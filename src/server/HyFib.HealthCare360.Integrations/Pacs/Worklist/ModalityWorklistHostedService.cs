@@ -16,6 +16,7 @@ namespace HyFib.HealthCare360.Integrations.Pacs.Worklist;
 internal sealed class ModalityWorklistHostedService(
     IServiceScopeFactory scopes,
     IOptions<PlatformOptions> platform,
+    IHostEnvironment environment,
     IDicomServerFactory servers,
     ModalityWorklistGateway gateway,
     TimeProvider time,
@@ -93,6 +94,16 @@ internal sealed class ModalityWorklistHostedService(
                 gateway.State.Stopped();
             }
 
+            return;
+        }
+
+        // A port the server itself listens on, such as the patient portal's since the portal has an address of its own (the
+        // worklist may have been given it before): binding it first would stop the server starting. Say why instead.
+        if (Listeners.ServerPortUse(wanted.Port, platform.Value, Listeners.ApiReferenceOn(platform.Value, environment)) is { } use)
+        {
+            gateway.State.Failed(wanted.AeTitle, wanted.Port,
+                $"Port {wanted.Port} is used by the HC360 server itself, for {use}. Choose another port for the worklist, here and on the modalities.");
+            _logger.LogError("The modality worklist is set to port {Port}, which the HC360 server uses for {Use}: it is not served", wanted.Port, use);
             return;
         }
 

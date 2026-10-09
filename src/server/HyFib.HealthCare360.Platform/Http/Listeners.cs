@@ -127,6 +127,21 @@ public static class Listeners
             : Listener.Staff;
     }
 
+    /// <summary>
+    /// What of the server listens on TCP port <paramref name="port"/>, or null when nothing does. A lab analyser or the
+    /// modality worklist may not listen there: binding the port first would stop the server starting, and otherwise the
+    /// listener would fail. The patient portal's port was free for them before the portal had an address of its own.
+    /// </summary>
+    public static string? ServerPortUse(int port, PlatformOptions options, bool apiReferenceOn)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return port == options.HttpsPort ? "the staff app"
+            : port == options.PortalHttpsPort ? "the patient portal"
+            : apiReferenceOn && port == options.ApiReferencePort ? "the API reference"
+            : options.HttpRedirectPort > 0 && port == options.HttpRedirectPort ? "the redirect from plain HTTP"
+            : null;
+    }
+
     /// <summary>The API reference is served in development, and elsewhere only when IT turns it on.</summary>
     public static bool ApiReferenceOn(PlatformOptions options, IHostEnvironment environment)
     {

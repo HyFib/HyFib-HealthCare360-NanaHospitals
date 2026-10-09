@@ -130,6 +130,27 @@ public sealed class ListenerPathsTests
         Listeners.PortProblem(new PlatformOptions { ApiReferencePort = 7361 }, apiReferenceOn: true).ShouldNotBeNull();
     }
 
+    [Theory]
+    [InlineData(7360, "the staff app")]
+    [InlineData(7361, "the patient portal")]
+    [InlineData(7362, "the API reference")]
+    [InlineData(5100, null)]
+    [InlineData(0, null)]
+    public void Names_the_part_of_the_server_that_listens_on_a_port(int port, string? use) =>
+        Listeners.ServerPortUse(port, new PlatformOptions(), apiReferenceOn: true).ShouldBe(use);
+
+    [Fact]
+    public void Names_only_the_ports_the_server_listens_on_with_its_settings()
+    {
+        Listeners.ServerPortUse(8443, new PlatformOptions { PortalHttpsPort = 8443 }, apiReferenceOn: false).ShouldBe("the patient portal");
+        Listeners.ServerPortUse(7361, new PlatformOptions { PortalHttpsPort = 8443 }, apiReferenceOn: false).ShouldBeNull();
+
+        // The API reference's port while the reference is on, and the redirect from plain HTTP's when IT gives it one.
+        Listeners.ServerPortUse(7362, new PlatformOptions(), apiReferenceOn: false).ShouldBeNull();
+        Listeners.ServerPortUse(80, new PlatformOptions(), apiReferenceOn: false).ShouldBeNull();
+        Listeners.ServerPortUse(80, new PlatformOptions { HttpRedirectPort = 80 }, apiReferenceOn: false).ShouldBe("the redirect from plain HTTP");
+    }
+
     [Fact]
     public async Task A_portal_page_asked_for_on_the_staff_apps_address_is_sent_to_the_same_page_on_the_portals()
     {

@@ -12,6 +12,7 @@ using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -298,13 +299,7 @@ public sealed class LabGatewayTests
     public async Task An_analyser_moved_off_the_network_shows_its_new_connection_straight_away(string transport, string shownTransport, string shownState)
     {
         var settings = Substitute.For<ISettingsService>();
-        var services = new ServiceCollection();
-        services.AddSingleton(settings);
-        services.AddSingleton(Substitute.For<ICurrentUser>());
-        services.AddSingleton<ILogger<IntegrationSettingsReader>>(NullLogger<IntegrationSettingsReader>.Instance);
-        services.AddScoped<IntegrationSettingsReader>();
-        using var gateway = new LabGatewayHostedService(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
-            Options.Create(new PlatformOptions()), Substitute.For<ILabMessageProcessor>(), _state, TimeProvider.System, NullLoggerFactory.Instance);
+        using var gateway = Gateway(settings, new PlatformOptions());
         settings.GetAsync<LabGatewaySettings>(LabSettingKeys.Gateway, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new LabGatewaySettings { Enabled = true, BindAddress = "127.0.0.1" });
         var network = LabSamples.AstmInstrument with { Port = FreePort() };
@@ -319,6 +314,58 @@ public sealed class LabGatewayTests
         await gateway.ReconcileAsync(Ct);
         var status = _state.Snapshot().ShouldHaveSingleItem();
         (status.InstrumentCode, status.Transport, status.State).ShouldBe(("C311", shownTransport, shownState));
+    }
+
+    [Fact]
+    public async Task An_analyser_on_a_port_of_the_server_itself_is_not_listened_for_and_says_why()
+    {
+        // The patient portal's port, which an analyser may have been given before the portal had an address of its own:
+        // were the gateway to take it first, the server would not start.
+        var portal = FreePort();
+
+        var status = await ReconcileAnalyserOnAsync(portal, new PlatformOptions { PortalHttpsPort = portal });
+
+        (status.InstrumentCode, status.State).ShouldBe(("C311", "failed"));
+        status.LastError.ShouldBe($"Port {portal} is used by the HC360 server itself, for the patient portal. " +
+                                  "Choose another port for this analyser, in its connection here and on the analyser.");
+        using var stillFree = new TcpListener(IPAddress.Loopback, portal);
+        stillFree.Start();
+    }
+
+    [Fact]
+    public async Task An_analyser_on_the_api_references_port_is_listened_for_while_the_reference_is_off()
+    {
+        var port = FreePort();
+
+        var status = await ReconcileAnalyserOnAsync(port, new PlatformOptions { ApiReferencePort = port });
+
+        status.State.ShouldBe("listening");
+    }
+
+    private async Task<LabListenerStatus> ReconcileAnalyserOnAsync(int port, PlatformOptions platform)
+    {
+        var settings = Substitute.For<ISettingsService>();
+        using var gateway = Gateway(settings, platform);
+        settings.GetAsync<LabGatewaySettings>(LabSettingKeys.Gateway, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new LabGatewaySettings { Enabled = true, BindAddress = "127.0.0.1" });
+        settings.GetAsync<List<LabInstrumentSettings>>(LabSettingKeys.Instruments, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns([LabSamples.AstmInstrument with { Port = port }]);
+
+        await gateway.ReconcileAsync(Ct);
+
+        return _state.Snapshot().ShouldHaveSingleItem();
+    }
+
+    private LabGatewayHostedService Gateway(ISettingsService settings, PlatformOptions platform)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(settings);
+        services.AddSingleton(Substitute.For<ICurrentUser>());
+        services.AddSingleton<ILogger<IntegrationSettingsReader>>(NullLogger<IntegrationSettingsReader>.Instance);
+        services.AddScoped<IntegrationSettingsReader>();
+        return new LabGatewayHostedService(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(platform), Substitute.For<IHostEnvironment>(), Substitute.For<ILabMessageProcessor>(), _state, TimeProvider.System,
+            NullLoggerFactory.Instance);
     }
 
     private static int FreePort()

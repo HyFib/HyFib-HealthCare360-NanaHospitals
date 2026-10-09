@@ -14,6 +14,7 @@ using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 
@@ -42,6 +43,7 @@ public sealed class ModalityWorklistServerTests : IAsyncDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions<PlatformOptions>();
+        services.AddSingleton(Substitute.For<IHostEnvironment>());
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(_tracing.Logger);
         services.AddScoped<IntegrationTrace>();
@@ -543,6 +545,23 @@ public sealed class ModalityWorklistServerTests : IAsyncDisposable
         var status = Gateway.State.Snapshot().ShouldHaveSingleItem();
         status.State.ShouldBe("failed");
         status.LastError!.ShouldContain("could not be opened");
+    }
+
+    [Fact]
+    public async Task Does_not_serve_on_a_port_of_the_server_itself_and_says_why()
+    {
+        // The patient portal's, which the worklist may have been given before the portal had an address of its own: were
+        // the worklist to take it first, the server would not start.
+        var portal = _services.GetRequiredService<IOptions<PlatformOptions>>().Value.PortalHttpsPort;
+        _settings.GetAsync<WorklistSettings>("integrations.mwl", Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(Settings() with { Port = portal });
+        var hosted = _services.GetServices<IHostedService>().OfType<ModalityWorklistHostedService>().Single();
+
+        await hosted.ReconcileAsync(Ct);
+
+        var status = Gateway.State.Snapshot().ShouldHaveSingleItem();
+        status.State.ShouldBe("failed");
+        status.LastError.ShouldBe($"Port {portal} is used by the HC360 server itself, for the patient portal. " +
+                                  "Choose another port for the worklist, here and on the modalities.");
     }
 
     private static int FreePort()

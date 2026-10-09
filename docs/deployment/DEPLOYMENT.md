@@ -455,6 +455,11 @@ sent and on QR codes already printed, keep working: the staff app's address send
 - Webhooks of the payment gateway, SMS and WhatsApp answer on both addresses, so their settings at the provider can
   stay as they are.
 - The API reference, if IT turned it on, moves to `https://localhost:7362/docs` on the server machine.
+- Before upgrading, check the ports of the network analysers (Lab setup › Analysers, each one's Connection) and of the
+  modality worklist (Administration › Integrations › Modality worklist). After the upgrade the server keeps port 7361
+  for the portal: an analyser or worklist set to it is not listened for, and shows as failing with the reason.
+  Move it to another port, in HC360 and on the analyser or the modalities, or run the installer with
+  `-PortalHttpsPort` and a free port, and use that port wherever this section says 7361.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
 Backups lists it as "before an update"). If that backup fails, for example because the disk is full, HC360 does not
 start and the database is not changed. The reason is in the log and in Windows Event Viewer.
@@ -528,6 +533,7 @@ distribution tool).
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
 | WhatsApp refuses the report message (error 132012) | The WhatsApp template has no document header but "Document header" is ticked in HC360, or the other way round. Make them match |
 | A modality cannot read the worklist | Administration › Integrations › Modality worklist: is it listening, and what is the last error? The modality's AE title and IP address must match its entry exactly, and the firewall rule must list its address. Refusals are logged once per ten minutes per network, so wait or look at the refused count |
+| An analyser or the modality worklist shows "Port … is used by the HC360 server itself" | It was given a port the server listens on, such as the patient portal's 7361 (see 7, Upgrades). Choose another port, in HC360 and on the analyser or the modalities, and open it in the firewall as described in 6 |
 | "HC360 cannot write the extract folder" (Analytics › BI extracts), or an extract is "Not refreshing" | The message gives the Windows error. Does the folder set as `HealthCare360:Analytics:ExtractDirectory` in `hc360.settings.json` exist (a machine environment variable `HC360_HealthCare360__Analytics__ExtractDirectory` overrides it), and does `NT SERVICE\HC360Server` (or the server's computer account, for a share) have *Modify* on it? Is the disk full? A file the BI tool keeps open can also stop a refresh: close Power BI Desktop and press *Refresh now* |
 | Images are not linked with PACS | Press "Link images from PACS" on the study: the message says why. "Under another patient ID", "without a patient ID" or "several studies" must be corrected in PACS; "not reached PACS yet" usually means the modality has not sent the images, or sent them without the worklist's accession number |
 
