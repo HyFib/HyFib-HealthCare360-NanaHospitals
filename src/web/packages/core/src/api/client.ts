@@ -1,4 +1,4 @@
-import { ApiError, featureOf, isFeatureDisabled, toApiError } from './errors';
+import { ApiError, featureOf, isFeatureDisabled, isSessionLocked, toApiError } from './errors';
 
 export type ClientType = 'web' | 'desktop' | 'portal';
 
@@ -27,6 +27,11 @@ export interface ApiClientConfig {
    * with the feature it names, so the app can explain instead of showing an error. The request still fails.
    */
   onFeatureDisabled?: (feature: string | undefined) => void;
+  /**
+   * Called when the server refuses a request because the session's screen is locked (`auth.session_locked`): the
+   * server locks a session left unused even when the app did not. The request still fails.
+   */
+  onSessionLocked?: () => void;
 }
 
 /** A downloaded file, the name the server gave it (Content-Disposition) and the response headers (notices). */
@@ -55,7 +60,7 @@ const MAX_ATTEMPTS = 3;
  * - every unsafe request carries an Idempotency-Key, so automatic retries after a dropped response never
  *   duplicate a bill, payment or order;
  * - transient failures (network, 502/503/504) are retried with exponential backoff + jitter;
- * - a 401 triggers one token refresh and replay;
+ * - a 401 triggers one token refresh and replay; a 423 (the screen is locked) does not, it waits for the PIN;
  * - Problem Details become typed {@link ApiError}s with field errors for forms.
  */
 export function createApiClient(config: ApiClientConfig): ApiClient {
@@ -134,6 +139,9 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         const error = await toApiError(response);
         if (isFeatureDisabled(error)) {
           config.onFeatureDisabled?.(featureOf(error));
+        }
+        if (isSessionLocked(error)) {
+          config.onSessionLocked?.();
         }
         throw error;
       }

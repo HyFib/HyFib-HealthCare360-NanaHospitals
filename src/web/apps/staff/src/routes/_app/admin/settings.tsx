@@ -38,7 +38,9 @@ export const Route = createFileRoute('/_app/admin/settings')({
  * (`features.*`) have their own screen, Hospital setup > Features.
  */
 const KNOWN: Record<string, string> = {
-  'ui.idleLockMinutes': 'Minutes of inactivity before a workstation locks (0 turns it off).',
+  'ui.idleLockMinutes': 'Minutes of inactivity before a workstation locks (0 turns it off). The server keeps the lock.',
+  'security.maxSessionsPerUser':
+    'How many sessions one staff account may have at once (3 if not set, 0 for no limit). Signing in once more signs out the one used least recently.',
   'alerts.oncallPhone': 'Mobile number that gets an SMS when the server WiFi drops or backups fail.',
 };
 

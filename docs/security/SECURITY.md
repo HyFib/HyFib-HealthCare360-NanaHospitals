@@ -77,10 +77,29 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - A refresh token presented after it was spent ends the whole session, and is audited as critical. A retry within
     60 seconds (a response lost on the WiFi link) is re-issued a token once. The token it replaces is retired, so if a
     copy was being replayed, the real client's next refresh ends the session for both.
-- Sessions:
-  - End after 12 hours, or after 2 hours idle.
-  - Workstations **lock after 10 minutes** of inactivity; staff unlock with a PIN.
-  - Too many wrong PINs end the session.
+- **Sessions** (ASVS V7):
+  - **How long:** a session ends 12 hours after sign-in (one clinical shift), or after 2 hours nobody has used it. A
+    patient portal session ends after 20 minutes unused, because portals run on shared and family phones. Together
+    with the lock below, these meet NIST SP 800-63B at AAL2: sign in again within 12 hours, and give a secret again
+    after 30 minutes unused.
+  - **What counts as use:** a key press, click, touch or scroll in the app, which the app reports with each token
+    refresh. The refresh itself does not count, since the app refreshes every few minutes in the background. A video
+    consultation in progress counts as use on the portal.
+  - **Idle lock:** staff screens lock after 10 minutes unused (the `ui.idleLockMinutes` setting; 0 turns it off), and
+    staff unlock with a PIN or their password. The server keeps the lock: until the session is unlocked, its requests
+    are refused (423) and live updates stop, so hiding the lock screen opens nothing. The server also locks a session
+    the app did not lock, at the next refresh that reports 10 minutes unused. Too many wrong PINs end the session.
+    Locking and unlocking are audited.
+  - **How many at once:** a staff account may have 3 sessions at once (the `security.maxSessionsPerUser` setting; 0
+    for no limit). Signing in once more signs out the session used least recently, audited as `auth.session_limit`.
+    Patient portal accounts have no limit.
+  - **Other devices:** under My account › Signed-in devices, staff see their sessions, when each was last used and
+    whether it is locked. They can sign out one of the others, or all of them, after giving their password again.
+  - **Everybody:** an administrator with `admin.system.manage` can sign out every session but their own, staff and
+    portal, from Administration › Users, after giving their password. Use it for a suspected break-in or a leaked
+    password list. It is audited as critical.
+  - **Credential changes:** changing the password, or turning two-step verification on or off, signs out the
+    account's other sessions. Setting up two-step verification asks for the password first.
 - Selected roles can be limited to **enrolled devices**:
   - Each HC360 Desktop has a device secret, protected with Windows DPAPI.
   - Administrators can revoke a device at any time.
@@ -287,11 +306,24 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - Nightly backups are **encrypted** (AES-256-GCM, chunked, every chunk authenticated) and optionally copied to a second
   disk or NAS.
 - Each backup is one archive holding the database, the stored documents (already encrypted) and escrow copies of the
-  field encryption keys. So one backup file and the recovery key restore everything on replacement hardware, including
+  field encryption keys. So one backup file and its recovery key restore everything on replacement hardware, including
   identifiers such as Aadhaar and ABHA, which are unreadable without that key.
 - Every backup is read back in full and its database dump listed by pg_restore before it counts. A backup that fails
   this check is discarded and reported.
-- The recovery key opens every backup. It is shown on request, each view is audited, and it must be stored **offline**.
+- **The recovery key opens the backups**, and the hospital keeps it **offline** (ASVS V11.1.1, V13.3.2).
+  - It is 256 random bits of its own, not derived from the data keys, kept on the Server Node with Data Protection
+    (machine DPAPI) to encrypt new backups.
+  - A holder of `admin.system.manage` makes a new one from Administration › Backups, after giving their password
+    again. It is shown once, to them, as 14 groups of 4 letters and digits whose last group checks the others. Backups
+    use it only once they type it back from their copy, so a key nobody wrote down never becomes the one backups need.
+    The server deletes the key it replaces. Showing it and putting it to use are audited, without the key.
+  - Every backup file names its key in a header that each chunk authenticates. The Backups list names each backup's
+    key, and the restore tool says which key a backup needs when it is given another.
+  - Until the first new key, backups use the original recovery key, derived from the original data key, which any
+    holder of the backups permission could display before. System health warns while they do, and says so as critical
+    when that key was never displayed, because then nobody holds it.
+  - A restore on a machine without a recovery key of its own, such as new hardware, keeps the key it was given for new
+    backups. A machine that has one keeps it.
 - Signing and encryption keys are generated on the Server Node and protected with Windows Data Protection (DPAPI).
   A restore installs the field encryption keys protected for the new machine, and a different key already there is
   kept under a new name, never deleted. The keys are installed last, after the backup's database is in place. If an
@@ -303,16 +335,18 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     time: the protected columns of every module, secret settings, and stored documents, which it rewrites only while no
     backup is copying them. The screen shows how much is left. Earlier keys are kept, so older backups and anything not
     yet moved stay readable, and every backup carries all of them.
-  - *What does not rotate.* Blind indexes and the backup key are derived from the original key. An Aadhaar index
-    cannot be computed again, because only the last four digits are kept, and the recovery key administrators hold
-    must not change. Short-lived encrypted data (stored responses for repeated requests, 24 hours; scheduled report
-    files, 30 days by default) is not moved: it expires with its key still in the ring.
+  - *What does not rotate.* Blind indexes are derived from the original key: an Aadhaar index cannot be computed again,
+    because only the last four digits are kept. So is the original recovery key, which older backups open with; the
+    recovery key is replaced on its own (above). Short-lived encrypted data (stored responses for repeated requests,
+    24 hours; scheduled report files, 30 days by default) is not moved: it expires with its key still in the ring.
   - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
     access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
 - **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
   says when either is due. Rotate both at once, and change the database password, when the Server Node, its disks or a
   backup may have been exposed, and when someone with administrator access to the Server Node leaves. Data keys are
-  never deleted: a key stays as long as any data or backup may need it.
+  never deleted: a key stays as long as any data or backup may need it. Make a new backup recovery key when someone who
+  has seen the current one leaves or a copy may have been exposed, and keep each one offline as long as backups made
+  with it are kept.
 
 #### Keys and certificates
 
@@ -320,7 +354,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 |---|---|---|---|---|
 | Data encryption keys (field master key ring) | `keys\field-master.key` (original) and `keys\field-keys\` (one per rotation, and which is current) | Data Protection (machine DPAPI) | AES-256-GCM, a key per purpose (HKDF): ABHA and policy numbers, staff PAN and bank details, two-step verification secrets, secret settings, stored documents, scheduled report files, stored responses | System health, every 2 years or on exposure; earlier keys kept |
 | Blind-index key | Derived from the original data key | As above | HMAC-SHA256 lookups of ABHA, Aadhaar, policy, PAN and bank account numbers | Not rotated (an Aadhaar index cannot be rebuilt) |
-| Backup key, which is the recovery key | Derived from the original data key; shown in Administration › Backups, each view audited | Kept offline by the hospital | Every backup file (chunked AES-256-GCM), which carries all the data keys | Not rotated |
+| Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
 | Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years |
@@ -382,8 +416,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 - **CodeQL code scanning** (`.github/workflows/codeql.yml`) analyses the server, HC360 Desktop and the lab agent (C#),
   the web apps (TypeScript) and the CI workflows, with the `security-extended` queries. It runs on every pull request,
   on main, and every Monday so that new queries reach code nobody is changing.
-  - A finding of high or critical severity fails the pull request. Each run checks whether GitHub Code Security is on
-    for the repository, and acts on the answer:
+  - A finding of high or critical severity fails the pull request. On a pull request, CodeQL reports only findings in
+    the lines it changes, as code scanning does; the runs on main and every Monday report everything. Each run checks
+    whether GitHub Code Security is on for the repository, and acts on the answer:
     - **On:** the results go to Security › Code scanning, and its check fails a pull request that adds such an alert.
     - **Off:** GitHub refuses the results, so they are not uploaded. Instead, each `CodeQL` job checks them itself
       (`.github/codeql/check-results.ps1`). It lists every finding in the job summary and on the line it is about, and

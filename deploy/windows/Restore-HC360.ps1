@@ -10,14 +10,17 @@
     back and HC360 is started again on it.
 
     1. Checks the PostgreSQL sign-in.
-    2. Checks the whole backup with the recovery key (Administration > Backups > Recovery key) and extracts its database,
-       using the server CLI's "backup decrypt". The key is passed through an environment variable, never on a command
-       line. A damaged backup, the wrong key, or a backup from a newer HC360 version stops here: nothing has changed and
-       HC360 is still running.
+    2. Checks the whole backup with its recovery key and extracts its database, using the server CLI's "backup decrypt".
+       The key is the one that was current when the backup was made: Administration > Backups lists it, and a wrong key
+       is answered with the id of the right one. Backups made before HC360 named their key open with the original key;
+       on the Server Node that made them, entering "original" uses that key without typing it. The key is passed through
+       an environment variable, never on a command line. A damaged backup, the wrong key, or a backup from a newer HC360
+       version stops here: nothing has changed and HC360 is still running.
     3. Stops the HC360 service, keeps the current database as hc360_before_restore_<timestamp> (nothing is dropped),
        creates a fresh one and runs pg_restore into it.
     4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A different
-       key already here is kept under a new name, never deleted.
+       key already here is kept under a new name, never deleted. On new hardware, later backups open with the recovery
+       key entered here.
     5. Starts the service again.
 
     Backups made before HC360 archive backups hold the database only. To restore one of those on new hardware, copy
@@ -89,7 +92,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not sign in to PostgreSQL as postgres. Nothing was changed.' }
 
     Write-Step 'Checking the whole backup and extracting its database'
-    $decryptExit = Invoke-ServerCli @('backup', 'decrypt', '--in', $BackupFile, '--out', $dump)
+    $decryptExit = Invoke-ServerCli @('backup', 'decrypt', '--in', $BackupFile, '--out', $dump, '--data-dir', $DataDir)
     if ($decryptExit -eq 3) { throw 'This backup was made by a newer version of HC360. Install that version first. Nothing was changed.' }
     if ($decryptExit -ne 0) { throw 'The backup could not be read (wrong recovery key or damaged backup). Nothing was changed.' }
 

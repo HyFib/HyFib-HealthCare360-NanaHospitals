@@ -11,13 +11,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { DesktopRegular, PhoneRegular, SignOutRegular } from '@fluentui/react-icons';
+import { DesktopRegular, LockClosedRegular, PhoneRegular, SignOutRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatRelative, humanize, useSession } from '@hc360/core';
-import { ConfirmDialog, DataTable, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import { DataTable, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
+import { PasswordConfirmDialog } from '@/modules/account/PasswordConfirmDialog';
 import { ChangePasswordForm, MfaSetup, PinForm, reloadCurrentUser } from '@/modules/account/security';
 
 export const Route = createFileRoute('/_app/account')({
@@ -28,12 +29,14 @@ interface SessionInfo {
   id: string;
   clientType: string;
   createdAt: string;
-  lastSeenAt: string;
+  /** When someone last used it: background refreshes do not count. */
+  lastActiveAt: string;
   expiresAt: string;
   ipAddress: string | null;
   userAgent: string | null;
   deviceName: string | null;
   isCurrent: boolean;
+  isLocked: boolean;
 }
 
 const useStyles = makeStyles({
@@ -42,6 +45,7 @@ const useStyles = makeStyles({
   badges: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
   stack: { display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '420px' },
+  sessions: { display: 'flex', flexDirection: 'column', gap: '12px' },
 });
 
 type TabId = 'password' | 'mfa' | 'pin' | 'sessions';
@@ -122,7 +126,8 @@ function DisableMfa() {
   return (
     <div className={styles.stack}>
       <Text>
-        Two-step verification is on. You will be asked for a code from your authenticator app when you sign in.
+        Two-step verification is on. You will be asked for a code from your authenticator app when you sign in. Turning
+        it off signs out your other devices.
       </Text>
       <Field label="Password (to turn it off)">
         <Input
@@ -141,27 +146,42 @@ function DisableMfa() {
   );
 }
 
+/** Signing out a device asks for the password again: whoever finds this one signed in must not sign the owner out. */
 function Sessions() {
+  const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const [revoking, setRevoking] = useState<SessionInfo | null>(null);
+  const [ending, setEnding] = useState<SessionInfo | 'others' | null>(null);
   const sessions = useQuery({
     queryKey: ['auth', 'sessions'],
     queryFn: () => api.get<SessionInfo[]>('/api/v1/auth/sessions'),
   });
+  const others = (sessions.data ?? []).filter((s) => !s.isCurrent).length;
 
-  const revoke = useMutation({
-    mutationFn: (id: string) => api.delete(`/api/v1/auth/sessions/${id}`),
-    onSuccess: () => {
-      setRevoking(null);
-      notify.success('Signed out of that device');
+  const end = useMutation({
+    mutationFn: async ({ target, password }: { target: SessionInfo | 'others'; password: string }) =>
+      target === 'others'
+        ? (await api.post<{ ended: number }>('/api/v1/auth/sessions/end-others', { password })).ended
+        : (await api.post(`/api/v1/auth/sessions/${target.id}/end`, { password }), 1),
+    onSuccess: (ended, { target }) => {
+      setEnding(null);
+      notify.success(target === 'others' ? `Signed out of ${ended} other device(s)` : 'Signed out of that device');
       void queryClient.invalidateQueries({ queryKey: ['auth', 'sessions'] });
     },
-    onError: (error) => notify.error(error, 'Could not sign out that device'),
   });
 
+  const open = (target: SessionInfo | 'others') => {
+    end.reset();
+    setEnding(target);
+  };
+
   return (
-    <>
+    <div className={styles.sessions}>
+      <div>
+        <Button icon={<SignOutRegular />} disabled={others === 0} onClick={() => open('others')}>
+          Sign out everywhere else
+        </Button>
+      </div>
       <DataTable
         ariaLabel="Signed-in devices"
         rows={sessions.data}
@@ -182,33 +202,44 @@ function Sessions() {
                     This device
                   </Badge>
                 )}
+                {s.isLocked && (
+                  <Badge appearance="tint" color="informative" icon={<LockClosedRegular />}>
+                    Locked
+                  </Badge>
+                )}
               </span>
             ),
           },
           { key: 'ip', header: 'Network address', render: (s) => s.ipAddress ?? '—', priority: 'low' },
           { key: 'signedIn', header: 'Signed in', render: (s) => formatDateTime(s.createdAt), priority: 'low' },
-          { key: 'lastSeen', header: 'Last active', render: (s) => formatRelative(s.lastSeenAt) },
+          {
+            key: 'lastActive',
+            header: 'Last used',
+            render: (s) => (s.isCurrent ? 'Now' : formatRelative(s.lastActiveAt)),
+          },
         ]}
         rowActions={(s) =>
           s.isCurrent ? null : (
-            <Button size="small" icon={<SignOutRegular />} onClick={() => setRevoking(s)}>
+            <Button size="small" icon={<SignOutRegular />} onClick={() => open(s)}>
               Sign out
             </Button>
           )
         }
         emptyTitle="No other devices"
       />
-      <ConfirmDialog
-        open={revoking !== null}
-        title="Sign out this device?"
+      <PasswordConfirmDialog
+        open={ending !== null}
+        title={ending === 'others' ? 'Sign out everywhere else?' : 'Sign out this device?'}
         confirmLabel="Sign out"
-        destructive
-        busy={revoke.isPending}
-        onConfirm={() => revoking && revoke.mutate(revoking.id)}
-        onCancel={() => setRevoking(null)}
+        busy={end.isPending}
+        error={end.error}
+        onConfirm={(password) => ending && end.mutate({ target: ending, password })}
+        onCancel={() => setEnding(null)}
       >
-        Anyone using HealthCare360 with your account on that device will be signed out immediately.
-      </ConfirmDialog>
-    </>
+        {ending === 'others'
+          ? `Anyone using HealthCare360 with your account on your ${others} other device(s) will be signed out immediately. This device stays signed in.`
+          : 'Anyone using HealthCare360 with your account on that device will be signed out immediately.'}
+      </PasswordConfirmDialog>
+    </div>
   );
 }

@@ -24,7 +24,11 @@ export interface AuthUser {
   mfaEnabled: boolean;
   hasPin: boolean;
   mustChangePassword: boolean;
-  restriction: 'password' | 'mfa-setup' | null;
+  /**
+   * What the session may do: change its password or set up two-step verification first, or nothing but unlock while
+   * its screen is locked (the server keeps the lock; the user keeps their permissions for the screens behind it).
+   */
+  restriction: 'password' | 'mfa-setup' | 'locked' | null;
   /** The password must be changed because a sign-in found it published from data breaches (SRS SEC-01). */
   passwordBreached?: boolean;
 }
@@ -62,12 +66,15 @@ export const useSession = create<SessionState>((set) => ({
   expiresAt: null,
   user: null,
   locked: false,
+  // A result never unlocks the screen by itself: only unlocking does (setLocked). The server locks a session left
+  // unused even when the app did not, and says so with the "locked" restriction.
   setAuth: (result) =>
     set((state) => ({
       status: result.accessToken ? 'authenticated' : state.status,
       accessToken: result.accessToken ?? state.accessToken,
       expiresAt: result.expiresAt ? Date.parse(result.expiresAt) : state.expiresAt,
       user: result.user ?? state.user,
+      locked: state.locked || result.user?.restriction === 'locked',
     })),
   setUser: (user) => set({ user }),
   setLocked: (locked) => set({ locked }),
@@ -99,16 +106,42 @@ export function hasPermission(
 let clientType: ClientType = 'web';
 let refreshing: Promise<string | null> | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+let lastActivity = Date.now();
 
 export function configureAuth(options: { clientType: ClientType }): void {
   clientType = options.clientType;
 }
 
-async function authFetch(path: string, body?: unknown): Promise<AuthResult> {
+/**
+ * Notes that someone is using the app now. Key presses, clicks, touches and scrolling count by themselves; an app calls
+ * this for use the browser does not see, such as a video consultation in progress.
+ */
+export function markActivity(): void {
+  lastActivity = Date.now();
+}
+
+// The same signs of use as the idle lock (useIdle), so the server and the screen agree on when it was last used.
+if (typeof window !== 'undefined') {
+  for (const name of ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'] as const) {
+    window.addEventListener(name, markActivity, { passive: true, capture: true });
+  }
+}
+
+/** Whole seconds since someone last used the app. */
+export function idleSeconds(): number {
+  return Math.max(0, Math.floor((Date.now() - lastActivity) / 1000));
+}
+
+async function authFetch(path: string, body?: unknown, headers?: Record<string, string>): Promise<AuthResult> {
   const response = await fetch(`/api/v1/auth/${path}`, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-HC360-Client': clientType },
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-HC360-Client': clientType,
+      ...headers,
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
@@ -153,11 +186,15 @@ export const auth = {
     return accept(result);
   },
 
-  /** Single-flight refresh; network failures keep the session (WiFi blips must not sign people out). */
+  /**
+   * Single-flight refresh; network failures keep the session (WiFi blips must not sign people out). It tells the server
+   * how long nobody has used the app, since refreshing alone, in the background, is no sign of anyone at the screen:
+   * the server locks the screen and ends the session by that.
+   */
   refresh(): Promise<string | null> {
     refreshing ??= (async () => {
       try {
-        const result = await authFetch('refresh');
+        const result = await authFetch('refresh', undefined, { 'X-HC360-Idle': String(idleSeconds()) });
         accept(result);
         return result.accessToken ?? null;
       } catch (error) {

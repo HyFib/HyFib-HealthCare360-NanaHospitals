@@ -10,13 +10,18 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// <list type="bullet">
 /// <item>Version 1 (<c>HC360BK1</c>): the payload is a pg_dump archive. Still read, no longer written.</item>
 /// <item>Version 2 (<c>HC360BK2</c>): the payload is a <see cref="BackupArchive"/>, and the header is also part of every
-/// chunk's associated data.</item>
+/// chunk's associated data. Still read, no longer written.</item>
+/// <item>Version 3 (<c>HC360BK3</c>): as version 2, and the header also names the recovery key that opens the file
+/// (<see cref="BackupRecoveryKey.Id"/>), so a restore given another key says which one it needs.</item>
 /// </list>
 /// </summary>
 public static class BackupEncryption
 {
     public const int LegacyVersion = 1;
     public const int ArchiveVersion = 2;
+
+    /// <summary>An archive whose header names the recovery key that opens it.</summary>
+    public const int KeyedVersion = 3;
     internal const int DefaultChunkSize = 1024 * 1024;
     internal const int HeaderSize = 12;
     internal const int NonceSize = 12;
@@ -24,16 +29,22 @@ public static class BackupEncryption
     private const int MaxChunkSize = 64 * 1024 * 1024;
     private static readonly byte[] MagicV1 = "HC360BK1"u8.ToArray();
     private static readonly byte[] MagicV2 = "HC360BK2"u8.ToArray();
+    private static readonly byte[] MagicV3 = "HC360BK3"u8.ToArray();
 
     /// <summary>
-    /// A write-only stream that encrypts into a version 2 file. Call <see cref="BackupEncryptor.CompleteAsync"/> after
-    /// the last write; an encryptor disposed without it leaves the file truncated, so an interrupted backup never
-    /// decrypts.
+    /// A write-only stream that encrypts into a version 3 file, which names <paramref name="key"/> by its id. Call
+    /// <see cref="BackupEncryptor.CompleteAsync"/> after the last write; an encryptor disposed without it leaves the file
+    /// truncated, so an interrupted backup never decrypts.
     /// </summary>
     public static BackupEncryptor CreateEncryptor(Stream output, byte[] key, bool leaveOpen = true) =>
-        new(output, key, ArchiveVersion, Header(ArchiveVersion, DefaultChunkSize), leaveOpen);
+        new(output, key, KeyedVersion, Header(KeyedVersion, DefaultChunkSize, key), leaveOpen);
 
-    /// <summary>Reads the header and returns a read-only stream of the decrypted payload (either version).</summary>
+    /// <summary>A version 2 encryptor, whose file does not name its key. Only for tests that need a backup in that format.</summary>
+    internal static BackupEncryptor CreateUnnamedEncryptor(Stream output, byte[] key) =>
+        new(output, key, ArchiveVersion, Header(ArchiveVersion, DefaultChunkSize), leaveOpen: true);
+
+    /// <summary>Reads the header and returns a read-only stream of the decrypted payload (any version).</summary>
+    /// <exception cref="BackupKeyMismatchException">The file names another recovery key (version 3).</exception>
     /// <exception cref="CryptographicException">Not an HC360 backup, the wrong key, or a damaged file.</exception>
     public static async Task<BackupDecryptor> OpenAsync(Stream input, byte[] key, CancellationToken ct, bool leaveOpen = true)
     {
@@ -43,7 +54,8 @@ public static class BackupEncryption
             throw new CryptographicException("Not an HC360 backup file.");
         }
 
-        var version = header.AsSpan(0, 8).SequenceEqual(MagicV2) ? ArchiveVersion
+        var version = header.AsSpan(0, 8).SequenceEqual(MagicV3) ? KeyedVersion
+            : header.AsSpan(0, 8).SequenceEqual(MagicV2) ? ArchiveVersion
             : header.AsSpan(0, 8).SequenceEqual(MagicV1) ? LegacyVersion
             : throw new CryptographicException("Not an HC360 backup file.");
         var chunkSize = BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(8));
@@ -52,7 +64,25 @@ public static class BackupEncryption
             throw new CryptographicException("Corrupt backup header.");
         }
 
-        return new BackupDecryptor(input, key, version, header, chunkSize, leaveOpen);
+        string? keyId = null;
+        if (version == KeyedVersion)
+        {
+            Array.Resize(ref header, HeaderSize + BackupRecoveryKey.IdLength);
+            if (await ReadFullAsync(input, header.AsMemory(HeaderSize), ct) != BackupRecoveryKey.IdLength)
+            {
+                throw new CryptographicException("The backup file is truncated.");
+            }
+
+            // The id is authenticated with every chunk, so a changed one does not decrypt either.
+            keyId = Convert.ToHexString(header, HeaderSize, BackupRecoveryKey.IdLength);
+            var given = BackupRecoveryKey.Id(key);
+            if (given != keyId)
+            {
+                throw new BackupKeyMismatchException(keyId, given);
+            }
+        }
+
+        return new BackupDecryptor(input, key, version, header, chunkSize, leaveOpen) { KeyId = keyId };
     }
 
     /// <summary>Decrypts a whole backup file into <paramref name="output"/> and returns its format version.</summary>
@@ -71,17 +101,23 @@ public static class BackupEncryption
         await encryptor.CompleteAsync(ct);
     }
 
-    internal static byte[] Header(int version, int chunkSize)
+    /// <param name="key">The recovery key a version 3 file names.</param>
+    internal static byte[] Header(int version, int chunkSize, byte[]? key = null)
     {
-        var header = new byte[HeaderSize];
-        (version == ArchiveVersion ? MagicV2 : MagicV1).CopyTo(header, 0);
+        var header = new byte[version == KeyedVersion ? HeaderSize + BackupRecoveryKey.IdLength : HeaderSize];
+        (version switch { KeyedVersion => MagicV3, ArchiveVersion => MagicV2, _ => MagicV1 }).CopyTo(header, 0);
         BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(8), chunkSize);
+        if (version == KeyedVersion)
+        {
+            Convert.FromHexString(BackupRecoveryKey.Id(key ?? throw new ArgumentNullException(nameof(key)))).CopyTo(header, HeaderSize);
+        }
+
         return header;
     }
 
     internal static byte[] AssociatedData(int version, byte[] header, long index, bool isFinal)
     {
-        var prefix = version == ArchiveVersion ? header.Length : 0;
+        var prefix = version >= ArchiveVersion ? header.Length : 0;
         var data = new byte[prefix + 9];
         if (prefix > 0)
         {
@@ -332,8 +368,11 @@ public sealed class BackupDecryptor : Stream
         _chunkSize = chunkSize;
     }
 
-    /// <summary><see cref="BackupEncryption.LegacyVersion"/> or <see cref="BackupEncryption.ArchiveVersion"/>.</summary>
+    /// <summary><see cref="BackupEncryption.LegacyVersion"/>, <see cref="BackupEncryption.ArchiveVersion"/> or <see cref="BackupEncryption.KeyedVersion"/>.</summary>
     public int Version { get; }
+
+    /// <summary>The id of the recovery key the file names (version 3); null for older files, made with the original key.</summary>
+    public string? KeyId { get; init; }
 
     public override bool CanRead => !_disposed;
 

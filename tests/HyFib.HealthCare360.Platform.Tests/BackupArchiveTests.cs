@@ -187,16 +187,87 @@ public sealed class BackupArchiveTests : IDisposable
     }
 
     [Fact]
-    public async Task A_key_that_does_not_belong_to_the_recovery_key_is_not_installed()
+    public async Task A_key_that_does_not_belong_to_an_older_backups_recovery_key_is_not_installed()
     {
+        // Backups that do not name their key were all made with the original recovery key, which comes from the key inside.
         var oldServer = Machine("old");
-        var (backup, recoveryKey) = await BackupFileAsync(oldServer, masterKey: RandomNumberGenerator.GetBytes(32), encryptWith: RandomNumberGenerator.GetBytes(32));
+        var (backup, recoveryKey) = await BackupFileAsync(oldServer, masterKey: RandomNumberGenerator.GetBytes(32),
+            recoveryKey: BackupRecoveryKey.Original(RandomNumberGenerator.GetBytes(32)), unnamed: true);
         var newServer = Machine("new");
 
         await Should.ThrowAsync<InvalidDataException>(() =>
             BackupRestore.RestoreAsync(backup, recoveryKey, Path.Combine(newServer.Temp, "r.dump"), newServer, new EphemeralDataProtectionProvider(), TimeProvider.System, CancellationToken.None));
 
         File.Exists(FieldMasterKey.PathIn(newServer)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task An_older_backup_that_does_not_name_its_key_still_restores()
+    {
+        var oldServer = Machine("old");
+        var masterKey = RandomNumberGenerator.GetBytes(32);
+        var (backup, recoveryKey) = await BackupFileAsync(oldServer, masterKey, unnamed: true);
+        var newServer = Machine("new");
+        var protection = new EphemeralDataProtectionProvider();
+
+        var result = await BackupRestore.RestoreAsync(backup, recoveryKey, null, newServer, protection, TimeProvider.System, TestContext.Current.CancellationToken);
+
+        (result.Version, result.KeyInstalled, result.RecoveryKeyKept).ShouldBe((BackupEncryption.ArchiveVersion, true, false));
+        FieldMasterKey.Load(FieldMasterKey.PathIn(newServer), FieldMasterKey.CreateProtector(protection)).ShouldBe(masterKey);
+    }
+
+    [Fact]
+    public async Task New_hardware_goes_on_backing_up_with_the_recovery_key_it_was_restored_with()
+    {
+        var oldServer = Machine("old");
+        var recoveryKey = BackupRecoveryKey.Create();
+        var (backup, _) = await BackupFileAsync(oldServer, RandomNumberGenerator.GetBytes(32), recoveryKey);
+        var newServer = Machine("new");
+        var protection = new EphemeralDataProtectionProvider();
+
+        var result = await BackupRestore.RestoreAsync(backup, recoveryKey, null, newServer, protection, TimeProvider.System, TestContext.Current.CancellationToken);
+
+        result.RecoveryKeyKept.ShouldBeTrue();
+        result.RecoveryKeyProblem.ShouldBeNull();
+        var keys = new RecoveryKeyStore(newServer, protection, new FieldProtector(newServer, protection), TimeProvider.System);
+        var current = keys.Current();
+        (current.KeyId, current.Original).ShouldBe((BackupRecoveryKey.Id(recoveryKey), false));
+        current.Key.ShouldBe(recoveryKey);
+    }
+
+    [Fact]
+    public async Task A_machine_with_a_recovery_key_of_its_own_keeps_it_after_a_restore()
+    {
+        // An older backup may have been made with a key the hospital has replaced since.
+        var machine = Machine("m");
+        var protection = new EphemeralDataProtectionProvider();
+        var keys = new RecoveryKeyStore(machine, protection, new FieldProtector(machine, protection), TimeProvider.System);
+        var admin = Guid.NewGuid();
+        var replacement = keys.Create(admin);
+        keys.Confirm(replacement.KeyId, replacement.Key, admin).IsSuccess.ShouldBeTrue();
+        var olderKey = BackupRecoveryKey.Create();
+        var (backup, _) = await BackupFileAsync(Machine("old"), RandomNumberGenerator.GetBytes(32), olderKey);
+
+        var result = await BackupRestore.RestoreAsync(backup, olderKey, null, machine, protection, TimeProvider.System, TestContext.Current.CancellationToken);
+
+        result.RecoveryKeyKept.ShouldBeFalse();
+        keys.Current().KeyId.ShouldBe(replacement.KeyId);
+    }
+
+    [Fact]
+    public async Task A_backup_made_with_the_original_key_leaves_new_hardware_on_the_original_key()
+    {
+        var masterKey = RandomNumberGenerator.GetBytes(32);
+        var (backup, recoveryKey) = await BackupFileAsync(Machine("old"), masterKey);
+        var newServer = Machine("new");
+        var protection = new EphemeralDataProtectionProvider();
+
+        var result = await BackupRestore.RestoreAsync(backup, recoveryKey, null, newServer, protection, TimeProvider.System, TestContext.Current.CancellationToken);
+
+        result.RecoveryKeyKept.ShouldBeFalse();
+        var keys = new RecoveryKeyStore(newServer, protection, new FieldProtector(newServer, protection), TimeProvider.System);
+        keys.IsOriginal.ShouldBeTrue();
+        keys.Current().Key.ShouldBe(BackupRecoveryKey.Original(masterKey));
     }
 
     [Fact]
@@ -305,14 +376,17 @@ public sealed class BackupArchiveTests : IDisposable
         new(BackupArchive.Format, "Manual", DateTimeOffset.UtcNow, "1.0.0", "hc360", ["20260928102924_InitialCreate"], true,
             documents.Count, documents.Sum(d => d.Length), FieldMasterKey.Fingerprint(key));
 
-    /// <summary>An encrypted archive of the machine's documents, as the backup service writes it.</summary>
-    private static async Task<(string File, byte[] RecoveryKey)> BackupFileAsync(DataDirectories machine, byte[] masterKey, byte[]? encryptWith = null)
+    /// <summary>
+    /// An encrypted archive of the machine's documents, as the backup service writes it: with the original recovery key
+    /// unless another is given, and in a file that names its key unless <paramref name="unnamed"/> (as before version 3).
+    /// </summary>
+    private static async Task<(string File, byte[] RecoveryKey)> BackupFileAsync(DataDirectories machine, byte[] masterKey, byte[]? recoveryKey = null, bool unnamed = false)
     {
-        var recoveryKey = FieldMasterKey.DeriveKey(encryptWith ?? masterKey, "backup");
+        recoveryKey ??= BackupRecoveryKey.Original(masterKey);
         var documents = BackupArchive.ListDocuments(machine.Files);
         var file = Path.Combine(machine.Backups, "test.hc360bak");
         await using (var output = File.Create(file))
-        await using (var encryptor = BackupEncryption.CreateEncryptor(output, recoveryKey))
+        await using (var encryptor = unnamed ? BackupEncryption.CreateUnnamedEncryptor(output, recoveryKey) : BackupEncryption.CreateEncryptor(output, recoveryKey))
         {
             await BackupArchive.WriteAsync(encryptor, Manifest(masterKey, documents), masterKey, [], WriteDump(machine), machine.Files, documents, CancellationToken.None);
             await encryptor.CompleteAsync(CancellationToken.None);

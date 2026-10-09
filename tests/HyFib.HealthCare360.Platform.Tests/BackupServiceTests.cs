@@ -19,6 +19,7 @@ public sealed class BackupServiceTests : IDisposable
     private readonly PlatformOptions _options;
     private readonly DataDirectories _directories;
     private readonly FieldProtector _protector;
+    private readonly RecoveryKeyStore _recoveryKeys;
 
     public BackupServiceTests()
     {
@@ -26,7 +27,9 @@ public sealed class BackupServiceTests : IDisposable
         _options.Backup.SecondaryDirectory = Path.Combine(_root, "nas");
         _directories = new DataDirectories(_options);
         _directories.EnsureCreated();
-        _protector = new FieldProtector(_directories, new EphemeralDataProtectionProvider());
+        var protection = new EphemeralDataProtectionProvider();
+        _protector = new FieldProtector(_directories, protection);
+        _recoveryKeys = new RecoveryKeyStore(_directories, protection, _protector, TimeProvider.System);
     }
 
     public void Dispose()
@@ -92,6 +95,49 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_backup_names_the_recovery_key_that_opens_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var original = BackupRecoveryKey.Original(_protector.ExportMasterKey());
+
+        var result = await Service().CreatePreMigrationAsync([], ct);
+
+        result.RecoveryKeyId.ShouldBe(BackupRecoveryKey.Id(original));
+        var file = Path.Combine(_directories.Backups, result.FileName);
+        await using (var input = File.OpenRead(file))
+        await using (var payload = await BackupEncryption.OpenAsync(input, original, ct))
+        {
+            (payload.Version, payload.KeyId).ShouldBe((BackupEncryption.KeyedVersion, result.RecoveryKeyId));
+        }
+
+        // Another key is turned away before anything is decrypted, with the id of the key that opens the backup.
+        var other = BackupRecoveryKey.Create();
+        await using var again = File.OpenRead(file);
+        var ex = await Should.ThrowAsync<BackupKeyMismatchException>(() => BackupEncryption.OpenAsync(again, other, ct));
+        (ex.BackupKeyId, ex.GivenKeyId).ShouldBe((result.RecoveryKeyId, BackupRecoveryKey.Id(other)));
+    }
+
+    [Fact]
+    public async Task After_a_new_recovery_key_backups_open_with_it_and_earlier_ones_with_the_key_before()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var original = BackupRecoveryKey.Original(_protector.ExportMasterKey());
+        var before = await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow.AddMinutes(-5), includeDocuments: true, [], ct);
+        var admin = Guid.NewGuid();
+        var created = _recoveryKeys.Create(admin);
+        _recoveryKeys.Confirm(created.KeyId, created.Key, admin).Value.ShouldBe(before.RecoveryKeyId);
+        BackupRecoveryKey.TryParse(created.Key, out var newKey, out _).ShouldBeTrue();
+
+        var after = await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow, includeDocuments: true, [], ct);
+
+        after.RecoveryKeyId.ShouldBe(created.KeyId);
+        await OpensWithAsync(after, newKey);
+        await OpensWithAsync(before, original);
+        await using var input = File.OpenRead(Path.Combine(_directories.Backups, after.FileName));
+        await Should.ThrowAsync<BackupKeyMismatchException>(() => BackupEncryption.OpenAsync(input, original, ct));
+    }
+
+    [Fact]
     public async Task A_backup_is_refused_when_the_disk_has_no_room_for_it()
     {
         _postgres.DatabaseSize = long.MaxValue / 4;
@@ -126,11 +172,20 @@ public sealed class BackupServiceTests : IDisposable
         File.Exists(Path.Combine(_directories.Backups, result.FileName)).ShouldBeTrue();
     }
 
+    private async Task OpensWithAsync(BackupResult backup, byte[] key)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var input = File.OpenRead(Path.Combine(_directories.Backups, backup.FileName));
+        await using var payload = await BackupEncryption.OpenAsync(input, key, ct);
+        var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), ct);
+        contents.MasterKey.ShouldBe(_protector.ExportMasterKey());
+    }
+
     private BackupService Service() => new(
         Substitute.For<IDbContextFactory<HospitalDbContext>>(),
         Options.Create(_options),
         _directories,
-        _protector,
+        _recoveryKeys,
         _protector,
         new NoDocumentsLock(),
         _postgres,

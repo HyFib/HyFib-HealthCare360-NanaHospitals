@@ -64,6 +64,7 @@ import { z } from 'zod';
 import { api } from '@/lib/api';
 import { searchPractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
+import { PasswordConfirmDialog } from '@/modules/account/PasswordConfirmDialog';
 import { adminQueries, type UserDetail, type UserListItem } from '@/modules/admin/api';
 
 export const Route = createFileRoute('/_app/admin/users')({
@@ -112,6 +113,8 @@ function UsersPage() {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canManage = usePermission('admin.users.manage');
+  const canSignOutEveryone = usePermission('admin.system.manage');
+  const [signingOutEveryone, setSigningOutEveryone] = useState(false);
   const [term, setTerm] = useState('');
   const search = useDebouncedValue(term.trim(), 300);
   const [page, setPage] = useState(1);
@@ -145,19 +148,55 @@ function UsersPage() {
     onError: (error) => notify.error(error, 'The action failed'),
   });
 
+  // For a suspected break-in: everybody but this administrator signs in again (ASVS V7.4.5).
+  const signOutEveryone = useMutation({
+    mutationFn: (password: string) => api.post<{ ended: number }>('/api/v1/admin/sessions/end-all', { password }),
+    onSuccess: ({ ended }) => {
+      setSigningOutEveryone(false);
+      notify.success(`Signed everybody out: ${ended} session(s) ended`);
+    },
+  });
+
   return (
     <Page>
       <PageHeader
         title="Users"
         subtitle="Staff accounts, their roles and sign-in security"
         actions={
-          canManage && (
-            <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
-              Add user
-            </Button>
+          (canSignOutEveryone || canManage) && (
+            <>
+              {canSignOutEveryone && (
+                <Button
+                  icon={<SignOutRegular />}
+                  onClick={() => {
+                    signOutEveryone.reset();
+                    setSigningOutEveryone(true);
+                  }}
+                >
+                  Sign out everyone
+                </Button>
+              )}
+              {canManage && (
+                <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                  Add user
+                </Button>
+              )}
+            </>
           )
         }
       />
+      <PasswordConfirmDialog
+        open={signingOutEveryone}
+        title="Sign out everyone?"
+        confirmLabel="Sign out everyone"
+        busy={signOutEveryone.isPending}
+        error={signOutEveryone.error}
+        onConfirm={(password) => signOutEveryone.mutate(password)}
+        onCancel={() => setSigningOutEveryone(false)}
+      >
+        Every session ends immediately, staff and patient portal alike, on every computer, tablet and phone. Only you
+        stay signed in. Use this when a password may have leaked or someone may have got in: everyone signs in again.
+      </PasswordConfirmDialog>
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>

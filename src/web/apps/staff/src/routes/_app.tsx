@@ -21,6 +21,7 @@ export const Route = createFileRoute('/_app')({
 function AppLayout() {
   const status = useSession((s) => s.status);
   const user = useSession((s) => s.user);
+  const locked = useSession((s) => s.locked);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -35,14 +36,16 @@ function AppLayout() {
     return <LoadingState label="Signing you in…" />;
   }
 
-  if (user.restriction) {
+  // A locked session keeps its screens, as they were, behind the lock screen.
+  if (user.restriction && user.restriction !== 'locked') {
     return <RestrictedSession restriction={user.restriction} />;
   }
 
+  // No live updates reach a locked screen: the server refuses the connection until it is unlocked.
   return (
     <RealtimeProvider
       accessTokenFactory={() => useSession.getState().accessToken ?? ''}
-      enabled={status === 'authenticated'}
+      enabled={status === 'authenticated' && !locked}
     >
       <AppShell>
         <Outlet />

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildUrl, createApiClient, fileNameFromDisposition } from './client';
-import { ApiError, featureOf, isFeatureDisabled } from './errors';
+import { ApiError, featureOf, isFeatureDisabled, isSessionLocked } from './errors';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -104,6 +104,27 @@ describe('api client', () => {
     const client = createApiClient({ ...baseConfig, onFeatureDisabled });
     await expect(client.get('/api/v1/portal/profiles')).rejects.toBeInstanceOf(ApiError);
     expect(onFeatureDisabled).toHaveBeenCalledWith('patientPortal');
+  });
+
+  it('shows the lock screen when the server says the screen is locked, without refreshing the token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ title: 'Screen locked', status: 423, code: 'auth.session_locked' }), {
+        status: 423,
+        headers: { 'content-type': 'application/problem+json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const onSessionLocked = vi.fn();
+    const refreshAccessToken = vi.fn(async () => 'token-2');
+
+    const client = createApiClient({ ...baseConfig, refreshAccessToken, onSessionLocked });
+    const error = await client.get('/api/v1/patients').catch((e: unknown) => e);
+
+    expect(isSessionLocked(error)).toBe(true);
+    expect(onSessionLocked).toHaveBeenCalledTimes(1);
+    expect(refreshAccessToken).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(isSessionLocked(new ApiError({ status: 423, code: 'other.code' }))).toBe(false);
   });
 
   it('tells a switched-off feature from other refusals', () => {

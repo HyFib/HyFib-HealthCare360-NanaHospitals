@@ -95,6 +95,13 @@ export function isApiError(error: unknown): error is ApiError {
 /** The problem code of an answer refused because an administrator switched the feature off. */
 export const FEATURE_DISABLED = 'feature.disabled';
 
+/** The problem code of an answer refused because the session's screen is locked (423): it waits for the PIN. */
+export const SESSION_LOCKED = 'auth.session_locked';
+
+export function isSessionLocked(error: unknown): error is ApiError {
+  return isApiError(error) && error.status === 423 && error.code === SESSION_LOCKED;
+}
+
 /** The feature a `feature.disabled` answer names ("telehealth", "patientPortal"). */
 export function featureOf(error: unknown): string | undefined {
   if (!isApiError(error) || error.code !== FEATURE_DISABLED) {

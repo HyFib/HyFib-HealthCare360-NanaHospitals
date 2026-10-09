@@ -111,12 +111,14 @@ public sealed class EndpointAuthorizationTests
         // The caller's own account, sessions, sign-in factors, PIN, lock screen and facility.
         "GET /api/v1/auth/me",
         "GET /api/v1/auth/sessions",
-        "DELETE /api/v1/auth/sessions/{id:guid}",
+        "POST /api/v1/auth/sessions/{id:guid}/end",
+        "POST /api/v1/auth/sessions/end-others",
         "POST /api/v1/auth/change-password",
         "POST /api/v1/auth/mfa/setup",
         "POST /api/v1/auth/mfa/enable",
         "POST /api/v1/auth/mfa/disable",
         "POST /api/v1/auth/pin",
+        "POST /api/v1/auth/lock",
         "POST /api/v1/auth/unlock",
         "POST /api/v1/auth/switch-facility",
 
@@ -165,6 +167,21 @@ public sealed class EndpointAuthorizationTests
 
         unreviewed.ShouldBeEmpty($"Not in the reviewed list {listName}; add them only after checking they are safe:\n" + string.Join('\n', unreviewed));
         stale.ShouldBeEmpty($"In {listName} but no longer {access}; remove them from the list:\n" + string.Join('\n', stale));
+    }
+
+    [Theory]
+    [InlineData("/api/v1/admin/backups/recovery-key")]
+    [InlineData("/api/v1/admin/backups/recovery-key/{keyId}/confirm")]
+    public void Making_a_backup_recovery_key_needs_the_system_permission_as_well(string route)
+    {
+        // Whoever runs backups sees which recovery key they use; making a new one shows it, so it needs more (ASVS V13.3.2).
+        var endpoint = ((IEndpointRouteBuilder)App.Value).DataSources.SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
+            .Single(e => "/" + (e.RoutePattern.RawText ?? string.Empty).TrimStart('/') == route
+                         && e.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods.Contains("POST") == true);
+
+        endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(a => a.Policy).ShouldBeSubsetOf(
+            [PermissionPolicyProvider.Prefix + PlatformPermissions.BackupsManage, PermissionPolicyProvider.Prefix + PlatformPermissions.SystemManage]);
+        endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(a => a.Policy).ShouldContain(PermissionPolicyProvider.Prefix + PlatformPermissions.SystemManage);
     }
 
     [Fact]

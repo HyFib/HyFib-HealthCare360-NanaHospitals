@@ -1,0 +1,68 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { auth, markActivity, useSession, type AuthResult, type AuthUser } from './session';
+
+const user = (restriction: AuthUser['restriction'] = null): AuthUser => ({
+  id: 'u1',
+  userName: 'asha',
+  displayName: 'Asha Rao',
+  type: 'staff',
+  facilityId: null,
+  facilityName: null,
+  practitionerId: null,
+  patientId: null,
+  roles: ['Nurse'],
+  permissions: ['patients.read'],
+  facilities: [],
+  mfaEnabled: false,
+  hasPin: true,
+  mustChangePassword: false,
+  restriction,
+});
+
+function refreshAnswer(result: AuthResult): Response {
+  return new Response(JSON.stringify(result), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+describe('session', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    useSession.setState({ status: 'unknown', accessToken: null, expiresAt: null, user: null, locked: false });
+  });
+
+  it('tells the server how long nobody has used the app when it refreshes in the background', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-09T08:00:00Z'));
+    markActivity();
+    vi.setSystemTime(new Date('2026-10-09T08:04:30Z'));
+    const fetchMock = vi.fn().mockResolvedValue(refreshAnswer({ accessToken: 't2', expiresAt: null, user: user() }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await auth.refresh();
+
+    const headers = new Headers((fetchMock.mock.calls[0]![1] as RequestInit).headers);
+    expect(headers.get('X-HC360-Idle')).toBe('270');
+  });
+
+  it('locks the screen when the server says the session is locked, and keeps the screens behind it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(refreshAnswer({ accessToken: 't2', expiresAt: null, user: user('locked') })),
+    );
+
+    await auth.refresh();
+
+    const state = useSession.getState();
+    expect(state.locked).toBe(true);
+    expect(state.status).toBe('authenticated');
+    expect(state.user?.permissions).toEqual(['patients.read']);
+  });
+
+  it('does not unlock a locked screen by itself: only the PIN does', () => {
+    useSession.setState({ locked: true, user: user() });
+
+    useSession.getState().setAuth({ accessToken: 't3', expiresAt: null, user: user() });
+
+    expect(useSession.getState().locked).toBe(true);
+  });
+});
