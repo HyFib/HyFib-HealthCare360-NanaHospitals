@@ -11,7 +11,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { LockClosedRegular } from '@fluentui/react-icons';
-import { auth, isApiError, useSession, type AuthUser } from '@hc360/core';
+import { auth, isApiError, useSession, type AuthResult, type AuthUser } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -46,8 +46,10 @@ const useStyles = makeStyles({
 });
 
 /**
- * Idle lock (SRS UX-11, SEC-05): hides patient data on shared ward/OPD workstations after inactivity. The session
- * stays valid; the user returns with their PIN (or password). Too many wrong attempts end the session server-side.
+ * Idle lock (SRS UX-11, SEC-05; ASVS V7.3.1): hides patient data on shared ward/OPD workstations after inactivity. The
+ * server keeps the lock too, so hiding this screen opens nothing: until the PIN (or password) is entered, every request
+ * of the session is refused. The server also locks a session nobody has used even if the app did not. Too many wrong
+ * attempts end the session.
  */
 export function LockScreen() {
   const locked = useSession((s) => s.locked);
@@ -72,6 +74,12 @@ function LockPanel({ user }: { user: AuthUser }) {
     inputRef.current?.focus();
   }, [pinMode]);
 
+  // Lock the session on the server as well (already done when the server locked it; locking twice changes nothing).
+  // Should this fail, the server still locks it at the next refresh, which says how long nobody has used the app.
+  useEffect(() => {
+    api.post('/api/v1/auth/lock').catch(() => undefined);
+  }, []);
+
   const signOut = async () => {
     await auth.logout();
     queryClient.clear();
@@ -86,8 +94,10 @@ function LockPanel({ user }: { user: AuthUser }) {
     setBusy(true);
     setError(null);
     try {
-      await api.post('/api/v1/auth/unlock', pinMode ? { pin: secret } : { password: secret });
+      auth.apply(await api.post<AuthResult>('/api/v1/auth/unlock', pinMode ? { pin: secret } : { password: secret }));
       setLocked(false);
+      // What the screens asked for while locked was refused: ask again.
+      void queryClient.invalidateQueries();
     } catch (err) {
       if (isApiError(err) && err.status === 401) {
         await signOut();

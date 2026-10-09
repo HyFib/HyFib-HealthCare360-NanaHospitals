@@ -117,8 +117,9 @@ Administration › System health warns while a secret in the file is in plain te
 ### Changing the database password
 
 The password of HC360's database account is changed from Administration › System health, while HC360 runs (SRS
-SEC-07). It needs the permission *Change the server's database password* (`admin.system.manage`), which only
-SuperAdmin has until it is given to another role in Administration › Roles and permissions. Then:
+SEC-07). It needs the permission *Change the server's database password and keys, and sign everybody out*
+(`admin.system.manage`), which only SuperAdmin has until it is given to another role in Administration › Roles and
+permissions. Then:
 
 1. Open Administration › System health. Under Database it shows when the password was last changed, and by whom.
 2. Select **Change password** and confirm.

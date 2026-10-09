@@ -121,10 +121,26 @@ internal sealed class PermissionService(IMemoryCache cache, IServiceScopeFactory
     private string CacheKey(Guid userId) => $"perm:{Volatile.Read(ref _generation)}:{userId:N}";
 }
 
-/// <summary>Rejects access tokens whose session was revoked (sign-out, reuse detection, admin revoke).</summary>
+/// <summary>Where a session stands for the requests made with its access tokens.</summary>
+public enum SessionState
+{
+    /// <summary>Signed in and unlocked.</summary>
+    Active,
+
+    /// <summary>The screen is locked: only unlocking, signing out and reading who is signed in are allowed.</summary>
+    Locked,
+
+    /// <summary>Signed out, expired, or ended by the server or an administrator.</summary>
+    Ended,
+}
+
+/// <summary>
+/// Checks the session behind each access token, so a session that ended stops working at once and a locked one can only
+/// be unlocked (sign-out, reuse detection, an administrator, the session limit, the idle lock).
+/// </summary>
 public interface ISessionValidator
 {
-    ValueTask<bool> IsActiveAsync(Guid sessionId, CancellationToken cancellationToken = default);
+    ValueTask<SessionState> GetStateAsync(Guid sessionId, CancellationToken cancellationToken = default);
 
     void Invalidate(Guid sessionId);
 }
@@ -133,21 +149,31 @@ internal sealed class SessionValidator(IMemoryCache cache, IServiceScopeFactory 
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);
 
-    public async ValueTask<bool> IsActiveAsync(Guid sessionId, CancellationToken cancellationToken = default)
+    public async ValueTask<SessionState> GetStateAsync(Guid sessionId, CancellationToken cancellationToken = default)
     {
         var key = $"session:{sessionId:N}";
-        if (cache.TryGetValue(key, out bool active))
+        if (cache.TryGetValue(key, out SessionState cached))
         {
-            return active;
+            return cached;
         }
 
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         var now = time.GetUtcNow();
-        active = await db.Set<UserSession>().AnyAsync(s => s.Id == sessionId && s.RevokedAt == null && s.ExpiresAt > now, cancellationToken);
+        var session = await db.Set<UserSession>().AsNoTracking()
+            .Where(s => s.Id == sessionId && s.RevokedAt == null && s.ExpiresAt > now)
+            .Select(s => new { s.LockedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+        var state = session is null ? SessionState.Ended : session.LockedAt is null ? SessionState.Active : SessionState.Locked;
 
-        cache.Set(key, active, CacheDuration);
-        return active;
+        // A locked session is read every time, so unlocking it on another server takes effect at once. It makes few
+        // requests: the locked app does not fetch.
+        if (state != SessionState.Locked)
+        {
+            cache.Set(key, state, CacheDuration);
+        }
+
+        return state;
     }
 
     public void Invalidate(Guid sessionId) => cache.Remove($"session:{sessionId:N}");

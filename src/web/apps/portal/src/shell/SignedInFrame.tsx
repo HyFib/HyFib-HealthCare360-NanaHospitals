@@ -1,6 +1,6 @@
 import { Button, makeStyles, tokens } from '@fluentui/react-components';
 import { PersonQuestionMarkRegular, SignOutRegular } from '@fluentui/react-icons';
-import { useIdle, useSession } from '@hc360/core';
+import { markActivity, useIdle, useSession } from '@hc360/core';
 import { EmptyState } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -57,6 +57,16 @@ export function SignedInFrame({ children, requireSession }: { children: ReactNod
 
   // Shared phones: sign out after a quiet spell, but never in the middle of a video consultation.
   useIdle(IDLE_SIGN_OUT_MINUTES * 60_000, () => void signOut('idle'), status === 'authenticated' && !inCall);
+
+  // The server ends a session nobody has used for as long, by what the app reports: a call is use, taps or not.
+  useEffect(() => {
+    if (!inCall) {
+      return;
+    }
+    markActivity();
+    const timer = setInterval(markActivity, 60_000);
+    return () => clearInterval(timer);
+  }, [inCall]);
 
   const list = useMemo(() => profiles.data ?? [], [profiles.data]);
   const active = resolveActiveProfile(list, storedId);

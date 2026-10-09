@@ -154,14 +154,29 @@ public static class PlatformServiceCollectionExtensions
 
                     return Task.CompletedTask;
                 },
-                // Revoked sessions (sign-out, theft detection, admin action) stop working immediately.
+                // Ended sessions (sign-out, theft detection, admin action, the session limit) stop working immediately,
+                // and a locked one can only be unlocked.
                 OnTokenValidated = async context =>
                 {
                     var validator = context.HttpContext.RequestServices.GetRequiredService<ISessionValidator>();
-                    if (!Guid.TryParse(context.Principal?.FindFirst(HcClaims.Session)?.Value, out var sessionId)
-                        || !await validator.IsActiveAsync(sessionId, context.HttpContext.RequestAborted))
+                    var state = Guid.TryParse(context.Principal?.FindFirst(HcClaims.Session)?.Value, out var sessionId)
+                        ? await validator.GetStateAsync(sessionId, context.HttpContext.RequestAborted)
+                        : SessionState.Ended;
+                    if (state == SessionState.Ended)
                     {
                         context.Fail("Session is no longer active.");
+                    }
+                    else if (state == SessionState.Locked && !SessionLock.Allows(context.HttpContext.Request))
+                    {
+                        SessionLock.MarkRefused(context.HttpContext);
+                        context.Fail("The screen is locked.");
+                    }
+                },
+                OnChallenge = async context =>
+                {
+                    if (await SessionLock.TryRefuseAsync(context.HttpContext))
+                    {
+                        context.HandleResponse();
                     }
                 },
             };

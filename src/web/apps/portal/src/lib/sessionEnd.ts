@@ -31,5 +31,8 @@ export const useCallActivity = create<CallActivityState>((set) => ({
   setInCall: (inCall) => set({ inCall }),
 }));
 
-/** Minutes without any touch, click or key press before the portal signs out (shared phones, family devices). */
+/**
+ * Minutes without any touch, click or key press before the portal signs out (shared phones, family devices). The server
+ * ends the session after as long too (Security:PortalSessionIdleMinutes): keep the two the same.
+ */
 export const IDLE_SIGN_OUT_MINUTES = 20;

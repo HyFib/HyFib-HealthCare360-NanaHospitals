@@ -11,5 +11,6 @@ export const api = createApiClient({
   getAccessToken: () => useSession.getState().accessToken,
   refreshAccessToken: () => auth.refresh(),
   onSessionExpired: () => useSession.getState().clear(),
+  onSessionLocked: () => useSession.getState().setLocked(true),
   onReachability: (reachable) => useConnection.getState().setReachable(reachable),
 });

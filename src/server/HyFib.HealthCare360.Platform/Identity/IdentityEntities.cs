@@ -106,7 +106,22 @@ public sealed class UserSession : Entity
     public Guid? DeviceId { get; set; }
     public string ClientType { get; set; } = "web";
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>The last token refresh, which the app does in the background whether or not anyone is using it.</summary>
     public DateTimeOffset LastSeenAt { get; set; }
+
+    /// <summary>
+    /// The last time someone used the app (a key press, click or touch, as the app reports at each refresh), or signed in
+    /// or unlocked. The idle lock and the idle end of the session count from it, not from <see cref="LastSeenAt"/>.
+    /// </summary>
+    public DateTimeOffset LastActiveAt { get; set; }
+
+    /// <summary>
+    /// When the screen was locked, by the app or by the server after a quiet spell; null while unlocked. A locked session
+    /// can do nothing but unlock or sign out until its PIN or password is entered.
+    /// </summary>
+    public DateTimeOffset? LockedAt { get; set; }
+
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
     public string? RevokedReason { get; set; }

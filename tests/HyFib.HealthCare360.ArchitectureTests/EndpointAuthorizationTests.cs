@@ -111,12 +111,14 @@ public sealed class EndpointAuthorizationTests
         // The caller's own account, sessions, sign-in factors, PIN, lock screen and facility.
         "GET /api/v1/auth/me",
         "GET /api/v1/auth/sessions",
-        "DELETE /api/v1/auth/sessions/{id:guid}",
+        "POST /api/v1/auth/sessions/{id:guid}/end",
+        "POST /api/v1/auth/sessions/end-others",
         "POST /api/v1/auth/change-password",
         "POST /api/v1/auth/mfa/setup",
         "POST /api/v1/auth/mfa/enable",
         "POST /api/v1/auth/mfa/disable",
         "POST /api/v1/auth/pin",
+        "POST /api/v1/auth/lock",
         "POST /api/v1/auth/unlock",
         "POST /api/v1/auth/switch-facility",
 

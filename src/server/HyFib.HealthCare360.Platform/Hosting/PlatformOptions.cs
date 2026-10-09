@@ -58,8 +58,14 @@ public sealed class SecurityOptions
     /// <summary>Absolute session length — one clinical shift.</summary>
     public int SessionHours { get; set; } = 12;
 
-    /// <summary>Refresh must happen within this idle window or the session ends.</summary>
+    /// <summary>
+    /// A staff session ends after this long with nobody using the app. Its screen locks long before, after the
+    /// <c>ui.idleLockMinutes</c> setting (10 minutes by default).
+    /// </summary>
     public int SessionIdleMinutes { get; set; } = 120;
+
+    /// <summary>A patient portal session ends after this long with nobody using it: portals run on shared phones.</summary>
+    public int PortalSessionIdleMinutes { get; set; } = 20;
 
     public int MaxFailedLogins { get; set; } = 5;
     public int LockoutMinutes { get; set; } = 15;

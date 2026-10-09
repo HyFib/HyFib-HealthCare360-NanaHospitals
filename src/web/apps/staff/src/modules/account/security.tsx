@@ -13,7 +13,7 @@ import {
 } from '@fluentui/react-components';
 import { CopyRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { auth, type AuthResult, type AuthUser, useSession } from '@hc360/core';
+import { auth, type AuthResult, type AuthUser, isApiError, useSession } from '@hc360/core';
 import { applyServerErrors, TextField, useNotify } from '@hc360/ui';
 import { useMutation } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
@@ -128,12 +128,20 @@ export function ChangePasswordForm({ onDone }: { onDone?: () => void }) {
 export function MfaSetup({ onDone }: { onDone?: () => void }) {
   const styles = useStyles();
   const notify = useNotify();
+  const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
 
+  // The password is asked again before the sign-in method changes (ASVS V7.5.1).
   const begin = useMutation({
-    mutationFn: () => api.post<{ secret: string; otpAuthUri: string }>('/api/v1/auth/mfa/setup'),
-    onError: (error) => notify.error(error, 'Could not start set-up'),
+    mutationFn: () => api.post<{ secret: string; otpAuthUri: string }>('/api/v1/auth/mfa/setup', { password }),
+    onSuccess: () => setPassword(''),
+    onError: (error) => {
+      if (!(isApiError(error) && error.fieldErrors.password)) {
+        notify.error(error, 'Could not start set-up');
+      }
+    },
   });
+  const passwordError = isApiError(begin.error) ? begin.error.fieldErrors.password?.[0] : undefined;
 
   const enable = useMutation({
     mutationFn: () => api.post<AuthResult>('/api/v1/auth/mfa/enable', { code }),
@@ -147,17 +155,37 @@ export function MfaSetup({ onDone }: { onDone?: () => void }) {
 
   if (!begin.data) {
     return (
-      <div className={styles.form}>
+      <form
+        className={styles.form}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (password && !begin.isPending) {
+            begin.mutate();
+          }
+        }}
+      >
         <Body1>
           Two-step verification asks for a 6-digit code from an authenticator app on your phone when you sign in, so a
-          stolen password alone cannot open patient records.
+          stolen password alone cannot open patient records. Your other devices are signed out once it is on.
         </Body1>
+        <Field
+          label="Your password (to start)"
+          validationMessage={passwordError}
+          validationState={passwordError ? 'error' : 'none'}
+        >
+          <Input
+            type="password"
+            value={password}
+            onChange={(_, d) => setPassword(d.value)}
+            autoComplete="current-password"
+          />
+        </Field>
         <div>
-          <Button appearance="primary" onClick={() => begin.mutate()} disabled={begin.isPending}>
+          <Button appearance="primary" type="submit" disabled={!password || begin.isPending}>
             Set up two-step verification
           </Button>
         </div>
-      </div>
+      </form>
     );
   }
 

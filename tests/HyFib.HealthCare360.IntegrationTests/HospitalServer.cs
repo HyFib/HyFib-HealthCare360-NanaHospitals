@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.Server;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.Builder;
@@ -55,6 +56,7 @@ public sealed class HospitalServer : IAsyncLifetime
     private readonly string _password = "It-" + Guid.NewGuid().ToString("N");
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "hc360-tests", "it-" + Guid.NewGuid().ToString("N"));
     private readonly ConcurrentDictionary<string, ApiClient> _signedIn = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _created = new(StringComparer.Ordinal);
     private TestDatabase? _database;
     private WebApplication? _app;
 
@@ -111,6 +113,14 @@ public sealed class HospitalServer : IAsyncLifetime
         });
         _app.UseServerApplication();
         await _app.InitializeDatabaseAsync(ct);
+
+        // Many tests sign in the same seeded accounts, each with a session of its own, while other tests keep using the
+        // cached ones: no limit on sessions per account, except in a test that sets one (SessionControlTests).
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(AuthService.MaxSessionsSetting, 0, cancellationToken: ct);
+        }
+
         await _app.StartAsync(ct);
     }
 
@@ -132,11 +142,41 @@ public sealed class HospitalServer : IAsyncLifetime
         }
 
         var http = CreateHttpClient();
-        var token = RolesCreatedOnFirstUse.TryGetValue(userName, out var role)
+        var token = RolesCreatedOnFirstUse.TryGetValue(userName, out var role) && _created.TryAdd(userName, 0)
             ? await CreateAccountAsync(http, userName, role)
             : FullAccess(userName, await LogInAsync(http, userName, _password));
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return _signedIn.GetOrAdd(userName, new ApiClient(http));
+    }
+
+    /// <summary>
+    /// Forgets the cached sign-ins, for a test that signed everybody out: the next <see cref="SignInAsync"/> of each
+    /// account signs in again.
+    /// </summary>
+    public void ForgetSignIns() => _signedIn.Clear();
+
+    /// <summary>
+    /// A new staff account with the role and the run's password, for a test that changes the account itself (its
+    /// sessions, its two-step verification), so the seeded accounts other tests use are left alone.
+    /// </summary>
+    public async Task CreateStaffAccountAsync(string userName, string role)
+    {
+        using var http = CreateHttpClient(ownAddress: true);
+        _created.TryAdd(userName, 0);
+        await CreateAccountAsync(http, userName, role);
+    }
+
+    /// <summary>
+    /// A new sign-in of a staff account with a session of its own: a client for it, and the refresh cookie the server set
+    /// (<c>name=value</c>). It does not disturb the account's cached client, and it comes from the test's own address.
+    /// </summary>
+    public async Task<(ApiClient Client, string RefreshCookie)> SignInNewSessionAsync(string userName)
+    {
+        var http = CreateHttpClient(ownAddress: true);
+        using var response = await PostLoginAsync(http, userName, _password);
+        var result = await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", FullAccess(userName, result));
+        return (new ApiClient(http), RefreshCookieOf(response) ?? throw new InvalidOperationException($"Signing in as '{userName}' set no refresh cookie."));
     }
 
     public async ValueTask DisposeAsync()
@@ -214,12 +254,20 @@ public sealed class HospitalServer : IAsyncLifetime
         return new ApiClient(http);
     }
 
-    /// <summary>A refresh of the session behind <paramref name="refreshCookie"/>, as the staff app sends it.</summary>
-    public async Task<HttpResponseMessage> RefreshAsync(string refreshCookie)
+    /// <summary>
+    /// A refresh of the session behind <paramref name="refreshCookie"/>, as the staff app sends it: with
+    /// <paramref name="idleSeconds"/>, saying how long nobody has used the app.
+    /// </summary>
+    public async Task<HttpResponseMessage> RefreshAsync(string refreshCookie, int? idleSeconds = null)
     {
         using var http = CreateHttpClient(ownAddress: true);
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/refresh");
         request.Headers.Add("Cookie", refreshCookie);
+        if (idleSeconds is { } idle)
+        {
+            request.Headers.Add(AuthService.IdleHeader, idle.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         return await http.SendAsync(request, TestContext.Current.CancellationToken);
     }
 

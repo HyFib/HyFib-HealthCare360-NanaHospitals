@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -6,6 +7,7 @@ using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +31,8 @@ public sealed record SetPinRequest(string Pin, string Password);
 public sealed record UnlockRequest(string? Pin, string? Password);
 
 public sealed record SwitchFacilityRequest(Guid FacilityId);
+
+public sealed record MfaSetupRequest(string Password);
 
 public sealed record MfaEnableRequest(string Code);
 
@@ -66,7 +70,22 @@ public sealed record AuthResult(
 
 public sealed record OtpChallengeResponse(Guid ChallengeId, DateTimeOffset ExpiresAt, string MaskedPhone);
 
-public sealed record SessionInfo(Guid Id, string ClientType, DateTimeOffset CreatedAt, DateTimeOffset LastSeenAt, DateTimeOffset ExpiresAt, string? IpAddress, string? UserAgent, string? DeviceName, bool IsCurrent);
+public sealed record SessionInfo(
+    Guid Id,
+    string ClientType,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset LastActiveAt,
+    DateTimeOffset ExpiresAt,
+    string? IpAddress,
+    string? UserAgent,
+    string? DeviceName,
+    bool IsCurrent,
+    bool IsLocked);
+
+/// <summary>The signed-in user's password, asked again before sessions are ended (ASVS V7.5.2).</summary>
+public sealed record ReauthenticateRequest(string Password);
+
+public sealed record SessionsEnded(int Ended);
 
 /// <summary>
 /// Sign-in, token refresh and session management (SEC-01/02, ADR-006). Refresh tokens rotate on every use;
@@ -85,6 +104,7 @@ public sealed class AuthService(
     INotificationService notifications,
     IPortalAccountResolver portalAccounts,
     ICurrentUser currentUser,
+    ISettingsService settings,
     IOptions<PlatformOptions> options,
     TimeProvider time)
 {
@@ -99,6 +119,24 @@ public sealed class AuthService(
     public const string ClientHeader = "X-HC360-Client";
     public const string RestrictionPasswordChange = "password";
     public const string RestrictionMfaSetup = "mfa-setup";
+
+    /// <summary>The screen is locked (<see cref="SessionLock"/>): the token is good for unlocking only.</summary>
+    public const string RestrictionLocked = "locked";
+
+    /// <summary>
+    /// Whole seconds since someone last used the app (a key press, click or touch), sent with each refresh. The refresh
+    /// itself is no sign of anyone at the screen: the app refreshes in the background every few minutes.
+    /// </summary>
+    public const string IdleHeader = "X-HC360-Idle";
+
+    /// <summary>Minutes without use before a staff screen locks (0: never); the app's lock and the server's agree.</summary>
+    public const string IdleLockMinutesSetting = "ui.idleLockMinutes";
+
+    /// <summary>How many sessions one staff account may have at once (0: no limit).</summary>
+    public const string MaxSessionsSetting = "security.maxSessionsPerUser";
+
+    public const int DefaultIdleLockMinutes = 10;
+    public const int DefaultMaxSessions = 3;
 
     private const int MaxChallengeAttempts = 5;
     private static readonly TimeSpan MfaChallengeLifetime = TimeSpan.FromMinutes(5);
@@ -380,7 +418,6 @@ public sealed class AuthService(
         var session = token is null ? null : await db.Set<UserSession>().FirstOrDefaultAsync(s => s.Id == token.SessionId, ct);
 
         if (token is null || session is null || session.RevokedAt is not null || session.ExpiresAt <= now || token.ExpiresAt <= now
-            || now - session.LastSeenAt > TimeSpan.FromMinutes(Security.SessionIdleMinutes)
             || RefreshCookieFor(session.ClientType) != RefreshCookieFor(ClientTypeOf(http)))
         {
             ClearRefreshCookie(http);
@@ -421,15 +458,50 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
+        // Nobody has used the app for too long: the session ends (ASVS V7.3.1). Use is what the app reports, since the
+        // refresh itself happens in the background; a locked screen's reports are not use, as nobody has unlocked it.
+        if (session.LockedAt is null)
+        {
+            RecordActivity(session, http, now);
+        }
+
+        if (now - session.LastActiveAt > IdleLimit(session))
+        {
+            session.RevokedAt = now;
+            session.RevokedReason = "idle_timeout";
+            audit.Add(new AuditEntry(AuditCategories.Auth, "auth.session_idle_ended",
+                $"Session ended after {IdleLimit(session).TotalMinutes:0} minutes without use ({session.ClientType})")
+            {
+                UserId = user.Id,
+                UserName = user.UserName,
+            });
+            await db.SaveChangesAsync(ct);
+            sessionValidator.Invalidate(session.Id);
+            ClearRefreshCookie(http);
+            return SessionEnded;
+        }
+
+        var roles = RoleNames(user);
+        var locks = session.LockedAt is null && await IdleLockMinutesAsync(user, roles, session, ct) is > 0 and var lockMinutes
+            && now - session.LastActiveAt >= TimeSpan.FromMinutes(lockMinutes);
+        if (locks)
+        {
+            // The app should have locked the screen itself: it may have been kept from it, or the request was lost.
+            Lock(session, user, now, "Screen locked by the server: nobody had used it for the idle lock time");
+        }
+
         token.UsedAt ??= now; // the grace runs from the first use: retries do not extend it
         var next = CreateRefreshToken(session, now);
         token.ReplacedById = next.Entity.Id;
         session.LastSeenAt = now;
         await db.SaveChangesAsync(ct);
+        if (locks)
+        {
+            sessionValidator.Invalidate(session.Id);
+        }
 
         SetRefreshCookie(http, session.ClientType, next.Raw, next.Entity.ExpiresAt);
-        var roles = RoleNames(user);
-        var restriction = RestrictionFor(user, roles);
+        var restriction = RestrictionFor(user, roles, session);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
         return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, restriction, ct), Restriction: restriction);
     }
@@ -485,7 +557,9 @@ public sealed class AuthService(
         }
 
         var roles = RoleNames(user);
-        return await BuildAuthUserAsync(user, roles, currentUser.FacilityId, RestrictionFor(user, roles), ct);
+        var locked = currentUser.SessionId is { } sessionId
+                     && await db.Set<UserSession>().AnyAsync(s => s.Id == sessionId && s.LockedAt != null, ct);
+        return await BuildAuthUserAsync(user, roles, currentUser.FacilityId, RestrictionFor(user, roles) ?? (locked ? RestrictionLocked : null), ct);
     }
 
     public async Task<Result<AuthResult>> SwitchFacilityAsync(SwitchFacilityRequest request, CancellationToken ct)
@@ -543,16 +617,10 @@ public sealed class AuthService(
         user.PasswordBreachedAt = null;
 
         // Sign out every other session of this user.
-        var others = await db.Set<UserSession>().Where(s => s.UserId == user.Id && s.Id != session.Id && s.RevokedAt == null).ToListAsync(ct);
-        foreach (var other in others)
-        {
-            other.RevokedAt = now;
-            other.RevokedReason = "password_changed";
-            sessionValidator.Invalidate(other.Id);
-        }
-
+        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "password_changed", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.password_changed", "Password changed") { UserId = user.Id });
         await db.SaveChangesAsync(ct);
+        InvalidateAll(others);
 
         // The first administrator now has a password of their own: the one-time password's file is no longer needed.
         if (user.UserName == InitialAdminPassword.UserName)
@@ -594,7 +662,12 @@ public sealed class AuthService(
         return Result.Success();
     }
 
-    public async Task<Result> UnlockAsync(UnlockRequest request, HttpContext http, CancellationToken ct)
+    /// <summary>
+    /// Locks the screen of this session, as the app does after the idle lock time or when asked to (Ctrl+Shift+L).
+    /// Until it is unlocked, the session's tokens reach nothing else (<see cref="SessionLock"/>). Patient portal sessions
+    /// have no lock screen: they end after a quiet spell instead.
+    /// </summary>
+    public async Task<Result> LockAsync(CancellationToken ct)
     {
         var (user, session) = await CurrentUserAndSessionAsync(ct);
         if (user is null || session is null)
@@ -602,15 +675,51 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        var ok = request.Pin is { Length: > 0 } pin && user.PinHash is not null
-            ? hashing.Verify(user.PinHash, pin).Succeeded
+        if (session.LockedAt is null && IsStaffSession(session) && RestrictionFor(user, RoleNames(user)) is null)
+        {
+            Lock(session, user, time.GetUtcNow(), "Screen locked");
+            await db.SaveChangesAsync(ct);
+            sessionValidator.Invalidate(session.Id);
+        }
+
+        return Result.Success();
+    }
+
+    public async Task<Result<AuthResult>> UnlockAsync(UnlockRequest request, HttpContext http, CancellationToken ct)
+    {
+        var (user, session) = await CurrentUserAndSessionAsync(ct);
+        if (user is null || session is null)
+        {
+            return SessionEnded;
+        }
+
+        var withPin = request.Pin is { Length: > 0 } && user.PinHash is not null;
+        var ok = withPin
+            ? hashing.Verify(user.PinHash!, request.Pin!).Succeeded
             : request.Password is { Length: > 0 } password && user.PasswordHash is not null && hashing.Verify(user.PasswordHash, password).Succeeded;
 
         if (ok)
         {
+            var now = time.GetUtcNow();
             session.FailedUnlockAttempts = 0;
+            session.LastActiveAt = now;
+            if (session.LockedAt is not null)
+            {
+                session.LockedAt = null;
+                audit.Add(new AuditEntry(AuditCategories.Auth, "auth.screen_unlocked", withPin ? "Screen unlocked with the PIN" : "Screen unlocked with the password")
+                {
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                });
+            }
+
             await db.SaveChangesAsync(ct);
-            return Result.Success();
+            sessionValidator.Invalidate(session.Id);
+
+            var roles = RoleNames(user);
+            var restriction = RestrictionFor(user, roles);
+            var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
+            return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, restriction, ct), Restriction: restriction);
         }
 
         session.FailedUnlockAttempts++;
@@ -635,7 +744,8 @@ public sealed class AuthService(
 
     // ---------------------------------------------------------------- MFA enrolment
 
-    public async Task<Result<MfaSetupResponse>> BeginMfaSetupAsync(CancellationToken ct)
+    /// <summary>Starts setting up two-step verification; the password is asked again first (ASVS V7.5.1).</summary>
+    public async Task<Result<MfaSetupResponse>> BeginMfaSetupAsync(MfaSetupRequest request, CancellationToken ct)
     {
         var (user, _) = await CurrentUserAndSessionAsync(ct);
         if (user is null)
@@ -646,6 +756,11 @@ public sealed class AuthService(
         if (user.MfaEnabled)
         {
             return Error.Rule("auth.mfa_already_enabled", "Two-step verification is already enabled.");
+        }
+
+        if (!PasswordMatches(user, request.Password))
+        {
+            return Error.Field("password", "Password is incorrect.");
         }
 
         var secret = Base32Encoding.ToString(KeyGeneration.GenerateRandomKey(20));
@@ -677,8 +792,12 @@ public sealed class AuthService(
 
         user.MfaEnabled = true;
         user.MfaLastTimeStep = timeStep;
+
+        // Sessions signed in before need no code: end them (ASVS V7.4.3).
+        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_enabled", time.GetUtcNow(), ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.mfa_enabled", "Two-step verification enabled") { UserId = user.Id });
         await db.SaveChangesAsync(ct);
+        InvalidateAll(others);
 
         var roles = RoleNames(user);
         var restriction = RestrictionFor(user, roles);
@@ -688,8 +807,8 @@ public sealed class AuthService(
 
     public async Task<Result> DisableMfaAsync(MfaDisableRequest request, CancellationToken ct)
     {
-        var (user, _) = await CurrentUserAndSessionAsync(ct);
-        if (user?.PasswordHash is null)
+        var (user, session) = await CurrentUserAndSessionAsync(ct);
+        if (user?.PasswordHash is null || session is null)
         {
             return SessionEnded;
         }
@@ -707,13 +826,18 @@ public sealed class AuthService(
         user.MfaEnabled = false;
         user.MfaSecret = null;
         user.MfaLastTimeStep = null;
+
+        // Whoever turned it off may not be the account's owner: end the account's other sessions (ASVS V7.4.3).
+        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_disabled", time.GetUtcNow(), ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.mfa_disabled", "Two-step verification disabled") { UserId = user.Id, Severity = AuditSeverity.Warning });
         await db.SaveChangesAsync(ct);
+        InvalidateAll(others);
         return Result.Success();
     }
 
     // ---------------------------------------------------------------- sessions
 
+    /// <summary>The signed-in user's sessions that are still open: not ended, expired or left idle too long.</summary>
     public async Task<IReadOnlyList<SessionInfo>> ListSessionsAsync(CancellationToken ct)
     {
         if (currentUser.UserId is not { } userId)
@@ -722,32 +846,102 @@ public sealed class AuthService(
         }
 
         var now = time.GetUtcNow();
-        var sessions = await db.Set<UserSession>()
-            .Where(s => s.UserId == userId && s.RevokedAt == null && s.ExpiresAt > now)
-            .OrderByDescending(s => s.LastSeenAt)
-            .ToListAsync(ct);
+        var sessions = (await db.Set<UserSession>()
+                .Where(s => s.UserId == userId && s.RevokedAt == null && s.ExpiresAt > now)
+                .ToListAsync(ct))
+            .Where(s => IsOpen(s, now))
+            .OrderByDescending(s => s.LastActiveAt)
+            .ToList();
         var deviceIds = sessions.Where(s => s.DeviceId != null).Select(s => s.DeviceId!.Value).Distinct().ToList();
         var devices = await db.Set<Device>().Where(d => deviceIds.Contains(d.Id)).ToDictionaryAsync(d => d.Id, d => d.Name, ct);
 
         return sessions.Select(s => new SessionInfo(
-            s.Id, s.ClientType, s.CreatedAt, s.LastSeenAt, s.ExpiresAt, s.IpAddress, s.UserAgent,
+            s.Id, s.ClientType, s.CreatedAt, s.LastActiveAt, s.ExpiresAt, s.IpAddress, s.UserAgent,
             s.DeviceId is { } d && devices.TryGetValue(d, out var name) ? name : null,
-            s.Id == currentUser.SessionId)).ToList();
+            s.Id == currentUser.SessionId,
+            s.LockedAt is not null)).ToList();
     }
 
-    public async Task<Result> RevokeSessionAsync(Guid sessionId, CancellationToken ct)
+    /// <summary>Signs out one of the user's sessions, once the password is given again (ASVS V7.5.2).</summary>
+    public async Task<Result> EndSessionAsync(Guid sessionId, ReauthenticateRequest request, CancellationToken ct)
     {
-        var session = await db.Set<UserSession>().FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == currentUser.UserId, ct);
-        if (session is null)
+        var (user, _) = await CurrentUserAndSessionAsync(ct);
+        if (user is null)
+        {
+            return SessionEnded;
+        }
+
+        if (!PasswordMatches(user, request.Password))
+        {
+            return Error.Field("password", "Password is incorrect.");
+        }
+
+        var target = db.Set<UserSession>().Where(s => s.Id == sessionId && s.UserId == user.Id);
+        if (!await target.AnyAsync(ct))
         {
             return Error.NotFound("Session", sessionId);
         }
 
-        session.RevokedAt ??= time.GetUtcNow();
-        session.RevokedReason ??= "revoked_by_user";
+        var ended = await EndSessionsAsync(target, "ended_by_user", time.GetUtcNow(), ct);
+        audit.Add(new AuditEntry(AuditCategories.Auth, "auth.session_ended", "Signed out one of their sessions") { UserId = user.Id, UserName = user.UserName });
         await db.SaveChangesAsync(ct);
-        sessionValidator.Invalidate(session.Id);
+        InvalidateAll(ended);
         return Result.Success();
+    }
+
+    /// <summary>Signs out every other session of the user ("sign out everywhere else"), once the password is given again.</summary>
+    public async Task<Result<SessionsEnded>> EndOtherSessionsAsync(ReauthenticateRequest request, CancellationToken ct)
+    {
+        var (user, session) = await CurrentUserAndSessionAsync(ct);
+        if (user is null || session is null)
+        {
+            return SessionEnded;
+        }
+
+        if (!PasswordMatches(user, request.Password))
+        {
+            return Error.Field("password", "Password is incorrect.");
+        }
+
+        var ended = await EndSessionsAsync(OtherSessionsOf(user, session), "ended_by_user", time.GetUtcNow(), ct);
+        audit.Add(new AuditEntry(AuditCategories.Security, "auth.other_sessions_ended", $"Signed out everywhere else ({ended.Count} session(s))")
+        {
+            UserId = user.Id,
+            UserName = user.UserName,
+        });
+        await db.SaveChangesAsync(ct);
+        InvalidateAll(ended);
+        return new SessionsEnded(ended.Count);
+    }
+
+    /// <summary>
+    /// Signs out everybody, staff and patients, except the administrator's own session: for a suspected break-in, or
+    /// after a leaked password list (ASVS V7.4.5). The administrator's password is asked again first.
+    /// </summary>
+    public async Task<Result<SessionsEnded>> EndAllSessionsAsync(ReauthenticateRequest request, CancellationToken ct)
+    {
+        var (user, session) = await CurrentUserAndSessionAsync(ct);
+        if (user is null || session is null)
+        {
+            return SessionEnded;
+        }
+
+        if (!PasswordMatches(user, request.Password))
+        {
+            return Error.Field("password", "Password is incorrect.");
+        }
+
+        var now = time.GetUtcNow();
+        var ended = await EndSessionsAsync(db.Set<UserSession>().Where(s => s.Id != session.Id && s.ExpiresAt > now), "ended_by_administrator", now, ct);
+        audit.Add(new AuditEntry(AuditCategories.Security, "auth.all_sessions_ended", $"Signed out everybody else: {ended.Count} session(s) ended")
+        {
+            UserId = user.Id,
+            UserName = user.UserName,
+            Severity = AuditSeverity.Critical,
+        });
+        await db.SaveChangesAsync(ct);
+        InvalidateAll(ended);
+        return new SessionsEnded(ended.Count);
     }
 
     // ---------------------------------------------------------------- helpers
@@ -771,18 +965,21 @@ public sealed class AuthService(
             ClientType = clientType,
             CreatedAt = now,
             LastSeenAt = now,
+            LastActiveAt = now,
             ExpiresAt = now.AddHours(Security.SessionHours),
             IpAddress = http.Connection.RemoteIpAddress?.ToString(),
             UserAgent = Truncate(http.Request.Headers.UserAgent.ToString(), 512),
         };
         db.Add(session);
         var refresh = CreateRefreshToken(session, now);
+        var ended = await EnforceSessionLimitAsync(user, session, now, ct);
 
         user.FailedLoginCount = 0;
         user.LockoutEndsAt = null;
         user.LastLoginAt = now;
         audit.Add(new AuditEntry(AuditCategories.Auth, "auth.login", $"Signed in ({clientType})") { UserId = user.Id, UserName = user.UserName });
         await db.SaveChangesAsync(ct);
+        InvalidateAll(ended);
 
         SetRefreshCookie(http, clientType, refresh.Raw, refresh.Entity.ExpiresAt);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
@@ -792,7 +989,7 @@ public sealed class AuthService(
     private (string Raw, RefreshToken Entity) CreateRefreshToken(UserSession session, DateTimeOffset now)
     {
         var raw = SecretTokens.NewOpaqueToken();
-        var idleExpiry = now.AddMinutes(Security.SessionIdleMinutes);
+        var idleExpiry = now + IdleLimit(session);
         var entity = new RefreshToken
         {
             SessionId = session.Id,
@@ -819,7 +1016,9 @@ public sealed class AuthService(
 
     private async Task<AuthUser> BuildAuthUserAsync(User user, IReadOnlyList<string> roles, Guid? facilityId, string? restriction, CancellationToken ct)
     {
-        IReadOnlyCollection<string> granted = restriction is null
+        // A locked session's screens stay as they were behind the lock screen, so its user keeps the permissions; the
+        // server refuses the requests themselves (SessionLock).
+        IReadOnlyCollection<string> granted = restriction is null or RestrictionLocked
             ? (await permissions.GetPermissionsAsync(user.Id, ct)).ToArray()
             : [];
         var facilities = await AllowedFacilitiesAsync(user, roles, ct);
@@ -922,8 +1121,129 @@ public sealed class AuthService(
         : RequiresMfa(roles) && !user.MfaEnabled ? RestrictionMfaSetup
         : null;
 
+    /// <summary>The account's restriction, else the session's lock.</summary>
+    private string? RestrictionFor(User user, IReadOnlyList<string> roles, UserSession session) =>
+        RestrictionFor(user, roles) ?? (session.LockedAt is null ? null : RestrictionLocked);
+
     private bool RequiresMfa(IReadOnlyList<string> roles) =>
         Security.EnforceMfa && roles.Any(r => Security.MfaRequiredRoles.Contains(r, StringComparer.OrdinalIgnoreCase));
+
+    private bool PasswordMatches(User user, string? password) =>
+        user.PasswordHash is not null && !string.IsNullOrEmpty(password) && hashing.Verify(user.PasswordHash, password).Succeeded;
+
+    /// <summary>Staff sessions (browser and HC360 Desktop) lock; patient portal sessions end instead.</summary>
+    private static bool IsStaffSession(UserSession session) => session.ClientType != "portal";
+
+    /// <summary>How long a session may go unused before it ends.</summary>
+    private TimeSpan IdleLimit(UserSession session) =>
+        TimeSpan.FromMinutes(IsStaffSession(session) ? Security.SessionIdleMinutes : Security.PortalSessionIdleMinutes);
+
+    /// <summary>Not ended, expired, or left unused past the idle limit (which the next refresh would end).</summary>
+    private bool IsOpen(UserSession session, DateTimeOffset now) =>
+        session.RevokedAt is null && session.ExpiresAt > now && now - session.LastActiveAt <= IdleLimit(session);
+
+    /// <summary>
+    /// Takes the app's report of when someone last used it (<see cref="IdleHeader"/>); it can only move forward. An app
+    /// that sends none, still open from before the server learned to read it, counts each refresh as use, as it did
+    /// then, until the page is reloaded. A client could claim use either way, so this weakens nothing: the idle lock
+    /// is there for a workstation left unattended, which runs the hospital's own app.
+    /// </summary>
+    private static void RecordActivity(UserSession session, HttpContext http, DateTimeOffset now)
+    {
+        var activeAt = int.TryParse(http.Request.Headers[IdleHeader].ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var idleSeconds)
+            ? now - TimeSpan.FromSeconds(idleSeconds)
+            : now;
+        if (activeAt > session.LastActiveAt)
+        {
+            session.LastActiveAt = activeAt;
+        }
+    }
+
+    private void Lock(UserSession session, User user, DateTimeOffset now, string description)
+    {
+        session.LockedAt = now;
+        audit.Add(new AuditEntry(AuditCategories.Auth, "auth.screen_locked", description) { UserId = user.Id, UserName = user.UserName });
+    }
+
+    /// <summary>
+    /// The idle lock time of a staff session (the <see cref="IdleLockMinutesSetting"/> of its facility, else the
+    /// hospital's), or 0 when it does not lock: a portal session, or a session that must first change its password or
+    /// set up two-step verification (it shows only that screen).
+    /// </summary>
+    private async Task<int> IdleLockMinutesAsync(User user, IReadOnlyList<string> roles, UserSession session, CancellationToken ct) =>
+        IsStaffSession(session) && RestrictionFor(user, roles) is null
+            ? await IntSettingAsync(IdleLockMinutesSetting, session.FacilityId, DefaultIdleLockMinutes, ct)
+            : 0;
+
+    /// <summary>
+    /// A staff account may have <see cref="MaxSessionsSetting"/> sessions at once (ASVS V7.1.2): signing in once more
+    /// signs out the one used least recently. Returns the sessions it ended, to invalidate once saved.
+    /// </summary>
+    private async Task<List<UserSession>> EnforceSessionLimitAsync(User user, UserSession session, DateTimeOffset now, CancellationToken ct)
+    {
+        if (user.Type != UserType.Staff || await IntSettingAsync(MaxSessionsSetting, session.FacilityId, DefaultMaxSessions, ct) is not (> 0 and var max))
+        {
+            return [];
+        }
+
+        // The new session is not saved yet, so it is not among these.
+        var open = (await db.Set<UserSession>().Where(s => s.UserId == user.Id && s.RevokedAt == null && s.ExpiresAt > now).ToListAsync(ct))
+            .Where(s => IsOpen(s, now))
+            .OrderBy(s => s.LastActiveAt)
+            .ToList();
+        var ended = open.Take(open.Count - (max - 1)).ToList();
+        foreach (var oldest in ended)
+        {
+            oldest.RevokedAt = now;
+            oldest.RevokedReason = "session_limit";
+            audit.Add(new AuditEntry(AuditCategories.Security, "auth.session_limit",
+                $"Signed out the session started {oldest.CreatedAt:yyyy-MM-dd HH:mm} UTC ({oldest.ClientType}, {oldest.IpAddress ?? "unknown address"}): " +
+                $"the account may have {max} session(s) at once")
+            {
+                UserId = user.Id,
+                UserName = user.UserName,
+                Severity = AuditSeverity.Warning,
+            });
+        }
+
+        return ended;
+    }
+
+    /// <summary>A whole-number setting; a value that is not one (or no value) gives the default.</summary>
+    private async Task<int> IntSettingAsync(string key, Guid? facilityId, int fallback, CancellationToken ct)
+    {
+        var value = await settings.GetAsync<JsonElement?>(key, facilityId, ct);
+        return value switch
+        {
+            { ValueKind: JsonValueKind.Number } number when number.TryGetInt32(out var n) => Math.Max(0, n),
+            { ValueKind: JsonValueKind.String } text when int.TryParse(text.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) => Math.Max(0, n),
+            _ => fallback,
+        };
+    }
+
+    private IQueryable<UserSession> OtherSessionsOf(User user, UserSession session) =>
+        db.Set<UserSession>().Where(s => s.UserId == user.Id && s.Id != session.Id);
+
+    /// <summary>Ends the sessions not ended yet; save, then <see cref="InvalidateAll"/>, so their tokens stop at once.</summary>
+    private static async Task<List<UserSession>> EndSessionsAsync(IQueryable<UserSession> sessions, string reason, DateTimeOffset now, CancellationToken ct)
+    {
+        var open = await sessions.Where(s => s.RevokedAt == null).ToListAsync(ct);
+        foreach (var session in open)
+        {
+            session.RevokedAt = now;
+            session.RevokedReason = reason;
+        }
+
+        return open;
+    }
+
+    private void InvalidateAll(IEnumerable<UserSession> sessions)
+    {
+        foreach (var session in sessions)
+        {
+            sessionValidator.Invalidate(session.Id);
+        }
+    }
 
     private async Task<(User? User, UserSession? Session)> CurrentUserAndSessionAsync(CancellationToken ct)
     {
