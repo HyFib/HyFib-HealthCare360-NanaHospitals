@@ -140,6 +140,31 @@ export interface DatabasePasswordStatus {
   lastChangedBy: string | null;
 }
 
+/** When a key was last rotated, and by whom. */
+export interface KeyRotationEvent {
+  at: string;
+  by: string | null;
+}
+
+/** The server's encryption keys (GET /api/v1/admin/system/keys, SRS SEC-07). */
+export interface EncryptionKeysStatus {
+  dataKey: {
+    keyId: string;
+    since: string | null;
+    /** Keys in the ring: the original and one per rotation. */
+    keys: number;
+    /** Values and documents still encrypted with an earlier key, moved in the background. */
+    valuesToMove: number;
+    documentsToMove: number;
+    lastRotation: KeyRotationEvent | null;
+  };
+  signingKey: {
+    keyId: string;
+    since: string | null;
+    lastRotation: KeyRotationEvent | null;
+  };
+}
+
 export interface DatabasePasswordChanged {
   changedAt: string;
   /** The settings that now hold the new password, e.g. ConnectionStrings:Hospital. */
@@ -333,6 +358,16 @@ export const adminQueries = {
       queryKey: ['admin', 'database-password'],
       queryFn: ({ signal }) => api.get<DatabasePasswordStatus>('/api/v1/admin/system/database-password', { signal }),
     }),
+  encryptionKeys: () =>
+    queryOptions({
+      queryKey: ['admin', 'encryption-keys'],
+      queryFn: ({ signal }) => api.get<EncryptionKeysStatus>('/api/v1/admin/system/keys', { signal }),
+      // While data moves to a new key, the count goes down.
+      refetchInterval: (query) =>
+        query.state.data && query.state.data.dataKey.valuesToMove + query.state.data.dataKey.documentsToMove > 0
+          ? 30_000
+          : false,
+    }),
   wifiSamples: (hours: number) =>
     queryOptions({
       queryKey: ['admin', 'wifi-samples', hours],
@@ -381,4 +416,14 @@ export function formatBytes(bytes: number | null | undefined): string {
  */
 export function changeDatabasePassword() {
   return api.post<DatabasePasswordChanged>('/api/v1/admin/system/database-password/change');
+}
+
+/** Makes a new data encryption key current; data encrypted before moves to it in the background. Needs `admin.system.manage`. */
+export function rotateDataKey() {
+  return api.post<EncryptionKeysStatus>('/api/v1/admin/system/keys/data/rotate');
+}
+
+/** Makes a new token signing key current; tokens already issued stay valid until they expire. Needs `admin.system.manage`. */
+export function rotateSigningKey() {
+  return api.post<EncryptionKeysStatus>('/api/v1/admin/system/keys/signing/rotate');
 }

@@ -21,12 +21,14 @@ internal static class ServerCli
               Checks the whole backup and writes only its database dump, for pg_restore. Nothing else changes.
 
           backup restore --in <backup.hc360bak> [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
-              Puts back the stored documents and then the backup's field encryption key on this Server Node, with the HC360
-              service stopped. A different key already here is kept under a new name. The whole backup is checked first,
+              Puts back the stored documents and then the backup's field encryption keys (the original key and any added by
+              rotations) on this Server Node, with the HC360 service stopped. A different key already here is kept under a
+              new name. The whole backup is checked first,
               so nothing changes if it is damaged. Run it only after the backup's database is restored: from then on this
               machine uses the backup's key. Restore-HC360.ps1 runs both steps in that order.
 
-        The recovery key is shown once in Administration > Backups > Recovery key; keep it offline. Without --key it is
+        The recovery key is shown in Administration > Backups > Recovery key (each view is audited); keep it offline. It
+        does not change when the data encryption key is rotated. Without --key it is
         read from the HC360_RECOVERY_KEY environment variable, from standard input when it is redirected, or from a hidden
         prompt, so it never appears in the process list.
 
@@ -143,7 +145,9 @@ internal static class ServerCli
 
         Describe(result.Manifest);
         Console.WriteLine($"Documents: {result.DocumentsRestored} restored, {result.DocumentsAlreadyPresent} already present.");
-        Console.WriteLine($"Installed the backup's field encryption key in {directories.Keys}.");
+        Console.WriteLine(result.RingKeysInstalled == 0
+            ? $"Installed the backup's field encryption key in {directories.Keys}."
+            : $"Installed the backup's field encryption key and the {result.RingKeysInstalled} key(s) its rotations added in {directories.Keys}.");
         if (result.PreviousKeyKeptAs is { } keptAs)
         {
             Console.WriteLine($"The different key that was here is kept as {keptAs}.");

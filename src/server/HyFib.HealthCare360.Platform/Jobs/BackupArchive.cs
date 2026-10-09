@@ -13,6 +13,8 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// <param name="Migrations">The EF migrations applied to the database when it was dumped (its schema version).</param>
 /// <param name="IncludesDocuments">False for the database-only backup taken before an update.</param>
 /// <param name="KeyFingerprint">The fingerprint of the escrowed field master key (<see cref="FieldMasterKey.Fingerprint"/>).</param>
+/// <param name="RingKeys">The ids of the keys rotations added to the ring (<see cref="FieldKeyRing"/>), escrowed too; none before the first rotation.</param>
+/// <param name="CurrentKey">Which key of the ring was current, or null for the original key.</param>
 public sealed record BackupManifest(
     int Format,
     string Kind,
@@ -23,7 +25,9 @@ public sealed record BackupManifest(
     bool IncludesDocuments,
     int DocumentCount,
     long DocumentBytes,
-    string KeyFingerprint);
+    string KeyFingerprint,
+    IReadOnlyList<string>? RingKeys = null,
+    string? CurrentKey = null);
 
 /// <summary>A stored document file, relative to the documents folder (forward slashes).</summary>
 public sealed record BackupDocument(string RelativePath, long Length);
@@ -32,7 +36,11 @@ public sealed record BackupDocument(string RelativePath, long Length);
 public sealed record BackupReadTargets(string? DatabaseDumpPath = null, string? DocumentsFolder = null);
 
 /// <summary>What an archive held, after every entry was read, authenticated and checked against the manifest.</summary>
-public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, int DocumentCount, long DocumentBytes);
+public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, int DocumentCount, long DocumentBytes)
+{
+    /// <summary>The keys rotations added to the ring, in the order the manifest lists them.</summary>
+    public IReadOnlyList<byte[]> RingKeys { get; init; } = [];
+}
 
 /// <summary>
 /// The payload of a version 2 backup (DED-16): one tar archive with the manifest, an escrow copy of the field master key,
@@ -45,6 +53,7 @@ public static class BackupArchive
     public const int Format = 2;
     public const string ManifestEntry = "manifest.json";
     public const string KeyEntry = "keys/field-master.key";
+    public const string RingKeyPrefix = "keys/" + FieldKeyRing.FolderName + "/";
     public const string DatabaseEntry = "database.dump";
     public const string DocumentsPrefix = "files/";
 
@@ -70,6 +79,7 @@ public static class BackupArchive
         Stream output,
         BackupManifest manifest,
         byte[] masterKey,
+        IReadOnlyList<byte[]> ringKeys,
         string databaseDumpPath,
         string documentsFolder,
         IReadOnlyList<BackupDocument> documents,
@@ -78,6 +88,10 @@ public static class BackupArchive
         await using var tar = new TarWriter(output, TarEntryFormat.Pax, leaveOpen: true);
         await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest, Json)), ct);
         await WriteEntryAsync(tar, KeyEntry, new MemoryStream(masterKey, writable: false), ct);
+        foreach (var key in ringKeys)
+        {
+            await WriteEntryAsync(tar, RingKeyPrefix + FieldMasterKey.Fingerprint(key) + ".key", new MemoryStream(key, writable: false), ct);
+        }
         await WriteEntryAsync(tar, DatabaseEntry, OpenForReading(databaseDumpPath), ct);
         foreach (var document in documents)
         {
@@ -102,6 +116,7 @@ public static class BackupArchive
     {
         BackupManifest? manifest = null;
         byte[]? masterKey = null;
+        var ringKeys = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var hasDatabase = false;
         var documentCount = 0;
         var documentBytes = 0L;
@@ -134,6 +149,16 @@ public static class BackupArchive
 
                         break;
 
+                    case var name when name.StartsWith(RingKeyPrefix, StringComparison.Ordinal):
+                        var ringKey = await ReadSmallAsync(entry, FieldMasterKey.Length, ct);
+                        var id = ringKey.Length == FieldMasterKey.Length ? FieldMasterKey.Fingerprint(ringKey) : null;
+                        if (id is null || name != RingKeyPrefix + id + ".key" || manifest.RingKeys?.Contains(id) != true || !ringKeys.TryAdd(id, ringKey))
+                        {
+                            throw new InvalidDataException($"The encryption key {name} in the backup does not match its manifest.");
+                        }
+
+                        break;
+
                     case DatabaseEntry when !hasDatabase:
                         hasDatabase = true;
                         await CopyEntryAsync(entry, targets.DatabaseDumpPath, overwrite: true, ct);
@@ -160,12 +185,18 @@ public static class BackupArchive
             throw new InvalidDataException("The backup is incomplete: the manifest, the encryption key or the database is missing.");
         }
 
+        var listed = manifest.RingKeys ?? [];
+        if (listed.Count != ringKeys.Count || (manifest.CurrentKey is { } current && current != manifest.KeyFingerprint && !ringKeys.ContainsKey(current)))
+        {
+            throw new InvalidDataException("The backup is incomplete: an encryption key its manifest lists is missing.");
+        }
+
         if (documentCount != manifest.DocumentCount || documentBytes != manifest.DocumentBytes)
         {
             throw new InvalidDataException($"The backup holds {documentCount} documents ({documentBytes} bytes); its manifest lists {manifest.DocumentCount} ({manifest.DocumentBytes} bytes).");
         }
 
-        return new BackupContents(manifest, masterKey, documentCount, documentBytes);
+        return new BackupContents(manifest, masterKey, documentCount, documentBytes) { RingKeys = listed.Select(id => ringKeys[id]).ToList() };
     }
 
     /// <summary>
@@ -252,7 +283,11 @@ public static class BackupArchive
 /// <summary>The outcome of <see cref="BackupRestore.RestoreAsync"/>.</summary>
 /// <param name="Manifest">Null for a version 1 backup, which holds the database only.</param>
 /// <param name="PreviousKeyKeptAs">The file name the replaced field key was kept under, when a different key was installed.</param>
-public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, int DocumentsRestored, int DocumentsAlreadyPresent, bool KeyInstalled, string? PreviousKeyKeptAs);
+public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, int DocumentsRestored, int DocumentsAlreadyPresent, bool KeyInstalled, string? PreviousKeyKeptAs)
+{
+    /// <summary>How many keys rotations had added to the backup's key ring, installed beside the original key.</summary>
+    public int RingKeysInstalled { get; init; }
+}
 
 /// <summary>
 /// Restores a backup on a Server Node, with the HC360 service stopped (the Server CLI's <c>backup restore</c>, run by
@@ -306,12 +341,34 @@ public static class BackupRestore
                 // Documents first: they are only ever added, and one the database does not refer to is harmless. The key
                 // last: until it is installed, this machine keeps the key its current database was encrypted with.
                 var (restored, present) = MoveDocuments(staging, directories.Files);
-                var keptAs = FieldMasterKey.Install(FieldMasterKey.PathIn(directories), FieldMasterKey.CreateProtector(dataProtection), contents.MasterKey, time.GetUtcNow());
-                return new BackupRestoreResult(payload.Version, contents.Manifest, restored, present, KeyInstalled: true, keptAs);
+
+                // The keys rotations added only ever join the ring (one already here stays), then the original key, then
+                // which key is current: data encrypted with any of them is readable once the database is back.
+                var protector = FieldMasterKey.CreateProtector(dataProtection);
+                foreach (var key in contents.RingKeys)
+                {
+                    FieldKeyRing.Add(directories, protector, key);
+                }
+
+                var keptAs = FieldMasterKey.Install(FieldMasterKey.PathIn(directories), protector, contents.MasterKey, time.GetUtcNow());
+
+                // The backup decides which key encrypts new data, also when it is the original key (no current key in its
+                // manifest): a key this machine had made current before is not used again, in case it was exposed.
+                var current = contents.Manifest.CurrentKey;
+                FieldKeyRing.SetCurrent(directories, current is null || current == contents.Manifest.KeyFingerprint ? null : current);
+
+                return new BackupRestoreResult(payload.Version, contents.Manifest, restored, present, KeyInstalled: true, keptAs)
+                {
+                    RingKeysInstalled = contents.RingKeys.Count,
+                };
             }
             finally
             {
                 CryptographicOperations.ZeroMemory(contents.MasterKey);
+                foreach (var key in contents.RingKeys)
+                {
+                    CryptographicOperations.ZeroMemory(key);
+                }
             }
         }
         finally

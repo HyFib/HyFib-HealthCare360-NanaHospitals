@@ -102,6 +102,7 @@ internal sealed class BackupService(
     DataDirectories directories,
     IFieldProtector protector,
     IFieldKeyEscrow keys,
+    IDocumentStoreLock documentsLock,
     IPostgresTools postgres,
     INotificationService notifications,
     TimeProvider time,
@@ -172,17 +173,28 @@ internal sealed class BackupService(
         var partial = target + PartialExtension;
         var dump = Path.Combine(directories.Temp, $"{Guid.NewGuid():N}.dump");
         var backupKey = protector.DeriveKey("backup");
+        IAsyncDisposable? documentsHeld = null;
         try
         {
             await EnsureRoomAsync(includeDocuments ? BackupArchive.ListDocuments(directories.Files).Sum(d => d.Length) : 0, ct);
             await postgres.DumpAsync(dump, ct);
 
             // The documents are listed after the database snapshot. The file store writes a document in full before its row
-            // is committed and never changes or removes it, so every document the dump refers to is on disk by now. One
-            // saved since is not in the dump and is only an extra file in the backup.
+            // is committed and never removes it, so every document the dump refers to is on disk by now. One saved since is
+            // not in the dump and is only an extra file in the backup. Moving documents to a new key rewrites them, so
+            // that waits while they are copied.
+            if (includeDocuments)
+            {
+                documentsHeld = await documentsLock.HoldSharedAsync(ct);
+            }
+
             var documents = includeDocuments ? BackupArchive.ListDocuments(directories.Files) : [];
+
+            // Every key of the ring is escrowed, and listed in the manifest, so data encrypted with any of them restores.
+            var ring = keys.ExportRing();
             var manifest = new BackupManifest(BackupArchive.Format, kind.ToString(), startedAt, ServerVersion, postgres.DatabaseName, migrations,
-                includeDocuments, documents.Count, documents.Sum(d => d.Length), keys.Fingerprint);
+                includeDocuments, documents.Count, documents.Sum(d => d.Length), keys.Fingerprint,
+                ring.Keys.Count == 0 ? null : ring.Keys.Select(FieldMasterKey.Fingerprint).ToList(), ring.Current);
 
             string sha256;
             var masterKey = keys.ExportMasterKey();
@@ -190,13 +202,23 @@ internal sealed class BackupService(
             {
                 await using var file = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
                 await using var encryptor = BackupEncryption.CreateEncryptor(file, backupKey);
-                await BackupArchive.WriteAsync(encryptor, manifest, masterKey, dump, directories.Files, documents, ct);
+                await BackupArchive.WriteAsync(encryptor, manifest, masterKey, ring.Keys, dump, directories.Files, documents, ct);
                 await encryptor.CompleteAsync(ct);
                 sha256 = encryptor.Sha256!;
             }
             finally
             {
                 CryptographicOperations.ZeroMemory(masterKey);
+                foreach (var key in ring.Keys)
+                {
+                    CryptographicOperations.ZeroMemory(key);
+                }
+
+                if (documentsHeld is not null)
+                {
+                    await documentsHeld.DisposeAsync();
+                    documentsHeld = null;
+                }
             }
 
             File.Delete(dump);
@@ -227,6 +249,11 @@ internal sealed class BackupService(
         }
         finally
         {
+            if (documentsHeld is not null)
+            {
+                await documentsHeld.DisposeAsync();
+            }
+
             File.Delete(dump);
             File.Delete(partial);
         }

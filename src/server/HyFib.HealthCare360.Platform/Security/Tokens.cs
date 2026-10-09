@@ -25,40 +25,135 @@ public sealed record IssuedToken(string Token, DateTimeOffset ExpiresAt);
 
 /// <summary>
 /// ECDSA P-256 signing key for access tokens. Generated on first start and stored under the data
-/// directory, wrapped by ASP.NET Core Data Protection (machine DPAPI on Windows).
+/// directory (<c>keys/jwt-signing.key</c>), wrapped by ASP.NET Core Data Protection (machine DPAPI on Windows).
+/// <para>
+/// Rotated from System health (SRS SEC-07): a new key signs from then on, and the previous one
+/// (<c>jwt-signing.previous.key</c>) still validates for as long as an access token lives, so nobody is signed out.
+/// Refresh tokens are opaque and do not depend on the key.
+/// </para>
 /// </summary>
 public sealed class SigningKeyStore
 {
-    private readonly Lazy<ECDsaSecurityKey> _key;
+    private readonly string _path;
+    private readonly string _previousPath;
+    private readonly string _retiredPath;
+    private readonly IDataProtector _protector;
+    private readonly TimeProvider _time;
+    private readonly TimeSpan _overlap;
+    private readonly Lock _rotation = new();
+    private readonly Lazy<SigningKeys> _initial;
+    private SigningKeys? _keys;
 
-    public SigningKeyStore(DataDirectories directories, IDataProtectionProvider dataProtection)
+    public SigningKeyStore(DataDirectories directories, IDataProtectionProvider dataProtection, IOptions<PlatformOptions> options, TimeProvider time)
     {
-        var path = Path.Combine(directories.Keys, "jwt-signing.key");
-        var protector = dataProtection.CreateProtector("HC360.Jwt.SigningKey.v1");
-        _key = new Lazy<ECDsaSecurityKey>(() => LoadOrCreate(path, protector), LazyThreadSafetyMode.ExecutionAndPublication);
+        _path = Path.Combine(directories.Keys, "jwt-signing.key");
+        _previousPath = Path.Combine(directories.Keys, "jwt-signing.previous.key");
+        _retiredPath = Path.Combine(directories.Keys, "jwt-signing.previous.retired");
+        _protector = dataProtection.CreateProtector("HC360.Jwt.SigningKey.v1");
+        _time = time;
+
+        // An access token signed just before a rotation stays valid until it expires, give or take the clock skew.
+        _overlap = TimeSpan.FromMinutes(options.Value.Security.AccessTokenMinutes) + TimeSpan.FromMinutes(1);
+        _initial = new Lazy<SigningKeys>(Load, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
-    public ECDsaSecurityKey Key => _key.Value;
+    private SigningKeys Current => Volatile.Read(ref _keys) ?? _initial.Value;
 
-    private static ECDsaSecurityKey LoadOrCreate(string path, IDataProtector protector)
+    /// <summary>The key new access tokens are signed with.</summary>
+    public ECDsaSecurityKey Key => Current.Key;
+
+    /// <summary>When the current key was made (its file was written).</summary>
+    public DateTimeOffset? KeyCreatedAt => File.Exists(_path) ? new DateTimeOffset(File.GetLastWriteTimeUtc(_path), TimeSpan.Zero) : null;
+
+    /// <summary>The keys an access token may be signed with: the current one, and the previous one shortly after a rotation.</summary>
+    public IEnumerable<SecurityKey> ValidationKeys()
+    {
+        var keys = Current;
+        return keys.Previous is { } previous && keys.RetiredAt is { } retired && _time.GetUtcNow() < retired + _overlap
+            ? [keys.Key, previous]
+            : [keys.Key];
+    }
+
+    /// <summary>
+    /// While the previous key still validates tokens (after a rotation), when the next rotation may be made; otherwise null.
+    /// Only one previous key is kept, so a second rotation sooner would end its tokens early.
+    /// </summary>
+    public DateTimeOffset? NextRotationAt
+    {
+        get
+        {
+            var keys = Current;
+            return keys.RetiredAt is { } retired && _time.GetUtcNow() < retired + _overlap ? retired + _overlap : null;
+        }
+    }
+
+    /// <summary>Makes a new key current; the previous one validates tokens it signed until they expire. Returns the new key's id.</summary>
+    /// <exception cref="InvalidOperationException">The key was rotated less than an access-token lifetime ago (<see cref="NextRotationAt"/>).</exception>
+    public string Rotate()
+    {
+        lock (_rotation)
+        {
+            var keys = Current;
+            var now = _time.GetUtcNow();
+            if (NextRotationAt is { } allowedAt)
+            {
+                throw new InvalidOperationException($"The signing key was rotated a moment ago; it can be rotated again from {allowedAt:O}.");
+            }
+
+            // The current key is kept as the previous one before the new one takes its place.
+            var currentFile = File.ReadAllBytes(_path);
+            WriteReplacing(_previousPath, currentFile);
+            WriteReplacing(_retiredPath, System.Text.Encoding.UTF8.GetBytes(now.ToString("O", System.Globalization.CultureInfo.InvariantCulture)));
+
+            var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            WriteReplacing(_path, _protector.Protect(ecdsa.ExportPkcs8PrivateKey()));
+            var next = new SigningKeys(ToSecurityKey(ecdsa), keys.Key, now);
+            Volatile.Write(ref _keys, next);
+            return next.Key.KeyId;
+        }
+    }
+
+    private SigningKeys Load()
     {
         var ecdsa = ECDsa.Create();
-        if (File.Exists(path))
+        if (File.Exists(_path))
         {
-            ecdsa.ImportPkcs8PrivateKey(protector.Unprotect(File.ReadAllBytes(path)), out _);
+            ecdsa.ImportPkcs8PrivateKey(_protector.Unprotect(File.ReadAllBytes(_path)), out _);
         }
         else
         {
             ecdsa.GenerateKey(ECCurve.NamedCurves.nistP256);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var temp = path + ".tmp";
-            File.WriteAllBytes(temp, protector.Protect(ecdsa.ExportPkcs8PrivateKey()));
-            File.Move(temp, path, overwrite: false);
+            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+            var temp = _path + ".tmp";
+            File.WriteAllBytes(temp, _protector.Protect(ecdsa.ExportPkcs8PrivateKey()));
+            File.Move(temp, _path, overwrite: false);
         }
 
-        var keyId = Base64UrlEncoder.Encode(SHA256.HashData(ecdsa.ExportSubjectPublicKeyInfo()))[..16];
-        return new ECDsaSecurityKey(ecdsa) { KeyId = keyId };
+        ECDsaSecurityKey? previous = null;
+        DateTimeOffset? retiredAt = null;
+        if (File.Exists(_previousPath) && File.Exists(_retiredPath)
+            && DateTimeOffset.TryParse(File.ReadAllText(_retiredPath), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var retired))
+        {
+            var old = ECDsa.Create();
+            old.ImportPkcs8PrivateKey(_protector.Unprotect(File.ReadAllBytes(_previousPath)), out _);
+            previous = ToSecurityKey(old);
+            retiredAt = retired;
+        }
+
+        return new SigningKeys(ToSecurityKey(ecdsa), previous, retiredAt);
     }
+
+    private static ECDsaSecurityKey ToSecurityKey(ECDsa ecdsa) =>
+        new(ecdsa) { KeyId = Base64UrlEncoder.Encode(SHA256.HashData(ecdsa.ExportSubjectPublicKeyInfo()))[..16] };
+
+    private static void WriteReplacing(string path, byte[] content)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllBytes(temp, content);
+        File.Move(temp, path, overwrite: true);
+    }
+
+    private sealed record SigningKeys(ECDsaSecurityKey Key, ECDsaSecurityKey? Previous, DateTimeOffset? RetiredAt);
 }
 
 public sealed class TokenService(SigningKeyStore keys, IOptions<PlatformOptions> options, TimeProvider time)

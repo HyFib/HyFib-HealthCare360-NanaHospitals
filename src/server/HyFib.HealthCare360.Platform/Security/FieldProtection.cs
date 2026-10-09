@@ -10,10 +10,20 @@ namespace HyFib.HealthCare360.Platform.Security;
 /// Application-level encryption for sensitive identifiers (ABHA, Aadhaar last digits, policy numbers),
 /// stored files and backups. AES-256-GCM with purpose-specific keys derived via HKDF from a master
 /// key that is itself wrapped by ASP.NET Core Data Protection (machine DPAPI on Windows).
+/// <para>
+/// The master keys form a ring (SRS SEC-07): the original key, and one more for each rotation from System health. New
+/// values are encrypted with the current key and name it; every key is kept, so anything encrypted before stays
+/// readable until <see cref="FieldKeyMover"/> moves it to the current key. Blind indexes and the keys from
+/// <see cref="DeriveKey"/> (backups) stay on the original key: an Aadhaar index cannot be computed again, and the
+/// recovery key administrators keep must not change.
+/// </para>
 /// </summary>
 public interface IFieldProtector
 {
-    /// <summary>Encrypts a short string: <c>v1.&lt;base64url(nonce|tag|ciphertext)&gt;</c>.</summary>
+    /// <summary>
+    /// Encrypts a short string: <c>v1.&lt;base64url(1|nonce|tag|ciphertext)&gt;</c> with the original key, or
+    /// <c>v2.&lt;key id&gt;.&lt;base64url(2|key id|nonce|tag|ciphertext)&gt;</c> once the key has been rotated.
+    /// </summary>
     string Protect(string plaintext);
 
     string? Unprotect(string? protectedValue);
@@ -24,12 +34,45 @@ public interface IFieldProtector
     /// </summary>
     string BlindIndex(string normalizedValue);
 
+    /// <summary>Encrypts bytes with the current key: <c>1|nonce|tag|ciphertext</c>, or <c>2|key id|nonce|tag|ciphertext</c> after a rotation.</summary>
     byte[] ProtectBytes(ReadOnlySpan<byte> plaintext, string purpose);
 
+    /// <exception cref="CryptographicException">The data is corrupt, or was encrypted with a key this server does not have.</exception>
     byte[] UnprotectBytes(ReadOnlySpan<byte> protectedData, string purpose);
 
-    /// <summary>A 256-bit key dedicated to <paramref name="purpose"/> (for streaming encryption such as backups).</summary>
+    /// <summary>
+    /// A 256-bit key dedicated to <paramref name="purpose"/> (for streaming encryption such as backups), from the original
+    /// master key, so it does not change when the key is rotated.
+    /// </summary>
     byte[] DeriveKey(string purpose);
+}
+
+/// <summary>One master key of the ring.</summary>
+public sealed record FieldKeyInfo(string Id, bool Original, bool Current, DateTimeOffset? CreatedAt);
+
+/// <summary>The master key ring (SRS SEC-07): which key new values use, rotation, and moving values to the current key.</summary>
+public interface IFieldKeyRing
+{
+    /// <summary>The key new values are encrypted with.</summary>
+    string CurrentKeyId { get; }
+
+    /// <summary>The key the ring started with: blind indexes, backups and every <c>v1</c> value use it.</summary>
+    string OriginalKeyId { get; }
+
+    IReadOnlyList<FieldKeyInfo> Keys { get; }
+
+    /// <summary>
+    /// The start every string encrypted with the current key has (<c>v1.</c> while it is the original key, otherwise
+    /// <c>v2.&lt;key id&gt;.</c>), so values still to move can be found in the database.
+    /// </summary>
+    string CurrentPrefix { get; }
+
+    /// <summary>The key these bytes (from <see cref="IFieldProtector.ProtectBytes"/>) were encrypted with.</summary>
+    /// <exception cref="CryptographicException">They are not in a format the protector writes.</exception>
+    string KeyIdOf(ReadOnlySpan<byte> protectedData);
+
+    /// <summary>Makes a new master key the current one, and keeps every earlier key. Returns the new key's id.</summary>
+    string Rotate();
 }
 
 /// <summary>
@@ -38,35 +81,107 @@ public interface IFieldProtector
 /// </summary>
 internal interface IFieldKeyEscrow
 {
-    /// <summary>A copy of the 32-byte master key.</summary>
+    /// <summary>A copy of the original 32-byte master key.</summary>
     byte[] ExportMasterKey();
 
-    /// <summary>The key's non-secret fingerprint (<see cref="FieldMasterKey.Fingerprint"/>).</summary>
+    /// <summary>The original key's non-secret fingerprint (<see cref="FieldMasterKey.Fingerprint"/>).</summary>
     string Fingerprint { get; }
+
+    /// <summary>Copies of the keys added by rotations, and which key is current (null while it is the original).</summary>
+    FieldKeyRingExport ExportRing();
 }
 
-internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow
+/// <summary>The rotated keys of a ring, for a backup's escrow. <see cref="Current"/> is null while the original key is current.</summary>
+public sealed record FieldKeyRingExport(IReadOnlyList<byte[]> Keys, string? Current);
+
+internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldKeyRing
 {
-    private const byte Version = 1;
+    private const byte OriginalKeyVersion = 1;
+    private const byte KeyedVersion = 2;
+    private const int KeyIdSize = 8;
     private const int NonceSize = 12;
     private const int TagSize = 16;
+    private readonly DataDirectories _directories;
+    private readonly IDataProtector _wrapper;
+    private readonly Lock _rotation = new();
     private readonly Lazy<byte[]> _masterKey;
+    private readonly Lazy<FieldKeyRingState> _initialRing;
+    private FieldKeyRingState? _ring;
 
     public FieldProtector(DataDirectories directories, IDataProtectionProvider dataProtection)
     {
+        _directories = directories;
+        _wrapper = FieldMasterKey.CreateProtector(dataProtection);
         var path = FieldMasterKey.PathIn(directories);
-        var protector = FieldMasterKey.CreateProtector(dataProtection);
-        _masterKey = new Lazy<byte[]>(() => FieldMasterKey.LoadOrCreate(path, protector), LazyThreadSafetyMode.ExecutionAndPublication);
+        _masterKey = new Lazy<byte[]>(() => FieldMasterKey.LoadOrCreate(path, _wrapper), LazyThreadSafetyMode.ExecutionAndPublication);
+        _initialRing = new Lazy<FieldKeyRingState>(() => FieldKeyRingState.Load(directories, _wrapper, _masterKey.Value), LazyThreadSafetyMode.ExecutionAndPublication);
     }
+
+    private FieldKeyRingState Ring => Volatile.Read(ref _ring) ?? _initialRing.Value;
 
     public byte[] ExportMasterKey() => (byte[])_masterKey.Value.Clone();
 
     public string Fingerprint => FieldMasterKey.Fingerprint(_masterKey.Value);
 
+    public FieldKeyRingExport ExportRing()
+    {
+        var ring = Ring;
+        return new FieldKeyRingExport(
+            ring.Keys.Where(k => k.Key != ring.OriginalId).Select(k => (byte[])k.Value.Clone()).ToList(),
+            ring.IsOriginalCurrent ? null : ring.CurrentId);
+    }
+
+    public string CurrentKeyId => Ring.CurrentId;
+
+    public string OriginalKeyId => Ring.OriginalId;
+
+    public IReadOnlyList<FieldKeyInfo> Keys
+    {
+        get
+        {
+            var ring = Ring;
+            return ring.Keys.Keys
+                .Select(id => new FieldKeyInfo(id, id == ring.OriginalId, id == ring.CurrentId, FieldKeyRing.CreatedAt(_directories, id, id == ring.OriginalId)))
+                .OrderBy(k => k.CreatedAt)
+                .ToList();
+        }
+    }
+
+    public string CurrentPrefix => Ring.IsOriginalCurrent ? "v1." : $"v2.{Ring.CurrentId}.";
+
+    public string KeyIdOf(ReadOnlySpan<byte> protectedData) =>
+        protectedData.Length >= 1 + NonceSize + TagSize && protectedData[0] == OriginalKeyVersion ? Ring.OriginalId
+        : protectedData.Length >= 1 + KeyIdSize + NonceSize + TagSize && protectedData[0] == KeyedVersion ? Convert.ToHexString(protectedData.Slice(1, KeyIdSize))
+        : throw new CryptographicException("Unsupported or corrupt protected payload.");
+
+    public string Rotate()
+    {
+        lock (_rotation)
+        {
+            var ring = Ring;
+            byte[] key;
+            string id;
+            do
+            {
+                key = RandomNumberGenerator.GetBytes(FieldMasterKey.Length);
+                id = FieldMasterKey.Fingerprint(key);
+            }
+            while (ring.Keys.ContainsKey(id));
+
+            // The key is on disk before anything is encrypted with it, and it is current only once it is there.
+            FieldKeyRing.Add(_directories, _wrapper, key);
+            FieldKeyRing.SetCurrent(_directories, id);
+            Volatile.Write(ref _ring, ring.With(id, key));
+            return id;
+        }
+    }
+
     public string Protect(string plaintext)
     {
         var data = ProtectBytes(Encoding.UTF8.GetBytes(plaintext), "field");
-        return "v1." + Base64UrlEncoder.Encode(data);
+        return data[0] == OriginalKeyVersion
+            ? "v1." + Base64UrlEncoder.Encode(data)
+            : $"v2.{Convert.ToHexString(data, 1, KeyIdSize)}.{Base64UrlEncoder.Encode(data)}";
     }
 
     public string? Unprotect(string? protectedValue)
@@ -76,12 +191,11 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow
             return protectedValue;
         }
 
-        if (!protectedValue.StartsWith("v1.", StringComparison.Ordinal))
-        {
-            throw new CryptographicException("Unsupported protected value format.");
-        }
-
-        return Encoding.UTF8.GetString(UnprotectBytes(Base64UrlEncoder.DecodeBytes(protectedValue[3..]), "field"));
+        // The key id in a v2 prefix only lets the database find values to move; the payload names its own key.
+        var payload = protectedValue.StartsWith("v1.", StringComparison.Ordinal) ? protectedValue[3..]
+            : protectedValue.StartsWith("v2.", StringComparison.Ordinal) && protectedValue.IndexOf('.', 3) is var dot and > 3 ? protectedValue[(dot + 1)..]
+            : throw new CryptographicException("Unsupported protected value format.");
+        return Encoding.UTF8.GetString(UnprotectBytes(Base64UrlEncoder.DecodeBytes(payload), "field"));
     }
 
     public string BlindIndex(string normalizedValue)
@@ -92,38 +206,86 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow
 
     public byte[] ProtectBytes(ReadOnlySpan<byte> plaintext, string purpose)
     {
-        var key = DeriveKey(purpose);
-        var output = new byte[1 + NonceSize + TagSize + plaintext.Length];
-        output[0] = Version;
-        var nonce = output.AsSpan(1, NonceSize);
-        var tag = output.AsSpan(1 + NonceSize, TagSize);
-        var cipher = output.AsSpan(1 + NonceSize + TagSize);
+        var ring = Ring;
+        var header = ring.IsOriginalCurrent ? 1 : 1 + KeyIdSize;
+        var output = new byte[header + NonceSize + TagSize + plaintext.Length];
+        if (ring.IsOriginalCurrent)
+        {
+            output[0] = OriginalKeyVersion;
+        }
+        else
+        {
+            output[0] = KeyedVersion;
+            Convert.FromHexString(ring.CurrentId).CopyTo(output, 1);
+        }
+
+        var nonce = output.AsSpan(header, NonceSize);
+        var tag = output.AsSpan(header + NonceSize, TagSize);
+        var cipher = output.AsSpan(header + NonceSize + TagSize);
         RandomNumberGenerator.Fill(nonce);
 
-        using var aes = new AesGcm(key, TagSize);
+        using var aes = new AesGcm(FieldMasterKey.DeriveKey(ring.Keys[ring.CurrentId], purpose), TagSize);
         aes.Encrypt(nonce, plaintext, cipher, tag, Encoding.UTF8.GetBytes(purpose));
         return output;
     }
 
     public byte[] UnprotectBytes(ReadOnlySpan<byte> protectedData, string purpose)
     {
-        if (protectedData.Length < 1 + NonceSize + TagSize || protectedData[0] != Version)
+        var ring = Ring;
+        byte[] masterKey;
+        int header;
+        if (protectedData.Length >= 1 + NonceSize + TagSize && protectedData[0] == OriginalKeyVersion)
+        {
+            masterKey = ring.Keys[ring.OriginalId];
+            header = 1;
+        }
+        else if (protectedData.Length >= 1 + KeyIdSize + NonceSize + TagSize && protectedData[0] == KeyedVersion)
+        {
+            var id = Convert.ToHexString(protectedData.Slice(1, KeyIdSize));
+            masterKey = ring.Keys.TryGetValue(id, out var key) ? key
+                : throw new CryptographicException($"The data was encrypted with key {id}, which this server does not have.");
+            header = 1 + KeyIdSize;
+        }
+        else
         {
             throw new CryptographicException("Unsupported or corrupt protected payload.");
         }
 
-        var key = DeriveKey(purpose);
-        var nonce = protectedData.Slice(1, NonceSize);
-        var tag = protectedData.Slice(1 + NonceSize, TagSize);
-        var cipher = protectedData[(1 + NonceSize + TagSize)..];
+        var nonce = protectedData.Slice(header, NonceSize);
+        var tag = protectedData.Slice(header + NonceSize, TagSize);
+        var cipher = protectedData[(header + NonceSize + TagSize)..];
         var plaintext = new byte[cipher.Length];
 
-        using var aes = new AesGcm(key, TagSize);
+        using var aes = new AesGcm(FieldMasterKey.DeriveKey(masterKey, purpose), TagSize);
         aes.Decrypt(nonce, cipher, tag, plaintext, Encoding.UTF8.GetBytes(purpose));
         return plaintext;
     }
 
     public byte[] DeriveKey(string purpose) => FieldMasterKey.DeriveKey(_masterKey.Value, purpose);
+
+    /// <summary>The keys by id, the original key's id, and the current key's id. Replaced whole on a rotation.</summary>
+    private sealed record FieldKeyRingState(IReadOnlyDictionary<string, byte[]> Keys, string OriginalId, string CurrentId)
+    {
+        public bool IsOriginalCurrent => CurrentId == OriginalId;
+
+        public static FieldKeyRingState Load(DataDirectories directories, IDataProtector wrapper, byte[] original)
+        {
+            var originalId = FieldMasterKey.Fingerprint(original);
+            var keys = new Dictionary<string, byte[]>(StringComparer.Ordinal) { [originalId] = original };
+            foreach (var key in FieldKeyRing.Load(directories, wrapper))
+            {
+                keys.TryAdd(FieldMasterKey.Fingerprint(key), key);
+            }
+
+            var current = FieldKeyRing.Current(directories) ?? originalId;
+            return keys.ContainsKey(current)
+                ? new FieldKeyRingState(keys, originalId, current)
+                : throw new CryptographicException($"The current field key {current} is missing from {FieldKeyRing.DirectoryIn(directories)}.");
+        }
+
+        public FieldKeyRingState With(string id, byte[] key) =>
+            new(new Dictionary<string, byte[]>(Keys, StringComparer.Ordinal) { [id] = key }, OriginalId, id);
+    }
 }
 
 /// <summary>
@@ -217,6 +379,101 @@ public static class FieldMasterKey
         }
 
         return keptAs is null ? null : Path.GetFileName(keptAs);
+    }
+}
+
+/// <summary>
+/// The keys rotations added to the field master key ring (SRS SEC-07), beside the original key: each in
+/// <c>keys/field-keys/&lt;key id&gt;.key</c>, wrapped by Data Protection like the original, and the current key's id in
+/// <c>keys/field-keys/current</c> (none while the original is current). Keys are only ever added, never removed: data,
+/// and backups, encrypted with an earlier key stay readable.
+/// </summary>
+public static class FieldKeyRing
+{
+    public const string FolderName = "field-keys";
+    public const string CurrentFileName = "current";
+    private const string KeyExtension = ".key";
+
+    public static string DirectoryIn(DataDirectories directories) => Path.Combine(directories.Keys, FolderName);
+
+    /// <summary>The keys added by rotations, unwrapped. A file whose key does not match its name is refused.</summary>
+    public static IReadOnlyList<byte[]> Load(DataDirectories directories, IDataProtector wrapper)
+    {
+        var folder = DirectoryIn(directories);
+        if (!Directory.Exists(folder))
+        {
+            return [];
+        }
+
+        var keys = new List<byte[]>();
+        foreach (var path in Directory.EnumerateFiles(folder, "*" + KeyExtension).Order(StringComparer.Ordinal))
+        {
+            var key = wrapper.Unprotect(File.ReadAllBytes(path));
+            if (key.Length != FieldMasterKey.Length || FieldMasterKey.Fingerprint(key) != Path.GetFileNameWithoutExtension(path))
+            {
+                throw new CryptographicException($"The field key {Path.GetFileName(path)} does not match its name.");
+            }
+
+            keys.Add(key);
+        }
+
+        return keys;
+    }
+
+    /// <summary>The current key's id, or null while the original key is current.</summary>
+    public static string? Current(DataDirectories directories)
+    {
+        var path = Path.Combine(DirectoryIn(directories), CurrentFileName);
+        return File.Exists(path) ? File.ReadAllText(path).Trim().ToUpperInvariant() : null;
+    }
+
+    /// <summary>Adds a key, wrapped for this machine, unless it is there already. Returns its id.</summary>
+    public static string Add(DataDirectories directories, IDataProtector wrapper, byte[] key)
+    {
+        if (key.Length != FieldMasterKey.Length)
+        {
+            throw new CryptographicException("A field master key must be 32 bytes.");
+        }
+
+        var id = FieldMasterKey.Fingerprint(key);
+        var folder = DirectoryIn(directories);
+        var path = Path.Combine(folder, id + KeyExtension);
+        if (!File.Exists(path))
+        {
+            Directory.CreateDirectory(folder);
+            var temp = path + ".tmp";
+            File.WriteAllBytes(temp, wrapper.Protect(key));
+            File.Move(temp, path, overwrite: false);
+        }
+
+        return id;
+    }
+
+    /// <summary>Makes the key with this id current (it must have been added), or the original key when null.</summary>
+    public static void SetCurrent(DataDirectories directories, string? id)
+    {
+        var path = Path.Combine(DirectoryIn(directories), CurrentFileName);
+        if (id is null)
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+
+            return;
+        }
+
+        Directory.CreateDirectory(DirectoryIn(directories));
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, id);
+        File.Move(temp, path, overwrite: true);
+    }
+
+    /// <summary>When a key was made: when its file was written.</summary>
+    public static DateTimeOffset? CreatedAt(DataDirectories directories, string id, bool original)
+    {
+        var path = original ? FieldMasterKey.PathIn(directories) : Path.Combine(DirectoryIn(directories), id + KeyExtension);
+        return File.Exists(path) ? new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero) : null;
     }
 }
 

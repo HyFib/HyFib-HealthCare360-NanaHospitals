@@ -18,6 +18,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { adminQueries, formatBytes, type SystemHealthReport, type WifiSample } from '@/modules/admin/api';
 import { DatabasePassword } from '@/modules/admin/DatabasePassword';
+import { EncryptionKeys } from '@/modules/admin/EncryptionKeys';
 import { encryptionSummary } from '@/modules/admin/diskEncryption';
 
 export const Route = createFileRoute('/_app/admin/system')({
@@ -214,6 +215,9 @@ function SystemHealthPage() {
             </Row>
             <Row label="Valid for">{h.certificate.subjectAlternativeNames.join(', ')}</Row>
           </div>
+        </Section>
+        <Section title="Encryption keys">
+          <EncryptionKeys />
         </Section>
         <Section title="Power">
           <div className={styles.rows}>

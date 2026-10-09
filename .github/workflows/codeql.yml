@@ -1,10 +1,13 @@
 name: CodeQL
 
 # Code scanning with CodeQL: the server, HC360 Desktop and the lab agent (C#), the web apps (TypeScript) and these
-# workflows (GitHub Actions). Alerts appear under Security › Code scanning, and the "CodeQL" check on a pull request
-# fails for a new alert of high or critical severity. A weekly run on main picks up new queries while nobody changes
-# the code. Needs GitHub Code Security on the repository, with CodeQL default setup turned off (this is the advanced
-# setup). What to do with an alert is in docs/security/SECURITY.md.
+# workflows (GitHub Actions). A weekly run on main picks up new queries while nobody changes the code. This is the
+# advanced setup, so CodeQL default setup stays off. What to do with a finding is in docs/security/SECURITY.md.
+#
+# With GitHub Code Security on for the repository, the results go to Security › Code scanning, and its check on a pull
+# request fails for a new alert of high or critical severity. While Code Security is off, GitHub refuses the results,
+# so they are not uploaded: each job lists its findings in its summary and on the lines they are about, and fails for
+# one of high or critical severity (.github/codeql/check-results.ps1). Each run finds out which applies by itself.
 on:
   push:
     branches: [main]
@@ -27,7 +30,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      security-events: write # uploads the results
+      security-events: write # finds out whether code scanning is on, and uploads the results when it is
     strategy:
       fail-fast: false
       matrix:
@@ -46,6 +49,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Listing the analyses answers 403 while Code Security is off, and 404 when it is on but nothing is uploaded yet.
+      - name: Is code scanning on?
+        id: scanning
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $uri = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/code-scanning/analyses?per_page=1"
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+          try { $status = (Invoke-WebRequest -Uri $uri -Headers $headers -SkipHttpErrorCheck).StatusCode } catch { $status = 0 }
+          $on = $status -in 200, 404
+          "on=$($on.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if (-not $on) {
+            $why = if ($status -eq 403) { 'GitHub Code Security is off for this repository' } else { "Could not tell whether code scanning is on (HTTP $status)" }
+            Write-Output "::notice title=Results checked in this job::$why, so the results are checked here instead of being uploaded."
+          }
 
       - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
@@ -70,3 +90,14 @@ jobs:
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: /language:${{ matrix.language }}
+          output: ${{ runner.temp }}/codeql-results
+          upload: ${{ steps.scanning.outputs.on == 'true' && 'always' || 'never' }}
+          upload-database: ${{ steps.scanning.outputs.on }}
+
+      - name: Check the results
+        shell: pwsh
+        env:
+          RESULTS: ${{ runner.temp }}/codeql-results
+          LANGUAGE: ${{ matrix.language }}
+          SCANNING_ON: ${{ steps.scanning.outputs.on }}
+        run: ./.github/codeql/check-results.ps1 -SarifDirectory $env:RESULTS -Language $env:LANGUAGE -ReportOnly:($env:SCANNING_ON -eq 'true')

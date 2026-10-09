@@ -26,6 +26,9 @@ public sealed class StoredFile : AuditableEntity
     public Guid? PatientId { get; set; }
     public string? OwnerModule { get; set; }
     public Guid? FacilityId { get; set; }
+
+    /// <summary>The field key the content is encrypted with (<see cref="IFieldKeyRing"/>); null for the original key.</summary>
+    public string? EncryptionKeyId { get; set; }
 }
 
 internal sealed class StoredFileConfiguration : IEntityTypeConfiguration<StoredFile>
@@ -39,6 +42,7 @@ internal sealed class StoredFileConfiguration : IEntityTypeConfiguration<StoredF
         b.Property(x => x.StoragePath).HasMaxLength(300);
         b.Property(x => x.Category).HasMaxLength(32);
         b.Property(x => x.OwnerModule).HasMaxLength(32);
+        b.Property(x => x.EncryptionKeyId).HasMaxLength(16);
         b.HasIndex(x => x.PatientId);
     }
 }
@@ -55,7 +59,8 @@ public interface IFileStore
     Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken);
 }
 
-internal sealed class EncryptedFileStore(HospitalDbContext db, DataDirectories directories, IFieldProtector protector, ICurrentUser currentUser, TimeProvider time) : IFileStore
+internal sealed class EncryptedFileStore(
+    HospitalDbContext db, DataDirectories directories, IFieldProtector protector, IFieldKeyRing keys, ICurrentUser currentUser, TimeProvider time) : IFileStore
 {
     public const long MaxBytes = 25 * 1024 * 1024;
 
@@ -101,7 +106,9 @@ internal sealed class EncryptedFileStore(HospitalDbContext db, DataDirectories d
 
         var fullPath = Path.Combine(directories.Files, file.StoragePath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        await File.WriteAllBytesAsync(fullPath, protector.ProtectBytes(bytes, Purpose), cancellationToken);
+        var encrypted = protector.ProtectBytes(bytes, Purpose);
+        file.EncryptionKeyId = keys.KeyIdOf(encrypted);
+        await File.WriteAllBytesAsync(fullPath, encrypted, cancellationToken);
 
         db.Add(file);
         await db.SaveChangesAsync(cancellationToken);

@@ -286,16 +286,48 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 ### Backups and keys
 - Nightly backups are **encrypted** (AES-256-GCM, chunked, every chunk authenticated) and optionally copied to a second
   disk or NAS.
-- Each backup is one archive holding the database, the stored documents (already encrypted) and an escrow copy of the
-  field encryption key. So one backup file and the recovery key restore everything on replacement hardware, including
+- Each backup is one archive holding the database, the stored documents (already encrypted) and escrow copies of the
+  field encryption keys. So one backup file and the recovery key restore everything on replacement hardware, including
   identifiers such as Aadhaar and ABHA, which are unreadable without that key.
 - Every backup is read back in full and its database dump listed by pg_restore before it counts. A backup that fails
   this check is discarded and reported.
 - The recovery key opens every backup. It is shown on request, each view is audited, and it must be stored **offline**.
 - Signing and encryption keys are generated on the Server Node and protected with Windows Data Protection (DPAPI).
-  A restore installs the field encryption key protected for the new machine, and a different key already there is
-  kept under a new name, never deleted. The key is installed last, after the backup's database is in place. If an
-  earlier step fails, the previous database is put back and the machine keeps its own key.
+  A restore installs the field encryption keys protected for the new machine, and a different key already there is
+  kept under a new name, never deleted. The keys are installed last, after the backup's database is in place. If an
+  earlier step fails, the previous database is put back and the machine keeps its own keys.
+- **Keys are rotated from System health › Encryption keys** (SRS SEC-07), by holders of `admin.system.manage`; each
+  rotation is audited.
+  - *Data encryption key.* A new key becomes current and encrypts new data at once. Every value and document names
+    the key it was encrypted with, and a background job moves what was encrypted before to the new key, a little at a
+    time: the protected columns of every module, secret settings, and stored documents, which it rewrites only while no
+    backup is copying them. The screen shows how much is left. Earlier keys are kept, so older backups and anything not
+    yet moved stay readable, and every backup carries all of them.
+  - *What does not rotate.* Blind indexes and the backup key are derived from the original key. An Aadhaar index
+    cannot be computed again, because only the last four digits are kept, and the recovery key administrators hold
+    must not change. Short-lived encrypted data (stored responses for repeated requests, 24 hours; scheduled report
+    files, 30 days by default) is not moved: it expires with its key still in the ring.
+  - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
+    access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
+- **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
+  says when either is due. Rotate both at once, and change the database password, when the Server Node, its disks or a
+  backup may have been exposed, and when someone with administrator access to the Server Node leaves. Data keys are
+  never deleted: a key stays as long as any data or backup may need it.
+
+#### Keys and certificates
+
+| Key or secret | Where | Protected by | Protects | Rotation |
+|---|---|---|---|---|
+| Data encryption keys (field master key ring) | `keys\field-master.key` (original) and `keys\field-keys\` (one per rotation, and which is current) | Data Protection (machine DPAPI) | AES-256-GCM, a key per purpose (HKDF): ABHA and policy numbers, staff PAN and bank details, two-step verification secrets, secret settings, stored documents, scheduled report files, stored responses | System health, every 2 years or on exposure; earlier keys kept |
+| Blind-index key | Derived from the original data key | As above | HMAC-SHA256 lookups of ABHA, Aadhaar, policy, PAN and bank account numbers | Not rotated (an Aadhaar index cannot be rebuilt) |
+| Backup key, which is the recovery key | Derived from the original data key; shown in Administration › Backups, each view audited | Kept offline by the hospital | Every backup file (chunked AES-256-GCM), which carries all the data keys | Not rotated |
+| Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
+| Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
+| Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years |
+| Database password | `config\hc360.settings.json` | Machine DPAPI | The server's PostgreSQL account | System health, every year or when someone who knew it leaves |
+| Integration credentials (SMS, WhatsApp, e-mail, payment, AI) | Secret settings in the database | The data encryption key | Each provider's API | At the provider, then saved in Administration › Settings |
+| Desktop and lab agent device secrets | Each workstation | DPAPI (user or machine) | A device's sign-in | Revoke and enrol the device again |
+| Passwords, refresh tokens, one-time codes | The database | PBKDF2-SHA512 (passwords), SHA-256 (tokens and codes) | Sign-in | Refresh tokens on every use; passwords rehashed when the work factor rises |
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.
 - **Secrets in the settings file** (`config\hc360.settings.json`) are protected with Windows DPAPI for the machine:
@@ -350,22 +382,27 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 - **CodeQL code scanning** (`.github/workflows/codeql.yml`) analyses the server, HC360 Desktop and the lab agent (C#),
   the web apps (TypeScript) and the CI workflows, with the `security-extended` queries. It runs on every pull request,
   on main, and every Monday so that new queries reach code nobody is changing.
-  - Alerts appear under Security › Code scanning. The `CodeQL` check fails a pull request that adds an alert of high
-    or critical severity.
-  - It needs GitHub Code Security on the repository, with CodeQL's default setup off (this workflow is the advanced
-    setup).
+  - A finding of high or critical severity fails the pull request. Each run checks whether GitHub Code Security is on
+    for the repository, and acts on the answer:
+    - **On:** the results go to Security › Code scanning, and its check fails a pull request that adds such an alert.
+    - **Off:** GitHub refuses the results, so they are not uploaded. Instead, each `CodeQL` job checks them itself
+      (`.github/codeql/check-results.ps1`). It lists every finding in the job summary and on the line it is about, and
+      fails for one of high or critical severity.
+  - CodeQL's default setup must stay off, because this workflow is the advanced setup.
   - Test code and generated route files are left out. For TypeScript and the workflows the filter is
     `.github/codeql/codeql-config.yml`; for C#, which CodeQL analyses as it is compiled, the workflow builds only the
     shipped projects, so the tests are left out but the database migrations, part of the server, are analysed.
-  - An alert is fixed in the code. One reviewed as a false positive or an accepted risk is dismissed on GitHub with
-    the reason, never hidden by turning a query off. The first run's alerts and how each was handled are in the table
-    below.
+  - A finding is fixed in the code, never hidden by turning a query off. One of high or critical severity reviewed as
+    a false positive or an accepted risk is marked where it is: a `// codeql[<query id>]` comment on the line just
+    before it, with the reason beside it. While Code Security is off, that comment is what keeps it from failing the
+    check. With Code Security on, also dismiss the alert on GitHub with the same reason. Medium and low findings do
+    not fail the check. The first run's alerts and how each was handled are in the table below.
 
 | CodeQL alert | Where | How it was handled |
 |---|---|---|
-| Clear-text storage of sensitive information (high) | `IdentitySeeder.CreateInitialAdministratorAsync` | Accepted risk: the first administrator's one-time password goes to `initial-admin-password.txt` so the installer can show it. The data directory is open only to administrators and the service, and HC360 now deletes the file as soon as `admin` sets a new password (and at start-up if that already happened). Dismiss as "won't fix" |
-| Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. Dismiss as "false positive" |
-| Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). Dismiss as "false positive" |
+| Clear-text storage of sensitive information (high) | `IdentitySeeder.CreateInitialAdministratorAsync` | False positive: what it flags is the log line giving the path of `initial-admin-password.txt`, which CodeQL takes for a password because the file's name contains the word. Marked with a `codeql[...]` comment there; with Code Security on, also dismiss as "false positive". The file itself does hold the first administrator's one-time password, so the installer can show it. That is an accepted risk: the data directory is open only to administrators and the service, and HC360 deletes the file as soon as `admin` sets a new password (and at start-up if that already happened) |
+| Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. With Code Security on, dismiss as "false positive" |
+| Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). With Code Security on, dismiss as "false positive" |
 
 | Rule | Where | Why it is accepted |
 |---|---|---|

@@ -16,7 +16,7 @@
        HC360 is still running.
     3. Stops the HC360 service, keeps the current database as hc360_before_restore_<timestamp> (nothing is dropped),
        creates a fresh one and runs pg_restore into it.
-    4. Puts back the stored documents and then installs the backup's field encryption key ("backup restore"). A different
+    4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A different
        key already here is kept under a new name, never deleted.
     5. Starts the service again.
 

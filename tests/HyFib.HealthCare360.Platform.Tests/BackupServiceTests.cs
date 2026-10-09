@@ -132,6 +132,7 @@ public sealed class BackupServiceTests : IDisposable
         _directories,
         _protector,
         _protector,
+        new NoDocumentsLock(),
         _postgres,
         Substitute.For<INotificationService>(),
         TimeProvider.System,
@@ -169,6 +170,16 @@ public sealed class BackupServiceTests : IDisposable
             return DumpIsDamaged
                 ? throw new InvalidOperationException("pg_restore cannot read the database dump (exit code 1): input file does not appear to be a valid archive")
                 : HasPgRestore;
+        }
+    }
+
+    private sealed class NoDocumentsLock : IDocumentStoreLock
+    {
+        public Task<IAsyncDisposable> HoldSharedAsync(CancellationToken cancellationToken) => Task.FromResult<IAsyncDisposable>(new Released());
+
+        private sealed class Released : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
     }
 }

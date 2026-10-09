@@ -60,6 +60,9 @@ public sealed class HospitalServer : IAsyncLifetime
 
     public IServiceProvider Services => App.Services;
 
+    /// <summary>The run's password of the seeded staff accounts, for a test that signs in on its own.</summary>
+    public string Password => _password;
+
     private WebApplication App => _app ?? throw new InvalidOperationException("The test server has not started.");
 
     public async ValueTask InitializeAsync()
