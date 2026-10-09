@@ -67,16 +67,42 @@ public sealed class SecurityOptions
     /// <summary>A patient portal session ends after this long with nobody using it: portals run on shared phones.</summary>
     public int PortalSessionIdleMinutes { get; set; } = 20;
 
+    /// <summary>
+    /// Wrong passwords and wrong authenticator codes in a row before an account locks for <see cref="LockoutMinutes"/>;
+    /// each further run of this many doubles the lock, up to 24 hours.
+    /// </summary>
     public int MaxFailedLogins { get; set; } = 5;
     public int LockoutMinutes { get; set; } = 15;
+
+    /// <summary>
+    /// Failures are forgotten after this long without another, so the occasional mistyped password does not add up to
+    /// ever longer locks.
+    /// </summary>
+    public int FailedLoginResetHours { get; set; } = 24;
+
+    /// <summary>How long a temporary password an administrator gives out works; the user replaces it at first sign-in.</summary>
+    public int TemporaryPasswordHours { get; set; } = 72;
+
     public int MinPasswordLength { get; set; } = 12;
     public int PasswordHashIterations { get; set; } = 210_000;
 
-    /// <summary>Enforce TOTP for <see cref="MfaRequiredRoles"/> (disable only on development machines).</summary>
+    /// <summary>
+    /// Enforce TOTP for <see cref="MfaRequiredRoles"/> and, with <see cref="MfaForAdministration"/>, for administrators
+    /// (disable only on development machines).
+    /// </summary>
     public bool EnforceMfa { get; set; } = true;
 
-    /// <summary>Roles that must use TOTP multi-factor authentication.</summary>
-    public string[] MfaRequiredRoles { get; set; } = ["SuperAdmin", "HospitalAdmin"];
+    /// <summary>
+    /// Roles that must use TOTP multi-factor authentication: the administrators, and those who handle accounts, payroll
+    /// and staff bank details.
+    /// </summary>
+    public string[] MfaRequiredRoles { get; set; } = ["SuperAdmin", "HospitalAdmin", "Accountant", "HrManager"];
+
+    /// <summary>
+    /// Also require TOTP from anyone holding an administrative permission (<see cref="Security.PlatformPermissions.IsAdministrative"/>),
+    /// whatever their roles are called, so a custom role with administrative rights needs it too.
+    /// </summary>
+    public bool MfaForAdministration { get; set; } = true;
 
     /// <summary>Roles that may sign in only from enrolled HC360 Desktop devices.</summary>
     public string[] EnrolledDeviceRequiredRoles { get; set; } = [];

@@ -131,6 +131,17 @@ public sealed class HospitalServer : IAsyncLifetime
     public ApiClient Anonymous(bool ownAddress = false) => new(CreateHttpClient(ownAddress));
 
     /// <summary>
+    /// A caller who has not signed in, from <paramref name="address"/>: for a test that signs in more often than one
+    /// address may in a minute, each attempt from an address of its own.
+    /// </summary>
+    public ApiClient AnonymousFrom(string address)
+    {
+        var http = CreateHttpClient();
+        http.DefaultRequestHeaders.Add(ClientAddressHeader, address);
+        return new ApiClient(http);
+    }
+
+    /// <summary>
     /// A caller signed in as one of the staff accounts in <see cref="Users"/>, with that role's real permissions.
     /// Each account signs in once per run: sign-in is rate-limited, and every test-server request has the same address.
     /// </summary>

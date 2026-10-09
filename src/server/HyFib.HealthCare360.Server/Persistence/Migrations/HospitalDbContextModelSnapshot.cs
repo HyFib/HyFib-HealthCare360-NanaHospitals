@@ -34688,6 +34688,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
 
+                    b.Property<DateTimeOffset?>("LastFailedLoginAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_failed_login_at");
+
                     b.Property<DateTimeOffset?>("LastLoginAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_login_at");
@@ -34750,6 +34754,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("PractitionerId")
                         .HasColumnType("uuid")
                         .HasColumnName("practitioner_id");
+
+                    b.Property<DateTimeOffset?>("TemporaryPasswordExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("temporary_password_expires_at");
 
                     b.Property<string>("Type")
                         .IsRequired()

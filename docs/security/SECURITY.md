@@ -65,9 +65,36 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - A staff sign-in with a password found there, set before the check existed, must change it before anything else.
     The sign-in is audited as `auth.password_breached`, and the screen says why.
   - Stored with PBKDF2-SHA512 (210 000 iterations).
-  - Accounts lock after 5 failures for 15 minutes. A locked account gets the same answer as a wrong password, so a
-    response never confirms that an account exists.
-- **Two-step verification (TOTP)**, required for administrator roles.
+- **Wrong passwords and codes** (ASVS V6.1.1, V6.3.1):
+  - Each address may try to sign in, or give an authenticator code, 10 times a minute. A phone number may be sent 3
+    portal codes in 15 minutes, and an address may ask for 5.
+  - An account locks for 15 minutes after 5 wrong passwords or authenticator codes in a row. Each further 5 double the
+    lock, up to 24 hours. A wrong code counts like a wrong password, whichever sign-in attempt it comes in, because
+    whoever is guessing codes knows the password. Attempts sent at once, from many machines, are judged one at a time
+    under a lock on the account, so each guess counts and none gets in once the account is locked.
+  - Failures are forgotten after 24 hours without another, so the occasional mistyped password does not add up to ever
+    longer locks.
+  - A locked account gets the same answer, after the same work, as a wrong password, so a response never confirms that
+    an account exists or is locked. A lock only delays its owner: it ends by itself, and an administrator can unlock
+    the account from Administration › Users.
+  - Settings: `HealthCare360:Security:MaxFailedLogins`, `LockoutMinutes` and `FailedLoginResetHours`.
+- **Two-step verification (TOTP)** (ASVS V6.3.3):
+  - Required of the SuperAdmin, HospitalAdmin, Accountant and HrManager roles, who run the hospital, its accounts and
+    its payroll. Roles listed in `HealthCare360:Security:MfaRequiredRoles` are required as well; the setting adds to
+    these four and cannot remove them.
+  - Required of anyone holding an administrative permission (all-access, or any `admin.` permission), whatever their
+    roles are called (`MfaForAdministration`), so a custom role with administrative rights needs it too.
+  - Until it is set up, such an account can do nothing else after signing in, and it cannot be turned off.
+- **Temporary passwords** from an administrator are 12 random characters (or the administrator's choice when creating
+  an account). They must be replaced at first sign-in, and stop working after 72 hours (`TemporaryPasswordHours`);
+  the administrator then gives out a new one. The first administrator's one-time password is written to a file only
+  administrators can read, and the file is deleted once the password is changed.
+- **Notices** (ASVS V6.4.3): when a password is changed or reset, or two-step verification is turned on, off or reset,
+  the account's holder is told in the app and, when the account has an e-mail address, by e-mail
+  (`auth.credentials_changed`). Someone who did not make the change can tell IT at once.
+- **No fixed first password outside development** (ASVS V6.3.2): `HealthCare360:Bootstrap:AdminPassword` and
+  `RequirePasswordChange`, and the demonstration accounts that share that password, work on development machines only.
+  Elsewhere they are ignored and the server logs a warning.
 - Access tokens:
   - ES256-signed, valid for 10 minutes, held only in memory.
   - Refresh tokens are opaque and rotate on every use, in an HttpOnly, Secure, SameSite=Strict cookie.

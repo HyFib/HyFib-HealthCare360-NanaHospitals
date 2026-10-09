@@ -151,6 +151,8 @@ public sealed class AuthService(
         ErrorType.Unauthorized);
     private static readonly Error SessionEnded = new("auth.session_ended", "Your session has ended. Please sign in again.", ErrorType.Unauthorized);
     private static readonly Error ChallengeExpired = new("auth.challenge_expired", "This sign-in attempt has expired. Please start again.", ErrorType.Unauthorized);
+    private static readonly Error TemporaryPasswordExpired = new(
+        "auth.temporary_password_expired", "This temporary password has expired. Ask an administrator for a new one.", ErrorType.Unauthorized);
 
     private SecurityOptions Security => options.Value.Security;
 
@@ -180,33 +182,49 @@ public sealed class AuthService(
             // The same work and the same answer as a wrong password: neither says whether the account exists. The
             // password is not checked against the lock, so the lock cannot be used to test guesses.
             hashing.Verify(_dummyHash ??= hashing.Hash("hc360-timing-equaliser"), request.Password ?? string.Empty);
-            await audit.WriteAsync(new AuditEntry(AuditCategories.Auth, "auth.login_locked", "Sign-in attempted while locked")
+            await AuditLockedAsync(user, ct);
+            return InvalidCredentials;
+        }
+
+        var check = hashing.Verify(user.PasswordHash, request.Password ?? string.Empty);
+
+        // Attempts sent at once all read the account before any of them was counted. Read it again under its row lock, one
+        // attempt at a time, so that each wrong password counts and none gets in once the others have locked the account
+        // (ASVS V6.3.1). The lock is held only while this is decided.
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+        {
+            await LockAndReloadAsync(user, ct);
+            if (user.LockoutEndsAt > now)
+            {
+                await AuditLockedAsync(user, ct);
+                return InvalidCredentials;
+            }
+
+            if (!check.Succeeded)
+            {
+                var locked = SignInPolicy.RecordFailure(Security, user, now);
+                audit.Add(new AuditEntry(AuditCategories.Auth, "auth.login_failed", "Wrong password")
+                {
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
+                });
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return InvalidCredentials;
+            }
+        }
+
+        // A temporary password works only for a while (ASVS V6.4.1); an administrator gives out a new one.
+        if (user.MustChangePassword && user.TemporaryPasswordExpiresAt <= now)
+        {
+            await audit.WriteAsync(new AuditEntry(AuditCategories.Auth, "auth.temporary_password_expired", "Signed in with an expired temporary password")
             {
                 UserId = user.Id,
                 UserName = user.UserName,
                 Severity = AuditSeverity.Warning,
             }, ct);
-            return InvalidCredentials;
-        }
-
-        var check = hashing.Verify(user.PasswordHash, request.Password ?? string.Empty);
-        if (!check.Succeeded)
-        {
-            user.FailedLoginCount++;
-            if (user.FailedLoginCount % Security.MaxFailedLogins == 0)
-            {
-                var multiplier = Math.Pow(2, (user.FailedLoginCount / Security.MaxFailedLogins) - 1);
-                user.LockoutEndsAt = now + TimeSpan.FromMinutes(Math.Min(Security.LockoutMinutes * multiplier, 24 * 60));
-            }
-
-            audit.Add(new AuditEntry(AuditCategories.Auth, "auth.login_failed", "Wrong password")
-            {
-                UserId = user.Id,
-                UserName = user.UserName,
-                Severity = user.LockoutEndsAt > now ? AuditSeverity.Critical : AuditSeverity.Warning,
-            });
-            await db.SaveChangesAsync(ct);
-            return InvalidCredentials;
+            return TemporaryPasswordExpired;
         }
 
         if (check.NeedsRehash)
@@ -274,22 +292,41 @@ public sealed class AuthService(
 
         challenge.Attempts++;
         var user = await LoadUserAsync(u => u.Id == challenge.UserId, ct);
-        if (user is null || !user.IsActive)
+        if (user is null || !user.IsActive || user.LockoutEndsAt > now)
         {
             await db.SaveChangesAsync(ct);
             return ChallengeExpired;
         }
 
-        if (!VerifyTotp(user, request.Code, out var timeStep))
+        // As for passwords: codes sent at once are judged one at a time, against the account as read under its row lock,
+        // so that each wrong code counts and none gets in once the others have locked the account (ASVS V6.3.1). The code
+        // is checked after the account is read again, so that it is checked against the last code used.
+        long timeStep;
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
-            audit.Add(new AuditEntry(AuditCategories.Auth, "auth.mfa_failed", "Wrong authenticator code")
+            await LockAndReloadAsync(user, ct);
+            if (user.LockoutEndsAt > now)
             {
-                UserId = user.Id,
-                UserName = user.UserName,
-                Severity = AuditSeverity.Warning,
-            });
-            await db.SaveChangesAsync(ct);
-            return Error.Field("code", "The code is incorrect or has expired.");
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return ChallengeExpired;
+            }
+
+            if (!VerifyTotp(user, request.Code, out timeStep))
+            {
+                // Whoever is guessing codes already knows the password, so a wrong code counts against the account like a
+                // wrong password, whichever sign-in attempt it comes in.
+                var locked = SignInPolicy.RecordFailure(Security, user, now);
+                audit.Add(new AuditEntry(AuditCategories.Auth, "auth.mfa_failed", locked ? "Wrong authenticator code; the account is locked" : "Wrong authenticator code")
+                {
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
+                });
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return Error.Field("code", "The code is incorrect or has expired.");
+            }
         }
 
         user.MfaLastTimeStep = timeStep;
@@ -615,12 +652,15 @@ public sealed class AuthService(
         user.PasswordChangedAt = now;
         user.MustChangePassword = false;
         user.PasswordBreachedAt = null;
+        user.TemporaryPasswordExpiresAt = null;
 
         // Sign out every other session of this user.
         var others = await EndSessionsAsync(OtherSessionsOf(user, session), "password_changed", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.password_changed", "Password changed") { UserId = user.Id });
+        CredentialNotices.QueueEmail(notifications, user, CredentialNotices.PasswordChanged, now);
         await db.SaveChangesAsync(ct);
         InvalidateAll(others);
+        await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.PasswordChanged, ct);
 
         // The first administrator now has a password of their own: the one-time password's file is no longer needed.
         if (user.UserName == InitialAdminPassword.UserName)
@@ -790,14 +830,17 @@ public sealed class AuthService(
             return Error.Field("code", "The code is incorrect. Check the time on your phone and try again.");
         }
 
+        var now = time.GetUtcNow();
         user.MfaEnabled = true;
         user.MfaLastTimeStep = timeStep;
 
         // Sessions signed in before need no code: end them (ASVS V7.4.3).
-        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_enabled", time.GetUtcNow(), ct);
+        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_enabled", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.mfa_enabled", "Two-step verification enabled") { UserId = user.Id });
+        CredentialNotices.QueueEmail(notifications, user, CredentialNotices.MfaEnabled, now);
         await db.SaveChangesAsync(ct);
         InvalidateAll(others);
+        await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.MfaEnabled, ct);
 
         var roles = RoleNames(user);
         var restriction = RestrictionFor(user, roles);
@@ -813,9 +856,9 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        if (RequiresMfa(RoleNames(user)))
+        if (RequiresMfa(user, RoleNames(user)))
         {
-            return Error.Forbidden("auth.mfa_required", "Your role requires two-step verification.");
+            return Error.Forbidden("auth.mfa_required", "Your account requires two-step verification.");
         }
 
         if (!hashing.Verify(user.PasswordHash, request.Password ?? string.Empty).Succeeded)
@@ -823,15 +866,18 @@ public sealed class AuthService(
             return Error.Field("password", "Password is incorrect.");
         }
 
+        var now = time.GetUtcNow();
         user.MfaEnabled = false;
         user.MfaSecret = null;
         user.MfaLastTimeStep = null;
 
         // Whoever turned it off may not be the account's owner: end the account's other sessions (ASVS V7.4.3).
-        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_disabled", time.GetUtcNow(), ct);
+        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_disabled", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.mfa_disabled", "Two-step verification disabled") { UserId = user.Id, Severity = AuditSeverity.Warning });
+        CredentialNotices.QueueEmail(notifications, user, CredentialNotices.MfaDisabled, now);
         await db.SaveChangesAsync(ct);
         InvalidateAll(others);
+        await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.MfaDisabled, ct);
         return Result.Success();
     }
 
@@ -990,6 +1036,7 @@ public sealed class AuthService(
         var ended = await EnforceSessionLimitAsync(user, session, now, ct);
 
         user.FailedLoginCount = 0;
+        user.LastFailedLoginAt = null;
         user.LockoutEndsAt = null;
         user.LastLoginAt = now;
         audit.Add(new AuditEntry(AuditCategories.Auth, "auth.login", $"Signed in ({clientType})") { UserId = user.Id, UserName = user.UserName });
@@ -1133,15 +1180,15 @@ public sealed class AuthService(
 
     private string? RestrictionFor(User user, IReadOnlyList<string> roles) =>
         user.MustChangePassword ? RestrictionPasswordChange
-        : RequiresMfa(roles) && !user.MfaEnabled ? RestrictionMfaSetup
+        : RequiresMfa(user, roles) && !user.MfaEnabled ? RestrictionMfaSetup
         : null;
 
     /// <summary>The account's restriction, else the session's lock.</summary>
     private string? RestrictionFor(User user, IReadOnlyList<string> roles, UserSession session) =>
         RestrictionFor(user, roles) ?? (session.LockedAt is null ? null : RestrictionLocked);
 
-    private bool RequiresMfa(IReadOnlyList<string> roles) =>
-        Security.EnforceMfa && roles.Any(r => Security.MfaRequiredRoles.Contains(r, StringComparer.OrdinalIgnoreCase));
+    private bool RequiresMfa(User user, IReadOnlyList<string> roles) =>
+        SignInPolicy.RequiresMfa(Security, roles, user.Roles.SelectMany(r => r.Role?.Permissions ?? []).Select(p => p.Permission));
 
     private bool PasswordMatches(User user, string? password) =>
         user.PasswordHash is not null && !string.IsNullOrEmpty(password) && hashing.Verify(user.PasswordHash, password).Succeeded;
@@ -1278,10 +1325,29 @@ public sealed class AuthService(
 
     private Task<User?> LoadUserAsync(System.Linq.Expressions.Expression<Func<User, bool>> predicate, CancellationToken ct) =>
         db.Set<User>()
-            .Include(u => u.Roles).ThenInclude(r => r.Role)
+            .Include(u => u.Roles).ThenInclude(r => r.Role!).ThenInclude(r => r.Permissions)
             .Include(u => u.Facilities)
             .AsSplitQuery()
             .FirstOrDefaultAsync(predicate, ct);
+
+    /// <summary>
+    /// Locks the account's row until the caller's transaction ends, then reads the account again: it now shows every
+    /// failure counted, and every lock set, by attempts that got there first. The lock is the one an update takes, so
+    /// rows that refer to the account by foreign key, such as its roles, can still be written meanwhile.
+    /// </summary>
+    private async Task LockAndReloadAsync(User user, CancellationToken ct)
+    {
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM identity.users WHERE id = {user.Id} FOR NO KEY UPDATE", ct);
+        await db.Entry(user).ReloadAsync(ct);
+    }
+
+    private Task AuditLockedAsync(User user, CancellationToken ct) =>
+        audit.WriteAsync(new AuditEntry(AuditCategories.Auth, "auth.login_locked", "Sign-in attempted while locked")
+        {
+            UserId = user.Id,
+            UserName = user.UserName,
+            Severity = AuditSeverity.Warning,
+        }, ct);
 
     private static List<string> RoleNames(User user) => user.Roles.Where(r => r.Role is not null).Select(r => r.Role!.Name).ToList();
 

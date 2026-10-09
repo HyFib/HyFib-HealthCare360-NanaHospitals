@@ -129,6 +129,14 @@ public static class PlatformPermissions
 
     private static readonly string[] Admins = [SystemRoles.HospitalAdmin];
 
+    /// <summary>
+    /// The permissions that control accounts, roles, credentials and the server itself: all-access and the Administration
+    /// ("admin.") permissions. Clinical and business permissions are handed out by user administrators every day. Only
+    /// someone who holds them may give them out, and those who hold them must use two-step verification.
+    /// </summary>
+    public static bool IsAdministrative(string permission) =>
+        permission == PermissionRegistry.Wildcard || permission.StartsWith("admin.", StringComparison.Ordinal);
+
     /// <summary>Every staff role (patients excluded).</summary>
     public static readonly string[] AllStaff = SystemRoles.All.Select(r => r.Name)
         .Where(r => r is not SystemRoles.Patient and not SystemRoles.SuperAdmin).ToArray();
