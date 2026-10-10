@@ -120,13 +120,19 @@ public sealed record FieldKeyMoveResult(int Values, int Documents, int Failed, b
 /// <see cref="ProtectedValueBuilderExtensions.IsProtectedValue{T}"/> in every module, secret settings, stored documents,
 /// and the columns marked <see cref="ProtectedValueBuilderExtensions.IsProtectedBytes{T}"/> with a purpose (scheduled
 /// report files). The blind indexes marked <see cref="ProtectedValueBuilderExtensions.IsBlindIndexOf{T}"/> are computed
-/// again with the current key from the value they index. Each value is decrypted and encrypted again, and written only
+/// again with the current key from the value they index, once the rotation is a minute old. Each value is decrypted and encrypted again, and written only
 /// if it has not changed meanwhile, so it never races a user's edit. Rows are updated directly, without audit entries for
 /// each (the rotation itself is audited).
 /// Stored answers to repeated requests, kept a day, are not moved: they expire with their key still in the ring. Once
 /// nothing is left on an earlier key (<see cref="UsageAsync"/>), it can be retired.
 /// </summary>
-internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protector, IFieldKeyRing ring, DataDirectories directories, ILogger<FieldKeyMover> logger)
+internal sealed class FieldKeyMover(
+    HospitalDbContext db,
+    IFieldProtector protector,
+    IFieldKeyRing ring,
+    DataDirectories directories,
+    TimeProvider time,
+    ILogger<FieldKeyMover> logger)
 {
     private const int ValueBatch = 200;
     private const int DocumentBatch = 20;
@@ -134,6 +140,12 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
 
     // The start of a ProtectBytes output that only one encryption has: its version, key id, nonce and tag.
     private const int Head = 1 + 8 + 12 + 16;
+
+    /// <summary>
+    /// How long after a rotation blind indexes are left as they are. A search or duplicate check that took the ring's keys
+    /// just before the rotation looks for a row by its earlier index; it has run long before this has passed.
+    /// </summary>
+    public static readonly TimeSpan IndexesSettleAfter = TimeSpan.FromMinutes(1);
 
     public async Task<FieldKeyBacklog> CountAsync(CancellationToken cancellationToken)
     {
@@ -237,7 +249,7 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
             {
                 ProtectedKind.Value => await MoveColumnAsync(column, cancellationToken),
                 ProtectedKind.File => await MoveFilesAsync(column, cancellationToken),
-                ProtectedKind.Index => await MoveIndexesAsync(column, cancellationToken),
+                ProtectedKind.Index when IndexesSettled() => await MoveIndexesAsync(column, cancellationToken),
                 _ => (0, 0),
             };
             if (column.Kind == ProtectedKind.File)
@@ -530,6 +542,9 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
             return null;
         }
     }
+
+    // Whether the current key has been current long enough for blind indexes to move (IndexesSettleAfter).
+    private bool IndexesSettled() => ring.CurrentSince is not { } since || time.GetUtcNow() - since >= IndexesSettleAfter;
 
     // Which blind indexes are not on the current key: the original key's have no key id, a later key's start with it.
     private NpgsqlParameter[] IndexParameters() =>

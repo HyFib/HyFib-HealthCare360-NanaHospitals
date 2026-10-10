@@ -387,8 +387,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     server has when the backup is made.
   - *Search indexes* (ASVS V11.2.2). The keyed hashes that find a patient by ABHA number, a policy by its number and an
     employee by PAN or bank account come from the current data key too, and name it. The same background job computes
-    each one again with the new key, from the encrypted number beside it; until it has, a search tries every key, so
-    nothing goes missing meanwhile.
+    each one again with the new key, from the encrypted number beside it, once the rotation is a minute old (a search
+    that began just before it still looks for the earlier index). Until then, and while it works, a search tries every
+    key, so nothing goes missing.
   - *Retiring an earlier data key* (ASVS V11.1.1). The screen lists each earlier key with what is still encrypted with
     it. Once nothing is, and the current key has been current for a day (so anything still being encrypted with the
     old key as it changed has been written, and moved), it offers to retire the key. The administrator gives their

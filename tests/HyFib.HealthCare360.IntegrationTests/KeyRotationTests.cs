@@ -85,7 +85,14 @@ public sealed class KeyRotationTests(HospitalServer server)
 
         var rotated = await admin.PostAsync<EncryptionKeysStatus>("/api/v1/admin/system/keys/data/rotate");
 
-        // Found by either number while the indexes move...
+        // For a minute the indexes stay as they are: a search that took the keys just before the rotation still looks for
+        // the earlier index. The patient is found by either number meanwhile...
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<FieldKeyMover>().MoveAsync(Ct);
+        }
+
+        (await SearchIndexesAsync(patient.Id)).Abha.ShouldBe(before.Abha);
         (await admin.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={abha}")).Items.ShouldContain(p => p.Id == patient.Id);
         (await admin.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={aadhaar}")).Items.ShouldContain(p => p.Id == patient.Id);
         await MoveEverythingAsync();
@@ -278,9 +285,15 @@ public sealed class KeyRotationTests(HospitalServer server)
     }
 
     // The background mover may be at work too: a pass can find the documents locked by it, so keep going until nothing is
-    // left.
+    // left. Blind indexes move once the rotation is a minute old, so the rotation is made older first.
     private async Task MoveEverythingAsync()
     {
+        var current = Path.Combine(FieldKeyRing.DirectoryIn(server.Services.GetRequiredService<DataDirectories>()), FieldKeyRing.CurrentFileName);
+        if (File.Exists(current) && File.GetLastWriteTimeUtc(current) > DateTime.UtcNow - FieldKeyMover.IndexesSettleAfter)
+        {
+            File.SetLastWriteTimeUtc(current, DateTime.UtcNow - FieldKeyMover.IndexesSettleAfter - TimeSpan.FromMinutes(1));
+        }
+
         await using var scope = server.Services.CreateAsyncScope();
         var mover = scope.ServiceProvider.GetRequiredService<FieldKeyMover>();
         for (var pass = 0; pass < 40 && !(await mover.CountAsync(Ct)).IsEmpty; pass++)
