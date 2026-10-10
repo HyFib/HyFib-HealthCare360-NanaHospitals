@@ -2,7 +2,7 @@ import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { ServiceItemDto } from './api';
-import type { ServiceCategory, TariffType } from './labels';
+import type { PackageUse, ServiceCategory, TariffType } from './labels';
 
 /** Tariff plans, plan prices and treatment packages: /api/v1/billing/tariffs and /packages (MB-02). */
 
@@ -97,6 +97,7 @@ export interface PackageListItem {
   price: number;
   lengthOfStayDays: number | null;
   tariffPlanId: string | null;
+  usedFor: PackageUse;
   isActive: boolean;
   inclusionCount: number;
 }
@@ -121,6 +122,7 @@ export interface PackageDetail {
   price: number;
   lengthOfStayDays: number | null;
   tariffPlanId: string | null;
+  usedFor: PackageUse;
   description: string | null;
   isActive: boolean;
   inclusions: PackageInclusionDto[];
@@ -142,10 +144,24 @@ export interface SavePackageRequest {
   price: number;
   lengthOfStayDays: number | null;
   tariffPlanId: string | null;
+  usedFor: PackageUse;
   description: string | null;
   isActive: boolean;
   inclusions: PackageInclusionInput[];
   version: number | null;
+}
+
+/** Packages an OP bill may be priced at: active (the list holds only those), for OP visits, for its tariff or any. */
+export function packagesForOpBill(
+  packages: readonly PackageListItem[],
+  bill: { tariffPlanId: string | null; package: { packageId: string } | null },
+): PackageListItem[] {
+  return packages.filter(
+    (p) =>
+      p.usedFor !== 'InPatient' &&
+      (p.tariffPlanId === null || p.tariffPlanId === bill.tariffPlanId) &&
+      p.id !== bill.package?.packageId,
+  );
 }
 
 export const mastersKeys = {

@@ -75,6 +75,7 @@ public sealed class BillDocumentTests
             Status = BillStatus.PartiallyPaid,
             GrossAmount = 123456.50m,
             PackageCoveredAmount = 1000m,
+            Package = new BillPackageSummary(Guid.NewGuid(), "PKG-CATARACT", "Cataract surgery (one eye)", 25000m, 1000m, 1000m, 0m),
             TariffDiscountAmount = 456.50m,
             LineDiscountAmount = 1000m,
             BillDiscountAmount = 500m,
@@ -110,6 +111,7 @@ public sealed class BillDocumentTests
         html.ShouldContain("Payable by patient: Rupees Twenty Thousand Five Hundred Only");
         html.ShouldContain("<div>Payer: Star Health</div>");
         html.ShouldContain("<div>Co-pay: 10%</div>");
+        html.ShouldContain("<div>Package: Cataract surgery (one eye)</div>");
         html.ShouldContain("<div>Status: Partly paid</div>");
     }
 
@@ -139,6 +141,7 @@ public sealed class BillDocumentTests
         html.ShouldContain("<div>Patient: <b>Ravi Kumar</b></div>");
         html.ShouldContain("<div>Payer: Self pay</div>");
         html.ShouldContain("<div>Tariff: General</div>");
+        html.ShouldNotContain("Package:");
 
         var plain = BillDocument.Build(Bill() with { PayerType = PayerType.GovernmentScheme }, Letterhead with { LegalName = null, Logo = null, Pan = null }).ToHtml();
         plain.ShouldContain("<div class=\"h-name\">Nana Hospitals</div>");
@@ -312,7 +315,8 @@ public sealed class BillDocumentTests
         TaxableAmount: 500m, CgstAmount: 0m, SgstAmount: 0m, TaxAmount: 0m, RoundOffAmount: 0m, NetAmount: 500m, PayerAmount: 0m, PatientAmount: 500m,
         CoPayAmount: 0m, NonPayableAmount: 0m, PaidAmount: 500m, RefundedAmount: 0m, CreditAmount: 0m, DueAmount: 0m, RefundableAmount: 0m,
         PayerSettledAmount: 0m, PayerDisallowedAmount: 0m, IsTaxInvoice: false, CreatedAt: Created, FinalizedAt: Created.AddMinutes(5), CancelledAt: null,
-        CancelReason: null, Notes: null, Lines: [Line()], Receipts: [Receipt()], Refunds: [], CreditNotes: [], PendingDiscount: null, Version: 3);
+        CancelReason: null, Notes: null, Lines: [Line()], Receipts: [Receipt()], Refunds: [], CreditNotes: [], PendingDiscount: null, Package: null,
+        Version: 3);
 
     private static BillLineDto Line() => new(
         Id: Guid.NewGuid(), ChargeId: Guid.NewGuid(), ServiceItemId: Guid.NewGuid(), ServiceCode: "CONS-NEW", Description: "Consultation",

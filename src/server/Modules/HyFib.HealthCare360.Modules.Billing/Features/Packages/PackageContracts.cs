@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Modules.Billing.Domain;
+
 namespace HyFib.HealthCare360.Modules.Billing.Features.Packages;
 
 public sealed record PackageListItem(
@@ -7,6 +9,7 @@ public sealed record PackageListItem(
     decimal Price,
     int? LengthOfStayDays,
     Guid? TariffPlanId,
+    PackageUse UsedFor,
     bool IsActive,
     int InclusionCount);
 
@@ -29,6 +32,7 @@ public sealed record PackageDetail(
     decimal Price,
     int? LengthOfStayDays,
     Guid? TariffPlanId,
+    PackageUse UsedFor,
     string? Description,
     bool IsActive,
     IReadOnlyList<PackageInclusionDto> Inclusions,
@@ -44,6 +48,7 @@ public sealed record SavePackageRequest(
     decimal Price,
     int? LengthOfStayDays,
     Guid? TariffPlanId,
+    PackageUse UsedFor,
     string? Description,
     bool IsActive,
     IReadOnlyList<PackageInclusionInput> Inclusions,
@@ -58,6 +63,7 @@ public sealed class SavePackageRequestValidator : AbstractValidator<SavePackageR
         RuleFor(x => x.ServiceItemId).NotEmpty();
         RuleFor(x => x.Price).NonNegativeAmount();
         RuleFor(x => x.LengthOfStayDays).InclusiveBetween(1, 365);
+        RuleFor(x => x.UsedFor).IsInEnum();
         RuleFor(x => x.Description).SafeText(1000);
         RuleFor(x => x.Inclusions).NotNull().Must(i => i.Count <= 100).WithMessage("A package can have at most 100 inclusions.");
         RuleForEach(x => x.Inclusions).ChildRules(inclusion =>

@@ -191,6 +191,15 @@ export const DISCOUNT_APPROVAL_STATUS_LABEL: Record<DiscountApprovalStatus, stri
 export const SHIFT_STATUSES = ['Open', 'Closed'] as const;
 export type ShiftStatus = (typeof SHIFT_STATUSES)[number];
 
+/** Which bills a package can price (MB-02): an admission's final bill, an OP bill, or either. */
+export const PACKAGE_USES = ['InPatient', 'OutPatient', 'Both'] as const;
+export type PackageUse = (typeof PACKAGE_USES)[number];
+export const PACKAGE_USE_LABEL: Record<PackageUse, string> = {
+  InPatient: 'Admissions',
+  OutPatient: 'Out-patient visits',
+  Both: 'Admissions and out-patient visits',
+};
+
 export const PRICE_SOURCES = ['BasePrice', 'TariffPlan', 'Override', 'FreeFollowUp'] as const;
 export type PriceSource = (typeof PRICE_SOURCES)[number];
 export const PRICE_SOURCE_LABEL: Record<PriceSource, string> = {

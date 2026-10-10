@@ -138,7 +138,18 @@ public sealed record BillDetail(
     IReadOnlyList<RefundSummary> Refunds,
     IReadOnlyList<CreditNoteDto> CreditNotes,
     DiscountApprovalDto? PendingDiscount,
+    BillPackageSummary? Package,
     uint Version);
+
+/// <summary>
+/// The package a bill is priced at: an OP bill's own, or the IP account's on a final bill. <see cref="Price"/> is the
+/// package line as billed, <see cref="Actuals"/> the other services at their full amount, of which the package
+/// <see cref="Covered"/> part and the patient (or payer) is billed <see cref="BeyondPackage"/>.
+/// </summary>
+public sealed record BillPackageSummary(Guid PackageId, string Code, string Name, decimal Price, decimal Actuals, decimal Covered, decimal BeyondPackage);
+
+/// <summary>Bills an OP draft at a package, or no longer (<c>null</c>).</summary>
+public sealed record SetBillPackageRequest(Guid? PackageId, uint Version);
 
 /// <summary>Draft an OP bill from a visit's unbilled charges (or a patient's charges without a visit).</summary>
 public sealed record CreateBillRequest(Guid? VisitId, Guid? PatientId, IReadOnlyList<Guid>? ChargeIds);

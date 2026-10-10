@@ -130,7 +130,14 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
             if (bill.Lines.FirstOrDefault(l => l.ChargeId == charge.Id) is { } line)
             {
                 bill.RemoveLine(line.Id);
-                bill.Recalculate();
+                if (charge.SourceModule == PackageSource && bill.Type == BillType.OutPatient)
+                {
+                    // The OP package's own line went, so the bill is no longer billed at the package.
+                    bill.UsePackage(null);
+                }
+
+                // What the package absorbs depends on every line, so it is worked out again.
+                await OpPackageCover.ApplyAsync(db, bill, ct);
             }
         }
 

@@ -306,9 +306,18 @@ public sealed class IpBillingService(
         }
 
         db.SetExpectedVersion(account, request.Version);
-        if (request.PackageId is { } packageId && !await db.Set<Package>().AnyAsync(p => p.Id == packageId && p.IsActive, ct))
+        if (request.PackageId is { } packageId)
         {
-            return Error.Field("packageId", "Choose an active package.");
+            var package = await db.Set<Package>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == packageId && p.IsActive, ct);
+            if (package is null)
+            {
+                return Error.Field("packageId", "Choose an active package.");
+            }
+
+            if (!package.CanBill(BillType.InPatient))
+            {
+                return Error.Field("packageId", $"{package.Name} is a package for out-patient visits.");
+            }
         }
 
         if (account.PackageId == request.PackageId)

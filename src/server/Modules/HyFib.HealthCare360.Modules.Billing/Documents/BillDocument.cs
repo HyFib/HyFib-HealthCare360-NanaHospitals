@@ -267,6 +267,7 @@ internal static class BillDocument
     {
         var tariff = string.IsNullOrWhiteSpace(bill.TariffPlanName) ? Html.Empty : Html.Of($"<div>Tariff: {bill.TariffPlanName}</div>");
         var coPay = bill.CoPayPercent > 0 ? Html.Of($"<div>Co-pay: {Percent(bill.CoPayPercent)}</div>") : Html.Empty;
+        var package = bill.Package is { } p ? Html.Of($"<div>Package: {p.Name}</div>") : Html.Empty;
         return Html.Of($"""
             <div class="box grid">
               <div>Patient: <b>{bill.PatientName ?? DocumentFormat.Missing}</b></div>
@@ -274,6 +275,7 @@ internal static class BillDocument
               <div>Status: {StatusLabel(bill.Status)}</div>
               <div>Payer: {bill.PayerName ?? PayerLabel(bill.PayerType)}</div>
               {tariff}
+              {package}
               {coPay}
             </div>
             """);

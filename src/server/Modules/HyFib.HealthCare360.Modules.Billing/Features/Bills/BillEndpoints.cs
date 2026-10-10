@@ -9,8 +9,8 @@ using HyFib.HealthCare360.Platform.Documents;
 namespace HyFib.HealthCare360.Modules.Billing.Features.Bills;
 
 /// <summary>
-/// /api/v1/billing/bills — OP/IP bills: draft, services, discounts, finalize, cancel, credit notes, and the printed A4
-/// bill and its PDF (OPB, IPB, MB-05/06).
+/// /api/v1/billing/bills — OP/IP bills: draft, services, an OP bill's package, discounts, finalize, cancel, credit notes,
+/// and the printed A4 bill and its PDF (OPB, IPB, MB-02, MB-05/06).
 /// </summary>
 internal static class BillEndpoints
 {
@@ -37,6 +37,7 @@ internal static class BillEndpoints
         group.MapPost("/", Create).RequirePermission(BillingPermissions.OpCreate).WithValidation<CreateBillRequest>();
         group.MapPost("/{id:guid}/lines", AddLine).RequirePermission(BillingPermissions.OpCreate).WithValidation<AddBillLineRequest>();
         group.MapDelete("/{id:guid}/lines/{lineId:guid}", RemoveLine).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
+        group.MapPut("/{id:guid}/package", SetPackage).RequirePermission(BillingPermissions.OpCreate);
         group.MapPost("/{id:guid}/refresh", Refresh).RequirePermission(BillingPermissions.OpCreate);
         group.MapPost("/{id:guid}/discount", ApplyDiscount).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage)
             .WithValidation<ApplyDiscountRequest>();
@@ -172,6 +173,9 @@ internal static class BillEndpoints
 
     private static async Task<IResult> RemoveLine(Guid id, Guid lineId, uint version, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
         await DetailAfterAsync(await bills.RemoveLineAsync(id, lineId, version, ct), db, id, time, ct);
+
+    private static async Task<IResult> SetPackage(Guid id, SetBillPackageRequest request, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
+        await DetailAfterAsync(await bills.SetPackageAsync(id, request, ct), db, id, time, ct);
 
     private static async Task<IResult> Refresh(Guid id, BillVersionRequest request, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct)
     {

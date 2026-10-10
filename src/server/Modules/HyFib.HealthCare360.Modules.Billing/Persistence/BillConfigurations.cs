@@ -50,6 +50,7 @@ internal sealed class BillConfiguration : IEntityTypeConfiguration<Bill>
         b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.BillId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Visit>().WithMany().HasForeignKey(x => x.VisitId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Package>().WithMany().HasForeignKey(x => x.PackageId).OnDelete(DeleteBehavior.Restrict);
 
         b.HasIndex(x => x.BillNumber).IsUnique().HasFilter("bill_number IS NOT NULL");
         b.HasIndex(x => new { x.PatientId, x.Status });

@@ -277,7 +277,7 @@ export function IpPackagePanel({ account }: { account: IpAccountDetail }) {
               >
                 <option value="">{p ? 'Change package…' : 'Choose a package…'}</option>
                 {(packages.data ?? [])
-                  .filter((x) => x.id !== account.packageId)
+                  .filter((x) => x.id !== account.packageId && x.usedFor !== 'OutPatient')
                   .map((x) => (
                     <option key={x.id} value={x.id}>
                       {x.name} · {formatInr(x.price)}

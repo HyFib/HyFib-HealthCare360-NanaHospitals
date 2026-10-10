@@ -39,6 +39,22 @@ public sealed class BillLifecycleTests
     }
 
     [Fact]
+    public void Only_an_op_draft_takes_a_package_of_its_own()
+    {
+        var draft = DraftBill(null, Charge(500m));
+        var packageId = Guid.CreateVersion7();
+
+        draft.UsePackage(packageId).IsSuccess.ShouldBeTrue();
+        draft.PackageId.ShouldBe(packageId);
+        draft.UsePackage(null).IsSuccess.ShouldBeTrue();
+        draft.PackageId.ShouldBeNull();
+
+        var stay = Bill.Draft(FacilityId, BillType.InPatient, true, PatientId, null, Guid.CreateVersion7(), Guid.CreateVersion7(), BillPayerTerms.SelfPay(PayerType.Self, null));
+        stay.UsePackage(packageId).Error!.Code.ShouldBe("billing.use_ip_package");
+        FinalizedBill(Charge(500m)).UsePackage(packageId).Error!.Code.ShouldBe("billing.bill_not_draft");
+    }
+
+    [Fact]
     public void Another_patients_service_cannot_be_added()
     {
         var bill = DraftBill(null);

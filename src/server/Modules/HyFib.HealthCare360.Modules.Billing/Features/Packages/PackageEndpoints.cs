@@ -3,10 +3,14 @@ using HyFib.HealthCare360.Modules.Billing.Services;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Packages;
 
-/// <summary>/api/v1/billing/packages — fixed-price treatment packages with inclusions and caps (MB-02, IPB-04).</summary>
+/// <summary>
+/// /api/v1/billing/packages — fixed-price treatment packages with inclusions and caps (MB-02, IPB-04), for admissions,
+/// out-patient visits or both. Whoever prepares OP bills reads them to choose a bill's package.
+/// </summary>
 internal static class PackageEndpoints
 {
-    private static readonly string[] Readers = [BillingPermissions.TariffsManage, BillingPermissions.IpManage, BillingPermissions.ChargesRead];
+    private static readonly string[] Readers =
+        [BillingPermissions.TariffsManage, BillingPermissions.IpManage, BillingPermissions.ChargesRead, BillingPermissions.OpCreate];
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -26,7 +30,7 @@ internal static class PackageEndpoints
         }
 
         var rows = await packages.OrderBy(p => p.Name)
-            .Select(p => new PackageListItem(p.Id, p.Code, p.Name, p.Price, p.LengthOfStayDays, p.TariffPlanId, p.IsActive, p.Inclusions.Count))
+            .Select(p => new PackageListItem(p.Id, p.Code, p.Name, p.Price, p.LengthOfStayDays, p.TariffPlanId, p.UsedFor, p.IsActive, p.Inclusions.Count))
             .ToListAsync(ct);
         return TypedResults.Ok(rows);
     }
@@ -95,6 +99,7 @@ internal static class PackageEndpoints
         package.Price = request.Price;
         package.LengthOfStayDays = request.LengthOfStayDays;
         package.TariffPlanId = request.TariffPlanId;
+        package.UsedFor = request.UsedFor;
         package.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         package.IsActive = request.IsActive;
         package.Inclusions.Clear();
@@ -120,7 +125,7 @@ internal static class PackageEndpoints
         var items = await db.Set<ServiceItem>().Where(s => ids.Contains(s.Id)).ToDictionaryAsync(s => s.Id, s => new { s.Code, s.Name }, ct);
         return new PackageDetail(
             package.Id, package.Code, package.Name, package.ServiceItemId, items.GetValueOrDefault(package.ServiceItemId)?.Code, package.Price,
-            package.LengthOfStayDays, package.TariffPlanId, package.Description, package.IsActive,
+            package.LengthOfStayDays, package.TariffPlanId, package.UsedFor, package.Description, package.IsActive,
             package.Inclusions.Select(i => new PackageInclusionDto(
                 i.Id, i.ServiceItemId, i.ServiceItemId is { } sid ? items.GetValueOrDefault(sid)?.Code : null,
                 i.ServiceItemId is { } nid ? items.GetValueOrDefault(nid)?.Name : null, i.Category, i.MaxQuantity, i.MaxAmount, i.Notes)).ToList(),

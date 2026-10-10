@@ -121,6 +121,7 @@ function bill(overrides: Partial<BillDetail> = {}): BillDetail {
     refunds: [],
     creditNotes: [],
     pendingDiscount: null,
+    package: null,
     version: 3,
     ...overrides,
   };

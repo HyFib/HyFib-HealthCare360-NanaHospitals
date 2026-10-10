@@ -42,6 +42,7 @@ import { useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
 import { billDocument, billingApi, billingQueries, type BillDetail, type BillLineDto } from './api';
 import { BillLinesTable } from './BillLinesTable';
+import { BillPackagePanel } from './BillPackagePanel';
 import { BillTotalsCard } from './BillTotalsCard';
 import { creditableAmount } from './billTotals';
 import { CollectPaymentDialog } from './CollectPaymentDialog';
@@ -80,6 +81,22 @@ function refundableNow(bill: BillDetail): number {
     .filter((r) => r.status === 'Requested' || r.status === 'Approved')
     .reduce((sum, r) => sum + toPaise(r.amount), 0n);
   return fromPaise(maxBig(toPaise(bill.refundableAmount) - outstanding, 0n));
+}
+
+/** What cancelling a finalised bill does to its services, its OP package line and the money already paid. */
+function cancelDescription(bill: BillDetail): string {
+  const effects = ['The services return to the unbilled list'];
+  if (bill.package && bill.type === 'OutPatient') {
+    effects.push('the package line is cancelled');
+  }
+  if (bill.paidAmount > 0) {
+    effects.push(
+      `${formatInr(bill.paidAmount)} already paid becomes a refund request that another person must approve`,
+    );
+  }
+  const said =
+    effects.length > 1 ? `${effects.slice(0, -1).join(', ')} and ${effects[effects.length - 1]}` : effects[0];
+  return `${said}. This cannot be undone.`;
 }
 
 /**
@@ -264,6 +281,8 @@ export function BillWorkspace({
             </MessageBarBody>
           </MessageBar>
         )}
+
+        <BillPackagePanel bill={bill} onChanged={store} />
 
         <Section
           title="Services"
@@ -494,7 +513,8 @@ export function BillWorkspace({
         onCancel={() => setDialog(null)}
       >
         <Text block>
-          The services go back to the unbilled list; services added on this screen are cancelled. No bill number is
+          The services go back to the unbilled list; services added on this screen
+          {bill.package && bill.type === 'OutPatient' ? ' and the package line' : ''} are cancelled. No bill number is
           used.
         </Text>
         <ActionError error={discard.error} onReload={reload} />
@@ -503,11 +523,7 @@ export function BillWorkspace({
       <ReasonDialog
         open={dialog === 'cancel'}
         title={`Cancel bill ${bill.billNumber ?? ''}?`}
-        description={
-          bill.paidAmount > 0
-            ? `The services return to the unbilled list and ${formatInr(bill.paidAmount)} already paid becomes a refund request that another person must approve. This cannot be undone.`
-            : 'The services return to the unbilled list. This cannot be undone.'
-        }
+        description={cancelDescription(bill)}
         confirmLabel="Cancel bill"
         destructive
         busy={cancel.isPending}

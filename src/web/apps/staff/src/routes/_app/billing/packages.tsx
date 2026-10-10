@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PACKAGE_USE_LABEL } from '@/modules/billing/labels';
 import { mastersQueries, type PackageDetail } from '@/modules/billing/mastersApi';
 import { PackageDrawer } from '@/modules/billing/PackageDrawer';
 import { flagParam } from '@/modules/billing/searchParams';
@@ -15,7 +16,10 @@ export const Route = createFileRoute('/_app/billing/packages')({
   component: PackagesPage,
 });
 
-/** Treatment packages (MB-02, IPB-04): fixed price, expected stay and inclusions with caps. */
+/**
+ * Treatment packages (MB-02, IPB-04, OPB): fixed price, whether they price admissions or OP bills, expected stay and
+ * inclusions with caps.
+ */
 function PackagesPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -53,7 +57,7 @@ function PackagesPage() {
     <Page>
       <PageHeader
         title="Packages"
-        subtitle="Fixed-price treatments such as normal delivery or a planned surgery"
+        subtitle="Fixed-price treatments such as normal delivery, a planned surgery or a day-care procedure"
         icon={<BoxMultipleRegular />}
         actions={
           canManage && (
@@ -97,6 +101,7 @@ function PackagesPage() {
               ),
             },
             { key: 'price', header: 'Price', align: 'end', render: (p) => <Amount value={p.price} strong /> },
+            { key: 'usedFor', header: 'Used for', render: (p) => PACKAGE_USE_LABEL[p.usedFor] },
             {
               key: 'stay',
               header: 'Stay',
@@ -122,7 +127,7 @@ function PackagesPage() {
             },
           ]}
           emptyTitle="No packages yet"
-          emptyDescription="Create a package, then assign it from the IP account of an admitted patient."
+          emptyDescription="Create a package, then assign it from an admitted patient's IP account or from a draft OP bill."
           size="small"
         />
       </Section>

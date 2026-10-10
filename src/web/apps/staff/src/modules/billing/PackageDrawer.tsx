@@ -22,7 +22,14 @@ import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { searchServices } from './api';
-import { SERVICE_CATEGORIES, SERVICE_CATEGORY_LABEL, type ServiceCategory } from './labels';
+import {
+  PACKAGE_USE_LABEL,
+  PACKAGE_USES,
+  SERVICE_CATEGORIES,
+  SERVICE_CATEGORY_LABEL,
+  type PackageUse,
+  type ServiceCategory,
+} from './labels';
 import { mastersApi, mastersKeys, mastersQueries, type PackageDetail, type PackageInclusionInput } from './mastersApi';
 import { amountInputText, parseRupees } from './money';
 import { ActionError, AmountField } from './ui';
@@ -103,7 +110,10 @@ function ServiceSearch({
   );
 }
 
-/** Create or edit a treatment package: price, stay, and what it includes (a service or a whole category, with caps). */
+/**
+ * Create or edit a treatment package: price, whether it prices admissions, OP bills or both, stay, and what it includes
+ * (a service or a whole category, with caps).
+ */
 export function PackageDrawer({
   packageDetail,
   onClose,
@@ -122,6 +132,7 @@ export function PackageDrawer({
     p ? { id: p.serviceItemId, label: p.serviceCode ?? 'Package service' } : null,
   );
   const [price, setPrice] = useState(p ? amountInputText(p.price) : '');
+  const [usedFor, setUsedFor] = useState<PackageUse>(p?.usedFor ?? 'InPatient');
   const [stay, setStay] = useState(p?.lengthOfStayDays ? String(p.lengthOfStayDays) : '');
   const [planId, setPlanId] = useState(p?.tariffPlanId ?? '');
   const [description, setDescription] = useState(p?.description ?? '');
@@ -139,7 +150,8 @@ export function PackageDrawer({
   );
 
   const parsedPrice = parseRupees(price, { allowZero: true });
-  const stayDays = stay.trim() ? Number(stay) : null;
+  // An out-patient package has no stay.
+  const stayDays = usedFor !== 'OutPatient' && stay.trim() ? Number(stay) : null;
   const stayOk = stayDays === null || (Number.isInteger(stayDays) && stayDays >= 1 && stayDays <= 365);
   const inclusionProblem = inclusions
     .map((i) => {
@@ -170,6 +182,7 @@ export function PackageDrawer({
         price: parsedPrice.ok ? parsedPrice.rupees : 0,
         lengthOfStayDays: stayDays,
         tariffPlanId: planId || null,
+        usedFor,
         description: description.trim() || null,
         isActive: active,
         inclusions: inclusions.map<PackageInclusionInput>((i) => {
@@ -238,13 +251,24 @@ export function PackageDrawer({
                 onChange={setPrice}
                 error={price && !parsedPrice.ok ? parsedPrice.error : null}
               />
-              <Field
-                label="Length of stay (days)"
-                validationMessage={stayOk ? undefined : 'Between 1 and 365 days'}
-                validationState={stayOk ? 'none' : 'error'}
-              >
-                <Input value={stay} onChange={(_, d) => setStay(d.value.replace(/\D/g, ''))} inputMode="numeric" />
+              <Field label="Used for" hint="Which bills can be priced at this package">
+                <Select value={usedFor} onChange={(_, d) => setUsedFor(d.value as PackageUse)}>
+                  {PACKAGE_USES.map((use) => (
+                    <option key={use} value={use}>
+                      {PACKAGE_USE_LABEL[use]}
+                    </option>
+                  ))}
+                </Select>
               </Field>
+              {usedFor !== 'OutPatient' && (
+                <Field
+                  label="Length of stay (days)"
+                  validationMessage={stayOk ? undefined : 'Between 1 and 365 days'}
+                  validationState={stayOk ? 'none' : 'error'}
+                >
+                  <Input value={stay} onChange={(_, d) => setStay(d.value.replace(/\D/g, ''))} inputMode="numeric" />
+                </Field>
+              )}
               <Field label="Only for tariff" hint="Leave empty for every payer">
                 <Select value={planId} onChange={(_, d) => setPlanId(d.value)}>
                   <option value="">Any tariff</option>
