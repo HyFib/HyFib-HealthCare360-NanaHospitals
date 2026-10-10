@@ -52,6 +52,12 @@ jobs:
           $password = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
           "HC360_TEST_DATABASE=Host=localhost;Port=5432;Username=$user;Password=$password;Database=postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      # The HC360 service signs in to PostgreSQL with its Windows account (SSPI) and no password. The installer's own
+      # functions set that up here, for the runner's account, so WindowsDatabaseSignInTests can sign in and dump that way.
+      - name: Let the runner's Windows account sign in to PostgreSQL (SSPI)
+        shell: pwsh
+        run: tests/deploy/Enable-TestWindowsSignIn.ps1
+
       # A hung run fails in half an hour instead of the runner's six.
       - name: Test
         run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m
@@ -72,6 +78,14 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerSettings.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
           pwsh -NoProfile -File tests/deploy/Test-InstallerSettings.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
+      - name: Test the installer's set-up of the database sign-in (pg_hba.conf, pg_ident.conf)
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerDatabaseSignIn.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerDatabaseSignIn.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
   web:

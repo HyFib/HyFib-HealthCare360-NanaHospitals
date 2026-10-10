@@ -89,6 +89,26 @@ public static class ProtectedSettings
                || name.EndsWith("ApiKey", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The plain value of the setting <paramref name="key"/> in the file, opened when it is protected, or null when the file
+    /// does not have it. Only that setting is opened.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The value is protected and cannot be opened on this machine.</exception>
+    public static string? ReadSecret(string path, string key, ISettingProtector? protector)
+    {
+        string? found = null;
+        Visit(Read(path), null, (name, value) =>
+        {
+            if (string.Equals(name, key, StringComparison.OrdinalIgnoreCase))
+            {
+                found = value;
+            }
+
+            return null;
+        });
+        return found is not null && IsProtected(found) ? Reveal(key, found, protector) : found;
+    }
+
     /// <summary>The keys of the secrets the file holds in plain text (never their values). Empty when there is no file.</summary>
     public static IReadOnlyList<string> PlainSecrets(string path)
     {
