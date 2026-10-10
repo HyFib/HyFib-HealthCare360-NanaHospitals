@@ -1,15 +1,39 @@
-import { Button, Caption1, makeStyles, Text, tokens } from '@fluentui/react-components';
-import { KeyResetRegular } from '@fluentui/react-icons';
-import { formatDateTime } from '@hc360/core';
+import {
+  Button,
+  Caption1,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  Field,
+  Input,
+  makeStyles,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import { DeleteRegular, KeyResetRegular } from '@fluentui/react-icons';
+import { formatDateTime, isApiError } from '@hc360/core';
 import { ConfirmDialog, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { adminQueries, rotateDataKey, rotateSigningKey, type KeyRotationEvent } from './api';
+import {
+  adminQueries,
+  retireDataKey,
+  rotateDataKey,
+  rotateSigningKey,
+  type EarlierDataKey,
+  type KeyRotationEvent,
+} from './api';
 
 const useStyles = makeStyles({
   root: { display: 'flex', flexDirection: 'column', gap: '16px' },
   key: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' },
+  earlier: { display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' },
+  earlierKey: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '12px', rowGap: '4px' },
+  body: { display: 'flex', flexDirection: 'column', gap: '12px' },
   mono: { fontFamily: tokens.fontFamilyMonospace },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -17,13 +41,13 @@ const useStyles = makeStyles({
 type Rotating = 'data' | 'signing' | null;
 
 /** What is still on an earlier key, in words: "1,240 value(s) and 56 document(s)". */
-function leftText(values: number, documents: number): string {
-  return [
+function leftText(values: number, documents: number, expiring = 0): string {
+  const parts = [
     values > 0 ? `${values.toLocaleString('en-IN')} value(s)` : null,
     documents > 0 ? `${documents.toLocaleString('en-IN')} document(s)` : null,
-  ]
-    .filter(Boolean)
-    .join(' and ');
+    expiring > 0 ? `${expiring.toLocaleString('en-IN')} stored answer(s) to repeated requests` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : (parts[0] ?? '');
 }
 
 function rotationText(last: KeyRotationEvent | null, since: string | null): string {
@@ -33,11 +57,135 @@ function rotationText(last: KeyRotationEvent | null, since: string | null): stri
   return since ? `In use since ${formatDateTime(since)}` : 'Not rotated since installation';
 }
 
+/** Where an earlier key stands: what it still encrypts, or when it can be retired. */
+function earlierText(key: EarlierDataKey): string {
+  const left = leftText(key.values, key.documents, key.expiring);
+  if (left) {
+    return key.expiring > 0 && key.values + key.documents === 0
+      ? `Still encrypts ${left}, which expire within a day.`
+      : `Still encrypts ${left}, moving to the current key.`;
+  }
+  return key.retireFrom
+    ? `Nothing is encrypted with it any more. It can be retired from ${formatDateTime(key.retireFrom)}.`
+    : 'Nothing is encrypted with it any more.';
+}
+
+/** The server's message for one field of a failed request, if it sent one. */
+function fieldError(error: unknown, field: string): string | undefined {
+  return isApiError(error) ? error.fieldErrors[field]?.[0] : undefined;
+}
+
+/**
+ * Asks for the password again, then retires an earlier data key: the server deletes it, once nothing is encrypted with
+ * it any more (ASVS V11.1.1).
+ */
+function RetireKeyDialog({ keyId, onClose }: { keyId: string | null; onClose: () => void }) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const [password, setPassword] = useState('');
+  const [missing, setMissing] = useState(false);
+
+  // Start empty each time it opens.
+  const [shownFor, setShownFor] = useState(keyId);
+  if (shownFor !== keyId) {
+    setShownFor(keyId);
+    setPassword('');
+    setMissing(false);
+  }
+
+  const retire = useMutation({
+    mutationFn: ({ id, value }: { id: string; value: string }) => retireDataKey(id, value),
+    onSuccess: (result, { id }) => {
+      queryClient.setQueryData(adminQueries.encryptionKeys().queryKey, result);
+      notify.success(
+        'Data key retired',
+        `Key ${id} was deleted from the server. Backups made before keep their own copy of it, so they still restore.`,
+      );
+      close();
+    },
+    onError: (error) => {
+      if (fieldError(error, 'password')) {
+        return;
+      }
+      // Something is encrypted with it again, or the key changed a moment ago: nothing was deleted.
+      notify.error(error, 'The key was not retired');
+      void queryClient.invalidateQueries({ queryKey: adminQueries.encryptionKeys().queryKey });
+      close();
+    },
+  });
+
+  function close() {
+    retire.reset();
+    onClose();
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!password) {
+      setMissing(true);
+    } else if (keyId && !retire.isPending) {
+      retire.mutate({ id: keyId, value: password });
+    }
+  }
+
+  const message = missing ? 'Enter your password.' : fieldError(retire.error, 'password');
+  return (
+    <Dialog
+      open={keyId !== null}
+      modalType="alert"
+      onOpenChange={(_, data) => !data.open && !retire.isPending && close()}
+    >
+      <DialogSurface>
+        <form onSubmit={submit} noValidate>
+          <DialogBody>
+            <DialogTitle>Retire key {keyId}?</DialogTitle>
+            <DialogContent className={styles.body}>
+              <Text>
+                HC360 deletes this key from the server. Nothing is encrypted with it any more, so nothing stops being
+                readable, and it is never used again.
+              </Text>
+              <Text className={styles.muted}>
+                Backups made before keep their own copy of the key, so they still restore, and restoring one puts it
+                back.
+              </Text>
+              <Field
+                label="Your password"
+                required
+                validationMessage={message}
+                validationState={message ? 'error' : 'none'}
+              >
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(_, data) => {
+                    setPassword(data.value);
+                    setMissing(false);
+                  }}
+                  autoComplete="current-password"
+                />
+              </Field>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="primary" type="submit" disabled={retire.isPending}>
+                Retire key
+              </Button>
+              <Button onClick={close} disabled={retire.isPending}>
+                Cancel
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
 /**
  * The encryption keys of System health (SRS SEC-07): the data encryption key (identifiers, secrets, documents) and the
  * key that signs sign-in tokens, with when each was last rotated and, for holders of `admin.system.manage`, a button to
  * rotate it. After a data key rotation, what was encrypted before moves to the new key in the background, and the count
- * left goes down here.
+ * left goes down here; an earlier key that nothing is encrypted with any more can then be retired.
  */
 export function EncryptionKeys() {
   const styles = useStyles();
@@ -46,6 +194,8 @@ export function EncryptionKeys() {
   const canManage = usePermission('admin.system.manage');
   const status = useQuery(adminQueries.encryptionKeys());
   const [rotating, setRotating] = useState<Rotating>(null);
+  const [retiring, setRetiring] = useState<string | null>(null);
+  const earlierId = useId();
 
   const rotate = useMutation({
     mutationFn: (which: Exclude<Rotating, null>) => (which === 'data' ? rotateDataKey() : rotateSigningKey()),
@@ -81,7 +231,7 @@ export function EncryptionKeys() {
         <Caption1 className={styles.muted}>
           Encrypts ABHA and policy numbers, staff bank details, two-step verification secrets, integration secrets and
           stored documents.{' '}
-          {dataKey.keys > 1 ? `${dataKey.keys} keys kept, so older data and backups stay readable.` : ''}
+          {dataKey.keys > 1 ? `${dataKey.keys} keys kept, so data encrypted before stays readable.` : ''}
         </Caption1>
         {left > 0 && (
           <Text>Moving to the new key: {leftText(dataKey.valuesToMove, dataKey.documentsToMove)} left.</Text>
@@ -90,6 +240,34 @@ export function EncryptionKeys() {
           <Button icon={<KeyResetRegular />} onClick={() => setRotating('data')} disabled={rotate.isPending}>
             Rotate data key
           </Button>
+        )}
+        {dataKey.earlier.length > 0 && (
+          <div className={styles.earlier}>
+            <Text weight="semibold" id={earlierId}>
+              Earlier keys
+            </Text>
+            <div className={styles.earlier} role="list" aria-labelledby={earlierId}>
+              {dataKey.earlier.map((key) => (
+                <div key={key.keyId} className={styles.earlierKey} role="listitem">
+                  <span className={styles.mono}>{key.keyId}</span>
+                  <Text>{earlierText(key)}</Text>
+                  {canManage && key.canRetire && (
+                    <Button
+                      size="small"
+                      icon={<DeleteRegular />}
+                      onClick={() => setRetiring(key.keyId)}
+                      aria-label={`Retire key ${key.keyId}`}
+                    >
+                      Retire
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <Caption1 className={styles.muted}>
+              The original key is always kept: searching by ABHA or Aadhaar number depends on it.
+            </Caption1>
+          </div>
         )}
       </div>
       <div className={styles.key}>
@@ -117,8 +295,8 @@ export function EncryptionKeys() {
           background, a little at a time; screens keep working meanwhile.
         </Text>
         <Text block className={styles.muted}>
-          Earlier keys are kept, so older backups and anything not yet moved stay readable. The backup recovery key does
-          not change. Rotate every two years, or at once if the server or a backup may have been exposed.
+          Earlier keys are kept until nothing is encrypted with them, and can then be retired. The backup recovery key
+          does not change. Rotate every two years, or at once if the server or a backup may have been exposed.
         </Text>
       </ConfirmDialog>
       <ConfirmDialog
@@ -137,6 +315,7 @@ export function EncryptionKeys() {
           Rotate every year, or at once if the server may have been exposed.
         </Text>
       </ConfirmDialog>
+      <RetireKeyDialog keyId={retiring} onClose={() => setRetiring(null)} />
     </div>
   );
 }

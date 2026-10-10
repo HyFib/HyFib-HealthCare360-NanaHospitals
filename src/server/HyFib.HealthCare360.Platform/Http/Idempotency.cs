@@ -53,6 +53,9 @@ internal sealed class IdempotencyRecordConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.Path).HasMaxLength(512);
         b.Property(x => x.ContentType).HasMaxLength(128);
         b.Property(x => x.Location).HasMaxLength(512);
+
+        // Encrypted for the user it answered, so not moved after a key rotation: it expires within a day.
+        b.Property(x => x.ResponseBody).IsProtectedBytes();
         b.HasIndex(x => new { x.Scope, x.Key }).IsUnique();
         b.HasIndex(x => x.ExpiresAt);
     }

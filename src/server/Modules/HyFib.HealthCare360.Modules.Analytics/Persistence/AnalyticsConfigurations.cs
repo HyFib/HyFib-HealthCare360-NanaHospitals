@@ -1,4 +1,6 @@
 using HyFib.HealthCare360.Modules.Analytics.Domain;
+using HyFib.HealthCare360.Modules.Analytics.Services;
+using HyFib.HealthCare360.Platform.Security;
 
 namespace HyFib.HealthCare360.Modules.Analytics.Persistence;
 
@@ -56,6 +58,9 @@ internal sealed class ReportDeliveryConfiguration : IEntityTypeConfiguration<Rep
         b.Property(x => x.FileName).HasMaxLength(200);
         b.Property(x => x.ContentType).HasMaxLength(100);
         b.Property(x => x.Error).HasMaxLength(1000);
+
+        // Moves to the current key after a rotation (SRS SEC-07), since it may be kept for years.
+        b.Property(x => x.Content).IsProtectedBytes(ReportDeliveryService.FilePurpose);
         b.HasMany(x => x.Recipients).WithOne().HasForeignKey(x => x.DeliveryId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => new { x.ScheduleId, x.CreatedAt });
 

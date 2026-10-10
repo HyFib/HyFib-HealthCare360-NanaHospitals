@@ -16,12 +16,22 @@ namespace HyFib.HealthCare360.Platform.Security;
 public static class ProtectedValueBuilderExtensions
 {
     public const string Annotation = "HC360:ProtectedValue";
+    public const string BytesAnnotation = "HC360:ProtectedBytes";
 
     /// <summary>
     /// Marks a column that holds <see cref="IFieldProtector.Protect"/> strings, so that after a key rotation
     /// <see cref="FieldKeyMover"/> moves its values to the current key (SRS SEC-07).
     /// </summary>
     public static PropertyBuilder<T> IsProtectedValue<T>(this PropertyBuilder<T> property) => property.HasAnnotation(Annotation, true);
+
+    /// <summary>
+    /// Marks a column that holds <see cref="IFieldProtector.ProtectBytes"/> output, encrypted for
+    /// <paramref name="purpose"/>, so that after a key rotation <see cref="FieldKeyMover"/> moves its values to the current
+    /// key (SRS SEC-07). Without a purpose (when it differs from row to row) the values are not moved: they must expire on
+    /// their own. Either way an earlier key is retired only once none of them is encrypted with it.
+    /// </summary>
+    public static PropertyBuilder<T> IsProtectedBytes<T>(this PropertyBuilder<T> property, string? purpose = null) =>
+        property.HasAnnotation(BytesAnnotation, purpose ?? string.Empty);
 }
 
 /// <summary>
@@ -72,10 +82,24 @@ internal sealed class PostgresDocumentStoreLock(IDbContextFactory<HospitalDbCont
     }
 }
 
-/// <summary>What is still encrypted with an earlier key: values in the database, and stored documents.</summary>
+/// <summary>
+/// What is still encrypted with an earlier key: values in the database, and stored documents and scheduled report files.
+/// </summary>
 public sealed record FieldKeyBacklog(long Values, long Documents)
 {
     public bool IsEmpty => Values == 0 && Documents == 0;
+}
+
+/// <summary>
+/// What is still encrypted with one key: values in the database (protected columns and secret settings), stored
+/// documents and scheduled report files, and stored answers to repeated requests, which are not moved but expire within a
+/// day.
+/// </summary>
+public sealed record FieldKeyUse(long Values, long Documents, long Expiring)
+{
+    public static readonly FieldKeyUse None = new(0, 0, 0);
+
+    public bool IsEmpty => Values == 0 && Documents == 0 && Expiring == 0;
 }
 
 /// <summary>What one pass moved, what could not be moved (and stays readable with its own key), and whether documents had to wait for a backup.</summary>
@@ -83,17 +107,21 @@ public sealed record FieldKeyMoveResult(int Values, int Documents, int Failed, b
 
 /// <summary>
 /// After a rotation (SRS SEC-07), moves what was encrypted with an earlier key to the current one: the columns marked
-/// <see cref="ProtectedValueBuilderExtensions.IsProtectedValue{T}"/> in every module, secret settings, and stored
-/// documents. Each value is decrypted and encrypted again, and written only if it has not changed meanwhile, so it never
-/// races a user's edit. Rows are updated directly, without audit entries for each (the rotation itself is audited).
-/// Short-lived encrypted data (stored responses for repeated requests, kept 24 hours, and scheduled report files, kept
-/// 30 days by default) is not moved: it stays readable with its key until it expires.
+/// <see cref="ProtectedValueBuilderExtensions.IsProtectedValue{T}"/> in every module, secret settings, stored documents,
+/// and the columns marked <see cref="ProtectedValueBuilderExtensions.IsProtectedBytes{T}"/> with a purpose (scheduled
+/// report files). Each value is decrypted and encrypted again, and written only if it has not changed meanwhile, so it
+/// never races a user's edit. Rows are updated directly, without audit entries for each (the rotation itself is audited).
+/// Stored answers to repeated requests, kept a day, are not moved: they expire with their key still in the ring. Once
+/// nothing is left on an earlier key (<see cref="UsageAsync"/>), it can be retired.
 /// </summary>
 internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protector, IFieldKeyRing ring, DataDirectories directories, ILogger<FieldKeyMover> logger)
 {
     private const int ValueBatch = 200;
     private const int DocumentBatch = 20;
     private const string FilesPurpose = "files";
+
+    // The start of a ProtectBytes output that only one encryption has: its version, key id, nonce and tag.
+    private const int Head = 1 + 8 + 12 + 16;
 
     public async Task<FieldKeyBacklog> CountAsync(CancellationToken cancellationToken)
     {
@@ -104,31 +132,113 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
         }
 
         var prefix = ring.CurrentPrefix + "%";
+        var header = CurrentHeader();
         long values = 0;
+        long files = 0;
         foreach (var column in ProtectedColumns())
         {
-            values += await db.Database.SqlQueryRaw<long>(column.CountSql, new NpgsqlParameter("prefix", prefix)).SingleAsync(cancellationToken);
+            switch (column.Kind)
+            {
+                case ProtectedKind.Value:
+                    values += await db.Database.SqlQueryRaw<long>(column.CountSql, new NpgsqlParameter("prefix", prefix)).SingleAsync(cancellationToken);
+                    break;
+                case ProtectedKind.File:
+                    files += await db.Database.SqlQueryRaw<long>(column.CountSql, new NpgsqlParameter("header", header), new NpgsqlParameter("length", header.Length))
+                        .SingleAsync(cancellationToken);
+                    break;
+            }
         }
 
         values += (await SecretSettingsAsync(cancellationToken)).Count(s => !s.Protected.StartsWith(ring.CurrentPrefix, StringComparison.Ordinal));
-        return new FieldKeyBacklog(values, await DocumentsToMove().LongCountAsync(cancellationToken));
+        return new FieldKeyBacklog(values, files + await DocumentsToMove().LongCountAsync(cancellationToken));
+    }
+
+    /// <summary>
+    /// What each key a rotation added still encrypts, by key id. A key that encrypts nothing is not listed; nor is the
+    /// original key, which is never retired.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, FieldKeyUse>> UsageAsync(CancellationToken cancellationToken)
+    {
+        var values = new Dictionary<string, long>(StringComparer.Ordinal);
+        var documents = new Dictionary<string, long>(StringComparer.Ordinal);
+        var expiring = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var column in ProtectedColumns())
+        {
+            var counts = column.Kind switch
+            {
+                ProtectedKind.Value => values,
+                ProtectedKind.File => documents,
+                _ => expiring,
+            };
+            foreach (var row in await db.Database.SqlQueryRaw<KeyCount>(column.UsageSql).ToListAsync(cancellationToken))
+            {
+                Add(counts, row.Key, row.Count);
+            }
+        }
+
+        foreach (var setting in await SecretSettingsAsync(cancellationToken))
+        {
+            if (KeyOf(setting.Protected) is { } key)
+            {
+                Add(values, key, 1);
+            }
+        }
+
+        var original = ring.OriginalKeyId;
+        var stored = await db.Set<StoredFile>().IgnoreQueryFilters()
+            .Where(f => f.EncryptionKeyId != null && f.EncryptionKeyId != original)
+            .GroupBy(f => f.EncryptionKeyId!)
+            .Select(g => new { Key = g.Key, Count = g.LongCount() })
+            .ToListAsync(cancellationToken);
+        foreach (var row in stored)
+        {
+            Add(documents, row.Key, row.Count);
+        }
+
+        return values.Keys.Union(documents.Keys).Union(expiring.Keys)
+            .Where(key => key != original)
+            .ToDictionary(key => key, key => new FieldKeyUse(values.GetValueOrDefault(key), documents.GetValueOrDefault(key), expiring.GetValueOrDefault(key)),
+                StringComparer.Ordinal);
+
+        static void Add(Dictionary<string, long> counts, string? key, long count)
+        {
+            if (!string.IsNullOrEmpty(key))
+            {
+                var id = key.ToUpperInvariant();
+                counts[id] = counts.GetValueOrDefault(id) + count;
+            }
+        }
     }
 
     /// <summary>One pass over everything still on an earlier key. A value that cannot be moved is logged and skipped.</summary>
     public async Task<FieldKeyMoveResult> MoveAsync(CancellationToken cancellationToken)
     {
         var values = 0;
+        var files = 0;
         var failed = 0;
         foreach (var column in ProtectedColumns())
         {
-            var (moved, failures) = await MoveColumnAsync(column, cancellationToken);
-            values += moved;
+            var (moved, failures) = column.Kind switch
+            {
+                ProtectedKind.Value => await MoveColumnAsync(column, cancellationToken),
+                ProtectedKind.File => await MoveFilesAsync(column, cancellationToken),
+                _ => (0, 0),
+            };
+            if (column.Kind == ProtectedKind.File)
+            {
+                files += moved;
+            }
+            else
+            {
+                values += moved;
+            }
+
             failed += failures;
         }
 
         var (settings, settingFailures) = await MoveSecretSettingsAsync(cancellationToken);
         var (documents, documentFailures, waited) = await MoveDocumentsAsync(cancellationToken);
-        return new FieldKeyMoveResult(values + settings, documents, failed + settingFailures + documentFailures, waited);
+        return new FieldKeyMoveResult(values + settings, documents + files, failed + settingFailures + documentFailures, waited);
     }
 
     private async Task<(int Moved, int Failed)> MoveColumnAsync(ProtectedColumn column, CancellationToken cancellationToken)
@@ -160,6 +270,53 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
             }
 
             after = rows[^1].Id;
+        }
+    }
+
+    /// <summary>
+    /// Moves a column of encrypted files (scheduled report files): one file in memory at a time, since a report can be
+    /// large, and written only if it is still the one read (the same start, which no other encryption has).
+    /// </summary>
+    private async Task<(int Moved, int Failed)> MoveFilesAsync(ProtectedColumn column, CancellationToken cancellationToken)
+    {
+        var moved = 0;
+        var failed = 0;
+        var header = CurrentHeader();
+        var after = Guid.Empty;
+        while (true)
+        {
+            var ids = await db.Database.SqlQueryRaw<Guid>(column.SelectSql,
+                    new NpgsqlParameter("header", header), new NpgsqlParameter("length", header.Length), new NpgsqlParameter("after", after),
+                    new NpgsqlParameter("take", DocumentBatch))
+                .ToListAsync(cancellationToken);
+            if (ids.Count == 0)
+            {
+                return (moved, failed);
+            }
+
+            foreach (var id in ids)
+            {
+                // Null when it was purged meanwhile: then there is nothing to move.
+                var stored = await db.Database.SqlQueryRaw<byte[]>(column.ReadSql, new NpgsqlParameter("id", id)).SingleOrDefaultAsync(cancellationToken);
+                if (stored is null)
+                {
+                    continue;
+                }
+
+                if (ReprotectBytes(stored, column) is { } value)
+                {
+                    var head = stored[..Math.Min(stored.Length, Head)];
+                    moved += await db.Database.ExecuteSqlRawAsync(column.UpdateSql,
+                        [new NpgsqlParameter("id", id), new NpgsqlParameter("value", value), new NpgsqlParameter("head", head), new NpgsqlParameter("length", head.Length)],
+                        cancellationToken);
+                }
+                else
+                {
+                    failed++;
+                }
+            }
+
+            after = ids[^1];
         }
     }
 
@@ -290,6 +447,28 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
         }
     }
 
+    private byte[]? ReprotectBytes(byte[] stored, ProtectedColumn column)
+    {
+        try
+        {
+            return protector.ProtectBytes(protector.UnprotectBytes(stored, column.Purpose), column.Purpose);
+        }
+        catch (CryptographicException ex)
+        {
+            logger.LogError(ex, "A value in {Column} could not be moved to the current key; it stays readable with its own key", column.Name);
+            return null;
+        }
+    }
+
+    // The start of everything ProtectBytes writes with the current key: version 1 for the original key, else version 2
+    // and the key's id.
+    private byte[] CurrentHeader() =>
+        ring.CurrentKeyId == ring.OriginalKeyId ? [1] : [2, .. Convert.FromHexString(ring.CurrentKeyId)];
+
+    // The key a v2 string names (v2.<key id>.<payload>); null for a v1 string, which the original key encrypted.
+    private static string? KeyOf(string value) =>
+        value.Length > 20 && value.StartsWith("v2.", StringComparison.Ordinal) && value[19] == '.' ? value[3..19] : null;
+
     private async Task<List<SecretSetting>> SecretSettingsAsync(CancellationToken cancellationToken) =>
         (await db.Set<SystemSetting>().IgnoreQueryFilters().AsNoTracking().Where(s => s.IsSecret).Select(s => new { s.Id, s.Value }).ToListAsync(cancellationToken))
             .Select(s => new SecretSetting(s.Id, s.Value, JsonSerializer.Deserialize<string>(s.Value) ?? string.Empty))
@@ -300,7 +479,7 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
     private List<ProtectedColumn> ProtectedColumns() =>
         db.Model.GetEntityTypes()
             .Where(e => e.GetTableName() is not null && e.FindPrimaryKey() is { Properties: [{ ClrType: var key }] } && key == typeof(Guid))
-            .SelectMany(e => e.GetProperties().Where(p => p.FindAnnotation(ProtectedValueBuilderExtensions.Annotation)?.Value is true).Select(p => new ProtectedColumn(e, p)))
+            .SelectMany(e => e.GetProperties().Select(p => ProtectedColumn.For(e, p)).OfType<ProtectedColumn>())
             .ToList();
 
     private sealed record SecretSetting(Guid Id, string Json, string Protected);
@@ -312,29 +491,84 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
         public string Value { get; set; } = string.Empty;
     }
 
+    private sealed class KeyCount
+    {
+        public string? Key { get; set; }
+
+        public long Count { get; set; }
+    }
+
+    private enum ProtectedKind
+    {
+        /// <summary><see cref="IFieldProtector.Protect"/> strings, moved.</summary>
+        Value,
+
+        /// <summary><see cref="IFieldProtector.ProtectBytes"/> output with one purpose for the column, moved.</summary>
+        File,
+
+        /// <summary><see cref="IFieldProtector.ProtectBytes"/> output whose purpose differs from row to row: it expires, and is not moved.</summary>
+        Expiring,
+    }
+
     [SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "Table and column names come from the EF model; values are parameters.")]
     private sealed class ProtectedColumn
     {
-        public ProtectedColumn(IEntityType entity, IProperty property)
+        private ProtectedColumn(IEntityType entity, IProperty property, ProtectedKind kind, string purpose)
         {
             var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
             var name = TableName(entity);
             var id = Quote(entity.FindPrimaryKey()!.Properties[0].GetColumnName(table)!);
             var column = Quote(property.GetColumnName(table)!);
             Name = $"{entity.GetSchema()}.{entity.GetTableName()}.{property.GetColumnName(table)}";
-            var pending = $"{column} IS NOT NULL AND {column} NOT LIKE @prefix";
-            CountSql = $"SELECT count(*) AS \"Value\" FROM {name} WHERE {pending}";
-            SelectSql = $"SELECT {id} AS \"Id\", {column} AS \"Value\" FROM {name} WHERE {pending} AND {id} > @after ORDER BY {id} LIMIT @take";
-            UpdateSql = $"UPDATE {name} SET {column} = @value WHERE {id} = @id AND {column} = @old";
+            Kind = kind;
+            Purpose = purpose;
+            if (kind == ProtectedKind.Value)
+            {
+                var pending = $"{column} IS NOT NULL AND {column} NOT LIKE @prefix";
+                CountSql = $"SELECT count(*) AS \"Value\" FROM {name} WHERE {pending}";
+                SelectSql = $"SELECT {id} AS \"Id\", {column} AS \"Value\" FROM {name} WHERE {pending} AND {id} > @after ORDER BY {id} LIMIT @take";
+                UpdateSql = $"UPDATE {name} SET {column} = @value WHERE {id} = @id AND {column} = @old";
+
+                // v2.<key id>.<payload>: the key id is the 16 characters after "v2.".
+                UsageSql = $"SELECT substring({column} from 4 for 16) AS \"Key\", count(*) AS \"Count\" FROM {name} WHERE {column} LIKE 'v2.%' GROUP BY 1";
+            }
+            else
+            {
+                // Version 2 output starts with the byte 2 and the key id's 8 bytes; version 1 (the original key) with the byte 1.
+                var pending = $"{column} IS NOT NULL AND substring({column} from 1 for @length) <> @header";
+                CountSql = $"SELECT count(*) AS \"Value\" FROM {name} WHERE {pending}";
+                SelectSql = $"SELECT {id} AS \"Value\" FROM {name} WHERE {pending} AND {id} > @after ORDER BY {id} LIMIT @take";
+                ReadSql = $"SELECT {column} AS \"Value\" FROM {name} WHERE {id} = @id";
+                UpdateSql = $"UPDATE {name} SET {column} = @value WHERE {id} = @id AND substring({column} from 1 for @length) = @head";
+                UsageSql = $"SELECT upper(encode(substring({column} from 2 for 8), 'hex')) AS \"Key\", count(*) AS \"Count\" FROM {name} " +
+                           $"WHERE substring({column} from 1 for 1) = decode('02', 'hex') GROUP BY 1";
+            }
         }
 
         public string Name { get; }
+
+        public ProtectedKind Kind { get; }
+
+        /// <summary>What the bytes were encrypted for (<see cref="IFieldProtector.ProtectBytes"/>); empty for strings and expiring bytes.</summary>
+        public string Purpose { get; }
 
         public string CountSql { get; }
 
         public string SelectSql { get; }
 
+        public string ReadSql { get; } = string.Empty;
+
         public string UpdateSql { get; }
+
+        /// <summary>How many values each key id encrypts, as rows of <see cref="KeyCount"/>.</summary>
+        public string UsageSql { get; }
+
+        /// <summary>The column, when it is marked as holding encrypted values; otherwise null.</summary>
+        public static ProtectedColumn? For(IEntityType entity, IProperty property) =>
+            property.FindAnnotation(ProtectedValueBuilderExtensions.Annotation)?.Value is true ? new ProtectedColumn(entity, property, ProtectedKind.Value, string.Empty)
+            : property.FindAnnotation(ProtectedValueBuilderExtensions.BytesAnnotation)?.Value is string purpose
+                ? new ProtectedColumn(entity, property, purpose.Length > 0 ? ProtectedKind.File : ProtectedKind.Expiring, purpose)
+                : null;
 
         /// <summary>For a jsonb column holding a JSON string: replaces the string if the column still holds the old one.</summary>
         public static string UpdateJsonStringSql(IEntityType entity, IProperty property)

@@ -146,17 +146,37 @@ export interface KeyRotationEvent {
   by: string | null;
 }
 
+/**
+ * A data key a rotation added that is no longer current, and what it still encrypts. It can be retired once it encrypts
+ * nothing and the current key has been current for a day.
+ */
+export interface EarlierDataKey {
+  keyId: string;
+  since: string | null;
+  /** Identifiers and secret settings still encrypted with it, moved in the background. */
+  values: number;
+  /** Documents and scheduled report files, moved in the background. */
+  documents: number;
+  /** Stored answers to repeated requests: not moved, they expire within a day. */
+  expiring: number;
+  /** When the current key will have been current for a day, while it has not. */
+  retireFrom: string | null;
+  canRetire: boolean;
+}
+
 /** The server's encryption keys (GET /api/v1/admin/system/keys, SRS SEC-07). */
 export interface EncryptionKeysStatus {
   dataKey: {
     keyId: string;
     since: string | null;
-    /** Keys in the ring: the original and one per rotation. */
+    /** Keys in the ring: the original, and one per rotation until it is retired. */
     keys: number;
-    /** Values and documents still encrypted with an earlier key, moved in the background. */
+    /** Values, documents and report files still encrypted with an earlier key, moved in the background. */
     valuesToMove: number;
     documentsToMove: number;
     lastRotation: KeyRotationEvent | null;
+    /** The keys rotations added that are no longer current, oldest first. */
+    earlier: EarlierDataKey[];
   };
   signingKey: {
     keyId: string;
@@ -479,6 +499,17 @@ export function confirmRecoveryKey(keyId: string, key: string) {
 /** Makes a new data encryption key current; data encrypted before moves to it in the background. Needs `admin.system.manage`. */
 export function rotateDataKey() {
   return api.post<EncryptionKeysStatus>('/api/v1/admin/system/keys/data/rotate');
+}
+
+/**
+ * Deletes an earlier data key from the server once nothing is encrypted with it (ASVS V11.1.1), after the password is
+ * given again: 400 with a `password` field error when it is wrong, 422 `keys.in_use` or `keys.rotated_recently` while it
+ * cannot be retired yet. Needs `admin.system.manage`.
+ */
+export function retireDataKey(keyId: string, password: string) {
+  return api.post<EncryptionKeysStatus>(`/api/v1/admin/system/keys/data/${encodeURIComponent(keyId)}/retire`, {
+    password,
+  });
 }
 
 /** Makes a new token signing key current; tokens already issued stay valid until they expire. Needs `admin.system.manage`. */
