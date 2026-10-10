@@ -34,9 +34,14 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     shows "HC360 stopped: the server could not be verified" until a check passes. Between two checks (10 seconds at
     most) the staff app could still use such a connection.
 - Browsers keep to HTTPS for a year after their first visit (HSTS).
-- The firewall opens only port 7360 (HTTPS) and mDNS, and only on Private/Domain networks. PostgreSQL listens on
-  localhost only. Network lab analysers need their own ports, which the installer opens only when asked
-  (`-LabPorts`), limited to the analysers' addresses; each analyser's port also accepts only its listed IP addresses.
+- The firewall opens only the HTTPS ports of the staff app (7360) and the patient portal (7361), and mDNS, and only on
+  Private/Domain networks. PostgreSQL listens on localhost only. Network lab analysers need their own ports, which the
+  installer opens only when asked (`-LabPorts`), limited to the analysers' addresses.
+- **Network lab analysers** cannot sign in: HL7 (MLLP) and ASTM have no authentication. Each one's address is
+  therefore its check (ASVS V13.2.1): its connection must list its fixed IP address, and its port closes a connection
+  from any other address before reading a byte. A connection set up before the address was required takes any address:
+  the server logs a warning when it starts listening on it, and Lab setup › Analysers shows it as *Open to any device*
+  until its address is added.
 - **The DICOM modality worklist** (off by default) listens on its own TCP port, 11112 unless changed, for the CT, MR,
   X-ray and ultrasound consoles. DICOM there has no encryption or passwords, as on most modality networks, so other
   controls apply:

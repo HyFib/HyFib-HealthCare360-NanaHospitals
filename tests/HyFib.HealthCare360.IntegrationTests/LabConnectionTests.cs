@@ -53,6 +53,9 @@ public sealed class LabConnectionTests(HospitalServer server)
         await ExpectFieldErrorAsync(admin, first, v => Tcp(platform.PortalHttpsPort, v), "is used by the HC360 server itself, for the patient portal");
         await ExpectFieldErrorAsync(admin, first, v => Tcp(platform.ApiReferencePort, v), "is used by the HC360 server itself, for the API reference");
 
+        // A network analyser connects without signing in: its address is required.
+        await ExpectFieldErrorAsync(admin, first, v => Tcp(port, v) with { AllowedIps = null }, "Enter the analyser's fixed IP address");
+
         // One analyser per network port.
         await admin.PutAsync($"{Connections}/{first}", Tcp(port, await VersionAsync(admin)));
         await ExpectFieldErrorAsync(admin, second, v => Tcp(port, v), $"is already used by analyser {first}");
@@ -212,7 +215,7 @@ public sealed class LabConnectionTests(HospitalServer server)
     }
 
     private static SaveLabConnectionRequest Tcp(int port, uint version) =>
-        new("Tcp", true, port, null, null, null, null, null, null, version);
+        new("Tcp", true, port, ["127.0.0.1"], null, null, null, null, null, version);
 
     private static SaveLabConnectionRequest Serial(Guid agent, uint version) =>
         new("Serial", true, null, null, null, null, null, agent, Com5, version);

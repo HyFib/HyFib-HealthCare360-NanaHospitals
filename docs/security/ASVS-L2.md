@@ -31,12 +31,12 @@ reviewed again once a year, and before each major release.
 | [V10 OAuth and OIDC](#v10-oauth-and-oidc) | 1 | 0 | 0 | 28 |
 | [V11 Cryptography](#v11-cryptography) | 8 | 5 | 0 | 1 |
 | [V12 Secure Communication](#v12-secure-communication) | 2 | 6 | 0 | 1 |
-| [V13 Configuration](#v13-configuration) | 7 | 4 | 2 | 0 |
+| [V13 Configuration](#v13-configuration) | 8 | 3 | 2 | 0 |
 | [V14 Data Protection](#v14-data-protection) | 3 | 5 | 1 | 0 |
 | [V15 Secure Coding and Architecture](#v15-secure-coding-and-architecture) | 8 | 5 | 0 | 0 |
 | [V16 Security Logging and Error Handling](#v16-security-logging-and-error-handling) | 4 | 11 | 1 | 0 |
 | [V17 WebRTC](#v17-webrtc) | 1 | 0 | 2 | 4 |
-| **Total** | **126** | **63** | **10** | **54** |
+| **Total** | **127** | **62** | **10** | **54** |
 
 ## Fixed while making this checklist
 
@@ -97,9 +97,6 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 
 ### Priority 1
 
-- **Analyser connections** (V13.2.1): the server signs in to PostgreSQL with its Windows account (SSPI) and no
-  password. Still to do: network analysers connect without signing in, so their allowed address is the only check.
-  Require one for every network analyser, and warn about those set up without one.
 - **Key management** (V11.1.1, V11.2.2): the data encryption key and the token signing key rotate from System health,
   and the backup recovery key is a key of its own, replaced from Backups and shown once only, with a written key policy
   and inventory (SECURITY.md). Still to do: a way to retire an old data key once no data or backup needs it.
@@ -418,7 +415,7 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 | ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
 |---|---|---|---|---|---|
 | V13.1.1 | L2 | Communication needs documented | Partial | Each integration and its admin-set URLs are documented. No single inventory covers ports, directions, internet exposure (portal, webhooks) and lab TCP ports. | [integrations.md](../../docs/modules/integrations.md), [DEPLOYMENT.md](../../docs/deployment/DEPLOYMENT.md) |
-| V13.2.1 | L2 | Backend components authenticate each other | Partial | Dedicated non-superuser DB role, which the service signs in to with its Windows account (SSPI) and no password: pg_hba.conf takes the role only that way and only from this machine. The installer sets it up, and goes back to the password if the server then cannot reach the database. Lab listeners accept any client when no allow-list is set. | [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1), [DatabaseSignIn.cs](../../src/server/HyFib.HealthCare360.Platform/Persistence/DatabaseSignIn.cs), [LabInstrumentListener.cs](../../src/server/HyFib.HealthCare360.Integrations/Laboratory/LabInstrumentListener.cs) |
+| V13.2.1 | L2 | Backend components authenticate each other | Met | Dedicated non-superuser DB role, which the service signs in to with its Windows account (SSPI) and no password: pg_hba.conf takes the role only that way and only from this machine. The installer sets it up, and goes back to the password if the server then cannot reach the database. Lab analysers cannot sign in (HL7 MLLP and ASTM have no authentication), so each network analyser's connection must list its fixed IP address, and its listener closes connections from any other address; one set up before that was required is shown as open to any device in Lab setup › Analysers, and logged when its listener starts. Modalities are allow-listed by AE title and address; lab agents and HC360 Desktop sign in with device credentials. | [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1), [DatabaseSignIn.cs](../../src/server/HyFib.HealthCare360.Platform/Persistence/DatabaseSignIn.cs), [LabConnectionContracts.cs](../../src/server/HyFib.HealthCare360.Integrations/Features/LabConnections/LabConnectionContracts.cs), [LabInstrumentListener.cs](../../src/server/HyFib.HealthCare360.Integrations/Laboratory/LabInstrumentListener.cs) |
 | V13.2.2 | L2 | Backend components use least-privilege accounts | Partial | The service runs as a virtual account, but its DB role owns the database (full DDL at runtime) and the service can modify its own config folder. | [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1), [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1) |
 | V13.2.3 | L2 | No default service credentials | Met | The app DB role has no password once the service signs in with its Windows account (until then, and where it cannot, a random 192-bit one); postgres password chosen at install, at least 12 characters; random first admin password that must be changed. | [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1), [IdentitySeeder.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentitySeeder.cs) |
 | V13.2.4 | L2 | Allowlist of external systems | Gap | No outbound allowlist. Admin-entered integration URLs can point at any host, and the installer creates inbound firewall rules only. | [IntegrationHttp.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/IntegrationHttp.cs), [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1) |

@@ -311,8 +311,9 @@ setup › Analysers** (code, bench, protocol HL7 or ASTM; tick **Bidirectional**
 sent orders), then set up its **Connection** there. An analyser connects in one of two ways.
 
 **Network analysers** (Ethernet). The analyser connects to a port on the server, one port per analyser, for example
-5100. In the Connection drawer choose Network, enter the port and the analyser's fixed IP address. Open those ports in
-the server's firewall, limited to the analysers' addresses, by running the server installer again:
+5100. In the Connection drawer choose Network, enter the port and the analyser's fixed IP address. The address is
+required: an analyser does not sign in, so HC360 takes its results only from that address. Open those ports in the
+server's firewall, limited to the analysers' addresses, by running the server installer again:
 
 ```powershell
 .\Install-HC360Server.ps1 -LabPorts 5100,5200 -LabAnalyserAddresses 10.0.5.21,10.0.5.22
@@ -476,6 +477,9 @@ way, staff who must now use two-step verification and have not set it up are ask
 accountants, HR managers, and anyone whose roles carry an administrative permission. Check that each has an
 authenticator app on their phone. Temporary passwords given out before HC360 made them expire work for 72 hours after
 the upgrade.
+Network analysers must now have their IP address in their connection. One set up without it keeps working, but takes
+results from any device on the network until the address is added: Lab setup › Analysers shows it as *Open to any
+device*. Enter each such analyser's address in its connection.
 Once the new version has started, the installer switches the service to sign in to PostgreSQL with its Windows account,
 so the configuration no longer holds the database password (section 3, "How the server signs in to the database").
 HC360 stops for another minute or two while PostgreSQL restarts. If HC360 then does not reach the database, the
