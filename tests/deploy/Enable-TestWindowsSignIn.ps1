@@ -15,7 +15,7 @@ Set-StrictMode -Version Latest
 $installer = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\deploy\windows\Install-HC360Server.ps1')).Path
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($installer, [ref] $null, [ref] $null)
 $functions = 'Remove-InstallerBlock', 'Set-HbaBlock', 'Set-IdentBlock', 'ConvertTo-SspiName', 'Get-PgCtlDataDirectory', 'Get-PostgresSetting',
-    'Read-TextLines', 'Write-TextLines', 'Find-PostgresService'
+    'Read-TextLines', 'Write-TextLines', 'Find-PostgresService', 'Select-PostgresService'
 foreach ($function in $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
     if ($functions -contains $function.Name) { . ([scriptblock]::Create($function.Extent.Text)) }
 }

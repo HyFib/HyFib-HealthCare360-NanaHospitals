@@ -15,7 +15,7 @@ Set-StrictMode -Version Latest
 $installer = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\deploy\windows\Install-HC360Server.ps1')).Path
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($installer, [ref] $null, [ref] $null)
 $functions = 'Remove-InstallerBlock', 'Set-HbaBlock', 'Set-IdentBlock', 'ConvertTo-SspiName', 'Get-PgCtlDataDirectory', 'Get-PostgresSetting',
-    'Read-TextLines', 'Write-TextLines'
+    'Read-TextLines', 'Write-TextLines', 'Select-PostgresService', 'Save-SignInFiles', 'Restore-SignInFiles'
 foreach ($function in $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
     if ($functions -contains $function.Name) { . ([scriptblock]::Create($function.Extent.Text)) }
 }
@@ -99,10 +99,49 @@ Assert ((Get-PostgresSetting $conf $auto 'hba_file') -ceq "D:\pg\it's\pg_hba.con
 Assert ($null -eq (Get-PostgresSetting $conf $auto 'ident_file')) 'none for a setting neither file has'
 Assert ($null -eq (Get-PostgresSetting @() @() 'port')) 'none from no files'
 
-Write-Host 'Writing the files'
 $root = Join-Path ([System.IO.Path]::GetTempPath()) ('hc360-signin-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root | Out-Null
 try {
+    Write-Host 'Choosing the PostgreSQL that runs'
+    # Two versions set to the same port, as after an upgrade to a new PostgreSQL version: only the new one runs.
+    $folders = @{}
+    foreach ($name in 'old', 'new', 'other') {
+        $folders[$name] = Join-Path $root $name
+        New-Item -ItemType Directory -Path $folders[$name] | Out-Null
+    }
+    Write-TextLines (Join-Path $folders['old'] 'postgresql.conf') @('port = 5432')
+    Write-TextLines (Join-Path $folders['new'] 'postgresql.conf') @('#port = 5432', "hba_file = '$(Join-Path $folders['new'] 'rules\hba.conf')'")
+    Write-TextLines (Join-Path $folders['other'] 'postgresql.conf') @('port = 5433')
+    function New-Service([string] $Name, [string] $State, [string] $Folder) {
+        [pscustomobject]@{ Name = $Name; State = $State; PathName = "`"C:\pgin\pg_ctl.exe`" runservice -N `"$Name`" -D `"$Folder`" -w" }
+    }
+    $services = @(
+        (New-Service 'postgresql-x64-16' 'Stopped' $folders['old']),
+        [pscustomobject]@{ Name = 'Spooler'; State = 'Running'; PathName = 'C:\Windows\System32\spoolsv.exe' },
+        (New-Service 'postgresql-x64-17' 'Running' $folders['new']),
+        (New-Service 'postgresql-x64-17-reports' 'Running' $folders['other'])
+    )
+    $found = Select-PostgresService $services 5432
+    Assert ($found.Name -ceq 'postgresql-x64-17') 'the running service is chosen, not an older stopped one set to the same port'
+    Assert ($found.HbaFile -ceq (Join-Path $folders['new'] 'rules\hba.conf')) 'its pg_hba.conf where hba_file says'
+    Assert ($found.IdentFile -ceq (Join-Path $folders['new'] 'pg_ident.conf')) 'its pg_ident.conf in its data folder, where hba_file does not say otherwise'
+    Assert ((Select-PostgresService $services 5433).Name -ceq 'postgresql-x64-17-reports') 'another port, another service'
+    Assert ($null -eq (Select-PostgresService @($services[0], $services[1]) 5432)) 'none when only a stopped one is set to the port'
+
+    Write-Host 'Putting the files back after a failed change'
+    $kept = Join-Path $root 'kept.conf'; $empty = Join-Path $root 'empty.conf'; $absent = Join-Path $root 'absent.conf'
+    Write-TextLines $kept @('host all all 127.0.0.1/32 scram-sha-256')
+    [System.IO.File]::WriteAllBytes($empty, [byte[]] @())
+    $before = [System.IO.File]::ReadAllBytes($kept)
+    $saved = Save-SignInFiles @($kept, $empty, $absent)
+    Write-TextLines $kept @('changed'); Write-TextLines $empty @('changed'); Write-TextLines $absent @('created')
+    Restore-SignInFiles $saved
+    Assert ([System.Linq.Enumerable]::SequenceEqual([byte[]] [System.IO.File]::ReadAllBytes($kept), [byte[]] $before)) 'a failed change puts a file back byte for byte'
+    Assert ((Get-Item -LiteralPath $empty).Length -eq 0) 'an empty file stays, empty'
+    Assert (-not (Test-Path -LiteralPath $absent)) 'a file that did not exist is removed again'
+
+    Write-Host 'Writing the files'
+
     $path = Join-Path $root 'pg_hba.conf'
     Assert ((Read-TextLines $path).Count -eq 0) 'a missing file reads as no lines'
     Write-TextLines $path $once

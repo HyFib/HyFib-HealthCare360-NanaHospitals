@@ -135,10 +135,13 @@ has started as it was:
    account. Without it, PostgreSQL refuses that password anyway: it takes the account only from the service's Windows
    account.
 
+The installer changes the PostgreSQL service that is running on the port in the configuration. A stopped one set to the
+same port, such as an older version's after an upgrade, is left alone.
+
 The server signs in with a password when PostgreSQL is on another machine, which the Windows sign-in is not set up for,
-or after `.\Install-HC360Server.ps1 -DatabaseSignIn Password`, which gives the account a new random password (it asks
-for the `postgres` password) and removes the blocks. Run the installer again without it to go back to the Windows
-sign-in. After PostgreSQL is reinstalled, or upgraded to a new version with a new data folder, run the HC360 installer
+or after `.\Install-HC360Server.ps1 -DatabaseSignIn Password`. That gives the account a new random password (it asks
+for the `postgres` password) and removes the blocks; if HC360 then does not reach the database, it puts everything
+back, as above. Run the installer again without it to go back to the Windows sign-in. After PostgreSQL is reinstalled, or upgraded to a new version with a new data folder, run the HC360 installer
 again: it writes the blocks into the new files.
 
 ### Changing the database password

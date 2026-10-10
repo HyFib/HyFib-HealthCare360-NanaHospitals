@@ -336,10 +336,36 @@ function Write-TextLines([string] $Path, [string[]] $Lines) {
     [System.IO.File]::WriteAllLines($Path, $Lines, (New-Object System.Text.UTF8Encoding $false))
 }
 
-# The PostgreSQL service of this machine that listens on $Port, with the files its sign-in rules are in; $null when there
-# is none.
+# The files a change of the database sign-in writes, as they are before it, so a failed change can put them back
+# (Restore-SignInFiles). A file that does not exist yet is noted as missing.
+function Save-SignInFiles([string[]] $Paths) {
+    $saved = @{}
+    foreach ($path in $Paths) {
+        $saved[$path] = if (Test-Path -LiteralPath $path) { , [System.IO.File]::ReadAllBytes($path) } else { $null }
+    }
+    return $saved
+}
+
+# Puts the files Save-SignInFiles saved back as they were, byte for byte, and removes those that did not exist.
+function Restore-SignInFiles([hashtable] $Saved) {
+    foreach ($path in $Saved.Keys) {
+        if ($null -eq $Saved[$path]) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+        else { [System.IO.File]::WriteAllBytes($path, [byte[]] $Saved[$path]) }
+    }
+}
+
+# The PostgreSQL service of this machine that runs and listens on $Port, with the files its sign-in rules are in; $null
+# when there is none.
 function Find-PostgresService([int] $Port) {
-    foreach ($service in @(Get-CimInstance -ClassName Win32_Service | Where-Object { $_.PathName -match 'pg_ctl(\.exe)?"?\s+runservice' })) {
+    return Select-PostgresService @(Get-CimInstance -ClassName Win32_Service) $Port
+}
+
+# Of $Services (Name, PathName and State, as Win32_Service has them), the PostgreSQL service that runs and is set to
+# listen on $Port. A stopped one is passed over: after an upgrade to a new PostgreSQL version, the old version's service
+# often stays, stopped, set to the same port.
+function Select-PostgresService([object[]] $Services, [int] $Port) {
+    foreach ($service in $Services) {
+        if ($service.State -ne 'Running' -or $service.PathName -notmatch 'pg_ctl(\.exe)?"?\s+runservice') { continue }
         $data = Get-PgCtlDataDirectory $service.PathName
         if (-not $data -or -not (Test-Path -LiteralPath (Join-Path $data 'postgresql.conf'))) { continue }
         $conf = Read-TextLines (Join-Path $data 'postgresql.conf')
@@ -631,11 +657,7 @@ if ($postgres) {
     }
     elseif ($DatabaseSignIn -eq 'Windows' -and $withPassword) {
         Write-Step 'Switching the service to sign in to the database with its Windows account'
-        $saved = @{}
-        $saved[$settingsPath] = [System.IO.File]::ReadAllBytes($settingsPath)
-        $saved[$postgres.HbaFile] = [System.IO.File]::ReadAllBytes($postgres.HbaFile)
-        $identExisted = Test-Path -LiteralPath $postgres.IdentFile
-        if ($identExisted) { $saved[$postgres.IdentFile] = [System.IO.File]::ReadAllBytes($postgres.IdentFile) }
+        $saved = Save-SignInFiles @($settingsPath, $postgres.HbaFile, $postgres.IdentFile)
         $switched = $false
         try {
             Stop-HC360Service
@@ -652,10 +674,10 @@ if ($postgres) {
             Write-Warning "$($_.Exception.Message) Putting the settings file, pg_hba.conf and pg_ident.conf back as they were: the service signs in with its password, as before. $DataDir\logs says why the Windows sign-in failed."
             # The files go back even when the service does not stop: it reads its settings only when it starts.
             try { Stop-HC360Service } catch { Write-Warning "The service did not stop: $($_.Exception.Message)" }
-            foreach ($file in $saved.Keys) { [System.IO.File]::WriteAllBytes($file, $saved[$file]) }
-            if (-not $identExisted) { Remove-Item -LiteralPath $postgres.IdentFile -Force -ErrorAction SilentlyContinue }
-            Restart-Postgres $postgres $databasePort
-            Start-Service -Name $ServiceName
+            try { Restore-SignInFiles $saved }
+            finally {
+                try { Restart-Postgres $postgres $databasePort } finally { Start-Service -Name $ServiceName }
+            }
             $ready = Wait-ServerReady -Port $HttpsPort
         }
         if ($switched) {
@@ -678,8 +700,11 @@ if ($postgres) {
         if (-not $pgBin) { throw 'PostgreSQL client tools (psql.exe) were not found, so the database account cannot be given a password.' }
         Write-Step 'Switching the service to sign in to the database with a password'
         # The rules that take only the Windows account go last, once the settings file holds the password: until then the
-        # service can still sign in as it did.
+        # service can still sign in as it did. If the server then does not reach the database, the files go back, and
+        # the service signs in with its Windows account as before; the account's new password is then never used.
+        if (-not $PostgresSuperuserPassword) { $PostgresSuperuserPassword = Read-Host -AsSecureString "Password for PostgreSQL user '$PostgresSuperuser'" }
         $appPassword = New-RandomSecret
+        $saved = Save-SignInFiles @($settingsPath, $postgres.HbaFile, $postgres.IdentFile)
         Stop-HC360Service
         try {
             Invoke-SuperuserSql $signIn['host'] $databasePort "ALTER ROLE $role PASSWORD '$appPassword'"
@@ -689,22 +714,36 @@ if ($postgres) {
             Write-TextLines $postgres.HbaFile $hbaAfter
             Write-TextLines $postgres.IdentFile $identAfter
             Restart-Postgres $postgres $databasePort
+            Start-Service -Name $ServiceName
+            $ready = Wait-ServerReady -Port $HttpsPort
+            if (-not $ready) { throw 'The server did not reach the database with its new password within 3 minutes.' }
+            Write-Host '    The service signs in to the database with its password, protected in the settings file.'
+        }
+        catch {
+            Write-Warning "$($_.Exception.Message) Putting the settings file, pg_hba.conf and pg_ident.conf back as they were: the service signs in with its Windows account, as before. $DataDir\logs says why."
+            try { Stop-HC360Service } catch { Write-Warning "The service did not stop: $($_.Exception.Message)" }
+            try { Restore-SignInFiles $saved }
+            finally {
+                try { Restart-Postgres $postgres $databasePort } finally { Start-Service -Name $ServiceName }
+            }
+            $ready = Wait-ServerReady -Port $HttpsPort
         }
         finally {
             Remove-Item Env:\HC360_DATABASE_PASSWORD -ErrorAction SilentlyContinue
-            Start-Service -Name $ServiceName
-            $ready = Wait-ServerReady -Port $HttpsPort
         }
-        if (-not $ready) { Write-Warning "The server did not reach the database with its new password within 3 minutes. Check $DataDir\logs." }
     }
     elseif ($filesChange) {
         # pg_hba.conf or pg_ident.conf lost the block (PostgreSQL reinstalled, say), or still has one it no longer needs.
         Write-Step 'Writing the database sign-in rules again'
         Stop-HC360Service
-        Write-TextLines $postgres.HbaFile $hbaAfter
-        Write-TextLines $postgres.IdentFile $identAfter
-        Restart-Postgres $postgres $databasePort
-        Start-Service -Name $ServiceName
+        try {
+            Write-TextLines $postgres.HbaFile $hbaAfter
+            Write-TextLines $postgres.IdentFile $identAfter
+            Restart-Postgres $postgres $databasePort
+        }
+        finally {
+            Start-Service -Name $ServiceName
+        }
         $ready = Wait-ServerReady -Port $HttpsPort
         if (-not $ready) { Write-Warning "The service was not ready, up and reaching the database, within 3 minutes. Check $DataDir\logs." }
     }
