@@ -92,7 +92,13 @@ public sealed class AccessControlTests(HospitalServer server)
                          ?? throw new InvalidOperationException("The front office has no facility.");
         var patient = await server.SignInToPortalAsync("9876500011");
 
-        using var response = await patient.SendRawAsync(HttpMethod.Post, "/api/v1/auth/switch-facility", new SwitchFacilityRequest(facilityId));
+        // Staff endpoints do not answer on the portal's address, and refuse a patient's sign-in on the staff app's.
+        using (var onPortal = await patient.SendRawAsync(HttpMethod.Post, "/api/v1/auth/switch-facility", new SwitchFacilityRequest(facilityId)))
+        {
+            onPortal.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        }
+
+        using var response = await server.OnStaffAddress(patient).SendRawAsync(HttpMethod.Post, "/api/v1/auth/switch-facility", new SwitchFacilityRequest(facilityId));
 
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }

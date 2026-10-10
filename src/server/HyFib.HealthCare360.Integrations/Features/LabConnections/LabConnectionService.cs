@@ -135,9 +135,13 @@ internal sealed class LabConnectionService(
         if (transport == LabTransport.Tcp)
         {
             var port = request.Port ?? 0;
-            if (port == platform.Value.HttpsPort || port == platform.Value.HttpRedirectPort || port == 5353)
+
+            // The API reference's port even while the reference is off, so that turning it on stops no analyser.
+            var use = Listeners.ServerPortUse(port, platform.Value, apiReferenceOn: true)
+                      ?? (port == 5353 ? "finding the server on the network (mDNS)" : null);
+            if (use is not null)
             {
-                return Error.Field("port", $"Port {port} is used by the HC360 server itself. Choose another, for example 5100.");
+                return Error.Field("port", $"Port {port} is used by the HC360 server itself, for {use}. Choose another, for example 5100.");
             }
 
             if (others.FirstOrDefault(i => i.Transport == LabTransport.Tcp && i.Port == port) is { } taken)

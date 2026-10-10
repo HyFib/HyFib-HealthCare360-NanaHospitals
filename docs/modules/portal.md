@@ -1,6 +1,8 @@
 # Patient Portal (web app)
 
-Project: `src/web/apps/portal` · package `@hc360/portal` · served at `/portal/` by the HC360 server. The build goes to
+Project: `src/web/apps/portal` · package `@hc360/portal` · served at `/portal/` by the HC360 server, on an address of its
+own: port 7361 (`HealthCare360:PortalHttpsPort`), where the staff app's is 7360. That address serves the portal and its
+API only, and the staff app's address sends `/portal/...` there (SECURITY.md, "Separate addresses"). The build goes to
 `src/server/HyFib.HealthCare360.Server/wwwroot/portal`, and the server's fallback `/portal/{**path}` returns its
 `index.html`. It covers the SRS Patient Portal requirements **PP-01..06**, patient-side telehealth (**TEL-01..05**)
 and the public checks of printed documents (**ERX-04**, **LIS-07**).
@@ -25,7 +27,8 @@ i18n is a small typed dictionary.
 | `src/lib` | API client (`clientType: 'portal'`), session, errors, payments, printing, PDF downloads, link tokens |
 
 Commands (run from `src/web`): `pnpm --filter @hc360/portal dev` (port 5361, proxies `/api`, `/hubs` and `/health` to
-`HC360_SERVER` or `https://localhost:7360`), `build`, `typecheck`, `test`, and `npx eslint apps/portal`.
+`HC360_PORTAL_SERVER` or `https://localhost:7361`, the portal's address of the local server), `build`, `typecheck`, `test`,
+and `npx eslint apps/portal`.
 
 ## Sign-in, session and family members
 
@@ -34,8 +37,9 @@ Commands (run from `src/web`): `pnpm --filter @hc360/portal dev` (port 5361, pro
   (30 s, 60 s, 2 min, then 5 min), so patients do not hit the server limit. A code that seems to expire implausibly (a
   wrong phone clock) falls back to a five-minute countdown.
 * **Tokens.** The access token stays in memory (core session). The refresh token is the server's HttpOnly cookie. The
-  portal and the staff console share one origin but keep separate refresh cookies, so signing in to one never signs
-  the other out.
+  portal and the staff console have addresses of their own, but browsers send a host's cookies to all its ports, so each
+  keeps its own refresh cookie and each address reads only its own app's: signing in to one never signs the other out,
+  and nothing on the portal's address can renew a staff session.
 * **Family.** `GET /api/v1/portal/profiles` returns everyone registered with the verified number, then the family
   members on other numbers that the account sees through a family link (below). The patient chooses whose records to
   see, and the switcher is always in the header. Every query key starts `['portal', patientId, …]`, and family-wide

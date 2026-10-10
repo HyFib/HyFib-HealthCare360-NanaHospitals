@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Networking;
@@ -23,6 +24,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -102,6 +104,7 @@ public sealed class HospitalServer : IAsyncLifetime
         builder.AddServerApplication(certificates);
 
         _app = builder.Build();
+        var platform = _app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value;
         _app.Use((context, next) =>
         {
             if (IPAddress.TryParse(context.Request.Headers[ClientAddressHeader].ToString(), out var address))
@@ -109,8 +112,12 @@ public sealed class HospitalServer : IAsyncLifetime
                 context.Connection.RemoteIpAddress = address;
             }
 
+            // The address a client used, which Kestrel tells by the port it arrived on (ListenerPaths): the port in the
+            // client's base address, and the staff app's when it has none.
+            context.Connection.LocalPort = context.Request.Host.Port ?? platform.HttpsPort;
             return next(context);
         });
+        _app.UseListenerGate();
         _app.UseServerApplication();
         await _app.InitializeDatabaseAsync(ct);
 
@@ -129,6 +136,40 @@ public sealed class HospitalServer : IAsyncLifetime
     /// for calls limited per address (one-time codes allow only 5 requests per address in 15 minutes).
     /// </summary>
     public ApiClient Anonymous(bool ownAddress = false) => new(CreateHttpClient(ownAddress));
+
+    /// <summary>
+    /// A visitor to the patient portal's address (<see cref="PortalAddress"/>), who has not signed in. With
+    /// <paramref name="ownAddress"/>, as for <see cref="Anonymous"/>.
+    /// </summary>
+    public ApiClient AnonymousOnPortal(bool ownAddress = false) => new(CreateHttpClient(ownAddress, portal: true));
+
+    /// <summary>
+    /// The patient portal's address, an origin of its own (<see cref="ListenerPaths"/>). Clients made without a base
+    /// address are on the staff app's.
+    /// </summary>
+    public Uri PortalAddress => new($"https://localhost:{Platform.PortalHttpsPort}/");
+
+    /// <summary>The API reference's address (<see cref="ListenerPaths"/>), on because the test server runs as development.</summary>
+    public Uri ApiReferenceAddress => new($"https://localhost:{Platform.ApiReferencePort}/");
+
+    private PlatformOptions Platform => Services.GetRequiredService<IOptions<PlatformOptions>>().Value;
+
+    /// <summary>A caller who has not signed in, at one of the server's addresses, from the test's own address.</summary>
+    public ApiClient AnonymousAt(Uri address)
+    {
+        var http = CreateHttpClient(ownAddress: true);
+        http.BaseAddress = address;
+        return new ApiClient(http);
+    }
+
+    /// <summary>The sign-in of <paramref name="client"/>, its bearer token, used on the staff app's address.</summary>
+    public ApiClient OnStaffAddress(ApiClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        var http = CreateHttpClient();
+        http.DefaultRequestHeaders.Authorization = client.Http.DefaultRequestHeaders.Authorization;
+        return new ApiClient(http);
+    }
 
     /// <summary>
     /// A caller who has not signed in, from <paramref name="address"/>: for a test that signs in more often than one
@@ -283,9 +324,14 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     /// <summary>The staff refresh cookie a response set, as <c>name=value</c>; null when it set none (or cleared it).</summary>
-    public static string? RefreshCookieOf(HttpResponseMessage response) =>
+    public static string? RefreshCookieOf(HttpResponseMessage response) => CookieOf(response, AuthService.RefreshCookieName);
+
+    /// <summary>The portal's refresh cookie a response set, as <c>name=value</c>; null when it set none (or cleared it).</summary>
+    public static string? PortalRefreshCookieOf(HttpResponseMessage response) => CookieOf(response, AuthService.PortalRefreshCookieName);
+
+    private static string? CookieOf(HttpResponseMessage response, string name) =>
         response.Headers.TryGetValues("Set-Cookie", out var cookies)
-            ? cookies.Select(c => c.Split(';')[0]).FirstOrDefault(c => c.StartsWith("hc360_rt=", StringComparison.Ordinal) && c.Length > "hc360_rt=".Length)
+            ? cookies.Select(c => c.Split(';')[0]).FirstOrDefault(c => c.StartsWith(name + "=", StringComparison.Ordinal) && c.Length > name.Length + 1)
             : null;
 
     private static async Task<SignInResult> LogInAsync(HttpClient http, string userName, string password)
@@ -375,13 +421,17 @@ public sealed class HospitalServer : IAsyncLifetime
 
     /// <summary>
     /// A patient signed in to the portal with a one-time code, as a new portal account for a number seen for the first
-    /// time. The test server sends no SMS: the code is read from the delivery waiting in the outbox. The requests come from
-    /// the test's own address: one-time codes allow only 5 requests per address in 15 minutes.
+    /// time, on the portal's address (<see cref="PortalAddress"/>). The test server sends no SMS: the code is read from the
+    /// delivery waiting in the outbox. The requests come from the test's own address: one-time codes allow only 5 requests
+    /// per address in 15 minutes.
     /// </summary>
-    public async Task<ApiClient> SignInToPortalAsync(string phone)
+    public async Task<ApiClient> SignInToPortalAsync(string phone) => (await SignInToPortalWithCookieAsync(phone)).Client;
+
+    /// <summary><see cref="SignInToPortalAsync"/>, with the portal's refresh cookie the sign-in set (<c>name=value</c>).</summary>
+    public async Task<(ApiClient Client, string RefreshCookie)> SignInToPortalWithCookieAsync(string phone)
     {
         var ct = TestContext.Current.CancellationToken;
-        var http = CreateHttpClient(ownAddress: true);
+        var http = CreateHttpClient(ownAddress: true, portal: true);
         OtpChallengeResponse challenge;
         using (var requested = await http.PostAsJsonAsync("/api/v1/auth/otp/request", new OtpRequest(phone), ApiClient.Json, ct))
         {
@@ -391,7 +441,7 @@ public sealed class HospitalServer : IAsyncLifetime
         using var verified = await http.PostAsJsonAsync("/api/v1/auth/otp/verify", new OtpVerifyRequest(challenge.ChallengeId, await ReadOtpAsync(phone, ct)), ApiClient.Json, ct);
         var result = await ApiClient.ReadAsync<SignInResult>(verified, HttpMethod.Post, "/api/v1/auth/otp/verify");
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", FullAccess(phone, result));
-        return new ApiClient(http);
+        return (new ApiClient(http), PortalRefreshCookieOf(verified) ?? throw new InvalidOperationException($"Signing in to the portal as {phone} set no refresh cookie."));
     }
 
     private async Task<string> ReadOtpAsync(string phone, CancellationToken ct)
@@ -408,10 +458,15 @@ public sealed class HospitalServer : IAsyncLifetime
             .Values["code"];
     }
 
-    private HttpClient CreateHttpClient(bool ownAddress = false)
+    private HttpClient CreateHttpClient(bool ownAddress = false, bool portal = false)
     {
         var http = App.GetTestClient();
-        http.DefaultRequestHeaders.Add("X-HC360-Client", "web");
+        if (portal)
+        {
+            http.BaseAddress = PortalAddress;
+        }
+
+        http.DefaultRequestHeaders.Add("X-HC360-Client", portal ? "portal" : "web");
         if (ownAddress)
         {
             http.DefaultRequestHeaders.Add(ClientAddressHeader, AddressOfCurrentTest());

@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Platform.Features;
+using HyFib.HealthCare360.Platform.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 
@@ -53,9 +54,13 @@ public sealed class FeatureSwitchTests
 
         refresh.Feature.ShouldBe(FeatureKeys.PatientPortal);
         var appliesTo = refresh.AppliesTo.ShouldNotBeNull();
-        appliesTo(RequestFrom("portal")).ShouldBeTrue();
-        appliesTo(RequestFrom("web")).ShouldBeFalse();
-        appliesTo(RequestFrom("desktop")).ShouldBeFalse();
+        appliesTo(RequestTo(Listener.Portal, "portal")).ShouldBeTrue();
+        appliesTo(RequestTo(Listener.Staff, "web")).ShouldBeFalse();
+        appliesTo(RequestTo(Listener.Staff, "desktop")).ShouldBeFalse();
+
+        // The portal is told by the address a request came to, not by what the request says it is.
+        appliesTo(RequestTo(Listener.Portal, "web")).ShouldBeTrue();
+        appliesTo(RequestTo(Listener.Staff, "portal")).ShouldBeFalse();
     }
 
     [Fact]
@@ -110,9 +115,10 @@ public sealed class FeatureSwitchTests
         rpm.ShouldAllBe(e => e.Requirements.Count == 0);
     }
 
-    private static HttpRequest RequestFrom(string client)
+    private static HttpRequest RequestTo(Listener address, string client)
     {
         var http = new DefaultHttpContext();
+        http.Features.Set(new ListenerFeature(address));
         http.Request.Headers["X-HC360-Client"] = client;
         return http.Request;
     }

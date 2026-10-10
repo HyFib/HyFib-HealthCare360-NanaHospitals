@@ -98,9 +98,10 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - Access tokens:
   - ES256-signed, valid for 10 minutes, held only in memory.
   - Refresh tokens are opaque and rotate on every use, in an HttpOnly, Secure, SameSite=Strict cookie.
-  - The staff app and the patient portal share one origin but keep separate refresh cookies (`hc360_rt` and
-    `hc360_prt`), so signing in to one never replaces the other's session. A cookie renews only its own app's
-    sessions.
+  - The staff app and the patient portal have addresses of their own ("Separate addresses" below) and separate refresh
+    cookies (`hc360_rt` and `hc360_prt`), so signing in to one never replaces the other's session. Browsers send a
+    host's cookies to every port of it, so each address reads only its own app's cookie: the portal's address renews
+    only portal sessions, and nothing there can renew a staff session.
   - A refresh token presented after it was spent ends the whole session, and is audited as critical. A retry within
     60 seconds (a response lost on the WiFi link) is re-issued a token once. The token it replaces is retired, so if a
     copy was being replayed, the real client's next refresh ends the session for both.
@@ -280,6 +281,20 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - Optimistic concurrency: a record changed by someone else is never silently overwritten.
 
 ### Application hardening
+- **Separate addresses** (ASVS V3.5.4). The staff app, the patient portal and the API reference each have an origin of
+  their own, so script running on one cannot read the others' pages or storage, or use their sessions:
+  - The staff app, HC360 Desktop and the integrations: port 7360 (`HealthCare360:HttpsPort`).
+  - The patient portal: port 7361 (`HealthCare360:PortalHttpsPort`). The portal runs third-party script, the payment
+    checkout. Its address serves the portal's pages and API and the few endpoints it shares with the staff app
+    (renewing and ending a session, public links, report and prescription checks, the server's name and switches,
+    video consultations, health probes and provider webhooks). Nothing else answers there: no staff sign-in, page or
+    endpoint. An architecture test fails if an endpoint needing a staff permission ever does.
+  - The staff app's address sends `/portal/...` to the same page on the portal's address, so links in messages sent,
+    and QR codes printed, before the portal moved keep working. It does not serve the portal's own API or sign-in.
+  - The API reference, while it is on: port 7362 (`HealthCare360:ApiReferencePort`), listening on the server machine
+    only. It runs third-party script too, so its address takes no cookies and sets none.
+  - Each address is told by the port a request arrived on, never by what the request says (its Host or
+    `X-HC360-Client` header).
 - Security headers:
   - Content-Security-Policy:
     - Scripts come only from the server, and pages connect only to the server, so injected script has nowhere to send
@@ -317,11 +332,13 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     job, so none of its processes begins outside it, and it inherits only its own pipes. Its private profile folder is
     deleted.
 - Calls to outside services follow no redirects and need TLS 1.2 or later.
-- The API reference is off by default. If IT turns it on, it answers only on the server machine.
+- The API reference is off by default. If IT turns it on, it answers only on its own address on the server machine
+  (port 7362), which takes and sets no cookies.
 - The embedded browser in HC360 Desktop:
   - Opens only the hospital server; other sites open in the default browser.
-  - Answers bridge calls (printing, device identity, notifications) only from the staff app's pages, not from the
-    patient portal or the API docs, which run third-party script.
+  - Answers bridge calls (printing, device identity, notifications) only from the staff app's pages. The patient
+    portal and the API reference, which run third-party script, are on addresses of their own, so it opens them in the
+    default browser.
   - Saves only document types HC360 produces, and only from the server.
   - Denies permissions other than camera, microphone, clipboard and notifications.
   - Disables password autosave and autofill.

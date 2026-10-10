@@ -124,7 +124,7 @@ public sealed class FeatureSwitchTests(HospitalServer server)
     {
         var signedIn = await server.SignInToPortalAsync(NewMobile());
         (await signedIn.GetAsync<JsonElement>("/api/v1/portal/profiles")).ValueKind.ShouldBe(JsonValueKind.Array);
-        var visitor = server.Anonymous(ownAddress: true);
+        var visitor = server.AnonymousOnPortal(ownAddress: true);
         try
         {
             await SwitchAsync(FeatureKeys.PatientPortal, enabled: false);
@@ -148,7 +148,7 @@ public sealed class FeatureSwitchTests(HospitalServer server)
                 profiles.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
             }
 
-            using (var me = await signedIn.SendRawAsync(HttpMethod.Get, "/api/v1/auth/me"))
+            using (var me = await server.OnStaffAddress(signedIn).SendRawAsync(HttpMethod.Get, "/api/v1/auth/me"))
             {
                 me.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
             }

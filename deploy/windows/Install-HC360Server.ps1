@@ -10,14 +10,15 @@
     - Writes the site configuration (%ProgramData%\HyFib\HealthCare360\config\hc360.settings.json), readable only by
       SYSTEM, Administrators and the service's own virtual account, with the database password protected by DPAPI for
       this machine (SRS SEC-07). Every setting already in the file is kept, including those added by hand. Of the
-      installer's own, one the file has changes only when its parameter is given again (-HttpsPort, -FacilityCode,
-      -FacilityName, -SecondaryBackupDir, -CreateDatabase); pg_dump follows the newest PostgreSQL found.
+      installer's own, one the file has changes only when its parameter is given again (-HttpsPort, -PortalHttpsPort,
+      -FacilityCode, -FacilityName, -SecondaryBackupDir, -CreateDatabase); pg_dump follows the newest PostgreSQL found.
     - Checks that BitLocker protects the fixed disks, and registers the "HC360 disk encryption check" scheduled task,
       which checks again as SYSTEM every day and at start-up for System health (SRS SEC-05).
     - Registers the "HC360Server" Windows service (virtual account NT SERVICE\HC360Server, delayed auto-start,
       automatic restart on failure) and its Event Log source.
-    - Opens HTTPS (7360) and mDNS (UDP 5353) in Windows Firewall for Private/Domain networks only. Serial analysers
-      reach the server through their lab agent on 7360. With -LabPorts it also opens the ports network analysers connect
+    - Opens HTTPS for the staff app (7360) and for the patient portal, which has an address of its own (7361), and mDNS
+      (UDP 5353) in Windows Firewall for Private/Domain networks only. Serial analysers reach the server through their
+      lab agent on 7360. With -LabPorts it also opens the ports network analysers connect
       to (Lab setup > Analysers > Connection), limited to -LabAnalyserAddresses when given.
     - Tunes the machine for an always-on WiFi server: no sleep/hibernate, WiFi adapter never powered down.
     - Starts the service, waits until it is healthy and prints the CA fingerprint staff will verify on workstations.
@@ -35,6 +36,7 @@ param(
     [string] $InstallDir = (Join-Path $env:ProgramFiles 'HyFib\HealthCare360\Server'),
     [string] $DataDir = (Join-Path $env:ProgramData 'HyFib\HealthCare360'),
     [int] $HttpsPort = 7360,
+    [int] $PortalHttpsPort = 7361,
     [string] $FacilityCode = 'NH',
     [string] $FacilityName = 'Nana Hospitals',
     [switch] $CreateDatabase,
@@ -236,6 +238,9 @@ $null = ConvertTo-SettingsJson $settings $settingsBefore @()
 # Without -HttpsPort (an upgrade, or a run for -LabPorts) the server keeps its port, and the firewall and checks follow it.
 $installedPort = $settingsBefore['HealthCare360:HttpsPort'] -as [int]
 if ($installedPort -and -not $PSBoundParameters.ContainsKey('HttpsPort')) { $HttpsPort = $installedPort }
+$installedPortalPort = $settingsBefore['HealthCare360:PortalHttpsPort'] -as [int]
+if ($installedPortalPort -and -not $PSBoundParameters.ContainsKey('PortalHttpsPort')) { $PortalHttpsPort = $installedPortalPort }
+if ($PortalHttpsPort -eq $HttpsPort) { throw "The patient portal needs a port of its own: -PortalHttpsPort and -HttpsPort are both $HttpsPort." }
 
 # ---------------------------------------------------------------- stop an existing service (upgrade)
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -316,6 +321,7 @@ Write-Step "Configuring $settingsPath"
 $changed = @(
     if ($CreateDatabase) { Set-Setting $settings 'ConnectionStrings:Hospital' $connectionString -Replace }
     Set-Setting $settings 'HealthCare360:HttpsPort' $HttpsPort -Replace:$PSBoundParameters.ContainsKey('HttpsPort')
+    Set-Setting $settings 'HealthCare360:PortalHttpsPort' $PortalHttpsPort -Replace:$PSBoundParameters.ContainsKey('PortalHttpsPort')
     Set-Setting $settings 'HealthCare360:DefaultFacilityCode' $FacilityCode -Replace:$PSBoundParameters.ContainsKey('FacilityCode')
     Set-Setting $settings 'HealthCare360:DefaultFacilityName' $FacilityName -Replace:$PSBoundParameters.ContainsKey('FacilityName')
     Set-Setting $settings 'HealthCare360:Backup:Enabled' $true
@@ -362,6 +368,8 @@ if (-not $SkipFirewall) {
     Write-Step 'Configuring Windows Firewall (Private and Domain networks only)'
     Get-NetFirewallRule -Group 'HyFib HealthCare360' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
     New-NetFirewallRule -DisplayName 'HC360 Server (HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $HttpsPort `
+        -Program (Join-Path $InstallDir $ExeName) -Profile Private, Domain -Action Allow | Out-Null
+    New-NetFirewallRule -DisplayName 'HC360 Server (patient portal, HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $PortalHttpsPort `
         -Program (Join-Path $InstallDir $ExeName) -Profile Private, Domain -Action Allow | Out-Null
     New-NetFirewallRule -DisplayName 'HC360 Server discovery (mDNS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol UDP -LocalPort 5353 `
         -Program (Join-Path $InstallDir $ExeName) -Profile Private, Domain -Action Allow | Out-Null
@@ -440,3 +448,4 @@ if (Test-Path $initialPassword) {
 
 Write-Host ''
 Write-Host "HyFib HealthCare360 is available at https://$($env:COMPUTERNAME):$HttpsPort/" -ForegroundColor Green
+Write-Host "The patient portal is at https://$($env:COMPUTERNAME):$PortalHttpsPort/portal/" -ForegroundColor Green

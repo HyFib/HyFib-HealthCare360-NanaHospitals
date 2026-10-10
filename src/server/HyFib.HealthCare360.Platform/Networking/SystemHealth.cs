@@ -26,7 +26,7 @@ public sealed record ServerInfo(string MachineName, string OsDescription, string
     double UptimeHours, int ProcessorCount, long WorkingSetBytes, string Framework);
 
 public sealed record NetworkInfo(bool WifiSupported, WifiConnectionInfo? Wifi, DateTimeOffset? ConnectedSince, DateTimeOffset? LastDisconnectAt,
-    IReadOnlyList<WifiEvent> RecentEvents, IReadOnlyList<string> IpAddresses, int HttpsPort, bool MdnsEnabled);
+    IReadOnlyList<WifiEvent> RecentEvents, IReadOnlyList<string> IpAddresses, int HttpsPort, int PortalHttpsPort, bool MdnsEnabled);
 
 public sealed record DatabaseInfo(bool Reachable, string? Version, long? SizeBytes, int? Connections, string? LastMigration, string? Error);
 
@@ -106,7 +106,7 @@ public sealed class SystemHealthService(
         var network = new NetworkInfo(
             wifi.Supported, wifi.Current, wifi.ConnectedSince, wifi.LastDisconnectAt, wifi.RecentEvents,
             LanCertificateManager.CurrentAddresses().Select(a => a.ToString()).ToList(),
-            options.Value.HttpsPort, options.Value.Network.EnableMdns);
+            options.Value.HttpsPort, options.Value.PortalHttpsPort, options.Value.Network.EnableMdns);
 
         var database = await ReadDatabaseAsync(ct);
         var encryption = OperatingSystem.IsWindows() ? DiskEncryption.Load(DiskEncryption.PathIn(directories)) : null;

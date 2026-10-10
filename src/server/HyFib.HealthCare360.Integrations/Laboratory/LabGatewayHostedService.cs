@@ -17,6 +17,7 @@ namespace HyFib.HealthCare360.Integrations.Laboratory;
 internal sealed class LabGatewayHostedService(
     IServiceScopeFactory scopes,
     IOptions<PlatformOptions> platform,
+    IHostEnvironment environment,
     ILabMessageProcessor processor,
     LabGatewayState state,
     TimeProvider time,
@@ -134,6 +135,16 @@ internal sealed class LabGatewayHostedService(
         var bindAddress = IPAddress.TryParse(gateway.BindAddress, out var address) ? address : IPAddress.Any;
         foreach (var (code, instrument) in desired.Where(d => !_listeners.ContainsKey(d.Key)))
         {
+            // A port the server itself listens on, such as the patient portal's since the portal has an address of its own
+            // (an analyser may have been given it before): binding it first would stop the server starting. Say why instead.
+            if (Listeners.ServerPortUse(instrument.Port, platform.Value, Listeners.ApiReferenceOn(platform.Value, environment)) is { } use)
+            {
+                state.Failed(code, instrument.Protocol, instrument.Port,
+                    $"Port {instrument.Port} is used by the HC360 server itself, for {use}. Choose another port for this analyser, in its connection here and on the analyser.");
+                _logger.LogError("Laboratory instrument {Instrument} is set to port {Port}, which the HC360 server uses for {Use}: it is not listened for", code, instrument.Port, use);
+                continue;
+            }
+
             var listener = new LabInstrumentListener(instrument, bindAddress, LabRuntimeOptions.From(gateway, instrument),
                 gateway.MaxConnectionsPerInstrument, processor, state, time, loggers.CreateLogger<LabInstrumentListener>());
             try

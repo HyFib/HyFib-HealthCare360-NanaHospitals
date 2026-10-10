@@ -48,8 +48,10 @@ public sealed class LabConnectionTests(HospitalServer server)
 
         // The server's own ports are never an analyser's.
         await ExpectFieldErrorAsync(admin, first, v => Tcp(5353, v), "is used by the HC360 server itself");
-        var https = server.Services.GetRequiredService<IOptions<PlatformOptions>>().Value.HttpsPort;
-        await ExpectFieldErrorAsync(admin, first, v => Tcp(https, v), "is used by the HC360 server itself");
+        var platform = server.Services.GetRequiredService<IOptions<PlatformOptions>>().Value;
+        await ExpectFieldErrorAsync(admin, first, v => Tcp(platform.HttpsPort, v), "is used by the HC360 server itself");
+        await ExpectFieldErrorAsync(admin, first, v => Tcp(platform.PortalHttpsPort, v), "is used by the HC360 server itself, for the patient portal");
+        await ExpectFieldErrorAsync(admin, first, v => Tcp(platform.ApiReferencePort, v), "is used by the HC360 server itself, for the API reference");
 
         // One analyser per network port.
         await admin.PutAsync($"{Connections}/{first}", Tcp(port, await VersionAsync(admin)));

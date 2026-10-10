@@ -21,7 +21,7 @@ reviewed again once a year, and before each major release.
 |---|---:|---:|---:|---:|
 | [V1 Encoding and Sanitization](#v1-encoding-and-sanitization) | 20 | 0 | 0 | 7 |
 | [V2 Validation and Business Logic](#v2-validation-and-business-logic) | 6 | 5 | 0 | 0 |
-| [V3 Web Frontend Security](#v3-web-frontend-security) | 14 | 4 | 1 | 0 |
+| [V3 Web Frontend Security](#v3-web-frontend-security) | 15 | 3 | 1 | 0 |
 | [V4 API and Web Service](#v4-api-and-web-service) | 5 | 2 | 1 | 2 |
 | [V5 File Handling](#v5-file-handling) | 6 | 1 | 1 | 1 |
 | [V6 Authentication](#v6-authentication) | 20 | 9 | 1 | 5 |
@@ -36,7 +36,7 @@ reviewed again once a year, and before each major release.
 | [V15 Secure Coding and Architecture](#v15-secure-coding-and-architecture) | 8 | 5 | 0 | 0 |
 | [V16 Security Logging and Error Handling](#v16-security-logging-and-error-handling) | 4 | 11 | 1 | 0 |
 | [V17 WebRTC](#v17-webrtc) | 1 | 0 | 2 | 4 |
-| **Total** | **125** | **64** | **10** | **54** |
+| **Total** | **126** | **63** | **10** | **54** |
 
 ## Fixed while making this checklist
 
@@ -97,8 +97,6 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 
 ### Priority 1
 
-- **Serve the patient portal and the API docs on their own host or port**, with their own refresh cookie. Script on a
-  portal page, such as the payment checkout, then cannot reach a staff session. (V3.5.4)
 - **Database credentials** (V13.2.1, V13.3.1): have the server sign in to PostgreSQL with SSPI or a certificate
   instead of a password. The password in `hc360.settings.json` is already DPAPI-protected and can be changed from
   System health (SRS SEC-07), and BitLocker is checked daily.
@@ -225,7 +223,7 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 | V3.5.1 | L1 | Cross-origin requests to sensitive functions refused (CSRF) | Met | The API authenticates with the Authorization bearer header, not ambient cookies. The cookie-based refresh requires the non-safelisted X-HC360-Client header. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V3.5.2 | L1 | CORS preflight cannot be sidestepped | Met | JSON bodies and custom headers force preflights, and both cookie endpoints (refresh and logout) require the X-HC360-Client header, which a cross-site page cannot send. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthEndpoints.cs) |
 | V3.5.3 | L1 | No state changes on safe methods (GET) | Met | State changes use POST/PUT/DELETE. GET handlers, including the public patient-link endpoints, are explicitly read-only. | [PublicFeedbackEndpoints.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Engagement/Features/Feedback/PublicFeedbackEndpoints.cs), [AuthEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthEndpoints.cs) |
-| V3.5.4 | L2 | Separate applications on separate hostnames | Partial | The staff app, patient portal and API docs still share one origin. HC360 Desktop's bridge now refuses messages from /portal and /docs pages, which run third-party script; a separate host for the portal is planned. | [BridgeHost.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Bridge/BridgeHost.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V3.5.4 | L2 | Separate applications on separate hostnames | Met | The staff app (port 7360), the patient portal (7361) and the API reference (7362, on the server machine only) each have an origin of their own, told by the port a request arrives on. Each address serves only its own app: nothing of the staff app's answers on the portal's, the portal's address renews only portal sessions although browsers send it the staff cookie too, the reference's takes and sets no cookies, and portal links to the staff app's address are sent on. Tested end to end, and an architecture test fails if an endpoint needing a staff permission answers on the portal's address. | [Listeners.cs](../../src/server/HyFib.HealthCare360.Platform/Http/Listeners.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PortalOriginTests.cs](../../tests/HyFib.HealthCare360.IntegrationTests/PortalOriginTests.cs), [PortalAddressTests.cs](../../tests/HyFib.HealthCare360.ArchitectureTests/PortalAddressTests.cs) |
 | V3.5.5 | L2 | postMessage origin and syntax checked | Met | Desktop ignores bridge messages that are not from the pinned server origin and rejects malformed JSON-RPC. The page listens only on chrome.webview. | [BridgeHost.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Bridge/BridgeHost.cs), [bridge.ts](../../src/web/packages/core/src/bridge/bridge.ts) |
 | V3.7.1 | L2 | Only supported client-side technologies | Met | React 19, Vite 8 and evergreen WebView2. No Flash, ActiveX, Java applets, NPAPI plugins or object/embed elements. | [package.json](../../src/web/apps/staff/package.json), [HyFib.HealthCare360.Desktop.csproj](../../src/desktop/HyFib.HealthCare360.Desktop/HyFib.HealthCare360.Desktop.csproj) |
 | V3.7.2 | L2 | Redirects to other domains only by allowlist | Met | After sign-in, redirects go only to paths inside the app. The one off-site redirect is the https payment link the server issues; there is no explicit host allowlist. | [redirect.ts](../../src/web/apps/staff/src/lib/redirect.ts), [payments.ts](../../src/web/apps/portal/src/lib/payments.ts) |
@@ -240,7 +238,7 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 | V4.2.1 | L2 | Consistent HTTP message boundaries (request smuggling) | Met | Kestrel is the only HTTP component (no proxy or load balancer) and enforces standard HTTP/1.1 and HTTP/2 message framing. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
 | V4.3.1 | L2 | GraphQL query cost limits | N/A | There is no GraphQL or expression-language API. The FHIR search facade caps _count at 100. | – |
 | V4.3.2 | L2 | GraphQL introspection off in production | N/A | No GraphQL endpoint exists in the server or clients. | – |
-| V4.4.1 | L1 | WebSockets only over TLS | Met | Hubs are served only on the HTTPS listener (the optional HTTP port just redirects). Clients use same-origin https URLs, so connections use wss. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [DesktopSettings.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/DesktopSettings.cs) |
+| V4.4.1 | L1 | WebSockets only over TLS | Met | Hubs are served only on the HTTPS listeners (the optional HTTP port just redirects). Clients use same-origin https URLs, so connections use wss. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [DesktopSettings.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/DesktopSettings.cs) |
 | V4.4.2 | L2 | WebSocket handshake Origin checked | Gap | Hub handshakes never check Origin (no CORS or WebSocket allowed-origins list). Risk is lower because auth uses bearer or join tokens, not cookies. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [VirtualCareModule.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/VirtualCareModule.cs) |
 | V4.4.3 | L2 | Dedicated WebSocket tokens follow session rules | Partial | Hubs reuse session JWTs, and telehealth guests get hashed, expiring join tokens. The events hub now closes a connection when its token expires; the telehealth hub does not yet. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [TelehealthSession.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/Domain/TelehealthSession.cs) |
 | V4.4.4 | L2 | WebSocket tokens come from the authenticated session | Met | Hub tokens are access tokens from the HTTPS sign-in/refresh flow. Session activity is checked when the connection authenticates. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [realtime.tsx](../../src/web/packages/core/src/realtime/realtime.tsx) |
@@ -429,7 +427,7 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 | V13.4.2 | L2 | Debug modes off in production | Met | Detailed EF/SignalR errors only in Development. Production returns a generic problem with a reference ID. Demo seed and API docs are off by default. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [ErrorHandling.cs](../../src/server/HyFib.HealthCare360.Platform/Http/ErrorHandling.cs) |
 | V13.4.3 | L2 | No directory listings | Met | Only default and static files from wwwroot. Directory browsing is not configured anywhere. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
 | V13.4.4 | L2 | HTTP TRACE not supported | Met | Nothing implements or echoes TRACE; catch-all routes answer it with 404 or the app shell. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [ServerComposition.cs](../../src/server/HyFib.HealthCare360.Server/ServerComposition.cs) |
-| V13.4.5 | L2 | Internal documentation and monitoring endpoints not exposed | Met | OpenAPI and the API reference are off by default; when IT turns them on outside development they answer only on the server machine. Health probes are anonymous but show status only. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [ServerComposition.cs](../../src/server/HyFib.HealthCare360.Server/ServerComposition.cs) |
+| V13.4.5 | L2 | Internal documentation and monitoring endpoints not exposed | Met | OpenAPI and the API reference are off by default; when IT turns them on outside development they answer only on an address of their own that listens on the server machine alone and takes no cookies. Health probes are anonymous but show status only. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [ServerComposition.cs](../../src/server/HyFib.HealthCare360.Server/ServerComposition.cs) |
 
 ## V14 Data Protection
 

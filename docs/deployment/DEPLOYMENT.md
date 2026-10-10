@@ -8,7 +8,8 @@ internet to work; SMS/WhatsApp, payment gateways, ABDM and the AI assistant use 
   Hospital WiFi (WPA2/WPA3-Enterprise, one SSID for clinical devices)
   ┌─────────────────────────────────────────────────────────────────────────────┐
   │  Server Node (Windows 11 Pro / Server 2022+)                                │
-  │   ├─ HC360Server service  :7360 HTTPS (API + staff app + patient portal)   │
+  │   ├─ HC360Server service  :7360 HTTPS (staff app and API)                   │
+  │   │                       :7361 HTTPS (patient portal)                      │
   │   ├─ PostgreSQL           localhost only                                    │
   │   ├─ Data  %ProgramData%\HyFib\HealthCare360 (keys, certs, documents, logs) │
   │   └─ UPS (USB)  ·  second disk / NAS for backups                            │
@@ -91,7 +92,8 @@ The installer:
   start-up. Administration › System health shows what it found, and warns about a disk that is not protected or a
   check that has stopped running.
 - Registers the `HC360Server` Windows service, which restarts itself if it stops.
-- Opens the firewall for Private networks only.
+- Opens the firewall, for Private networks only: HTTPS for the staff app (7360) and the patient portal (7361), and
+  mDNS.
 - Keeps the machine and its WiFi adapter from sleeping.
 - Starts HC360 and checks that it is healthy.
 
@@ -193,8 +195,10 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
      *Pre-printed stationery* and measure the space its letterhead (and footer) takes; *Preview* shows the page. Add
      closing notes, such as the terms on bills, and choose A5 or A4 for prescriptions. Without templates, documents
      print the letterhead with the logo, as before.
-   - Set `portal.baseUrl` (the patient portal's public https address). Documents then carry a QR code that anyone can
-     scan to check the report is genuine. Without it they print only the verification code.
+   - Set `portal.baseUrl` to the patient portal's address: `https://HC360-SRV:7361`, or the public https address that
+     forwards to port 7361. The portal has an address of its own (SECURITY.md, "Separate addresses"). Documents then
+     carry a QR code that anyone can scan to check the report is genuine. Without it they print only the verification
+     code.
    - E-mail (`integrations.email`): the "report ready" e-mail carries the report's PDF.
    - WhatsApp: to send the PDF on WhatsApp, register the `lab_report_ready` template in WhatsApp Manager **with a
      document header**. Then, in Administration › Notification templates, tick "Document header" on that template.
@@ -429,9 +433,9 @@ same shared folder, as a UNC path such as `\\NAS\HC360-BI`, on every server, and
 The installer stops the service, replaces the program files, keeps configuration and data, and starts the new version.
 Every setting in `hc360.settings.json` stays as it is, including those added by hand (such as
 `HealthCare360:Pdf:BrowserPath`, the BI extract folder or a reporting replica) and protected values. Of its own
-settings, the installer changes only those given to it again as parameters (`-HttpsPort`, `-FacilityCode`,
-`-FacilityName`, `-SecondaryBackupDir`), and `HealthCare360:Backup:PgDumpPath`, which follows the newest PostgreSQL
-under Program Files. The same holds when it runs again for `-LabPorts`. Leave comments out of the file: Windows
+settings, the installer changes only those given to it again as parameters (`-HttpsPort`, `-PortalHttpsPort`,
+`-FacilityCode`, `-FacilityName`, `-SecondaryBackupDir`), and `HealthCare360:Backup:PgDumpPath`, which follows the newest
+PostgreSQL under Program Files. One the file lacks is added, such as the portal's port. The same holds when it runs again for `-LabPorts`. Leave comments out of the file: Windows
 PowerShell cannot read them (the installer then stops before it changes anything), and they are lost when the file is
 rewritten.
 It also protects any secret still written in plain text in the configuration (an installation from before this was
@@ -442,6 +446,20 @@ way, staff who must now use two-step verification and have not set it up are ask
 accountants, HR managers, and anyone whose roles carry an administrative permission. Check that each has an
 authenticator app on their phone. Temporary passwords given out before HC360 made them expire work for 72 hours after
 the upgrade.
+The patient portal moves to an address of its own, port 7361 (SECURITY.md, "Separate addresses"), and the installer
+opens that port in the firewall. Links to the old address (`https://HC360-SRV:7360/portal/...`), in messages already
+sent and on QR codes already printed, keep working: the staff app's address sends them on to the portal's. Then:
+- Set `portal.baseUrl` to the portal's new address, for example `https://HC360-SRV:7361`, so new links go there directly.
+- If the portal was reachable from the internet through port 7360, forward port 7361 instead and close 7360 to the
+  internet: staff never need the staff app's address from outside.
+- Webhooks of the payment gateway, SMS and WhatsApp answer on both addresses, so their settings at the provider can
+  stay as they are.
+- The API reference, if IT turned it on, moves to `https://localhost:7362/docs` on the server machine.
+- Before upgrading, check the ports of the network analysers (Lab setup › Analysers, each one's Connection) and of the
+  modality worklist (Administration › Integrations › Modality worklist). After the upgrade the server keeps port 7361
+  for the portal: an analyser or worklist set to it is not listened for, and shows as failing with the reason.
+  Move it to another port, in HC360 and on the analyser or the modalities, or run the installer with
+  `-PortalHttpsPort` and a free port, and use that port wherever this section says 7361.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
 Backups lists it as "before an update"). If that backup fails, for example because the disk is full, HC360 does not
 start and the database is not changed. The reason is in the log and in Windows Event Viewer.
@@ -515,6 +533,7 @@ distribution tool).
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
 | WhatsApp refuses the report message (error 132012) | The WhatsApp template has no document header but "Document header" is ticked in HC360, or the other way round. Make them match |
 | A modality cannot read the worklist | Administration › Integrations › Modality worklist: is it listening, and what is the last error? The modality's AE title and IP address must match its entry exactly, and the firewall rule must list its address. Refusals are logged once per ten minutes per network, so wait or look at the refused count |
+| An analyser or the modality worklist shows "Port … is used by the HC360 server itself" | It was given a port the server listens on, such as the patient portal's 7361 (see 7, Upgrades). Choose another port, in HC360 and on the analyser or the modalities, and open it in the firewall as described in 6 |
 | "HC360 cannot write the extract folder" (Analytics › BI extracts), or an extract is "Not refreshing" | The message gives the Windows error. Does the folder set as `HealthCare360:Analytics:ExtractDirectory` in `hc360.settings.json` exist (a machine environment variable `HC360_HealthCare360__Analytics__ExtractDirectory` overrides it), and does `NT SERVICE\HC360Server` (or the server's computer account, for a share) have *Modify* on it? Is the disk full? A file the BI tool keeps open can also stop a refresh: close Power BI Desktop and press *Refresh now* |
 | Images are not linked with PACS | Press "Link images from PACS" on the study: the message says why. "Under another patient ID", "without a patient ID" or "several studies" must be corrected in PACS; "not reached PACS yet" usually means the modality has not sent the images, or sent them without the worklist's accession number |
 

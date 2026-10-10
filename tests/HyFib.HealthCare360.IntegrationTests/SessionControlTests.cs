@@ -271,7 +271,7 @@ public sealed class SessionControlTests(HospitalServer server)
 
             ended.Ended.ShouldBeGreaterThanOrEqualTo(3);
             (await StatusOfAsync(nurse)).ShouldBe(HttpStatusCode.Unauthorized);
-            (await StatusOfAsync(patient)).ShouldBe(HttpStatusCode.Unauthorized);
+            (await StatusOfAsync(patient, "/api/v1/portal/profiles")).ShouldBe(HttpStatusCode.Unauthorized);
             (await StatusOfAsync(hospitalAdmin)).ShouldBe(HttpStatusCode.Unauthorized);
             (await StatusOfAsync(admin)).ShouldBe(HttpStatusCode.OK);
             (await AuditCountAsync("auth.all_sessions_ended", HospitalServer.Users.Admin)).ShouldBeGreaterThanOrEqualTo(1);
@@ -291,9 +291,9 @@ public sealed class SessionControlTests(HospitalServer server)
         TimeProvider.System,
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Redis"] = redis }).Build());
 
-    private static async Task<HttpStatusCode> StatusOfAsync(ApiClient client)
+    private static async Task<HttpStatusCode> StatusOfAsync(ApiClient client, string page = AnyPage)
     {
-        using var response = await client.SendRawAsync(HttpMethod.Get, AnyPage);
+        using var response = await client.SendRawAsync(HttpMethod.Get, page);
         return response.StatusCode;
     }
 
