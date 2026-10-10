@@ -112,7 +112,7 @@ public sealed class QueryTranslationTests : IDisposable
     public void The_patient_search_filters_consent_and_restriction_in_sql()
     {
         var protector = Substitute.For<IFieldProtector>();
-        protector.BlindIndex(Arg.Any<string>()).Returns("index");
+        protector.BlindIndexes(Arg.Any<string>()).Returns(["index"]);
         var records = new PatientRecords(_db, protector, Substitute.For<IPermissionService>(), Substitute.For<ICurrentUser>(), References, NullLogger<PatientRecords>.Instance);
 
         var sql = Where(records.SearchQuery(TestData.Search("Patient", "name=meera kul&identifier=91-1234-5678-9012&birthdate=ge1980"), includeRestricted: false));

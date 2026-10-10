@@ -50,7 +50,7 @@ public sealed class KeyRotationTests : IDisposable
     }
 
     [Fact]
-    public void Blind_indexes_and_the_original_recovery_key_do_not_change()
+    public void Fixed_blind_indexes_and_the_original_recovery_key_do_not_change()
     {
         var protector = new FieldProtector(Machine("m"), _protection);
         var index = protector.BlindIndex("123456789012");
@@ -60,9 +60,36 @@ public sealed class KeyRotationTests : IDisposable
         protector.Rotate();
         protector.Rotate();
 
-        protector.BlindIndex("123456789012").ShouldBe(index);
+        protector.FixedBlindIndex("123456789012").ShouldBe(index);
         BackupRecoveryKey.Original(protector.ExportMasterKey()).ShouldBe(originalRecoveryKey);
         protector.Fingerprint.ShouldBe(fingerprint);
+    }
+
+    [Fact]
+    public void A_blind_index_names_the_key_it_was_made_with_and_is_found_under_every_key()
+    {
+        var protector = new FieldProtector(Machine("m"), _protection);
+        var original = protector.BlindIndex("91234567890123");
+
+        var first = protector.Rotate();
+        var afterFirst = protector.BlindIndex("91234567890123");
+        var second = protector.Rotate();
+        var afterSecond = protector.BlindIndex("91234567890123");
+
+        // The original key's index is 64 hex digits, as before keys rotated; a later key's starts with its id, and fits the
+        // same 64-character column.
+        original.ShouldMatch("^[0-9A-F]{64}$");
+        afterFirst.ShouldStartWith(first + ".");
+        afterSecond.ShouldStartWith(second + ".");
+        afterSecond.Length.ShouldBeLessThanOrEqualTo(64);
+        afterSecond.ShouldNotBe(afterFirst);
+
+        // A lookup finds a row whichever key its index was made with.
+        protector.BlindIndexes("91234567890123").ShouldBe([original, afterFirst, afterSecond], ignoreOrder: true);
+        protector.BlindIndexes("91234567890124").ShouldNotContain(afterSecond);
+
+        // The Aadhaar index stays on the original key.
+        protector.FixedBlindIndex("91234567890123").ShouldBe(original);
     }
 
     [Fact]

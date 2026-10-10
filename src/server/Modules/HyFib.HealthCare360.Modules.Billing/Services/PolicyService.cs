@@ -18,8 +18,8 @@ public sealed class PolicyService(HospitalDbContext db, IFieldProtector protecto
             return check.Error!;
         }
 
-        var index = IndexFor(request.PolicyNumber!);
-        if (await db.Set<PatientPolicy>().AnyAsync(p => p.PatientId == request.PatientId && p.PayerId == request.PayerId && p.PolicyNumberIndex == index && p.IsActive, ct))
+        var indexes = IndexesFor(request.PolicyNumber!);
+        if (await db.Set<PatientPolicy>().AnyAsync(p => p.PatientId == request.PatientId && p.PayerId == request.PayerId && indexes.Contains(p.PolicyNumberIndex) && p.IsActive, ct))
         {
             return Error.Conflict("insurance.policy_exists", "This policy is already recorded for the patient.");
         }
@@ -92,6 +92,9 @@ public sealed class PolicyService(HospitalDbContext db, IFieldProtector protecto
     }
 
     public string IndexFor(string policyNumber) => protector.BlindIndex(Masking.Normalize(policyNumber));
+
+    /// <summary>The policy number's index under every data key, to look it up while indexes move after a rotation.</summary>
+    public string[] IndexesFor(string policyNumber) => [.. protector.BlindIndexes(Masking.Normalize(policyNumber))];
 
     private void SetPolicyNumber(PatientPolicy policy, string policyNumber)
     {

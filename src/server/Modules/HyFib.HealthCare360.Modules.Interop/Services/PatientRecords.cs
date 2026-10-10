@@ -49,7 +49,7 @@ internal sealed class PatientRecords(
         PatientSearchQuery.Apply(
             db.Set<Patient>().AsNoTracking(),
             db.Set<PatientConsent>(),
-            PatientCriteria.From(request, abha => protector.BlindIndex(abha)),
+            PatientCriteria.From(request, protector.BlindIndexes),
             includeRestricted,
             word =>
             {

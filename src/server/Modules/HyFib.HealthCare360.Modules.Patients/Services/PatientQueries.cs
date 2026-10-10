@@ -32,10 +32,10 @@ public static class PatientQueries
         if (!hasLetters && digits.Length >= 10)
         {
             var phone = Phone.Normalize(digits);
-            var abhaIndex = digits.Length == 14 ? protector.BlindIndex(digits) : null;
-            var aadhaarIndex = digits.Length == 12 ? protector.BlindIndex(digits) : null;
+            var abhaIndexes = digits.Length == 14 ? protector.BlindIndexes(digits).ToArray() : null;
+            var aadhaarIndex = digits.Length == 12 ? protector.FixedBlindIndex(digits) : null;
             return patients.Where(p => (phone != null && (p.Phone == phone || p.AlternatePhone == phone))
-                                       || (abhaIndex != null && p.AbhaNumberIndex == abhaIndex)
+                                       || (abhaIndexes != null && p.AbhaNumberIndex != null && abhaIndexes.Contains(p.AbhaNumberIndex))
                                        || (aadhaarIndex != null && p.AadhaarIndex == aadhaarIndex));
         }
 

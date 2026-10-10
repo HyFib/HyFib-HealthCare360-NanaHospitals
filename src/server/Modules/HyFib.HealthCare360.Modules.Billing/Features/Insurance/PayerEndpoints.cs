@@ -193,8 +193,8 @@ internal static class PayerEndpoints
             return Error.Field("policyNumber", "Enter the policy or card number.").ToProblem();
         }
 
-        var index = policies.IndexFor(policyNumber);
-        var found = await db.Set<PatientPolicy>().AsNoTracking().Where(p => p.PolicyNumberIndex == index).ToListAsync(ct);
+        var indexes = policies.IndexesFor(policyNumber);
+        var found = await db.Set<PatientPolicy>().AsNoTracking().Where(p => indexes.Contains(p.PolicyNumberIndex)).ToListAsync(ct);
         return TypedResults.Ok(await ToDtosAsync(db, found, time, ct));
     }
 

@@ -31,10 +31,11 @@ internal sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
         b.Property(x => x.Nationality).HasMaxLength(64);
         b.Property(x => x.PreferredLanguage).HasMaxLength(32);
         b.Property(x => x.AbhaNumberCipher).HasMaxLength(256).IsProtectedValue();
-        b.Property(x => x.AbhaNumberIndex).HasMaxLength(64);
+        b.Property(x => x.AbhaNumberIndex).HasMaxLength(64).IsBlindIndexOf(nameof(Patient.AbhaNumberCipher));
         b.Property(x => x.AbhaNumberMasked).HasMaxLength(20);
         b.Property(x => x.AbhaAddress).HasMaxLength(128);
         b.Property(x => x.AadhaarLast4).HasMaxLength(4);
+        // On the original key for good (FixedBlindIndex): only the last four digits are kept, so it cannot be computed again.
         b.Property(x => x.AadhaarIndex).HasMaxLength(64);
         b.Property(x => x.Notes).HasMaxLength(2000);
         b.ComplexProperty(x => x.Address, a =>

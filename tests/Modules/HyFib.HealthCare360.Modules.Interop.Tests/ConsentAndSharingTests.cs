@@ -100,7 +100,7 @@ public sealed class PatientSearchQueryTests
     private static List<string> Run(IEnumerable<Patient> patients, IEnumerable<PatientConsent> consents, string query, bool includeRestricted = false)
     {
         var request = TestData.Search("Patient", query);
-        var criteria = PatientCriteria.From(request, abha => "idx:" + abha);
+        var criteria = PatientCriteria.From(request, abha => ["idx:" + abha]);
         return [.. PatientSearchQuery.Apply(patients.AsQueryable(), consents.AsQueryable(), criteria, includeRestricted, Contains).Select(p => p.Uhid)];
     }
 

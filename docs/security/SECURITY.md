@@ -385,6 +385,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     it rewrites only while no backup is copying them. The screen shows how much is left. An earlier key stays until
     nothing is encrypted with it, so anything not yet moved stays readable, and every backup carries every key the
     server has when the backup is made.
+  - *Search indexes* (ASVS V11.2.2). The keyed hashes that find a patient by ABHA number, a policy by its number and an
+    employee by PAN or bank account come from the current data key too, and name it. The same background job computes
+    each one again with the new key, from the encrypted number beside it; until it has, a search tries every key, so
+    nothing goes missing meanwhile.
   - *Retiring an earlier data key* (ASVS V11.1.1). The screen lists each earlier key with what is still encrypted with
     it. Once nothing is, and the current key has been current for a day (so anything still being encrypted with the
     old key as it changed has been written, and moved), it offers to retire the key. The administrator gives their
@@ -392,9 +396,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     not moved: they are kept a day, so a key waits for them to expire. Backups made before keep their own copy of the
     key, so they still restore, and a restore of one puts the key back. When it also makes that key current again (the
     backup was made while it was), rotate the data key again.
-  - *What does not rotate.* Blind indexes are derived from the original key: an Aadhaar index cannot be computed again,
-    because only the last four digits are kept. So is the original recovery key, which older backups open with; the
-    recovery key is replaced on its own (above). The original key is therefore never retired.
+  - *What does not rotate.* The Aadhaar index stays on the original key: it cannot be computed again, because only the
+    last four digits are kept. This is an accepted risk: keeping the full number to compute the index again would
+    break the rule that HC360 never stores it. The original recovery key, which older backups open with, comes from the
+    original key too; the recovery key is replaced on its own (above). The original key is therefore never retired.
   - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
     access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
 - **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
@@ -410,7 +415,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Key or secret | Where | Protected by | Protects | Rotation |
 |---|---|---|---|---|
 | Data encryption keys (field master key ring) | `keys\field-master.key` (original) and `keys\field-keys\` (one per rotation, and which is current) | Data Protection (machine DPAPI) | AES-256-GCM, a key per purpose (HKDF): ABHA and policy numbers, staff PAN and bank details, two-step verification secrets, secret settings, stored documents, scheduled report files, stored responses | System health, every 2 years or on exposure; an earlier key retired there once nothing is encrypted with it, the original never |
-| Blind-index key | Derived from the original data key | As above | HMAC-SHA256 lookups of ABHA, Aadhaar, policy, PAN and bank account numbers | Not rotated (an Aadhaar index cannot be rebuilt) |
+| Blind-index keys | Derived from each data key | As above | HMAC-SHA256 lookups of ABHA, policy, PAN and bank account numbers (the current data key's), and of Aadhaar numbers (the original key's) | With the data key, indexes computed again in the background; the Aadhaar index stays on the original key (it cannot be rebuilt) |
 | Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |

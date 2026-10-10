@@ -27,7 +27,7 @@ internal sealed class PatientCriteria
     /// <c>https://healthid.ndhm.gov.in|NN-NNNN-NNNN-NNNN</c> (ABHA number through its blind index — the number itself is
     /// never stored in clear) or a bare value, which is tried as both. Unknown systems match nothing.
     /// </summary>
-    public static PatientCriteria From(SearchRequest request, Func<string, string> blindIndex)
+    public static PatientCriteria From(SearchRequest request, Func<string, IEnumerable<string>> blindIndexes)
     {
         var criteria = new PatientCriteria();
         foreach (var criterion in request.Criteria)
@@ -50,7 +50,7 @@ internal sealed class PatientCriteria
 
                         if (token.System is null or FhirSystems.Abha && Masking.Normalize(token.Code!) is { Length: 14 } abha && abha.All(char.IsAsciiDigit))
                         {
-                            indexes.Add(blindIndex(abha));
+                            indexes.AddRange(blindIndexes(abha));
                         }
                     }
 
