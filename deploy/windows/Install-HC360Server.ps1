@@ -7,6 +7,10 @@
 .DESCRIPTION
     - Copies the published server to Program Files (the data folder is kept across upgrades).
     - Creates the PostgreSQL database and a least-privilege application role (optional, -CreateDatabase).
+    - Has the service sign in to PostgreSQL with its Windows account (SSPI), so the settings file holds no database
+      password (-DatabaseSignIn Windows, the default). The switch is made once the server has started as it was, and is
+      undone if the server then cannot reach the database. Needs PostgreSQL on this machine; -DatabaseSignIn Password
+      goes back to a password.
     - Writes the site configuration (%ProgramData%\HyFib\HealthCare360\config\hc360.settings.json), readable only by
       SYSTEM, Administrators and the service's own virtual account, with the database password protected by DPAPI for
       this machine (SRS SEC-07). Every setting already in the file is kept, including those added by hand. Of the
@@ -51,7 +55,9 @@ param(
     # Ports network (TCP) analysers connect to, as set in Lab setup > Analysers > Connection, e.g. 5100,5200.
     [int[]] $LabPorts,
     # The analysers' fixed IP addresses, so only they can reach those ports.
-    [string[]] $LabAnalyserAddresses
+    [string[]] $LabAnalyserAddresses,
+    # How the service signs in to PostgreSQL: with its Windows account (no password anywhere), or with a password.
+    [ValidateSet('Windows', 'Password')] [string] $DatabaseSignIn = 'Windows'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -71,10 +77,11 @@ function New-RandomSecret([int] $Bytes = 24) {
     return [Convert]::ToBase64String($buffer).TrimEnd('=').Replace('+', 'A').Replace('/', 'B')
 }
 
-# Local readiness probe. The certificate is issued by the hospital's private CA, which this machine does not have
-# to trust, so validation is skipped for this one localhost request only.
-function Test-ServerLive([int] $Port) {
-    $uri = "https://localhost:$Port/health/live"
+# Local health probe: "live" when the server is up, "ready" when it also reaches the database. The certificate is issued
+# by the hospital's private CA, which this machine does not have to trust, so validation is skipped for this one
+# localhost request only.
+function Test-ServerHealth([int] $Port, [string] $Probe = 'live') {
+    $uri = "https://localhost:$Port/health/$Probe"
     try {
         if ($PSVersionTable.PSVersion.Major -ge 6) {
             return (Invoke-WebRequest -Uri $uri -SkipCertificateCheck -TimeoutSec 5).StatusCode -eq 200
@@ -102,6 +109,24 @@ function Find-PostgresBin {
         if (Test-Path (Join-Path $bin 'psql.exe')) { return $bin }
     }
     return $null
+}
+
+# Waits up to 3 minutes for the server to be up and to reach the database.
+function Wait-ServerReady([int] $Port) {
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Seconds 3
+        if (Test-ServerHealth -Port $Port -Probe 'ready') { return $true }
+        Write-Host '    waiting for the server to start...'
+    }
+    return $false
+}
+
+function Stop-HC360Service {
+    $service = Get-Service -Name $ServiceName
+    if ($service.Status -ne 'Stopped') {
+        Stop-Service -Name $ServiceName -Force
+        $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
+    }
 }
 
 function Set-RestrictedAcl([string] $Path, [switch] $ServiceWrite) {
@@ -213,6 +238,150 @@ function Save-SettingsFile($Settings, [hashtable] $Before, [string[]] $Changed, 
     $json = ConvertTo-SettingsJson $Settings $Before $Changed
     $encoding = if ($PSVersionTable.PSVersion.Major -ge 6) { 'utf8BOM' } else { 'UTF8' }
     Set-Content -LiteralPath $Path -Value $json -Encoding $encoding
+}
+
+# ---------------------------------------------------------------- database sign-in (pg_hba.conf, pg_ident.conf)
+# The service signs in to PostgreSQL with its Windows account (SSPI), so there is no database password to keep, change or
+# lose (ASVS V13.2.1). The installer writes one block in pg_hba.conf and one in pg_ident.conf, each between a
+# "# BEGIN HyFib HealthCare360" and a "# END HyFib HealthCare360" line, and writes them again on every run: a change made
+# to them by hand is lost.
+
+# The lines of a PostgreSQL configuration file without the installer's block.
+function Remove-InstallerBlock([string[]] $Lines, [string] $Name) {
+    $kept = @()
+    $inside = $false
+    foreach ($line in $Lines) {
+        if (-not $inside -and $line.StartsWith('# BEGIN HyFib HealthCare360')) { $inside = $true }
+        elseif ($inside) { if ($line.StartsWith('# END HyFib HealthCare360')) { $inside = $false } }
+        else { $kept += $line }
+    }
+    if ($inside) {
+        throw "$Name has a '# BEGIN HyFib HealthCare360' line without its '# END HyFib HealthCare360' line. Correct the file and run the installer again."
+    }
+    return , $kept
+}
+
+# pg_hba.conf with the block that lets $Role sign in only with the Windows account pg_ident.conf maps to it under $Map,
+# and only from this machine. It goes before the first rule: PostgreSQL follows the first rule a connection matches.
+function Set-HbaBlock([string[]] $Lines, [string] $Role, [string] $Map) {
+    if ($Role -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+        throw "The database account '$Role' cannot be named in pg_hba.conf as it is: use an account named with letters, digits and underscores."
+    }
+    $block = @(
+        '# BEGIN HyFib HealthCare360. Install-HC360Server.ps1 writes this block on every run: changes to it are lost.',
+        "# $Role signs in only with the HC360 service's Windows account (SSPI, mapped in pg_ident.conf), from this machine.",
+        "local   all   $Role                  reject",
+        "host    all   $Role   127.0.0.1/32   sspi   map=$Map",
+        "host    all   $Role   ::1/128        sspi   map=$Map",
+        "host    all   $Role   all            reject",
+        '# END HyFib HealthCare360'
+    )
+    $rest = Remove-InstallerBlock $Lines 'pg_hba.conf'
+    $first = 0
+    while ($first -lt $rest.Count -and $rest[$first] -match '^\s*(#|$)') { $first++ }
+    $head = if ($first -gt 0) { @($rest[0..($first - 1)]) } else { @() }
+    $tail = if ($first -lt $rest.Count) { @($rest[$first..($rest.Count - 1)]) } else { @() }
+    return , ($head + $block + $tail)
+}
+
+# pg_ident.conf with the block that maps the Windows account $WindowsAccount, named as PostgreSQL names it
+# (ConvertTo-SspiName), to the database account $Role under $Map.
+function Set-IdentBlock([string[]] $Lines, [string] $Map, [string] $WindowsAccount, [string] $Role) {
+    if ($WindowsAccount.Contains('"')) { throw "The Windows account '$WindowsAccount' cannot be named in pg_ident.conf." }
+    $block = @(
+        '# BEGIN HyFib HealthCare360. Install-HC360Server.ps1 writes this block on every run: changes to it are lost.',
+        "$Map   `"$WindowsAccount`"   $Role",
+        '# END HyFib HealthCare360'
+    )
+    $rest = Remove-InstallerBlock $Lines 'pg_ident.conf'
+    return , (@($rest) + $block)
+}
+
+# A Windows account written DOMAIN\name, such as NT SERVICE\HC360Server, as PostgreSQL's SSPI sign-in names it: name@DOMAIN.
+# PostgreSQL compares it without regard to case.
+function ConvertTo-SspiName([string] $Account) {
+    $parts = $Account.Split('\')
+    if ($parts.Count -ne 2 -or -not $parts[0] -or -not $parts[1]) { throw "'$Account' is not a Windows account written DOMAIN\name." }
+    return "$($parts[1])@$($parts[0])"
+}
+
+# The data folder in a PostgreSQL service's command line: pg_ctl runservice -N "name" -D "folder".
+function Get-PgCtlDataDirectory([string] $CommandLine) {
+    if ($CommandLine -match '(?:^|\s)-D\s*"([^"]+)"') { return $Matches[1] }
+    if ($CommandLine -match '(?:^|\s)-D\s*([^\s"]+)') { return $Matches[1] }
+    return $null
+}
+
+# A setting of PostgreSQL's configuration as the server reads it: the last line that sets it, postgresql.auto.conf
+# (ALTER SYSTEM) after postgresql.conf. $null when neither sets it.
+function Get-PostgresSetting([string[]] $Conf, [string[]] $AutoConf, [string] $Name) {
+    $value = $null
+    foreach ($line in @($Conf) + @($AutoConf)) {
+        if ($line -match "^\s*$Name\s*=?\s*(?:'(?<quoted>(?:[^']|'')*)'|(?<plain>[^\s#']+))") {
+            $value = if ($Matches.ContainsKey('quoted')) { $Matches['quoted'].Replace("''", "'") } else { $Matches['plain'] }
+        }
+    }
+    return $value
+}
+
+# A text file's lines; none when there is no file.
+function Read-TextLines([string] $Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return , @() }
+    return , [string[]][System.IO.File]::ReadAllLines($Path)
+}
+
+# Writes a PostgreSQL configuration file, keeping its ACL, as UTF-8 without a byte order mark: PostgreSQL would read one
+# as part of the first line.
+function Write-TextLines([string] $Path, [string[]] $Lines) {
+    [System.IO.File]::WriteAllLines($Path, $Lines, (New-Object System.Text.UTF8Encoding $false))
+}
+
+# The PostgreSQL service of this machine that listens on $Port, with the files its sign-in rules are in; $null when there
+# is none.
+function Find-PostgresService([int] $Port) {
+    foreach ($service in @(Get-CimInstance -ClassName Win32_Service | Where-Object { $_.PathName -match 'pg_ctl(\.exe)?"?\s+runservice' })) {
+        $data = Get-PgCtlDataDirectory $service.PathName
+        if (-not $data -or -not (Test-Path -LiteralPath (Join-Path $data 'postgresql.conf'))) { continue }
+        $conf = Read-TextLines (Join-Path $data 'postgresql.conf')
+        $auto = Read-TextLines (Join-Path $data 'postgresql.auto.conf')
+        $configured = Get-PostgresSetting $conf $auto 'port'
+        if (-not $configured) { $configured = '5432' }
+        if (($configured -as [int]) -ne $Port) { continue }
+        $files = @{}
+        foreach ($setting in @(@('hba_file', 'pg_hba.conf'), @('ident_file', 'pg_ident.conf'))) {
+            $file = Get-PostgresSetting $conf $auto $setting[0]
+            if (-not $file) { $file = $setting[1] }
+            $files[$setting[0]] = if ([System.IO.Path]::IsPathRooted($file)) { $file } else { Join-Path $data $file }
+        }
+        return [pscustomobject]@{ Name = $service.Name; DataDirectory = $data; HbaFile = $files['hba_file']; IdentFile = $files['ident_file'] }
+    }
+    return $null
+}
+
+# Restarts PostgreSQL, which then reads pg_hba.conf and pg_ident.conf again, and waits until it takes connections.
+function Restart-Postgres($Postgres, [int] $Port) {
+    Restart-Service -Name $Postgres.Name -Force
+    $isReady = if ($pgBin) { Join-Path $pgBin 'pg_isready.exe' } else { $null }
+    if ($isReady -and (Test-Path -LiteralPath $isReady)) {
+        & $isReady -h localhost -p $Port -t 60 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "PostgreSQL ($($Postgres.Name)) did not take connections within a minute of restarting." }
+    }
+    else {
+        Start-Sleep -Seconds 10
+    }
+}
+
+# Runs one statement as the PostgreSQL superuser.
+function Invoke-SuperuserSql([string] $Server, [int] $Port, [string] $Sql) {
+    if (-not $PostgresSuperuserPassword) { $script:PostgresSuperuserPassword = Read-Host -AsSecureString "Password for PostgreSQL user '$PostgresSuperuser'" }
+    $env:PGPASSWORD = [System.Net.NetworkCredential]::new('', $PostgresSuperuserPassword).Password
+    try {
+        & (Join-Path $pgBin 'psql.exe') -h $Server -p $Port -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c $Sql
+        if ($LASTEXITCODE -ne 0) { throw "PostgreSQL refused: $Sql" }
+    }
+    finally {
+        Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+    }
 }
 
 # ---------------------------------------------------------------- checks
@@ -417,14 +586,132 @@ if (-not $SkipPowerTuning) {
 # ---------------------------------------------------------------- start and verify
 Write-Step 'Starting HyFib HealthCare360'
 Start-Service -Name $ServiceName
-$healthy = $false
-for ($i = 0; $i -lt 60 -and -not $healthy; $i++) {
-    Start-Sleep -Seconds 3
-    $healthy = Test-ServerLive -Port $HttpsPort
-    if (-not $healthy) { Write-Host '    waiting for the server to start...' }
+$ready = Wait-ServerReady -Port $HttpsPort
+if (-not $ready) {
+    Write-Warning "The service was not ready, up and reaching the database, within 3 minutes. Check $DataDir\logs and the Windows Application event log."
 }
-if (-not $healthy) {
-    Write-Warning "The service did not report healthy within 3 minutes. Check $DataDir\logs and the Windows Application event log."
+
+# ---------------------------------------------------------------- database sign-in
+# The service signs in to PostgreSQL with its Windows account (SSPI), and the settings file then holds no database
+# password (ASVS V13.2.1). The switch is made only once the server has started as it was, so an upgrade's database changes
+# are done first. Then the server must reach the database within 3 minutes, or the settings file, pg_hba.conf and
+# pg_ident.conf go back as they were, and the service signs in with its password as before.
+Write-Step 'Checking how the service signs in to the database'
+$signIn = $null
+$shown = @(& $exe database sign-in show --data-dir $DataDir)
+if ($LASTEXITCODE -eq 0) { $signIn = ($shown -join "`n") | ConvertFrom-StringData }
+else { Write-Warning 'The database sign-in could not be read from the settings file, so it is left as it is.' }
+$postgres = $null
+if ($signIn -and $signIn['on-this-machine'] -ne 'yes') {
+    Write-Host "    PostgreSQL is reached at $($signIn['host']), not on this machine: the service signs in with its password."
+}
+elseif ($signIn) {
+    $postgres = Find-PostgresService ([int] $signIn['port'])
+    if (-not $postgres) { Write-Warning "No PostgreSQL service on this machine listens on port $($signIn['port']), so the database sign-in is left as it is." }
+}
+
+if ($postgres) {
+    $role = $signIn['username']
+    $databasePort = [int] $signIn['port']
+    $withPassword = $signIn['sign-in'] -eq 'password'
+    $hbaBefore = Read-TextLines $postgres.HbaFile
+    $identBefore = Read-TextLines $postgres.IdentFile
+    if ($DatabaseSignIn -eq 'Windows') {
+        $hbaAfter = Set-HbaBlock $hbaBefore $role 'hc360'
+        $identAfter = Set-IdentBlock $identBefore 'hc360' (ConvertTo-SspiName $ServiceAccount) $role
+    }
+    else {
+        $hbaAfter = Remove-InstallerBlock $hbaBefore 'pg_hba.conf'
+        $identAfter = Remove-InstallerBlock $identBefore 'pg_ident.conf'
+    }
+    $filesChange = ($hbaAfter -join "`n") -cne ($hbaBefore -join "`n") -or ($identAfter -join "`n") -cne ($identBefore -join "`n")
+
+    if ($DatabaseSignIn -eq 'Windows' -and $withPassword -and -not $ready) {
+        Write-Warning 'The service still signs in to the database with its password: it is switched to its Windows account only once the server is ready. Run the installer again when it is.'
+    }
+    elseif ($DatabaseSignIn -eq 'Windows' -and $withPassword) {
+        Write-Step 'Switching the service to sign in to the database with its Windows account'
+        $saved = @{}
+        $saved[$settingsPath] = [System.IO.File]::ReadAllBytes($settingsPath)
+        $saved[$postgres.HbaFile] = [System.IO.File]::ReadAllBytes($postgres.HbaFile)
+        $identExisted = Test-Path -LiteralPath $postgres.IdentFile
+        if ($identExisted) { $saved[$postgres.IdentFile] = [System.IO.File]::ReadAllBytes($postgres.IdentFile) }
+        $switched = $false
+        try {
+            Stop-HC360Service
+            Write-TextLines $postgres.HbaFile $hbaAfter
+            Write-TextLines $postgres.IdentFile $identAfter
+            & $exe database sign-in windows --data-dir $DataDir | ForEach-Object { Write-Host "    $_" }
+            if ($LASTEXITCODE -ne 0) { throw "The settings file could not be changed (exit code $LASTEXITCODE)." }
+            Restart-Postgres $postgres $databasePort
+            Start-Service -Name $ServiceName
+            $switched = Wait-ServerReady -Port $HttpsPort
+            if (-not $switched) { throw 'The server did not reach the database with its Windows account within 3 minutes.' }
+        }
+        catch {
+            Write-Warning "$($_.Exception.Message) Putting the settings file, pg_hba.conf and pg_ident.conf back as they were: the service signs in with its password, as before. $DataDir\logs says why the Windows sign-in failed."
+            # The files go back even when the service does not stop: it reads its settings only when it starts.
+            try { Stop-HC360Service } catch { Write-Warning "The service did not stop: $($_.Exception.Message)" }
+            foreach ($file in $saved.Keys) { [System.IO.File]::WriteAllBytes($file, $saved[$file]) }
+            if (-not $identExisted) { Remove-Item -LiteralPath $postgres.IdentFile -Force -ErrorAction SilentlyContinue }
+            Restart-Postgres $postgres $databasePort
+            Start-Service -Name $ServiceName
+            $ready = Wait-ServerReady -Port $HttpsPort
+        }
+        if ($switched) {
+            Write-Host "    The service signs in to the database with its Windows account ($ServiceAccount): the settings file holds no database password."
+            if ($PostgresSuperuserPassword -and $pgBin) {
+                try {
+                    Invoke-SuperuserSql $signIn['host'] $databasePort "ALTER ROLE $role PASSWORD NULL"
+                    Write-Host "    The database account $role has no password any more."
+                }
+                catch {
+                    Write-Warning "The old password of $role could not be removed ($($_.Exception.Message)). PostgreSQL no longer accepts it anyway: it takes that account only from this service's Windows account."
+                }
+            }
+            else {
+                Write-Host "    PostgreSQL no longer accepts the old password of ${role}: it takes that account only from this service's Windows account."
+            }
+        }
+    }
+    elseif ($DatabaseSignIn -eq 'Password' -and -not $withPassword) {
+        if (-not $pgBin) { throw 'PostgreSQL client tools (psql.exe) were not found, so the database account cannot be given a password.' }
+        Write-Step 'Switching the service to sign in to the database with a password'
+        # The rules that take only the Windows account go last, once the settings file holds the password: until then the
+        # service can still sign in as it did.
+        $appPassword = New-RandomSecret
+        Stop-HC360Service
+        try {
+            Invoke-SuperuserSql $signIn['host'] $databasePort "ALTER ROLE $role PASSWORD '$appPassword'"
+            $env:HC360_DATABASE_PASSWORD = $appPassword
+            & $exe database sign-in password --data-dir $DataDir | ForEach-Object { Write-Host "    $_" }
+            if ($LASTEXITCODE -ne 0) { throw "The settings file could not be changed (exit code $LASTEXITCODE)." }
+            Write-TextLines $postgres.HbaFile $hbaAfter
+            Write-TextLines $postgres.IdentFile $identAfter
+            Restart-Postgres $postgres $databasePort
+        }
+        finally {
+            Remove-Item Env:\HC360_DATABASE_PASSWORD -ErrorAction SilentlyContinue
+            Start-Service -Name $ServiceName
+            $ready = Wait-ServerReady -Port $HttpsPort
+        }
+        if (-not $ready) { Write-Warning "The server did not reach the database with its new password within 3 minutes. Check $DataDir\logs." }
+    }
+    elseif ($filesChange) {
+        # pg_hba.conf or pg_ident.conf lost the block (PostgreSQL reinstalled, say), or still has one it no longer needs.
+        Write-Step 'Writing the database sign-in rules again'
+        Stop-HC360Service
+        Write-TextLines $postgres.HbaFile $hbaAfter
+        Write-TextLines $postgres.IdentFile $identAfter
+        Restart-Postgres $postgres $databasePort
+        Start-Service -Name $ServiceName
+        $ready = Wait-ServerReady -Port $HttpsPort
+        if (-not $ready) { Write-Warning "The service was not ready, up and reaching the database, within 3 minutes. Check $DataDir\logs." }
+    }
+    else {
+        $how = if ($withPassword) { 'with its password' } else { "with its Windows account ($ServiceAccount)" }
+        Write-Host "    The service signs in to the database $how."
+    }
 }
 
 $caPath = Join-Path $DataDir 'certs\hc360-hospital-ca.crt'

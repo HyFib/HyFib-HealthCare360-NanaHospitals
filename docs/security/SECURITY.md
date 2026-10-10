@@ -386,8 +386,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
     access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
 - **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
-  says when either is due. Rotate both at once, and change the database password, when the Server Node, its disks or a
-  backup may have been exposed, and when someone with administrator access to the Server Node leaves. Data keys are
+  says when either is due. Rotate both at once, and change the database password if the server signs in with one, when
+  the Server Node, its disks or a backup may have been exposed, and when someone with administrator access to the
+  Server Node leaves. Data keys are
   never deleted: a key stays as long as any data or backup may need it. Make a new backup recovery key when someone who
   has seen the current one leaves or a copy may have been exposed, and keep each one offline as long as backups made
   with it are kept.
@@ -402,24 +403,33 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
 | Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years |
-| Database password | `config\hc360.settings.json` | Machine DPAPI | The server's PostgreSQL account | System health, every year or when someone who knew it leaves |
+| Database sign-in | None: the service's Windows account (`NT SERVICE\HC360Server`, SSPI), which `pg_hba.conf` and `pg_ident.conf` allow from this machine only | Windows | The server's PostgreSQL account | Nothing to rotate. Where the server signs in with a password instead (PostgreSQL on another machine), the password is in `config\hc360.settings.json` under machine DPAPI, and changed from System health every year or when someone who knew it leaves |
 | Integration credentials (SMS, WhatsApp, e-mail, payment, AI) | Secret settings in the database | The data encryption key | Each provider's API | At the provider, then saved in Administration › Settings |
 | Desktop and lab agent device secrets | Each workstation | DPAPI (user or machine) | A device's sign-in | Revoke and enrol the device again |
 | Passwords, refresh tokens, one-time codes | The database | PBKDF2-SHA512 (passwords), SHA-256 (tokens and codes) | Sign-in | Refresh tokens on every use; passwords rehashed when the work factor rises |
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.
 - **Secrets in the settings file** (`config\hc360.settings.json`) are protected with Windows DPAPI for the machine:
-  every connection string, which carries the database password, and every setting whose name ends in Password, Secret
-  or ApiKey, such as an administrator-supplied certificate's password (SRS SEC-07). The server opens them as it loads
-  the file, so a copy of the file is no use on another computer, and the file itself can be read only by SYSTEM,
-  Administrators and the service. The installer protects them on every install and upgrade, and System health warns
-  while one is in plain text. Integration keys are stored encrypted in the database, as before.
-- **The database password is changed from System health** (SRS SEC-07), by holders of `admin.system.manage`, which
-  only SuperAdmin has by default. HC360 makes a new random password that nobody sees and sends PostgreSQL only its SCRAM-SHA-256
-  verifier, so the password never appears in a statement or the database's logs. The settings file is written before
-  the change is committed and put back if the commit fails, so the two agree. When a failed commit cannot be checked
-  because the database is out of reach, the old password is kept and the server log says how to recover. New
-  connections use the new password at once, and each change is audited.
+  every connection string, which carries the database password where the server signs in with one, and every setting
+  whose name ends in Password, Secret or ApiKey, such as an administrator-supplied certificate's password (SRS SEC-07).
+  The server opens them as it loads the file, so a copy of the file is no use on another computer, and the file itself
+  can be read only by SYSTEM, Administrators and the service. The installer protects them on every install and
+  upgrade, and System health warns while one is in plain text. Integration keys are stored encrypted in the database,
+  as before.
+- **The server signs in to PostgreSQL with its Windows account** (ASVS V13.2.1), `NT SERVICE\HC360Server`, through
+  SSPI, and not with a password: there is none in the settings file to copy, leak with a backup of it, or change.
+  `pg_ident.conf` maps that Windows account to the database account, and `pg_hba.conf` takes the database account only
+  that way and only from this machine, ahead of every other rule. Backups (pg_dump) sign in the same way. The installer
+  sets this up once the server has started as it was, checks that the server then reaches the database, and puts the
+  settings file, `pg_hba.conf` and `pg_ident.conf` back if it does not. With the superuser's password it also removes
+  the account's old password; without it, PostgreSQL refuses that password anyway. The Windows sign-in needs PostgreSQL
+  on the same machine: elsewhere, or after `-DatabaseSignIn Password`, the server signs in with a password, as below.
+- **Where the server signs in with a password, it is changed from System health** (SRS SEC-07), by holders of
+  `admin.system.manage`, which only SuperAdmin has by default. HC360 makes a new random password that nobody sees and
+  sends PostgreSQL only its SCRAM-SHA-256 verifier, so the password never appears in a statement or the database's
+  logs. The settings file is written before the change is committed and put back if the commit fails, so the two agree.
+  When a failed commit cannot be checked because the database is out of reach, the old password is kept and the server
+  log says how to recover. New connections use the new password at once, and each change is audited.
 - **BitLocker** must protect every fixed disk of the Server Node (SRS SEC-05). Reading BitLocker's state needs
   administrator rights, which the service does not have, so a scheduled task checks it as SYSTEM every day and at
   start-up, and the installer checks it too. System health shows the result, and warns when a disk is not encrypted,

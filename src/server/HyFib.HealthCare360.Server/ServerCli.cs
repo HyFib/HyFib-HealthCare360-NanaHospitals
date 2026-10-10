@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
+using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -10,6 +11,8 @@ namespace HyFib.HealthCare360.Server;
 /// <summary>Offline maintenance commands for administrators on the Server Node.</summary>
 internal static class ServerCli
 {
+    private const string DatabasePasswordVariable = "HC360_DATABASE_PASSWORD";
+
     private const string Usage = """
         HyFib HealthCare360 server maintenance
 
@@ -42,6 +45,15 @@ internal static class ServerCli
               reads them as before, and a copy of the file is no use on another machine. To change one, write its new plain
               value in the file and run this again. Install-HC360Server.ps1 runs it on every install and upgrade.
 
+          database sign-in show|windows|password [--data-dir <folder>]
+              How the server signs in to PostgreSQL, from config\hc360.settings.json. "show" prints the hospital connection
+              without its password, and whether it signs in with one. "windows" takes the password out of every connection
+              string that signs in to this machine's PostgreSQL as that account: the server then signs in with its Windows
+              account (SSPI), which pg_hba.conf and pg_ident.conf must allow. "password" puts back the password given in the
+              HC360_DATABASE_PASSWORD environment variable, which must already be the account's password.
+              Install-HC360Server.ps1 runs these, and sets PostgreSQL up to match; run them by hand only with the HC360
+              service stopped.
+
           disk-encryption check [--data-dir <folder>]
               Records whether BitLocker protects each fixed disk of this machine, for System health. It needs administrator
               rights; the "HC360 disk encryption check" scheduled task runs it as SYSTEM every day and at start-up. Exit code
@@ -55,7 +67,7 @@ internal static class ServerCli
         """;
 
     public static bool IsCommand(string argument) =>
-        argument is "backup" or "catalogue" or "settings" or "disk-encryption" or "help" or "--help" or "-h";
+        argument is "backup" or "catalogue" or "settings" or "database" or "disk-encryption" or "help" or "--help" or "-h";
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -71,6 +83,9 @@ internal static class ServerCli
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
                 ["catalogue", "import", ..] when options.ContainsKey("file") => await CatalogueCli.ImportAsync(options["file"], dryRun),
                 ["settings", "protect", ..] => ProtectSettings(options),
+                ["database", "sign-in", "show", ..] => ShowDatabaseSignIn(options),
+                ["database", "sign-in", "windows", ..] => ChangeDatabaseSignIn(options, windows: true),
+                ["database", "sign-in", "password", ..] => ChangeDatabaseSignIn(options, windows: false),
                 ["disk-encryption", "check", ..] => CheckDiskEncryption(options),
                 _ => PrintUsage(args),
             };
@@ -214,6 +229,93 @@ internal static class ServerCli
             ? "Every secret in the settings file is already protected."
             : $"Protected with DPAPI for this machine: {string.Join(", ", keys)}.");
         return 0;
+    }
+
+    /// <summary>
+    /// Prints the hospital database connection without its password, as name=value lines Install-HC360Server.ps1 reads
+    /// (ConvertFrom-StringData).
+    /// </summary>
+    private static int ShowDatabaseSignIn(Dictionary<string, string> options)
+    {
+        if (SettingsFile(options) is not { } path)
+        {
+            return 1;
+        }
+
+        DatabaseSignInState state;
+        try
+        {
+            state = DatabaseSignIn.Read(path, ProtectedSettings.ForThisMachine());
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or System.Text.Json.JsonException or IOException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 2;
+        }
+
+        Console.WriteLine($"host={state.Host}");
+        Console.WriteLine($"port={state.Port}");
+        Console.WriteLine($"database={state.Database}");
+        Console.WriteLine($"username={state.Username}");
+        Console.WriteLine($"sign-in={(state.WithPassword ? "password" : "windows")}");
+        Console.WriteLine($"on-this-machine={(state.OnThisMachine ? "yes" : "no")}");
+        return 0;
+    }
+
+    /// <summary>
+    /// Switches the server's connection strings to the Windows sign-in, or back to the password in
+    /// <see cref="DatabasePasswordVariable"/>, which must already be the account's in PostgreSQL. The file stays
+    /// protected with DPAPI.
+    /// </summary>
+    private static int ChangeDatabaseSignIn(Dictionary<string, string> options, bool windows)
+    {
+        var password = windows ? null : Environment.GetEnvironmentVariable(DatabasePasswordVariable);
+        if (!windows && string.IsNullOrEmpty(password))
+        {
+            Console.Error.WriteLine("Give the password in the HC360_DATABASE_PASSWORD environment variable, never on the command line.");
+            return 1;
+        }
+
+        if (SettingsFile(options) is not { } path)
+        {
+            return 1;
+        }
+
+        if (ProtectedSettings.ForThisMachine() is not { } protector)
+        {
+            Console.Error.WriteLine("The database sign-in can be changed only on Windows, where the settings file is protected with DPAPI.");
+            return 1;
+        }
+
+        IReadOnlyList<string> changed;
+        try
+        {
+            changed = windows ? DatabaseSignIn.UseWindows(path, protector) : DatabaseSignIn.UsePassword(path, protector, password!);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or CryptographicException or System.Text.Json.JsonException
+                                       or IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 2;
+        }
+
+        var how = windows ? "with its Windows account" : "with its password";
+        Console.WriteLine(changed.Count == 0
+            ? $"The server already signs in to the database {how}."
+            : $"The server now signs in to the database {how}: changed {string.Join(", ", changed)}.");
+        return 0;
+    }
+
+    private static string? SettingsFile(Dictionary<string, string> options)
+    {
+        var path = ProtectedSettings.PathIn(new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") }));
+        if (File.Exists(path))
+        {
+            return path;
+        }
+
+        Console.Error.WriteLine($"There is no settings file at {path}.");
+        return null;
     }
 
     /// <summary>Records BitLocker's state of every fixed disk for System health (SRS SEC-05). Needs administrator rights.</summary>
@@ -414,14 +516,16 @@ internal static class ServerCli
         }
     }
 
+    // "--name value" pairs wherever they start: after a command of two words (settings protect) or three (database sign-in show).
     private static Dictionary<string, string> ParseOptions(string[] args)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i + 1 < args.Length; i += 2)
+        for (var i = 0; i + 1 < args.Length; i++)
         {
             if (args[i].StartsWith("--", StringComparison.Ordinal))
             {
                 result[args[i][2..]] = args[i + 1];
+                i++;
             }
         }
 

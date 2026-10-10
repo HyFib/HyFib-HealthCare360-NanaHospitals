@@ -83,10 +83,11 @@ Keep the postgres password in the hospital's password safe.
 ```
 
 The installer:
-- Creates a least-privilege database account with a random password.
-- Writes the configuration, readable only by Administrators and the service. The database password in it is protected
-  with Windows DPAPI for this machine, so a copy of the file is no use on another computer (see "Changing a protected
-  setting" below).
+- Creates a least-privilege database account. Once HC360 has started, the service signs in to it with its Windows
+  account instead of a password (see "How the server signs in to the database" below).
+- Writes the configuration, readable only by Administrators and the service. Secrets in it are protected with Windows
+  DPAPI for this machine, so a copy of the file is no use on another computer (see "Changing a protected setting"
+  below).
 - Checks that BitLocker protects every fixed disk, and warns if one is not. It registers the scheduled task
   *HC360 disk encryption check* (in Task Scheduler › HyFib), which checks again as SYSTEM every day at 06:15 and at
   start-up. Administration › System health shows what it found, and warns about a disk that is not protected or a
@@ -95,7 +96,7 @@ The installer:
 - Opens the firewall, for Private networks only: HTTPS for the staff app (7360) and the patient portal (7361), and
   mDNS.
 - Keeps the machine and its WiFi adapter from sleeping.
-- Starts HC360 and checks that it is healthy.
+- Starts HC360 and checks that it is ready: up, and reaching the database.
 
 At the end it prints two things. Write them down:
 - the **hospital CA fingerprint**, which staff compare when setting up HC360 Desktop;
@@ -116,12 +117,36 @@ A protected value opens only on the machine that protected it. When the server m
 values in plain text on the new machine and protect them there (Install-HC360Server.ps1 does this for the database).
 Administration › System health warns while a secret in the file is in plain text.
 
+### How the server signs in to the database
+
+The `HC360Server` service signs in to PostgreSQL with its own Windows account, `NT SERVICE\HC360Server`, through
+Windows' SSPI. There is no database password: none in the configuration, none to change, and none to leak with a copy
+of the file. Backups (pg_dump) sign in the same way. The installer sets this up on every install and upgrade, once HC360
+has started as it was:
+
+1. In PostgreSQL's `pg_hba.conf` it lets the database account (`hc360_app`) sign in only with that Windows account and
+   only from this machine, and in `pg_ident.conf` it maps the Windows account to the database account. Each file gets
+   one block, between a `# BEGIN HyFib HealthCare360` and a `# END HyFib HealthCare360` line, which the installer
+   writes again on every run: change the rest of the files as you need, but not the blocks.
+2. It restarts PostgreSQL, takes the password out of the configuration, and starts HC360 again.
+3. If HC360 does not reach the database within 3 minutes, it puts the configuration, `pg_hba.conf` and `pg_ident.conf`
+   back as they were, and HC360 signs in with its password as before. The warning, and the log in `logs\`, say why.
+4. Given `-PostgresSuperuserPassword` (as with `-CreateDatabase`), it removes the old password from the database
+   account. Without it, PostgreSQL refuses that password anyway: it takes the account only from the service's Windows
+   account.
+
+The server signs in with a password when PostgreSQL is on another machine, which the Windows sign-in is not set up for,
+or after `.\Install-HC360Server.ps1 -DatabaseSignIn Password`, which gives the account a new random password (it asks
+for the `postgres` password) and removes the blocks. Run the installer again without it to go back to the Windows
+sign-in. After PostgreSQL is reinstalled, or upgraded to a new version with a new data folder, run the HC360 installer
+again: it writes the blocks into the new files.
+
 ### Changing the database password
 
-The password of HC360's database account is changed from Administration › System health, while HC360 runs (SRS
-SEC-07). It needs the permission *Change the server's database password and keys, make backup recovery keys, and sign
-everybody out* (`admin.system.manage`), which only SuperAdmin has until it is given to another role in Administration ›
-Roles and permissions. Then:
+When the server signs in with a password (above), the password of HC360's database account is changed from
+Administration › System health, while HC360 runs (SRS SEC-07). It needs the permission *Change the server's database
+password and keys, make backup recovery keys, and sign everybody out* (`admin.system.manage`), which only SuperAdmin has
+until it is given to another role in Administration › Roles and permissions. Then:
 
 1. Open Administration › System health. Under Database it shows when the password was last changed, and by whom.
 2. Select **Change password** and confirm.
@@ -133,14 +158,16 @@ new password too. Each change is recorded in the audit log. Change the password 
 leaves, and at least once a year.
 
 It works on the Windows Server Node when the connection string is in the settings file. When the connection is set
-somewhere else, such as in environment variables, System health says so, and the password is changed there.
+somewhere else, such as in environment variables, System health says so, and the password is changed there. With the
+Windows sign-in there is no password, and System health says so.
 
 ### Rotating the encryption keys
 
 Two keys are rotated from Administration › System health › Encryption keys, with the same permission
 (`admin.system.manage`), while HC360 runs (SRS SEC-07). Each rotation is recorded in the audit log, and System health
 says when one is due: the sign-in token key every year, the data encryption key every two years. Rotate both, and
-change the database password, at once if the Server Node, its disks or a backup may have been exposed.
+change the database password if the server signs in with one, at once if the Server Node, its disks or a backup may
+have been exposed.
 
 - **Rotate data key.** New identifiers, secrets and documents are encrypted with a new key from then on. A background
   job moves everything encrypted before to the new key, a little at a time; the section shows how much is left, and
@@ -435,9 +462,9 @@ Every setting in `hc360.settings.json` stays as it is, including those added by 
 `HealthCare360:Pdf:BrowserPath`, the BI extract folder or a reporting replica) and protected values. Of its own
 settings, the installer changes only those given to it again as parameters (`-HttpsPort`, `-PortalHttpsPort`,
 `-FacilityCode`, `-FacilityName`, `-SecondaryBackupDir`), and `HealthCare360:Backup:PgDumpPath`, which follows the newest
-PostgreSQL under Program Files. One the file lacks is added, such as the portal's port. The same holds when it runs again for `-LabPorts`. Leave comments out of the file: Windows
-PowerShell cannot read them (the installer then stops before it changes anything), and they are lost when the file is
-rewritten.
+PostgreSQL under Program Files. One the file lacks is added, such as the portal's port. The same holds when it runs
+again for `-LabPorts`. Leave comments out of the file: Windows PowerShell cannot read them (the installer then stops
+before it changes anything), and they are lost when the file is rewritten.
 It also protects any secret still written in plain text in the configuration (an installation from before this was
 done), and checks BitLocker again.
 Staff whose password is on the breach list built into the new version are asked to choose a new one at their next
@@ -446,6 +473,11 @@ way, staff who must now use two-step verification and have not set it up are ask
 accountants, HR managers, and anyone whose roles carry an administrative permission. Check that each has an
 authenticator app on their phone. Temporary passwords given out before HC360 made them expire work for 72 hours after
 the upgrade.
+Once the new version has started, the installer switches the service to sign in to PostgreSQL with its Windows account,
+so the configuration no longer holds the database password (section 3, "How the server signs in to the database").
+HC360 stops for another minute or two while PostgreSQL restarts. If HC360 then does not reach the database, the
+installer puts everything back, and HC360 signs in with its password as before; the warning says so. Run the upgrade
+with `-PostgresSuperuserPassword` to remove the old password from the database account as well.
 The patient portal moves to an address of its own, port 7361 (SECURITY.md, "Separate addresses"), and the installer
 opens that port in the firewall. Links to the old address (`https://HC360-SRV:7360/portal/...`), in messages already
 sent and on QR codes already printed, keep working: the staff app's address sends them on to the portal's. Then:
@@ -521,6 +553,8 @@ distribution tool).
 | Service will not start | `%ProgramData%\HyFib\HealthCare360\logs\`, then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
 | A restore says "This backup opens with recovery key …, not with the key entered" | Each backup opens with the key in use when it was made. Use the copy whose ID the message names; the Backups list names every backup's key |
 | A restore says "The recovery key has a mistake in it" | A character was copied or typed wrong. The key has no letters I, L, O or U; an I or L is read as 1, and an O as 0 |
+| Service will not start, and the log says `SSPI authentication failed for user "hc360_app"` or `No password has been provided but the backend requires one` | PostgreSQL no longer has HC360's sign-in rules, for example after it was reinstalled or upgraded to a new version with a new data folder. Run `Install-HC360Server.ps1` again: it writes them again. To sign in with a password instead, run it with `-DatabaseSignIn Password` |
+| The installer warns "The server did not reach the database with its Windows account" | It put everything back, and HC360 signs in with its password as before. The HC360 log in `logs\` and PostgreSQL's log (`log\` in its data folder) say why. Send both to HyFib support; until then HC360 works as it did |
 | "The database could not be reached to confirm the change" after Change password | HC360 kept the old password. If it cannot sign in to the database once the database is back, set a new password for its account as `postgres` (`\password hc360_app` in psql), write the connection string with it in plain text in `hc360.settings.json`, run `settings protect` and restart the `HC360Server` service |
 | `Install-HC360Server.ps1` stops at the start: "… hc360.settings.json is not valid JSON" | Nothing was changed, and HC360 keeps running. Correct the file where the message says (Windows PowerShell does not accept comments in it), then run the installer again |
 | Service will not start: "The setting … cannot be opened on this machine" | The configuration was copied from another server, or the value was damaged. Write that setting's plain value in `hc360.settings.json` and run `settings protect` (see "Changing a protected setting") |
