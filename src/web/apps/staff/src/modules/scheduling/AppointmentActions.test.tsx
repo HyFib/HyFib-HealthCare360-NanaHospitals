@@ -3,7 +3,7 @@ import type * as Ui from '@hc360/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as SchedulingApi from './api';
 import { schedulingApi, type AppointmentRef, type CheckInResult } from './api';
 import { AppointmentRowActions } from './AppointmentActions';
@@ -20,7 +20,10 @@ const notify = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.
 vi.mock('@hc360/ui', async (importOriginal) => ({ ...(await importOriginal<typeof Ui>()), useNotify: () => notify }));
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
 
-const startsAt = new Date(Date.now() + 30 * 60_000).toISOString();
+// The clock is pinned to noon IST (see beforeEach) and the appointment starts half an hour later. The row offers Check in
+// only for today's appointments on the IST calendar, and half an hour after the real time is tomorrow from 23:30 IST.
+const now = new Date('2026-09-26T12:00:00+05:30');
+const startsAt = new Date(now.getTime() + 30 * 60_000).toISOString();
 const appointment: AppointmentRef = {
   id: 'a1',
   number: 'NHAP260000123',
@@ -66,7 +69,13 @@ function renderRow() {
 
 describe('AppointmentRowActions', () => {
   beforeEach(() => {
+    // Only Date is faked: user-event and the focus waits need real timers.
+    vi.useFakeTimers({ now, toFake: ['Date'] });
     Object.values(schedulingApi).forEach((fn) => vi.mocked(fn).mockReset());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('returns focus to the row menu button when a dialog opened from it is closed from the keyboard', async () => {
