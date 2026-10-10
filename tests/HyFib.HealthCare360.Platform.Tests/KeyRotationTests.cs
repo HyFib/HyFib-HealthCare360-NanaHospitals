@@ -8,9 +8,10 @@ using Microsoft.Extensions.Options;
 namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
-/// SRS SEC-07, ASVS V11.2.2: the data encryption key and the token signing key rotate. After a rotation new data uses
-/// the new key, everything encrypted before stays readable, and blind indexes and the original recovery key do not
-/// change; backups carry every key, so a restore reads data encrypted with any of them.
+/// SRS SEC-07, ASVS V11.1.1, V11.2.2: the data encryption key and the token signing key rotate. After a rotation new data
+/// uses the new key, everything encrypted before stays readable, and blind indexes and the original recovery key do not
+/// change; backups carry every key, so a restore reads data encrypted with any of them. An earlier key can be retired,
+/// and a backup made before still restores and brings it back.
 /// </summary>
 public sealed class KeyRotationTests : IDisposable
 {
@@ -106,6 +107,77 @@ public sealed class KeyRotationTests : IDisposable
         File.Move(keyFile, Path.Combine(FieldKeyRing.DirectoryIn(machine), "0000000000000000.key"));
 
         Should.Throw<CryptographicException>(() => new FieldProtector(machine, _protection).Protect("x"));
+    }
+
+    [Fact]
+    public void A_retired_key_leaves_the_ring_and_the_disk()
+    {
+        var machine = Machine("m");
+        var protector = new FieldProtector(machine, _protection);
+        var earlier = protector.Rotate();
+        var left = protector.Protect("12-3456-7890-1234");
+        var current = protector.Rotate();
+        var moved = protector.Protect("98-7654-3210-9876");
+
+        protector.Retire(earlier);
+
+        protector.Keys.Select(k => k.Id).ShouldBe([protector.OriginalKeyId, current], ignoreOrder: true);
+        File.Exists(Path.Combine(FieldKeyRing.DirectoryIn(machine), earlier + ".key")).ShouldBeFalse();
+        protector.Unprotect(moved).ShouldBe("98-7654-3210-9876");
+
+        // Whatever was left on it can no longer be read here: retiring is only for a key nothing is encrypted with.
+        Should.Throw<CryptographicException>(() => protector.Unprotect(left)).Message.ShouldContain(earlier);
+
+        // A restart does not bring it back.
+        var restarted = new FieldProtector(machine, _protection);
+        restarted.Keys.Select(k => k.Id).ShouldBe([protector.OriginalKeyId, current], ignoreOrder: true);
+        restarted.CurrentKeyId.ShouldBe(current);
+    }
+
+    [Fact]
+    public void The_original_key_and_the_current_one_are_never_retired()
+    {
+        var machine = Machine("m");
+        var protector = new FieldProtector(machine, _protection);
+        var current = protector.Rotate();
+
+        Should.Throw<InvalidOperationException>(() => protector.Retire(protector.OriginalKeyId)).Message.ShouldContain("original key");
+        Should.Throw<InvalidOperationException>(() => protector.Retire(current)).Message.ShouldContain("current key");
+        Should.Throw<InvalidOperationException>(() => protector.Retire("0123456789ABCDEF")).Message.ShouldContain("not in the ring");
+        Should.Throw<InvalidOperationException>(() => FieldKeyRing.Remove(machine, current));
+        Should.Throw<ArgumentException>(() => FieldKeyRing.Remove(machine, "../field-master"));
+
+        new FieldProtector(machine, _protection).Keys.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void The_ring_knows_when_its_current_key_became_current()
+    {
+        var protector = new FieldProtector(Machine("m"), _protection);
+        protector.CurrentSince.ShouldBeNull("the original key has been current since installation");
+
+        protector.Rotate();
+
+        protector.CurrentSince.ShouldNotBeNull().ShouldBe(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task A_backup_made_before_a_key_was_retired_restores_and_brings_the_key_back()
+    {
+        var machine = Machine("m");
+        var protector = new FieldProtector(machine, _protection);
+        var earlier = protector.Rotate();
+        var value = protector.Protect("12-3456-7890-1234");
+        var current = protector.Rotate();
+        var (backup, recoveryKey) = await BackupWithRingAsync(machine, protector);
+
+        protector.Retire(earlier);
+        await BackupRestore.RestoreAsync(backup, recoveryKey, Path.Combine(machine.Temp, "r.dump"), machine, _protection, TimeProvider.System, CancellationToken.None);
+
+        var restored = new FieldProtector(machine, _protection);
+        restored.Keys.Select(k => k.Id).ShouldBe([protector.OriginalKeyId, earlier, current], ignoreOrder: true);
+        restored.CurrentKeyId.ShouldBe(current);
+        restored.Unprotect(value).ShouldBe("12-3456-7890-1234");
     }
 
     [Fact]

@@ -419,4 +419,7 @@ Web: `format.test.ts`, `params.test.ts`, `charts.test.ts`, `schedule-form.test.t
 * **Contract gaps**: e-mail attachments are not supported by `INotificationService` (the module's outbox handler uses
   `IEmailSender` directly); `IFileStore` rejects XLSX/CSV, so delivered files are kept encrypted in the module's table.
   Adding attachment support to notifications would let this handler go.
+* `report_deliveries.content` is marked `IsProtectedBytes(ReportDeliveryService.FilePurpose)`: after a data key
+  rotation the platform's key mover moves each kept file to the new key, so an earlier key can be retired without
+  waiting out the retention period. Encrypt any other stored file for one purpose and mark its column the same way.
 * The shared `EChart` wrapper exposes no events, so drill-down is from table rows (charts are visual only).

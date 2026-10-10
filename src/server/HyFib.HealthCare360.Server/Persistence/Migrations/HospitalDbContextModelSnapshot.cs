@@ -617,7 +617,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.Property<byte[]>("Content")
                         .HasColumnType("bytea")
-                        .HasColumnName("content");
+                        .HasColumnName("content")
+                        .HasAnnotation("HC360:ProtectedBytes", "analytics.delivery");
 
                     b.Property<DateTimeOffset?>("ContentPurgedAt")
                         .HasColumnType("timestamp with time zone")
@@ -34196,7 +34197,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.Property<byte[]>("ResponseBody")
                         .HasColumnType("bytea")
-                        .HasColumnName("response_body");
+                        .HasColumnName("response_body")
+                        .HasAnnotation("HC360:ProtectedBytes", "");
 
                     b.Property<string>("Scope")
                         .IsRequired()

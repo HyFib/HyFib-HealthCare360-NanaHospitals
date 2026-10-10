@@ -12,10 +12,12 @@ namespace HyFib.HealthCare360.Platform.Security;
 /// key that is itself wrapped by ASP.NET Core Data Protection (machine DPAPI on Windows).
 /// <para>
 /// The master keys form a ring (SRS SEC-07): the original key, and one more for each rotation from System health. New
-/// values are encrypted with the current key and name it; every key is kept, so anything encrypted before stays
-/// readable until <see cref="FieldKeyMover"/> moves it to the current key. Blind indexes and the keys from
-/// <see cref="DeriveKey"/> stay on the original key: an Aadhaar index cannot be computed again, and older backups open
-/// with the original recovery key, which comes from it (<see cref="Jobs.BackupRecoveryKey.Original"/>).
+/// values are encrypted with the current key and name it; an earlier key stays in the ring, so anything encrypted
+/// before stays readable, until <see cref="FieldKeyMover"/> has moved all of it to the current key. Then an
+/// administrator may retire it (<see cref="IFieldKeyRing.Retire"/>). Blind indexes and the keys from
+/// <see cref="DeriveKey"/> stay on the original key, which is never retired: an Aadhaar index cannot be computed again,
+/// and older backups open with the original recovery key, which comes from it
+/// (<see cref="Jobs.BackupRecoveryKey.Original"/>).
 /// </para>
 /// </summary>
 public interface IFieldProtector
@@ -59,6 +61,12 @@ public interface IFieldKeyRing
     /// <summary>The key the ring started with: blind indexes, backups and every <c>v1</c> value use it.</summary>
     string OriginalKeyId { get; }
 
+    /// <summary>
+    /// When the current key became current, by a rotation or a restore; every earlier key was replaced then or before.
+    /// Null while the original key is current.
+    /// </summary>
+    DateTimeOffset? CurrentSince { get; }
+
     IReadOnlyList<FieldKeyInfo> Keys { get; }
 
     /// <summary>
@@ -73,6 +81,14 @@ public interface IFieldKeyRing
 
     /// <summary>Makes a new master key the current one, and keeps every earlier key. Returns the new key's id.</summary>
     string Rotate();
+
+    /// <summary>
+    /// Takes a key a rotation added out of the ring, and deletes it from this machine. The caller checks first that
+    /// nothing is encrypted with it any more: what is would no longer be readable here. Backups made before keep their
+    /// copy of it.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">It is the original key, the current one, or not in the ring.</exception>
+    void Retire(string id);
 }
 
 /// <summary>
@@ -135,6 +151,8 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
 
     public string OriginalKeyId => Ring.OriginalId;
 
+    public DateTimeOffset? CurrentSince => FieldKeyRing.CurrentSince(_directories);
+
     public IReadOnlyList<FieldKeyInfo> Keys
     {
         get
@@ -173,6 +191,25 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
             FieldKeyRing.SetCurrent(_directories, id);
             Volatile.Write(ref _ring, ring.With(id, key));
             return id;
+        }
+    }
+
+    public void Retire(string id)
+    {
+        lock (_rotation)
+        {
+            var ring = Ring;
+            if (id == ring.OriginalId || id == ring.CurrentId || !ring.Keys.ContainsKey(id))
+            {
+                throw new InvalidOperationException(id == ring.OriginalId ? $"Key {id} is the original key, which is never retired."
+                    : id == ring.CurrentId ? $"Key {id} is the current key."
+                    : $"Key {id} is not in the ring.");
+            }
+
+            // Off the disk first, so a restart never brings it back. The bytes are left for the collector, not wiped: a
+            // backup may be copying them from the ring it read a moment ago.
+            FieldKeyRing.Remove(_directories, id);
+            Volatile.Write(ref _ring, ring.Without(id));
         }
     }
 
@@ -285,6 +322,13 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
 
         public FieldKeyRingState With(string id, byte[] key) =>
             new(new Dictionary<string, byte[]>(Keys, StringComparer.Ordinal) { [id] = key }, OriginalId, id);
+
+        public FieldKeyRingState Without(string id)
+        {
+            var keys = new Dictionary<string, byte[]>(Keys, StringComparer.Ordinal);
+            keys.Remove(id);
+            return new FieldKeyRingState(keys, OriginalId, CurrentId);
+        }
     }
 }
 
@@ -385,8 +429,9 @@ public static class FieldMasterKey
 /// <summary>
 /// The keys rotations added to the field master key ring (SRS SEC-07), beside the original key: each in
 /// <c>keys/field-keys/&lt;key id&gt;.key</c>, wrapped by Data Protection like the original, and the current key's id in
-/// <c>keys/field-keys/current</c> (none while the original is current). Keys are only ever added, never removed: data,
-/// and backups, encrypted with an earlier key stay readable.
+/// <c>keys/field-keys/current</c> (none while the original is current). An earlier key stays until nothing is encrypted
+/// with it any more and an administrator retires it (<see cref="Remove"/>). Every backup carries a copy of each key the
+/// ring held when it was made, so a backup restores without the machine still having its keys.
 /// </summary>
 public static class FieldKeyRing
 {
@@ -427,6 +472,13 @@ public static class FieldKeyRing
         return File.Exists(path) ? File.ReadAllText(path).Trim().ToUpperInvariant() : null;
     }
 
+    /// <summary>When the current key was made current (its id written down), or null while the original key is current.</summary>
+    public static DateTimeOffset? CurrentSince(DataDirectories directories)
+    {
+        var path = Path.Combine(DirectoryIn(directories), CurrentFileName);
+        return File.Exists(path) ? new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero) : null;
+    }
+
     /// <summary>Adds a key, wrapped for this machine, unless it is there already. Returns its id.</summary>
     public static string Add(DataDirectories directories, IDataProtector wrapper, byte[] key)
     {
@@ -447,6 +499,25 @@ public static class FieldKeyRing
         }
 
         return id;
+    }
+
+    /// <summary>
+    /// Deletes a key a rotation added, which must not be the current one. Data still encrypted with it is no longer
+    /// readable here, so the caller checks first that there is none.
+    /// </summary>
+    public static void Remove(DataDirectories directories, string id)
+    {
+        if (id.Length != 16 || !id.All(Uri.IsHexDigit))
+        {
+            throw new ArgumentException("A field key id is 16 hexadecimal digits.", nameof(id));
+        }
+
+        if (string.Equals(Current(directories), id, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Key {id} is the current key.");
+        }
+
+        File.Delete(Path.Combine(DirectoryIn(directories), id.ToUpperInvariant() + KeyExtension));
     }
 
     /// <summary>Makes the key with this id current (it must have been added), or the original key when null.</summary>

@@ -175,8 +175,14 @@ have been exposed.
 - **Rotate data key.** New identifiers, secrets and documents are encrypted with a new key from then on. A background
   job moves everything encrypted before to the new key, a little at a time; the section shows how much is left, and
   screens keep working meanwhile. Documents move only while no backup is copying them. Earlier keys stay in
-  `keys\field-keys` beside `keys\field-master.key`, and every backup carries them all, so older backups restore as
-  before. Rotating it does not change the backup recovery key, which has a key of its own (below).
+  `keys\field-keys` beside `keys\field-master.key` until they are retired, and every backup carries every key the
+  server has when the backup is made, so older backups restore as before. Rotating it does not change the backup
+  recovery key, which has a key of its own (below).
+- **Retire.** *Earlier keys* lists each earlier data key with what is still encrypted with it. Once nothing is, and
+  the current key has been current for a day, **Retire** deletes the key from the server, after you give your password
+  again. Backups made before keep their own copy of it, so they still restore, and restoring one puts it back (retire
+  it again once its data has moved; if the restore made it the current key, rotate first). The original key is never
+  retired: searching by ABHA or Aadhaar number depends on it.
 - **Rotate sign-in key.** New sign-in tokens are signed with a new key. Tokens already issued stay valid until they
   expire, within minutes, so nobody is signed out. It can be rotated again once those have expired.
 

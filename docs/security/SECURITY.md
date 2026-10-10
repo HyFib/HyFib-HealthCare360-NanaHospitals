@@ -381,28 +381,35 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   rotation is audited.
   - *Data encryption key.* A new key becomes current and encrypts new data at once. Every value and document names
     the key it was encrypted with, and a background job moves what was encrypted before to the new key, a little at a
-    time: the protected columns of every module, secret settings, and stored documents, which it rewrites only while no
-    backup is copying them. The screen shows how much is left. Earlier keys are kept, so older backups and anything not
-    yet moved stay readable, and every backup carries all of them.
+    time: the protected columns of every module, secret settings, scheduled report files, and stored documents, which
+    it rewrites only while no backup is copying them. The screen shows how much is left. An earlier key stays until
+    nothing is encrypted with it, so anything not yet moved stays readable, and every backup carries every key the
+    server has when the backup is made.
+  - *Retiring an earlier data key* (ASVS V11.1.1). The screen lists each earlier key with what is still encrypted with
+    it. Once nothing is, and the current key has been current for a day (so anything still being encrypted with the
+    old key as it changed has been written, and moved), it offers to retire the key. The administrator gives their
+    password again, the server deletes the key, and the audit log records it. Stored answers to repeated requests are
+    not moved: they are kept a day, so a key waits for them to expire. Backups made before keep their own copy of the
+    key, so they still restore, and a restore of one puts the key back. When it also makes that key current again (the
+    backup was made while it was), rotate the data key again.
   - *What does not rotate.* Blind indexes are derived from the original key: an Aadhaar index cannot be computed again,
     because only the last four digits are kept. So is the original recovery key, which older backups open with; the
-    recovery key is replaced on its own (above). Short-lived encrypted data (stored responses for repeated requests,
-    24 hours; scheduled report files, 30 days by default) is not moved: it expires with its key still in the ring.
+    recovery key is replaced on its own (above). The original key is therefore never retired.
   - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
     access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
 - **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
   says when either is due. Rotate both at once, and change the database password if the server signs in with one, when
   the Server Node, its disks or a backup may have been exposed, and when someone with administrator access to the
-  Server Node leaves. Data keys are
-  never deleted: a key stays as long as any data or backup may need it. Make a new backup recovery key when someone who
-  has seen the current one leaves or a copy may have been exposed, and keep each one offline as long as backups made
-  with it are kept.
+  Server Node leaves. Retire an earlier data key once System health shows nothing is encrypted with it; the backups
+  made before keep their copy of it until they are deleted. Make a new backup recovery key when someone who has seen
+  the current one leaves or a copy may have been exposed, and keep each one offline as long as backups made with it are
+  kept.
 
 #### Keys and certificates
 
 | Key or secret | Where | Protected by | Protects | Rotation |
 |---|---|---|---|---|
-| Data encryption keys (field master key ring) | `keys\field-master.key` (original) and `keys\field-keys\` (one per rotation, and which is current) | Data Protection (machine DPAPI) | AES-256-GCM, a key per purpose (HKDF): ABHA and policy numbers, staff PAN and bank details, two-step verification secrets, secret settings, stored documents, scheduled report files, stored responses | System health, every 2 years or on exposure; earlier keys kept |
+| Data encryption keys (field master key ring) | `keys\field-master.key` (original) and `keys\field-keys\` (one per rotation, and which is current) | Data Protection (machine DPAPI) | AES-256-GCM, a key per purpose (HKDF): ABHA and policy numbers, staff PAN and bank details, two-step verification secrets, secret settings, stored documents, scheduled report files, stored responses | System health, every 2 years or on exposure; an earlier key retired there once nothing is encrypted with it, the original never |
 | Blind-index key | Derived from the original data key | As above | HMAC-SHA256 lookups of ABHA, Aadhaar, policy, PAN and bank account numbers | Not rotated (an Aadhaar index cannot be rebuilt) |
 | Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |

@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Organization;
@@ -352,10 +353,15 @@ internal static class SystemEndpoints
         admin.MapPost("/database-password/change", async (DatabasePasswordService passwords, CancellationToken ct) => (await passwords.ChangeAsync(ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);
 
-        // The encryption keys (SRS SEC-07): who may see their age and what is left to move, and who may rotate them.
+        // The encryption keys (SRS SEC-07): who may see their age and what is left to move, and who may rotate them, and
+        // retire an earlier data key once nothing is encrypted with it (after giving their password again).
         admin.MapGet("/keys", async (KeyRotationService keys, CancellationToken ct) => TypedResults.Ok(await keys.StatusAsync(ct)));
         admin.MapPost("/keys/data/rotate", async (KeyRotationService keys, CancellationToken ct) => TypedResults.Ok(await keys.RotateDataKeyAsync(ct)))
             .RequirePermission(PlatformPermissions.SystemManage);
+        admin.MapPost("/keys/data/{keyId}/retire", async (string keyId, ReauthenticateRequest request, KeyRotationService keys, CancellationToken ct) =>
+                (await keys.RetireDataKeyAsync(keyId, request, ct)).ToOk())
+            .RequirePermission(PlatformPermissions.SystemManage)
+            .RequireRateLimiting(AuthEndpoints.AuthRateLimit);
         admin.MapPost("/keys/signing/rotate", async (KeyRotationService keys, CancellationToken ct) => (await keys.RotateSigningKeyAsync(ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);
 

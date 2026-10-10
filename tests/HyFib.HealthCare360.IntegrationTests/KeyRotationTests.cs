@@ -4,9 +4,13 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Modules.Analytics.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Files;
+using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -20,8 +24,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// SRS SEC-07 over the real API: an administrator rotates the data encryption key and the sign-in token key from System
-/// health. Identifiers, secret settings and documents encrypted before move to the new key and stay readable, ABHA
-/// search keeps working, and nobody is signed out.
+/// health. Identifiers, secret settings, documents and scheduled report files encrypted before move to the new key and
+/// stay readable, ABHA search keeps working, and nobody is signed out. An earlier data key is retired once nothing is
+/// encrypted with it any more (ASVS V11.1.1).
 /// </summary>
 public sealed class KeyRotationTests(HospitalServer server)
 {
@@ -51,18 +56,8 @@ public sealed class KeyRotationTests(HospitalServer server)
         (await admin.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={abha}")).Items.ShouldContain(p => p.Id == patient.Id);
         (await DownloadAsync(admin, fileId)).ShouldBe(png);
 
-        // ...and after. The background mover may be at work too: a pass can find the documents locked by it, so keep going
-        // until nothing is left.
-        await using (var scope = server.Services.CreateAsyncScope())
-        {
-            var mover = scope.ServiceProvider.GetRequiredService<FieldKeyMover>();
-            for (var pass = 0; pass < 40 && !(await mover.CountAsync(Ct)).IsEmpty; pass++)
-            {
-                await mover.MoveAsync(Ct);
-                await Task.Delay(250, Ct);
-            }
-        }
-
+        // ...and after.
+        await MoveEverythingAsync();
         var moved = await admin.GetAsync<EncryptionKeysStatus>("/api/v1/admin/system/keys");
         (moved.DataKey.ValuesToMove, moved.DataKey.DocumentsToMove).ShouldBe((0, 0));
         var prefix = $"v2.{rotated.DataKey.KeyId}.";
@@ -77,6 +72,104 @@ public sealed class KeyRotationTests(HospitalServer server)
 
         (await admin.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={abha}")).Items.ShouldContain(p => p.Id == patient.Id);
         (await DownloadAsync(admin, fileId)).ShouldBe(png);
+    }
+
+    [Fact]
+    public async Task A_scheduled_report_file_moves_to_the_new_key_and_still_opens()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var content = Encoding.UTF8.GetBytes("Ward,Census\nGeneral,42\n");
+        Guid deliveryId;
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            var delivery = new ReportDelivery
+            {
+                FacilityId = Guid.NewGuid(),
+                ScheduleId = Guid.NewGuid(),
+                ReportId = "ward-census",
+                ReportTitle = "Ward census",
+                CreatedAt = DateTimeOffset.UtcNow,
+                FileName = "ward-census.csv",
+                ContentType = "text/csv",
+                Content = scope.ServiceProvider.GetRequiredService<IFieldProtector>().ProtectBytes(content, "analytics.delivery"),
+            };
+            db.Add(delivery);
+            await db.SaveChangesAsync(Ct);
+            deliveryId = delivery.Id;
+        }
+
+        var rotated = await admin.PostAsync<EncryptionKeysStatus>("/api/v1/admin/system/keys/data/rotate");
+        await MoveEverythingAsync();
+
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var stored = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<ReportDelivery>().IgnoreQueryFilters()
+                .Where(d => d.Id == deliveryId).Select(d => d.Content).SingleAsync(Ct);
+            var ring = scope.ServiceProvider.GetRequiredService<IFieldKeyRing>();
+            ring.KeyIdOf(stored.ShouldNotBeNull()).ShouldBe(rotated.DataKey.KeyId);
+            scope.ServiceProvider.GetRequiredService<IFieldProtector>().UnprotectBytes(stored, "analytics.delivery").ShouldBe(content);
+        }
+    }
+
+    [Fact]
+    public async Task An_earlier_data_key_is_retired_once_nothing_is_encrypted_with_it()
+    {
+        // From the test's own address: retiring a key asks for the password, so it is rate-limited like signing in.
+        var (admin, _) = await server.SignInNewSessionAsync(HospitalServer.Users.Admin);
+        var earlier = (await admin.PostAsync<EncryptionKeysStatus>("/api/v1/admin/system/keys/data/rotate")).DataKey.KeyId;
+        var abha = "91" + Digits(12);
+
+        // Registered while that key is current, and the answer is kept a day for a retry of the same request. The answer
+        // is not moved by a rotation: it expires.
+        var patient = await RegisterPatientAsync(abha, idempotencyKey: Guid.NewGuid().ToString());
+        var rotated = await admin.PostAsync<EncryptionKeysStatus>("/api/v1/admin/system/keys/data/rotate");
+        var current = rotated.DataKey.KeyId;
+        var entry = rotated.DataKey.Earlier.Single(k => k.KeyId == earlier);
+        entry.Expiring.ShouldBeGreaterThanOrEqualTo(1);
+        entry.CanRetire.ShouldBeFalse();
+        await RefusedAsync(admin, earlier, "keys.in_use", "stored answer");
+
+        // Everything else moves, and the kept answer expires.
+        await MoveEverythingAsync();
+        await ExpireStoredAnswersAsync(earlier);
+
+        // The key changed a moment ago: whatever was still being encrypted with the earlier one gets a day to be written.
+        var waiting = (await admin.GetAsync<EncryptionKeysStatus>("/api/v1/admin/system/keys")).DataKey.Earlier.Single(k => k.KeyId == earlier);
+        (waiting.Values, waiting.Documents, waiting.Expiring, waiting.CanRetire).ShouldBe((0, 0, 0, false));
+        waiting.RetireFrom.ShouldNotBeNull().ShouldBeGreaterThan(DateTimeOffset.UtcNow.AddHours(23));
+        await RefusedAsync(admin, earlier, "keys.rotated_recently", "less than a day ago");
+        var directories = server.Services.GetRequiredService<DataDirectories>();
+        File.SetLastWriteTimeUtc(Path.Combine(FieldKeyRing.DirectoryIn(directories), FieldKeyRing.CurrentFileName), DateTime.UtcNow.AddDays(-2));
+
+        // The password is asked again.
+        using (var wrong = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/admin/system/keys/data/{earlier}/retire", new ReauthenticateRequest("not-the-password")))
+        {
+            wrong.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
+
+        var retired = await admin.PostAsync<EncryptionKeysStatus>($"/api/v1/admin/system/keys/data/{earlier}/retire", new ReauthenticateRequest(server.Password));
+
+        retired.DataKey.KeyId.ShouldBe(current);
+        retired.DataKey.Earlier.ShouldNotContain(k => k.KeyId == earlier);
+        retired.DataKey.Keys.ShouldBe(rotated.DataKey.Keys - 1);
+        File.Exists(Path.Combine(FieldKeyRing.DirectoryIn(directories), earlier + ".key")).ShouldBeFalse();
+
+        // What was encrypted with it moved, so it is still readable and searchable.
+        (await admin.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={abha}")).Items.ShouldContain(p => p.Id == patient.Id);
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            var cipher = await db.Set<Patient>().Where(p => p.Id == patient.Id).Select(p => p.AbhaNumberCipher).SingleAsync(Ct);
+            scope.ServiceProvider.GetRequiredService<IFieldProtector>().Unprotect(cipher).ShouldBe(abha);
+            var audit = await db.Set<AuditEvent>().AsNoTracking().Where(e => e.Action == "security.data_key_retired").OrderByDescending(e => e.Id).FirstAsync(Ct);
+            (audit.Severity, audit.UserName).ShouldBe((AuditSeverity.Warning, HospitalServer.Users.Admin));
+            audit.Summary.ShouldNotBeNull().ShouldContain(earlier);
+        }
+
+        // The original key and the current one are never retired.
+        await RefusedAsync(admin, server.Services.GetRequiredService<IFieldKeyRing>().OriginalKeyId, "keys.original_kept", "never retired");
+        await RefusedAsync(admin, current, "keys.current_key", "encrypts new data");
     }
 
     [Fact]
@@ -109,8 +202,14 @@ public sealed class KeyRotationTests(HospitalServer server)
         using var data = await hospitalAdmin.SendRawAsync(HttpMethod.Post, "/api/v1/admin/system/keys/data/rotate");
         using var signing = await hospitalAdmin.SendRawAsync(HttpMethod.Post, "/api/v1/admin/system/keys/signing/rotate");
 
+        // Retiring asks for the password, so it is rate-limited like signing in: from the test's own address.
+        var (ownAddress, _) = await server.SignInNewSessionAsync(HospitalServer.Users.HospitalAdmin);
+        using var retire = await ownAddress.SendRawAsync(HttpMethod.Post, "/api/v1/admin/system/keys/data/0123456789ABCDEF/retire",
+            new ReauthenticateRequest(server.Password));
+
         data.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         signing.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        retire.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
     [Fact]
@@ -126,19 +225,70 @@ public sealed class KeyRotationTests(HospitalServer server)
         encrypted.Count.ShouldBeGreaterThanOrEqualTo(7);
         encrypted.Where(p => p.FindAnnotation(ProtectedValueBuilderExtensions.Annotation)?.Value is not true)
             .Select(p => $"{p.DeclaringType.DisplayName()}.{p.Name}").ShouldBeEmpty("mark the column IsProtectedValue() in its configuration");
+
+        // Encrypted files kept in the database: moved (report files), or expiring (stored answers), so a key that still
+        // encrypts one is not retired.
+        model.GetEntityTypes()
+            .SelectMany(e => e.GetProperties().Where(p => p.FindAnnotation(ProtectedValueBuilderExtensions.BytesAnnotation) is not null))
+            .Select(p => $"{p.DeclaringType.DisplayName()}.{p.Name}={p.FindAnnotation(ProtectedValueBuilderExtensions.BytesAnnotation)!.Value}")
+            .ShouldBe(["IdempotencyRecord.ResponseBody=", "ReportDelivery.Content=analytics.delivery"], ignoreOrder: true);
     }
 
-    private async Task<PatientCreated> RegisterPatientAsync(string abha)
+    // The background mover may be at work too: a pass can find the documents locked by it, so keep going until nothing is
+    // left.
+    private async Task MoveEverythingAsync()
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var mover = scope.ServiceProvider.GetRequiredService<FieldKeyMover>();
+        for (var pass = 0; pass < 40 && !(await mover.CountAsync(Ct)).IsEmpty; pass++)
+        {
+            await mover.MoveAsync(Ct);
+            await Task.Delay(250, Ct);
+        }
+
+        (await mover.CountAsync(Ct)).IsEmpty.ShouldBeTrue();
+    }
+
+    // Stored answers to repeated requests are kept a day; these, encrypted with the key, are removed as if they had expired.
+    private async Task ExpireStoredAnswersAsync(string keyId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        byte[] header = [2, .. Convert.FromHexString(keyId)];
+        var records = await db.Set<IdempotencyRecord>().Where(r => r.ResponseBody != null).ToListAsync(Ct);
+        db.RemoveRange(records.Where(r => r.ResponseBody!.AsSpan().StartsWith(header)));
+        await db.SaveChangesAsync(Ct);
+    }
+
+    private async Task RefusedAsync(ApiClient admin, string keyId, string code, string message)
+    {
+        using var response = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/admin/system/keys/data/{keyId}/retire", new ReauthenticateRequest(server.Password));
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = await response.Content.ReadAsStringAsync(Ct);
+        problem.ShouldContain($"\"code\":\"{code}\"");
+        problem.ShouldContain(message);
+    }
+
+    private async Task<PatientCreated> RegisterPatientAsync(string abha, string? idempotencyKey = null)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
-        return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
+        var request = new RegisterPatientRequest(
             Title: "Mr.", FirstName: "Rotan", MiddleName: null, LastName: "Keys" + Letters(8), Gender: Gender.Male,
             DateOfBirth: new DateOnly(1970, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
             EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
             Category: null, AbhaNumber: abha, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
-            ConfirmedNotDuplicate: true));
+            ConfirmedNotDuplicate: true);
+        if (idempotencyKey is null)
+        {
+            return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", request);
+        }
+
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/api/v1/patients") { Content = JsonContent.Create(request, options: ApiClient.Json) };
+        message.Headers.Add(IdempotencyMiddleware.HeaderName, idempotencyKey);
+        using var response = await frontOffice.Http.SendAsync(message, Ct);
+        return await ApiClient.ReadAsync<PatientCreated>(response, HttpMethod.Post, "/api/v1/patients");
     }
 
     private static async Task<Guid> UploadAsync(ApiClient client, byte[] png)
