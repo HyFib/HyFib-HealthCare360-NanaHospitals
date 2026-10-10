@@ -17,6 +17,7 @@ public static class ProtectedValueBuilderExtensions
 {
     public const string Annotation = "HC360:ProtectedValue";
     public const string BytesAnnotation = "HC360:ProtectedBytes";
+    public const string BlindIndexAnnotation = "HC360:BlindIndexOf";
 
     /// <summary>
     /// Marks a column that holds <see cref="IFieldProtector.Protect"/> strings, so that after a key rotation
@@ -32,6 +33,15 @@ public static class ProtectedValueBuilderExtensions
     /// </summary>
     public static PropertyBuilder<T> IsProtectedBytes<T>(this PropertyBuilder<T> property, string? purpose = null) =>
         property.HasAnnotation(BytesAnnotation, purpose ?? string.Empty);
+
+    /// <summary>
+    /// Marks a column that holds <see cref="IFieldProtector.BlindIndex"/> values of the value encrypted in
+    /// <paramref name="protectedProperty"/> (a column marked <see cref="IsProtectedValue{T}"/> of the same table), so that
+    /// after a key rotation <see cref="FieldKeyMover"/> computes each index again with the current key, from the
+    /// decrypted value normalised with <see cref="Masking.Normalize"/> (SRS SEC-07).
+    /// </summary>
+    public static PropertyBuilder<T> IsBlindIndexOf<T>(this PropertyBuilder<T> property, string protectedProperty) =>
+        property.HasAnnotation(BlindIndexAnnotation, protectedProperty);
 }
 
 /// <summary>
@@ -109,12 +119,20 @@ public sealed record FieldKeyMoveResult(int Values, int Documents, int Failed, b
 /// After a rotation (SRS SEC-07), moves what was encrypted with an earlier key to the current one: the columns marked
 /// <see cref="ProtectedValueBuilderExtensions.IsProtectedValue{T}"/> in every module, secret settings, stored documents,
 /// and the columns marked <see cref="ProtectedValueBuilderExtensions.IsProtectedBytes{T}"/> with a purpose (scheduled
-/// report files). Each value is decrypted and encrypted again, and written only if it has not changed meanwhile, so it
-/// never races a user's edit. Rows are updated directly, without audit entries for each (the rotation itself is audited).
+/// report files). The blind indexes marked <see cref="ProtectedValueBuilderExtensions.IsBlindIndexOf{T}"/> are computed
+/// again with the current key from the value they index, once the rotation is a minute old. Each value is decrypted and encrypted again, and written only
+/// if it has not changed meanwhile, so it never races a user's edit. Rows are updated directly, without audit entries for
+/// each (the rotation itself is audited).
 /// Stored answers to repeated requests, kept a day, are not moved: they expire with their key still in the ring. Once
 /// nothing is left on an earlier key (<see cref="UsageAsync"/>), it can be retired.
 /// </summary>
-internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protector, IFieldKeyRing ring, DataDirectories directories, ILogger<FieldKeyMover> logger)
+internal sealed class FieldKeyMover(
+    HospitalDbContext db,
+    IFieldProtector protector,
+    IFieldKeyRing ring,
+    DataDirectories directories,
+    TimeProvider time,
+    ILogger<FieldKeyMover> logger)
 {
     private const int ValueBatch = 200;
     private const int DocumentBatch = 20;
@@ -122,6 +140,12 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
 
     // The start of a ProtectBytes output that only one encryption has: its version, key id, nonce and tag.
     private const int Head = 1 + 8 + 12 + 16;
+
+    /// <summary>
+    /// How long after a rotation blind indexes are left as they are. A search or duplicate check that took the ring's keys
+    /// just before the rotation looks for a row by its earlier index; it has run long before this has passed.
+    /// </summary>
+    public static readonly TimeSpan IndexesSettleAfter = TimeSpan.FromMinutes(1);
 
     public async Task<FieldKeyBacklog> CountAsync(CancellationToken cancellationToken)
     {
@@ -146,6 +170,9 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
                     files += await db.Database.SqlQueryRaw<long>(column.CountSql, new NpgsqlParameter("header", header), new NpgsqlParameter("length", header.Length))
                         .SingleAsync(cancellationToken);
                     break;
+                case ProtectedKind.Index:
+                    values += await db.Database.SqlQueryRaw<long>(column.CountSql, IndexParameters()).SingleAsync(cancellationToken);
+                    break;
             }
         }
 
@@ -166,7 +193,7 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
         {
             var counts = column.Kind switch
             {
-                ProtectedKind.Value => values,
+                ProtectedKind.Value or ProtectedKind.Index => values,
                 ProtectedKind.File => documents,
                 _ => expiring,
             };
@@ -222,6 +249,7 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
             {
                 ProtectedKind.Value => await MoveColumnAsync(column, cancellationToken),
                 ProtectedKind.File => await MoveFilesAsync(column, cancellationToken),
+                ProtectedKind.Index when IndexesSettled() => await MoveIndexesAsync(column, cancellationToken),
                 _ => (0, 0),
             };
             if (column.Kind == ProtectedKind.File)
@@ -317,6 +345,42 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
             }
 
             after = ids[^1];
+        }
+    }
+
+    /// <summary>
+    /// Computes the blind indexes of a column again with the current key, each from the value it indexes, and writes one
+    /// only if it has not changed meanwhile.
+    /// </summary>
+    private async Task<(int Moved, int Failed)> MoveIndexesAsync(ProtectedColumn column, CancellationToken cancellationToken)
+    {
+        var moved = 0;
+        var failed = 0;
+        var after = Guid.Empty;
+        while (true)
+        {
+            var rows = await db.Database.SqlQueryRaw<IndexRow>(column.SelectSql,
+                    [.. IndexParameters(), new NpgsqlParameter("after", after), new NpgsqlParameter("take", ValueBatch)])
+                .ToListAsync(cancellationToken);
+            if (rows.Count == 0)
+            {
+                return (moved, failed);
+            }
+
+            foreach (var row in rows)
+            {
+                if (Reindex(row, column) is { } index)
+                {
+                    moved += await db.Database.ExecuteSqlRawAsync(column.UpdateSql,
+                        [new NpgsqlParameter("id", row.Id), new NpgsqlParameter("value", index), new NpgsqlParameter("old", row.Index)], cancellationToken);
+                }
+                else
+                {
+                    failed++;
+                }
+            }
+
+            after = rows[^1].Id;
         }
     }
 
@@ -460,6 +524,35 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
         }
     }
 
+    private string? Reindex(IndexRow row, ProtectedColumn column)
+    {
+        if (row.Protected is null)
+        {
+            logger.LogError("An index in {Column} has no value beside it to compute it again from; it stays on its own key", column.Name);
+            return null;
+        }
+
+        try
+        {
+            return protector.BlindIndex(Masking.Normalize(protector.Unprotect(row.Protected)!));
+        }
+        catch (CryptographicException ex)
+        {
+            logger.LogError(ex, "An index in {Column} could not be computed again with the current key; it stays on its own key", column.Name);
+            return null;
+        }
+    }
+
+    // Whether the current key has been current long enough for blind indexes to move (IndexesSettleAfter).
+    private bool IndexesSettled() => ring.CurrentSince is not { } since || time.GetUtcNow() - since >= IndexesSettleAfter;
+
+    // Which blind indexes are not on the current key: the original key's have no key id, a later key's start with it.
+    private NpgsqlParameter[] IndexParameters() =>
+    [
+        new("original", ring.CurrentKeyId == ring.OriginalKeyId),
+        new("prefix", ring.CurrentKeyId + ".%"),
+    ];
+
     // The start of everything ProtectBytes writes with the current key: version 1 for the original key, else version 2
     // and the key's id.
     private byte[] CurrentHeader() =>
@@ -491,6 +584,15 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
         public string Value { get; set; } = string.Empty;
     }
 
+    private sealed class IndexRow
+    {
+        public Guid Id { get; set; }
+
+        public string Index { get; set; } = string.Empty;
+
+        public string? Protected { get; set; }
+    }
+
     private sealed class KeyCount
     {
         public string? Key { get; set; }
@@ -508,12 +610,15 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
 
         /// <summary><see cref="IFieldProtector.ProtectBytes"/> output whose purpose differs from row to row: it expires, and is not moved.</summary>
         Expiring,
+
+        /// <summary><see cref="IFieldProtector.BlindIndex"/> values, computed again from the encrypted value they index.</summary>
+        Index,
     }
 
     [SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "Table and column names come from the EF model; values are parameters.")]
     private sealed class ProtectedColumn
     {
-        private ProtectedColumn(IEntityType entity, IProperty property, ProtectedKind kind, string purpose)
+        private ProtectedColumn(IEntityType entity, IProperty property, ProtectedKind kind, string purpose, IProperty? indexed = null)
         {
             var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
             var name = TableName(entity);
@@ -522,7 +627,17 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
             Name = $"{entity.GetSchema()}.{entity.GetTableName()}.{property.GetColumnName(table)}";
             Kind = kind;
             Purpose = purpose;
-            if (kind == ProtectedKind.Value)
+            if (kind == ProtectedKind.Index)
+            {
+                // Not on the current key: the original key's indexes have no key id; a later key's start with it and a dot.
+                var pending = $"{column} IS NOT NULL AND (CASE WHEN @original THEN {column} LIKE '%.%' ELSE {column} NOT LIKE @prefix END)";
+                var value = Quote(indexed!.GetColumnName(table)!);
+                CountSql = $"SELECT count(*) AS \"Value\" FROM {name} WHERE {pending}";
+                SelectSql = $"SELECT {id} AS \"Id\", {column} AS \"Index\", {value} AS \"Protected\" FROM {name} WHERE {pending} AND {id} > @after ORDER BY {id} LIMIT @take";
+                UpdateSql = $"UPDATE {name} SET {column} = @value WHERE {id} = @id AND {column} = @old";
+                UsageSql = $"SELECT split_part({column}, '.', 1) AS \"Key\", count(*) AS \"Count\" FROM {name} WHERE {column} LIKE '%.%' GROUP BY 1";
+            }
+            else if (kind == ProtectedKind.Value)
             {
                 var pending = $"{column} IS NOT NULL AND {column} NOT LIKE @prefix";
                 CountSql = $"SELECT count(*) AS \"Value\" FROM {name} WHERE {pending}";
@@ -564,10 +679,16 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
         public string UsageSql { get; }
 
         /// <summary>The column, when it is marked as holding encrypted values; otherwise null.</summary>
+        /// <exception cref="InvalidOperationException">A blind index names a value that is not an encrypted column of its table.</exception>
         public static ProtectedColumn? For(IEntityType entity, IProperty property) =>
             property.FindAnnotation(ProtectedValueBuilderExtensions.Annotation)?.Value is true ? new ProtectedColumn(entity, property, ProtectedKind.Value, string.Empty)
             : property.FindAnnotation(ProtectedValueBuilderExtensions.BytesAnnotation)?.Value is string purpose
                 ? new ProtectedColumn(entity, property, purpose.Length > 0 ? ProtectedKind.File : ProtectedKind.Expiring, purpose)
+            : property.FindAnnotation(ProtectedValueBuilderExtensions.BlindIndexAnnotation)?.Value is string indexed
+                ? new ProtectedColumn(entity, property, ProtectedKind.Index, string.Empty, entity.FindProperty(indexed) is { } value
+                    && value.FindAnnotation(ProtectedValueBuilderExtensions.Annotation)?.Value is true
+                        ? value
+                        : throw new InvalidOperationException($"{entity.DisplayName()}.{property.Name} indexes {indexed}, which is not an encrypted column of {entity.DisplayName()}."))
                 : null;
 
         /// <summary>For a jsonb column holding a JSON string: replaces the string if the column still holds the old one.</summary>

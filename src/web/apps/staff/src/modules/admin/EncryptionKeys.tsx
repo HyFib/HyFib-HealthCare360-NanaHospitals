@@ -265,7 +265,7 @@ export function EncryptionKeys() {
               ))}
             </div>
             <Caption1 className={styles.muted}>
-              The original key is always kept: searching by ABHA or Aadhaar number depends on it.
+              The original key is always kept: searching by Aadhaar number depends on it.
             </Caption1>
           </div>
         )}

@@ -254,9 +254,9 @@ public sealed class EmployeeService(
     {
         if (!string.IsNullOrWhiteSpace(pan))
         {
-            var index = protector.BlindIndex(HrIdentifiers.Normalize(pan));
+            var indexes = protector.BlindIndexes(HrIdentifiers.Normalize(pan)).ToArray();
             var holder = await db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
-                .Where(e => e.PanIndex == index && e.Id != excludeId && e.Status != EmployeeStatus.Separated)
+                .Where(e => e.PanIndex != null && indexes.Contains(e.PanIndex) && e.Id != excludeId && e.Status != EmployeeStatus.Separated)
                 .Select(e => e.EmployeeCode).FirstOrDefaultAsync(ct);
             if (holder is not null)
             {
@@ -266,9 +266,9 @@ public sealed class EmployeeService(
 
         if (!string.IsNullOrWhiteSpace(accountNumber) && !confirmSharedAccount)
         {
-            var index = protector.BlindIndex(HrIdentifiers.Normalize(accountNumber));
+            var indexes = protector.BlindIndexes(HrIdentifiers.Normalize(accountNumber)).ToArray();
             var holder = await db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
-                .Where(e => e.BankAccountIndex == index && e.Id != excludeId && e.Status != EmployeeStatus.Separated)
+                .Where(e => e.BankAccountIndex != null && indexes.Contains(e.BankAccountIndex) && e.Id != excludeId && e.Status != EmployeeStatus.Separated)
                 .Select(e => e.EmployeeCode).FirstOrDefaultAsync(ct);
             if (holder is not null)
             {

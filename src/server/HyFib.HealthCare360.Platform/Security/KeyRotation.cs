@@ -159,7 +159,7 @@ internal sealed class KeyRotationService(
             if (key.Original)
             {
                 return Error.Rule("keys.original_kept",
-                    "This is the original data key, which is never retired: searching by ABHA, Aadhaar, policy, PAN or account number, and backups made before the first new recovery key, depend on it.");
+                    "This is the original data key, which is never retired: searching by Aadhaar number, and backups made before the first new recovery key, depend on it.");
             }
 
             if (key.Current)

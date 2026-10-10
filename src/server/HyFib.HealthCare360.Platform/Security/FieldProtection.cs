@@ -14,10 +14,10 @@ namespace HyFib.HealthCare360.Platform.Security;
 /// The master keys form a ring (SRS SEC-07): the original key, and one more for each rotation from System health. New
 /// values are encrypted with the current key and name it; an earlier key stays in the ring, so anything encrypted
 /// before stays readable, until <see cref="FieldKeyMover"/> has moved all of it to the current key. Then an
-/// administrator may retire it (<see cref="IFieldKeyRing.Retire"/>). Blind indexes and the keys from
-/// <see cref="DeriveKey"/> stay on the original key, which is never retired: an Aadhaar index cannot be computed again,
-/// and older backups open with the original recovery key, which comes from it
-/// (<see cref="Jobs.BackupRecoveryKey.Original"/>).
+/// administrator may retire it (<see cref="IFieldKeyRing.Retire"/>). Blind indexes move with the key too, computed
+/// again from the encrypted value they index. Fixed indexes and the keys from <see cref="DeriveKey"/> stay on the
+/// original key, which is never retired: an Aadhaar index cannot be computed again, and older backups open with the
+/// original recovery key, which comes from it (<see cref="Jobs.BackupRecoveryKey.Original"/>).
 /// </para>
 /// </summary>
 public interface IFieldProtector
@@ -31,10 +31,26 @@ public interface IFieldProtector
     string? Unprotect(string? protectedValue);
 
     /// <summary>
-    /// Deterministic keyed hash (HMAC-SHA256) for exact-match lookups without storing plaintext.
-    /// Normalise the value (trim, remove spaces, upper-case) before calling.
+    /// Deterministic keyed hash (HMAC-SHA256) for exact-match lookups without storing plaintext, with a key derived from
+    /// the current key: 64 hex digits for the original key, <c>&lt;key id&gt;.&lt;base64url&gt;</c> (60 characters) for
+    /// a later one, so an index names its key. Normalise the value (<see cref="Masking.Normalize"/>) before calling.
+    /// Keep the value itself encrypted beside it and mark the column <c>IsBlindIndexOf</c> that one, so that after a
+    /// rotation <see cref="FieldKeyMover"/> computes the index again with the new key. Look a value up with
+    /// <see cref="BlindIndexes"/>.
     /// </summary>
     string BlindIndex(string normalizedValue);
+
+    /// <summary>
+    /// The value's <see cref="BlindIndex"/> under every key of the ring, to look it up: until the indexes have moved to
+    /// the current key, a row may hold one made with an earlier key.
+    /// </summary>
+    IReadOnlyList<string> BlindIndexes(string normalizedValue);
+
+    /// <summary>
+    /// A blind index that stays on the original key (64 hex digits), for a value HC360 does not keep: an Aadhaar number,
+    /// of which only the last four digits are kept, so its index cannot be computed again with a new key.
+    /// </summary>
+    string FixedBlindIndex(string normalizedValue);
 
     /// <summary>Encrypts bytes with the current key: <c>1|nonce|tag|ciphertext</c>, or <c>2|key id|nonce|tag|ciphertext</c> after a rotation.</summary>
     byte[] ProtectBytes(ReadOnlySpan<byte> plaintext, string purpose);
@@ -237,8 +253,27 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
 
     public string BlindIndex(string normalizedValue)
     {
-        var key = DeriveKey("blind-index");
-        return Convert.ToHexString(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(normalizedValue)));
+        var ring = Ring;
+        return BlindIndexWith(ring, ring.CurrentId, normalizedValue);
+    }
+
+    public IReadOnlyList<string> BlindIndexes(string normalizedValue)
+    {
+        var ring = Ring;
+        return ring.Keys.Keys.Select(id => BlindIndexWith(ring, id, normalizedValue)).ToList();
+    }
+
+    public string FixedBlindIndex(string normalizedValue)
+    {
+        var ring = Ring;
+        return BlindIndexWith(ring, ring.OriginalId, normalizedValue);
+    }
+
+    // The original key's index is 64 hex digits, as before keys rotated; a later key's names it, and fits the same column.
+    private static string BlindIndexWith(FieldKeyRingState ring, string keyId, string normalizedValue)
+    {
+        var hash = HMACSHA256.HashData(FieldMasterKey.DeriveKey(ring.Keys[keyId], "blind-index"), Encoding.UTF8.GetBytes(normalizedValue));
+        return keyId == ring.OriginalId ? Convert.ToHexString(hash) : $"{keyId}.{Base64UrlEncoder.Encode(hash)}";
     }
 
     public byte[] ProtectBytes(ReadOnlySpan<byte> plaintext, string purpose)

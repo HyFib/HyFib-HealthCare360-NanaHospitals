@@ -75,6 +75,44 @@ public sealed class KeyRotationTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Search_indexes_move_to_the_new_key_and_the_Aadhaar_index_stays_on_the_original()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var abha = "91" + Digits(12);
+        var aadhaar = Aadhaar();
+        var patient = await RegisterPatientAsync(abha, aadhaar: aadhaar);
+        var before = await SearchIndexesAsync(patient.Id);
+
+        var rotated = await admin.PostAsync<EncryptionKeysStatus>("/api/v1/admin/system/keys/data/rotate");
+
+        // For a minute the indexes stay as they are: a search that took the keys just before the rotation still looks for
+        // the earlier index. The patient is found by either number meanwhile...
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<FieldKeyMover>().MoveAsync(Ct);
+        }
+
+        (await SearchIndexesAsync(patient.Id)).Abha.ShouldBe(before.Abha);
+        (await admin.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={abha}")).Items.ShouldContain(p => p.Id == patient.Id);
+        (await admin.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={aadhaar}")).Items.ShouldContain(p => p.Id == patient.Id);
+        await MoveEverythingAsync();
+
+        // ...and after. The ABHA index is now made with the new key, which it names. The Aadhaar index stays on the original
+        // key: only the last four digits are kept, so it cannot be computed again.
+        var after = await SearchIndexesAsync(patient.Id);
+        after.Abha.ShouldStartWith(rotated.DataKey.KeyId + ".");
+        after.Abha.ShouldNotBe(before.Abha);
+        after.Aadhaar.ShouldBe(before.Aadhaar);
+        after.Aadhaar.ShouldMatch("^[0-9A-F]{64}$");
+        (await admin.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={abha}")).Items.ShouldContain(p => p.Id == patient.Id);
+        (await admin.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={aadhaar}")).Items.ShouldContain(p => p.Id == patient.Id);
+
+        // The same number is still recognised when someone registers it again.
+        var ex = await Should.ThrowAsync<HttpRequestException>(() => RegisterPatientAsync(abha));
+        (ex.StatusCode, ex.Message.Contains("patient.abha_in_use", StringComparison.Ordinal)).ShouldBe((HttpStatusCode.Conflict, true));
+    }
+
+    [Fact]
     public async Task A_scheduled_report_file_moves_to_the_new_key_and_still_opens()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
@@ -226,6 +264,18 @@ public sealed class KeyRotationTests(HospitalServer server)
         encrypted.Where(p => p.FindAnnotation(ProtectedValueBuilderExtensions.Annotation)?.Value is not true)
             .Select(p => $"{p.DeclaringType.DisplayName()}.{p.Name}").ShouldBeEmpty("mark the column IsProtectedValue() in its configuration");
 
+        // Blind indexes move too, computed again from the encrypted value beside them. An Aadhaar index cannot be (only the
+        // last four digits are kept), so it stays on the original key.
+        model.GetEntityTypes()
+            .SelectMany(e => e.GetProperties().Where(p => p.FindAnnotation(ProtectedValueBuilderExtensions.BlindIndexAnnotation) is not null))
+            .Select(p => $"{p.DeclaringType.DisplayName()}.{p.Name}={p.FindAnnotation(ProtectedValueBuilderExtensions.BlindIndexAnnotation)!.Value}")
+            .ShouldBe([
+                "Patient.AbhaNumberIndex=AbhaNumberCipher",
+                "PatientPolicy.PolicyNumberIndex=PolicyNumberCipher",
+                "Employee.PanIndex=PanCipher",
+                "Employee.BankAccountIndex=BankAccountCipher",
+            ], ignoreOrder: true);
+
         // Encrypted files kept in the database: moved (report files), or expiring (stored answers), so a key that still
         // encrypts one is not retired.
         model.GetEntityTypes()
@@ -235,9 +285,15 @@ public sealed class KeyRotationTests(HospitalServer server)
     }
 
     // The background mover may be at work too: a pass can find the documents locked by it, so keep going until nothing is
-    // left.
+    // left. Blind indexes move once the rotation is a minute old, so the rotation is made older first.
     private async Task MoveEverythingAsync()
     {
+        var current = Path.Combine(FieldKeyRing.DirectoryIn(server.Services.GetRequiredService<DataDirectories>()), FieldKeyRing.CurrentFileName);
+        if (File.Exists(current) && File.GetLastWriteTimeUtc(current) > DateTime.UtcNow - FieldKeyMover.IndexesSettleAfter)
+        {
+            File.SetLastWriteTimeUtc(current, DateTime.UtcNow - FieldKeyMover.IndexesSettleAfter - TimeSpan.FromMinutes(1));
+        }
+
         await using var scope = server.Services.CreateAsyncScope();
         var mover = scope.ServiceProvider.GetRequiredService<FieldKeyMover>();
         for (var pass = 0; pass < 40 && !(await mover.CountAsync(Ct)).IsEmpty; pass++)
@@ -269,7 +325,15 @@ public sealed class KeyRotationTests(HospitalServer server)
         problem.ShouldContain(message);
     }
 
-    private async Task<PatientCreated> RegisterPatientAsync(string abha, string? idempotencyKey = null)
+    private async Task<(string Abha, string Aadhaar)> SearchIndexesAsync(Guid patientId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var indexes = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Patient>()
+            .Where(p => p.Id == patientId).Select(p => new { p.AbhaNumberIndex, p.AadhaarIndex }).SingleAsync(Ct);
+        return (indexes.AbhaNumberIndex.ShouldNotBeNull(), indexes.AadhaarIndex.ShouldNotBeNull());
+    }
+
+    private async Task<PatientCreated> RegisterPatientAsync(string abha, string? idempotencyKey = null, string? aadhaar = null)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var request = new RegisterPatientRequest(
@@ -278,7 +342,7 @@ public sealed class KeyRotationTests(HospitalServer server)
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
             EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
-            Category: null, AbhaNumber: abha, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
+            Category: null, AbhaNumber: abha, AbhaAddress: null, AadhaarNumber: aadhaar, PhotoFileId: null, IsVip: false, Notes: null,
             ConfirmedNotDuplicate: true);
         if (idempotencyKey is null)
         {
@@ -312,6 +376,33 @@ public sealed class KeyRotationTests(HospitalServer server)
 
     private static string KeyIdOf(string jwt) =>
         JsonDocument.Parse(Encoding.UTF8.GetString(Base64UrlEncoder.DecodeBytes(jwt.Split('.')[0]))).RootElement.GetProperty("kid").GetString()!;
+
+    // A valid Aadhaar number: 12 digits, the first 2 to 9, and a Verhoeff check digit last.
+    private static string Aadhaar()
+    {
+        int[,] d =
+        {
+            { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }, { 1, 2, 3, 4, 0, 6, 7, 8, 9, 5 }, { 2, 3, 4, 0, 1, 7, 8, 9, 5, 6 },
+            { 3, 4, 0, 1, 2, 8, 9, 5, 6, 7 }, { 4, 0, 1, 2, 3, 9, 5, 6, 7, 8 }, { 5, 9, 8, 7, 6, 0, 4, 3, 2, 1 },
+            { 6, 5, 9, 8, 7, 1, 0, 4, 3, 2 }, { 7, 6, 5, 9, 8, 2, 1, 0, 4, 3 }, { 8, 7, 6, 5, 9, 3, 2, 1, 0, 4 },
+            { 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 },
+        };
+        int[,] p =
+        {
+            { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }, { 1, 5, 7, 6, 2, 8, 3, 0, 9, 4 }, { 5, 8, 0, 3, 7, 9, 6, 1, 4, 2 },
+            { 8, 9, 1, 6, 0, 4, 3, 5, 2, 7 }, { 9, 4, 5, 3, 1, 2, 6, 8, 7, 0 }, { 4, 2, 8, 6, 5, 7, 3, 9, 0, 1 },
+            { 2, 7, 9, 3, 8, 0, 6, 4, 1, 5 }, { 7, 0, 4, 6, 9, 1, 3, 2, 5, 8 },
+        };
+        int[] inverse = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9];
+        var digits = (char)('2' + Random.Shared.Next(8)) + Digits(10);
+        var check = 0;
+        for (var i = 0; i < digits.Length; i++)
+        {
+            check = d[check, p[(i + 1) % 8, digits[^(i + 1)] - '0']];
+        }
+
+        return digits + (char)('0' + inverse[check]);
+    }
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));
 

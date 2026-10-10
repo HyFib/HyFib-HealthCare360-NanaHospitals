@@ -4093,7 +4093,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
-                        .HasColumnName("policy_number_index");
+                        .HasColumnName("policy_number_index")
+                        .HasAnnotation("HC360:BlindIndexOf", "PolicyNumberCipher");
 
                     b.Property<string>("PolicyNumberMasked")
                         .IsRequired()
@@ -15660,7 +15661,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("BankAccountIndex")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
-                        .HasColumnName("bank_account_index");
+                        .HasColumnName("bank_account_index")
+                        .HasAnnotation("HC360:BlindIndexOf", "BankAccountCipher");
 
                     b.Property<string>("BankAccountMasked")
                         .HasMaxLength(24)
@@ -15818,7 +15820,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("PanIndex")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
-                        .HasColumnName("pan_index");
+                        .HasColumnName("pan_index")
+                        .HasAnnotation("HC360:BlindIndexOf", "PanCipher");
 
                     b.Property<string>("PanMasked")
                         .HasMaxLength(16)
@@ -19403,7 +19406,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("AbhaNumberIndex")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
-                        .HasColumnName("abha_number_index");
+                        .HasColumnName("abha_number_index")
+                        .HasAnnotation("HC360:BlindIndexOf", "AbhaNumberCipher");
 
                     b.Property<string>("AbhaNumberMasked")
                         .HasMaxLength(20)

@@ -40,7 +40,7 @@ internal sealed class PatientPolicyConfiguration : IEntityTypeConfiguration<Pati
     {
         b.ToTable("patient_policies", BillingSchema.Name);
         b.Property(x => x.PolicyNumberCipher).HasMaxLength(256).IsProtectedValue();
-        b.Property(x => x.PolicyNumberIndex).HasMaxLength(64);
+        b.Property(x => x.PolicyNumberIndex).HasMaxLength(64).IsBlindIndexOf(nameof(PatientPolicy.PolicyNumberCipher));
         b.Property(x => x.PolicyNumberMasked).HasMaxLength(40);
         b.Property(x => x.MemberId).HasMaxLength(64);
         b.Property(x => x.PolicyHolderName).HasMaxLength(200);

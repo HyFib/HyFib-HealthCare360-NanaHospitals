@@ -43,19 +43,19 @@ public sealed class PatientRegistrationService(
     public async Task<IReadOnlyList<DuplicateCandidate>> FindDuplicatesAsync(DuplicateCheckRequest check, Guid? excludeId, CancellationToken ct)
     {
         var phone = Phone.Normalize(check.Phone);
-        var abhaIndex = string.IsNullOrWhiteSpace(check.AbhaNumber) ? null : protector.BlindIndex(Masking.Normalize(check.AbhaNumber));
-        var aadhaarIndex = string.IsNullOrWhiteSpace(check.AadhaarNumber) ? null : protector.BlindIndex(Masking.Normalize(check.AadhaarNumber));
+        var abhaIndexes = string.IsNullOrWhiteSpace(check.AbhaNumber) ? null : protector.BlindIndexes(Masking.Normalize(check.AbhaNumber)).ToArray();
+        var aadhaarIndex = string.IsNullOrWhiteSpace(check.AadhaarNumber) ? null : protector.FixedBlindIndex(Masking.Normalize(check.AadhaarNumber));
         var firstName = string.IsNullOrWhiteSpace(check.FirstName) ? null : check.FirstName.Trim();
         var dob = check.DateOfBirth;
 
-        if (phone is null && abhaIndex is null && aadhaarIndex is null && (firstName is null || dob is null))
+        if (phone is null && abhaIndexes is null && aadhaarIndex is null && (firstName is null || dob is null))
         {
             return [];
         }
 
         var rows = await db.Set<Patient>().AsNoTracking()
             .Where(p => p.MergedIntoPatientId == null && (excludeId == null || p.Id != excludeId))
-            .Where(p => (abhaIndex != null && p.AbhaNumberIndex == abhaIndex)
+            .Where(p => (abhaIndexes != null && p.AbhaNumberIndex != null && abhaIndexes.Contains(p.AbhaNumberIndex))
                         || (aadhaarIndex != null && p.AadhaarIndex == aadhaarIndex)
                         || (phone != null && p.Phone == phone)
                         || (firstName != null && dob != null && p.DateOfBirth == dob && EF.Functions.ILike(p.FirstName, firstName)))
@@ -72,7 +72,7 @@ public sealed class PatientRegistrationService(
                 var samePhone = phone is not null && p.Phone == phone;
                 var similarAge = dob is not null && p.DateOfBirth is not null && Math.Abs(dob.Value.DayNumber - p.DateOfBirth.Value.DayNumber) <= 365;
                 var (score, reason) =
-                    abhaIndex is not null && p.AbhaNumberIndex == abhaIndex ? (100, "Same ABHA number")
+                    abhaIndexes is not null && p.AbhaNumberIndex is not null && abhaIndexes.Contains(p.AbhaNumberIndex) ? (100, "Same ABHA number")
                     : aadhaarIndex is not null && p.AadhaarIndex == aadhaarIndex ? (100, "Same Aadhaar number")
                     : samePhone && sameFirst ? (90, "Same mobile number and first name")
                     : sameFirst && dob is not null && p.DateOfBirth == dob ? (85, "Same name and date of birth")
@@ -278,8 +278,9 @@ public sealed class PatientRegistrationService(
     {
         if (!string.IsNullOrWhiteSpace(input.AbhaNumber))
         {
-            var index = protector.BlindIndex(Masking.Normalize(input.AbhaNumber));
-            var holder = await db.Set<Patient>().Where(p => p.AbhaNumberIndex == index && p.Id != excludeId).Select(p => p.Uhid).FirstOrDefaultAsync(ct);
+            var indexes = protector.BlindIndexes(Masking.Normalize(input.AbhaNumber)).ToArray();
+            var holder = await db.Set<Patient>().Where(p => p.AbhaNumberIndex != null && indexes.Contains(p.AbhaNumberIndex) && p.Id != excludeId)
+                .Select(p => p.Uhid).FirstOrDefaultAsync(ct);
             if (holder is not null)
             {
                 return Error.Conflict("patient.abha_in_use", $"This ABHA number is already linked to UHID {holder}.");
@@ -288,7 +289,7 @@ public sealed class PatientRegistrationService(
 
         if (!string.IsNullOrWhiteSpace(input.AadhaarNumber))
         {
-            var index = protector.BlindIndex(Masking.Normalize(input.AadhaarNumber));
+            var index = protector.FixedBlindIndex(Masking.Normalize(input.AadhaarNumber));
             var holder = await db.Set<Patient>().Where(p => p.AadhaarIndex == index && p.Id != excludeId).Select(p => p.Uhid).FirstOrDefaultAsync(ct);
             if (holder is not null)
             {
@@ -384,7 +385,8 @@ public sealed class PatientRegistrationService(
             {
                 var aadhaar = Masking.Normalize(input.AadhaarNumber);
                 patient.AadhaarLast4 = aadhaar[^4..];
-                patient.AadhaarIndex = protector.BlindIndex(aadhaar);
+                // Only the last four digits are kept, so the index cannot be computed again: it stays on the original key.
+                patient.AadhaarIndex = protector.FixedBlindIndex(aadhaar);
             }
         }
 
