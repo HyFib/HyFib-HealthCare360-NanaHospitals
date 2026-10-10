@@ -8,8 +8,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 
 /// <summary>
 /// OP billing and the bill lifecycle (OPB-01..07, MB-05): draft from a visit's unbilled charges, ad-hoc services,
-/// finalization under a gap-free number, cancellation with approval (charges released, payments made refundable) and
-/// discarding drafts. IP-specific preparation lives in <see cref="IpBillingService"/>.
+/// packages, finalization under a gap-free number, cancellation with approval (charges released, payments made
+/// refundable) and discarding drafts. IP-specific preparation lives in <see cref="IpBillingService"/>.
 /// </summary>
 public sealed class BillService(
     HospitalDbContext db,
@@ -130,7 +130,110 @@ public sealed class BillService(
         }
 
         await AttachAsync(bill, [staged.Value], ct);
+        await OpPackageCover.ApplyAsync(db, bill, ct);
         await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Bills an OP draft at a package (MB-02, OPB), or no longer (<c>null</c>). The package is one line at its price, and
+    /// the services it includes are absorbed up to its caps (<see cref="OpPackageCover"/>); choosing another package
+    /// replaces the line. The package must be active, for out-patient visits, and priced for the bill's tariff plan or
+    /// for any plan.
+    /// </summary>
+    public async Task<Result> SetPackageAsync(Guid billId, SetBillPackageRequest request, CancellationToken ct)
+    {
+        var bill = await BillQueries.LoadAsync(db, billId, ct);
+        if (bill is null)
+        {
+            return Error.NotFound(nameof(Bill), billId);
+        }
+
+        if (bill.Status != BillStatus.Draft)
+        {
+            return Error.Rule("billing.bill_not_draft", "Only draft bills can be changed.");
+        }
+
+        if (bill.Type == BillType.InPatient)
+        {
+            return Error.Rule("billing.use_ip_package", "An admission's package is chosen on its IP account.");
+        }
+
+        db.GuardVersion(bill, request.Version);
+        if (bill.PackageId == request.PackageId)
+        {
+            return Result.Success();
+        }
+
+        Package? package = null;
+        if (request.PackageId is { } packageId)
+        {
+            package = await db.Set<Package>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == packageId && p.IsActive, ct);
+            if (package is null)
+            {
+                return Error.Field("packageId", "Choose an active package.");
+            }
+
+            if (!package.CanBill(BillType.OutPatient))
+            {
+                return Error.Field("packageId", $"{package.Name} is a package for in-patient stays.");
+            }
+
+            if (package.TariffPlanId is { } planId && planId != bill.TariffPlanId)
+            {
+                return Error.Field("packageId", $"{package.Name} is priced for another tariff plan than this bill's.");
+            }
+        }
+
+        // The package line exists only on this draft: changing or removing the package cancels it.
+        var now = time.GetUtcNow();
+        foreach (var old in await db.Set<Charge>().Where(c => c.BillId == bill.Id && c.SourceModule == ChargeService.PackageSource).ToListAsync(ct))
+        {
+            if (bill.Lines.FirstOrDefault(l => l.ChargeId == old.Id) is { } line)
+            {
+                bill.RemoveLine(line.Id);
+            }
+
+            old.Release();
+            old.Cancel(package is null ? "Package removed from the draft bill" : "Package changed on the draft bill", now);
+        }
+
+        var chosen = bill.UsePackage(package?.Id);
+        if (chosen.IsFailure)
+        {
+            return chosen;
+        }
+
+        if (package is not null)
+        {
+            var practitionerId = bill.VisitId is { } visitId
+                ? await db.Set<Visit>().Where(v => v.Id == visitId).Select(v => v.PractitionerId).FirstOrDefaultAsync(ct)
+                : null;
+            var staged = await charges.StageAsync(new ChargeRequest
+            {
+                PatientId = bill.PatientId,
+                VisitId = bill.VisitId,
+                ServiceItemId = package.ServiceItemId,
+                UnitPriceOverride = package.Price,
+                Description = package.Name,
+                SourceModule = ChargeService.PackageSource,
+
+                // A package chosen again after it was removed is a new line, so each choice has a reference of its own.
+                SourceReference = $"{bill.Id:N}:{Guid.CreateVersion7():N}",
+                PractitionerId = practitionerId,
+                ServiceDate = now,
+            }, isFreeFollowUp: false, ct);
+            if (staged.IsFailure)
+            {
+                return staged.Error!;
+            }
+
+            await AttachAsync(bill, [staged.Value], ct);
+        }
+
+        await OpPackageCover.ApplyAsync(db, bill, ct);
+        await db.SaveChangesAsync(ct);
+        await PublishAsync(bill, ct);
         return Result.Success();
     }
 
@@ -155,8 +258,14 @@ public sealed class BillService(
         {
             charge.Cancel("Removed from the draft bill", time.GetUtcNow());
         }
+        else if (charge.SourceModule == ChargeService.PackageSource && bill.Type == BillType.OutPatient)
+        {
+            // The OP package's own line: without it the bill is no longer billed at the package.
+            charge.Cancel("Package removed from the draft bill", time.GetUtcNow());
+            bill.UsePackage(null);
+        }
 
-        bill.Recalculate();
+        await OpPackageCover.ApplyAsync(db, bill, ct);
         await db.SaveChangesAsync(ct);
         return Result.Success();
     }
@@ -183,6 +292,7 @@ public sealed class BillService(
         db.GuardVersion(bill, version);
         var available = await AvailableOpChargesAsync(bill.PatientId, bill.VisitId, null, ct);
         await AttachAsync(bill, available, ct);
+        await OpPackageCover.ApplyAsync(db, bill, ct);
         await db.SaveChangesAsync(ct);
         return available.Count;
     }
@@ -282,6 +392,11 @@ public sealed class BillService(
         foreach (var charge in await db.Set<Charge>().Where(c => c.BillId == bill.Id).ToListAsync(ct))
         {
             charge.Release();
+            if (bill.Type == BillType.OutPatient && charge.SourceModule == ChargeService.PackageSource)
+            {
+                // The package line belonged to this bill alone; a new bill of the visit chooses its package again.
+                charge.Cancel($"Bill {bill.BillNumber} cancelled", now);
+            }
         }
 
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
@@ -343,8 +458,9 @@ public sealed class BillService(
     }
 
     /// <summary>
-    /// Discards a draft in the caller's unit of work: its charges return to the unbilled pool (ad-hoc services, which
-    /// exist only on the draft, are cancelled) and pending discount requests are withdrawn. Does not save.
+    /// Discards a draft in the caller's unit of work: its charges return to the unbilled pool (ad-hoc services and an
+    /// OP bill's package line, which exist only on the draft, are cancelled) and pending discount requests are
+    /// withdrawn. Does not save.
     /// </summary>
     internal async Task StageDiscardAsync(Bill bill, string reason, CancellationToken ct)
     {
@@ -354,7 +470,8 @@ public sealed class BillService(
         foreach (var charge in reserved)
         {
             charge.Release();
-            if (charge.SourceModule == ChargeService.AdhocSource)
+            if (charge.SourceModule == ChargeService.AdhocSource
+                || (charge.SourceModule == ChargeService.PackageSource && bill.Type == BillType.OutPatient))
             {
                 charge.Cancel(reason, now);
             }
@@ -389,7 +506,9 @@ public sealed class BillService(
 
     private async Task<List<Charge>> AvailableOpChargesAsync(Guid patientId, Guid? visitId, IReadOnlyList<Guid>? chargeIds, CancellationToken ct)
     {
-        var query = db.Set<Charge>().Where(c => c.PatientId == patientId && c.Status == ChargeStatus.Unbilled && c.BillId == null && c.AdmissionId == null);
+        // An OP package line is made for one bill (SetPackageAsync) and never waits in the unbilled pool for another.
+        var query = db.Set<Charge>().Where(c => c.PatientId == patientId && c.Status == ChargeStatus.Unbilled && c.BillId == null && c.AdmissionId == null
+                                                && c.SourceModule != ChargeService.PackageSource);
         query = visitId is { } id ? query.Where(c => c.VisitId == id) : query.Where(c => c.VisitId == null);
         if (chargeIds is { Count: > 0 })
         {

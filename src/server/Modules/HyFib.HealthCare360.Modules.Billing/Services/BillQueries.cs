@@ -58,6 +58,7 @@ internal static class BillQueries
             .OrderByDescending(a => a.RequestedAt)
             .FirstOrDefaultAsync(ct);
 
+        var package = await PackageSummaryAsync(db, bill, ct);
         var lines = bill.Lines.OrderBy(l => l.SortOrder).Select(l => new BillLineDto(
             l.Id, l.ChargeId, l.ServiceItemId, l.ServiceCode, l.Description, l.Category, l.SacCode, l.Quantity, l.UnitPrice, l.GrossAmount,
             l.PackageCoveredAmount, l.TariffDiscountAmount, l.LineDiscountAmount, l.BillDiscountShare, l.TaxRate, l.TaxableAmount, l.CgstAmount,
@@ -77,7 +78,35 @@ internal static class BillQueries
             refunds.Select(r => new RefundSummary(r.Id, r.RefundNumber, r.Amount, r.Status, r.Mode, r.RequestedAt, r.PaidAt)).ToList(),
             credits.Select(c => new CreditNoteDto(c.Id, c.Number, c.Kind, c.Amount, c.Reason, c.IssuedAt, c.IssuedByName)).ToList(),
             pending is null ? null : ToDto(pending, bill.BillNumber, patient?.Uhid, patient?.FullName),
+            package,
             bill.Version);
+    }
+
+    /// <summary>The package pricing a bill: the OP bill's own, or the IP account's on a final bill.</summary>
+    private static async Task<BillPackageSummary?> PackageSummaryAsync(HospitalDbContext db, Bill bill, CancellationToken ct)
+    {
+        var packageId = bill.PackageId;
+        if (packageId is null && bill.IsFinalBill && bill.IpAccountId is { } accountId)
+        {
+            packageId = await db.Set<IpAccount>().Where(a => a.Id == accountId).Select(a => a.PackageId).FirstOrDefaultAsync(ct);
+        }
+
+        if (packageId is not { } id)
+        {
+            return null;
+        }
+
+        var package = await db.Set<Package>().Where(p => p.Id == id).Select(p => new { p.Code, p.Name, p.ServiceItemId }).FirstOrDefaultAsync(ct);
+        if (package is null)
+        {
+            return null;
+        }
+
+        var services = bill.Lines.Where(l => l.Category != ServiceCategory.Package).ToList();
+        var actuals = services.Sum(l => l.GrossAmount);
+        var covered = services.Sum(l => l.PackageCoveredAmount);
+        var price = bill.Lines.Where(l => l.ServiceItemId == package.ServiceItemId).Sum(l => l.GrossAmount);
+        return new BillPackageSummary(id, package.Code, package.Name, price, actuals, covered, actuals - covered);
     }
 
     public static ReceiptSummary ToSummary(Receipt r) => new(r.Id, r.ReceiptNumber, r.Purpose, r.Amount, r.ModeSummary, r.ReceivedAt);

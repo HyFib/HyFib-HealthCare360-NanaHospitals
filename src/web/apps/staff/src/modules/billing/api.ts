@@ -131,6 +131,21 @@ export interface DiscountApprovalDto {
   remarks: string | null;
 }
 
+/**
+ * The package a bill is priced at (MB-02): an OP bill's own, or the IP account's on a final bill. `price` is the package
+ * line as billed, `actuals` the other services at their full amount, of which the package `covered` part and
+ * `beyondPackage` is billed as usual.
+ */
+export interface BillPackageSummary {
+  packageId: string;
+  code: string;
+  name: string;
+  price: number;
+  actuals: number;
+  covered: number;
+  beyondPackage: number;
+}
+
 export interface BillDetail {
   id: string;
   billNumber: string | null;
@@ -191,6 +206,7 @@ export interface BillDetail {
   refunds: RefundSummary[];
   creditNotes: CreditNoteDto[];
   pendingDiscount: DiscountApprovalDto | null;
+  package: BillPackageSummary | null;
   version: number;
 }
 
@@ -771,6 +787,9 @@ export const billingApi = {
     api.post<BillDetail>(`/api/v1/billing/bills/${billId}/lines`, request),
   removeLine: (billId: string, lineId: string, version: number) =>
     api.delete<BillDetail>(`/api/v1/billing/bills/${billId}/lines/${lineId}`, { query: { version } }),
+  /** Bills an OP draft at a package, or no longer (`null`). */
+  setPackage: (billId: string, packageId: string | null, version: number) =>
+    api.put<BillDetail>(`/api/v1/billing/bills/${billId}/package`, { packageId, version }),
   refresh: (billId: string, version: number) =>
     api.post<BillDetail>(`/api/v1/billing/bills/${billId}/refresh`, { version }),
   applyDiscount: (billId: string, request: ApplyDiscountRequest) =>

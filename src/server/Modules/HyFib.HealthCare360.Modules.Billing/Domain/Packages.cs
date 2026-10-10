@@ -1,7 +1,15 @@
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
 
+/// <summary>Which bills a package can price: an admission's final bill, an out-patient bill, or either.</summary>
+public enum PackageUse
+{
+    InPatient = 0,
+    OutPatient,
+    Both,
+}
+
 /// <summary>
-/// A fixed-price treatment package (MB-02, IPB-04): for example "Normal delivery — 2 days" or "Cataract (per eye)".
+/// A fixed-price treatment package (MB-02, IPB-04, OPB): for example "Normal delivery — 2 days" or "Cataract (per eye)".
 /// The package is billed as one line; the inclusions say which actual services it absorbs and up to what caps.
 /// </summary>
 public sealed class Package : AuditableEntity
@@ -18,12 +26,22 @@ public sealed class Package : AuditableEntity
     /// <summary>Tariff plan the package price belongs to (<c>null</c> = any plan).</summary>
     public Guid? TariffPlanId { get; set; }
 
+    /// <summary>
+    /// Admissions, out-patient visits (day-care procedures, minor surgery, dental work) or both. Packages made before
+    /// out-patient bills could use packages are in-patient packages.
+    /// </summary>
+    public PackageUse UsedFor { get; set; } = PackageUse.InPatient;
+
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
     public List<PackageInclusion> Inclusions { get; set; } = [];
 
     public IReadOnlyList<PackageRule> Rules() =>
         Inclusions.Select(i => new PackageRule(i.ServiceItemId, i.Category, i.MaxQuantity, i.MaxAmount)).ToList();
+
+    /// <summary>True when the package may price a bill of this type.</summary>
+    public bool CanBill(BillType type) =>
+        UsedFor == PackageUse.Both || UsedFor == (type == BillType.InPatient ? PackageUse.InPatient : PackageUse.OutPatient);
 }
 
 /// <summary>What a package covers: one service item or a whole category, optionally capped by quantity and/or amount.</summary>

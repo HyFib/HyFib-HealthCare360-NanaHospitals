@@ -1082,6 +1082,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("package_covered_amount");
 
+                    b.Property<Guid?>("PackageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("package_id");
+
                     b.Property<decimal>("PaidAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
@@ -1216,6 +1220,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("IsDeleted")
                         .HasDatabaseName("ix_bills_is_deleted");
+
+                    b.HasIndex("PackageId")
+                        .HasDatabaseName("ix_bills_package_id");
 
                     b.HasIndex("AdmissionId", "Status")
                         .HasDatabaseName("ix_bills_admission_id_status");
@@ -3822,6 +3829,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("UpdatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by");
+
+                    b.Property<string>("UsedFor")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("used_for");
 
                     b.Property<uint>("Version")
                         .IsConcurrencyToken()
@@ -36373,6 +36386,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.Bill", b =>
                 {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.Package", null)
+                        .WithMany()
+                        .HasForeignKey("PackageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_bills_package_package_id");
+
                     b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
                         .WithMany()
                         .HasForeignKey("PatientId")

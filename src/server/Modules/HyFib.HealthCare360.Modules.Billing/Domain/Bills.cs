@@ -58,6 +58,13 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public Guid? TariffPlanId { get; set; }
     public Guid? PolicyId { get; set; }
     public Guid? PreAuthorizationId { get; set; }
+
+    /// <summary>
+    /// OP bills: the package the visit is billed at (MB-02, OPB). Its line is on the bill, and what it absorbs is each
+    /// line's <see cref="BillLine.PackageCoveredAmount"/>. An admission's package is on its IP account instead.
+    /// </summary>
+    public Guid? PackageId { get; set; }
+
     public decimal CoPayPercent { get; set; }
 
     /// <summary>Most the payer covers (pre-auth approval); <c>null</c> = no cap (corporate or scheme credit).</summary>
@@ -221,8 +228,29 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     }
 
     /// <summary>
-    /// Marks how much of each line the IP package absorbs (lines not listed are billed in full). For a credit line the
-    /// cover is negative: the part of the return that goes back to the package rather than to the patient.
+    /// Bills an OP draft at a package, or no longer (<c>null</c>). The caller adds or removes the package's line and
+    /// applies its cover.
+    /// </summary>
+    public Result UsePackage(Guid? packageId)
+    {
+        if (Status != BillStatus.Draft)
+        {
+            return NotDraft();
+        }
+
+        if (Type != BillType.OutPatient)
+        {
+            return Error.Rule("billing.use_ip_package", "An admission's package is chosen on its IP account.");
+        }
+
+        PackageId = packageId;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Marks how much of each line the package absorbs (lines not listed are billed in full): the IP account's package
+    /// on a final bill, the bill's own on an OP bill. For a credit line the cover is negative: the part of the return
+    /// that goes back to the package rather than to the patient.
     /// </summary>
     public void ApplyPackageCoverage(IReadOnlyDictionary<Guid, decimal> coveredByLine)
     {

@@ -85,9 +85,9 @@ Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.c
 ### Packages — `/api/v1/billing/packages`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/` · `/{id}` | `billing.tariffs.manage` / `billing.ip.manage` / `billing.charges.read` | → `PackageListItem[]` / `PackageDetail` |
-| POST | `/` | `billing.tariffs.manage` | `SavePackageRequest` (price, LOS, inclusions: item or category, quantity/amount caps) → 201 |
-| PUT | `/{id}` | `billing.tariffs.manage` | `SavePackageRequest` (+`version`) → 204 |
+| GET | `/` · `/{id}` | `billing.tariffs.manage` / `billing.ip.manage` / `billing.charges.read` / `billing.op.create` | → `PackageListItem[]` / `PackageDetail` |
+| POST | `/` | `billing.tariffs.manage` | `SavePackageRequest` (price, `usedFor`: `InPatient`, `OutPatient` or `Both`, LOS, inclusions: item or category, quantity/amount caps) → 201 |
+| PUT | `/{id}` | `billing.tariffs.manage` | `SavePackageRequest` (+`version`) → `PackageDetail` |
 
 ### Charges — `/api/v1/billing/charges`
 | Method | Path | Permission | Request → response |
@@ -103,12 +103,13 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/?from&to&type&status&patientId&visitId&admissionId&payerId&withDueOnly&search` (paged, `sort=createdAt\|finalizedAt\|billNumber\|netAmount\|dueAmount`) | readers | → `PagedResult<BillListItem>` |
-| GET | `/{id}` | readers | → `BillDetail` (lines as `BillLineDto` with `isReturn`, receipts, refunds, credit notes, pending discount); PHI access guarded and audited |
+| GET | `/{id}` | readers | → `BillDetail` (lines as `BillLineDto` with `isReturn`, receipts, refunds, credit notes, pending discount, the `package` it is priced at); PHI access guarded and audited |
 | GET | `/{id}/document` | readers | → `PrintableDocumentDto` (title, file name, page size `A4`, HTML): the [printed bill](#the-printed-bill) for the staff app to print, drafts included; guarded and audited ("Printed bill …") |
 | GET | `/{id}/pdf` | readers | → `application/pdf` attachment `bill-<number>.pdf` (a draft: `bill-draft-<UHID>-<yyyy-MM-dd>.pdf`), the same document; 503 `pdf.unavailable` when the server cannot make PDFs; guarded and audited ("Downloaded bill … as a PDF") |
 | POST | `/` | `billing.op.create` | `CreateBillRequest(visitId?, patientId?, chargeIds?)` → 201 `BillDetail`: OP draft from the visit's unbilled charges, or a patient-level draft from charges with no visit/admission |
 | POST | `/{id}/lines` | `billing.op.create` | `AddBillLineRequest` → `BillDetail` (ad-hoc service, posted as `billing.adhoc`) |
-| DELETE | `/{id}/lines/{lineId}?version` | `op.create` / `ip.manage` | → `BillDetail` |
+| DELETE | `/{id}/lines/{lineId}?version` | `op.create` / `ip.manage` | → `BillDetail` (removing an OP bill's package line removes its package) |
+| PUT | `/{id}/package` | `billing.op.create` | `SetBillPackageRequest(packageId?, version)` → `BillDetail`: bills an OP draft at a package, or no longer ([Packages on OP bills](#packages-on-op-bills)). 400 `packageId` for a package that is inactive, for admissions only, or priced for another tariff plan; 422 `billing.use_ip_package` on an IP bill |
 | POST | `/{id}/refresh` | `billing.op.create` | `BillVersionRequest` → `BillDetail` (pulls charges posted since the draft was made) |
 | POST | `/{id}/discount` | `op.create` / `ip.manage` | `ApplyDiscountRequest` (bill % or ₹, line ₹, reason) → `DiscountOutcome` (applied, or an approval request above the user's limit) |
 | POST | `/{id}/finalize` | `billing.bills.finalize` | `BillVersionRequest` → `BillDetail`; allocates `{FAC}OB{YY}{SEQ:7}` / `{FAC}IB{YY}{SEQ:7}`; adjusts the visit's online prepayment |
@@ -175,7 +176,7 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 | PUT | `/{id}` | `billing.ip.manage` | `UpdateIpAccountRequest` (payer, policy, pre-auth, estimate; unbilled charges re-priced) → 204 |
 | GET | `/{id}/running-bill` | readers | → `RunningBill` (by category, by day, lines with `isReturn`, `returnsNet`, package vs actuals, insurance estimate, deposit, estimated balance); guarded + audited |
 | GET | `/{id}/package-status` | readers | → `PackageStatus` |
-| PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204 |
+| PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204; 400 `packageId` for a package for out-patient visits only |
 | POST | `/{id}/interim-bills` | `billing.ip.manage` | `CreateInterimBillRequest(upTo?)` → 201 `BillDetail` (self-pay, non-package stays only) |
 | POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services) |
 | POST | `/{id}/settle` | `billing.ip.manage` | → `SettlementResult` (advance adjusted oldest bill first; unused advance becomes a refund request) |
@@ -277,6 +278,29 @@ one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) fo
 | POST | `/{id}/pay` | → `PortalPaymentOrder` (gateway checkout / link) |
 | POST | `/{id}/payments/{orderId}/verify` | → `PortalPaymentStatus` |
 
+## Packages on OP bills
+A visit can be billed at a package (MB-02, OPB-01..07), as an admission can: for example a cataract operation done as
+day care, a minor procedure, or dental work done in one sitting. Each package says what it is **used for**: admissions,
+out-patient visits, or both. Packages made before out-patient bills could use them are for admissions.
+
+* **Choosing the package.** On a draft OP bill, whoever prepares OP bills (`billing.op.create`) picks an active package
+  for out-patient visits whose tariff plan is the bill's, or any plan (`PUT /bills/{id}/package`). The package becomes
+  one line at its price, a `billing.package` charge (reference `{billId}:{unique id}`) with the visit's doctor, and
+  `bills.package_id` records it.
+* **Package vs actuals.** The package absorbs the services it includes, up to each inclusion's quantity or amount cap,
+  earliest service first, exactly as an admission's package does (`PackageCalculator`). The rest is billed as usual and
+  can be discounted. Lines of category Package (the package itself, a health checkup) are never absorbed. The cover is
+  worked out again whenever the draft's lines change: a service added or removed, new services picked up, or a service
+  cancelled by the module that charged it (`OpPackageCover`).
+* **Changing or removing it.** Choosing another package replaces the line; choosing none, or removing the package's
+  line, bills every service in full again. The package line belongs to its bill alone. It is cancelled when the package
+  is changed or removed, when the draft is discarded, and when the finalized bill is cancelled: the other services
+  return to the unbilled list, and the next bill chooses its package again.
+* **What the bill shows.** `BillDetail.package` gives the package, its price as billed, the services at full price, what
+  it covered and what is billed beyond it, for an OP bill and for an IP final bill (whose package is the IP account's).
+  The staff bill screen shows them, with the package picker on OP drafts, and the printed bill names the package.
+* An admission cannot be given a package for out-patient visits only.
+
 ## The printed bill
 The A4 bill is made on the server (`Documents/BillDocument.cs`) from `BillDetail` and the facility letterhead, so the
 copy printed at the counter, the staff PDF and the patient's PDF are the same document. The 80 mm counter copy is still
@@ -287,7 +311,7 @@ printed by the staff app.
   and the cancellation date and reason.
 * Header: logo, legal name, address, phone and e-mail, GSTIN and PAN, registration number; the title, bill number and
   date on the right.
-* Patient, UHID, status, payer, tariff and co-pay; every line with service code, doctor, date, SAC code, quantity, rate,
+* Patient, UHID, status, payer, tariff, package and co-pay; every line with service code, doctor, date, SAC code, quantity, rate,
   package cover (when a package covers anything), discount and, on a tax invoice, taxable value, GST rate, CGST and SGST.
 * Totals from the gross amount to the net amount, the payer's and the patient's share, credit notes, paid, refunded,
   and the balance due or the refund due; the patient's share in words (Indian system, "Rupees … Only").
@@ -692,9 +716,14 @@ export's tracking columns, and `GatewayReconciliation` adds `gateway_settlements
 `PosSettlements` adds `pos_settlement_imports` (unique facility and file SHA-256) and `pos_settlement_lines` (unique
 facility and `line_key`; unique matched `receipt_payment_id` and `refund_id` where set; `xmin` as the concurrency
 token), and indexes on `receipt_payments.reference` and `pos_transactions.approval_code` for the matching. Both tables
-are append-mostly and not data-audited; imports and reviews are audited.
+are append-mostly and not data-audited; imports and reviews are audited. `OpBillPackages` adds `bills.package_id`
+(foreign key to `packages`, restrict) and `packages.used_for` (text; packages that existed before are `InPatient`).
 
 ## Not covered yet
+* **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
+  bill.
+* **An admission's package is not checked against its tariff plan.** OP bills take only packages for their tariff plan
+  or for any plan; the IP account still accepts any active package for admissions.
 * **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant
   pays it by bank transfer outside HC360, records that in Tally, and resolves the exception with the reference.
 * **Card and UPI settlement reports are imported by hand.** HC360 does not fetch them from the acquirer (Pine Labs and
