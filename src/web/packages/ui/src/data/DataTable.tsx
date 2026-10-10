@@ -58,7 +58,10 @@ export interface DataTableProps<T> {
 }
 
 const useStyles = makeStyles({
-  wrapper: { overflowX: 'auto', width: '100%' },
+  // Overflow alone does not stop the table's minimum width (its fixed columns) from widening the section and the page
+  // around it. A one-column grid whose column may shrink to nothing keeps that width in here, so the table scrolls
+  // sideways in its own box, while a container sized to its content still gets the table's full width.
+  wrapper: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', overflowX: 'auto', width: '100%' },
   row: { cursor: 'pointer' },
   lowPriority: { '@media (max-width: 900px)': { display: 'none' } },
   alignEnd: { textAlign: 'end', justifyContent: 'flex-end' },

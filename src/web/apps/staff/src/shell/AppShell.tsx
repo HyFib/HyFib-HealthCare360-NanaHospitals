@@ -30,7 +30,15 @@ import { NotificationsButton } from './NotificationsButton';
 import { UserMenu } from './UserMenu';
 
 const useStyles = makeStyles({
-  root: { display: 'grid', gridTemplateRows: '48px minmax(0, 1fr)', height: '100vh', overflow: 'hidden' },
+  // One column, as wide as the window: an implicit column grows to the minimum width of what a screen holds, which
+  // pushed the top bar's buttons and the page's right edge off screen. Content that cannot narrow scrolls in main.
+  root: {
+    display: 'grid',
+    gridTemplateRows: '48px minmax(0, 1fr)',
+    gridTemplateColumns: 'minmax(0, 1fr)',
+    height: '100vh',
+    overflow: 'hidden',
+  },
   topbar: {
     display: 'flex',
     alignItems: 'center',

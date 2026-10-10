@@ -148,3 +148,43 @@ describe('DataTable rows that open', () => {
     expect(onRowClick).toHaveBeenCalledWith({ id: '1', name: 'Asha Devi', buttons: [] });
   });
 });
+
+describe('DataTable width', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('keeps a wide table in its own scroll box instead of widening the page around it', () => {
+    act(() =>
+      root.render(
+        <DataTable
+          ariaLabel="Backups"
+          columns={[
+            { key: 'started', header: 'Started', width: 900, render: (row: Row) => row.name },
+            { key: 'file', header: 'File', width: 900, render: (row: Row) => row.name },
+          ]}
+          rows={[{ id: '1', name: 'Asha Devi', buttons: [] }]}
+          getRowId={(row) => row.id}
+        />,
+      ),
+    );
+
+    // jsdom does no layout, so the rule that does it is checked. With overflow alone, the table's minimum width still
+    // widens the section, the page and the window frame; a grid column that may shrink to nothing keeps it in the box.
+    const box = getComputedStyle(container.querySelector('table')!.parentElement!);
+    expect(box.overflowX).toBe('auto');
+    expect(box.display).toBe('grid');
+    expect(box.gridTemplateColumns).toBe('minmax(0, 1fr)');
+  });
+});
