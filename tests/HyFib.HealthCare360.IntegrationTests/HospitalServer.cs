@@ -438,14 +438,16 @@ public sealed class HospitalServer : IAsyncLifetime
             challenge = await ApiClient.ReadAsync<OtpChallengeResponse>(requested, HttpMethod.Post, "/api/v1/auth/otp/request");
         }
 
-        using var verified = await http.PostAsJsonAsync("/api/v1/auth/otp/verify", new OtpVerifyRequest(challenge.ChallengeId, await ReadOtpAsync(phone, ct)), ApiClient.Json, ct);
+        using var verified = await http.PostAsJsonAsync("/api/v1/auth/otp/verify", new OtpVerifyRequest(challenge.ChallengeId, await PortalCodeAsync(phone)), ApiClient.Json, ct);
         var result = await ApiClient.ReadAsync<SignInResult>(verified, HttpMethod.Post, "/api/v1/auth/otp/verify");
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", FullAccess(phone, result));
         return (new ApiClient(http), PortalRefreshCookieOf(verified) ?? throw new InvalidOperationException($"Signing in to the portal as {phone} set no refresh cookie."));
     }
 
-    private async Task<string> ReadOtpAsync(string phone, CancellationToken ct)
+    /// <summary>The last portal sign-in code sent to <paramref name="phone"/>: the test server sends no SMS, so it is read from the outbox.</summary>
+    public async Task<string> PortalCodeAsync(string phone)
     {
+        var ct = TestContext.Current.CancellationToken;
         await using var scope = Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         var deliveries = await db.Set<OutboxMessage>().AsNoTracking()

@@ -184,7 +184,7 @@ public sealed class AuthService(
             // The same work and the same answer as a wrong password: neither says whether the account exists. The
             // password is not checked against the lock, so the lock cannot be used to test guesses.
             hashing.Verify(_dummyHash ??= hashing.Hash("hc360-timing-equaliser"), request.Password ?? string.Empty);
-            await AuditLockedAsync(user, ct);
+            await AuditLockedAsync(user, "Sign-in attempted while locked", ct);
             return InvalidCredentials;
         }
 
@@ -198,7 +198,7 @@ public sealed class AuthService(
             await LockAndReloadAsync(user, ct);
             if (user.LockoutEndsAt > now)
             {
-                await AuditLockedAsync(user, ct);
+                await AuditLockedAsync(user, "Sign-in attempted while locked", ct);
                 return InvalidCredentials;
             }
 
@@ -351,7 +351,11 @@ public sealed class AuthService(
             return Error.Field("phone", "Enter a valid 10-digit mobile number.");
         }
 
+        // Requests for one number take turns under a lock on it, so codes asked for at once, from many machines, cannot get
+        // past three in 15 minutes: each code sent is five more guesses at the account.
         var now = time.GetUtcNow();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"auth.otp:" + phone}, 0))", ct);
         var windowStart = now.AddMinutes(-15);
         var recent = await db.Set<AuthChallenge>().CountAsync(c => c.Kind == AuthChallengeKind.Otp && c.Phone == phone && c.CreatedAt > windowStart, ct);
         if (recent >= 3)
@@ -379,27 +383,44 @@ public sealed class AuthService(
             OtpLifetime);
 
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return new OtpChallengeResponse(challenge.Id, challenge.ExpiresAt, SharedKernel.Phone.Mask(phone));
     }
 
     public async Task<Result<AuthResult>> VerifyOtpAsync(OtpVerifyRequest request, HttpContext http, CancellationToken ct)
     {
         var now = time.GetUtcNow();
-        var challenge = await db.Set<AuthChallenge>().FirstOrDefaultAsync(c => c.Id == request.ChallengeId && c.Kind == AuthChallengeKind.Otp, ct);
-        if (challenge?.Phone is null || challenge.ConsumedAt is not null || challenge.ExpiresAt <= now || challenge.Attempts >= MaxChallengeAttempts)
-        {
-            return ChallengeExpired;
-        }
 
-        challenge.Attempts++;
-        var expected = SecretTokens.Hash($"{challenge.Id:N}:{(request.Code ?? string.Empty).Trim()}");
-        if (challenge.CodeHash is null || !SecretTokens.FixedTimeEquals(challenge.CodeHash, expected))
+        // A portal account has no lock: the five tries of each code, and three codes per number in 15 minutes, are what
+        // stop guessing. So codes sent at once, from many machines, are judged one at a time under the challenge's row
+        // lock, as staff passwords and authenticator codes are under the account's: each try counts, none is judged after
+        // the fifth, and a code is used once (ASVS V6.3.1).
+        AuthChallenge? challenge;
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
+            await db.Database.ExecuteSqlAsync($"SELECT 1 FROM identity.auth_challenges WHERE id = {request.ChallengeId} FOR NO KEY UPDATE", ct);
+            challenge = await db.Set<AuthChallenge>().FirstOrDefaultAsync(c => c.Id == request.ChallengeId && c.Kind == AuthChallengeKind.Otp, ct);
+            if (challenge?.Phone is null || challenge.ConsumedAt is not null || challenge.ExpiresAt <= now || challenge.Attempts >= MaxChallengeAttempts)
+            {
+                return ChallengeExpired;
+            }
+
+            challenge.Attempts++;
+            var expected = SecretTokens.Hash($"{challenge.Id:N}:{(request.Code ?? string.Empty).Trim()}");
+            var correct = challenge.CodeHash is not null && SecretTokens.FixedTimeEquals(challenge.CodeHash, expected);
+            if (correct)
+            {
+                challenge.ConsumedAt = now;
+            }
+
             await db.SaveChangesAsync(ct);
-            return Error.Field("code", "The code is incorrect.");
+            await transaction.CommitAsync(ct);
+            if (!correct)
+            {
+                return Error.Field("code", "The code is incorrect.");
+            }
         }
 
-        challenge.ConsumedAt = now;
         var user = await LoadUserAsync(u => u.Type == UserType.Patient && u.Phone == challenge.Phone, ct);
         if (user is null)
         {
@@ -633,7 +654,7 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        if (!hashing.Verify(user.PasswordHash, request.CurrentPassword ?? string.Empty).Succeeded)
+        if (!await PasswordConfirmedAsync(user, request.CurrentPassword, ct))
         {
             return Error.Field("currentPassword", "Current password is incorrect.");
         }
@@ -686,7 +707,7 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        if (!hashing.Verify(user.PasswordHash, request.Password ?? string.Empty).Succeeded)
+        if (!await PasswordConfirmedAsync(user, request.Password, ct))
         {
             return Error.Field("password", "Password is incorrect.");
         }
@@ -740,6 +761,16 @@ public sealed class AuthService(
             ? hashing.Verify(user.PinHash!, request.Pin!).Succeeded
             : request.Password is { Length: > 0 } password && user.PasswordHash is not null && hashing.Verify(user.PasswordHash, password).Succeeded;
 
+        // Attempts sent at once all read the session before any of them was counted. Read it again under its row lock, one
+        // attempt at a time, so that each wrong PIN counts and none is judged once the session has ended (ASVS V6.3.1).
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM identity.user_sessions WHERE id = {session.Id} FOR NO KEY UPDATE", ct);
+        await db.Entry(session).ReloadAsync(ct);
+        if (session.RevokedAt is not null)
+        {
+            return SessionEnded;
+        }
+
         if (ok)
         {
             var now = time.GetUtcNow();
@@ -756,6 +787,7 @@ public sealed class AuthService(
             }
 
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
             sessionValidator.Invalidate(session.Id);
 
             var roles = RoleNames(user);
@@ -775,12 +807,14 @@ public sealed class AuthService(
                 Severity = AuditSeverity.Warning,
             });
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
             sessionValidator.Invalidate(session.Id);
             ClearRefreshCookie(http, session.ClientType);
             return SessionEnded;
         }
 
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return Error.Field(request.Pin is { Length: > 0 } ? "pin" : "password", "That did not match. Try again.");
     }
 
@@ -800,7 +834,7 @@ public sealed class AuthService(
             return Error.Rule("auth.mfa_already_enabled", "Two-step verification is already enabled.");
         }
 
-        if (!PasswordMatches(user, request.Password))
+        if (!await PasswordConfirmedAsync(user, request.Password, ct))
         {
             return Error.Field("password", "Password is incorrect.");
         }
@@ -863,7 +897,7 @@ public sealed class AuthService(
             return Error.Forbidden("auth.mfa_required", "Your account requires two-step verification.");
         }
 
-        if (!hashing.Verify(user.PasswordHash, request.Password ?? string.Empty).Succeeded)
+        if (!await PasswordConfirmedAsync(user, request.Password, ct))
         {
             return Error.Field("password", "Password is incorrect.");
         }
@@ -922,7 +956,7 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        return PasswordMatches(user, request.Password) ? Result.Success() : Error.Field("password", "Password is incorrect.");
+        return await PasswordConfirmedAsync(user, request.Password, ct) ? Result.Success() : Error.Field("password", "Password is incorrect.");
     }
 
     /// <summary>Signs out one of the user's sessions, once the password is given again (ASVS V7.5.2).</summary>
@@ -934,7 +968,7 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        if (!PasswordMatches(user, request.Password))
+        if (!await PasswordConfirmedAsync(user, request.Password, ct))
         {
             return Error.Field("password", "Password is incorrect.");
         }
@@ -961,7 +995,7 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        if (!PasswordMatches(user, request.Password))
+        if (!await PasswordConfirmedAsync(user, request.Password, ct))
         {
             return Error.Field("password", "Password is incorrect.");
         }
@@ -989,7 +1023,7 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        if (!PasswordMatches(user, request.Password))
+        if (!await PasswordConfirmedAsync(user, request.Password, ct))
         {
             return Error.Field("password", "Password is incorrect.");
         }
@@ -1192,8 +1226,55 @@ public sealed class AuthService(
     private bool RequiresMfa(User user, IReadOnlyList<string> roles) =>
         SignInPolicy.RequiresMfa(Security, roles, user.Roles.SelectMany(r => r.Role?.Permissions ?? []).Select(p => p.Permission));
 
-    private bool PasswordMatches(User user, string? password) =>
-        user.PasswordHash is not null && !string.IsNullOrEmpty(password) && hashing.Verify(user.PasswordHash, password).Succeeded;
+    /// <summary>
+    /// Checks the password a signed-in user gives again to confirm an action: changing it, setting a PIN, two-step
+    /// verification, signing out sessions, key and backup actions. A wrong one counts against the account as at sign-in,
+    /// because whoever guesses here holds a session, say on a workstation left signed in, but not the password. While the
+    /// account is locked no password is accepted, so the lock stops guessing here too (ASVS V6.3.1).
+    /// </summary>
+    private async Task<bool> PasswordConfirmedAsync(User user, string? password, CancellationToken ct)
+    {
+        if (user.PasswordHash is null || string.IsNullOrEmpty(password))
+        {
+            return false;
+        }
+
+        var matches = hashing.Verify(user.PasswordHash, password).Succeeded;
+        var now = time.GetUtcNow();
+
+        // As at sign-in: attempts sent at once are counted one at a time under the account's row lock.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await LockAndReloadAsync(user, ct);
+        if (user.LockoutEndsAt > now)
+        {
+            await AuditLockedAsync(user, "Password given to confirm an action while locked", ct);
+            return false;
+        }
+
+        if (matches)
+        {
+            if (user.FailedLoginCount > 0)
+            {
+                user.FailedLoginCount = 0;
+                user.LastFailedLoginAt = null;
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            }
+
+            return true;
+        }
+
+        var locked = SignInPolicy.RecordFailure(Security, user, now);
+        audit.Add(new AuditEntry(AuditCategories.Auth, "auth.reauthentication_failed", "Wrong password given to confirm an action")
+        {
+            UserId = user.Id,
+            UserName = user.UserName,
+            Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return false;
+    }
 
     /// <summary>Staff sessions (browser and HC360 Desktop) lock; patient portal sessions end instead.</summary>
     private static bool IsStaffSession(UserSession session) => session.ClientType != "portal";
@@ -1343,8 +1424,8 @@ public sealed class AuthService(
         await db.Entry(user).ReloadAsync(ct);
     }
 
-    private Task AuditLockedAsync(User user, CancellationToken ct) =>
-        audit.WriteAsync(new AuditEntry(AuditCategories.Auth, "auth.login_locked", "Sign-in attempted while locked")
+    private Task AuditLockedAsync(User user, string summary, CancellationToken ct) =>
+        audit.WriteAsync(new AuditEntry(AuditCategories.Auth, "auth.login_locked", summary)
         {
             UserId = user.Id,
             UserName = user.UserName,

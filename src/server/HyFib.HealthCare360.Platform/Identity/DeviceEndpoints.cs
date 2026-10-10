@@ -105,6 +105,10 @@ internal static class DeviceEndpoints
         var now = time.GetUtcNow();
         var normalizedCode = new string((request.Code ?? string.Empty).Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
         var hash = SecretTokens.Hash(normalizedCode);
+
+        // Enrolments sent at once with the same code take turns under its row lock, so a code enrols one device only.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM identity.device_enrollment_codes WHERE code_hash = {hash} FOR NO KEY UPDATE", ct);
         var enrollment = await db.Set<DeviceEnrollmentCode>().FirstOrDefaultAsync(c => c.CodeHash == hash, ct);
         if (enrollment is null || enrollment.UsedAt is not null || enrollment.ExpiresAt <= now)
         {
@@ -141,6 +145,7 @@ internal static class DeviceEndpoints
             UserId = enrollment.CreatedBy,
         });
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         return TypedResults.Ok(new EnrollDeviceResponse(device.Id, secret, Environment.MachineName, certificates.CaFingerprint));
     }
