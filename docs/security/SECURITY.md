@@ -75,8 +75,14 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     portal codes in 15 minutes, and an address may ask for 5.
   - An account locks for 15 minutes after 5 wrong passwords or authenticator codes in a row. Each further 5 double the
     lock, up to 24 hours. A wrong code counts like a wrong password, whichever sign-in attempt it comes in, because
-    whoever is guessing codes knows the password. Attempts sent at once, from many machines, are judged one at a time
-    under a lock on the account, so each guess counts and none gets in once the account is locked.
+    whoever is guessing codes knows the password. So does a wrong password given again to confirm an action (changing
+    the password, setting a PIN, two-step verification, signing out sessions, key and backup actions), because whoever
+    guesses there holds a session, say on a workstation left signed in, but not the password. While the account is
+    locked, no password is accepted there either.
+  - Attempts sent at once, from many machines, are judged one at a time under a lock on the account, so each guess
+    counts and none gets in once the account is locked. The same holds for each portal code's five tries, a session's
+    five PIN tries, the three portal codes a number may be sent in 15 minutes, and the single use of an enrolment
+    code.
   - Failures are forgotten after 24 hours without another, so the occasional mistyped password does not add up to ever
     longer locks.
   - A locked account gets the same answer, after the same work, as a wrong password, so a response never confirms that
@@ -121,8 +127,10 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - **Idle lock:** staff screens lock after 10 minutes unused (the `ui.idleLockMinutes` setting; 0 turns it off), and
     staff unlock with a PIN or their password. The server keeps the lock: until the session is unlocked, its requests
     are refused (423) and live updates stop, so hiding the lock screen opens nothing. The server also locks a session
-    the app did not lock, at the next refresh that reports 10 minutes unused. Too many wrong PINs end the session.
-    Locking and unlocking are audited.
+    the app did not lock, at the next refresh that reports 10 minutes unused. Five wrong PINs or passwords end the
+    session. A PIN is 4 to 6 digits, not all the same or in sequence, and setting one needs the password; an
+    administrator's password reset clears it, since whoever knew the old password may know it. Locking and unlocking
+    are audited.
   - **How many at once:** a staff account may have 3 sessions at once (the `security.maxSessionsPerUser` setting; 0
     for no limit). Signing in once more signs out the session used least recently, audited as `auth.session_limit`.
     Patient portal accounts have no limit.
@@ -134,13 +142,59 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - **Credential changes:** changing the password, or turning two-step verification on or off, signs out the
     account's other sessions. Setting up two-step verification asks for the password first.
 - Selected roles can be limited to **enrolled devices**:
-  - Each HC360 Desktop has a device secret, protected with Windows DPAPI.
+  - Each HC360 Desktop has a device secret, protected with Windows DPAPI. It gets it by enrolling with a code an
+    administrator makes, which is good for one device and for 30 minutes unless the administrator chose otherwise.
   - Administrators can revoke a device at any time.
   - Only HC360 Desktop kinds count (workstation, kiosk, queue display, tablet). An HC360 lab agent is also an enrolled
     device, but its secret sits on an unattended lab PC (protected with machine DPAPI, in a folder only SYSTEM,
     Administrators and the agent's service account can read), so it is refused for sign-in and for the desktop
     heartbeat. It can only relay the analysers assigned to it, which the server checks on every call and again every
     minute while a relay is open. Revoking it ends its relays within a minute.
+
+#### Sign-in pathways
+Every way in, for people, devices, providers and other systems, with what it takes and what stops guessing (ASVS
+V6.1.3, V6.3.4). Every endpoint open to callers who have not signed in is also on the reviewed list in
+`EndpointAuthorizationTests`, which fails when one is added, so a new pathway is a reviewed change to both.
+
+What they all share:
+- The keys, tokens and codes HC360 makes come from the system's secure random generator.
+- What HC360 only has to check is stored as a hash: PBKDF2-SHA512 for passwords and PINs, SHA-256 for device keys,
+  tokens and codes. What it must read back is encrypted with the data encryption key (Keys and certificates, below):
+  authenticator (TOTP) seeds, and the webhook secrets and tokens the providers issue. A secret is compared in constant
+  time, or found by its hash. The exceptions are codes printed or posted for anyone holding the paper to use, which are
+  stored as they are: feedback form tokens, and report and prescription verification codes.
+- An unknown account, device or code gets the same answer as a wrong one.
+- Each secret allows a set number of tries, and tries sent at once are judged one at a time, so the limit holds
+  however they arrive. Requests are limited per address as well: 10 a minute for sign-in, codes, PINs and password
+  prompts, 5 portal code requests in 15 minutes, 60 a minute for patient links, and an allowance per device for devices.
+- Every pathway but the analyser and modality connections is HTTPS only.
+
+| Pathway | Proof, and its strength | What stops guessing |
+|---|---|---|
+| **Staff sign-in** (staff app, HC360 Desktop) | Username and password: at least 12 characters, none from breach lists. The SuperAdmin, HospitalAdmin, Accountant and HrManager roles, and anyone holding an administrative permission, also give a 6-digit authenticator code (TOTP): two factors (NIST AAL2) for them, one (AAL1) for other staff. A role can be limited to enrolled HC360 Desktops; none is by default | The account locks after 5 wrong passwords or codes in a row, for 15 minutes, doubling up to 24 hours |
+| **Renewing a session** | The refresh cookie: 256 random bits, replaced on every use, sent with the `X-HC360-Client` header. A spent one presented again, past a minute's grace for a lost response, ends the session. Sessions end 12 hours after sign-in, or after 2 hours unused (portal: 20 minutes) | Too large to guess |
+| **Lock screen** | The PIN (4 to 6 digits, not all the same or in sequence) or the password. It opens only the session it locked | 5 wrong ones end the session |
+| **Password prompts** before sensitive actions | The password again, from a signed-in staff member | Wrong ones count toward the account lock |
+| **Patient portal sign-in** | A 6-digit code sent by SMS to the registered number, valid 5 minutes: one factor (AAL1), as strong as the phone number | 5 tries per code; 3 codes per number in 15 minutes |
+| **Video consultation guests** | The 256-bit token in the link sent to the patient, valid until 2 hours after the consultation's scheduled end. A guest waits until the doctor admits them, and the link reveals only the patient's first name | Too large to guess; 5 failed joins per connection |
+| **Enrolling a workstation or lab PC** | A code an administrator makes: 8 characters from 31 (about 40 bits), good for one device, for 30 minutes by default (5 minutes to 24 hours) | Too many to try in its lifetime at 60 a minute per address |
+| **HC360 Desktop and lab agents** | The device's id and its 256-bit secret, kept with DPAPI. Lab agents never sign anyone in, and relay only their own analysers. Revoking the device stops it | Too large to guess |
+| **Attendance terminals, JSON punch API** | The serial number and a 256-bit device key | Too large to guess |
+| **Attendance terminals, ADMS** (ZKTeco, eSSL) | The serial number, which is printed on the terminal, and its fixed IP address when one is set: the ADMS protocol carries no key. This is the weakest pathway. Without an address, anyone on the network who knows a serial number can add punches in its name, so set the address of every terminal that pushes over ADMS in HR › Terminals (ASVS V6.3.4) | Only registered, active serials; refusals are logged |
+| **Patient monitors and their gateways** | A device key of 256 random bits that names its device | Too large to guess |
+| **Network lab analysers** | The analyser's fixed IP address: HL7 (MLLP) and ASTM have no authentication. A connection set up before the address was required accepts any address until one is added | Other addresses are closed before a byte is read |
+| **Modality worklist** (DICOM) | The modality's AE title and IP address together, from the allow-list | Other addresses are closed before a byte is read |
+| **Payment gateway callbacks** | An HMAC-SHA256 signature of the body with the webhook secret | Too large to guess; refusals are logged |
+| **SMS delivery receipts** | MSG91 and generic gateways: a shared token in the address (`?token=`), and the gateway's addresses if an allow-list is set. Twilio: its `X-Twilio-Signature` (HMAC-SHA1, Twilio's scheme) | As strong as the token; refusals are logged |
+| **WhatsApp callbacks** (Meta) | An `X-Hub-Signature-256` (HMAC-SHA256 of the body with the app secret); the verify token for Meta's subscription check | Too large to guess; refusals are logged |
+| **FHIR API** | A staff sign-in whose roles hold `fhir.read` (HospitalAdmin by default): no separate client credentials or SMART on FHIR. `fhir.read` alone does not require two-step verification | As staff sign-in |
+| **Patient links** | Feedback forms: a 128-bit token on the hospital's QR poster, which any patient may answer. Feedback invitations: 128 bits, 14 days, one answer. Unsubscribe links: 128 bits; they only stop campaign messages. Prescription checks: 144 bits; the doctor, facility and date, no patient details. Report checks: 100 bits; the patient's initials and the test names, never results | Too large to guess; 60 a minute per address |
+| **Server command line and database** | A Windows administrator's sign-in on the Server Node: the data folder is readable only by them, the service and SYSTEM. PostgreSQL accepts only the service's Windows account, from that machine, unless it runs elsewhere (Keys and certificates, below) | Windows |
+
+The webhook secrets and tokens are made at each provider and saved in Administration › Integrations. HC360 does not check
+their length, so use the long random values the providers generate. The rest of what anyone may call (the server's
+name and certificate, the public doctor directory, the privacy notice and health checks) reveals nothing about a person
+and grants nothing.
 
 ### Authorisation and privacy
 - Permission-based access: every API endpoint requires a named permission, and screens hide what a role cannot use.
@@ -541,7 +595,10 @@ CI runs these checks on every pull request and on main. A pull request cannot me
    review the charts it lists as past their period.
 10. If the modality worklist is used, open its port in the firewall for the modalities' addresses only, keep it on the
     imaging network, and remove a modality from the worklist settings the day it is retired or moved.
-11. Keep Microsoft Edge updating on the Server Node: it makes the PDFs, and HC360 restarts it regularly so updates apply.
+11. Give every attendance terminal that pushes over ADMS a fixed IP address, and enter it as *Only accept from this IP
+    address* on the terminal in HR › Terminals. ADMS carries no key, so without the address a device that knows the
+    terminal's serial number can add punches in its name.
+12. Keep Microsoft Edge updating on the Server Node: it makes the PDFs, and HC360 restarts it regularly so updates apply.
     Decide whether report PDFs may go by e-mail and WhatsApp (`diagnostics.reports.sendPdf`, on by default), and say so
     in the privacy notice.
 

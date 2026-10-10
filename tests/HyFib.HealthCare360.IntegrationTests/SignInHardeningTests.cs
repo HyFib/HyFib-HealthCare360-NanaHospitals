@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -106,6 +107,165 @@ public sealed class SignInHardeningTests(HospitalServer server)
         var user = await UserAsync(name);
         user.FailedLoginCount.ShouldBe(5);
         user.LockoutEndsAt.ShouldNotBeNull().ShouldBeGreaterThan(DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
+    public async Task Wrong_portal_codes_sent_at_once_each_count()
+    {
+        // A portal account has no lock, so each code's five tries are what stop guessing.
+        var phone = NewMobile();
+        OtpChallengeResponse challenge;
+        using (var requested = await OnPortal().SendRawAsync(HttpMethod.Post, "/api/v1/auth/otp/request", new OtpRequest(phone)))
+        {
+            challenge = await ApiClient.ReadAsync<OtpChallengeResponse>(requested, HttpMethod.Post, "/api/v1/auth/otp/request");
+        }
+
+        var code = await server.PortalCodeAsync(phone);
+        var wrong = ((int.Parse(code, System.Globalization.CultureInfo.InvariantCulture) + 1) % 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
+
+        // Ten wrong codes at once, as from ten machines: each reads the challenge before any of the others is counted.
+        var answers = await Task.WhenAll(Enumerable.Range(0, 10).Select(async _ =>
+        {
+            using var response = await OnPortal().SendRawAsync(HttpMethod.Post, "/api/v1/auth/otp/verify", new OtpVerifyRequest(challenge.ChallengeId, wrong));
+            return response.StatusCode;
+        }));
+
+        // Five are told the code is wrong; the rest, and then the right code itself, find the challenge used up.
+        answers.Count(a => a == HttpStatusCode.BadRequest).ShouldBe(5);
+        answers.Count(a => a == HttpStatusCode.Unauthorized).ShouldBe(5);
+        using (var right = await OnPortal().SendRawAsync(HttpMethod.Post, "/api/v1/auth/otp/verify", new OtpVerifyRequest(challenge.ChallengeId, code)))
+        {
+            right.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        }
+
+        await using var scope = server.Services.CreateAsyncScope();
+        var stored = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuthChallenge>().AsNoTracking()
+            .SingleAsync(c => c.Id == challenge.ChallengeId, Ct);
+        (stored.Attempts, stored.ConsumedAt).ShouldBe((5, null));
+    }
+
+    [Fact]
+    public async Task Portal_codes_asked_for_at_once_stay_within_three_per_number()
+    {
+        // Each code sent is five more guesses, so a number gets three in 15 minutes, however the requests arrive.
+        var phone = NewMobile();
+        var answers = await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            using var response = await OnPortal().SendRawAsync(HttpMethod.Post, "/api/v1/auth/otp/request", new OtpRequest(phone));
+            return response.StatusCode;
+        }));
+
+        answers.Count(a => a == HttpStatusCode.OK).ShouldBe(3);
+        answers.Count(a => a == HttpStatusCode.UnprocessableEntity).ShouldBe(5);
+        await using var scope = server.Services.CreateAsyncScope();
+        var normalized = Phone.Normalize(phone);
+        (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuthChallenge>()
+            .CountAsync(c => c.Phone == normalized, Ct)).ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task An_enrolment_code_sent_twice_at_once_enrols_one_device()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+            new CreateEnrollmentCodeRequest(DeviceKind.Workstation, null, "Enrolment race", 30));
+
+        var name = "Race PC " + Guid.NewGuid().ToString("N")[..8];
+        var answers = await Task.WhenAll(Enumerable.Range(0, 4).Select(async i =>
+        {
+            using var response = await server.AnonymousFrom(NewAddress()).SendRawAsync(HttpMethod.Post, "/api/v1/devices/enroll",
+                new EnrollDeviceRequest(code.Code, $"{name} {i}", null, "Windows 11", "1.0.0"));
+            return response.StatusCode;
+        }));
+
+        answers.Count(a => a == HttpStatusCode.OK).ShouldBe(1);
+        answers.Count(a => a == HttpStatusCode.UnprocessableEntity).ShouldBe(3);
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var hash = SecretTokens.Hash(code.Code.Replace("-", string.Empty, StringComparison.Ordinal));
+        var used = await db.Set<DeviceEnrollmentCode>().AsNoTracking().SingleAsync(c => c.CodeHash == hash, Ct);
+        (await db.Set<Device>().CountAsync(d => d.Name.StartsWith(name), Ct)).ShouldBe(1);
+        used.UsedByDeviceId.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task An_administrators_password_reset_clears_the_lock_screen_PIN()
+    {
+        const string name = "it-pin-reset";
+        await server.CreateStaffAccountAsync(name, SystemRoles.Billing);
+        var (client, _) = await server.SignInNewSessionAsync(name);
+        await client.PostAsync("/api/v1/auth/pin", new SetPinRequest("2580", server.Password));
+        (await UserAsync(name)).PinHash.ShouldNotBeNull();
+
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        await admin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{(await UserAsync(name)).Id}/reset-password");
+
+        // Whoever may know the old password may know the PIN: until the holder sets a new one, the password unlocks.
+        (await UserAsync(name)).PinHash.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Wrong_PINs_sent_at_once_each_count()
+    {
+        const string name = "it-pin-guess";
+        await server.CreateStaffAccountAsync(name, SystemRoles.Billing);
+        var (client, _) = await server.SignInNewSessionAsync(name);
+        await client.PostAsync("/api/v1/auth/pin", new SetPinRequest("2580", server.Password));
+        await client.PostAsync("/api/v1/auth/lock");
+
+        // Ten wrong PINs at once, as a script on the locked workstation could send them: each reads the session before any
+        // of the others is counted.
+        var answers = await Task.WhenAll(Enumerable.Range(0, 10).Select(async i =>
+        {
+            var guesser = server.AnonymousFrom(NewAddress());
+            guesser.Http.DefaultRequestHeaders.Authorization = client.Http.DefaultRequestHeaders.Authorization;
+            using var response = await guesser.SendRawAsync(HttpMethod.Post, "/api/v1/auth/unlock",
+                new UnlockRequest((1357 + i).ToString(System.Globalization.CultureInfo.InvariantCulture), null));
+            return response.StatusCode;
+        }));
+
+        // Four are told the PIN is wrong, the fifth ends the session, and the rest find it ended.
+        answers.Count(a => a == HttpStatusCode.BadRequest).ShouldBe(4);
+        answers.Count(a => a == HttpStatusCode.Unauthorized).ShouldBe(6);
+        var user = await UserAsync(name);
+        await using var scope = server.Services.CreateAsyncScope();
+        var ended = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserSession>().AsNoTracking()
+            .Where(s => s.UserId == user.Id && s.RevokedReason == "unlock_attempts_exceeded")
+            .ToListAsync(Ct);
+        ended.ShouldHaveSingleItem().FailedUnlockAttempts.ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task Wrong_passwords_given_to_confirm_an_action_count_toward_the_lock()
+    {
+        const string name = "it-reauth-guess";
+        await server.CreateStaffAccountAsync(name, SystemRoles.Billing);
+        var (client, _) = await server.SignInNewSessionAsync(name);
+
+        // Someone at a workstation left signed in guesses the password where an action asks for it again, ten at once.
+        var answers = await Task.WhenAll(Enumerable.Range(0, 10).Select(async i =>
+        {
+            var guesser = server.AnonymousFrom(NewAddress());
+            guesser.Http.DefaultRequestHeaders.Authorization = client.Http.DefaultRequestHeaders.Authorization;
+            using var response = await guesser.SendRawAsync(HttpMethod.Post, "/api/v1/auth/sessions/end-others", new ReauthenticateRequest($"Not-the-password-{i}"));
+            return response.StatusCode;
+        }));
+        answers.ShouldAllBe(a => a == HttpStatusCode.BadRequest);
+
+        // Five were counted, and they locked the account: now the right password is refused too, there and at sign-in.
+        var user = await UserAsync(name);
+        user.FailedLoginCount.ShouldBe(5);
+        user.LockoutEndsAt.ShouldNotBeNull().ShouldBeGreaterThan(DateTimeOffset.UtcNow);
+        var failures = await AuditAsync(user.Id, "auth.reauthentication_failed");
+        failures.Count.ShouldBe(5);
+        failures.Count(e => e.Severity == AuditSeverity.Critical).ShouldBe(1);
+        using (var right = await client.SendRawAsync(HttpMethod.Post, "/api/v1/auth/sessions/end-others", new ReauthenticateRequest(server.Password)))
+        {
+            right.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
+
+        using var signIn = await LogInAsync(name, server.Password);
+        signIn.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -261,6 +421,14 @@ public sealed class SignInHardeningTests(HospitalServer server)
         return response.StatusCode;
     }
 
+    // A caller at the patient portal's address, from an address of its own.
+    private ApiClient OnPortal()
+    {
+        var client = server.AnonymousFrom(NewAddress());
+        client.Http.BaseAddress = server.PortalAddress;
+        return client;
+    }
+
     private Task<HttpResponseMessage> LogInAsync(string name, string password) =>
         server.AnonymousFrom(NewAddress()).SendRawAsync(HttpMethod.Post, "/api/v1/auth/login", new LoginRequest(name, password));
 
@@ -275,6 +443,8 @@ public sealed class SignInHardeningTests(HospitalServer server)
 
     // A code for ten minutes from now: never one the server accepts now.
     private static string WrongCode(string secret) => CodeAt(secret, DateTime.UtcNow.AddMinutes(10));
+
+    private static string NewMobile() => "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + Random.Shared.Next(10))));
 
     private static string NewAddress()
     {

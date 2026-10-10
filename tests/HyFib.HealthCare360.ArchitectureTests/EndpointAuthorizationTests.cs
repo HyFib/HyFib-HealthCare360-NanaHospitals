@@ -18,7 +18,8 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 /// Every endpoint says who may call it: holders of a permission, any signed-in user, or anyone. The last two are
 /// reviewed lists below, so a new endpoint open to every signed-in user (patients on the portal included) or to the
 /// internet is a deliberate, visible decision. An endpoint that says nothing fails the first test; at run time the
-/// server's fallback policy would still require sign-in.
+/// server's fallback policy would still require sign-in. What each way in takes, and what stops guessing it, is in
+/// docs/security/SECURITY.md (Sign-in pathways): a new anonymous endpoint belongs there too.
 /// </summary>
 public sealed class EndpointAuthorizationTests
 {
@@ -46,7 +47,8 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/devices/enroll",
         "POST /api/v1/devices/heartbeat",
 
-        // Patient links from SMS/WhatsApp and printed QR codes: an unguessable token or code, no patient data returned.
+        // Patient links from SMS/WhatsApp and printed QR codes: an unguessable token or code. Report checks name the patient
+        // by initials only; the others return no patient data.
         "GET /api/v1/public/feedback/forms/{token}",
         "POST /api/v1/public/feedback/forms/{token}",
         "GET /api/v1/public/feedback/invitations/{token}",

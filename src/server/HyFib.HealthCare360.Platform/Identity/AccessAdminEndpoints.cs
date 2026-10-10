@@ -322,6 +322,10 @@ internal static class AccessAdminEndpoints
         user.FailedLoginCount = 0;
         user.LastFailedLoginAt = null;
         user.LockoutEndsAt = null;
+
+        // The lock-screen PIN goes too: whoever may know the old password may know it. Until the account's holder sets a
+        // new one, their screen unlocks with the password.
+        user.PinHash = null;
         await RevokeAllSessionsAsync(db, sessions, user.Id, "password_reset", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.password_reset", $"Password reset for {user.UserName}")
         {
