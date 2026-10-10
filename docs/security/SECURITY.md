@@ -157,9 +157,12 @@ V6.1.3, V6.3.4). Every endpoint open to callers who have not signed in is also o
 `EndpointAuthorizationTests`, which fails when one is added, so a new pathway is a reviewed change to both.
 
 What they all share:
-- Secrets come from the system's secure random generator. They are stored only as hashes (PBKDF2-SHA512 for passwords
-  and PINs, SHA-256 for keys, tokens and codes) and compared in constant time. The exceptions are codes printed or
-  posted for anyone holding the paper to use: feedback form tokens, and report and prescription verification codes.
+- The keys, tokens and codes HC360 makes come from the system's secure random generator.
+- What HC360 only has to check is stored as a hash: PBKDF2-SHA512 for passwords and PINs, SHA-256 for device keys,
+  tokens and codes. What it must read back is encrypted with the data encryption key (Keys and certificates, below):
+  authenticator (TOTP) seeds, and the webhook secrets and tokens the providers issue. A secret is compared in constant
+  time, or found by its hash. The exceptions are codes printed or posted for anyone holding the paper to use, which are
+  stored as they are: feedback form tokens, and report and prescription verification codes.
 - An unknown account, device or code gets the same answer as a wrong one.
 - Each secret allows a set number of tries, and tries sent at once are judged one at a time, so the limit holds
   however they arrive. Requests are limited per address as well: 10 a minute for sign-in, codes, PINs and password
