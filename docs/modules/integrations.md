@@ -561,7 +561,10 @@ Analysers send results to HC360, ask it which tests to run on a tube (host query
 listener per enabled network analyser with the settings: it starts new listeners, restarts changed ones, stops
 removed ones and retries ports that could not be bound.
 
-* Connections from outside `allowedIps` are closed at once. Use the analyser's fixed IP.
+* An analyser connects without signing in, so its address is the only check. A connection needs at least one
+  address in `allowedIps` (Lab setup does not save one without), and connections from anywhere else are closed at
+  once. Use the analyser's fixed IP. A connection saved without an address before one was required takes any address:
+  the gateway logs a warning when it starts listening, and Lab setup › Analysers shows it as *Open to any device*.
 * At most `maxConnectionsPerInstrument` connections are served at a time.
 * Idle connections close after `idleTimeoutSeconds`.
 * A port the HC360 server uses itself (HTTPS, the HTTP redirect, mDNS 5353) is refused, and two analysers cannot share
@@ -999,7 +1002,7 @@ Permissions:
 * Secrets are read only from `*.secret` settings and never logged or returned. Log summaries are built by the
   adapters, and patient data in analyser messages is masked.
 * Every network call has a timeout. The TCP listeners limit message size, connection count and idle time and apply
-  per-instrument allow-lists.
+  per-instrument allow-lists, which every network analyser's connection must have.
 * Lab agents authenticate with their device id and secret (compared in constant time) on every call, may relay only
   the analysers assigned to them, and are checked again every minute. A lab agent's credential is refused everywhere
   else, sign-in included. The agent trusts only the pinned hospital CA.

@@ -438,14 +438,15 @@ sent and receive.
 
 **Lab setup › Analysers** lists the facility's analysers (`/api/v1/lab/instruments`). For each one, staff with
 `integrations.lab.connections` (HospitalAdmin) set up its connection in the Connection drawer: a network port the
-analyser connects to (with its fixed IP), or a COM port on a lab PC whose HC360 lab agent relays it, with the line
-settings from the analyser's interface manual. Staff with `integrations.lab.status` (LabTechnician, Pathologist,
-HospitalAdmin) see whether each analyser and its agent are connected and how many orders wait for it. The screen warns
-when the laboratory gateway is off. **Bidirectional** on the analyser is the one switch for host queries and order
+analyser connects to (with its fixed IP address, which is required), or a COM port on a lab PC whose HC360 lab agent
+relays it, with the line settings from the analyser's interface manual. Staff with `integrations.lab.status`
+(LabTechnician, Pathologist, HospitalAdmin) see whether each analyser and its agent are connected and how many orders
+wait for it. The screen warns when the laboratory gateway is off, and when a network analyser set up without its
+address takes results from any device. **Bidirectional** on the analyser is the one switch for host queries and order
 download; Lab setup › Analysers shows only the signed-in facility's analysers and agents. For training, an analyser's
 connection can be the **training analyser (simulator)**: nothing connects, and *Send results* takes a received
-sample's results on screen and sends them as that analyser would, so they are checked and released like any
-analyser's (see [integrations.md](integrations.md#training-analyser-transport-simulator)).
+sample's results on screen and sends them as that analyser would, so they are checked and released like any analyser's
+(see [integrations.md](integrations.md#training-analyser-transport-simulator)).
 
 `IInstrumentResultSink` is implemented by `InstrumentResultSink` (registered in `AddServices`):
 

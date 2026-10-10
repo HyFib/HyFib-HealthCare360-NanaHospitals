@@ -41,6 +41,10 @@ export function splitList(text: string): string[] {
   ];
 }
 
+// A network analyser connects without signing in, so its address is the only check (ASVS V13.2.1).
+const NO_ADDRESS =
+  "Enter the analyser's fixed IP address: an analyser connects without signing in, so only the addresses listed here can send results.";
+
 export const connectionSchema = z
   .object({
     transport: z.enum(['Tcp', 'Serial', 'Simulator']),
@@ -70,7 +74,9 @@ export const connectionSchema = z
       }
       const ips = splitList(values.allowedIps);
       const wrong = ips.find((ip) => !isIpAddress(ip));
-      if (wrong) {
+      if (ips.length === 0) {
+        problem('allowedIps', NO_ADDRESS);
+      } else if (wrong) {
         problem('allowedIps', `${wrong} is not an IP address.`);
       } else if (ips.length > 16) {
         problem('allowedIps', 'List at most 16 addresses.');
@@ -240,6 +246,15 @@ export function connectionStatus(
     };
   }
   if (connection.transport === 'Tcp') {
+    // Set up before HC360 required the analyser's address, or with none it can read: the listener then takes results
+    // from any device on the network.
+    if (status?.state === 'listening' && !connection.allowedIps.some(isIpAddress)) {
+      return {
+        label: 'Open to any device',
+        tone: 'warning',
+        detail: `HC360 takes results on port ${connection.port} from any device on the network. Enter the analyser's fixed IP address in its connection, so that only the analyser can send them.`,
+      };
+    }
     switch (status?.state) {
       case 'listening':
         return status.activeConnections > 0

@@ -81,6 +81,9 @@ const list = (overrides: Partial<LabConnectionsDto> = {}): LabConnectionsDto => 
   ...overrides,
 });
 
+const NO_ADDRESS =
+  "Enter the analyser's fixed IP address: an analyser connects without signing in, so only the addresses listed here can send results.";
+
 const problems = (values: ConnectionForm) => {
   const result = connectionSchema.safeParse(values);
   return result.success
@@ -133,8 +136,11 @@ describe('the form', () => {
   it('needs a port and real addresses for a network analyser', () => {
     const tcp = toConnectionForm(undefined);
 
-    expect(problems(tcp)).toEqual({ port: 'Enter the port the analyser connects to.' });
-    expect(problems({ ...tcp, port: 70000 })).toEqual({ port: 'A port is a number from 1 to 65535.' });
+    expect(problems(tcp)).toEqual({ port: 'Enter the port the analyser connects to.', allowedIps: NO_ADDRESS });
+    expect(problems({ ...tcp, port: 70000, allowedIps: '10.0.5.21' })).toEqual({
+      port: 'A port is a number from 1 to 65535.',
+    });
+    expect(problems({ ...tcp, port: 5100, allowedIps: '  ' })).toEqual({ allowedIps: NO_ADDRESS });
     expect(problems({ ...tcp, port: 5100, allowedIps: '10.0.5.21\nlab-pc' })).toEqual({
       allowedIps: 'lab-pc is not an IP address.',
     });
@@ -157,7 +163,7 @@ describe('the form', () => {
   });
 
   it('checks where an HL7 analyser puts the barcode', () => {
-    const tcp = { ...toConnectionForm(undefined), port: 5100 };
+    const tcp = { ...toConnectionForm(undefined), port: 5100, allowedIps: '10.0.5.21' };
 
     expect(problems({ ...tcp, sampleIdFields: 'OBX-3' })).toEqual({
       sampleIdFields: 'Write fields like SPM-2, SAC-3, OBR-3 or OBR-2.',
@@ -263,6 +269,32 @@ describe('the status shown', () => {
       ).detail,
     ).toContain('AddressAlreadyInUse');
     expect(connectionStatus(connection(), list()).label).toBe('Starting');
+  });
+
+  it('warns about a network analyser set up without its address, which takes results from any device', () => {
+    const listening = {
+      state: 'listening',
+      activeConnections: 1,
+      connectedSince: null,
+      lastMessageAt: null,
+      lastErrorAt: null,
+      lastError: null,
+      messagesAccepted: 0,
+      messagesRefused: 0,
+    };
+
+    const open = connectionStatus(connection({ allowedIps: [], status: listening }), list());
+
+    expect(open).toMatchObject({ label: 'Open to any device', tone: 'warning' });
+    expect(open.detail).toContain("Enter the analyser's fixed IP address");
+    // The listener skips what is not an address, as written in the settings by hand.
+    expect(connectionStatus(connection({ allowedIps: ['lab-pc'], status: listening }), list()).label).toBe(
+      'Open to any device',
+    );
+    expect(connectionStatus(connection({ status: listening }), list()).label).toBe('Connected');
+    expect(
+      connectionStatus(connection({ allowedIps: [], status: { ...listening, state: 'failed' } }), list()).label,
+    ).toBe('Port failed');
   });
 
   it('tells an offline agent from a connected relay and a COM port problem', () => {

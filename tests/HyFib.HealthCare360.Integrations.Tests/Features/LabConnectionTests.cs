@@ -11,7 +11,7 @@ public sealed class LabConnectionTests
     private static readonly LabSerialPortDto Com3 = new("COM3", 9600, 8, "None", "One", "None", true, true);
 
     private static SaveLabConnectionRequest Tcp(int? port = 5100, params string[] ips) =>
-        new("Tcp", true, port, ips, null, null, null, null, null, 0);
+        new("Tcp", true, port, ips.Length == 0 ? ["10.0.5.21"] : ips, null, null, null, null, null, 0);
 
     private static SaveLabConnectionRequest Serial(Guid? agent, LabSerialPortDto? port) =>
         new("Serial", true, null, null, null, null, null, agent, port, 0);
@@ -32,6 +32,20 @@ public sealed class LabConnectionTests
         Errors(Tcp(port: 70000)).ShouldContain("A port is a number from 1 to 65535.");
         Errors(Tcp(5100, "10.0.5.300")).ShouldContain("'10.0.5.300' is not an IP address.");
         Errors(Tcp(5100, [.. Enumerable.Range(1, 17).Select(i => $"10.0.5.{i}")])).ShouldContain("List at most 16 addresses.");
+    }
+
+    [Fact]
+    public void A_network_analyser_needs_its_address_as_it_connects_without_signing_in()
+    {
+        const string NoAddress =
+            "Enter the analyser's fixed IP address: an analyser connects without signing in, so only the addresses listed here can send results.";
+        Errors(Tcp() with { AllowedIps = null }).ShouldContain(NoAddress);
+        Errors(Tcp() with { AllowedIps = [] }).ShouldContain(NoAddress);
+        Errors(Tcp() with { AllowedIps = [" "] }).ShouldContain(NoAddress);
+
+        // A serial analyser is relayed by its signed-in lab agent, and the training analyser takes no connections.
+        Validator.Validate(Serial(Guid.CreateVersion7(), Com3)).IsValid.ShouldBeTrue();
+        Validator.Validate(Tcp() with { Transport = "Simulator", Port = null, AllowedIps = null }).IsValid.ShouldBeTrue();
     }
 
     [Fact]

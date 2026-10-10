@@ -131,8 +131,9 @@ export function ConnectionFields({
             control={control}
             name="allowedIps"
             label="Analyser's IP address"
+            required
             disabled={disabled}
-            hint="Only this address may connect. Give the analyser a fixed address. One per line."
+            hint="Only this address can send results: the analyser connects without signing in. Give it a fixed address. One per line."
           />
         </FormGrid>
       ) : (

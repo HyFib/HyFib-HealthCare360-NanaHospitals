@@ -85,7 +85,10 @@ internal sealed partial record LabInstrumentSettings
     /// <summary>Network: the port the analyser connects to.</summary>
     public int Port { get; init; }
 
-    /// <summary>Network: analyser IP addresses allowed to connect (recommended: the analyser's fixed IP).</summary>
+    /// <summary>
+    /// Network: the analyser's IP addresses, the only ones its listener takes. Lab setup requires one; a connection saved
+    /// without one before it did takes any address, and Lab setup shows it as open to any device.
+    /// </summary>
     public IReadOnlyList<string>? AllowedIps { get; init; }
 
     /// <summary>Serial: the enrolled lab agent (device id) on the PC the analyser is cabled to.</summary>

@@ -47,6 +47,13 @@ internal sealed class LabInstrumentListener : IAsyncDisposable
     {
         _listener.Start(backlog: 8);
         _state.Listening(Instrument.Code, Instrument.Protocol, Instrument.Port);
+        if (_allowed is null)
+        {
+            _logger.LogWarning(
+                "Instrument {Instrument} takes results on port {Port} from any device on the network: enter the analyser's IP address in its connection (Lab setup › Analysers)",
+                Instrument.Code, Instrument.Port);
+        }
+
         _acceptLoop = AcceptLoopAsync(_stopping.Token);
     }
 

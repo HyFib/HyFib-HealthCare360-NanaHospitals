@@ -50,8 +50,9 @@ public sealed record LabConnectionStatusDto(
 public sealed record LabAgentDto(Guid Id, string Name, string? MachineName, string? Location, DateTimeOffset? LastSeenAt, bool Online, string? AppVersion, string? LastIpAddress);
 
 /// <summary>
-/// Saves an analyser's connection. Network: <c>Port</c> (and the analyser's fixed IP in <c>AllowedIps</c>). Serial:
-/// <c>AgentDeviceId</c> and <c>Serial</c>. HL7 analysers may set <c>SampleIdFields</c> and <c>OrderMessage</c>.
+/// Saves an analyser's connection. Network: <c>Port</c>, and the analyser's fixed IP address in <c>AllowedIps</c>: an
+/// analyser connects without signing in, so its address is the only check (ASVS V13.2.1). Serial: <c>AgentDeviceId</c>
+/// and <c>Serial</c>. HL7 analysers may set <c>SampleIdFields</c> and <c>OrderMessage</c>.
 /// </summary>
 public sealed record SaveLabConnectionRequest(
     string Transport,
@@ -76,6 +77,8 @@ public sealed class SaveLabConnectionRequestValidator : AbstractValidator<SaveLa
         {
             RuleFor(r => r.Port).NotNull().WithMessage("Enter the port the analyser connects to.")
                 .InclusiveBetween(1, 65535).WithMessage("A port is a number from 1 to 65535.");
+            RuleFor(r => r.AllowedIps).Must(ips => ips is not null && ips.Any(ip => !string.IsNullOrWhiteSpace(ip)))
+                .WithMessage("Enter the analyser's fixed IP address: an analyser connects without signing in, so only the addresses listed here can send results.");
             RuleFor(r => r.AllowedIps).Must(ips => ips is null || ips.Count <= 16).WithMessage("List at most 16 addresses.");
             RuleForEach(r => r.AllowedIps).Must(ip => IPAddress.TryParse(ip?.Trim(), out _)).WithMessage("'{PropertyValue}' is not an IP address.");
         });
