@@ -119,6 +119,7 @@ function BackupsPage() {
             {
               key: 'file',
               header: 'File / error',
+              width: 300,
               priority: 'low',
               render: (b) =>
                 b.error ? (
