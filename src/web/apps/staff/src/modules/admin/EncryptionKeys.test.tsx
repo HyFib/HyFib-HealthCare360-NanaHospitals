@@ -6,7 +6,14 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as AdminApi from './api';
-import { retireDataKey, rotateDataKey, rotateSigningKey, type EarlierDataKey, type EncryptionKeysStatus } from './api';
+import {
+  encryptionKeysRefetchInterval,
+  retireDataKey,
+  rotateDataKey,
+  rotateSigningKey,
+  type EarlierDataKey,
+  type EncryptionKeysStatus,
+} from './api';
 import { EncryptionKeys } from './EncryptionKeys';
 
 // The server, the toasts and the signed-in user are outside the test; the section's own behaviour is what is tested.
@@ -227,5 +234,26 @@ describe('EncryptionKeys', () => {
     expect(screen.queryByRole('button', { name: 'Rotate data key' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Rotate sign-in key' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Retire key/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('encryptionKeysRefetchInterval', () => {
+  it('reads the keys every 30 seconds while data moves to the new key', () => {
+    expect(encryptionKeysRefetchInterval(status({ keys: 2, valuesToMove: 4 }))).toBe(30_000);
+    expect(encryptionKeysRefetchInterval(status({ keys: 2, documentsToMove: 1 }))).toBe(30_000);
+  });
+
+  it('keeps reading them, less often, while an earlier key waits to become retirable', () => {
+    const waiting = earlierKey({ retireFrom: '2026-10-11T10:00:00Z', canRetire: false });
+    const expiring = earlierKey({ expiring: 2, canRetire: false });
+
+    expect(encryptionKeysRefetchInterval(status({ keys: 3, earlier: [waiting] }))).toBe(300_000);
+    expect(encryptionKeysRefetchInterval(status({ keys: 3, earlier: [earlierKey(), expiring] }))).toBe(300_000);
+  });
+
+  it('stops once nothing moves and every earlier key can be retired', () => {
+    expect(encryptionKeysRefetchInterval(status())).toBe(false);
+    expect(encryptionKeysRefetchInterval(status({ keys: 3, earlier: [earlierKey()] }))).toBe(false);
+    expect(encryptionKeysRefetchInterval(undefined)).toBe(false);
   });
 });

@@ -164,6 +164,22 @@ export interface EarlierDataKey {
   canRetire: boolean;
 }
 
+/**
+ * How often the encryption keys are read again: every 30 seconds while data moves to a new key, so the count goes down,
+ * and every 5 minutes while an earlier key waits to become retirable (for its stored answers to expire, or for the
+ * current key to have been current a day), so Retire appears on a screen left open.
+ */
+export function encryptionKeysRefetchInterval(status: EncryptionKeysStatus | undefined): number | false {
+  if (!status) {
+    return false;
+  }
+  const { dataKey } = status;
+  if (dataKey.valuesToMove + dataKey.documentsToMove > 0) {
+    return 30_000;
+  }
+  return dataKey.earlier.some((key) => !key.canRetire) ? 300_000 : false;
+}
+
 /** The server's encryption keys (GET /api/v1/admin/system/keys, SRS SEC-07). */
 export interface EncryptionKeysStatus {
   dataKey: {
@@ -422,11 +438,7 @@ export const adminQueries = {
     queryOptions({
       queryKey: ['admin', 'encryption-keys'],
       queryFn: ({ signal }) => api.get<EncryptionKeysStatus>('/api/v1/admin/system/keys', { signal }),
-      // While data moves to a new key, the count goes down.
-      refetchInterval: (query) =>
-        query.state.data && query.state.data.dataKey.valuesToMove + query.state.data.dataKey.documentsToMove > 0
-          ? 30_000
-          : false,
+      refetchInterval: (query) => encryptionKeysRefetchInterval(query.state.data),
     }),
   wifiSamples: (hours: number) =>
     queryOptions({
