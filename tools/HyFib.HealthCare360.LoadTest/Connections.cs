@@ -16,7 +16,8 @@ internal static class Connections
 
     public static Func<bool, HttpMessageHandler> Factory(string? caCertificatePath, int connections)
     {
-        var ca = caCertificatePath is null ? null : X509Certificate2.CreateFromPemFile(caCertificatePath);
+        // The certificate alone, as /api/v1/system/ca-certificate gives it (CreateFromPemFile would look for a key too).
+        var ca = caCertificatePath is null ? null : X509Certificate2.CreateFromPem(File.ReadAllText(caCertificatePath));
         return decompress =>
         {
             var handler = new SocketsHttpHandler

@@ -1,4 +1,7 @@
 using System.Net.Http.Json;
+using System.Net.Security;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 
 namespace HyFib.HealthCare360.LoadTest.Tests;
@@ -183,5 +186,75 @@ public sealed class OperationsTests
         b.GetProperty("phone").GetString().ShouldBe("8000000043");
         a.GetProperty("confirmedNotDuplicate").GetBoolean().ShouldBeTrue();
         a.GetProperty("ageYears").GetInt32().ShouldBeInRange(1, 89);
+    }
+}
+
+public sealed class ConnectionsTests : IDisposable
+{
+    private readonly string _folder = Path.Combine(Path.GetTempPath(), "hc360-loadtest-" + Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public void The_hospital_CA_is_read_from_its_certificate_alone_as_the_server_gives_it()
+    {
+        using var ca = CreateCa("CN=Nana Hospitals HC360 CA");
+        var path = WriteCa(ca);
+
+        var factory = Connections.Factory(path, 4);
+
+        using var handler = factory(true).ShouldBeOfType<SocketsHttpHandler>();
+        handler.SslOptions.RemoteCertificateValidationCallback.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void Only_a_certificate_from_the_hospital_CA_for_the_host_is_trusted()
+    {
+        using var ca = CreateCa("CN=Nana Hospitals HC360 CA");
+        using var other = CreateCa("CN=Another CA");
+
+        Connections.IsTrusted(ca, CreateServerCertificate(ca, "hc360-srv"), null, SslPolicyErrors.RemoteCertificateChainErrors)
+            .ShouldBeTrue("Windows does not know the hospital CA; the load test does");
+        Connections.IsTrusted(ca, CreateServerCertificate(other, "hc360-srv"), null, SslPolicyErrors.RemoteCertificateChainErrors)
+            .ShouldBeFalse("another CA");
+        Connections.IsTrusted(ca, CreateServerCertificate(ca, "hc360-srv"), null, SslPolicyErrors.RemoteCertificateNameMismatch)
+            .ShouldBeFalse("a certificate for another host");
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_folder))
+        {
+            Directory.Delete(_folder, recursive: true);
+        }
+    }
+
+    private string WriteCa(X509Certificate2 ca)
+    {
+        Directory.CreateDirectory(_folder);
+        var path = Path.Combine(_folder, "hc360-hospital-ca.crt");
+        File.WriteAllText(path, ca.ExportCertificatePem());
+        return path;
+    }
+
+    private static X509Certificate2 CreateCa(string subject)
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 1, true));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(
+            X509KeyUsageFlags.KeyCertSign, true));
+        return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+    }
+
+    private static X509Certificate2 CreateServerCertificate(
+        X509Certificate2 ca, string host)
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest($"CN={host}", key, HashAlgorithmName.SHA256);
+        var names = new SubjectAlternativeNameBuilder();
+        names.AddDnsName(host);
+        request.CertificateExtensions.Add(names.Build());
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            [new Oid("1.3.6.1.5.5.7.3.1")], false));
+        return request.Create(ca, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddMonths(6), [1, 2, 3, 4]);
     }
 }
