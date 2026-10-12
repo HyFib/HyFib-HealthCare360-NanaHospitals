@@ -91,6 +91,13 @@ export interface DeviceDto {
   version: number;
 }
 
+/** The HC360 Desktop version the server offers to enrolled workstations, or why it offers none (SRS DED-18). */
+export interface DesktopUpdateState {
+  offeredVersion: string | null;
+  releasedAt: string | null;
+  problem: string | null;
+}
+
 export interface HealthWarning {
   code: string;
   severity: 'info' | 'warning' | 'critical' | string;
@@ -417,6 +424,11 @@ export const adminQueries = {
     queryOptions({
       queryKey: ['admin', 'devices'],
       queryFn: ({ signal }) => api.get<DeviceDto[]>('/api/v1/admin/devices', { signal }),
+    }),
+  desktopUpdate: () =>
+    queryOptions({
+      queryKey: ['admin', 'devices', 'desktop-update'],
+      queryFn: ({ signal }) => api.get<DesktopUpdateState>('/api/v1/admin/devices/desktop-update', { signal }),
     }),
   health: () =>
     queryOptions({
