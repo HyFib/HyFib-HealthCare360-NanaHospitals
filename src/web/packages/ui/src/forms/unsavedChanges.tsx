@@ -13,10 +13,17 @@ export interface Place {
   search?: unknown;
 }
 
+/** How the router moves: to a new entry (PUSH, REPLACE) or along the history (BACK, FORWARD, GO). */
+export type NavigationAction = 'PUSH' | 'REPLACE' | 'BACK' | 'FORWARD' | 'GO';
+
 export interface Navigation {
   current: Place;
   next: Place;
+  action?: NavigationAction;
 }
+
+/** Whether moving from `current` to `next` loses a form. */
+export type Leaves = (current: Place, next: Place, action?: NavigationAction) => boolean;
 
 /** What the app asks before leaving a form's changes behind. */
 export interface LeaveQuestion {
@@ -98,9 +105,18 @@ export async function confirmLeaving(navigation?: Navigation): Promise<boolean> 
   return leave;
 }
 
-/** By default a form is lost when the app moves to another screen; a change of search parameters keeps it. */
+/** By default a screen's form is lost when the app moves to another screen; a change of search parameters keeps it. */
 export function leavesScreen(current: Place, next: Place): boolean {
   return current.pathname !== next.pathname;
+}
+
+/**
+ * A dialog's or drawer's form is lost on another screen too, and on Back or Forward: many dialogs are opened through the
+ * address (`?send=true`, `?edit=<id>`), and going back closes them. While a dialog is open, nothing else on the screen
+ * moves the app along its history.
+ */
+export function leavesDialog(current: Place, next: Place, action?: NavigationAction): boolean {
+  return leavesScreen(current, next) || action === 'BACK' || action === 'FORWARD' || action === 'GO';
 }
 
 export interface LeaveGuardOptions {
@@ -111,8 +127,11 @@ export interface LeaveGuardOptions {
    * ask; closing the window still is.
    */
   busy?: boolean;
-  /** Whether moving from `current` to `next` loses the form. By default, moving to another screen does. */
-  leaves?: (current: Place, next: Place) => boolean;
+  /**
+   * Whether a navigation loses the form. By default moving to another screen does (`leavesScreen`); for a dialog or
+   * drawer, Back and Forward do too (`leavesDialog`).
+   */
+  leaves?: Leaves;
   /** Asked instead of "Leave without saving?". */
   leaveQuestion?: LeaveQuestion;
 }
@@ -152,7 +171,7 @@ export function useLeaveGuard({
           return false;
         }
         const { busy: saving, leaves: loses } = latest.current;
-        return navigation ? !saving && loses(navigation.current, navigation.next) : true;
+        return navigation ? !saving && loses(navigation.current, navigation.next, navigation.action) : true;
       },
       question: () => latest.current.leaveQuestion,
       allow: () => {
@@ -206,7 +225,7 @@ export function useUnsavedChangesState({
   busy = false,
   open = true,
   onClose,
-  leaves,
+  leaves = leavesDialog,
   leaveQuestion,
 }: UnsavedChangesOptions): UnsavedChangesState {
   const [confirming, setConfirming] = useState(false);

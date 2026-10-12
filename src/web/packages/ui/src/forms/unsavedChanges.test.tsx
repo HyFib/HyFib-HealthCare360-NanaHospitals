@@ -5,6 +5,7 @@ import {
   askToLeaveWith,
   confirmLeaving,
   LEAVE_KEEPING_DRAFT,
+  leavesDialog,
   leaveQuestionFor,
   sameValues,
   useLeaveGuard,
@@ -85,6 +86,19 @@ describe('useLeaveGuard', () => {
 
     act(() => root.render(<Form dirty leaves={() => true} />));
     expect(wouldLoseChanges(sameScreen)).toBe(true);
+  });
+
+  it("loses a dialog's form on Back and Forward too, which close a dialog opened through the address", () => {
+    const list = { pathname: '/inventory/transfers', search: { send: true } };
+    const closed = { pathname: '/inventory/transfers', search: {} };
+    expect(leavesDialog(list, closed, 'BACK')).toBe(true);
+    expect(leavesDialog(list, closed, 'FORWARD')).toBe(true);
+    expect(leavesDialog(list, closed, 'PUSH')).toBe(false);
+    expect(leavesDialog(list, { pathname: '/inventory/items' }, 'PUSH')).toBe(true);
+
+    act(() => root.render(<Form dirty leaves={leavesDialog} />));
+    expect(wouldLoseChanges({ current: list, next: closed, action: 'BACK' })).toBe(true);
+    expect(wouldLoseChanges({ current: list, next: closed, action: 'REPLACE' })).toBe(false);
   });
 
   it('lets a save move on while it runs, but still has the browser ask before the window closes', () => {

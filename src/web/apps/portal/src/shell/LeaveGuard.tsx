@@ -18,8 +18,8 @@ export function LeaveGuard() {
   const returnFocus = useReturnFocus();
 
   const shouldBlockFn = useCallback<ShouldBlockFn>(
-    async ({ current, next }) => {
-      if (!wouldLoseChanges({ current, next })) {
+    async ({ current, next, action }) => {
+      if (!wouldLoseChanges({ current, next, action })) {
         return false;
       }
       // The question opens once the element the user was on is where focus returns to on "Stay".

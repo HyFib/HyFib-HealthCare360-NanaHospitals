@@ -31,6 +31,8 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
+  useNavigate,
+  useRouterState,
   type RouterHistory,
 } from '@tanstack/react-router';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -309,6 +311,60 @@ describe('leaving a screen with unsaved changes', () => {
       await userEvent.type(field, 'Ravi');
 
       expect(closeWindow().defaultPrevented).toBe(true);
+    } finally {
+      router.history.destroy();
+    }
+  });
+});
+
+// A dialog opened through the address (`?note=true`), as many list screens open theirs: Back closes it.
+function AddressNotes() {
+  const open = useRouterState({ select: (state) => Boolean((state.location.search as { note?: boolean }).note) });
+  const navigate = useNavigate();
+  return open ? (
+    <NoteDialog onClose={() => void navigate({ to: '/' as never, search: {} as never })} />
+  ) : (
+    <p>No note open</p>
+  );
+}
+
+// The browser's history: TanStack's memory history asks blockers only for new entries, not for Back.
+describe('a dialog opened through the address', () => {
+  it('asks before Back closes it with changes, and keeps them on "Stay"', async () => {
+    window.history.replaceState(null, '', '/');
+    const router = renderApp(() => <AddressNotes />, createBrowserHistory());
+    try {
+      await act(() => router.navigate({ to: '/' as never, search: { note: true } as never }));
+      const dialog = await screen.findByRole('dialog', { name: 'Add a note' });
+      await userEvent.type(within(dialog).getByRole('textbox', { name: 'Note' }), 'Allergic to latex');
+
+      act(() => router.history.back());
+      const question = await screen.findByRole('alertdialog', { name: 'Leave without saving?' });
+      await userEvent.click(within(question).getByRole('button', { name: 'Stay' }));
+
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(screen.getByRole('textbox', { name: 'Note' })).toHaveValue('Allergic to latex');
+    } finally {
+      router.history.destroy();
+    }
+  });
+
+  it('closes through the address without asking once saved, and goes Back freely when nothing was typed', async () => {
+    window.history.replaceState(null, '', '/');
+    const router = renderApp(() => <AddressNotes />, createBrowserHistory());
+    try {
+      await act(() => router.navigate({ to: '/' as never, search: { note: true } as never }));
+      const dialog = await screen.findByRole('dialog', { name: 'Add a note' });
+      await userEvent.type(within(dialog).getByRole('textbox', { name: 'Note' }), 'Allergic to latex');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+      expect(await screen.findByText('No note open')).toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+      await act(() => router.navigate({ to: '/' as never, search: { note: true } as never }));
+      await screen.findByRole('dialog', { name: 'Add a note' });
+      act(() => router.history.back());
+      expect(await screen.findByText('No note open')).toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     } finally {
       router.history.destroy();
     }

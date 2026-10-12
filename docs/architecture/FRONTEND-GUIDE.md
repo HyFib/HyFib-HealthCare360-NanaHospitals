@@ -164,8 +164,10 @@ passes its `open` as the second argument) or `!sameValues(draft, saved)`.
   through the child's guard.
 * **A form that is the screen** (or a panel on it): `useLeaveGuard({ dirty, busy })`. After saving in place, reset the
   form to what was saved (`form.reset(values)`) so it is no longer dirty. A save that navigates in its `onSuccess` is
-  let through while `busy`; one that navigates after `await mutateAsync(...)` calls `allowLeaving()` first. An editor
-  opened through the address (`?edit=`) passes `leaves` so that Back, which closes it, asks too. A form that keeps a
+  let through while `busy`; one that navigates after `await mutateAsync(...)` calls `allowLeaving()` first. A screen's
+  form is lost when the path changes (`leavesScreen`); a dialog's or drawer's also on Back and Forward (`leavesDialog`,
+  the default of `useUnsavedChanges`), since going back closes a dialog opened through the address (`?send=true`).
+  `leaves` changes either (the dashboard editor asks on any navigation). A form that keeps a
   draft on the workstation (`useFormDraft`, `useDraft`) passes `leaveQuestion: LEAVE_KEEPING_DRAFT`, which says so and
   is not destructive.
 * **Leaving outside the router** (sign-out, facility switch): `if (!(await confirmLeaving())) return;` before it starts;
