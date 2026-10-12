@@ -213,8 +213,9 @@ pass focus on the moment they get it, but axe reports each one.
 Hide one that sits beside words already saying what is happening, such as a busy button's icon (the button's label,
 and its unavailable state, say it): `icon={busy ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}`. Name one
 that stands for something loading: `label="Loading…"`, or `aria-label` to keep it small. The lint rule refuses a
-`Spinner` with neither (`no-restricted-syntax` in `eslint.config.js`). A test waits for a busy button by its state
-(`aria-disabled`), not by finding its spinner.
+`Spinner` with neither (`no-restricted-syntax` in `eslint.config.js`). A test that waits for a busy button finds its
+hidden spinner with `findByRole('progressbar', { hidden: true })`; waiting for `aria-disabled` instead would turn a
+button that went back to `disabled` into a timeout rather than a failure on lost focus.
 
 **Colours of your own.** Use theme tokens, and pair them: a background token with the foreground token of the same
 state (`colorNeutralBackground1Selected` with `colorNeutralForeground1Selected`, `…Hover` with `…Hover`). In the

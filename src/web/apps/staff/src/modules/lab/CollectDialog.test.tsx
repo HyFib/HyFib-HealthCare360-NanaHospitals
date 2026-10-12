@@ -85,8 +85,9 @@ describe('CollectDialog', () => {
 
     submit.focus();
     await userEvent.keyboard('{Enter}');
-    // The button is busy while the request runs: its spinner is hidden from screen readers, which hear it is unavailable.
-    await waitFor(() => expect(submit).toHaveAttribute('aria-disabled', 'true'));
+    // The spinner shows while the request runs (hidden from screen readers, which hear the button is unavailable). Not
+    // aria-disabled: a button that went back to disabled would then time out here instead of failing on focus below.
+    await within(submit).findByRole('progressbar', { hidden: true });
     dropFocusIfDisabled(submit);
 
     expect(submit).toHaveFocus();
