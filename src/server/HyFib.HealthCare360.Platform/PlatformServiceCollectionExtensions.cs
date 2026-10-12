@@ -124,6 +124,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<IPermissionService, PermissionService>();
         services.AddSingleton<ISessionValidator, SessionValidator>();
         services.AddScoped<AuthService>();
+        services.AddScoped<LoadTestAccounts>();
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(jwt =>
         {

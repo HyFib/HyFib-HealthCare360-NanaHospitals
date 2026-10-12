@@ -23,30 +23,35 @@ Not measured here: PERF-03 (the screens' load time, which a browser measures) an
 Use a server set up for testing, on the hospital's hardware: the figures mean something only there. Never the live
 server — the load test registers patients.
 
-1. Install HC360 with demonstration data: add `"SeedDemoData": true` under `HealthCare360` in
-   `config\hc360.settings.json`, and give the demonstration staff accounts a password with
-   `HealthCare360:Bootstrap:AdminPassword` (in the settings file, or the `HC360_HealthCare360__Bootstrap__AdminPassword`
-   environment variable for the service) and `"RequirePasswordChange": false` under `Bootstrap`. Turn two-step
-   verification off for the test (`HealthCare360:Security:EnforceMfa` false). Start the service once.
-2. Add synthetic patients, from an elevated prompt on the server:
+1. Install HC360 as for a hospital (DEPLOYMENT.md), then add `"SeedDemoData": true` under `HealthCare360` in
+   `config\hc360.settings.json` and restart the service: the test server then has demonstration data, which the
+   commands below require. Turn two-step verification off for the test (`HealthCare360:Security:EnforceMfa` false).
+2. From an elevated prompt on the server, add synthetic patients and the load test's accounts:
    ```powershell
-   & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' loadtest patients --count 1000000
+   $server = 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe'
+   & $server loadtest patients --count 1000000
+   $env:HC360_LOADTEST_PASSWORD = Read-Host 'A password for the load test accounts (12 characters or more)'
+   & $server loadtest accounts --count 8
    ```
-   It adds them after any added before, so it can be run in parts. Their UHIDs start with `LT`, their mobile numbers
-   run from +91 90000 00001, and registering them sends nothing to anyone. It refuses on a server without demonstration
-   data. A million take some minutes; the database grows by a few GB (the patients and their audit trail).
+   - `loadtest patients` adds patients after any added before, so it can run in parts. Their UHIDs start with `LT`,
+     their mobile numbers run from +91 90000 00001, and registering them sends nothing to anyone. About 700 are added a
+     second on a CI runner, so a million take some 25 minutes; the database grows with the patients and their audit
+     trail.
+   - `loadtest accounts` makes `loadtest01` to `loadtest08`, Front Office accounts with that password, and prints their
+     names. Run again, it gives the same accounts the new password. Each account may make 200 requests in 10 seconds,
+     so make one for every ten users or so.
+   - Both refuse on a server without demonstration data.
 3. From a workstation on the hospital network, with the .NET SDK:
    ```powershell
-   $env:HC360_LOADTEST_PASSWORD = Read-Host 'Demonstration accounts password'
+   $env:HC360_LOADTEST_PASSWORD = Read-Host 'The load test accounts password'
    dotnet run --project tools/HyFib.HealthCare360.LoadTest -c Release -- run `
        --server https://HC360-SRV:7360/ --ca .\hc360-hospital-ca.crt `
-       --accounts frontoffice,hospitaladmin --test-server `
+       --accounts loadtest01,loadtest02,loadtest03,loadtest04,loadtest05,loadtest06,loadtest07,loadtest08 --test-server `
        --users 75 --ramp 2m --duration 10m --report load-test.md
    ```
    `--ca` is the hospital CA certificate (from `https://HC360-SRV:7360/api/v1/system/ca-certificate`): the load test
-   trusts the server only through it, as HC360 Desktop does. The accounts must be allowed to register patients; the
-   virtual users share them. Each account may make 200 requests in 10 seconds, so give one account for every 40 or so
-   users. Sign-in allows 10 a minute from one address, so the load test waits when it must.
+   trusts the server only through it, as HC360 Desktop does. Sign-in allows 10 a minute from one address, so the load
+   test waits when it must.
 
 The report lists each step's p50, p95, p99 and slowest time against its target, the lists' sizes, and the failed
 requests by status. Exit code 0 means every target was met, 1 that one was missed or more than 1% of requests failed.
@@ -59,11 +64,12 @@ kept.
 ## In CI
 
 `.github/workflows/load.yml` runs the same steps on a GitHub runner: it starts PostgreSQL and the server with
-demonstration data, adds synthetic patients and runs the load test. It runs every Monday (100,000 patients, 75 users,
+demonstration data, as in production, adds synthetic patients and eight load test accounts, and runs the load test. It runs every Monday (100,000 patients, 75 users,
 5 minutes), by hand (Actions › Load test › Run workflow, with the numbers to use), and on a pull request that changes
 the load test (20,000 patients, 2 minutes). The runner is a shared machine that also runs the server and the database,
 so its figures only compare runs with each other: the targets are reported in the run's summary, not enforced. The run
 fails when requests fail.
 
 `tests/HyFib.HealthCare360.IntegrationTests/LoadTestTests.cs` checks on every pull request that each step of the load
-test works against the whole server, for the accounts the workflow uses, and that a short run has no failed request.
+test works against the whole server, for a load test account and the front office, and that a short run has no failed
+request.

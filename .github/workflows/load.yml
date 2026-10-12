@@ -75,9 +75,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'The database could not be created.' }
 
       # One step: the runner ends every process a step started when the step ends, so the server must run in the step
-      # that uses it. A test server with demonstration data and its staff accounts, configured through environment
-      # variables only, with a password new for every run. The data folder is named without the HC360_ prefix: the
-      # server finds its folder (and the settings file in it) before it reads the HC360_ variables.
+      # that uses it. A test server with demonstration data, run as in production and configured through environment
+      # variables only; the load test's accounts get a password new for every run. The data folder is named without the
+      # HC360_ prefix: the server finds its folder (and the settings file in it) before it reads the HC360_ variables.
       - name: Start the server, add synthetic patients and run the load test
         shell: pwsh
         run: |
@@ -88,8 +88,6 @@ jobs:
           $env:HC360_ConnectionStrings__Hospital = "Host=localhost;Port=5432;Username=$user;Password=$pgPassword;Database=hc360_load;Maximum Pool Size=200"
           $env:HealthCare360__DataDirectory = Join-Path $env:RUNNER_TEMP 'hc360'
           $env:HC360_HealthCare360__SeedDemoData = 'true'
-          $env:HC360_HealthCare360__Bootstrap__AdminPassword = $password
-          $env:HC360_HealthCare360__Bootstrap__RequirePasswordChange = 'false'
           $env:HC360_HealthCare360__Security__EnforceMfa = 'false'
           $env:HC360_HealthCare360__Network__EnableMdns = 'false'
           $env:HC360_HealthCare360__Network__EnableWifiMonitor = 'false'
@@ -115,11 +113,13 @@ jobs:
             & $server loadtest patients --count $env:PATIENTS
             if ($LASTEXITCODE -ne 0) { throw "Adding synthetic patients failed (exit code $LASTEXITCODE)." }
 
-            # Accounts that may take every step (registering patients included), shared by the virtual users.
+            # Front Office accounts the virtual users share, about ten users to one, as each may make 200 requests in 10 s.
+            $accounts = (& $server loadtest accounts --count 8 | Select-Object -Last 1)
+            if ($LASTEXITCODE -ne 0) { throw "Making the load test's accounts failed (exit code $LASTEXITCODE)." }
             $report = Join-Path $env:RUNNER_TEMP 'load-test.md'
             & 'tools/HyFib.HealthCare360.LoadTest/bin/Release/net10.0/HyFib.HealthCare360.LoadTest.exe' run `
               --server https://localhost:7360/ --ca $ca `
-              --accounts frontoffice,hospitaladmin --test-server `
+              --accounts $accounts --test-server `
               --users $env:USERS --ramp 1m --duration "$($env:MINUTES)m" --targets report --report $report
             $code = $LASTEXITCODE
             if (Test-Path $report) {
