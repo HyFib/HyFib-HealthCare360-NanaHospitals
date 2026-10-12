@@ -56,6 +56,10 @@ and `npx eslint apps/portal`.
   number, and ending it takes effect on the next request.
 * **Clearing.** Signing out, idle sign-out (after 20 minutes, never during a video call) and switching family members
   clear the query cache.
+* **Unsaved changes (SRS UX-08).** A sheet with a form asks "Discard your changes?" before *Not now*, its close button,
+  Esc or a tap outside throw what was typed away, and leaving a page with a form being filled in (a link, Back, signing
+  out) asks "Leave without saving?", in the patient's language; closing the tab has the browser ask. Idle sign-out does
+  not wait for an answer. How a form gets the guard: *Unsaved changes* in `docs/architecture/FRONTEND-GUIDE.md`.
 
 ## Routes
 
@@ -234,6 +238,8 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
   a request's detail and withdrawal, the nominee, a breach notice).
 * **WebRTC codecs and quality.**
 * **The feedback form in jsdom:** stars, the 0–10 score, the comment, and the call-back number check.
+* **Unsaved changes:** the add-family sheet asks before *Not now* or Esc throw typed details away, and the leave
+  question stays or leaves.
 * **Public pages end to end in jsdom** (router, layouts and queries against a fake server). Feedback and unsubscribe
   links open without sign-in and their tokens leave the address bar. The prescription and report checks, the privacy
   notice, and the redirect of signed-out visitors to sign-in are covered too.

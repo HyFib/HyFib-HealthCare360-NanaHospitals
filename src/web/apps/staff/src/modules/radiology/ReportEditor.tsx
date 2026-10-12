@@ -30,11 +30,13 @@ import {
   applyServerErrors,
   EmptyState,
   ErrorState,
+  LEAVE_KEEPING_DRAFT,
   LoadingState,
   Section,
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -344,6 +346,13 @@ function ReportForm({
   };
 
   const status = latest()?.status;
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: form.formState.isDirty,
+    busy: save.isPending || submit.isPending || sign.isPending,
+    leaveQuestion: LEAVE_KEEPING_DRAFT,
+  });
 
   return (
     <ReportLayout

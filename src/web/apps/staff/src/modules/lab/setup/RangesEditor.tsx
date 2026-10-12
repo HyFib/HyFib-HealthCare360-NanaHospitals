@@ -13,9 +13,9 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, CopyRegular, DeleteRegular, SaveRegular } from '@fluentui/react-icons';
 import type { Gender } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { errorMessage, indexedFieldErrors } from '../common/errors';
 import { labApi, labKeys, type LabTestDetail, type ReferenceRangeDto } from '../api';
 import {
@@ -138,7 +138,14 @@ const UNITS: { value: AgeUnit; label: string }[] = [
  * answers (answer tests). The server picks the most specific interval for each patient, so a sex-specific adult interval
  * and an all-ages fallback can live side by side.
  */
-export function RangesEditor({ test }: { test: LabTestDetail }) {
+export function RangesEditor({
+  test,
+  onChanged,
+}: {
+  test: LabTestDetail;
+  /** Whether the ranges have unsaved changes, for the drawer they are in (its own question on closing). */
+  onChanged?: (changed: boolean) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -188,6 +195,10 @@ export function RangesEditor({ test }: { test: LabTestDetail }) {
     setRows((current) => [...current, { ...template, key: `new-${crypto.randomUUID()}` }]);
     setDirty(true);
   };
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty, busy: save.isPending });
+  useEffect(() => onChanged?.(dirty), [dirty, onChanged]);
 
   return (
     <div className={styles.root}>

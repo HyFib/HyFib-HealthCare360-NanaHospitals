@@ -48,7 +48,7 @@ export function ReferringDoctorDrawer({
   const doctor = useQuery({ ...crmQueries.referringDoctor(doctorId ?? ''), enabled: doctorId !== null });
   if (doctorId && !doctor.data) {
     return (
-      <EditorDrawer open title="Referring doctor" onClose={onClose} onSubmit={(e) => e.preventDefault()}>
+      <EditorDrawer open title="Referring doctor" dirty={false} onClose={onClose} onSubmit={(e) => e.preventDefault()}>
         {doctor.error ? (
           <ErrorState error={doctor.error} onRetry={() => void doctor.refetch()} />
         ) : (
@@ -121,6 +121,7 @@ function DoctorForm({
     <EditorDrawer
       open
       title={doctor ? doctor.name : 'Add referring doctor'}
+      dirty={form.formState.isDirty}
       onClose={onClose}
       onSubmit={form.handleSubmit(submit)}
       busy={form.formState.isSubmitting}

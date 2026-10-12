@@ -25,7 +25,7 @@ import {
 } from '@fluentui/react-components';
 import { CheckmarkRegular, OpenRegular, PersonRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError } from '@hc360/core';
-import { LoadingState, useNotify } from '@hc360/ui';
+import { CloseRequestScope, LoadingState, useCloseRequests, useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -130,10 +130,13 @@ function StudyReportNote({ kind, study }: { kind: 'Radiology' | 'Cardiology'; st
 
 /** Review a released result and acknowledge it (critical results stay at the top of the worklist until then). */
 export function ResultReviewDialog({ result, onClose }: { result: WorklistResult | null; onClose: () => void }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={result !== null} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={result !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760 }}>
-        {result && <ReviewBody key={result.id} result={result} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {result && <ReviewBody key={result.id} result={result} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -182,6 +185,8 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
     },
     onError: (error) => notify.error(error, 'Could not acknowledge the result'),
   });
+
+  const guard = useUnsavedChanges({ dirty: note.trim() !== '', busy: acknowledge.isPending, onClose });
 
   return (
     <DialogBody>
@@ -241,7 +246,7 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
             Full report
           </Button>
         )}
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={guard.requestClose}>Close</Button>
         {canAcknowledge && (
           <Button
             appearance="primary"
@@ -253,6 +258,7 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
           </Button>
         )}
       </DialogActions>
+      {guard.dialogs}
     </DialogBody>
   );
 }

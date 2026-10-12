@@ -37,7 +37,17 @@ import {
   StethoscopeRegular,
 } from '@fluentui/react-icons';
 import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError, useSession } from '@hc360/core';
-import { DataTable, EmptyState, ErrorState, LoadingState, Page, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Page,
+  Section,
+  StatusBadge,
+  useLeaveGuard,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -405,6 +415,9 @@ function Documents({ patientId }: { patientId: string }) {
       notify.error(error, 'Could not open the document');
     }
   };
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: file !== null || title !== '', busy: upload.isPending });
 
   return (
     <>

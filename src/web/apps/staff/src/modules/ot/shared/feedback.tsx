@@ -22,7 +22,14 @@ import {
 } from '@fluentui/react-components';
 import { ArrowClockwiseRegular, LockClosedRegular, PersonRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError } from '@hc360/core';
-import { EmptyState, ErrorState } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  EmptyState,
+  ErrorState,
+  useCloseRequests,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useNavigate } from '@tanstack/react-router';
 import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { isConcurrencyConflict } from './errors';
@@ -278,6 +285,8 @@ export interface ReasonDialogProps {
   /** An extra yes/no, e.g. "The patient did not come". */
   option?: { label: string; hint?: string; defaultChecked?: boolean };
   children?: ReactNode;
+  /** The fields in `children` have unsaved changes (the typed reason counts by itself). */
+  dirty?: boolean;
   onConfirm: (reason: string, option: boolean) => void;
   onCancel: () => void;
 }
@@ -295,10 +304,14 @@ export function ReasonDialog(props: ReasonDialogProps) {
     }
   }
 
+  const closing = useCloseRequests({ onClose: props.onCancel, busy: props.busy });
+
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && !props.busy && props.onCancel()} modalType="alert">
+    <Dialog open={open} onOpenChange={closing.onOpenChange} modalType="alert">
       <DialogSurface>
-        <ReasonForm key={session} {...props} />
+        <CloseRequestScope value={closing}>
+          <ReasonForm key={session} {...props} />
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -309,6 +322,12 @@ function ReasonForm(props: ReasonDialogProps) {
   const { option, minLength = 3, maxLength = 500 } = props;
   const [reason, setReason] = useState('');
   const [checked, setChecked] = useState(option?.defaultChecked ?? false);
+  // A typed reason is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ reason, checked }) || Boolean(props.dirty),
+    busy: props.busy,
+    onClose: props.onCancel,
+  });
 
   const valid = reason.trim().length >= minLength;
   const submit = (event?: FormEvent) => {
@@ -324,72 +343,75 @@ function ReasonForm(props: ReasonDialogProps) {
   };
 
   return (
-    <form onSubmit={submit} noValidate>
-      <DialogBody>
-        <DialogTitle>{props.title}</DialogTitle>
-        <DialogContent className={styles.reason}>
-          {props.description && <Text>{props.description}</Text>}
-          {props.children}
-          {props.presets && props.presets.length > 0 && (
-            <div className={styles.presets} role="group" aria-label="Common reasons">
-              {props.presets.map((preset) => (
-                <Button
-                  key={preset}
-                  size="small"
-                  appearance={reason === preset ? 'primary' : 'secondary'}
-                  onClick={() => setReason(preset)}
-                >
-                  {preset}
-                </Button>
-              ))}
-            </div>
-          )}
-          <Field
-            label={props.label ?? 'Reason'}
-            required
-            hint={`At least ${minLength} characters. Press Ctrl+Enter to confirm.`}
-          >
-            <Textarea
-              value={reason}
-              onChange={(_, data) => setReason(data.value)}
-              onKeyDown={onKeyDown}
-              placeholder={props.placeholder}
-              maxLength={maxLength}
-              rows={3}
-              resize="vertical"
-              autoFocus
-            />
-          </Field>
-          {option && (
-            <Field hint={option.hint}>
-              <Checkbox
-                checked={checked}
-                onChange={(_, data) => setChecked(data.checked === true)}
-                label={option.label}
+    <>
+      <form onSubmit={submit} noValidate>
+        <DialogBody>
+          <DialogTitle>{props.title}</DialogTitle>
+          <DialogContent className={styles.reason}>
+            {props.description && <Text>{props.description}</Text>}
+            {props.children}
+            {props.presets && props.presets.length > 0 && (
+              <div className={styles.presets} role="group" aria-label="Common reasons">
+                {props.presets.map((preset) => (
+                  <Button
+                    key={preset}
+                    size="small"
+                    appearance={reason === preset ? 'primary' : 'secondary'}
+                    onClick={() => setReason(preset)}
+                  >
+                    {preset}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <Field
+              label={props.label ?? 'Reason'}
+              required
+              hint={`At least ${minLength} characters. Press Ctrl+Enter to confirm.`}
+            >
+              <Textarea
+                value={reason}
+                onChange={(_, data) => setReason(data.value)}
+                onKeyDown={onKeyDown}
+                placeholder={props.placeholder}
+                maxLength={maxLength}
+                rows={3}
+                resize="vertical"
+                autoFocus
               />
             </Field>
-          )}
-          <ActionError error={props.error} />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={props.onCancel} disabled={props.busy}>
-            Go back
-          </Button>
-          <Button
-            type="submit"
-            appearance="primary"
-            disabled={!valid || props.busy}
-            // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out of
-            // the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It still
-            // submits the form, which `submit` ignores while busy.
-            disabledFocusable={props.busy}
-            icon={props.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
-            style={props.destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
-          >
-            {props.confirmLabel}
-          </Button>
-        </DialogActions>
-      </DialogBody>
-    </form>
+            {option && (
+              <Field hint={option.hint}>
+                <Checkbox
+                  checked={checked}
+                  onChange={(_, data) => setChecked(data.checked === true)}
+                  label={option.label}
+                />
+              </Field>
+            )}
+            <ActionError error={props.error} />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={guard.requestClose} disabled={props.busy}>
+              Go back
+            </Button>
+            <Button
+              type="submit"
+              appearance="primary"
+              disabled={!valid || props.busy}
+              // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out of
+              // the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It still
+              // submits the form, which `submit` ignores while busy.
+              disabledFocusable={props.busy}
+              icon={props.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
+              style={props.destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
+            >
+              {props.confirmLabel}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </form>
+      {guard.dialogs}
+    </>
   );
 }

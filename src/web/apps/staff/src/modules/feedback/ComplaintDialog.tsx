@@ -16,7 +16,7 @@ import {
   Textarea,
 } from '@fluentui/react-components';
 import { isApiError, normalizePhone } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
@@ -63,10 +63,13 @@ export function ComplaintDialog({
   onCreated?: (id: string) => void;
   patient?: PickedPatient | null;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 680 }}>
-        {open && <Body onClose={onClose} onCreated={onCreated} initialPatient={patient ?? null} />}
+        <CloseRequestScope value={closing}>
+          {open && <Body onClose={onClose} onCreated={onCreated} initialPatient={patient ?? null} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -140,6 +143,22 @@ function Body({
       setBusy(false);
     }
   };
+
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({
+      source,
+      patient,
+      departmentId,
+      category,
+      description,
+      contactName,
+      contactPhone,
+      priority,
+      owner,
+    }),
+    busy: busy,
+    onClose,
+  });
 
   return (
     <form
@@ -268,7 +287,7 @@ function Body({
           </Caption1>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
@@ -276,6 +295,7 @@ function Body({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

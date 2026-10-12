@@ -20,7 +20,7 @@ import {
 } from '@fluentui/react-components';
 import { CheckmarkRegular, CopyRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatTime, useSession } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ignoreEscapeWhile } from '@/lib/dialogFocus';
@@ -119,10 +119,13 @@ export function NewSessionDialog({
   onClose: () => void;
   onCreated: (link: TelehealthLinkIssued) => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
-        {open && <NewSessionContent onClose={onClose} onCreated={onCreated} />}
+        <CloseRequestScope value={closing}>
+          {open && <NewSessionContent onClose={onClose} onCreated={onCreated} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -180,6 +183,12 @@ function NewSessionContent({
       create.mutate();
     }
   };
+
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ departmentId, practitionerId, startsAt, duration, sendLink }),
+    busy: create.isPending,
+    onClose,
+  });
 
   return (
     <form
@@ -251,7 +260,7 @@ function NewSessionContent({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={create.isPending}>
+          <Button onClick={guard.requestClose} disabled={create.isPending}>
             Cancel
           </Button>
           <Button
@@ -264,6 +273,7 @@ function NewSessionContent({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }
@@ -277,10 +287,13 @@ export interface SessionRef {
 }
 
 export function CancelSessionDialog({ session, onClose }: { session: SessionRef | null; onClose: () => void }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={session !== null} onOpenChange={(_, d) => !d.open && onClose()} modalType="alert">
+    <Dialog open={session !== null} onOpenChange={closing.onOpenChange} modalType="alert">
       <DialogSurface style={{ maxWidth: 520 }}>
-        {session && <CancelSessionContent key={session.id} session={session} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {session && <CancelSessionContent key={session.id} session={session} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -300,6 +313,8 @@ function CancelSessionContent({ session, onClose }: { session: SessionRef; onClo
     },
     onError: (error) => notify.error(error, 'Could not cancel the consultation'),
   });
+
+  const guard = useUnsavedChanges({ dirty: reason !== '', busy: cancel.isPending, onClose });
 
   return (
     <form
@@ -334,7 +349,7 @@ function CancelSessionContent({ session, onClose }: { session: SessionRef; onClo
           </Field>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={cancel.isPending}>
+          <Button onClick={guard.requestClose} disabled={cancel.isPending}>
             Keep it
           </Button>
           <Button
@@ -349,6 +364,7 @@ function CancelSessionContent({ session, onClose }: { session: SessionRef; onClo
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }
@@ -366,10 +382,13 @@ export function EndSessionDialog({
   onClose: () => void;
   onEnded: (session: TelehealthSessionDetail) => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()} modalType="alert">
+    <Dialog open={open} onOpenChange={closing.onOpenChange} modalType="alert">
       <DialogSurface style={{ maxWidth: 520 }}>
-        {open && <EndSessionContent sessionId={sessionId} onClose={onClose} onEnded={onEnded} />}
+        <CloseRequestScope value={closing}>
+          {open && <EndSessionContent sessionId={sessionId} onClose={onClose} onEnded={onEnded} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -397,6 +416,8 @@ function EndSessionContent({
     onError: (error) => notify.error(error, 'Could not end the consultation'),
   });
 
+  const guard = useUnsavedChanges({ dirty: notes !== '', busy: end.isPending, onClose });
+
   return (
     <form
       onSubmit={(event) => {
@@ -416,7 +437,7 @@ function EndSessionContent({
           </Field>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={end.isPending}>
+          <Button onClick={guard.requestClose} disabled={end.isPending}>
             Continue the call
           </Button>
           <Button
@@ -431,6 +452,7 @@ function EndSessionContent({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

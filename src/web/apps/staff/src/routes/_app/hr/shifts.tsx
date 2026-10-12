@@ -188,6 +188,7 @@ function ShiftDrawer({ shift, onClose }: { shift: ShiftDto | null; onClose: () =
     <EditorDrawer
       open
       title={shift ? `${shift.code} · ${shift.name}` : 'Add shift'}
+      dirty={form.formState.isDirty}
       onClose={onClose}
       onSubmit={form.handleSubmit((v) => save.mutate(v))}
       busy={save.isPending}

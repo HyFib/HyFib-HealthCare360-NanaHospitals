@@ -15,7 +15,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
-import { FormGrid } from '@hc360/ui';
+import { FormGrid, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useId, useState } from 'react';
 import type { SusceptibilityDto, SusceptibilityInterpretation } from './api';
 
@@ -116,8 +116,10 @@ export function CultureDialog({
     (name) => !rows.some((row) => row.antibiotic.toLowerCase() === name.toLowerCase()),
   );
 
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ value, organism, colonyCount, rows }), onClose });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 820 }}>
         <form
           onSubmit={(event) => {
@@ -277,7 +279,7 @@ export function CultureDialog({
               </div>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</Button>
+              <Button onClick={guard.requestClose}>{readOnly ? 'Close' : 'Cancel'}</Button>
               {!readOnly && (
                 <Button type="submit" appearance="primary" disabled={!complete || !value.trim()}>
                   Use these results
@@ -286,6 +288,7 @@ export function CultureDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

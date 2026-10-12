@@ -14,7 +14,17 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, MoneyRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatInr, isApiError } from '@hc360/core';
-import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  FilterBar,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -170,8 +180,10 @@ function NewRunDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ year, month, notes }), busy, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -211,7 +223,7 @@ function NewRunDialog({ onClose }: { onClose: () => void }) {
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={busy}>
+              <Button onClick={guard.requestClose} disabled={busy}>
                 Cancel
               </Button>
               <Button
@@ -225,6 +237,7 @@ function NewRunDialog({ onClose }: { onClose: () => void }) {
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

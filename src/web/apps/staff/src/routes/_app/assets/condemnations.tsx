@@ -24,7 +24,17 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, BinRecycleRegular, CheckmarkRegular, DismissRegular, OpenRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, isApiError, useSession, type PagedResult } from '@hc360/core';
-import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  FilterBar,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -370,8 +380,10 @@ function RequestDialog({ onClose, onRequested }: { onClose: () => void; onReques
       onRequested();
     },
   });
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ asset, reason }), busy: request.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !request.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600, width: '95vw' }}>
         <DialogBody>
           <DialogTitle>Request condemnation</DialogTitle>
@@ -424,7 +436,7 @@ function RequestDialog({ onClose, onRequested }: { onClose: () => void; onReques
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={request.isPending}>
+            <Button onClick={guard.requestClose} disabled={request.isPending}>
               Cancel
             </Button>
             <Button
@@ -437,6 +449,7 @@ function RequestDialog({ onClose, onRequested }: { onClose: () => void; onReques
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

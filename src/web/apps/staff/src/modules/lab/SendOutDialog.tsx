@@ -17,7 +17,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { VehicleTruckProfileRegular } from '@fluentui/react-icons';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { errorMessage } from './common/errors';
@@ -56,8 +56,10 @@ export function SendOutDialog({ target, onClose }: { target: SendOutTarget; onCl
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ labId, reference }), busy: send.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !send.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <form
           onSubmit={(event) => {
@@ -108,7 +110,7 @@ export function SendOutDialog({ target, onClose }: { target: SendOutTarget; onCl
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={send.isPending}>
+              <Button onClick={guard.requestClose} disabled={send.isPending}>
                 Cancel
               </Button>
               <Button
@@ -124,6 +126,7 @@ export function SendOutDialog({ target, onClose }: { target: SendOutTarget; onCl
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

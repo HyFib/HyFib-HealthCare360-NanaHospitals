@@ -24,7 +24,17 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, AlertUrgentRegular, DeleteRegular } from '@fluentui/react-icons';
 import { formatRelative, humanize, isApiError, useDebouncedValue } from '@hc360/core';
-import { DataTable, EmptyState, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  EmptyState,
+  FilterBar,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
@@ -264,8 +274,14 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ fromStoreId, target, toStoreId, departmentId, priority, remarks, lines }),
+    busy: raise.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !raise.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 920, width: '96vw' }}>
         <DialogBody>
           <DialogTitle>Raise indent</DialogTitle>
@@ -409,7 +425,7 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={raise.isPending}>
+            <Button onClick={guard.requestClose} disabled={raise.isPending}>
               Cancel
             </Button>
             <Button
@@ -422,6 +438,7 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

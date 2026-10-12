@@ -24,7 +24,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError, todayIso, useSession } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useStoredState } from '@/modules/inpatient/hooks';
@@ -155,8 +155,14 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
     setLines([NEW_LINE]);
   };
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ sterilizer, method, program, implants, operator, notes, lines }),
+    busy: create.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !create.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 680 }}>
         <form
           onSubmit={(event) => {
@@ -282,7 +288,7 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={create.isPending}>
+              <Button onClick={guard.requestClose} disabled={create.isPending}>
                 Cancel
               </Button>
               <Button
@@ -296,6 +302,7 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -353,8 +360,14 @@ export function CompleteLoadDialog({ load, onClose }: { load: LoadDto; onClose: 
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ temperature, pressure, minutes, ci }),
+    busy: complete.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !complete.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <form
           onSubmit={(event) => {
@@ -441,7 +454,7 @@ export function CompleteLoadDialog({ load, onClose }: { load: LoadDto; onClose: 
               </Text>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={complete.isPending}>
+              <Button onClick={guard.requestClose} disabled={complete.isPending}>
                 Cancel
               </Button>
               <Button
@@ -456,6 +469,7 @@ export function CompleteLoadDialog({ load, onClose }: { load: LoadDto; onClose: 
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -493,8 +507,10 @@ export function BiologicalIndicatorDialog({ load, onClose }: { load: LoadDto; on
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ result, lot }), busy: record.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !record.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -539,7 +555,7 @@ export function BiologicalIndicatorDialog({ load, onClose }: { load: LoadDto; on
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={record.isPending}>
+              <Button onClick={guard.requestClose} disabled={record.isPending}>
                 Cancel
               </Button>
               <Button
@@ -554,6 +570,7 @@ export function BiologicalIndicatorDialog({ load, onClose }: { load: LoadDto; on
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

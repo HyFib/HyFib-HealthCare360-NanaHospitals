@@ -24,7 +24,7 @@ import {
   SignOutRegular,
 } from '@fluentui/react-icons';
 import { auth, humanize, isDesktop, useSession, type AuthResult } from '@hc360/core';
-import { useNotify, useThemeMode, type ThemeMode } from '@hc360/ui';
+import { confirmLeaving, useNotify, useThemeMode, type ThemeMode } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { api } from '@/lib/api';
@@ -54,20 +54,27 @@ export function UserMenu({ onLock }: { onLock: () => void }) {
     return null;
   }
 
+  // Both leave the screen: unsaved changes are asked about first (SRS UX-08), not after the session has changed.
   const switchFacility = async (facilityId: string) => {
+    if (!(await confirmLeaving())) {
+      return;
+    }
     try {
       auth.apply(await api.post<AuthResult>('/api/v1/auth/switch-facility', { facilityId }));
       queryClient.clear();
-      await navigate({ to: '/' });
+      await navigate({ to: '/', ignoreBlocker: true });
     } catch (error) {
       notify.error(error, 'Could not switch facility');
     }
   };
 
   const signOut = async () => {
+    if (!(await confirmLeaving())) {
+      return;
+    }
     await auth.logout();
     queryClient.clear();
-    await navigate({ to: '/login', search: {} });
+    await navigate({ to: '/login', search: {}, ignoreBlocker: true });
   };
 
   return (

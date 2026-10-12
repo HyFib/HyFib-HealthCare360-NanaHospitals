@@ -22,7 +22,7 @@ import {
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatTime, isApiError, todayIso } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ignoreEscapeWhile } from '@/lib/dialogFocus';
@@ -73,10 +73,13 @@ export function RescheduleDialog({
   appointment: AppointmentRef | null;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={appointment !== null} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={appointment !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 880, width: '100%' }}>
-        {appointment && <RescheduleContent key={appointment.id} appointment={appointment} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {appointment && <RescheduleContent key={appointment.id} appointment={appointment} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -128,6 +131,12 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
         void queryClient.invalidateQueries({ queryKey: schedulingKeys.slots });
       }
     },
+  });
+
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ practitionerId, date, reason, notifyPatient }) && done === null,
+    busy: reschedule.isPending,
+    onClose,
   });
 
   if (done) {
@@ -261,7 +270,7 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
           </div>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={reschedule.isPending}>
+          <Button onClick={guard.requestClose} disabled={reschedule.isPending}>
             Cancel
           </Button>
           <Button
@@ -276,6 +285,7 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

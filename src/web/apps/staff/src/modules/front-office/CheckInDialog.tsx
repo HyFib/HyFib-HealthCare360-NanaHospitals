@@ -24,6 +24,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -192,8 +193,15 @@ export function CheckInDialog({
     }).catch((error: unknown) => notify.error(error, 'Printing failed'));
   };
 
+  const guard = useUnsavedChanges({
+    dirty: !visit && form.formState.isDirty,
+    busy: create.isPending,
+    open: open,
+    onClose: close,
+  });
+
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && close()}>
+    <Dialog open={open} onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720 }}>
         {visit ? (
           <DialogBody>
@@ -335,7 +343,7 @@ export function CheckInDialog({
                 />
               </DialogContent>
               <DialogActions>
-                <Button onClick={close} disabled={create.isPending}>
+                <Button onClick={guard.requestClose} disabled={create.isPending}>
                   Cancel
                 </Button>
                 <Button
@@ -350,6 +358,7 @@ export function CheckInDialog({
             </DialogBody>
           </form>
         )}
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

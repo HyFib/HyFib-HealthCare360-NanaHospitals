@@ -30,9 +30,18 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatRelative, todayIso, useSession } from '@hc360/core';
-import { ConfirmDialog, ErrorState, Page, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  ErrorState,
+  type LeaveQuestion,
+  Page,
+  Section,
+  StatusBadge,
+  useLeaveGuard,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { aiQueries } from '@/lib/ai';
 import { useServerDocuments } from '@/lib/documents';
@@ -125,6 +134,15 @@ const useStyles = makeStyles({
   ok: { color: tokens.colorPaletteGreenForeground1, display: 'flex', fontSize: '18px' },
   warn: { color: tokens.colorPaletteMarigoldForeground1, display: 'flex', fontSize: '18px' },
 });
+
+const LEAVE_NOTE: LeaveQuestion = {
+  title: 'Leave without saving the note?',
+  body:
+    'Your unsaved text is kept on this computer and offered again when you reopen this encounter. Save it with ' +
+    'Ctrl+S to store it on the server.',
+  confirmLabel: 'Leave',
+  destructive: false,
+};
 
 function EncounterPage() {
   const { encounterId } = Route.useParams();
@@ -232,11 +250,8 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const blocker = useBlocker({
-    shouldBlockFn: () => note.form.formState.isDirty,
-    enableBeforeUnload: () => note.form.formState.isDirty,
-    withResolver: true,
-  });
+  // Leaving with an unsaved note asks first (SRS UX-08); its draft stays on this computer.
+  useLeaveGuard({ dirty: note.form.formState.isDirty, leaves: () => true, leaveQuestion: LEAVE_NOTE });
 
   const printSummary = useMutation({
     mutationFn: async () => {
@@ -627,16 +642,6 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
           onClosed={afterDictation}
         />
       )}
-      <ConfirmDialog
-        open={blocker.status === 'blocked'}
-        title="Leave without saving the note?"
-        confirmLabel="Leave"
-        onConfirm={() => blocker.proceed?.()}
-        onCancel={() => blocker.reset?.()}
-      >
-        Your unsaved text is kept on this computer and offered again when you reopen this encounter. Save it with Ctrl+S
-        to store it on the server.
-      </ConfirmDialog>
     </Page>
   );
 }

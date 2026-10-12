@@ -81,7 +81,7 @@ export function RiskDrawer({ riskId, onClose }: { riskId: string | null; onClose
   const risk = useQuery({ ...qualityQueries.risk(riskId ?? ''), enabled: riskId !== null });
   if (riskId && !risk.data) {
     return (
-      <EditorDrawer open title="Risk" onClose={onClose} onSubmit={(e) => e.preventDefault()} busy={false}>
+      <EditorDrawer open title="Risk" dirty={false} onClose={onClose} onSubmit={(e) => e.preventDefault()} busy={false}>
         {risk.error ? (
           <ErrorState error={risk.error} onRetry={() => void risk.refetch()} />
         ) : (
@@ -204,6 +204,7 @@ function RiskForm({ risk, onClose }: { risk: RiskDetail | null; onClose: () => v
       open
       size="large"
       title={risk ? `${risk.riskNumber} · ${risk.title}` : 'Add a risk'}
+      dirty={form.formState.isDirty}
       onClose={onClose}
       onSubmit={form.handleSubmit(submit)}
       busy={busy}

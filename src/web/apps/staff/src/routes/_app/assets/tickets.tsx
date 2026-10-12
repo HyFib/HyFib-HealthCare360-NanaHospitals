@@ -37,6 +37,8 @@ import {
   PageHeader,
   Section,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -378,8 +380,10 @@ function AssignDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () =
       onClose();
     },
   });
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ assignedTo, vendor }), busy: assign.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !assign.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <DialogBody>
           <DialogTitle>Assign {ticket.number}</DialogTitle>
@@ -405,7 +409,7 @@ function AssignDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () =
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={assign.isPending}>
+            <Button onClick={guard.requestClose} disabled={assign.isPending}>
               Cancel
             </Button>
             <Button
@@ -418,6 +422,7 @@ function AssignDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () =
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -450,8 +455,14 @@ function ResolveDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () 
       onClose();
     },
   });
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ resolution, rootCause, cost, downtime }),
+    busy: resolve.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !resolve.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
           <DialogTitle>Resolve {ticket.number}</DialogTitle>
@@ -492,7 +503,7 @@ function ResolveDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () 
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={resolve.isPending}>
+            <Button onClick={guard.requestClose} disabled={resolve.isPending}>
               Cancel
             </Button>
             <Button
@@ -505,6 +516,7 @@ function ResolveDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () 
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

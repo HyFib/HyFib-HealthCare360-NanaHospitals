@@ -11,7 +11,18 @@ import {
   Spinner,
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { applyServerErrors, DateField, FormGrid, SelectField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  CloseRequestScope,
+  DateField,
+  FormGrid,
+  SelectField,
+  TextAreaField,
+  TextField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -60,10 +71,15 @@ export function CredentialDialog({
   employeeName: string;
   credential: CredentialDto | null;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 680 }}>
-        {open && <Body onClose={onClose} employeeId={employeeId} employeeName={employeeName} credential={credential} />}
+        <CloseRequestScope value={closing}>
+          {open && (
+            <Body onClose={onClose} employeeId={employeeId} employeeName={employeeName} credential={credential} />
+          )}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -132,6 +148,8 @@ function Body({
     }
   };
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty || file !== null, busy, onClose });
+
   return (
     <form
       onSubmit={form.handleSubmit((values) => !busy && onValid(values))}
@@ -192,7 +210,7 @@ function Body({
           <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={1000} />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -207,6 +225,7 @@ function Body({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

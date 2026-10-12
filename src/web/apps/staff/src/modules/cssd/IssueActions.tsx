@@ -16,7 +16,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { isApiError } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ReasonDialog } from '@/modules/inpatient/ReasonDialog';
@@ -43,8 +43,14 @@ export function RecordUseDialog({ issue, onClose }: { issue: SetIssueDto; onClos
   });
   const valid = patient !== null && (!earlier || fromIstInput(usedAt) !== null);
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ patient, earlier, usedAt }),
+    busy: record.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !record.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -87,7 +93,7 @@ export function RecordUseDialog({ issue, onClose }: { issue: SetIssueDto; onClos
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={record.isPending}>
+              <Button onClick={guard.requestClose} disabled={record.isPending}>
                 Cancel
               </Button>
               <Button
@@ -101,6 +107,7 @@ export function RecordUseDialog({ issue, onClose }: { issue: SetIssueDto; onClos
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

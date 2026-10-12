@@ -19,6 +19,7 @@ import { isApiError } from '@hc360/core';
 import {
   applyServerErrors,
   ChoiceField,
+  CloseRequestScope,
   ConfirmDialog,
   DateField,
   FormGrid,
@@ -26,7 +27,9 @@ import {
   SelectField,
   SwitchField,
   TextField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -130,9 +133,12 @@ export interface ExceptionDrawerProps {
 
 /** Leave, blocked time or an extra OPD session on specific dates (PMS-01). */
 export function ExceptionDrawer(props: ExceptionDrawerProps) {
+  const closing = useCloseRequests({ onClose: props.onClose });
   return (
-    <OverlayDrawer open={props.open} position="end" size="medium" onOpenChange={(_, d) => !d.open && props.onClose()}>
-      {props.open && <ExceptionForm key={props.exception?.id ?? 'new'} {...props} />}
+    <OverlayDrawer open={props.open} position="end" size="medium" onOpenChange={closing.onOpenChange}>
+      <CloseRequestScope value={closing}>
+        {props.open && <ExceptionForm key={props.exception?.id ?? 'new'} {...props} />}
+      </CloseRequestScope>
     </OverlayDrawer>
   );
 }
@@ -225,11 +231,15 @@ function ExceptionForm({ exception, defaults, today, onClose, onSaved }: Excepti
 
   const perSession = slotsPerSession(startTime, endTime, Number(slotMinutes));
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending || remove.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           {exception
             ? `${exceptionTypeText[exception.type].label} · ${exception.practitionerName}`
@@ -370,7 +380,7 @@ function ExceptionForm({ exception, defaults, today, onClose, onSaved }: Excepti
           >
             {exception ? 'Save' : 'Add'}
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
           <span className={styles.spacer} />
           {exception && (
             <Button appearance="subtle" icon={<DeleteRegular />} onClick={() => setConfirmDelete(true)}>
@@ -392,6 +402,7 @@ function ExceptionForm({ exception, defaults, today, onClose, onSaved }: Excepti
           ? 'Its slots disappear. Check the appointment desk for bookings made in this session.'
           : 'The doctor becomes bookable again in this time.'}
       </ConfirmDialog>
+      {guard.dialogs}
     </form>
   );
 }

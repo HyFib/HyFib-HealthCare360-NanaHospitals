@@ -25,7 +25,19 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, DismissRegular } from '@fluentui/react-icons';
 import { humanize } from '@hc360/core';
-import { ConfirmDialog, DataTable, ErrorState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  Page,
+  PageHeader,
+  Section,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
@@ -109,10 +121,13 @@ function RoleDrawer({ roleId, readOnly, onClose }: { roleId: string | null; read
   const error = role.error ?? groups.error;
   const ready = (roleId === null || role.data) && groups.data;
 
+  const closing = useCloseRequests({ onClose });
   return (
-    <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open position="end" size="large" onOpenChange={closing.onOpenChange}>
       {ready ? (
-        <RoleForm role={role.data ?? null} groups={groups.data} readOnly={readOnly} onClose={onClose} />
+        <CloseRequestScope value={closing}>
+          <RoleForm role={role.data ?? null} groups={groups.data} readOnly={readOnly} onClose={onClose} />
+        </CloseRequestScope>
       ) : (
         <DrawerBody>
           {error ? <ErrorState error={error} title="Could not load the role" /> : <Spinner label="Loading…" />}
@@ -208,11 +223,19 @@ function RoleForm({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ name, description, selected }),
+    busy: save.isPending || remove.isPending,
+    onClose,
+  });
+
   return (
     <>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           {role ? role.name : 'New role'}
         </DrawerHeaderTitle>
@@ -298,7 +321,7 @@ function RoleForm({
           >
             Save
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
           {role && !role.isSystem && (
             <Button
               appearance="subtle"
@@ -322,6 +345,7 @@ function RoleForm({
       >
         Users who have only this role will lose access to the screens it allowed.
       </ConfirmDialog>
+      {guard.dialogs}
     </>
   );
 }

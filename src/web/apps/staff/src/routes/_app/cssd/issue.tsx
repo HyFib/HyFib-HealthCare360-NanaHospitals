@@ -27,7 +27,7 @@ import {
   PrintRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, isApiError, todayIso } from '@hc360/core';
-import { DataTable, EmptyState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import { DataTable, EmptyState, Page, PageHeader, Section, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type FormEvent } from 'react';
@@ -168,6 +168,9 @@ function IssuePacksPage() {
     issue.reset();
     void navigate({ to: '/cssd/issue', search: {} });
   };
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: issued === null && (selected.length > 0 || issuedTo !== ''), busy: issue.isPending });
 
   if (!canIssue) {
     return (

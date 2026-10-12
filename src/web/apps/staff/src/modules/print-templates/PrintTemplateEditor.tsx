@@ -25,11 +25,14 @@ import { MAX_CLOSING_NOTE_LENGTH, MAX_PRINT_SPACE_MM } from '@hc360/core';
 import {
   applyServerErrors,
   ChoiceField,
+  CloseRequestScope,
   NumberField,
   SelectField,
   SwitchField,
   TextAreaField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -75,9 +78,12 @@ export function PrintTemplateDrawer({
   list: PrintTemplateList;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
-      <PrintTemplateEditor item={item} list={list} onClose={onClose} />
+    <OverlayDrawer open position="end" size="medium" onOpenChange={closing.onOpenChange}>
+      <CloseRequestScope value={closing}>
+        <PrintTemplateEditor item={item} list={list} onClose={onClose} />
+      </CloseRequestScope>
     </OverlayDrawer>
   );
 }
@@ -133,11 +139,15 @@ function PrintTemplateEditor({
     onError: (error) => notify.error(error, 'Could not remove the print template'),
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           {item.name}
         </DrawerHeaderTitle>
@@ -170,9 +180,10 @@ function PrintTemplateEditor({
         >
           Preview
         </Button>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={guard.requestClose}>Cancel</Button>
       </DrawerFooter>
       {preview !== null && <PreviewDialog title={item.name} html={preview} onClose={() => setPreview(null)} />}
+      {guard.dialogs}
     </form>
   );
 }

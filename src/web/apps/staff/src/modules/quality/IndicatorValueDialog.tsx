@@ -16,7 +16,14 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { StatusBadge, useNotify } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  StatusBadge,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { isApiError } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -70,10 +77,13 @@ export function IndicatorValueDialog({
   indicator: IndicatorDto;
   value?: IndicatorValueDto | null;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 620 }}>
-        {open && <Body onClose={onClose} indicator={indicator} value={value ?? null} />}
+        <CloseRequestScope value={closing}>
+          {open && <Body onClose={onClose} indicator={indicator} value={value ?? null} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -138,6 +148,12 @@ function Body({
       setBusy(false);
     }
   };
+
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ year, month, numerator, denominator, notes }),
+    busy,
+    onClose,
+  });
 
   return (
     <form
@@ -231,7 +247,7 @@ function Body({
           {!value && <Caption1 className={styles.muted}>If this period already has a value, it is replaced.</Caption1>}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
@@ -239,6 +255,7 @@ function Body({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

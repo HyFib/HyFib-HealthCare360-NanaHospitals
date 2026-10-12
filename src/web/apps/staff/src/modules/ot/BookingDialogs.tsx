@@ -16,7 +16,7 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { todayIso } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { otApi, otKeys, type SurgeryDetail } from './api';
@@ -88,8 +88,10 @@ export function ScheduleDialog({
       ? 'No anaesthetist is chosen (needed for every technique except local anaesthesia).'
       : null;
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: schedule.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !schedule.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760 }}>
         <form onSubmit={form.handleSubmit((values) => !schedule.isPending && schedule.mutate(values))} noValidate>
           <DialogBody>
@@ -120,7 +122,7 @@ export function ScheduleDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={schedule.isPending}>
+              <Button onClick={guard.requestClose} disabled={schedule.isPending}>
                 Cancel
               </Button>
               <Button
@@ -136,6 +138,7 @@ export function ScheduleDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -167,8 +170,10 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
   const conflicts = slotConflicts(save.error);
   const gate = planGate(booking);
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 820 }}>
         <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
           <DialogBody>
@@ -196,7 +201,7 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button
@@ -210,6 +215,7 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

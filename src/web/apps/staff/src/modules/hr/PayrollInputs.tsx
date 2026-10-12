@@ -20,7 +20,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, ArrowUploadRegular, DeleteRegular } from '@fluentui/react-icons';
 import { formatInr, humanize, isApiError } from '@hc360/core';
-import { ConfirmDialog, DataTable, useNotify } from '@hc360/ui';
+import { ConfirmDialog, DataTable, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { hrApi, hrKeys, hrQueries, type PayrollInputDto } from './api';
@@ -203,8 +203,14 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
     }
   };
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ employee, kind, componentCode, description, amount }),
+    busy,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
         <form
           onSubmit={(event) => {
@@ -291,7 +297,7 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={busy}>
+              <Button onClick={guard.requestClose} disabled={busy}>
                 Cancel
               </Button>
               <Button
@@ -305,6 +311,7 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -341,8 +348,10 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
     }
   };
 
+  const guard = useUnsavedChanges({ dirty: csv.trim() !== '', busy, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760, width: '100%' }}>
         <DialogBody>
           <DialogTitle>Import payroll inputs</DialogTitle>
@@ -411,7 +420,7 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={busy}>
+            <Button onClick={guard.requestClose} disabled={busy}>
               Cancel
             </Button>
             <Button
@@ -424,6 +433,7 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

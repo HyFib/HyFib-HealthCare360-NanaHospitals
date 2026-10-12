@@ -161,6 +161,7 @@ export function LeadDrawer({ lead, onClose }: { lead: LeadDetail | null; onClose
       open
       size="medium"
       title={lead ? `${lead.leadNumber} · ${lead.name}` : 'New lead'}
+      dirty={form.formState.isDirty}
       onClose={onClose}
       onSubmit={form.handleSubmit((v) => void save(v, false))}
       busy={busy}

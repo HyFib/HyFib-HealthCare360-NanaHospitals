@@ -21,7 +21,14 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useSession } from '@hc360/core';
-import { applyServerErrors, ErrorState, TextField } from '@hc360/ui';
+import {
+  applyServerErrors,
+  CloseRequestScope,
+  ErrorState,
+  TextField,
+  useCloseRequests,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -82,10 +89,13 @@ export function VerifyIdentityDialog({
   command: RequestCommand;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !command.busy && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 580 }}>
-        {open && <VerifyBody request={request} command={command} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {open && <VerifyBody request={request} command={command} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -120,6 +130,8 @@ function VerifyBody({
       onClose();
     }
   };
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: command.busy, onClose });
 
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate>
@@ -168,7 +180,7 @@ function VerifyBody({
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={command.busy}>
+          <Button onClick={guard.requestClose} disabled={command.busy}>
             Cancel
           </Button>
           <Button
@@ -181,6 +193,7 @@ function VerifyBody({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }
@@ -344,17 +357,20 @@ export function AnswerDialog({
   command: RequestCommand;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !command.busy && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 680 }}>
         {open && (
-          <AnswerBody
-            request={request}
-            prefill={prefill}
-            erasureSummary={erasureSummary}
-            command={command}
-            onClose={onClose}
-          />
+          <CloseRequestScope value={closing}>
+            <AnswerBody
+              request={request}
+              prefill={prefill}
+              erasureSummary={erasureSummary}
+              command={command}
+              onClose={onClose}
+            />
+          </CloseRequestScope>
         )}
       </DialogSurface>
     </Dialog>
@@ -415,6 +431,8 @@ function AnswerBody({
     }
     form.setValue('outcome', next, { shouldDirty: true, shouldValidate: true });
   };
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: command.busy, onClose });
 
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate>
@@ -509,7 +527,7 @@ function AnswerBody({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={command.busy}>
+          <Button onClick={guard.requestClose} disabled={command.busy}>
             Cancel
           </Button>
           <Button
@@ -522,6 +540,7 @@ function AnswerBody({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

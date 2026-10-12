@@ -23,7 +23,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { formatDateOnly, formatInr, todayIso } from '@hc360/core';
-import { DataTable, useNotify } from '@hc360/ui';
+import { DataTable, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
@@ -179,8 +179,10 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
   const canPrepare = mode === 'percent' ? signedPercent !== null : sheet.trim().length > 0;
   const busy = prepare.isPending || apply.isPending;
 
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ percent, rounding, sheet, from }), busy, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 820, width: '100%' }}>
         <DialogBody>
           <DialogTitle>Bulk price update · {plan.name}</DialogTitle>
@@ -306,7 +308,7 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
             <ActionError error={prepare.error ?? apply.error} />
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={busy}>
+            <Button onClick={guard.requestClose} disabled={busy}>
               Cancel
             </Button>
             {!prepared ? (
@@ -330,6 +332,7 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
             )}
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

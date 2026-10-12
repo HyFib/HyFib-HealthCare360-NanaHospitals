@@ -36,9 +36,9 @@ import {
   WeatherMoonRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, isApiError, todayIso } from '@hc360/core';
-import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState, type MouseEvent } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
@@ -263,7 +263,17 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
   const shiftById = useMemo(() => new Map((shifts.data ?? []).map((s) => [s.id, s])), [shifts.data]);
   const currentBrush: Brush | null = brush ?? (activeShifts[0] ? { kind: 'shift', shiftId: activeShifts[0].id } : null);
 
-  const blocker = useBlocker({ shouldBlockFn: () => dirty, enableBeforeUnload: () => dirty, withResolver: true });
+  // Any navigation with unsaved changes asks first (SRS UX-08): another week or department shows other entries.
+  useLeaveGuard({
+    dirty,
+    leaves: () => true,
+    leaveQuestion: {
+      title: 'Leave without saving?',
+      body: `You have ${diff.changedKeys.length} roster change(s) that are not saved.`,
+      confirmLabel: 'Discard changes',
+      destructive: true,
+    },
+  });
 
   const people = useMemo(() => {
     const map = new Map<string, RowPerson>();
@@ -595,21 +605,6 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
         departmentId={departmentId}
         targetWeek={week}
       />
-
-      <Dialog open={blocker.status === 'blocked'} onOpenChange={(_, d) => !d.open && blocker.reset?.()}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>Leave without saving?</DialogTitle>
-            <DialogContent>You have {diff.changedKeys.length} roster change(s) that are not saved.</DialogContent>
-            <DialogActions>
-              <Button onClick={() => blocker.reset?.()}>Stay and save</Button>
-              <Button appearance="primary" onClick={() => blocker.proceed?.()}>
-                Discard changes
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
     </>
   );
 }

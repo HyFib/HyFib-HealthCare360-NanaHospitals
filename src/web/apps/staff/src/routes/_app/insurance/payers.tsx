@@ -22,7 +22,18 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, BuildingRegular, DeleteRegular } from '@fluentui/react-icons';
 import { formatPhone, useDebouncedValue } from '@hc360/core';
-import { ConfirmDialog, DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  FilterBar,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -332,8 +343,14 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ payerId, kind, service, category, notes }),
+    busy: add.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !add.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -403,7 +420,7 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
               <ActionError error={add.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={add.isPending}>
+              <Button onClick={guard.requestClose} disabled={add.isPending}>
                 Cancel
               </Button>
               <Button
@@ -417,6 +434,7 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

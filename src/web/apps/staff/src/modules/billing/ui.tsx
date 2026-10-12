@@ -24,7 +24,7 @@ import {
 } from '@fluentui/react-components';
 import { ArrowClockwiseRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
 import { formatInr, isApiError } from '@hc360/core';
-import { EmptyState, StatusBadge } from '@hc360/ui';
+import { EmptyState, StatusBadge, useUnsavedChanges } from '@hc360/ui';
 import { useState, type FormEvent, type ReactNode, type Ref } from 'react';
 import {
   BILL_STATUS_LABEL,
@@ -344,6 +344,8 @@ export interface ReasonDialogProps {
   /** Server error shown inside the dialog. */
   error?: unknown;
   children?: ReactNode;
+  /** The fields in `children` have unsaved changes (the typed reason counts by itself). */
+  dirty?: boolean;
   onConfirm: (reason: string) => void;
   onCancel: () => void;
 }
@@ -366,6 +368,13 @@ export function ReasonDialog(props: ReasonDialogProps) {
   const minLength = props.optional ? 0 : (props.minLength ?? 5);
   const trimmed = reason.trim();
   const valid = trimmed.length >= minLength;
+  // A typed reason is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({
+    dirty: reason !== '' || Boolean(props.dirty),
+    busy: props.busy,
+    open: props.open,
+    onClose: props.onCancel,
+  });
 
   const submit = (event: Pick<FormEvent, 'preventDefault'>) => {
     event.preventDefault();
@@ -375,60 +384,59 @@ export function ReasonDialog(props: ReasonDialogProps) {
   };
 
   return (
-    <Dialog
-      open={props.open}
-      onOpenChange={(_, data) => !data.open && !props.busy && props.onCancel()}
-      modalType="alert"
-    >
-      <DialogSurface style={{ maxWidth: 540 }}>
-        <form onSubmit={submit}>
-          <DialogBody>
-            <DialogTitle>{props.title}</DialogTitle>
-            <DialogContent className={styles.dialogBody}>
-              {props.description && <Text>{props.description}</Text>}
-              {props.children}
-              <Field
-                label={props.label ?? 'Reason'}
-                required={!props.optional}
-                hint={props.hint ?? (minLength > 0 ? `At least ${minLength} characters` : undefined)}
-              >
-                <Textarea
-                  value={reason}
-                  onChange={(_, data) => setReason(data.value)}
-                  placeholder={props.placeholder}
-                  maxLength={props.maxLength ?? 300}
-                  rows={3}
-                  resize="vertical"
-                  autoFocus
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      submit(event);
-                    }
-                  }}
-                />
-              </Field>
-              <ActionError error={props.error} />
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={props.onCancel} disabled={props.busy}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                appearance="primary"
-                disabled={!valid || props.busy}
-                // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out
-                // of the open dialog, and Fluent then returns it to the button that opened the dialog, behind it.
-                disabledFocusable={props.busy}
-                icon={props.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
-                style={props.destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
-              >
-                {props.confirmLabel}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </form>
-      </DialogSurface>
-    </Dialog>
+    <>
+      <Dialog open={props.open} onOpenChange={guard.onOpenChange} modalType="alert">
+        <DialogSurface style={{ maxWidth: 540 }}>
+          <form onSubmit={submit}>
+            <DialogBody>
+              <DialogTitle>{props.title}</DialogTitle>
+              <DialogContent className={styles.dialogBody}>
+                {props.description && <Text>{props.description}</Text>}
+                {props.children}
+                <Field
+                  label={props.label ?? 'Reason'}
+                  required={!props.optional}
+                  hint={props.hint ?? (minLength > 0 ? `At least ${minLength} characters` : undefined)}
+                >
+                  <Textarea
+                    value={reason}
+                    onChange={(_, data) => setReason(data.value)}
+                    placeholder={props.placeholder}
+                    maxLength={props.maxLength ?? 300}
+                    rows={3}
+                    resize="vertical"
+                    autoFocus
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        submit(event);
+                      }
+                    }}
+                  />
+                </Field>
+                <ActionError error={props.error} />
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={guard.requestClose} disabled={props.busy}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={!valid || props.busy}
+                  // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out
+                  // of the open dialog, and Fluent then returns it to the button that opened the dialog, behind it.
+                  disabledFocusable={props.busy}
+                  icon={props.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
+                  style={props.destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
+                >
+                  {props.confirmLabel}
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </form>
+        </DialogSurface>
+      </Dialog>
+      {guard.dialogs}
+    </>
   );
 }

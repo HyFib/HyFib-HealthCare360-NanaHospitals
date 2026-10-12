@@ -42,6 +42,8 @@ import {
   Section,
   StatusBadge,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -475,8 +477,10 @@ function AmountReferenceDialog({
         : insuranceApi.finalApproval(preAuth.id, parsed.ok ? parsed.rupees : 0, reference.trim() || null),
     onSuccess: onDone,
   });
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ amount, reference }), busy: save.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <form
           onSubmit={(event) => {
@@ -508,7 +512,7 @@ function AmountReferenceDialog({
               <ActionError error={save.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button
@@ -522,6 +526,7 @@ function AmountReferenceDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -545,8 +550,10 @@ function EnhancementDialog({
     mutationFn: () => insuranceApi.requestEnhancement(preAuth.id, parsed.ok ? parsed.rupees : 0, reason.trim()),
     onSuccess: onDone,
   });
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ amount, reason }), busy: save.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -577,7 +584,7 @@ function EnhancementDialog({
               <ActionError error={save.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button
@@ -591,6 +598,7 @@ function EnhancementDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -624,8 +632,14 @@ function RespondEnhancementDialog({
       ),
     onSuccess: onDone,
   });
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ decision, amount, reference }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <form
           onSubmit={(event) => {
@@ -665,7 +679,7 @@ function RespondEnhancementDialog({
               <ActionError error={save.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button
@@ -679,6 +693,7 @@ function RespondEnhancementDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

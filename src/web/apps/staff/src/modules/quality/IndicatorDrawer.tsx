@@ -102,6 +102,7 @@ export function IndicatorDrawer({
       open
       size="medium"
       title={indicator ? indicator.name : 'Add quality indicator'}
+      dirty={form.formState.isDirty}
       onClose={onClose}
       onSubmit={form.handleSubmit(submit)}
       busy={form.formState.isSubmitting}

@@ -18,7 +18,7 @@ import {
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, CircleRegular, LockClosedRegular, SubtractCircleRegular } from '@fluentui/react-icons';
 import { formatTime } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
@@ -155,6 +155,9 @@ export function PreOpChecklistPanel({
 
   const setItem = (item: ChecklistItemDto, next: Partial<PreOpEdit>) =>
     setEdits((current) => ({ ...current, [item.key]: { ...valueOf(item), ...next } }));
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: Object.keys(edits).length > 0, busy: save.isPending });
 
   return (
     <div className={styles.panel}>
@@ -372,6 +375,9 @@ export function SafetyPhasePanel({
 
   const update = (key: string, next: Partial<PhaseSelection>) =>
     setSelection((current) => ({ ...current, [key]: { ...selectionOf(key), ...next } }));
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: Object.keys(selection).length > 0, busy: confirm.isPending });
 
   return (
     <div className={styles.panel}>

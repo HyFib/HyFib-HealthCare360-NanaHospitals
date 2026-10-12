@@ -28,7 +28,8 @@ function AppLayout() {
   // Session ended elsewhere (signed out, revoked by an administrator, idle timeout on the server).
   useEffect(() => {
     if (status === 'anonymous') {
-      void navigate({ to: '/login', search: { redirect: location.href }, replace: true });
+      // The session is over: unsaved changes cannot be saved any more, so nothing holds the sign-in page back.
+      void navigate({ to: '/login', search: { redirect: location.href }, replace: true, ignoreBlocker: true });
     }
   }, [status, navigate, location.href]);
 

@@ -18,7 +18,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { formatDate, formatDateOnly } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -120,8 +120,24 @@ export function PreAuthDialog({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({
+      patient,
+      policyId,
+      admissionId,
+      amount,
+      stay,
+      diagnosis,
+      procedures,
+      summary,
+      documents,
+    }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760, width: '100%' }}>
         <form
           onSubmit={(event) => {
@@ -234,7 +250,7 @@ export function PreAuthDialog({
               <ActionError error={save.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button
@@ -248,6 +264,7 @@ export function PreAuthDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -13,6 +13,7 @@ import { ReasonDialog as InpatientReasonDialog } from '@/modules/inpatient/Reaso
 import { ReasonDialog as InventoryReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { ReasonDialog as LabReasonDialog } from '@/modules/lab/common/ReasonDialog';
 import { MasterDrawer } from '@/modules/masters/MasterDrawer';
+import { useEditorGuard } from '@/modules/masters/useEditorGuard';
 import { ReasonDialog as OtReasonDialog } from '@/modules/ot/shared/feedback';
 
 // The dialogs and drawers the staff screens share, open and while they work, checked with axe-core for WCAG 2.2 A and
@@ -126,6 +127,7 @@ const DIALOGS: { name: string; role: 'dialog' | 'alertdialog'; render: (busy: bo
       <EditorDrawer
         open
         title="Edit the shift"
+        dirty={false}
         busy={busy}
         onSubmit={(event) => event.preventDefault()}
         onClose={cancel}
@@ -139,19 +141,7 @@ const DIALOGS: { name: string; role: 'dialog' | 'alertdialog'; render: (busy: bo
   {
     name: 'MasterDrawer',
     role: 'dialog',
-    render: (busy) => (
-      <MasterDrawer
-        title="Edit specialty"
-        guard={{ close: cancel, requestClose: cancel, dialogs: null }}
-        busy={busy}
-        submitLabel="Save"
-        onSubmit={(event) => event.preventDefault()}
-      >
-        <Field label="Name" required>
-          <Input />
-        </Field>
-      </MasterDrawer>
-    ),
+    render: (busy) => <SpecialtyEditor busy={busy} />,
   },
   {
     name: 'PasswordConfirmDialog',
@@ -170,6 +160,24 @@ const DIALOGS: { name: string; role: 'dialog' | 'alertdialog'; render: (busy: bo
     ),
   },
 ];
+
+/** A masters editor with its real guard (UX-08), as the masters screens give it. */
+function SpecialtyEditor({ busy }: { busy: boolean }) {
+  const guard = useEditorGuard({ dirty: false, busy, onClose: cancel });
+  return (
+    <MasterDrawer
+      title="Edit specialty"
+      guard={guard}
+      busy={busy}
+      submitLabel="Save"
+      onSubmit={(event) => event.preventDefault()}
+    >
+      <Field label="Name" required>
+        <Input />
+      </Field>
+    </MasterDrawer>
+  );
+}
 
 function show(dialog: ReactNode) {
   render(

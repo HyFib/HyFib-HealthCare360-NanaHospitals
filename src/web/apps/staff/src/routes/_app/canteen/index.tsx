@@ -29,7 +29,17 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr, isApiError, useHotkey } from '@hc360/core';
-import { applyServerErrors, EmptyState, ErrorState, Page, PageHeader, Section, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  EmptyState,
+  ErrorState,
+  Page,
+  PageHeader,
+  Section,
+  TextField,
+  useLeaveGuard,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -351,6 +361,9 @@ function CanteenPosPage() {
       ? changeDue(bill.netAmount, tenderedNumber)
       : null;
   const short = paymentMode === 'Cash' && tendered !== '' && tenderedNumber < bill.netAmount;
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: cart.length > 0, busy: sale.isPending });
 
   if (!canSell) {
     return (

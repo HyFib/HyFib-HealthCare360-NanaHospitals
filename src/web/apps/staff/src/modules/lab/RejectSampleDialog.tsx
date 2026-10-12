@@ -25,6 +25,7 @@ import { useState } from 'react';
 import { errorMessage } from './common/errors';
 import { labApi, labKeys, REJECTION_REASONS, type SampleRejected, type SampleRejectionReason } from './api';
 import { rejectionReasonLabel } from './labels';
+import { useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 
 const useStyles = makeStyles({
   content: { display: 'flex', flexDirection: 'column', gap: '14px' },
@@ -82,8 +83,14 @@ export function RejectSampleDialog({
   const needsRemarks = reason === 'Other' && !remarks.trim();
   const done = reject.data;
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ reason, remarks, recollect }) && !done,
+    busy: reject.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !reject.isPending && onClose()} modalType="alert">
+    <Dialog open onOpenChange={guard.onOpenChange} modalType="alert">
       <DialogSurface style={{ maxWidth: 640 }}>
         {done ? (
           <DialogBody>
@@ -165,7 +172,7 @@ export function RejectSampleDialog({
                 />
               </DialogContent>
               <DialogActions>
-                <Button onClick={onClose} disabled={reject.isPending}>
+                <Button onClick={guard.requestClose} disabled={reject.isPending}>
                   Cancel
                 </Button>
                 <Button
@@ -183,6 +190,7 @@ export function RejectSampleDialog({
             </DialogBody>
           </form>
         )}
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

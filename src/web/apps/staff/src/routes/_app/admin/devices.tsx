@@ -25,7 +25,17 @@ import {
   TvRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatRelative, humanize } from '@hc360/core';
-import { ConfirmDialog, DataTable, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -306,8 +316,14 @@ function EditDeviceDialog({ device, onClose }: { device: DeviceDto; onClose: () 
     onError: (error) => notify.error(error, 'Could not update the device'),
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ name, location, departmentId }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface>
         <DialogBody>
           <DialogTitle>{device.name}</DialogTitle>
@@ -330,12 +346,13 @@ function EditDeviceDialog({ device, onClose }: { device: DeviceDto; onClose: () 
             </Field>
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose}>Cancel</Button>
+            <Button onClick={guard.requestClose}>Cancel</Button>
             <Button appearance="primary" disabled={!name.trim() || save.isPending} onClick={() => save.mutate()}>
               Save
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

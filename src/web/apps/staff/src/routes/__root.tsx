@@ -2,6 +2,7 @@ import { Toaster } from '@fluentui/react-components';
 import { TOASTER_ID } from '@hc360/ui';
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
 import type { RouterContext } from '@/router';
+import { LeaveGuard } from '@/shell/LeaveGuard';
 import { NotFound, RouteError } from '@/shell/RouteError';
 
 export const Route = createRootRouteWithContext<RouterContext>()({
@@ -14,6 +15,7 @@ function Root() {
   return (
     <>
       <Outlet />
+      <LeaveGuard />
       <Toaster toasterId={TOASTER_ID} position="bottom-end" pauseOnHover pauseOnWindowBlur />
     </>
   );

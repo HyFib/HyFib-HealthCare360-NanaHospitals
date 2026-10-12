@@ -61,6 +61,13 @@ export const common = defineMessages({
     'common.changedOn': 'Changed on {date}',
     'common.goHome': 'Go to home',
 
+    'common.unsaved.discardTitle': 'Discard your changes?',
+    'common.unsaved.leaveTitle': 'Leave without saving?',
+    'common.unsaved.body': 'What you changed here has not been saved.',
+    'common.unsaved.discard': 'Discard changes',
+    'common.unsaved.keepEditing': 'Keep editing',
+    'common.unsaved.stay': 'Stay',
+
     'document.downloadPdf': 'Download PDF',
     'document.preparingPdf': 'Preparing your PDF…',
     'document.print': 'Print',
@@ -198,6 +205,13 @@ export const common = defineMessages({
     'common.copied': 'कॉपी हो गया',
     'common.changedOn': '{date} को बदला गया',
     'common.goHome': 'होम पर जाएँ',
+
+    'common.unsaved.discardTitle': 'अपने बदलाव छोड़ दें?',
+    'common.unsaved.leaveTitle': 'सहेजे बिना जाएँ?',
+    'common.unsaved.body': 'आपने यहाँ जो बदला है, वह अभी सहेजा नहीं गया है।',
+    'common.unsaved.discard': 'बदलाव छोड़ें',
+    'common.unsaved.keepEditing': 'बदलाव जारी रखें',
+    'common.unsaved.stay': 'रुकें',
 
     'document.downloadPdf': 'PDF डाउनलोड करें',
     'document.preparingPdf': 'आपका PDF तैयार हो रहा है…',

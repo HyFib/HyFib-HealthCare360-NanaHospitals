@@ -28,6 +28,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -240,6 +241,7 @@ function TestEditor({
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabId>('details');
+  const [rangesChanged, setRangesChanged] = useState(false);
   const referralLabs = useQuery(labQueries.referralLabs());
   const form = useForm<TestValues>({ resolver: zodResolver(schema), defaultValues: defaults(test) });
   const [resultType, isPanel, isOrderable] = useWatch({
@@ -265,12 +267,20 @@ function TestEditor({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: form.formState.isDirty || (tab === 'ranges' && rangesChanged),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <OverlayDrawer open position="end" size="large" onOpenChange={(_, data) => !data.open && onClose()}>
+    <OverlayDrawer open position="end" size="large" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {test ? `${test.name} (${test.code})` : 'New lab test'}
           </DrawerHeaderTitle>
@@ -471,7 +481,7 @@ function TestEditor({
               </section>
             )}
           </div>
-          {test && tab === 'ranges' && !test.isPanel && <RangesEditor test={test} />}
+          {test && tab === 'ranges' && !test.isPanel && <RangesEditor test={test} onChanged={setRangesChanged} />}
           {test && tab === 'components' && test.isPanel && <ComponentsEditor test={test} />}
         </DrawerBody>
         {tab === 'details' && (
@@ -484,10 +494,11 @@ function TestEditor({
             >
               {test ? 'Save' : 'Create test'}
             </Button>
-            <Button onClick={onClose}>Close</Button>
+            <Button onClick={guard.requestClose}>Close</Button>
           </DrawerFooter>
         )}
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

@@ -27,6 +27,7 @@ import {
   LoadingState,
   Section,
   TextAreaField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -186,6 +187,8 @@ function EditorForm({
         investigatorUserIds: values.investigators.map((i) => i.id),
       });
       notify.success('Analysis saved');
+      // What the form shows is saved now: leaving does not ask (SRS UX-08).
+      form.reset(values);
       void queryClient.invalidateQueries({ queryKey: qualityKeys.incidents });
       return true;
     } catch (error) {
@@ -220,6 +223,9 @@ function EditorForm({
       setBusy(null);
     }
   };
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty, busy: busy !== null });
 
   return (
     <form

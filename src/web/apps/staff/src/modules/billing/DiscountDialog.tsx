@@ -29,7 +29,7 @@ import {
 } from '@fluentui/react-components';
 import { TagPercentRegular } from '@fluentui/react-icons';
 import { formatInr } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { billingApi, type BillDetail, type DiscountOutcome, type LineDiscountInput } from './api';
@@ -233,8 +233,15 @@ export function DiscountDialog({
   const set = (patch: Partial<DraftState>) => setState((s) => ({ ...s, ...patch }));
   const clearAll = () => set({ billValue: '', lineValues: {}, reason: state.reason || 'Discount removed' });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged(state, open),
+    busy: apply.isPending,
+    open,
+    onClose,
+  });
+
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && !apply.isPending && onClose()}>
+    <Dialog open={open} onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760, width: '100%' }}>
         <form
           onSubmit={(event) => {
@@ -428,7 +435,7 @@ export function DiscountDialog({
               <Button onClick={clearAll} disabled={apply.isPending}>
                 Remove all discounts
               </Button>
-              <Button onClick={onClose} disabled={apply.isPending}>
+              <Button onClick={guard.requestClose} disabled={apply.isPending}>
                 Cancel
               </Button>
               <Button
@@ -447,6 +454,7 @@ export function DiscountDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

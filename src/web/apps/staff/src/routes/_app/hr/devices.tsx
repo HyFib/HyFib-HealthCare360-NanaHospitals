@@ -507,6 +507,7 @@ function DeviceDrawer({
     <EditorDrawer
       open
       title={device ? device.name : 'Register terminal'}
+      dirty={form.formState.isDirty}
       onClose={onClose}
       onSubmit={form.handleSubmit((v) => save.mutate(v))}
       busy={save.isPending}

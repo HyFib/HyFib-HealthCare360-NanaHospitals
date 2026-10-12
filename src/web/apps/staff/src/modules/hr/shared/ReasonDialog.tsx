@@ -12,6 +12,7 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
+import { CloseRequestScope, useCloseRequests, useUnsavedChanges } from '@hc360/ui';
 import { useState, type ReactNode } from 'react';
 
 export interface ReasonDialogProps {
@@ -33,6 +34,8 @@ export interface ReasonDialogProps {
   children?: ReactNode;
   /** Blocks confirming while extra fields are incomplete. */
   confirmDisabled?: boolean;
+  /** The extra fields have unsaved changes (the typed text counts by itself). */
+  dirty?: boolean;
   onConfirm: (text: string) => void;
   onCancel: () => void;
 }
@@ -43,9 +46,12 @@ export interface ReasonDialogProps {
  */
 export function ReasonDialog(props: ReasonDialogProps) {
   const { open, busy, onCancel } = props;
+  const closing = useCloseRequests({ onClose: onCancel, busy });
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && !busy && onCancel()}>
-      <DialogSurface style={{ maxWidth: 560 }}>{open && <ReasonBody {...props} />}</DialogSurface>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        <CloseRequestScope value={closing}>{open && <ReasonBody {...props} />}</CloseRequestScope>
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -64,10 +70,13 @@ function ReasonBody({
   initialValue,
   children,
   confirmDisabled,
+  dirty,
   onConfirm,
   onCancel,
 }: ReasonDialogProps) {
   const [text, setText] = useState(initialValue ?? '');
+  // Typed text is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({ dirty: text !== (initialValue ?? '') || Boolean(dirty), busy, onClose: onCancel });
   const trimmed = text.trim();
   const missing = required && trimmed.length < minLength;
   const blocked = Boolean(busy || missing || confirmDisabled);
@@ -79,57 +88,60 @@ function ReasonBody({
   };
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <DialogBody>
-        <DialogTitle>{title}</DialogTitle>
-        <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {description && <Text>{description}</Text>}
-          {children}
-          <Field
-            label={label}
-            required={required}
-            hint={hint ?? (required && minLength > 1 ? `At least ${minLength} characters.` : undefined)}
-          >
-            <Textarea
-              value={text}
-              onChange={(_, data) => setText(data.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                  event.preventDefault();
-                  submit();
-                }
-              }}
-              rows={3}
-              maxLength={maxLength}
-              resize="vertical"
-              autoFocus
-            />
-          </Field>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            appearance="primary"
-            disabled={blocked}
-            // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out of
-            // the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It still
-            // submits the form, which `submit` ignores while busy.
-            disabledFocusable={busy}
-            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
-            style={destructive && !blocked ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
-          >
-            {confirmLabel}
-          </Button>
-        </DialogActions>
-      </DialogBody>
-    </form>
+    <>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <DialogBody>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {description && <Text>{description}</Text>}
+            {children}
+            <Field
+              label={label}
+              required={required}
+              hint={hint ?? (required && minLength > 1 ? `At least ${minLength} characters.` : undefined)}
+            >
+              <Textarea
+                value={text}
+                onChange={(_, data) => setText(data.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                    event.preventDefault();
+                    submit();
+                  }
+                }}
+                rows={3}
+                maxLength={maxLength}
+                resize="vertical"
+                autoFocus
+              />
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={guard.requestClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              appearance="primary"
+              disabled={blocked}
+              // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out of
+              // the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It still
+              // submits the form, which `submit` ignores while busy.
+              disabledFocusable={busy}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
+              style={destructive && !blocked ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
+            >
+              {confirmLabel}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </form>
+      {guard.dialogs}
+    </>
   );
 }

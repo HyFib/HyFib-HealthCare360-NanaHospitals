@@ -26,6 +26,7 @@ import {
   ErrorState,
   FormGrid,
   FullRow,
+  LEAVE_KEEPING_DRAFT,
   LoadingState,
   NumberField,
   Section,
@@ -33,6 +34,7 @@ import {
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -274,6 +276,9 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
     form.reset(toValues(latest, booking));
     save.reset();
   };
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: save.isPending, leaveQuestion: LEAVE_KEEPING_DRAFT });
 
   return (
     <Section

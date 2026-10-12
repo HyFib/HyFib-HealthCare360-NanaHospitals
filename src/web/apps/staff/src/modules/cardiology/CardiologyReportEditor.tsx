@@ -28,12 +28,14 @@ import {
   EmptyState,
   FormGrid,
   FullRow,
+  LEAVE_KEEPING_DRAFT,
   NumberField,
   Section,
   SelectField,
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -475,6 +477,13 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
   const qtcSuggestion = bazettQtc(ecg?.qtInterval, ecg?.heartRate);
   const targetSuggestion = targetHeartRatePercent(watched.tmt?.maxHeartRate, ageYears);
   const dip = dippingPattern(watched.abpm?.daytimeMeanSystolic, watched.abpm?.nighttimeMeanSystolic);
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: form.formState.isDirty,
+    busy: save.isPending || submit.isPending || sign.isPending,
+    leaveQuestion: LEAVE_KEEPING_DRAFT,
+  });
 
   return (
     <Section
