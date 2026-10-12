@@ -136,7 +136,7 @@ function ReasonDialogBody({
           // open dialog, and Fluent then returns it to the button that opened the dialog, behind it.
           disabledFocusable={busy}
           onClick={submit}
-          icon={busy ? <Spinner size="tiny" /> : undefined}
+          icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           style={destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
         >
           {confirmLabel}

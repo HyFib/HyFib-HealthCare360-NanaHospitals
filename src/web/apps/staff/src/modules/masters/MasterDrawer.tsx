@@ -75,7 +75,7 @@ export function MasterDrawer({
               type="submit"
               appearance="primary"
               disabled={busy}
-              icon={busy ? <Spinner size="tiny" /> : undefined}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
             >
               {submitLabel}
             </Button>

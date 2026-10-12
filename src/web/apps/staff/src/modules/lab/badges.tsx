@@ -23,6 +23,14 @@ const useStyles = makeStyles({
     flexShrink: 0,
   },
   flag: { minWidth: '30px', justifyContent: 'center', fontWeight: tokens.fontWeightBold },
+  srOnly: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+  },
 });
 
 /** STAT and urgent work stand out; routine work shows nothing unless asked (less noise in busy lists). */
@@ -76,8 +84,11 @@ export function FlagChip({ flag, preview }: { flag: ResultFlag | null | undefine
   if (!display || !display.code) {
     return null;
   }
+  const meaning = `${display.label}${preview ? ' (preview: saved flag may differ)' : ''}`;
+  // A badge is a plain element, which cannot be given a name: screen readers read the meaning from the badge's own
+  // (hidden) text instead of the code, and the tooltip is for the mouse.
   return (
-    <Tooltip content={`${display.label}${preview ? ' (preview: saved flag may differ)' : ''}`} relationship="label">
+    <Tooltip content={meaning} relationship="inaccessible">
       <Badge
         className={styles.flag}
         appearance={preview ? 'outline' : display.critical ? 'filled' : 'tint'}
@@ -85,7 +96,8 @@ export function FlagChip({ flag, preview }: { flag: ResultFlag | null | undefine
         shape="rounded"
         size="medium"
       >
-        {display.code}
+        <span aria-hidden>{display.code}</span>
+        <span className={styles.srOnly}>{meaning}</span>
       </Badge>
     </Tooltip>
   );

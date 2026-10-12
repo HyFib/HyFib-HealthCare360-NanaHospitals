@@ -64,6 +64,7 @@ const useStyles = makeStyles({
   },
   chips: { display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' },
   muted: { color: tokens.colorNeutralForeground3 },
+  switchRow: { display: 'flex', alignItems: 'center', minHeight: '32px' },
 });
 
 function diagnosisTypeTone(type: DiagnosisType): 'brand' | 'warning' | 'informative' {
@@ -173,8 +174,13 @@ export function EncounterDiagnoses({
               ))}
             </Select>
           </Field>
+          {/* The field's label names the switch; a label of the switch's own would be a second one. Its state is
+              announced as on or off, so the words beside it are for the eye. */}
           <Field label="Primary">
-            <Switch checked={primary} onChange={(_, d) => setPrimaryChoice(d.checked)} label={primary ? 'Yes' : 'No'} />
+            <div className={styles.switchRow}>
+              <Switch checked={primary} onChange={(_, d) => setPrimaryChoice(d.checked)} />
+              <Text aria-hidden>{primary ? 'Yes' : 'No'}</Text>
+            </div>
           </Field>
         </div>
       )}

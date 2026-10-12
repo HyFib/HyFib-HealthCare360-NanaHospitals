@@ -123,7 +123,7 @@ function ReasonBody({
             // the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It still
             // submits the form, which `submit` ignores while busy.
             disabledFocusable={busy}
-            icon={busy ? <Spinner size="tiny" /> : undefined}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
             style={destructive && !blocked ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
           >
             {confirmLabel}

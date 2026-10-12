@@ -184,6 +184,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               setNavOpen(false);
             }
           }}
+          // On a narrow screen it opens over the screen as a modal panel, which Fluent marks aria-modal: only a dialog
+          // may carry that, so there it is a dialog named "Main navigation" rather than a landmark.
+          role={narrow ? 'dialog' : 'navigation'}
           aria-label="Main navigation"
         >
           <NavDrawerBody>

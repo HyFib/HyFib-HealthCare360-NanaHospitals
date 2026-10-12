@@ -38,16 +38,17 @@ export function WorklistPatient({
       <Caption1>
         ({age ?? '—'} / {gender.charAt(0)}) · {uhid}
       </Caption1>
+      {/* The tooltips describe the badges: a badge says "Allergy" itself, and a plain element cannot be given a name. */}
       <span className={styles.badges}>
         {hasActiveAllergies && (
-          <Tooltip content="Has active allergies" relationship="label">
+          <Tooltip content="Has active allergies" relationship="description">
             <Badge size="small" color="danger" icon={<WarningRegular />}>
               Allergy
             </Badge>
           </Tooltip>
         )}
         {hasCriticalAlerts && (
-          <Tooltip content="Critical alert on the banner (DNR, isolation…)" relationship="label">
+          <Tooltip content="Critical alert on the banner (DNR, isolation…)" relationship="description">
             <Badge size="small" color="important" icon={<AlertUrgentRegular />}>
               Alert
             </Badge>
