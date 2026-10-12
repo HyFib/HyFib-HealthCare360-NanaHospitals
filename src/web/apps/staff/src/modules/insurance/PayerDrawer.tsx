@@ -234,7 +234,7 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {payer ? 'Save' : 'Add payer'}
           </Button>

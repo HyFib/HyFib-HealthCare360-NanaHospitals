@@ -276,7 +276,7 @@ function LoginPage() {
                   appearance="primary"
                   size="large"
                   disabled={busy}
-                  icon={busy ? <Spinner size="tiny" /> : undefined}
+                  icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
                 >
                   {busy ? 'Signing in…' : 'Sign in'}
                 </Button>

@@ -116,7 +116,7 @@ function UnsubscribePage() {
           size="large"
           onClick={() => void confirm()}
           disabled={busy}
-          icon={busy ? <Spinner size="tiny" /> : undefined}
+          icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
         >
           {busy ? t('common.sending') : t('unsubscribe.confirm')}
         </Button>

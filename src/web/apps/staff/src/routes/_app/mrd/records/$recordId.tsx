@@ -191,7 +191,7 @@ function AddDeficiencyForm({ record, onClose }: { record: MedicalRecordDto; onCl
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Add
           </Button>
@@ -360,7 +360,7 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
             )}
             {!archived && (
               <Button
-                icon={scan.isPending ? <Spinner size="tiny" /> : <ScanRegular />}
+                icon={scan.isPending ? <Spinner size="tiny" aria-hidden /> : <ScanRegular />}
                 disabled={scan.isPending}
                 onClick={() => scan.mutate()}
               >

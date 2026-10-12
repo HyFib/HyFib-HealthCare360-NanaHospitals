@@ -347,7 +347,7 @@ function CodingSection({ claim }: { claim: ClaimDetail }) {
         !closed && (
           <Button
             appearance="primary"
-            icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
             disabled={!changed || save.isPending}
             onClick={() => save.mutate()}
           >

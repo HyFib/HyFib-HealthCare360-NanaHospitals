@@ -204,7 +204,7 @@ function PickerShell({
             onSelect(data.optionValue);
           }
         }}
-        expandIcon={busy ? <Spinner size="extra-tiny" /> : undefined}
+        expandIcon={busy ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         positioning={{ autoSize: 'width' }}
       >
         {children}

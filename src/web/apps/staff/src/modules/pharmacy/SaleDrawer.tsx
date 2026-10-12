@@ -450,7 +450,7 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
                 type="submit"
                 appearance="primary"
                 disabled={!valid || collect.isPending}
-                icon={collect.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={collect.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Record payment
               </Button>
@@ -647,7 +647,7 @@ function ReturnDialog({
             <Button
               appearance="primary"
               disabled={!valid || submit.isPending}
-              icon={submit.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={submit.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => submit.mutate()}
             >
               Record return

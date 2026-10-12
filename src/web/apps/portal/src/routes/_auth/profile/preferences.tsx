@@ -117,7 +117,7 @@ function PreferencesPage() {
                   )}
                 </span>
                 <span className={styles.control}>
-                  {saving === choice.key && <Spinner size="tiny" />}
+                  {saving === choice.key && <Spinner size="tiny" aria-hidden />}
                   <Switch
                     aria-labelledby={titleId}
                     checked={preferences.data[choice.key]}

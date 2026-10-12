@@ -192,7 +192,7 @@ export function TestIntegrationDialog({
                     // Keeps focus while the test runs (a disabled button drops it); Enter can still submit, which
                     // `submit` ignores.
                     disabledFocusable={test.isPending}
-                    icon={test.isPending ? <Spinner size="tiny" /> : undefined}
+                    icon={test.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                   >
                     {input ? 'Send test' : 'Run test'}
                   </Button>

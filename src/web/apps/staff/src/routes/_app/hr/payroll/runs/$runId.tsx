@@ -215,7 +215,7 @@ function RunView({ run }: { run: PayrollRunDto }) {
             {has('process') && (
               <Button
                 appearance={run.status === 'Draft' ? 'primary' : 'secondary'}
-                icon={process.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+                icon={process.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSyncRegular />}
                 disabled={process.isPending}
                 onClick={() => process.mutate()}
               >
@@ -606,7 +606,7 @@ function MarkPaidDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!valid || busy}
-                icon={busy ? <Spinner size="tiny" /> : undefined}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Mark as paid
               </Button>

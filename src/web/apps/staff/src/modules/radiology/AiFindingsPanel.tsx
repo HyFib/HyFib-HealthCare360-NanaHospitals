@@ -155,7 +155,7 @@ function FindingItem({
           </Field>
           <Button
             size="small"
-            icon={review.isPending ? <Spinner size="tiny" /> : <CheckmarkRegular />}
+            icon={review.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkRegular />}
             disabled={review.isPending}
             onClick={() => review.mutate(true)}
           >

@@ -64,7 +64,7 @@ export function ConfirmDialog({
               size="large"
               onClick={onConfirm}
               disabled={busy}
-              icon={busy ? <Spinner size="tiny" /> : undefined}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               className={destructive ? styles.destructive : undefined}
             >
               {confirmLabel}

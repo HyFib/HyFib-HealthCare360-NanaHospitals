@@ -274,7 +274,7 @@ function BookCheckupPage() {
             <Button
               appearance="primary"
               size="large"
-              icon={book.isPending ? <Spinner size="tiny" /> : <CalendarAddRegular />}
+              icon={book.isPending ? <Spinner size="tiny" aria-hidden /> : <CalendarAddRegular />}
               disabled={!canBook}
               onClick={() => {
                 setProblem(null);

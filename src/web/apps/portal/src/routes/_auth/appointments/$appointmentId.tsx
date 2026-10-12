@@ -222,7 +222,7 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
             <Button
               appearance={appointment.isTelehealth ? 'secondary' : 'primary'}
               size="large"
-              icon={busy === 'pay' ? <Spinner size="tiny" /> : <PaymentRegular />}
+              icon={busy === 'pay' ? <Spinner size="tiny" aria-hidden /> : <PaymentRegular />}
               disabled={busy !== null}
               onClick={() => void pay()}
             >

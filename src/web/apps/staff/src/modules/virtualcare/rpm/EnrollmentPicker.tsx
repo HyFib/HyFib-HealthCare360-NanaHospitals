@@ -55,7 +55,7 @@ export function EnrollmentPicker({
           );
           setTerm('');
         }}
-        expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+        expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         clearable
       >
         {items.length === 0 && !results.isFetching && (

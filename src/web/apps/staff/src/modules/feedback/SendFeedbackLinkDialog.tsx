@@ -189,7 +189,7 @@ function Body({
             disabled={busy}
             // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
             disabledFocusable={busy}
-            icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
           >
             Send link
           </Button>

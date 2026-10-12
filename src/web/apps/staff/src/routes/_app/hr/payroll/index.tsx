@@ -230,7 +230,7 @@ function NewRunDialog({ onClose }: { onClose: () => void }) {
                 type="submit"
                 appearance="primary"
                 disabled={busy || future}
-                icon={busy ? <Spinner size="tiny" /> : undefined}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Create payroll
               </Button>

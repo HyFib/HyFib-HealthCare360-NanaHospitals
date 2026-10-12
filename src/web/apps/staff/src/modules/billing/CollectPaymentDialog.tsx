@@ -289,7 +289,7 @@ export function CollectPaymentDialog({
                               </Text>
                               <Button
                                 size="small"
-                                icon={adjust.isPending ? <Spinner size="tiny" /> : <WalletRegular />}
+                                icon={adjust.isPending ? <Spinner size="tiny" aria-hidden /> : <WalletRegular />}
                                 disabled={adjust.isPending}
                                 onClick={() => adjust.mutate({ id: advance.id, amount })}
                               >
@@ -390,7 +390,7 @@ export function CollectPaymentDialog({
                     size="large"
                     onClick={submit}
                     disabled={!canCollect}
-                    icon={collect.isPending ? <Spinner size="tiny" /> : undefined}
+                    icon={collect.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                   >
                     Collect {formatInr(summary.total)}
                     <KeyHint>Ctrl+Enter</KeyHint>

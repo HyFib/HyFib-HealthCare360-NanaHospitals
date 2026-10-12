@@ -165,7 +165,7 @@ export function MachineDrawer({ machine, onClose }: { machine: DialysisMachineDt
             type="submit"
             appearance="primary"
             disabled={save.isPending || blockedRededication}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {machine ? 'Save' : 'Add machine'}
           </Button>

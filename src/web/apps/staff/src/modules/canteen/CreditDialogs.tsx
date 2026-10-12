@@ -226,7 +226,7 @@ export function PaymentDialog({ balance, onClose }: { balance: StaffBalanceDto |
                 type="submit"
                 appearance="primary"
                 disabled={!valid || pay.isPending}
-                icon={pay.isPending ? <Spinner size="tiny" /> : <MoneyRegular />}
+                icon={pay.isPending ? <Spinner size="tiny" aria-hidden /> : <MoneyRegular />}
               >
                 Record payment
               </Button>
@@ -350,7 +350,7 @@ export function SettleDialog({ currentMonth, onClose }: { currentMonth: string; 
                   type="submit"
                   appearance="primary"
                   disabled={!valid || settle.isPending}
-                  icon={settle.isPending ? <Spinner size="tiny" /> : undefined}
+                  icon={settle.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                 >
                   Settle {period ? monthLabel(period) : ''}
                 </Button>

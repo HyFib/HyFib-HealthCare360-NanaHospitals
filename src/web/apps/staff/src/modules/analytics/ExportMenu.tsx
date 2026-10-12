@@ -92,7 +92,7 @@ export function ExportMenu({
         <MenuTrigger disableButtonEnhancement>
           <Button
             appearance={appearance}
-            icon={download.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+            icon={download.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowDownloadRegular />}
             disabled={disabled || download.isPending}
             // Stays focusable while the file is prepared, so focus is not dropped to the page.
             disabledFocusable={download.isPending}

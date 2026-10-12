@@ -182,7 +182,7 @@ export function MenuItemDrawer({ item, onClose }: { item: MenuItemDto | null; on
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {item ? 'Save' : 'Add item'}
           </Button>
@@ -293,7 +293,7 @@ export function StockDialog({ item, onClose }: { item: MenuItemDto; onClose: () 
                 type="submit"
                 appearance="primary"
                 disabled={!valid || move.isPending}
-                icon={move.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={move.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Save stock
               </Button>

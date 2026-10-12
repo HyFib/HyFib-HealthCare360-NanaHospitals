@@ -545,7 +545,7 @@ function BookAppointmentPage() {
                 type="submit"
                 appearance="primary"
                 className={styles.bookButton}
-                icon={book.isPending ? <Spinner size="tiny" /> : <CalendarAddRegular />}
+                icon={book.isPending ? <Spinner size="tiny" aria-hidden /> : <CalendarAddRegular />}
                 disabled={!ready || book.isPending}
                 aria-keyshortcuts="Control+Enter"
               >

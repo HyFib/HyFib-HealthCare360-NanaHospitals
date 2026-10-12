@@ -470,7 +470,7 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
             <Button
               appearance="primary"
               size="large"
-              icon={issue.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+              icon={issue.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
               disabled={!ready || issue.isPending}
               onClick={submit}
               aria-keyshortcuts="F9"

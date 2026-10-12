@@ -424,7 +424,7 @@ export function BreachForm({
         <Button
           type="submit"
           appearance="primary"
-          icon={busy ? <Spinner size="tiny" /> : <SaveRegular />}
+          icon={busy ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={busy}
         >
           {mode.kind === 'new' ? 'Record breach' : 'Save changes'}

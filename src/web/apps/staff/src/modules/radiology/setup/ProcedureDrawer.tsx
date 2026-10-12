@@ -176,7 +176,7 @@ export function ProcedureDrawer({
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {procedure ? 'Save' : 'Add procedure'}
           </Button>

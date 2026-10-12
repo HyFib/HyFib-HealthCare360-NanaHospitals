@@ -280,7 +280,7 @@ export function CollectDepositDialog({
                     size="large"
                     onClick={submit}
                     disabled={!canCollect}
-                    icon={collect.isPending ? <Spinner size="tiny" /> : undefined}
+                    icon={collect.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                   >
                     Collect {formatInr(summary.total)}
                     <KeyHint>Ctrl+Enter</KeyHint>

@@ -205,7 +205,7 @@ export function StartWashDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!valid || start.isPending}
-                icon={start.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={start.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Start wash ({total} trays)
               </Button>
@@ -355,7 +355,7 @@ export function CompleteWashDialog({ wash, onClose }: { wash: WashCycleDto; onCl
                 type="submit"
                 appearance="primary"
                 disabled={!valid || complete.isPending}
-                icon={complete.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={complete.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                 style={willFail ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
               >
                 {willFail ? 'Record as failed' : 'Record result'}

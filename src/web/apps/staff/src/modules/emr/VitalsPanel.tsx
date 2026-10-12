@@ -368,7 +368,7 @@ export function VitalsForm({
         <Button
           type="submit"
           appearance="primary"
-          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={!ready || save.isPending}
         >
           Record vitals

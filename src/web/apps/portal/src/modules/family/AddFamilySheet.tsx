@@ -138,7 +138,7 @@ export function AddFamilySheet({ open, onClose }: { open: boolean; onClose: () =
         size="large"
         onClick={() => void verify()}
         disabled={busy !== null || spent || code.length !== CODE_LENGTH}
-        icon={busy === 'verify' ? <Spinner size="tiny" /> : undefined}
+        icon={busy === 'verify' ? <Spinner size="tiny" aria-hidden /> : undefined}
       >
         {busy === 'verify' ? t('auth.verifying') : t('family.code.verify')}
       </Button>
@@ -153,7 +153,7 @@ export function AddFamilySheet({ open, onClose }: { open: boolean; onClose: () =
         size="large"
         onClick={() => void send()}
         disabled={busy !== null}
-        icon={busy === 'send' ? <Spinner size="tiny" /> : undefined}
+        icon={busy === 'send' ? <Spinner size="tiny" aria-hidden /> : undefined}
       >
         {busy === 'send' ? t('common.sending') : t('family.add.send')}
       </Button>

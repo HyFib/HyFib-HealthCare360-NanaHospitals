@@ -390,7 +390,7 @@ function AssignDialog({
             <Button
               appearance="primary"
               disabled={busy || !user}
-              icon={busy ? <Spinner size="tiny" /> : undefined}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => void assign()}
             >
               Assign

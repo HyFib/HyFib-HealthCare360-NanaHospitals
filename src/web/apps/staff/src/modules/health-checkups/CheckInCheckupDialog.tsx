@@ -145,7 +145,7 @@ function CheckInBody({
         </Button>
         <Button
           appearance="primary"
-          icon={checkIn.isPending ? <Spinner size="tiny" /> : <PersonAvailableRegular />}
+          icon={checkIn.isPending ? <Spinner size="tiny" aria-hidden /> : <PersonAvailableRegular />}
           disabled={checkIn.isPending}
           onClick={() => {
             setProblem(null);

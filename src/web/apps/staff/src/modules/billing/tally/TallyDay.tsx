@@ -340,7 +340,7 @@ export function TallyDayDrawer({
                 Post to Tally
               </Button>
               <Button
-                icon={downloading ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+                icon={downloading ? <Spinner size="tiny" aria-hidden /> : <ArrowDownloadRegular />}
                 disabled={downloading}
                 // Busy buttons here stay focusable: a disabled button drops focus out of the drawer.
                 disabledFocusable={downloading}
@@ -354,7 +354,13 @@ export function TallyDayDrawer({
                 </Button>
               )}
               <Button
-                icon={run.isPending && run.variables === false ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+                icon={
+                  run.isPending && run.variables === false ? (
+                    <Spinner size="tiny" aria-hidden />
+                  ) : (
+                    <CheckmarkCircleRegular />
+                  )
+                }
                 disabled={run.isPending}
                 disabledFocusable={run.isPending}
                 onClick={() => run.mutate(false)}
@@ -362,7 +368,9 @@ export function TallyDayDrawer({
                 Check records
               </Button>
               <Button
-                icon={run.isPending && run.variables === true ? <Spinner size="tiny" /> : <ScanTextRegular />}
+                icon={
+                  run.isPending && run.variables === true ? <Spinner size="tiny" aria-hidden /> : <ScanTextRegular />
+                }
                 disabled={run.isPending || !check.data?.canCheckTally}
                 disabledFocusable={run.isPending}
                 title={check.data?.canCheckTally ? undefined : 'Post the day to Tally first; Tally must be set up.'}

@@ -248,7 +248,7 @@ export function CreatePayoutDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!valid || create.isPending}
-                icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Prepare payout
               </Button>
@@ -405,7 +405,7 @@ export function PayoutDialog({ payoutId, onClose }: { payoutId: string; onClose:
                 (step === 'pay' ? (
                   <Button
                     appearance="primary"
-                    icon={act.isPending ? <Spinner size="tiny" /> : <MoneyHandRegular />}
+                    icon={act.isPending ? <Spinner size="tiny" aria-hidden /> : <MoneyHandRegular />}
                     disabled={needsReference || act.isPending}
                     onClick={() => act.mutate(p)}
                   >

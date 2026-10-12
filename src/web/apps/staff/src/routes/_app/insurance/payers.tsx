@@ -427,7 +427,7 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
                 type="submit"
                 appearance="primary"
                 disabled={!valid || add.isPending}
-                icon={add.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Add
               </Button>

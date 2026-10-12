@@ -294,7 +294,7 @@ export function BillWorkspace({
           actions={
             isOpDraft && canEditOp ? (
               <Button
-                icon={refreshServices.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+                icon={refreshServices.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowClockwiseRegular />}
                 onClick={() => refreshServices.mutate()}
                 disabled={refreshServices.isPending}
               >
@@ -413,7 +413,7 @@ export function BillWorkspace({
               relationship="label"
             >
               <Button
-                icon={downloadPdf.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+                icon={downloadPdf.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowDownloadRegular />}
                 disabled={downloadPdf.isPending}
                 onClick={() => downloadPdf.mutate(billDocument(bill.id))}
               >

@@ -97,7 +97,7 @@ function DailySheetPage() {
             </Button>
             <Button
               appearance="primary"
-              icon={compute.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+              icon={compute.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSyncRegular />}
               disabled={compute.isPending}
               onClick={() => compute.mutate()}
             >

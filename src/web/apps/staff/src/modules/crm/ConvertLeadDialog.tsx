@@ -284,7 +284,7 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
               <Button
                 appearance="primary"
                 disabled={busy}
-                icon={busy ? <Spinner size="tiny" /> : undefined}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
                 onClick={() => submit(true)}
               >
                 It is a different person, register
@@ -294,7 +294,7 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
                 type="submit"
                 appearance="primary"
                 disabled={busy}
-                icon={busy ? <Spinner size="tiny" /> : undefined}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 {mode === 'register' ? 'Register and convert' : 'Convert'}
               </Button>

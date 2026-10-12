@@ -382,7 +382,7 @@ export function DischargeSummaryEditor({
         actions={
           !locked && (
             <Button
-              icon={prefill.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+              icon={prefill.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowDownloadRegular />}
               disabled={prefill.isPending}
               onClick={() => prefill.mutate()}
             >
@@ -473,7 +473,7 @@ export function DischargeSummaryEditor({
         {canWrite && !signedOrAmended && (
           <>
             <Button
-              icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+              icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
               disabled={save.isPending || sign.isPending}
               onClick={() => save.mutate()}
             >

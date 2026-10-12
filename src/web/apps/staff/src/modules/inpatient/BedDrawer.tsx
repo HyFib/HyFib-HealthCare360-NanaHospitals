@@ -301,7 +301,11 @@ export function BedDrawer({
                     className={styles.actionButton}
                     appearance={index === 0 && !occupant ? 'primary' : 'secondary'}
                     icon={
-                      run.isPending && run.variables?.action === action ? <Spinner size="tiny" /> : ACTION_ICONS[action]
+                      run.isPending && run.variables?.action === action ? (
+                        <Spinner size="tiny" aria-hidden />
+                      ) : (
+                        ACTION_ICONS[action]
+                      )
                     }
                     disabled={run.isPending}
                     onClick={() => start(action)}
@@ -507,7 +511,7 @@ function ReserveDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!valid || reserve.isPending}
-                icon={reserve.isPending ? <Spinner size="tiny" /> : <CalendarClockRegular />}
+                icon={reserve.isPending ? <Spinner size="tiny" aria-hidden /> : <CalendarClockRegular />}
               >
                 Reserve bed
               </Button>

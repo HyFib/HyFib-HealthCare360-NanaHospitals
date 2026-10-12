@@ -141,7 +141,7 @@ function LockPanel({ user }: { user: AuthUser }) {
             appearance="primary"
             size="large"
             disabled={busy || !secret}
-            icon={busy ? <Spinner size="tiny" /> : undefined}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Unlock
           </Button>

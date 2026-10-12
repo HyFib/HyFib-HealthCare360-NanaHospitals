@@ -277,7 +277,7 @@ function AlertActionContent({
             type="submit"
             appearance="primary"
             disabled={act.isPending}
-            icon={act.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={act.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {action === 'acknowledge' ? 'Mark as seen' : 'Resolve'}
           </Button>

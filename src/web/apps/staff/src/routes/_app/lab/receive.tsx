@@ -399,7 +399,7 @@ function ReceivePage() {
               <div key={row.key} className={styles.row}>
                 <span aria-hidden>
                   {row.state === 'sending' ? (
-                    <Spinner size="extra-tiny" />
+                    <Spinner size="extra-tiny" aria-hidden />
                   ) : row.state === 'received' ? (
                     <CheckmarkCircleRegular className={styles.green} fontSize={20} />
                   ) : row.state === 'problem' ? (
@@ -473,7 +473,7 @@ function ReceivePage() {
                   {canReceive && row.sample?.status === 'Rejected' && (
                     <Button
                       size="small"
-                      icon={recollecting === row.key ? <Spinner size="tiny" /> : undefined}
+                      icon={recollecting === row.key ? <Spinner size="tiny" aria-hidden /> : undefined}
                       disabled={recollecting !== null}
                       onClick={() => void recollect(row)}
                     >
@@ -534,7 +534,7 @@ function LastScan({ row }: { row: ScanRow }) {
         ) : row.state === 'problem' ? (
           <ErrorCircleRegular className={styles.red} />
         ) : row.state === 'sending' ? (
-          <Spinner size="small" />
+          <Spinner size="small" aria-hidden />
         ) : (
           <InfoRegular />
         )}

@@ -154,7 +154,7 @@ function MealPlansPage() {
           canManage && (
             <Button
               appearance="primary"
-              icon={generate.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+              icon={generate.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSyncRegular />}
               disabled={!canGenerate || generate.isPending}
               title={
                 canGenerate

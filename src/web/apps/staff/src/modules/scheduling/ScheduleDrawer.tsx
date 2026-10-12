@@ -444,7 +444,7 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {schedule ? 'Save' : weekdays.length > 1 ? `Add ${weekdays.length} sessions` : 'Add session'}
           </Button>

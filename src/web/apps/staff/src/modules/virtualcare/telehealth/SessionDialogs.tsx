@@ -267,7 +267,7 @@ function NewSessionContent({
             type="submit"
             appearance="primary"
             disabled={create.isPending}
-            icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Create consultation
           </Button>
@@ -445,7 +445,7 @@ function EndSessionContent({
             appearance="primary"
             className={styles.destructive}
             disabled={end.isPending}
-            icon={end.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={end.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
             autoFocus
           >
             End consultation

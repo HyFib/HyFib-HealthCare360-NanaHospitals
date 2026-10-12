@@ -126,7 +126,7 @@ export function Attachments({
           />
           <Button
             size="small"
-            icon={uploading ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
+            icon={uploading ? <Spinner size="tiny" aria-hidden /> : <ArrowUploadRegular />}
             disabled={uploading}
             onClick={() => inputRef.current?.click()}
           >

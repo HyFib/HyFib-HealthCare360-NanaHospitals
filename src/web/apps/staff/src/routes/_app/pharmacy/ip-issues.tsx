@@ -445,7 +445,7 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
             <Button
               appearance="primary"
               disabled={!valid || submit.isPending}
-              icon={submit.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={submit.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => submit.mutate()}
             >
               Record return

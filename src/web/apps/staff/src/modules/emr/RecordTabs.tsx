@@ -265,7 +265,7 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Record
           </Button>

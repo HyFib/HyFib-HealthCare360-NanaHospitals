@@ -187,7 +187,7 @@ function VerifyBody({
             type="submit"
             appearance="primary"
             disabled={command.busy}
-            icon={command.busy ? <Spinner size="tiny" /> : undefined}
+            icon={command.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Confirm identity
           </Button>
@@ -309,7 +309,7 @@ function AssignBody({
             type="submit"
             appearance="primary"
             disabled={command.busy || !userId || !changed}
-            icon={command.busy ? <Spinner size="tiny" /> : undefined}
+            icon={command.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Assign
           </Button>
@@ -534,7 +534,7 @@ function AnswerBody({
             type="submit"
             appearance="primary"
             disabled={command.busy || Boolean(blocker)}
-            icon={command.busy ? <Spinner size="tiny" /> : undefined}
+            icon={command.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Send answer
           </Button>

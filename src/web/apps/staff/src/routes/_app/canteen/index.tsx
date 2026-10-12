@@ -702,7 +702,7 @@ function CanteenPosPage() {
                 appearance="primary"
                 className={styles.charge}
                 disabled={priced.length === 0 || sale.isPending}
-                icon={sale.isPending ? <Spinner size="tiny" /> : <ReceiptRegular />}
+                icon={sale.isPending ? <Spinner size="tiny" aria-hidden /> : <ReceiptRegular />}
                 aria-keyshortcuts="F9"
               >
                 Charge {formatInr(bill.netAmount)} (F9)

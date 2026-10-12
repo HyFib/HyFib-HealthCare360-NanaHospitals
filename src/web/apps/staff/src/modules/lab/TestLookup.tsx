@@ -65,7 +65,7 @@ export function TestLookup({
           onChange(items.find((test) => test.id === data.optionValue) ?? null);
           setTerm('');
         }}
-        expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+        expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         clearable
       >
         {items.map((test) => (

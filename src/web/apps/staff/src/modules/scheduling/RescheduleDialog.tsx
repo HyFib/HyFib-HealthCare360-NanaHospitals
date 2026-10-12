@@ -279,7 +279,7 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
             disabled={!slot || reschedule.isPending}
             // Keeps focus while moving the appointment, and when a clash clears the slot: a disabled button drops it.
             disabledFocusable={!slot || reschedule.isPending}
-            icon={reschedule.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={reschedule.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {slot ? `Move to ${formatDayMedium(slot.date)}, ${formatTime(slot.startsAt)}` : 'Choose a new slot'}
           </Button>

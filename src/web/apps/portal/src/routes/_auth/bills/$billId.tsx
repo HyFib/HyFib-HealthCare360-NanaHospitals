@@ -232,7 +232,7 @@ function BillDetail({ bill, back }: { bill: PortalBillDetail; back: ReactNode })
             <Button
               appearance="primary"
               size="large"
-              icon={busy ? <Spinner size="tiny" /> : <PaymentRegular />}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : <PaymentRegular />}
               disabled={busy || verification.isFetching}
               onClick={() => void pay()}
             >

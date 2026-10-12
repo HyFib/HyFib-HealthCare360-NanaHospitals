@@ -1098,7 +1098,7 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
             {canEnter && inLab && (
               <Button
                 appearance={canVerify && selectedLines.length > 0 ? 'secondary' : 'primary'}
-                icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
                 disabled={dirtyLines.length === 0 || save.isPending}
                 onClick={saveAll}
                 aria-keyshortcuts="Control+S"
@@ -1109,7 +1109,7 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
             {canVerify && (
               <Button
                 appearance={selectedLines.length > 0 ? 'primary' : 'secondary'}
-                icon={verify.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+                icon={verify.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
                 disabled={selectedLines.length === 0 || verify.isPending}
                 onClick={() => startVerify(selectedLines.map((line) => line.resultId))}
               >

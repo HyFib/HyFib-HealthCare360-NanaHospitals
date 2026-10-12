@@ -254,7 +254,7 @@ function ReceiveStep({ booking, onDone }: { booking: SurgeryDetail; onDone: () =
           <Button
             appearance="primary"
             className={styles.bigAction}
-            icon={receive.isPending ? <Spinner size="tiny" /> : <PersonAvailableRegular />}
+            icon={receive.isPending ? <Spinner size="tiny" aria-hidden /> : <PersonAvailableRegular />}
             disabled={!gate.allowed || receive.isPending}
             onClick={() => receive.mutate()}
           >

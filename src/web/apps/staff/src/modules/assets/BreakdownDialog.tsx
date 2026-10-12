@@ -215,7 +215,7 @@ export function BreakdownDialog({
             <Button
               appearance="primary"
               disabled={!valid || report.isPending}
-              icon={report.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={report.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => report.mutate()}
             >
               Report breakdown

@@ -274,7 +274,7 @@ function TheatreDrawer({ theatre, onClose }: { theatre: TheatreDto | null; onClo
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {theatre ? 'Save' : 'Add theatre'}
           </Button>

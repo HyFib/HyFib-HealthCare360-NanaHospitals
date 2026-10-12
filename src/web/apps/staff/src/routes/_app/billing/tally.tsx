@@ -276,7 +276,7 @@ function ExportsView({
             Post to Tally
           </Button>
           <Button
-            icon={downloading === postFrom ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+            icon={downloading === postFrom ? <Spinner size="tiny" aria-hidden /> : <ArrowDownloadRegular />}
             disabled={!postFrom || downloading !== null}
             onClick={() => void save(postFrom)}
           >

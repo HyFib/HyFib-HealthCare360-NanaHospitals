@@ -335,7 +335,7 @@ function SettingsFormBody({
         <Button
           type="submit"
           appearance="primary"
-          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={save.isPending || !form.formState.isDirty}
         >
           Save
