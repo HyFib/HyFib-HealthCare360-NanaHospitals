@@ -10,7 +10,9 @@
       - listens on localhost only (HC360 is the only client; workstations never talk to the database),
       - enforces scram-sha-256 password authentication,
       - sizes memory settings from the installed RAM,
-      - logs slow statements without their parameter values, which can be patient details.
+      - logs slow statements without their parameter values, which can be patient details,
+      - has Windows restart the service when its process fails (SRS DED-01). Install-HC360Server.ps1 then adds the
+        "HC360 database watchdog" task, which also starts it again when the database itself crashed.
 
 .EXAMPLE
     .\Install-PostgreSQL.ps1 -SuperuserPassword (Read-Host -AsSecureString 'New postgres password')
@@ -26,6 +28,15 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Write-Step([string] $Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
+
+# Has Windows restart the service $Name when its process ends unexpectedly, or it stops with an error: after 5 seconds,
+# 15 seconds, then every minute, counting again after a day without a failure (SRS DED-01). Install-HC360Server.ps1 has
+# the same function.
+function Set-RestartOnFailure([string] $Name) {
+    sc.exe failure $Name reset= 86400 actions= restart/5000/restart/15000/restart/60000 | Out-Null
+    if ($LASTEXITCODE -eq 0) { sc.exe failureflag $Name 1 | Out-Null }
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Windows did not take the restart-on-failure settings of the service $Name (sc.exe exit code $LASTEXITCODE)." }
+}
 
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     throw 'winget is not available. Install "App Installer" from the Microsoft Store, or install PostgreSQL manually from https://www.postgresql.org/download/windows/ and re-run Install-HC360Server.ps1.'
@@ -113,6 +124,7 @@ if ($service) {
     Write-Step "Restarting $($service.Name)"
     Restart-Service -Name $service.Name -Force
     Set-Service -Name $service.Name -StartupType Automatic
+    Set-RestartOnFailure $service.Name
 }
 
 Write-Host ''

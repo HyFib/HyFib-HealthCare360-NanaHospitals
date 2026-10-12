@@ -62,6 +62,12 @@ jobs:
       - name: Test
         run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m
 
+      # The database watchdog (SRS DED-01) against the runner's PostgreSQL service: it kills the database and checks the
+      # watchdog starts it again, and that it leaves alone a PostgreSQL someone stopped. Last, after the tests that use it.
+      - name: Check the database watchdog starts a crashed PostgreSQL again
+        shell: pwsh
+        run: tests/deploy/Test-DatabaseWatchdog.ps1 -Server src/server/HyFib.HealthCare360.Server/bin/Release/net10.0/HyFib.HealthCare360.Server.exe
+
   installer:
     name: Server installer (PowerShell 5.1 and 7)
     runs-on: windows-latest
@@ -86,6 +92,14 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerDatabaseSignIn.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
           pwsh -NoProfile -File tests/deploy/Test-InstallerDatabaseSignIn.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
+      - name: Test the installers' restart of HC360 and PostgreSQL when they fail
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerServiceRestart.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerServiceRestart.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
   web:

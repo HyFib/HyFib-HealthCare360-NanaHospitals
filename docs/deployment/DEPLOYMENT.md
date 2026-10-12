@@ -57,12 +57,14 @@ Open **PowerShell as Administrator** in the extracted `deploy` folder:
 .\Install-PostgreSQL.ps1 -SuperuserPassword (Read-Host -AsSecureString 'New postgres password')
 ```
 
-This does five things:
+This does six things:
 - Installs PostgreSQL through winget.
 - Restricts it to localhost, with scram-sha-256 authentication only.
 - Sizes its memory settings from the machine's RAM.
 - Logs statements slower than two seconds, without their parameter values, which can be patient details.
 - Sets the time zone to IST.
+- Has Windows restart its service if the service's process fails. The HC360 installer (step 3) also starts PostgreSQL
+  again when the database itself crashes (see "When PostgreSQL stops" below).
 
 A server installed with an earlier version of this script logged the parameter values of slow statements. Turn that
 off once, as the postgres user, then delete the old PostgreSQL log files in its `data\log` folder:
@@ -93,6 +95,8 @@ The installer:
   start-up. Administration › System health shows what it found, and warns about a disk that is not protected or a
   check that has stopped running.
 - Registers the `HC360Server` Windows service, which restarts itself if it stops.
+- Has PostgreSQL started again if it stops without being shut down, within a minute, through the scheduled task
+  *HC360 database watchdog* (see "When PostgreSQL stops" below).
 - Opens the firewall, for Private networks only: HTTPS for the staff app (7360) and the patient portal (7361), and
   mDNS.
 - Keeps the machine and its WiFi adapter from sleeping.
@@ -101,6 +105,28 @@ The installer:
 At the end it prints two things. Write them down:
 - the **hospital CA fingerprint**, which staff compare when setting up HC360 Desktop;
 - the **first administrator password** (user `admin`).
+
+### When PostgreSQL stops
+
+HC360 cannot work without its database, so PostgreSQL must come back by itself after a crash (SRS DED-01, REL-01). Two
+things see to that, and both are set up again on every install and upgrade:
+- **Windows' recovery settings** on the PostgreSQL service (Services › its Properties › Recovery): restart after 5
+  seconds, 15 seconds, then every minute. These help only when the service's own process (`pg_ctl.exe`) ends. When
+  the database server itself (`postgres.exe`) crashes or is killed, PostgreSQL's service tells Windows it stopped
+  normally, and Windows leaves it stopped.
+- The scheduled task ***HC360 database watchdog*** (Task Scheduler › HyFib), which runs as SYSTEM every minute. When
+  the PostgreSQL service is set to start automatically but is stopped, and PostgreSQL's data folder says it was not
+  shut down cleanly, the watchdog starts it and writes a warning in Event Viewer › Application (source *HyFib
+  HealthCare360*). After three failed starts in a row it tries every quarter of an hour.
+
+The watchdog leaves PostgreSQL stopped when someone stopped it: stopping the service (Services, `Stop-Service`, or
+the installers' own restarts) shuts PostgreSQL down cleanly, which the watchdog can tell. It also leaves alone a
+service set to start manually, and a PostgreSQL that runs without its service, started by hand with `pg_ctl`.
+
+System health warns when PostgreSQL had to be started again in the last 24 hours, critically when it could not be, and
+when the watchdog has not run for ten minutes. PostgreSQL's own log (`log\` in its data folder) says why it stopped.
+The watchdog needs PostgreSQL on the same machine as HC360; when the database is elsewhere, look after its restarts
+there.
 
 ### Changing a protected setting
 
@@ -574,6 +600,9 @@ distribution tool).
 | Service will not start: "The setting … cannot be opened on this machine" | The configuration was copied from another server, or the value was damaged. Write that setting's plain value in `hc360.settings.json` and run `settings protect` (see "Changing a protected setting") |
 | "BitLocker is off on D:" or "BitLocker is not installed" (System health) | Turn on BitLocker, with the TPM, for that disk (Control Panel › BitLocker Drive Encryption). The warning clears after the next daily check, or run the *HC360 disk encryption check* task in Task Scheduler › HyFib |
 | "BitLocker was last checked on …" or "has not been checked" (System health) | Is the *HC360 disk encryption check* task in Task Scheduler › HyFib, enabled, and does its last run show success? Run `Install-HC360Server.ps1` again to recreate it |
+| "PostgreSQL stopped without being shut down" (System health, or Event Viewer › Application) | The watchdog started it again (see "When PostgreSQL stops"). PostgreSQL's log, in `log\` in its data folder, says why it stopped: often a full disk, or antivirus software that ended or locked `postgres.exe`. Exclude the PostgreSQL data folder and programs from scanning |
+| "… the database watchdog could not start it again" (System health) | PostgreSQL's log says why it does not start. Once the cause is fixed, start the PostgreSQL service in Services; the watchdog keeps trying every quarter of an hour |
+| "The database watchdog has not run since …" or "… watches the PostgreSQL service …, which is no longer on this server" (System health) | Is the *HC360 database watchdog* task in Task Scheduler › HyFib, enabled, and does its last run show success? After PostgreSQL was upgraded to a new version, run `Install-HC360Server.ps1` again: it watches the new service |
 | A serial analyser shows "Waiting for agent" | Is the lab PC on and the `HC360LabAgent` service running? Administration › Devices shows when the agent last called in. Event Viewer › Application on the lab PC (source *HyFib HC360 Lab Agent*) says why it cannot connect |
 | A serial analyser shows "COM port problem" | The message gives the Windows error. "Access to the port is denied": another program has the port open. Otherwise check the COM number in Device Manager on the lab PC |
 | An analyser sends results but none arrive | Integration log (Administration › Integrations) for refused messages. Network analysers: is the analyser's IP the one in its connection, and the port open in the firewall? Serial: compare baud rate, parity and stop bits with the analyser's settings |

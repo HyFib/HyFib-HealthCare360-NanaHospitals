@@ -137,10 +137,12 @@ public sealed class SystemHealthService(
             warnings.Add(new("disk.low", "critical", $"Less than 10% disk space free on the data drive ({free / (1024 * 1024 * 1024)} GB)."));
         }
 
-        // BitLocker and the settings file's secrets exist only on the Windows Server Node (SRS SEC-05, SEC-07).
+        // BitLocker, the settings file's secrets and the database watchdog exist only on the Windows Server Node (SRS
+        // SEC-05, SEC-07, DED-01).
         if (OperatingSystem.IsWindows())
         {
             warnings.AddRange(DiskEncryption.Warnings(encryption, now));
+            warnings.AddRange(DatabaseWatchdog.Warnings(DatabaseWatchdog.Load(DatabaseWatchdog.PathIn(directories)), now));
             if (PlainSecrets() is { Count: > 0 } plain)
             {
                 warnings.Add(new("settings.unprotected", "warning",

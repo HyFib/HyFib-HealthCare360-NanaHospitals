@@ -1,5 +1,9 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
+using System.ServiceProcess;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -12,6 +16,15 @@ namespace HyFib.HealthCare360.Server;
 internal static class ServerCli
 {
     private const string DatabasePasswordVariable = "HC360_DATABASE_PASSWORD";
+
+    /// <summary>The Event Log source the installer registers, and the server writes its errors to.</summary>
+    private const string EventSource = "HyFib HealthCare360";
+
+    /// <summary>ERROR_SERVICE_DOES_NOT_EXIST.</summary>
+    private const int ErrorServiceDoesNotExist = 1060;
+
+    /// <summary>How long the watchdog waits for PostgreSQL to take connections, crash recovery included.</summary>
+    private static readonly TimeSpan WatchdogStartTimeout = TimeSpan.FromMinutes(2);
 
     private const string Usage = """
         HyFib HealthCare360 server maintenance
@@ -54,6 +67,15 @@ internal static class ServerCli
               Install-HC360Server.ps1 runs these, and sets PostgreSQL up to match; run them by hand only with the HC360
               service stopped.
 
+          database watchdog --service <name> --pgdata <folder> [--data-dir <folder>]
+              Starts the PostgreSQL service again when it is stopped, though set to start automatically, and its data folder
+              (--pgdata) says it was not shut down cleanly: it crashed or was killed. A clean shut-down, which is how a person
+              or a script stops PostgreSQL, is left alone, as is a service set to start by hand. Windows does not restart
+              PostgreSQL itself, because its service reports a clean stop even when the database crashes. It needs
+              administrator rights; the "HC360 database watchdog" scheduled task runs it as SYSTEM every minute, and System
+              health says when it had to start PostgreSQL. Exit code 0 when PostgreSQL runs or was left stopped on purpose, 2
+              when there is no such service or it cannot be read, 3 when it could not be started.
+
           disk-encryption check [--data-dir <folder>]
               Records whether BitLocker protects each fixed disk of this machine, for System health. It needs administrator
               rights; the "HC360 disk encryption check" scheduled task runs it as SYSTEM every day and at start-up. Exit code
@@ -86,6 +108,7 @@ internal static class ServerCli
                 ["database", "sign-in", "show", ..] => ShowDatabaseSignIn(options),
                 ["database", "sign-in", "windows", ..] => ChangeDatabaseSignIn(options, windows: true),
                 ["database", "sign-in", "password", ..] => ChangeDatabaseSignIn(options, windows: false),
+                ["database", "watchdog", ..] when options.ContainsKey("service") && options.ContainsKey("pgdata") => WatchDatabase(options),
                 ["disk-encryption", "check", ..] => CheckDiskEncryption(options),
                 _ => PrintUsage(args),
             };
@@ -316,6 +339,135 @@ internal static class ServerCli
 
         Console.Error.WriteLine($"There is no settings file at {path}.");
         return null;
+    }
+
+    /// <summary>
+    /// Starts PostgreSQL again when it stopped without being shut down (SRS DED-01, <see cref="DatabaseWatchdog"/>), and
+    /// records what it found for System health. Needs administrator rights.
+    /// </summary>
+    private static int WatchDatabase(Dictionary<string, string> options)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.Error.WriteLine("The database watchdog watches a Windows service, so it runs only on Windows.");
+            return 1;
+        }
+
+        var name = options["service"];
+        var path = DatabaseWatchdog.PathIn(new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") }));
+        var restarts = DatabaseWatchdog.Load(path) is { } last && string.Equals(last.Service, name, StringComparison.OrdinalIgnoreCase)
+            ? last.Restarts
+            : [];
+        var cluster = DatabaseWatchdog.ReadClusterState(options["pgdata"]);
+        var runsWithoutService = DatabaseWatchdog.ReadPostmasterId(options["pgdata"]) is { } postmaster && IsPostgres(postmaster);
+        var now = DateTimeOffset.UtcNow;
+
+        using var service = new ServiceController(name);
+        DatabaseServiceState state;
+        bool automatic;
+        try
+        {
+            (state, automatic) = ReadService(service);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Nothing is recorded, so System health says the watchdog has stopped once its record is old.
+            Console.Error.WriteLine($"The service {name} could not be read: {ex.InnerException?.Message ?? ex.Message} Run it from an elevated prompt.");
+            return 2;
+        }
+
+        var decision = DatabaseWatchdog.Decide(name, state, automatic, cluster, runsWithoutService, restarts, now);
+        Console.WriteLine(decision.Reason);
+        var exitCode = state == DatabaseServiceState.Missing ? 2 : 0;
+        if (decision.Start)
+        {
+            var restart = StartService(service, now);
+            restarts = DatabaseWatchdog.WithRestart(restarts, restart);
+            state = ReadService(service).State;
+            var message = restart.Succeeded
+                ? $"PostgreSQL ({name}) had stopped without being shut down, and the HC360 database watchdog started it again. PostgreSQL's log folder says why it stopped."
+                : $"PostgreSQL ({name}) had stopped without being shut down, and the HC360 database watchdog could not start it again: {restart.Problem}";
+            Console.WriteLine(message);
+            WriteEvent(message, restart.Succeeded ? EventLogEntryType.Warning : EventLogEntryType.Error);
+            exitCode = restart.Succeeded ? 0 : 3;
+        }
+
+        DatabaseWatchdog.Save(path, new DatabaseWatchdogReport(now, name, state, cluster, restarts));
+        return exitCode;
+    }
+
+    /// <summary>The service's state, and whether it starts automatically (delayed or not).</summary>
+    /// <exception cref="InvalidOperationException">The service exists but cannot be read, as without administrator rights.</exception>
+    [SupportedOSPlatform("windows")]
+    private static (DatabaseServiceState State, bool Automatic) ReadService(ServiceController service)
+    {
+        try
+        {
+            service.Refresh();
+            var state = service.Status switch
+            {
+                ServiceControllerStatus.Running => DatabaseServiceState.Running,
+                ServiceControllerStatus.StartPending or ServiceControllerStatus.ContinuePending => DatabaseServiceState.Starting,
+                ServiceControllerStatus.StopPending or ServiceControllerStatus.PausePending => DatabaseServiceState.Stopping,
+                ServiceControllerStatus.Paused => DatabaseServiceState.Paused,
+                _ => DatabaseServiceState.Stopped,
+            };
+            return (state, service.StartType == ServiceStartMode.Automatic);
+        }
+        catch (InvalidOperationException ex) when (ex.InnerException is Win32Exception { NativeErrorCode: ErrorServiceDoesNotExist })
+        {
+            return (DatabaseServiceState.Missing, false);
+        }
+    }
+
+    /// <summary>Starts the service and waits until it runs, which pg_ctl reports once PostgreSQL takes connections.</summary>
+    [SupportedOSPlatform("windows")]
+    private static DatabaseRestart StartService(ServiceController service, DateTimeOffset at)
+    {
+        try
+        {
+            service.Start();
+            service.WaitForStatus(ServiceControllerStatus.Running, WatchdogStartTimeout);
+            return new(at, Succeeded: true);
+        }
+        catch (System.ServiceProcess.TimeoutException)
+        {
+            service.Refresh();
+            return new(at, false, service.Status == ServiceControllerStatus.Stopped
+                ? "it stopped again as it started."
+                : $"it was still starting {WatchdogStartTimeout.TotalMinutes:0} minutes later.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new(at, false, (ex.InnerException?.Message ?? ex.Message).Trim());
+        }
+    }
+
+    /// <summary>Whether process <paramref name="id"/> is a PostgreSQL server process; a crash leaves an old id behind.</summary>
+    private static bool IsPostgres(int id)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(id);
+            return string.Equals(process.ProcessName, "postgres", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void WriteEvent(string message, EventLogEntryType type)
+    {
+        try
+        {
+            EventLog.WriteEntry(EventSource, message, type);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or Win32Exception or System.Security.SecurityException)
+        {
+            Console.Error.WriteLine($"The Application event log could not be written to: {ex.Message}");
+        }
     }
 
     /// <summary>Records BitLocker's state of every fixed disk for System health (SRS SEC-05). Needs administrator rights.</summary>
