@@ -14,6 +14,7 @@ import { describeError } from '@/lib/errors';
 import { useToast } from '@/lib/toast';
 import type { RefillablePrescription } from '@/lib/types';
 import { prescriptionApi } from './api';
+import { useUnsavedChanges } from '@/lib/unsavedChanges';
 
 const useStyles = makeStyles({
   lead: { margin: 0, color: tokens.colorNeutralForeground2 },
@@ -67,6 +68,8 @@ export function RefillSheet({
     form.reset();
     onClose();
   };
+  // What was typed is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, open, onClose: close });
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
@@ -91,6 +94,7 @@ export function RefillSheet({
       open={open}
       title={t('rx.refill.request')}
       onClose={close}
+      guard={guard}
       dismissible={!busy}
       footer={
         <>
@@ -103,7 +107,7 @@ export function RefillSheet({
           >
             {t('rx.refill.submit')}
           </Button>
-          <Button size="large" onClick={close} disabled={busy}>
+          <Button size="large" onClick={guard.requestClose} disabled={busy}>
             {t('common.notNow')}
           </Button>
         </>
