@@ -111,7 +111,9 @@ export function describeViolations(violations: axe.Result[]): string {
   return violations
     .map((violation) => {
       const nodes = violation.nodes.map((node) => {
-        const html = shorten(node.html.replace(/\s+class="[^"]*"/g, ''), 240);
+        // One space before the attribute, not \s+: that would be tried again from every space of a long run (CodeQL
+        // js/polynomial-redos).
+        const html = shorten(node.html.replace(/\sclass="[^"]*"/g, ''), 240);
         const fix = (node.failureSummary ?? '').replace(/\n/g, '\n      ');
         return `  - ${node.target.join(' ')}\n    ${html}\n      ${fix}`;
       });
