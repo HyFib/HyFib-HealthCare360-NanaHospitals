@@ -99,7 +99,7 @@ internal static class ServerCli
         """;
 
     public static bool IsCommand(string argument) =>
-        argument is "backup" or "catalogue" or "settings" or "database" or "disk-encryption" or "loadtest" or "help" or "--help" or "-h";
+        argument is "backup" or "catalogue" or "settings" or "database" or "disk-encryption" or "loadtest" or "desktop" or "help" or "--help" or "-h";
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -122,6 +122,9 @@ internal static class ServerCli
                 ["database", "sign-in", "password", ..] => ChangeDatabaseSignIn(options, windows: false),
                 ["database", "watchdog", ..] when options.ContainsKey("service") && options.ContainsKey("pgdata") => WatchDatabase(options),
                 ["disk-encryption", "check", ..] => CheckDiskEncryption(options),
+                ["desktop", "publish", ..] when options.ContainsKey("package") => DesktopCli.Publish(options["package"], options.GetValueOrDefault("data-dir")),
+                ["desktop", "verify", ..] when options.ContainsKey("package") => DesktopCli.Verify(options["package"]),
+                ["desktop", "show", ..] => await DesktopCli.ShowAsync(options.GetValueOrDefault("data-dir")),
                 _ => PrintUsage(args),
             };
         }
@@ -156,6 +159,8 @@ internal static class ServerCli
     private static int PrintUsage(string[] args)
     {
         Console.WriteLine(Usage);
+        Console.WriteLine();
+        Console.WriteLine(DesktopCli.Usage);
         return args.Length == 0 || args[0] is "help" or "--help" or "-h" ? 0 : 2;
     }
 

@@ -13,8 +13,10 @@ using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
+using HyFib.HealthCare360.Platform.Updates;
 using HyFib.HealthCare360.Server;
 using HyFib.HealthCare360.SharedKernel;
+using HyFib.HealthCare360.WindowsInterop.Updates;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.TestHost;
@@ -64,6 +66,11 @@ public sealed class HospitalServer : IAsyncLifetime
 
     public IServiceProvider Services => App.Services;
 
+    /// <summary>
+    /// A release signing key made for this run, which the test server trusts as it trusts HyFib's (DesktopUpdateTests).
+    /// </summary>
+    public ECDsa ReleaseSigningKey { get; } = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
     /// <summary>The run's password of the seeded staff accounts, for a test that signs in on its own.</summary>
     public string Password => _password;
 
@@ -101,6 +108,10 @@ public sealed class HospitalServer : IAsyncLifetime
         var directories = new DataDirectories(options);
         directories.EnsureCreated();
         var certificates = new LanCertificateManager(directories, options, new EphemeralDataProtectionProvider(), NullLogger<LanCertificateManager>.Instance);
+
+        // HC360 Desktop packages signed with a throwaway key made for this run (DesktopUpdateTests) are trusted too, as
+        // HyFib's are; the server registers only the built-in keys when nothing was registered before.
+        builder.Services.AddSingleton(new ReleaseTrust([.. ReleaseKeys.Trusted, ReleaseKey.FromSubjectPublicKeyInfo(ReleaseSigningKey.ExportSubjectPublicKeyInfo())]));
         builder.AddServerApplication(certificates);
 
         _app = builder.Build();
@@ -244,6 +255,7 @@ public sealed class HospitalServer : IAsyncLifetime
             await _database.DisposeAsync();
         }
 
+        ReleaseSigningKey.Dispose();
         await DeleteDataDirectoryAsync();
     }
 

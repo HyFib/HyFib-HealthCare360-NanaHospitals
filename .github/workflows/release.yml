@@ -35,9 +35,32 @@ jobs:
         shell: pwsh
         run: ./deploy/windows/Publish-HC360.ps1 -Configuration Release
 
+      # HC360 Desktop updates itself from the Server Node only with a package HyFib signed (SRS DED-18). The key is the
+      # HC360_RELEASE_SIGNING_KEY secret, which the script reads from its environment; without it the release is built
+      # unsigned, and the job summary says so. tests/deploy/Test-ReleaseSigning.ps1 tests the script with a throwaway key.
+      - name: Sign the HC360 Desktop package
+        id: sign
+        shell: pwsh
+        env:
+          HC360_RELEASE_SIGNING_KEY: ${{ secrets.HC360_RELEASE_SIGNING_KEY }}
+        run: ./tools/release/Sign-HC360Release.ps1 -ArtifactsDir artifacts
+
+      # Signed, the package must verify with the keys built into this release, as the server and the workstations check
+      # it: a key not yet added to ReleaseKeys.cs fails the release instead of shipping a package no workstation takes.
+      - name: Check the signature with the release keys HC360 trusts
+        if: steps.sign.outputs.signed == 'true'
+        shell: pwsh
+        env:
+          DESKTOP_PACKAGE: ${{ steps.sign.outputs.package }}
+        run: |
+          & artifacts/server/HyFib.HealthCare360.Server.exe desktop verify --package $env:DESKTOP_PACKAGE
+          if ($LASTEXITCODE -ne 0) { throw 'The signed HC360 Desktop package does not verify with the release keys built into this version (ReleaseKeys.cs).' }
+
       - name: Attach packages to the GitHub release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
             artifacts/*.zip
+            artifacts/*.manifest.json
+            artifacts/*.manifest.sig
             artifacts/SHA256SUMS.txt

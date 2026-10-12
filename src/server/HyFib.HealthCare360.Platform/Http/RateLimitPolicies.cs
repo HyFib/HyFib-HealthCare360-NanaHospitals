@@ -20,6 +20,12 @@ public static class RateLimitPolicies
     /// </summary>
     public const string Device = "device";
 
+    /// <summary>
+    /// HC360 Desktop's self-update (SRS DED-18): 30 requests in 15 minutes per device credential (<c>X-Device-Key</c>),
+    /// enough to check for a package and download it in a few pieces, not to pull the package over and over.
+    /// </summary>
+    public const string DesktopUpdate = "desktop-update";
+
     private const string DeviceKeyHeader = "X-Device-Key";
     private const string DeviceSerialHeader = "X-Device-Serial";
 

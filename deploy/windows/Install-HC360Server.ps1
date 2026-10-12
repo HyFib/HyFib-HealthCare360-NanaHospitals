@@ -29,6 +29,10 @@
       lab agent on 7360. With -LabPorts it also opens the ports network analysers connect
       to (Lab setup > Analysers > Connection), limited to -LabAnalyserAddresses when given.
     - Tunes the machine for an always-on WiFi server: no sleep/hibernate, WiFi adapter never powered down.
+    - Offers the release's HC360 Desktop package to the enrolled workstations, which then update themselves from the
+      server (SRS DED-18): HC360-Desktop-<version>-win-x64.zip, with its .manifest.json and .manifest.sig, from beside
+      the server package (the folder it was extracted to, or the one above), or from -DesktopPackage. The server takes
+      it in only when HyFib signed it (desktop publish); otherwise workstations are upgraded with Install-HC360Desktop.ps1.
     - Starts the service, waits until it is healthy and prints the CA fingerprint staff will verify on workstations.
 
 .EXAMPLE
@@ -61,7 +65,9 @@ param(
     # The analysers' fixed IP addresses, so only they can reach those ports.
     [string[]] $LabAnalyserAddresses,
     # How the service signs in to PostgreSQL: with its Windows account (no password anywhere), or with a password.
-    [ValidateSet('Windows', 'Password')] [string] $DatabaseSignIn = 'Windows'
+    [ValidateSet('Windows', 'Password')] [string] $DatabaseSignIn = 'Windows',
+    # The HC360 Desktop package to offer to workstations, when it is not beside the server package.
+    [string] $DesktopPackage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -145,6 +151,21 @@ function Set-RestartOnFailure([string] $Name) {
 # The triggers of the database watchdog task: every minute from now for as long as Windows runs, and at each start-up.
 function New-EveryMinuteTriggers {
     return @((New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)), (New-ScheduledTaskTrigger -AtStartup))
+}
+
+# The newest HC360 Desktop package of a release beside the server package (SRS DED-18): in the folder the server package
+# was extracted to, or the one above it, where the release's files were downloaded. Null when there is none. Whether it
+# is signed is for the server to check (desktop publish).
+function Find-DesktopPackage([string] $PackagePath) {
+    $pattern = '^HC360-Desktop-(?<numbers>\d+\.\d+\.\d+(?:\.\d+)?)(?:-[0-9A-Za-z.-]+)?-win-[a-z0-9]+\.zip$'
+    $extracted = Split-Path -Parent ([System.IO.Path]::GetFullPath($PackagePath))
+    $folders = @($extracted, (Split-Path -Parent $extracted)) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -Unique
+    $found = @(foreach ($folder in $folders) {
+            Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $pattern }
+        })
+    if ($found.Count -eq 0) { return $null }
+    $newest = $found | Sort-Object -Property @{ Expression = { $null = $_.Name -match $pattern; [version] $Matches['numbers'] } }, Name -Descending | Select-Object -First 1
+    return $newest.FullName
 }
 
 function Set-RestrictedAcl([string] $Path, [switch] $ServiceWrite) {
@@ -574,6 +595,24 @@ $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOn
 Register-ScheduledTask -TaskName 'HC360 disk encryption check' -TaskPath '\HyFib\' -Action $taskAction -Trigger $taskTriggers `
     -Principal $taskPrincipal -Settings $taskSettings -Force `
     -Description 'Records whether BitLocker protects the disks of the HC360 Server Node, for System health (SRS SEC-05).' | Out-Null
+
+# ---------------------------------------------------------------- HC360 Desktop for the workstations (SRS DED-18)
+# Workstations update themselves from the server, which needs HC360 Desktop's package for that: the one the release has
+# beside the server package. The server checks HyFib's signature before it takes the package in, and nothing changes
+# when it refuses one: the workstations then keep their version until Install-HC360Desktop.ps1 upgrades them.
+if (-not $DesktopPackage) { $DesktopPackage = Find-DesktopPackage $PackagePath }
+if ($DesktopPackage) {
+    Write-Step "Offering $(Split-Path -Leaf $DesktopPackage) to the workstations"
+    & $exe desktop publish --package $DesktopPackage --data-dir $DataDir | ForEach-Object { Write-Host "    $_" }
+    switch ($LASTEXITCODE) {
+        0 { }
+        2 { Write-Warning 'The server does not offer this HC360 Desktop package to workstations (the reason is above). Upgrade them with Install-HC360Desktop.ps1, or offer a signed package later with: HyFib.HealthCare360.Server.exe desktop publish --package <zip>' }
+        default { Write-Warning "The HC360 Desktop package could not be offered to workstations (exit code $LASTEXITCODE)." }
+    }
+}
+else {
+    Write-Host '==> No HC360 Desktop package beside the server package: workstations are not offered an update. Offer one with: HyFib.HealthCare360.Server.exe desktop publish --package <zip>' -ForegroundColor Cyan
+}
 
 # ---------------------------------------------------------------- firewall
 if (-not $SkipFirewall) {
