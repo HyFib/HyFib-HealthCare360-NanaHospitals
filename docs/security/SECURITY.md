@@ -37,6 +37,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - The firewall opens only the HTTPS ports of the staff app (7360) and the patient portal (7361), and mDNS, and only on
   Private/Domain networks. PostgreSQL listens on localhost only. Network lab analysers need their own ports, which the
   installer opens only when asked (`-LabPorts`), limited to the analysers' addresses.
+- **A warm standby** (SRS DED-20, optional) is the one machine let in to PostgreSQL from the network, and only once
+  `Enable-HC360Replication.ps1` names its address: `pg_hba.conf` and the firewall take the account `hc360_replicator`
+  from that address alone, over TLS (`hostssl`), with a SCRAM password; the account can stream the database and open
+  none of it. The standby trusts exactly the primary's own PostgreSQL certificate (`sslmode=verify-ca`). Its PostgreSQL
+  listens on localhost only, and HC360 there is disabled and refuses to start on a database in recovery. The standby
+  holds every patient record, so it needs the primary's physical security and BitLocker.
 - **Network lab analysers** cannot sign in: HL7 (MLLP) and ASTM have no authentication. Each one's address is
   therefore its check (ASVS V13.2.1): its connection must list its fixed IP address, and its port closes a connection
   from any other address before reading a byte. A connection set up before the address was required takes any address:
@@ -475,6 +481,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
 | Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years |
+| Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby or replacement hardware; kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
+| PostgreSQL TLS certificate (warm standby) | `hc360-server.key` in PostgreSQL's data folder, copied to the standby with the database | File permissions: PostgreSQL's service account and Administrators | The replication stream between the Server Nodes | Made by `Enable-HC360Replication.ps1`, valid 10 years; made again when it is within 30 days of expiry (copy the new `hc360-server.crt` to the standby) |
+| Replication password (warm standby) | On the primary, only its SCRAM verifier, in PostgreSQL; on the standby, `hc360-standby\replication.pgpass` beside the data folder; the hospital's password safe | File permissions on the standby: PostgreSQL's service account and Administrators | Streaming the database to the standby's address | Run `Enable-HC360Replication.ps1` with a new password, then `New-HC360Standby.ps1` with it |
 | Database sign-in | None: the service's Windows account (`NT SERVICE\HC360Server`, SSPI), which `pg_hba.conf` and `pg_ident.conf` allow from this machine only | Windows | The server's PostgreSQL account | Nothing to rotate. Where the server signs in with a password instead (PostgreSQL on another machine), the password is in `config\hc360.settings.json` under machine DPAPI, and changed from System health every year or when someone who knew it leaves |
 | Integration credentials (SMS, WhatsApp, e-mail, payment, AI) | Secret settings in the database | The data encryption key | Each provider's API | At the provider, then saved in Administration › Settings |
 | Desktop and lab agent device secrets | Each workstation | DPAPI (user or machine) | A device's sign-in | Revoke and enrol the device again |
