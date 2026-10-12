@@ -640,8 +640,9 @@ machine only. The standby holds every patient record: protect it as the primary 
    account; a replication slot through which the standby streams, so the primary keeps the changes the standby has
    not received while it is away (up to 20 GB, `-StandbyWalLimitGB`); TLS for PostgreSQL with a certificate of its own
    (`hc360-server.crt` in PostgreSQL's data folder; its key is readable only by PostgreSQL's service account and
-   Administrators); the rule in `pg_hba.conf`, between `# BEGIN HC360 replication` and `# END HC360 replication`; and
-   the firewall rule. PostgreSQL restarts once, and HC360 is unavailable for those seconds. It prints the
+   Administrators); the rules in `pg_hba.conf`, between `# BEGIN HC360 replication` and `# END HC360 replication`, which
+   take the account from the standby's address over TLS for replication and refuse it every database; and the firewall
+   rule. PostgreSQL restarts once, and HC360 is unavailable for those seconds. It prints the
    certificate's fingerprint. Run it again whenever you like: it writes the same settings.
 
 3. On the primary, export the hospital CA, which HC360 Desktop and the lab agents trust:

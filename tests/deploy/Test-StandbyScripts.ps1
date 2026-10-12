@@ -79,22 +79,30 @@ $hba = Set-HbaBlock @(
     'host    all       all   ::1/128        scram-sha-256'
 ) 'hc360_app' 'hc360'
 $rule = 'hostssl   replication   hc360_replicator   10.0.5.12/32   scram-sha-256'
+$block = @('# BEGIN HC360 replication. Enable-HC360Replication.ps1 writes this block on every run: changes to it are lost.',
+    '# The warm standby streams this server''s WAL as hc360_replicator, from its address only, over TLS, with its password; the account opens no database.',
+    $rule,
+    'host      all           hc360_replicator   all              reject',
+    'local     all           hc360_replicator                    reject',
+    '# END HC360 replication')
 $once = Set-ReplicationHbaBlock $hba 'hc360_replicator' '10.0.5.12'
-Assert ((($once[0..($hba.Count - 1)]) -join "`n") -ceq ($hba -join "`n")) 'the rules already there stay as they were'
-Assert ((($once[$hba.Count..($once.Count - 1)]) -join "`n") -ceq ((@('# BEGIN HC360 replication. Enable-HC360Replication.ps1 writes this block on every run: changes to it are lost.',
-            '# The warm standby streams this server''s WAL as hc360_replicator, from its address only, over TLS, with its password.', $rule, '# END HC360 replication')) -join "`n")) 'the block goes last, and takes the replication account from the standby''s address alone, over TLS, with its password'
+$start = [array]::IndexOf($once, $block[0])
+Assert ($start -eq 9) 'the block goes after the comments at the top and the installer''s block, before the first rule'
+Assert ((($once[$start..($start + 5)]) -join "`n") -ceq ($block -join "`n")) 'it takes the replication account from the standby''s address alone, over TLS, with its password, and refuses it every database'
+Assert ((($once[0..($start - 1)] + $once[($start + 6)..($once.Count - 1)]) -join "`n") -ceq ($hba -join "`n")) 'the rest of the file stays as it was'
 Assert (((Set-ReplicationHbaBlock $once 'hc360_replicator' '10.0.5.12') -join "`n") -ceq ($once -join "`n")) 'a second run writes the same file'
 $moved = Set-ReplicationHbaBlock $once 'hc360_replicator' '10.0.5.13'
 Assert (((@($moved | Where-Object { $_ -like 'hostssl*' })) -join "`n") -ceq 'hostssl   replication   hc360_replicator   10.0.5.13/32   scram-sha-256') 'a new standby address replaces the old one'
 Assert (((@(Set-ReplicationHbaBlock $hba 'hc360_replicator' 'fd00::12') | Where-Object { $_ -like 'hostssl*' }) -join '') -like '*fd00::12/128*') 'an IPv6 address is one address too'
 Assert (((Remove-ReplicationHbaBlock $once) -join "`n") -ceq ($hba -join "`n")) 'removing the block gives back the file as it was'
 Assert ((Get-OtherReplicationRules $once).Count -eq 0) 'no other rule takes replication connections'
-Assert (Test-Throws { Remove-ReplicationHbaBlock @($once[0..($once.Count - 2)]) } "without its '# END HC360 replication' line") 'a block without its END line stops the script instead of losing the rules after it'
+Assert (Test-Throws { Remove-ReplicationHbaBlock @($once | Where-Object { $_ -ne '# END HC360 replication' }) } "without its '# END HC360 replication' line") 'a block without its END line stops the script instead of losing the rules after it'
 Assert (Test-Throws { Set-ReplicationHbaBlock $hba 'hc360 replicator' '10.0.5.12' } 'cannot be named') 'an account name pg_hba.conf would read differently is refused'
 # PostgreSQL's own default file has rules for replication from this machine: the standby's goes before them.
 $withDefaults = @($hba) + @('local   replication   all                  scram-sha-256', 'host    replication   all   127.0.0.1/32   scram-sha-256')
 $beforeDefaults = Set-ReplicationHbaBlock $withDefaults 'hc360_replicator' '10.0.5.12'
-Assert ([array]::IndexOf($beforeDefaults, $rule) -lt [array]::IndexOf($beforeDefaults, 'local   replication   all                  scram-sha-256')) 'it goes before the first rule for replication connections, which PostgreSQL would follow first'
+Assert ([array]::IndexOf($beforeDefaults, $rule) -lt [array]::IndexOf($beforeDefaults, 'local   replication   all                  scram-sha-256')) 'it goes before the rules for replication connections, which PostgreSQL would follow first'
+Assert ([array]::IndexOf($beforeDefaults, $block[3]) -lt [array]::IndexOf($beforeDefaults, 'host    all       all   127.0.0.1/32   scram-sha-256')) 'and its refusal before the rules that take every account with a password'
 Assert ((Get-OtherReplicationRules $beforeDefaults).Count -eq 2) 'the other replication rules are found, for a warning'
 # The installer writes its block again on every run, and must not touch this one; nor this script the installer's.
 $installerAgain = Set-HbaBlock $once 'hc360_app' 'hc360'
@@ -102,7 +110,12 @@ Assert (($installerAgain -join "`n") -ceq ($once -join "`n")) 'Install-HC360Serv
 Assert (((Remove-InstallerBlock $once 'pg_hba.conf') -join "`n") -ceq ((Set-ReplicationHbaBlock (Remove-InstallerBlock $hba 'pg_hba.conf') 'hc360_replicator' '10.0.5.12') -join "`n")) 'removing the installer''s block keeps the replication block'
 $replicationFirst = Set-HbaBlock (Set-ReplicationHbaBlock (@('# PostgreSQL Client Authentication', 'host replication all 10.0.0.0/8 reject') + @($hba[2..($hba.Count - 1)])) 'hc360_replicator' '10.0.5.12') 'hc360_app' 'hc360'
 $begin = [array]::IndexOf($replicationFirst, ($replicationFirst | Where-Object { $_ -like '# BEGIN HC360 replication*' }))
-Assert ($replicationFirst[$begin + 2] -ceq $rule -and $replicationFirst[$begin + 3] -ceq '# END HC360 replication') 'the installer''s block never lands inside the replication block, even when that comes first'
+Assert ((($replicationFirst[$begin..($begin + 5)]) -join "`n") -ceq ($block -join "`n")) 'the installer''s block never lands inside the replication block, even when that comes first'
+$fresh = @('# top', 'local all all scram-sha-256')
+$mineFirst = Set-HbaBlock (Set-ReplicationHbaBlock $fresh 'hc360_replicator' '10.0.5.12') 'hc360_app' 'hc360'
+$installerFirst = Set-ReplicationHbaBlock (Set-HbaBlock $fresh 'hc360_app' 'hc360') 'hc360_replicator' '10.0.5.12'
+Assert (($mineFirst -join "`n") -ceq ($installerFirst -join "`n")) 'run in either order, the two scripts leave the same file'
+Assert (((Set-ReplicationHbaBlock (Set-HbaBlock $mineFirst 'hc360_app' 'hc360') 'hc360_replicator' '10.0.5.12') -join "`n") -ceq ($mineFirst -join "`n")) 'and run again, they change nothing'
 
 Write-Host 'postgresql.conf on the primary'
 Assert ((Add-ListenAddress 'localhost' '10.0.5.11') -ceq 'localhost,10.0.5.11') 'the address towards the standby is added, localhost kept'

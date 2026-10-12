@@ -20,7 +20,8 @@
         certificate: copy hc360-server.crt to it.
       - Adds this machine's address towards the standby to listen_addresses, keeping localhost.
       - Writes one block in pg_hba.conf, between "# BEGIN HC360 replication" and "# END HC360 replication":
-        hostssl replication hc360_replicator <standby address>/32 scram-sha-256.
+        hostssl replication hc360_replicator <standby address>/32 scram-sha-256, and rules that refuse the account every
+        database.
       - Opens TCP 5432 in Windows Firewall for PostgreSQL, from the standby's address only, on Private and Domain networks.
       - With -WalArchiveDirectory, archives every finished WAL file there (archive_mode, archive_command, archive_timeout of
         15 minutes). Off by default. -NoWalArchive turns it off again.
@@ -184,25 +185,32 @@ function ConvertTo-ScramVerifier([string] $Password, [byte[]] $Salt, [int] $Iter
     return 'SCRAM-SHA-256${0}:{1}${2}:{3}' -f $Iterations, [Convert]::ToBase64String($Salt), [Convert]::ToBase64String($keys.StoredKey), [Convert]::ToBase64String($keys.ServerKey)
 }
 
-# pg_hba.conf with the block that takes the replication account from $StandbyAddress alone, over TLS, with its password.
-# It goes before the first rule for replication connections, or last when there is none: PostgreSQL follows the first
-# rule a connection matches, and rules for "all" databases do not match replication. It is marked apart from
-# Install-HC360Server.ps1's block, which that installer writes again on every run.
+# pg_hba.conf with the block that takes the replication account from $StandbyAddress alone, over TLS, with its password,
+# and refuses it every database, from anywhere. PostgreSQL follows the first rule a connection matches, so the block goes
+# before the first rule (rules for "all" databases do not match replication, so the refusal leaves streaming alone). It
+# goes after the comments at the top and after another script's marked block there, such as Install-HC360Server.ps1's,
+# which that installer puts before this one: run in either order, the two scripts leave the file the same.
 function Set-ReplicationHbaBlock([string[]] $Lines, [string] $Role, [string] $StandbyAddress) {
     if ($Role -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { throw "The account '$Role' cannot be named in pg_hba.conf as it is." }
     $address = [System.Net.IPAddress]::Parse($StandbyAddress)
     $prefix = if ($address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6) { 128 } else { 32 }
     $block = @(
         '# BEGIN HC360 replication. Enable-HC360Replication.ps1 writes this block on every run: changes to it are lost.',
-        "# The warm standby streams this server's WAL as $Role, from its address only, over TLS, with its password.",
+        "# The warm standby streams this server's WAL as $Role, from its address only, over TLS, with its password; the account opens no database.",
         "hostssl   replication   $Role   $address/$prefix   scram-sha-256",
+        "host      all           $Role   all              reject",
+        "local     all           $Role                    reject",
         '# END HC360 replication'
     )
     $rest = Remove-ReplicationHbaBlock $Lines
-    $at = $rest.Count
-    for ($i = 0; $i -lt $rest.Count; $i++) {
-        $fields = @($rest[$i].Trim() -split '\s+')
-        if ($rest[$i] -notmatch '^\s*(#|$)' -and $fields.Count -ge 2 -and (@($fields[1] -split ',') -contains 'replication')) { $at = $i; break }
+    $at = 0
+    while ($at -lt $rest.Count) {
+        if ($rest[$at].StartsWith('# BEGIN ')) {
+            while ($at -lt $rest.Count -and -not $rest[$at].StartsWith('# END ')) { $at++ }
+            $at++
+        }
+        elseif ($rest[$at] -match '^\s*(#|$)') { $at++ }
+        else { break }
     }
     # In @(), so that one line is an array of one, not a string the block would be added to.
     $head = @(if ($at -gt 0) { $rest[0..($at - 1)] })
