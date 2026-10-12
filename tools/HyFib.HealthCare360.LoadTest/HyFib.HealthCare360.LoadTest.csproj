@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Load test of a running HC360 server against the SRS §7.3 targets (docs/testing/LOAD-TESTS.md). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>HyFib.HealthCare360.LoadTest</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HyFib.HealthCare360.LoadTest.Tests" />
+    <InternalsVisibleTo Include="HyFib.HealthCare360.IntegrationTests" />
+  </ItemGroup>
+</Project>

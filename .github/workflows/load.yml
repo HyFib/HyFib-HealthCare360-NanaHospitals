@@ -1,0 +1,140 @@
+name: Load test
+
+# How the server performs at the SRS 7.3 targets, with the load test in tools/HyFib.HealthCare360.LoadTest
+# (docs/testing/LOAD-TESTS.md). GitHub's runners are shared machines, nothing like a hospital's Server Node, and the
+# load test runs on the same one as the server and PostgreSQL: the figures here are only reported, in the run's
+# summary. The job fails when requests fail or the load test itself breaks. The figures that decide go-live come from
+# a run against a test Server Node on the hospital's hardware.
+on:
+  workflow_dispatch:
+    inputs:
+      patients:
+        description: Synthetic patients to add before the run
+        default: "100000"
+      users:
+        description: Virtual users
+        default: "75"
+      minutes:
+        description: Minutes to measure, after a minute of starting users
+        default: "5"
+  schedule:
+    # Mondays at 02:00 IST, so a change that slows the server shows within a week.
+    - cron: "30 20 * * 0"
+  # A change to the load test itself is tried on a smaller register before it merges.
+  pull_request:
+    paths:
+      - tools/HyFib.HealthCare360.LoadTest/**
+      - src/server/Modules/HyFib.HealthCare360.Modules.Patients/Seed/LoadTestPatients.cs
+      - src/server/HyFib.HealthCare360.Server/LoadTestCli.cs
+      - .github/workflows/load.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  load:
+    name: Load test (figures reported, not enforced)
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      PATIENTS: ${{ inputs.patients || (github.event_name == 'schedule' && '100000' || '20000') }}
+      USERS: ${{ inputs.users || '75' }}
+      MINUTES: ${{ inputs.minutes || (github.event_name == 'schedule' && '5' || '2') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Build the server and the load test
+        run: |
+          dotnet build src/server/HyFib.HealthCare360.Server/HyFib.HealthCare360.Server.csproj -c Release
+          dotnet build tools/HyFib.HealthCare360.LoadTest/HyFib.HealthCare360.LoadTest.csproj -c Release
+
+      # Windows runners come with PostgreSQL installed (service stopped), as in ci.yml. The server does not create its
+      # database (Install-HC360Server.ps1 -CreateDatabase does): an empty one is made here, as the tests do, and the
+      # server's migrations fill it, as the superuser.
+      - name: Start PostgreSQL
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name 'postgresql*' | Select-Object -First 1
+          Set-Service -InputObject $service -StartupType Manual
+          Start-Service -InputObject $service
+          & (Join-Path $env:PGBIN 'pg_isready.exe') -h localhost -p 5432 -t 60
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL did not start.' }
+          $user = if ($env:PGUSER) { $env:PGUSER } else { 'postgres' }
+          if (-not $env:PGPASSWORD) { $env:PGPASSWORD = 'root' }
+          & (Join-Path $env:PGBIN 'psql.exe') -h localhost -p 5432 -U $user -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE hc360_load ENCODING 'UTF8'"
+          if ($LASTEXITCODE -ne 0) { throw 'The database could not be created.' }
+
+      # One step: the runner ends every process a step started when the step ends, so the server must run in the step
+      # that uses it. A test server with demonstration data, run as in production and configured through environment
+      # variables only; the load test's accounts get a password new for every run. The data folder is named without the
+      # HC360_ prefix: the server finds its folder (and the settings file in it) before it reads the HC360_ variables.
+      - name: Start the server, add synthetic patients and run the load test
+        shell: pwsh
+        run: |
+          $password = 'Load-' + [guid]::NewGuid().ToString('N')
+          "::add-mask::$password"
+          $user = if ($env:PGUSER) { $env:PGUSER } else { 'postgres' }
+          $pgPassword = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
+          $env:HC360_ConnectionStrings__Hospital = "Host=localhost;Port=5432;Username=$user;Password=$pgPassword;Database=hc360_load;Maximum Pool Size=200"
+          $env:HealthCare360__DataDirectory = Join-Path $env:RUNNER_TEMP 'hc360'
+          $env:HC360_HealthCare360__SeedDemoData = 'true'
+          $env:HC360_HealthCare360__Security__EnforceMfa = 'false'
+          $env:HC360_HealthCare360__Network__EnableMdns = 'false'
+          $env:HC360_HealthCare360__Network__EnableWifiMonitor = 'false'
+          $env:HC360_HealthCare360__Backup__Enabled = 'false'
+          $env:HC360_HealthCare360__Backup__BeforeMigrations = 'false'
+          $env:HC360_LOADTEST_PASSWORD = $password
+
+          $server = (Resolve-Path 'src/server/HyFib.HealthCare360.Server/bin/Release/net10.0/HyFib.HealthCare360.Server.exe').Path
+          $log = Join-Path $env:RUNNER_TEMP 'hc360-server.log'
+          $process = Start-Process -FilePath $server -RedirectStandardOutput $log -RedirectStandardError "$log.err" -WindowStyle Hidden -PassThru
+          try {
+            $deadline = (Get-Date).AddMinutes(5)
+            do {
+              Start-Sleep -Seconds 3
+              try { $ready = (Invoke-WebRequest -Uri 'https://localhost:7360/health/ready' -SkipCertificateCheck -TimeoutSec 5).StatusCode -eq 200 } catch { $ready = $false }
+            } until ($ready -or $process.HasExited -or (Get-Date) -gt $deadline)
+            if (-not $ready) { throw 'The server was not ready within 5 minutes.' }
+
+            # The hospital CA, from the server, as a workstation gets it: the load test trusts the server only through it.
+            $ca = Join-Path $env:RUNNER_TEMP 'hc360-hospital-ca.crt'
+            Invoke-WebRequest -Uri 'https://localhost:7360/api/v1/system/ca-certificate' -SkipCertificateCheck -OutFile $ca
+
+            & $server loadtest patients --count $env:PATIENTS
+            if ($LASTEXITCODE -ne 0) { throw "Adding synthetic patients failed (exit code $LASTEXITCODE)." }
+
+            # Front Office accounts the virtual users share, about ten users to one, as each may make 200 requests in 10 s.
+            $accounts = (& $server loadtest accounts --count 8 | Select-Object -Last 1)
+            if ($LASTEXITCODE -ne 0) { throw "Making the load test's accounts failed (exit code $LASTEXITCODE)." }
+            $report = Join-Path $env:RUNNER_TEMP 'load-test.md'
+            & 'tools/HyFib.HealthCare360.LoadTest/bin/Release/net10.0/HyFib.HealthCare360.LoadTest.exe' run `
+              --server https://localhost:7360/ --ca $ca `
+              --accounts $accounts --test-server `
+              --users $env:USERS --ramp 1m --duration "$($env:MINUTES)m" --targets report --report $report
+            $code = $LASTEXITCODE
+            if (Test-Path $report) {
+              Get-Content $report | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+              "_$env:PATIENTS synthetic patients; GitHub runner: figures for comparison between runs, not the hospital's targets._" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            }
+            if ($code -ne 0) { throw "The load test failed (exit code $code)." }
+          }
+          finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+
+      - name: Show the server's log
+        if: failure()
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'hc360-server.log'
+          Get-Content $log, "$log.err" -ErrorAction SilentlyContinue | Select-Object -Last 200

@@ -97,7 +97,7 @@ internal static class CatalogueCli
     /// The server's services without its web host, configured from the same files as the Windows service (appsettings,
     /// hc360.settings.json beside the data, HC360_ environment variables). Nothing is started: no listener, no jobs.
     /// </summary>
-    private static WebApplication BuildApplication()
+    internal static WebApplication BuildApplication()
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory });
         var options = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? new PlatformOptions();
