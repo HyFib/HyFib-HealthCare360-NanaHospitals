@@ -152,7 +152,8 @@ describe('a dialog form with unsaved changes', () => {
 
     await userEvent.keyboard('{Escape}');
     const question = await screen.findByRole('alertdialog', { name: 'Discard your changes?' });
-    expect(screen.getByRole('dialog', { name: 'Add a note' })).toBeInTheDocument();
+    // Still open behind the question, which hides it from screen readers (Tabster) while it is up.
+    expect(screen.getByRole('dialog', { name: 'Add a note', hidden: true })).toBeInTheDocument();
     await waitFor(() => expect(within(question).getByRole('button', { name: 'Keep editing' })).toHaveFocus());
 
     await userEvent.keyboard('{Escape}');
@@ -203,7 +204,8 @@ describe('a dialog form with unsaved changes', () => {
 
     expect(onClosed).not.toHaveBeenCalled();
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: 'Add a note' })).toBeInTheDocument();
+    // Tabster shows the dialog to screen readers again a moment after the question closes.
+    expect(await screen.findByRole('dialog', { name: 'Add a note' })).toBeInTheDocument();
   });
 
   it('counts as unsaved for leaving the screen until it is saved', async () => {
@@ -343,7 +345,8 @@ describe('a dialog opened through the address', () => {
       await userEvent.click(within(question).getByRole('button', { name: 'Stay' }));
 
       await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
-      expect(screen.getByRole('textbox', { name: 'Note' })).toHaveValue('Allergic to latex');
+      // Tabster shows the dialog to screen readers again a moment after the question closes.
+      expect(await screen.findByRole('textbox', { name: 'Note' })).toHaveValue('Allergic to latex');
     } finally {
       router.history.destroy();
     }
