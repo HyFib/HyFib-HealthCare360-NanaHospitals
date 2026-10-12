@@ -47,6 +47,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -219,12 +220,16 @@ export function DonorDrawer({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {donor ? `${donor.fullName} · ${donor.donorNumber}` : 'Register donor'}
           </DrawerHeaderTitle>
@@ -307,9 +312,10 @@ export function DonorDrawer({
           >
             {donor ? 'Save' : 'Register donor'}
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }
@@ -427,8 +433,10 @@ export function ScreeningDialog({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: !result && form.formState.isDirty, busy: screen.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !screen.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 1000, width: '95vw' }}>
         {result ? (
           <DialogBody>
@@ -464,7 +472,7 @@ export function ScreeningDialog({
             </DialogContent>
             <DialogActions>
               {/* Takes focus from Save screening, which the result replaces. */}
-              <Button onClick={onClose} autoFocus>
+              <Button onClick={guard.requestClose} autoFocus>
                 Close
               </Button>
               {result.outcome === 'Eligible' && onCollect && (
@@ -595,7 +603,7 @@ export function ScreeningDialog({
                 <ActionError error={screen.error} />
               </DialogContent>
               <DialogActions>
-                <Button onClick={onClose} disabled={screen.isPending}>
+                <Button onClick={guard.requestClose} disabled={screen.isPending}>
                   Cancel
                 </Button>
                 <Button
@@ -612,6 +620,7 @@ export function ScreeningDialog({
             </DialogBody>
           </form>
         )}
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -713,8 +722,10 @@ export function CollectDialog({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: collect.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !collect.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720 }}>
         <form onSubmit={form.handleSubmit((v) => !stale && !collect.isPending && collect.mutate(v))} noValidate>
           <DialogBody>
@@ -803,7 +814,7 @@ export function CollectDialog({
               <ActionError error={collect.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={collect.isPending}>
+              <Button onClick={guard.requestClose} disabled={collect.isPending}>
                 Cancel
               </Button>
               <Button
@@ -820,6 +831,7 @@ export function CollectDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -866,8 +878,10 @@ export function DeferDialog({ donor, onClose }: { donor: DonorDetail; onClose: (
       applyFormErrors(error, form.setError);
     },
   });
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: defer.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !defer.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form onSubmit={form.handleSubmit((v) => !defer.isPending && defer.mutate(v))} noValidate>
           <DialogBody>
@@ -881,7 +895,7 @@ export function DeferDialog({ donor, onClose }: { donor: DonorDetail; onClose: (
               <ActionError error={defer.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={defer.isPending}>
+              <Button onClick={guard.requestClose} disabled={defer.isPending}>
                 Cancel
               </Button>
               <Button
@@ -897,6 +911,7 @@ export function DeferDialog({ donor, onClose }: { donor: DonorDetail; onClose: (
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

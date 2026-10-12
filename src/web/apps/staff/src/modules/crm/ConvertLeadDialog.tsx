@@ -21,7 +21,7 @@ import {
 } from '@fluentui/react-components';
 import { CalendarAddRegular, CheckmarkCircleRegular } from '@fluentui/react-icons';
 import { isApiError, todayIso, type Gender } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -63,9 +63,12 @@ const useStyles = makeStyles({
  * duplicate check), then book the appointment. Booking an appointment for the lead's number also converts it.
  */
 export function ConvertLeadDialog({ open, onClose, lead }: { open: boolean; onClose: () => void; lead: LeadDetail }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 640 }}>{open && <Body onClose={onClose} lead={lead} />}</DialogSurface>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
+      <DialogSurface style={{ maxWidth: 640 }}>
+        <CloseRequestScope value={closing}>{open && <Body onClose={onClose} lead={lead} />}</CloseRequestScope>
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -136,6 +139,9 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
     });
   };
 
+  const changed = useValuesChanged({ mode, patient, gender, dateOfBirth, age });
+  const guard = useUnsavedChanges({ dirty: changed && !result, busy, onClose });
+
   if (result) {
     return (
       <DialogBody>
@@ -182,118 +188,121 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
   }
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-      noValidate
-    >
-      <DialogBody>
-        <DialogTitle>
-          Convert {lead.name}
-          <Caption1 block>{lead.leadNumber}</Caption1>
-        </DialogTitle>
-        <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <RadioGroup value={mode} onChange={(_, d) => setMode(d.value as 'existing' | 'register')}>
-            {canRegister && <Radio value="register" label="Register as a new patient (issues a UHID)" />}
-            <Radio value="existing" label="Link to an already registered patient" />
-          </RadioGroup>
-          {mode === 'existing' ? (
-            <PatientPicker value={patient} onChange={setPatient} required />
-          ) : (
-            <>
-              <Caption1>Name, mobile, email and city are taken from the lead.</Caption1>
-              <Field label="Gender" required>
-                <RadioGroup layout="horizontal" value={gender} onChange={(_, d) => setGender(d.value as Gender)}>
-                  <Radio value="Female" label="Female" />
-                  <Radio value="Male" label="Male" />
-                  <Radio value="Other" label="Other" />
-                </RadioGroup>
-              </Field>
-              <div className={styles.row}>
-                <Field label="Date of birth">
-                  <Input
-                    type="date"
-                    value={dateOfBirth}
-                    max={todayIso()}
-                    onChange={(_, d) => setDateOfBirth(d.value)}
-                  />
+    <>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+        noValidate
+      >
+        <DialogBody>
+          <DialogTitle>
+            Convert {lead.name}
+            <Caption1 block>{lead.leadNumber}</Caption1>
+          </DialogTitle>
+          <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <RadioGroup value={mode} onChange={(_, d) => setMode(d.value as 'existing' | 'register')}>
+              {canRegister && <Radio value="register" label="Register as a new patient (issues a UHID)" />}
+              <Radio value="existing" label="Link to an already registered patient" />
+            </RadioGroup>
+            {mode === 'existing' ? (
+              <PatientPicker value={patient} onChange={setPatient} required />
+            ) : (
+              <>
+                <Caption1>Name, mobile, email and city are taken from the lead.</Caption1>
+                <Field label="Gender" required>
+                  <RadioGroup layout="horizontal" value={gender} onChange={(_, d) => setGender(d.value as Gender)}>
+                    <Radio value="Female" label="Female" />
+                    <Radio value="Male" label="Male" />
+                    <Radio value="Other" label="Other" />
+                  </RadioGroup>
                 </Field>
-                <Text>or</Text>
-                <Field label="Age (years)">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={130}
-                    value={age}
-                    disabled={Boolean(dateOfBirth)}
-                    onChange={(_, d) => setAge(d.value)}
-                  />
-                </Field>
-              </div>
-            </>
-          )}
-          {error && (
-            <MessageBar intent="error">
-              <MessageBarBody>{error}</MessageBarBody>
-            </MessageBar>
-          )}
-          {candidates && (
-            <MessageBar intent="warning" layout="multiline">
-              <MessageBarBody>
-                <MessageBarTitle>This person may already be registered</MessageBarTitle>
-                Registering the same person twice splits their medical history. Use the existing record if it is the
-                same person.
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-                  {candidates.map((c) => (
-                    <div key={c.id} className={styles.candidate}>
-                      <span>
-                        <Text weight="semibold">{c.fullName}</Text>
-                        <Caption1 block>
-                          {c.uhid} · {c.age ?? '—'} / {c.gender.charAt(0)}
-                          {c.phoneMasked ? ` · ${c.phoneMasked}` : ''} · {c.reason}
-                        </Caption1>
-                      </span>
-                      <Button
-                        size="small"
-                        disabled={busy}
-                        onClick={() => void convert({ patientId: c.id, registerPatient: null, appointmentId: null })}
-                      >
-                        Use this patient
-                      </Button>
-                    </div>
-                  ))}
+                <div className={styles.row}>
+                  <Field label="Date of birth">
+                    <Input
+                      type="date"
+                      value={dateOfBirth}
+                      max={todayIso()}
+                      onChange={(_, d) => setDateOfBirth(d.value)}
+                    />
+                  </Field>
+                  <Text>or</Text>
+                  <Field label="Age (years)">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={130}
+                      value={age}
+                      disabled={Boolean(dateOfBirth)}
+                      onChange={(_, d) => setAge(d.value)}
+                    />
+                  </Field>
                 </div>
-              </MessageBarBody>
-            </MessageBar>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          {candidates ? (
-            <Button
-              appearance="primary"
-              disabled={busy}
-              icon={busy ? <Spinner size="tiny" /> : undefined}
-              onClick={() => submit(true)}
-            >
-              It is a different person, register
+              </>
+            )}
+            {error && (
+              <MessageBar intent="error">
+                <MessageBarBody>{error}</MessageBarBody>
+              </MessageBar>
+            )}
+            {candidates && (
+              <MessageBar intent="warning" layout="multiline">
+                <MessageBarBody>
+                  <MessageBarTitle>This person may already be registered</MessageBarTitle>
+                  Registering the same person twice splits their medical history. Use the existing record if it is the
+                  same person.
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                    {candidates.map((c) => (
+                      <div key={c.id} className={styles.candidate}>
+                        <span>
+                          <Text weight="semibold">{c.fullName}</Text>
+                          <Caption1 block>
+                            {c.uhid} · {c.age ?? '—'} / {c.gender.charAt(0)}
+                            {c.phoneMasked ? ` · ${c.phoneMasked}` : ''} · {c.reason}
+                          </Caption1>
+                        </span>
+                        <Button
+                          size="small"
+                          disabled={busy}
+                          onClick={() => void convert({ patientId: c.id, registerPatient: null, appointmentId: null })}
+                        >
+                          Use this patient
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </MessageBarBody>
+              </MessageBar>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={guard.requestClose} disabled={busy}>
+              Cancel
             </Button>
-          ) : (
-            <Button
-              type="submit"
-              appearance="primary"
-              disabled={busy}
-              icon={busy ? <Spinner size="tiny" /> : undefined}
-            >
-              {mode === 'register' ? 'Register and convert' : 'Convert'}
-            </Button>
-          )}
-        </DialogActions>
-      </DialogBody>
-    </form>
+            {candidates ? (
+              <Button
+                appearance="primary"
+                disabled={busy}
+                icon={busy ? <Spinner size="tiny" /> : undefined}
+                onClick={() => submit(true)}
+              >
+                It is a different person, register
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={busy}
+                icon={busy ? <Spinner size="tiny" /> : undefined}
+              >
+                {mode === 'register' ? 'Register and convert' : 'Convert'}
+              </Button>
+            )}
+          </DialogActions>
+        </DialogBody>
+      </form>
+      {guard.dialogs}
+    </>
   );
 }

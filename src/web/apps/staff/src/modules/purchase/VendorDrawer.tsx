@@ -24,6 +24,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
@@ -211,12 +212,16 @@ function VendorForm({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open position="end" size="large" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {vendor ? vendor.name : 'Add vendor'}
           </DrawerHeaderTitle>
@@ -345,9 +350,10 @@ function VendorForm({
               {vendor ? 'Save' : 'Add vendor'}
             </Button>
           )}
-          <Button onClick={onClose}>{canManage ? 'Cancel' : 'Close'}</Button>
+          <Button onClick={guard.requestClose}>{canManage ? 'Cancel' : 'Close'}</Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

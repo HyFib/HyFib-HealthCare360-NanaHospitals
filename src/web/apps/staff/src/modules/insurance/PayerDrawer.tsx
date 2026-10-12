@@ -22,6 +22,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -143,12 +144,16 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {payer ? payer.name : 'Add a payer'}
           </DrawerHeaderTitle>
@@ -233,11 +238,12 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
           >
             {payer ? 'Save' : 'Add payer'}
           </Button>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

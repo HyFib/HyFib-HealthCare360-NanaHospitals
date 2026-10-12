@@ -20,11 +20,14 @@ import { formatTime, isApiError, useSession } from '@hc360/core';
 import {
   applyServerErrors,
   ChoiceField,
+  CloseRequestScope,
   FormGrid,
   SelectField,
   SwitchField,
   TextAreaField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -79,10 +82,13 @@ export function CheckInAppointmentDialog({
   appointment: AppointmentRef | null;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={appointment !== null} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={appointment !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
-        {appointment && <CheckInContent key={appointment.id} appointment={appointment} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {appointment && <CheckInContent key={appointment.id} appointment={appointment} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -137,6 +143,12 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
         notify.error(error, 'Could not check the patient in');
       }
     },
+  });
+
+  const guard = useUnsavedChanges({
+    dirty: form.formState.isDirty && result === null,
+    busy: checkIn.isPending,
+    onClose,
   });
 
   if (result) {
@@ -259,7 +271,7 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
           </div>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={checkIn.isPending}>
+          <Button onClick={guard.requestClose} disabled={checkIn.isPending}>
             Cancel
           </Button>
           <Button
@@ -275,6 +287,7 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

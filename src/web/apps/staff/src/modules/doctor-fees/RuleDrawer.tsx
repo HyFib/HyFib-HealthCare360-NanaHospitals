@@ -22,7 +22,7 @@ import {
 } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { todayIso, useDebouncedValue, type PayerType } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { searchServices } from '@/modules/billing/api';
@@ -119,8 +119,14 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ doctor, scope, service, category, payerType, method, value, from, to, active, notes }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -132,7 +138,9 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
       >
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {rule ? 'Sharing rule' : 'Add a sharing rule'}
           </DrawerHeaderTitle>
@@ -261,11 +269,12 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
           >
             {rule ? 'Save rule' : 'Add rule'}
           </Button>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

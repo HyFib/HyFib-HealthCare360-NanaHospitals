@@ -19,7 +19,7 @@ import {
 } from '@fluentui/react-components';
 import { ArrowLeftRegular, LockClosedRegular } from '@fluentui/react-icons';
 import { isApiError } from '@hc360/core';
-import { EmptyState } from '@hc360/ui';
+import { EmptyState, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
@@ -159,8 +159,13 @@ export function WidgetEditorDialog({
     });
   };
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ reportId, title, view, width, parameters }),
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface className={styles.surface}>
         <DialogBody>
           <DialogTitle>{initial ? 'Change tile' : 'Add a tile'}</DialogTitle>
@@ -233,12 +238,13 @@ export function WidgetEditorDialog({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose}>Cancel</Button>
+            <Button onClick={guard.requestClose}>Cancel</Button>
             <Button appearance="primary" disabled={!report || invalid} onClick={save}>
               {initial ? 'Update tile' : 'Add tile'}
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

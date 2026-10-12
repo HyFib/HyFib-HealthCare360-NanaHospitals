@@ -26,7 +26,18 @@ import {
 } from '@fluentui/react-components';
 import { ArrowUndoRegular, DismissRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, isApiError, todayIso, useDebouncedValue } from '@hc360/core';
-import { DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  ErrorState,
+  FilterBar,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
@@ -352,8 +363,10 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
       [id]: { quantity: prev[id]?.quantity ?? '', restock: prev[id]?.restock ?? true, ...patch },
     }));
 
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ lines, reason }), busy: submit.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !submit.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 780, width: '95vw' }}>
         <DialogBody>
           <DialogTitle>Take back from the ward</DialogTitle>
@@ -426,7 +439,7 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={submit.isPending}>
+            <Button onClick={guard.requestClose} disabled={submit.isPending}>
               Cancel
             </Button>
             <Button
@@ -439,6 +452,7 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

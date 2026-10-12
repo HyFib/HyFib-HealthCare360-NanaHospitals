@@ -14,7 +14,16 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, todayIso } from '@hc360/core';
-import { applyServerErrors, DateField, FormGrid, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  CloseRequestScope,
+  DateField,
+  FormGrid,
+  TextAreaField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -49,9 +58,16 @@ type Values = z.infer<typeof schema>;
 
 /** Periodic re-assessment: new scores, controls in place and the next review date. */
 export function RiskReviewDialog({ open, onClose, risk }: { open: boolean; onClose: () => void; risk: RiskDetail }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 640 }}>{open && <Body onClose={onClose} risk={risk} />}</DialogSurface>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
+      <DialogSurface style={{ maxWidth: 640 }}>
+        {open && (
+          <CloseRequestScope value={closing}>
+            <Body onClose={onClose} risk={risk} />
+          </CloseRequestScope>
+        )}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -140,6 +156,8 @@ function Body({ onClose, risk }: { onClose: () => void; risk: RiskDetail }) {
   const inherent = riskScore(l, i);
   const residual = rl && ri ? riskScore(rl, ri) : null;
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
+
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate>
       <DialogBody>
@@ -186,7 +204,7 @@ function Body({ onClose, risk }: { onClose: () => void; risk: RiskDetail }) {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
@@ -194,6 +212,7 @@ function Body({ onClose, risk }: { onClose: () => void; risk: RiskDetail }) {
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

@@ -13,7 +13,16 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime } from '@hc360/core';
-import { applyServerErrors, SelectField, SwitchField, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  CloseRequestScope,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -52,10 +61,13 @@ export function CancelAppointmentDialog({
   appointment: AppointmentRef | null;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={appointment !== null} onOpenChange={(_, data) => !data.open && onClose()} modalType="alert">
+    <Dialog open={appointment !== null} onOpenChange={closing.onOpenChange} modalType="alert">
       <DialogSurface style={{ maxWidth: 520 }}>
-        {appointment && <CancelContent key={appointment.id} appointment={appointment} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {appointment && <CancelContent key={appointment.id} appointment={appointment} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -91,6 +103,8 @@ function CancelContent({ appointment, onClose }: { appointment: AppointmentRef; 
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: cancel.isPending, onClose });
+
   return (
     <form
       onSubmit={form.handleSubmit((values) => !cancel.isPending && cancel.mutate(values))}
@@ -125,7 +139,7 @@ function CancelContent({ appointment, onClose }: { appointment: AppointmentRef; 
           </div>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={cancel.isPending}>
+          <Button onClick={guard.requestClose} disabled={cancel.isPending}>
             Keep appointment
           </Button>
           <Button
@@ -141,6 +155,7 @@ function CancelContent({ appointment, onClose }: { appointment: AppointmentRef; 
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

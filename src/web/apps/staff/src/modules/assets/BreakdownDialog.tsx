@@ -21,7 +21,7 @@ import {
 } from '@fluentui/react-components';
 import { WrenchRegular } from '@fluentui/react-icons';
 import { isApiError, type PagedResult } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/lib/api';
@@ -76,6 +76,7 @@ export function BreakdownDialog({
   const [priority, setPriority] = useState<TicketPriority | ''>('');
   const [down, setDown] = useState(false);
   const valid = asset !== null && issue.trim().length >= 5;
+  const dirty = useValuesChanged({ asset, issue, priority, down });
 
   const report = useMutation({
     mutationFn: () =>
@@ -98,8 +99,10 @@ export function BreakdownDialog({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty, busy: report.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !report.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 620, width: '95vw' }}>
         <DialogBody>
           <DialogTitle>Report equipment breakdown</DialogTitle>
@@ -206,7 +209,7 @@ export function BreakdownDialog({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={report.isPending}>
+            <Button onClick={guard.requestClose} disabled={report.isPending}>
               Cancel
             </Button>
             <Button
@@ -219,6 +222,7 @@ export function BreakdownDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

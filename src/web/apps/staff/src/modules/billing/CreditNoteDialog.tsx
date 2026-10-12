@@ -15,7 +15,7 @@ import {
   Textarea,
 } from '@fluentui/react-components';
 import { formatInr } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { billingApi, type BillDetail } from './api';
@@ -74,8 +74,15 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ kind, amount, reason }, open),
+    busy: issue.isPending,
+    open,
+    onClose,
+  });
+
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && !issue.isPending && onClose()} modalType="alert">
+    <Dialog open={open} onOpenChange={guard.onOpenChange} modalType="alert">
       <DialogSurface style={{ maxWidth: 540 }}>
         <form
           onSubmit={(event) => {
@@ -124,7 +131,7 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
               <ActionError error={issue.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={issue.isPending}>
+              <Button onClick={guard.requestClose} disabled={issue.isPending}>
                 Cancel
               </Button>
               <Button
@@ -140,6 +147,7 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

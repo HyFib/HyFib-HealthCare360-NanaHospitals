@@ -14,7 +14,7 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, isApiError } from '@hc360/core';
-import { TextField } from '@hc360/ui';
+import { CloseRequestScope, TextField, useCloseRequests, useUnsavedChanges } from '@hc360/ui';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -111,10 +111,13 @@ export function BreachStepDialog({
   command: BreachCommand;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={kind !== null} onOpenChange={(_, d) => !d.open && !command.busy && onClose()}>
+    <Dialog open={kind !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
-        {kind && <StepBody kind={kind} breach={breach} command={command} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {kind && <StepBody kind={kind} breach={breach} command={command} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -174,6 +177,8 @@ function StepBody({
     }
   };
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: command.busy, onClose });
+
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate>
       <DialogBody>
@@ -211,7 +216,7 @@ function StepBody({
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={command.busy}>
+          <Button onClick={guard.requestClose} disabled={command.busy}>
             Cancel
           </Button>
           <Button
@@ -224,6 +229,7 @@ function StepBody({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

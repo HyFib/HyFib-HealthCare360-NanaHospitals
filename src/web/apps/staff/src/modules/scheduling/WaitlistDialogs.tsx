@@ -22,12 +22,15 @@ import { formatDateTime, formatTime } from '@hc360/core';
 import {
   applyServerErrors,
   ChoiceField,
+  CloseRequestScope,
   DateField,
   FormGrid,
   SelectField,
   SwitchField,
   TextAreaField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -124,10 +127,13 @@ export function AddToWaitlistDialog({
   defaults?: WaitlistDefaults;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
-        {open && <AddToWaitlistContent defaults={defaults} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {open && <AddToWaitlistContent defaults={defaults} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -185,6 +191,8 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
       }
     },
   });
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: add.isPending, onClose });
 
   return (
     <form onSubmit={form.handleSubmit((v) => add.mutate(v))} noValidate>
@@ -261,7 +269,7 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
           </div>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={add.isPending}>
+          <Button onClick={guard.requestClose} disabled={add.isPending}>
             Cancel
           </Button>
           <Button
@@ -274,6 +282,7 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }
@@ -290,10 +299,13 @@ export function BookFromWaitlistDialog({
   onClose: () => void;
   onBooked: (appointment: AppointmentDetail) => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={entry !== null} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={entry !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 880, width: '100%' }}>
-        {entry && <BookFromWaitlistContent key={entry.id} entry={entry} onClose={onClose} onBooked={onBooked} />}
+        <CloseRequestScope value={closing}>
+          {entry && <BookFromWaitlistContent key={entry.id} entry={entry} onClose={onClose} onBooked={onBooked} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -342,6 +354,8 @@ function BookFromWaitlistContent({
   });
 
   const expired = entry.preferredTo < today;
+
+  const guard = useUnsavedChanges({ dirty: reason !== '', busy: book.isPending, onClose });
 
   return (
     <form
@@ -424,7 +438,7 @@ function BookFromWaitlistContent({
           </div>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={book.isPending}>
+          <Button onClick={guard.requestClose} disabled={book.isPending}>
             Cancel
           </Button>
           <Button
@@ -437,6 +451,7 @@ function BookFromWaitlistContent({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

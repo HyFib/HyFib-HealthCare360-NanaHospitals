@@ -21,6 +21,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
@@ -128,13 +129,10 @@ export function EditAdmissionDrawer({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, open, onClose });
+
   return (
-    <OverlayDrawer
-      open={open}
-      position="end"
-      size="medium"
-      onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}
-    >
+    <OverlayDrawer open={open} position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form
         onSubmit={form.handleSubmit((values) => !save.isPending && save.mutate(values))}
         noValidate
@@ -142,7 +140,9 @@ export function EditAdmissionDrawer({
       >
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             Edit admission {admission.admissionNumber}
           </DrawerHeaderTitle>
@@ -224,9 +224,10 @@ export function EditAdmissionDrawer({
           >
             Save
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

@@ -28,6 +28,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -342,12 +343,16 @@ export function ConnectionDrawer({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
+    <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             Connection: {instrument.name}
           </DrawerHeaderTitle>
@@ -412,7 +417,7 @@ export function ConnectionDrawer({
               Remove
             </Button>
           )}
-          <Button onClick={onClose}>{canEdit ? 'Cancel' : 'Close'}</Button>
+          <Button onClick={guard.requestClose}>{canEdit ? 'Cancel' : 'Close'}</Button>
         </DrawerFooter>
       </form>
       <ConfirmDialog
@@ -427,6 +432,7 @@ export function ConnectionDrawer({
         HC360 stops receiving results from this analyser. Orders waiting for it are not sent. The analyser stays in Lab
         setup.
       </ConfirmDialog>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

@@ -20,7 +20,16 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, LockClosedRegular } from '@fluentui/react-icons';
 import { formatRelative } from '@hc360/core';
-import { DataTable, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  FilterBar,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
@@ -199,8 +208,14 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
     onError: (error) => notify.error(error, 'Could not save the setting'),
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ key, secret, raw, description }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
         <DialogBody>
           <DialogTitle>{setting ? setting.key : 'Add setting'}</DialogTitle>
@@ -257,7 +272,7 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose}>Cancel</Button>
+            <Button onClick={guard.requestClose}>Cancel</Button>
             <Button
               appearance="primary"
               disabled={!keyValid || save.isPending || keepSecret}
@@ -267,6 +282,7 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -20,7 +20,18 @@ import {
 import { PeopleAddRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatPhone, isApiError } from '@hc360/core';
-import { ChoiceField, DataTable, EmptyState, SelectField, StatusBadge, TextField, useNotify } from '@hc360/ui';
+import {
+  ChoiceField,
+  CloseRequestScope,
+  DataTable,
+  EmptyState,
+  SelectField,
+  StatusBadge,
+  TextField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -248,10 +259,13 @@ function ShareDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
-        {open && <ShareForm patientId={patientId} ownPhone={ownPhone} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {open && <ShareForm patientId={patientId} ownPhone={ownPhone} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -297,6 +311,8 @@ export function ShareForm({
       setProblems(other);
     },
   });
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
 
   return (
     <form
@@ -381,7 +397,7 @@ export function ShareForm({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
@@ -394,6 +410,7 @@ export function ShareForm({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

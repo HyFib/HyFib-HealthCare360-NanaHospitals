@@ -22,7 +22,14 @@ import {
 } from '@fluentui/react-components';
 import { DismissRegular, PeopleAddRegular, PersonDeleteRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError } from '@hc360/core';
-import { DataTable, Section } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  DataTable,
+  Section,
+  useCloseRequests,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
@@ -188,10 +195,13 @@ export function AffectedPeople({
 
 function AddPeopleDialog({ open, breachId, onClose }: { open: boolean; breachId: string; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 620 }}>
-        {open && <AddPeopleBody breachId={breachId} busy={busy} setBusy={setBusy} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {open && <AddPeopleBody breachId={breachId} busy={busy} setBusy={setBusy} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -241,6 +251,8 @@ function AddPeopleBody({
       setBusy(false);
     }
   };
+
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ chosen, pasted }) && result === null, busy, onClose });
 
   return (
     <form
@@ -327,7 +339,7 @@ function AddPeopleBody({
           </Caption1>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             {result ? 'Done' : 'Cancel'}
           </Button>
           <Button
@@ -340,6 +352,7 @@ function AddPeopleBody({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

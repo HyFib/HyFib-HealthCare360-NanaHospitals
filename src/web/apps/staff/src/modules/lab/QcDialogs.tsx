@@ -36,6 +36,8 @@ import {
   SwitchField,
   TextField,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -165,12 +167,16 @@ export function QcLotDrawer({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
+    <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {lot ? `Control lot ${lot.lotNumber}` : 'Register a control lot'}
           </DrawerHeaderTitle>
@@ -256,9 +262,10 @@ export function QcLotDrawer({
           >
             {lot ? 'Save' : 'Register lot'}
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }
@@ -308,12 +315,18 @@ export function QcRunDialog({ lot, onClose }: { lot: RunLot; onClose: () => void
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ value, runAt }) && recorded === null,
+    busy: record.isPending,
+    onClose,
+  });
+
   if (recorded && reviewing) {
     return <QcReviewDialog run={recorded} testName={lot.testName} onClose={onClose} />;
   }
 
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !record.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         {recorded ? (
           <DialogBody>
@@ -426,7 +439,7 @@ export function QcRunDialog({ lot, onClose }: { lot: RunLot; onClose: () => void
                 </Field>
               </DialogContent>
               <DialogActions>
-                <Button onClick={onClose} disabled={record.isPending}>
+                <Button onClick={guard.requestClose} disabled={record.isPending}>
                   Cancel
                 </Button>
                 <Button
@@ -443,6 +456,7 @@ export function QcRunDialog({ lot, onClose }: { lot: RunLot; onClose: () => void
             </DialogBody>
           </form>
         )}
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -469,8 +483,10 @@ export function QcReviewDialog({ run, testName, onClose }: { run: QcRunDto; test
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ note, action }), busy: review.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !review.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <form
           onSubmit={(event) => {
@@ -525,7 +541,7 @@ export function QcReviewDialog({ run, testName, onClose }: { run: QcRunDto; test
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={review.isPending}>
+              <Button onClick={guard.requestClose} disabled={review.isPending}>
                 Cancel
               </Button>
               <Button
@@ -541,6 +557,7 @@ export function QcReviewDialog({ run, testName, onClose }: { run: QcRunDto; test
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

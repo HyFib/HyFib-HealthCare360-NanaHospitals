@@ -17,7 +17,7 @@ import {
   Textarea,
 } from '@fluentui/react-components';
 import { formatDateOnly, formatInr, isApiError, todayIso } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { addDays, parseNumber } from '@/modules/inventory/format';
@@ -40,6 +40,7 @@ function FormDialog({
   children,
   submitLabel,
   valid,
+  dirty,
   busy,
   error,
   onSubmit,
@@ -50,14 +51,17 @@ function FormDialog({
   children: ReactNode;
   submitLabel: string;
   valid: boolean;
+  /** The form has unsaved changes: closing it asks first (SRS UX-08). */
+  dirty: boolean;
   busy: boolean;
   error: unknown;
   onSubmit: () => void;
   onClose: () => void;
   width?: number;
 }) {
+  const guard = useUnsavedChanges({ dirty, busy, onClose });
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: width, width: '95vw' }}>
         <form
           onSubmit={(event) => {
@@ -78,7 +82,7 @@ function FormDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={busy}>
+              <Button onClick={guard.requestClose} disabled={busy}>
                 Cancel
               </Button>
               <Button
@@ -94,6 +98,7 @@ function FormDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -119,6 +124,7 @@ export function PmPlanDialog({
   const [checklist, setChecklist] = useState(plan?.checklist ?? '');
   const [assignedTo, setAssignedTo] = useState(plan?.assignedTo ?? '');
   const [active, setActive] = useState(plan?.isActive ?? true);
+  const dirty = useValuesChanged({ title, frequency, nextDue, checklist, assignedTo, active });
   const days = parseNumber(frequency) ?? 0;
   const valid = title.trim().length > 0 && Number.isInteger(days) && days >= 1 && days <= 3650 && Boolean(nextDue);
   const save = useMutation({
@@ -144,6 +150,7 @@ export function PmPlanDialog({
       title={plan ? 'Edit maintenance plan' : 'Add a maintenance plan'}
       submitLabel="Save"
       valid={valid}
+      dirty={dirty}
       busy={save.isPending}
       error={save.error}
       onSubmit={() => save.mutate()}
@@ -194,6 +201,7 @@ export function PmVisitDialog({
   const [outcome, setOutcome] = useState<PmVisitOutcome>('Completed');
   const [findings, setFindings] = useState('');
   const [cost, setCost] = useState('');
+  const dirty = useValuesChanged({ visitDate, performedBy, vendor, outcome, findings, cost });
   const costValue = parseNumber(cost) ?? 0;
   const valid = Boolean(visitDate) && visitDate <= today && costValue >= 0;
   const save = useMutation({
@@ -223,6 +231,7 @@ export function PmVisitDialog({
       title={`Record visit: ${plan.title}`}
       submitLabel="Record visit"
       valid={valid}
+      dirty={dirty}
       busy={save.isPending}
       error={save.error}
       onSubmit={() => save.mutate()}
@@ -288,6 +297,7 @@ export function CalibrationDialog({
   const [nextDue, setNextDue] = useState(addDays(today, 365));
   const [outcome, setOutcome] = useState<CalibrationResult>('Pass');
   const [remarks, setRemarks] = useState('');
+  const dirty = useValuesChanged({ calibratedOn, agency, certificate, nextDue, outcome, remarks });
   const valid =
     Boolean(calibratedOn) &&
     calibratedOn <= today &&
@@ -321,6 +331,7 @@ export function CalibrationDialog({
       title={`Record calibration: ${asset.name}`}
       submitLabel="Record"
       valid={valid}
+      dirty={dirty}
       busy={save.isPending}
       error={save.error}
       onSubmit={() => save.mutate()}
@@ -392,6 +403,7 @@ export function ContractDialog({
   const [end, setEnd] = useState(contract?.endDate ?? addDays(today, 364));
   const [cost, setCost] = useState(contract ? String(contract.cost) : '');
   const [coverage, setCoverage] = useState(contract?.coverageNotes ?? '');
+  const dirty = useValuesChanged({ type, vendor, number, start, end, cost, coverage });
   const costValue = parseNumber(cost) ?? 0;
   const valid = Boolean(start) && Boolean(end) && end > start && costValue >= 0;
   const save = useMutation({
@@ -420,6 +432,7 @@ export function ContractDialog({
       title={contract ? 'Edit maintenance contract' : 'Add maintenance contract'}
       submitLabel="Save"
       valid={valid}
+      dirty={dirty}
       busy={save.isPending}
       error={save.error}
       onSubmit={() => save.mutate()}
@@ -480,6 +493,7 @@ export function DisposeDialog({
   const [date, setDate] = useState(today);
   const [value, setValue] = useState('');
   const [method, setMethod] = useState('');
+  const dirty = useValuesChanged({ date, value, method });
   const amount = parseNumber(value) ?? 0;
   const valid = Boolean(date) && amount >= 0 && method.trim().length > 0;
   const dispose = useMutation({
@@ -495,6 +509,7 @@ export function DisposeDialog({
       title={`Dispose of ${asset.name}?`}
       submitLabel="Record disposal"
       valid={valid}
+      dirty={dirty}
       busy={dispose.isPending}
       error={dispose.error}
       onSubmit={() => dispose.mutate()}

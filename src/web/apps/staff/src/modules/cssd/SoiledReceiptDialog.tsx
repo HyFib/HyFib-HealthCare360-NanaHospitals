@@ -23,7 +23,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatDate, isApiError } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
@@ -161,8 +161,14 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ departmentId, handedOverBy, notes, trays }),
+    busy: receive.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !receive.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 860, width: '100%' }}>
         <form
           onSubmit={(event) => {
@@ -358,7 +364,7 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={receive.isPending}>
+              <Button onClick={guard.requestClose} disabled={receive.isPending}>
                 Cancel
               </Button>
               <Button
@@ -372,6 +378,7 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

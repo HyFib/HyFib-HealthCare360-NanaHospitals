@@ -16,7 +16,17 @@ import {
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, FormGrid, SelectField, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  CloseRequestScope,
+  FormGrid,
+  SelectField,
+  SwitchField,
+  TextField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -61,9 +71,16 @@ export function IncidentEditDialog({
   onClose: () => void;
   incident: IncidentDetail;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 760 }}>{open && <Body onClose={onClose} incident={incident} />}</DialogSurface>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
+      <DialogSurface style={{ maxWidth: 760 }}>
+        {open && (
+          <CloseRequestScope value={closing}>
+            <Body onClose={onClose} incident={incident} />
+          </CloseRequestScope>
+        )}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -130,6 +147,8 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
       setBusy(false);
     }
   };
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
 
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate>
@@ -232,7 +251,7 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
@@ -240,6 +259,7 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

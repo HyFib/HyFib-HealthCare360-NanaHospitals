@@ -36,6 +36,8 @@ import {
   Section,
   StatusBadge,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
@@ -281,8 +283,25 @@ function IssuePassDialog({ onClose, onIssued }: { onClose: () => void; onIssued:
     onError: (error) => notify.error(error, 'Could not issue the pass'),
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({
+      patient,
+      visitorName,
+      phone,
+      relation,
+      idProofType,
+      idProofNumber,
+      purpose,
+      location,
+      isAttendant,
+      validHours,
+    }),
+    busy: issue.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
         <DialogBody>
           <DialogTitle>Issue visitor pass</DialogTitle>
@@ -346,7 +365,7 @@ function IssuePassDialog({ onClose, onIssued }: { onClose: () => void; onIssued:
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose}>Cancel</Button>
+            <Button onClick={guard.requestClose}>Cancel</Button>
             <Button
               appearance="primary"
               disabled={!visitorName.trim() || phoneInvalid || issue.isPending}
@@ -356,6 +375,7 @@ function IssuePassDialog({ onClose, onIssued }: { onClose: () => void; onIssued:
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

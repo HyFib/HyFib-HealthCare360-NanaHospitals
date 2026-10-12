@@ -35,7 +35,19 @@ import {
   todayIso,
   useDebouncedValue,
 } from '@hc360/core';
-import { DataTable, FilterBar, FormGrid, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  DataTable,
+  FilterBar,
+  FormGrid,
+  Page,
+  PageHeader,
+  Section,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -83,9 +95,12 @@ function NewBatchDrawer({
   onClose: () => void;
   onBooked: (result: CorporateBatchResult, people: PickedPatient[]) => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <OverlayDrawer open={open} position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
-      {open && <NewBatchForm onClose={onClose} onBooked={onBooked} />}
+    <OverlayDrawer open={open} position="end" size="large" onOpenChange={closing.onOpenChange}>
+      <CloseRequestScope value={closing}>
+        {open && <NewBatchForm onClose={onClose} onBooked={onBooked} />}
+      </CloseRequestScope>
     </OverlayDrawer>
   );
 }
@@ -148,11 +163,19 @@ function NewBatchForm({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ corporateName, contactPerson, contactPhone, reference, packageId, date, notes, people }),
+    busy: book.isPending,
+    onClose,
+  });
+
   return (
     <>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           New corporate batch
         </DrawerHeaderTitle>
@@ -254,8 +277,9 @@ function NewBatchForm({
         >
           Book {people.length} {people.length === 1 ? 'employee' : 'employees'}
         </Button>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={guard.requestClose}>Cancel</Button>
       </DrawerFooter>
+      {guard.dialogs}
     </>
   );
 }

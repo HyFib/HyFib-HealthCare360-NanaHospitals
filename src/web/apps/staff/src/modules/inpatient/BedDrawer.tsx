@@ -38,7 +38,7 @@ import {
   WrenchRegular,
 } from '@fluentui/react-icons';
 import { formatDate, formatDateOnly, formatDateTime, formatRelative, humanize, isApiError } from '@hc360/core';
-import { ConfirmDialog, useNotify } from '@hc360/ui';
+import { ConfirmDialog, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState, type ReactElement, type ReactNode } from 'react';
@@ -448,8 +448,14 @@ function ReserveDialog({
   });
   const valid = patient !== null && fromIstInput(until) !== null;
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ patient, until, note }),
+    busy: reserve.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !reserve.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -494,7 +500,7 @@ function ReserveDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={reserve.isPending}>
+              <Button onClick={guard.requestClose} disabled={reserve.isPending}>
                 Cancel
               </Button>
               <Button
@@ -508,6 +514,7 @@ function ReserveDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

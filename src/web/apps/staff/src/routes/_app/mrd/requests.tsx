@@ -19,6 +19,7 @@ import {
 import { AddRegular, ArrowUndoRegular, DismissRegular, SendRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
 import {
+  CloseRequestScope,
   ConfirmDialog,
   DataTable,
   FilterBar,
@@ -27,7 +28,10 @@ import {
   PageHeader,
   Section,
   StatusBadge,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -75,9 +79,16 @@ function statusTone(status: RecordRequestStatus): 'warning' | 'brand' | 'success
 }
 
 function NewRequestDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 620 }}>{open && <NewRequestForm onClose={onClose} />}</DialogSurface>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
+      <DialogSurface style={{ maxWidth: 620 }}>
+        {open && (
+          <CloseRequestScope value={closing}>
+            <NewRequestForm onClose={onClose} />
+          </CloseRequestScope>
+        )}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -109,6 +120,12 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
     onError: (error) => notify.error(error, 'Could not record the request'),
   });
   const valid = Boolean(patient) && requestedBy.trim().length > 0;
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ patient, requestedBy, department, purpose, details }),
+    busy: create.isPending,
+    onClose,
+  });
+
   return (
     <DialogBody>
       <DialogTitle>New record request</DialogTitle>
@@ -150,7 +167,7 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
         </Field>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={create.isPending}>
+        <Button onClick={guard.requestClose} disabled={create.isPending}>
           Cancel
         </Button>
         <Button
@@ -162,6 +179,7 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
           Record request
         </Button>
       </DialogActions>
+      {guard.dialogs}
     </DialogBody>
   );
 }

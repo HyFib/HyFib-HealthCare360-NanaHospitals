@@ -17,7 +17,16 @@ import {
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDate } from '@hc360/core';
-import { DataTable, FormGrid, NumberField, Section, StatusBadge, TextField, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  FormGrid,
+  NumberField,
+  Section,
+  StatusBadge,
+  TextField,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -228,8 +237,10 @@ function RegisterDialyzerDialog({ patientId, onClose }: { patientId: string; onC
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: register.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <form onSubmit={form.handleSubmit((v) => register.mutate(v))} noValidate>
           <DialogBody>
@@ -259,7 +270,7 @@ function RegisterDialyzerDialog({ patientId, onClose }: { patientId: string; onC
               <ActionError error={register.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={register.isPending}>
+              <Button onClick={guard.requestClose} disabled={register.isPending}>
                 Cancel
               </Button>
               <Button
@@ -273,6 +284,7 @@ function RegisterDialyzerDialog({ patientId, onClose }: { patientId: string; onC
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

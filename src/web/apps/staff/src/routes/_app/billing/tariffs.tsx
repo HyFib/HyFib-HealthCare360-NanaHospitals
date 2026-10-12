@@ -33,6 +33,8 @@ import {
   PageHeader,
   Section,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -430,8 +432,14 @@ function PriceDialog({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ service, amount, from, to }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -494,7 +502,7 @@ function PriceDialog({
               <ActionError error={save.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button
@@ -508,6 +516,7 @@ function PriceDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

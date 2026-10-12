@@ -24,6 +24,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr } from '@hc360/core';
 import {
   applyServerErrors,
+  CloseRequestScope,
   DateField,
   FormGrid,
   LoadingState,
@@ -31,7 +32,10 @@ import {
   SelectField,
   SwitchField,
   TextAreaField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
@@ -83,10 +87,13 @@ export function SalaryStructureDialog({
   employeeName: string;
   current: SalaryStructureDto | null;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 860, width: '100%' }}>
-        {open && <Body onClose={onClose} employeeId={employeeId} employeeName={employeeName} current={current} />}
+        <CloseRequestScope value={closing}>
+          {open && <Body onClose={onClose} employeeId={employeeId} employeeName={employeeName} current={current} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -265,6 +272,9 @@ function StructureForm({
     </Table>
   );
 
+  const valuesChanged = useValuesChanged(values);
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty || valuesChanged, busy, onClose });
+
   return (
     <form onSubmit={form.handleSubmit(onValid)} noValidate>
       <DialogBody>
@@ -343,7 +353,7 @@ function StructureForm({
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
@@ -351,6 +361,7 @@ function StructureForm({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

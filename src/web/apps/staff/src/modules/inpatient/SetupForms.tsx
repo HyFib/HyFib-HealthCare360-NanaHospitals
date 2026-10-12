@@ -30,6 +30,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
@@ -162,12 +163,16 @@ export function WardDrawer({ ward, onClose }: { ward: WardDto | null; onClose: (
     label: `${s.name} (${s.code}) · ${formatInr(s.basePrice)}/day`,
   }));
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {ward ? `Edit ${ward.name}` : 'Add ward'}
           </DrawerHeaderTitle>
@@ -255,9 +260,10 @@ export function WardDrawer({ ward, onClose }: { ward: WardDto | null; onClose: (
           >
             {ward ? 'Save' : 'Add ward'}
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }
@@ -308,8 +314,10 @@ export function RoomDialog({ wardId, room, onClose }: { wardId: string; room: Ro
     onSuccess: saved,
     onError: (error) => applyServerErrors(error, form.setError),
   });
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate>
           <DialogBody>
@@ -328,7 +336,7 @@ export function RoomDialog({ wardId, room, onClose }: { wardId: string; room: Ro
               <ServerError error={save.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button type="submit" appearance="primary" disabled={save.isPending}>
@@ -337,6 +345,7 @@ export function RoomDialog({ wardId, room, onClose }: { wardId: string; room: Ro
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -400,8 +409,10 @@ export function BedDialog({
     onSuccess: saved,
     onError: (error) => applyServerErrors(error, form.setError),
   });
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate>
           <DialogBody>
@@ -442,7 +453,7 @@ export function BedDialog({
               <ServerError error={save.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button type="submit" appearance="primary" disabled={save.isPending}>
@@ -451,6 +462,7 @@ export function BedDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -516,8 +528,10 @@ export function BulkBedsDialog({
     },
     onError: (error) => applyServerErrors(error, form.setError),
   });
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate>
           <DialogBody>
@@ -555,7 +569,7 @@ export function BulkBedsDialog({
               <ServerError error={save.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button
@@ -569,6 +583,7 @@ export function BulkBedsDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

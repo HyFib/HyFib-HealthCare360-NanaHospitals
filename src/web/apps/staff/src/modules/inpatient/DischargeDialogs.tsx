@@ -23,7 +23,7 @@ import {
 import { ArrowClockwiseRegular, ArrowExitRegular, CheckmarkCircleRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr, isApiError, todayIso } from '@hc360/core';
-import { applyServerErrors, DateField, TextAreaField, useNotify } from '@hc360/ui';
+import { applyServerErrors, DateField, TextAreaField, useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -140,8 +140,10 @@ export function InitiateDischargeDialog({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: initiate.isPending, open, onClose });
+
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !initiate.isPending && onClose()}>
+    <Dialog open={open} onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <form onSubmit={form.handleSubmit((values) => initiate.mutate(values))} noValidate>
           <DialogBody>
@@ -167,7 +169,7 @@ export function InitiateDischargeDialog({
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={initiate.isPending}>
+              <Button onClick={guard.requestClose} disabled={initiate.isPending}>
                 Cancel
               </Button>
               <Button
@@ -181,6 +183,7 @@ export function InitiateDischargeDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -277,8 +280,10 @@ export function CompleteDischargeDialog({
     onClose();
   };
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: complete.isPending, open, onClose: close });
+
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !complete.isPending && close()}>
+    <Dialog open={open} onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
         <form onSubmit={form.handleSubmit((values) => !complete.isPending && complete.mutate(values))} noValidate>
           <DialogBody>
@@ -389,7 +394,7 @@ export function CompleteDischargeDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={close} disabled={complete.isPending}>
+              <Button onClick={guard.requestClose} disabled={complete.isPending}>
                 Cancel
               </Button>
               <Button
@@ -410,6 +415,7 @@ export function CompleteDischargeDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
