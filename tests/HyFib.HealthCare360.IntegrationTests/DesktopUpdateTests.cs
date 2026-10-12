@@ -58,13 +58,15 @@ public sealed class DesktopUpdateTests : IDisposable
             (await SendAsync(path, workstation, secret)).ShouldBe(HttpStatusCode.OK, $"{path} for the enrolled workstation");
         }
 
-        // A signed-in member of staff is not a device either, and only device administrators see what is offered.
-        using (var staff = await (await _server.SignInAsync(HospitalServer.Users.FrontOffice)).SendRawAsync(HttpMethod.Get, OfferPath))
+        // A signed-in member of staff is not a device either, and only device administrators see what is offered. The
+        // sign-in comes from the test's own address, so it takes nothing from the sign-in budget other tests share.
+        var (staff, _) = await _server.SignInNewSessionAsync(HospitalServer.Users.FrontOffice);
+        using (var asked = await staff.SendRawAsync(HttpMethod.Get, OfferPath))
         {
-            staff.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+            asked.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         }
 
-        using var state = await (await _server.SignInAsync(HospitalServer.Users.FrontOffice)).SendRawAsync(HttpMethod.Get, "/api/v1/admin/devices/desktop-update");
+        using var state = await staff.SendRawAsync(HttpMethod.Get, "/api/v1/admin/devices/desktop-update");
         state.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
