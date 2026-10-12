@@ -74,8 +74,9 @@ jobs:
           & (Join-Path $env:PGBIN 'psql.exe') -h localhost -p 5432 -U $user -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE hc360_load ENCODING 'UTF8'"
           if ($LASTEXITCODE -ne 0) { throw 'The database could not be created.' }
 
-      # A test server with demonstration data and its staff accounts, configured through HC360_ variables only. The
-      # accounts' password is new for every run.
+      # A test server with demonstration data and its staff accounts, configured through environment variables only.
+      # The accounts' password is new for every run. The data folder is named without the HC360_ prefix: the server
+      # finds its folder (and the settings file in it) before it reads the HC360_ variables.
       - name: Start the HC360 server
         shell: pwsh
         run: |
@@ -85,7 +86,7 @@ jobs:
           $pgPassword = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
           $settings = @{
             'HC360_ConnectionStrings__Hospital' = "Host=localhost;Port=5432;Username=$user;Password=$pgPassword;Database=hc360_load;Maximum Pool Size=200"
-            'HC360_HealthCare360__DataDirectory' = $data
+            'HealthCare360__DataDirectory' = $data
             'HC360_HealthCare360__SeedDemoData' = 'true'
             'HC360_HealthCare360__Bootstrap__AdminPassword' = $password
             'HC360_HealthCare360__Bootstrap__RequirePasswordChange' = 'false'
@@ -101,7 +102,6 @@ jobs:
           }
           "::add-mask::$password"
           "HC360_LOADTEST_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "HC360_DATA=$data" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
           $exe = (Resolve-Path 'src/server/HyFib.HealthCare360.Server/bin/Release/net10.0/HyFib.HealthCare360.Server.exe').Path
           $log = Join-Path $env:RUNNER_TEMP 'hc360-server.log'
@@ -112,6 +112,11 @@ jobs:
             try { $ready = (Invoke-WebRequest -Uri 'https://localhost:7360/health/ready' -SkipCertificateCheck -TimeoutSec 5).StatusCode -eq 200 } catch { $ready = $false }
           } until ($ready -or (Get-Date) -gt $deadline)
           if (-not $ready) { Get-Content $log, "$log.err" -ErrorAction SilentlyContinue | Select-Object -Last 80; throw 'The server was not ready within 5 minutes.' }
+
+          # The hospital CA, from the server, as a workstation gets it: the load test trusts the server only through it.
+          $ca = Join-Path $env:RUNNER_TEMP 'hc360-hospital-ca.crt'
+          Invoke-WebRequest -Uri 'https://localhost:7360/api/v1/system/ca-certificate' -SkipCertificateCheck -OutFile $ca
+          "HC360_CA=$ca" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Add synthetic patients
         shell: pwsh
@@ -125,7 +130,7 @@ jobs:
         run: |
           $report = Join-Path $env:RUNNER_TEMP 'load-test.md'
           & 'tools/HyFib.HealthCare360.LoadTest/bin/Release/net10.0/HyFib.HealthCare360.LoadTest.exe' run `
-            --server https://localhost:7360/ --ca (Join-Path $env:HC360_DATA 'certs/hc360-hospital-ca.crt') `
+            --server https://localhost:7360/ --ca $env:HC360_CA `
             --accounts frontoffice,hospitaladmin --test-server `
             --users $env:USERS --ramp 1m --duration "$($env:MINUTES)m" --targets report --report $report
           $code = $LASTEXITCODE

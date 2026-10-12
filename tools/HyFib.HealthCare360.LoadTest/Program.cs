@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
 using System.Text.Json;
 using HyFib.HealthCare360.LoadTest;
 
@@ -27,9 +28,20 @@ Console.CancelKeyPress += (_, e) =>
     cancel.Cancel();
 };
 
+Func<bool, HttpMessageHandler> connections;
 try
 {
-    var runner = new LoadRunner(options, Connections.Factory(options.CaCertificatePath, options.Users), Console.Out);
+    connections = Connections.Factory(options.CaCertificatePath, options.Users);
+}
+catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
+{
+    await Console.Error.WriteLineAsync($"The hospital CA certificate could not be read from {options.CaCertificatePath}: {ex.Message}");
+    return 2;
+}
+
+try
+{
+    var runner = new LoadRunner(options, connections, Console.Out);
     var result = await runner.RunAsync(cancel.Token);
     var report = Results.Markdown(result);
     Console.WriteLine();
