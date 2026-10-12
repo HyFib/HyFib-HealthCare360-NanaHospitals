@@ -268,6 +268,14 @@ Without `-ServerUrl` / `-CaFingerprint`, it finds the server on the WiFi and sho
 On an all-in-one machine (server and Desktop on one computer), setup also lists "This computer" when the server
 listens on port 7360 there, because the network search does not always find the computer it runs on.
 
+HC360 Desktop remembers the addresses the server answered on, and the others the network search found for it at
+setup (its name, `name.local` and its IP addresses). When the staff app cannot load and the server has not answered
+three tries in a row, HC360 Desktop looks for it, once a minute, at those addresses, on this computer, and on the
+network (a server announcing the same certificate authority). It opens again where the server answers, says so from
+the tray, and staff sign in again. Only the hospital's server can answer: every address is checked against the pinned
+certificate authority first. A workstation whose server IT fixed with `-ServerUrl` (the machine policy) only ever uses
+that address (SRS DED-03).
+
 **Tablets and browsers**:
 1. Download `https://HC360-SRV:7360/api/v1/system/ca-certificate`.
 2. Install it as a trusted root certificate on the device (MDM or device settings).
@@ -559,7 +567,8 @@ distribution tool).
 
 | Symptom | Check |
 |---|---|
-| "Cannot reach the HealthCare360 server" on workstations | Server switched on? WiFi connected? System health on the server; client isolation on the AP |
+| "Cannot reach the HealthCare360 server" on workstations | Server switched on? WiFi connected? System health on the server; client isolation on the AP. After three tries the details line says HC360 is looking for the server at its other addresses; if the server's address changed and HC360 does not find it, use Change server… |
+| "HC360 now connects to the server at …" (tray) | The server stopped answering at its usual address, and answered at this one. Usually its IP address changed: give the server a fixed address or a DHCP reservation. The desktop log (`%LocalAppData%\HyFib\HC360Desktop\logs`) has both addresses |
 | Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal; Administration › System health shows the server's |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
