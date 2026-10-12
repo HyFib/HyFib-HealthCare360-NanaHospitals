@@ -57,8 +57,9 @@ public sealed class LoadTestTests(HospitalServer server)
         var ct = TestContext.Current.CancellationToken;
         await EnsureAccountsAsync(1);
         var frontOffice = await server.SignInAsync(account);
-        var patients = (await frontOffice.GetAsync<JsonElement>("/api/v1/patients?pageSize=5"))
-            .GetProperty("items").EnumerateArray().Select(p => p.GetProperty("id").GetGuid()).ToList();
+        // As the load test does, not VIPs, whose records open only through break-glass (other tests make some).
+        var patients = (await frontOffice.GetAsync<JsonElement>("/api/v1/patients?pageSize=50"))
+            .GetProperty("items").EnumerateArray().Where(p => !p.GetProperty("isVip").GetBoolean()).Select(p => p.GetProperty("id").GetGuid()).ToList();
         var context = new OperationContext(patients, new Random(5), () => Random.Shared.NextInt64(1, 999_999_999));
 
         foreach (var operation in Operations.All)

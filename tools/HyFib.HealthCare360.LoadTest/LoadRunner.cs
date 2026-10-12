@@ -176,7 +176,7 @@ internal sealed class LoadRunner(LoadTestOptions options, Func<bool, HttpMessage
         }
     }
 
-    /// <summary>Patients for the users to open: the latest 200 registered (the synthetic ones when there are any).</summary>
+    /// <summary>Patients for the users to open: of the latest 200 registered (the synthetic ones when there are any), those not VIPs.</summary>
     private static async Task<IReadOnlyList<Guid>> PatientsAsync(HttpClient http, string token, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/patients?pageSize=200");
@@ -188,7 +188,12 @@ internal sealed class LoadRunner(LoadTestOptions options, Func<bool, HttpMessage
         }
 
         using var page = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
-        var ids = page.RootElement.GetProperty("items").EnumerateArray().Select(p => p.GetProperty("id").GetGuid()).ToList();
+
+        // A VIP's record opens only through break-glass, with a reason: staff do not open those in passing.
+        var ids = page.RootElement.GetProperty("items").EnumerateArray()
+            .Where(p => !p.TryGetProperty("isVip", out var vip) || !vip.GetBoolean())
+            .Select(p => p.GetProperty("id").GetGuid())
+            .ToList();
         return ids.Count > 0 ? ids : throw new LoadTestException("The server has no patients to open: add some with \"HyFib.HealthCare360.Server.exe loadtest patients --count N\".");
     }
 
