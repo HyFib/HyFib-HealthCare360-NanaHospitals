@@ -180,7 +180,7 @@ function GroupDialog({ request, onClose }: { request: BloodRequestDetail; onClos
             <Button
               appearance="primary"
               disabled={!group || record.isPending}
-              icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => record.mutate()}
             >
               Save group
@@ -334,7 +334,7 @@ function CrossMatchDialog({
             <Button
               appearance="primary"
               disabled={!result || save.isPending}
-              icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => save.mutate()}
             >
               Save cross-match
@@ -507,7 +507,7 @@ function EmergencyReleaseDialog({ request, onClose }: { request: BloodRequestDet
             <Button
               appearance="primary"
               disabled={!valid || authorise.isPending}
-              icon={authorise.isPending ? <Spinner size="tiny" /> : <WarningRegular />}
+              icon={authorise.isPending ? <Spinner size="tiny" aria-hidden /> : <WarningRegular />}
               style={{ backgroundColor: tokens.colorPaletteRedBackground3 }}
               onClick={() => authorise.mutate()}
             >
@@ -705,7 +705,7 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
           appearance="primary"
           size="large"
           disabled={!u || !check?.allowed || !collector.trim() || issue.isPending}
-          icon={issue.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
+          icon={issue.isPending ? <Spinner size="tiny" aria-hidden /> : <PrintRegular />}
           onClick={submit}
         >
           Issue unit and print slip
@@ -887,7 +887,7 @@ function ReturnDialog({ issue, onClose }: { issue: BloodIssueDto; onClose: () =>
             <Button
               appearance="primary"
               disabled={accept.isPending}
-              icon={accept.isPending ? <Spinner size="tiny" /> : <ArrowUndoRegular />}
+              icon={accept.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowUndoRegular />}
               onClick={() => accept.mutate()}
             >
               Accept return

@@ -635,7 +635,7 @@ function AdmitPatientPage() {
                   appearance="primary"
                   className={styles.submit}
                   disabled={admit.isPending || Boolean(activeStay)}
-                  icon={admit.isPending ? <Spinner size="tiny" /> : <PersonAddRegular />}
+                  icon={admit.isPending ? <Spinner size="tiny" aria-hidden /> : <PersonAddRegular />}
                   aria-keyshortcuts="Control+S"
                 >
                   Admit patient

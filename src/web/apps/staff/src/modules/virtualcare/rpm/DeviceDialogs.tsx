@@ -168,7 +168,7 @@ function RegisterContent({
             type="submit"
             appearance="primary"
             disabled={register.isPending}
-            icon={register.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={register.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Register and show key
           </Button>

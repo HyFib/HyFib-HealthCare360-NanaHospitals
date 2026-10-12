@@ -63,7 +63,7 @@ export function EmployeeAttendance({ employee }: { employee: PickedEmployee }) {
         </Field>
         <Button
           style={{ alignSelf: 'flex-end' }}
-          icon={compute.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+          icon={compute.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSyncRegular />}
           disabled={future || compute.isPending}
           onClick={() => compute.mutate()}
         >

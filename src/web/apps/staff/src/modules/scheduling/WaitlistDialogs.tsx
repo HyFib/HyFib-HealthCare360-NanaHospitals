@@ -268,7 +268,7 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
             type="submit"
             appearance="primary"
             disabled={add.isPending}
-            icon={add.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Add to waitlist
           </Button>
@@ -431,7 +431,7 @@ function BookFromWaitlistContent({
             type="submit"
             appearance="primary"
             disabled={!slot || book.isPending || expired || videoOff}
-            icon={book.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={book.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {slot ? `Book ${formatDayMedium(slot.date)}, ${formatTime(slot.startsAt)}` : 'Choose a slot'}
           </Button>

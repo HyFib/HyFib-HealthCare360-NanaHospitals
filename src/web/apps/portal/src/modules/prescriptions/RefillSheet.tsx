@@ -99,7 +99,7 @@ export function RefillSheet({
             size="large"
             onClick={() => void submit()}
             disabled={busy}
-            icon={busy ? <Spinner size="tiny" /> : undefined}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {t('rx.refill.submit')}
           </Button>

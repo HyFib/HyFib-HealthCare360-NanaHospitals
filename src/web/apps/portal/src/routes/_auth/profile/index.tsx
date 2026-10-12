@@ -124,7 +124,7 @@ function ProfilePage() {
         appearance="secondary"
         size="large"
         className={styles.signOut}
-        icon={signingOut ? <Spinner size="tiny" /> : <SignOutRegular />}
+        icon={signingOut ? <Spinner size="tiny" aria-hidden /> : <SignOutRegular />}
         disabled={signingOut}
         onClick={() => {
           setSigningOut(true);

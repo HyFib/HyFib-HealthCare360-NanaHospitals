@@ -975,7 +975,7 @@ function EntryScreen({
                 <Button
                   appearance="primary"
                   size="large"
-                  icon={submit.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+                  icon={submit.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
                   disabled={!ready || submit.isPending}
                   onClick={dispense}
                   aria-keyshortcuts="F9"

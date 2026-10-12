@@ -238,7 +238,7 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
                 type="submit"
                 appearance="primary"
                 disabled={!valid || amend.isPending}
-                icon={amend.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={amend.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 {changes.length > 0
                   ? `Amend ${changes.length} ${changes.length === 1 ? 'result' : 'results'}`

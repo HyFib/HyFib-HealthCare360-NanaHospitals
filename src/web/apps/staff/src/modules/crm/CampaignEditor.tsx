@@ -331,7 +331,7 @@ export function CampaignEditor({
             <Button
               appearance="primary"
               size="large"
-              icon={busy ? <Spinner size="tiny" /> : <SaveRegular />}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
               disabled={busy}
               onClick={() => void save()}
             >

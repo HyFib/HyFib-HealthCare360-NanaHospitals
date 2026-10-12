@@ -197,7 +197,7 @@ function RefillBody({
         </Button>
         <Button
           appearance="primary"
-          icon={refill.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+          icon={refill.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSyncRegular />}
           disabled={!rx || rx.refillsRemaining <= 0 || blockers.length > 0 || refill.isPending}
           // Keeps focus while issuing, and when the safety check asks for a decision: a disabled button drops it.
           disabledFocusable={refill.isPending || blockers.length > 0}

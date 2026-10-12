@@ -144,7 +144,7 @@ export function WaitlistSheet({
             size="large"
             onClick={() => void submit()}
             disabled={busy}
-            icon={busy ? <Spinner size="tiny" /> : undefined}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {t('waitlist.submit')}
           </Button>

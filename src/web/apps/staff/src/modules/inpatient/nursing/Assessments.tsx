@@ -315,7 +315,7 @@ function MorseForm({ admissionId, onDone }: { admissionId: string; onDone: () =>
         <Button
           appearance="primary"
           disabled={save.isPending}
-          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           onClick={() => save.mutate()}
         >
           Save fall risk ({score.score})
@@ -370,7 +370,7 @@ function BradenForm({ admissionId, onDone }: { admissionId: string; onDone: () =
         <Button
           appearance="primary"
           disabled={!complete || save.isPending}
-          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           onClick={() => save.mutate()}
         >
           Save Braden score{score ? ` (${score.score})` : ''}
@@ -467,7 +467,7 @@ function PainForm({ admissionId, onDone }: { admissionId: string; onDone: () => 
         <Button
           appearance="primary"
           disabled={score === null || save.isPending}
-          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           onClick={() => save.mutate()}
         >
           Save pain score{score ? ` (${score.score})` : ''}

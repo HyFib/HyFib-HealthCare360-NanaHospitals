@@ -269,7 +269,7 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
             disabled={checkIn.isPending}
             // Keeps focus while checking in (a disabled button drops it); Enter can still submit, which is ignored.
             disabledFocusable={checkIn.isPending}
-            icon={checkIn.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={checkIn.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Check in
           </Button>

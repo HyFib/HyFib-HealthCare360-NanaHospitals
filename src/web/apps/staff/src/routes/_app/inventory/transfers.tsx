@@ -524,7 +524,7 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
             <Button
               appearance="primary"
               disabled={!valid || send.isPending}
-              icon={send.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={send.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => send.mutate()}
             >
               Send

@@ -373,7 +373,7 @@ function IssuePacksPage() {
             <Button
               appearance="primary"
               size="large"
-              icon={issue.isPending ? <Spinner size="tiny" /> : <BoxArrowUpRegular />}
+              icon={issue.isPending ? <Spinner size="tiny" aria-hidden /> : <BoxArrowUpRegular />}
               disabled={!valid || issue.isPending}
               onClick={() => issue.mutate()}
             >

@@ -372,7 +372,7 @@ export function FeedbackFormEditor({
                   <Button
                     type="submit"
                     appearance="primary"
-                    icon={busy ? <Spinner size="tiny" /> : <SaveRegular />}
+                    icon={busy ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
                     disabled={busy || (!!form && !dirty)}
                   >
                     {form ? 'Save changes' : 'Create form'}

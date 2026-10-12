@@ -163,7 +163,7 @@ function HandoverCard({
           <Button
             size="small"
             appearance="primary"
-            icon={busy ? <Spinner size="tiny" /> : <CheckmarkRegular />}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : <CheckmarkRegular />}
             disabled={busy}
             onClick={onAcknowledge}
           >
@@ -283,7 +283,7 @@ export function PatientHandovers({ admissionId, canWrite }: { admissionId: strin
             <Button
               type="submit"
               appearance="primary"
-              icon={add.isPending ? <Spinner size="tiny" /> : <PeopleSwapRegular />}
+              icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : <PeopleSwapRegular />}
               disabled={add.isPending}
             >
               Give handover (Ctrl+Enter)

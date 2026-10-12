@@ -454,7 +454,7 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
             type="submit"
             appearance="primary"
             disabled={!form.formState.isValid || save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Save
           </Button>

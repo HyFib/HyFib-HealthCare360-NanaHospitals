@@ -203,7 +203,7 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
                       <MenuList>
                         {!o.isAsNeeded && o.roundTimes.length > 0 && (
                           <MenuItem
-                            icon={extend.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+                            icon={extend.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSyncRegular />}
                             onClick={() => extend.mutate(o)}
                           >
                             Schedule next 24 hours
@@ -450,7 +450,7 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
                 type="submit"
                 appearance="primary"
                 disabled={add.isPending}
-                icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+                icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : <AddRegular />}
               >
                 Add to chart
               </Button>

@@ -108,7 +108,7 @@ export function NomineeSheet({
             size="large"
             onClick={() => void submit()}
             disabled={busy}
-            icon={busy ? <Spinner size="tiny" /> : undefined}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {busy ? t('common.saving') : t('myPrivacy.nominee.save')}
           </Button>

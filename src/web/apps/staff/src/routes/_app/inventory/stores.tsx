@@ -234,7 +234,7 @@ function StoreDrawer({ store, onClose }: { store: StoreDto | null; onClose: () =
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Save
           </Button>

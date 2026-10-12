@@ -249,7 +249,7 @@ export function BookingSheet({
             size="large"
             onClick={() => void submit()}
             disabled={working}
-            icon={working ? <Spinner size="tiny" /> : undefined}
+            icon={working ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {phase.name === 'working' ? t(phase.label) : t('booking.book')}
           </Button>

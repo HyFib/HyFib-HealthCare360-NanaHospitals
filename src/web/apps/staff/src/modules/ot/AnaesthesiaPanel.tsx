@@ -416,7 +416,7 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
         <div className={styles.footer}>
           <Caption1 className={styles.muted}>Signing locks the record. It cannot be changed afterwards.</Caption1>
           <Button
-            icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
             disabled={save.isPending}
             onClick={() => void submit(false)}
           >
@@ -609,7 +609,7 @@ function VitalsSection({
             <Button
               type="submit"
               appearance="primary"
-              icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+              icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : <AddRegular />}
               disabled={add.isPending}
             >
               Add reading

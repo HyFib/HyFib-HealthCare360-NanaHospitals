@@ -276,7 +276,7 @@ export function LeaveApplyForm({
           type="submit"
           appearance="primary"
           disabled={busy}
-          icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
+          icon={busy ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
         >
           {submitLabel}
         </Button>

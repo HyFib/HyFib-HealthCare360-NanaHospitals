@@ -320,7 +320,7 @@ export function RecordDoseDialog({
                   type="submit"
                   appearance="primary"
                   disabled={!valid || record.isPending}
-                  icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+                  icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                 >
                   Record {outcome.toLowerCase()}
                 </Button>

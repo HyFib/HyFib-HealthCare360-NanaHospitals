@@ -190,7 +190,7 @@ export function DietTypeDrawer({ dietType, onClose }: { dietType: DietTypeDto | 
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {dietType ? 'Save' : 'Add diet'}
           </Button>

@@ -137,7 +137,7 @@ export function TemplateDrawer({ template, onClose }: { template: ReportTemplate
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {template ? 'Save' : 'Add template'}
           </Button>

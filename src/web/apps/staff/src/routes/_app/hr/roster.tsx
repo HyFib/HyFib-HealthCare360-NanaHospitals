@@ -403,7 +403,7 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
               Copy last week
             </Button>
             <Button
-              icon={busy === 'check' ? <Spinner size="tiny" /> : <ShieldCheckmarkRegular />}
+              icon={busy === 'check' ? <Spinner size="tiny" aria-hidden /> : <ShieldCheckmarkRegular />}
               disabled={!dirty || busy !== null}
               onClick={() => void check()}
             >
@@ -421,7 +421,7 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
             </Button>
             <Button
               appearance="primary"
-              icon={busy === 'save' ? <Spinner size="tiny" /> : <SaveRegular />}
+              icon={busy === 'save' ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
               disabled={!dirty || busy !== null}
               onClick={() => void save(false)}
             >
@@ -732,7 +732,7 @@ function CopyWeekDialog({
             </Button>
             <Button
               appearance="primary"
-              icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
               disabled={
                 busy || !isIsoDate(source) || blockingErrors.length > 0 || (Boolean(warnings?.length) && !acknowledge)
               }

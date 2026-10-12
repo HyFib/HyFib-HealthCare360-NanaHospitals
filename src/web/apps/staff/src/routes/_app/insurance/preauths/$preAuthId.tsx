@@ -515,7 +515,7 @@ function AmountReferenceDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!parsed.ok || save.isPending}
-                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Record
               </Button>
@@ -584,7 +584,7 @@ function EnhancementDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!valid || save.isPending}
-                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Ask for enhancement
               </Button>
@@ -672,7 +672,7 @@ function RespondEnhancementDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!valid || save.isPending}
-                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Record reply
               </Button>

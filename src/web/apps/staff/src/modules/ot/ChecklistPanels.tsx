@@ -255,7 +255,7 @@ export function PreOpChecklistPanel({
           <Button
             appearance="primary"
             disabled={changed.length === 0 || missingReason.length > 0 || save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
             onClick={submit}
           >
             {changed.length === 0
@@ -495,7 +495,7 @@ export function SafetyPhasePanel({
             appearance="primary"
             size="large"
             disabled={chosen.length === 0 || missingReason.length > 0 || confirm.isPending}
-            icon={confirm.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+            icon={confirm.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
             onClick={submit}
           >
             {chosen.length === 0

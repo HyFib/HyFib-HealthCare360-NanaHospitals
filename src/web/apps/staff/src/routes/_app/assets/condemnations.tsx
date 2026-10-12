@@ -430,7 +430,7 @@ function RequestDialog({ onClose, onRequested }: { onClose: () => void; onReques
             <Button
               appearance="primary"
               disabled={!valid || request.isPending}
-              icon={request.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={request.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => request.mutate()}
             >
               Request condemnation

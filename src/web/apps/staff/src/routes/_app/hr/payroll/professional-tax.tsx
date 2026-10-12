@@ -346,7 +346,7 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
             <Button
               appearance="primary"
               disabled={busy || errors.length > 0}
-              icon={busy ? <Spinner size="tiny" /> : undefined}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => void save()}
             >
               Save slabs

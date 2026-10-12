@@ -246,7 +246,7 @@ function DashboardViewer({
             </Tooltip>
             {canManage && (
               <Button
-                icon={copy.isPending ? <Spinner size="tiny" /> : <CopyRegular />}
+                icon={copy.isPending ? <Spinner size="tiny" aria-hidden /> : <CopyRegular />}
                 disabled={copy.isPending}
                 onClick={() => copy.mutate()}
               >
@@ -408,7 +408,7 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
             </Button>
             <Button
               appearance="primary"
-              icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+              icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
               disabled={!name.trim() || save.isPending || !dirty}
               onClick={() => save.mutate()}
             >

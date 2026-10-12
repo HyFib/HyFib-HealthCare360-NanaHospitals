@@ -173,7 +173,7 @@ export function DictateButton({ onText, label = 'Dictate' }: { onText: (text: st
       <Button
         size="small"
         appearance="subtle"
-        icon={busy ? <Spinner size="extra-tiny" /> : <MicRegular />}
+        icon={busy ? <Spinner size="extra-tiny" aria-hidden /> : <MicRegular />}
         onClick={dictate}
         disabled={busy}
       >

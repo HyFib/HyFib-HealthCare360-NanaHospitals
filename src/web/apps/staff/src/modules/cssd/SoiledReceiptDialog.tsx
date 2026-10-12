@@ -365,7 +365,7 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
                 type="submit"
                 appearance="primary"
                 disabled={!valid || receive.isPending}
-                icon={receive.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={receive.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 {anyDiscrepancy ? 'Receive with differences' : 'Receive trays'}
               </Button>

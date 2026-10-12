@@ -178,7 +178,7 @@ export function CreateClaimDialog({ onClose, onCreated }: { onClose: () => void;
                 type="submit"
                 appearance="primary"
                 disabled={!valid || create.isPending}
-                icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Submit claim
               </Button>
@@ -246,7 +246,7 @@ export function ApproveClaimDialog({ claim, onClose }: { claim: ClaimDetail; onC
                 type="submit"
                 appearance="primary"
                 disabled={!parsed.ok || approve.isPending}
-                icon={approve.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={approve.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Record approval
               </Button>
@@ -437,7 +437,7 @@ export function SettleClaimDialog({ claim, onClose }: { claim: ClaimDetail; onCl
                 type="submit"
                 appearance="primary"
                 disabled={!valid || settle.isPending}
-                icon={settle.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={settle.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Record settlement
               </Button>

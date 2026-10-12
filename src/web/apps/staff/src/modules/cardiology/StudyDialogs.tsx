@@ -107,7 +107,7 @@ function Shell({
                 disabled={!canSubmit || busy}
                 // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
                 disabledFocusable={busy}
-                icon={busy ? <Spinner size="tiny" /> : undefined}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 {submitLabel}
               </Button>

@@ -206,7 +206,7 @@ export function OpenShiftDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!valid || openShift.isPending}
-                icon={openShift.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={openShift.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Open shift
               </Button>
@@ -382,7 +382,7 @@ export function CloseShiftDialog({
             <Button
               appearance="primary"
               disabled={!parsed.ok || needsNote || close.isPending}
-              icon={close.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={close.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => close.mutate()}
             >
               Close shift

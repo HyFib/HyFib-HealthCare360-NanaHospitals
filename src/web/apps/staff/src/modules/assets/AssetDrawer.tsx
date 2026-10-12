@@ -319,7 +319,7 @@ export function AssetDrawer({
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {asset ? 'Save' : 'Add asset'}
           </Button>

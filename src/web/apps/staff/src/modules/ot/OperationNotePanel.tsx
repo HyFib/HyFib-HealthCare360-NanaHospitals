@@ -370,7 +370,7 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
             Signing locks the note. The ward sees the post-op orders as soon as it is saved.
           </Caption1>
           <Button
-            icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
             disabled={save.isPending}
             onClick={() => void submit(false)}
           >

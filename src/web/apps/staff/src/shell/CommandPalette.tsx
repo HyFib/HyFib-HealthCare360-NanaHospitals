@@ -173,7 +173,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             canSearchPatients ? 'Search patients by UHID, mobile or name, or jump to a screen' : 'Jump to a screen'
           }
           contentBefore={<SearchRegular />}
-          contentAfter={patients.isFetching ? <Spinner size="tiny" /> : undefined}
+          contentAfter={patients.isFetching ? <Spinner size="tiny" aria-hidden /> : undefined}
           value={term}
           onChange={(_, data) => {
             setTerm(data.value);

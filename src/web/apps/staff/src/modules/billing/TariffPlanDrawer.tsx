@@ -268,7 +268,7 @@ export function TariffPlanDrawer({
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <AddRegular />}
           >
             {plan ? 'Save' : 'Create plan'}
           </Button>

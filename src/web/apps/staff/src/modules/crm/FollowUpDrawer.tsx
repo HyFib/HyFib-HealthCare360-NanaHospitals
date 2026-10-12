@@ -282,13 +282,13 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
             <Button
               appearance="primary"
               disabled={!outcome || busy !== null}
-              icon={busy === 'record' ? <Spinner size="tiny" /> : undefined}
+              icon={busy === 'record' ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => void record()}
             >
               {closes ? 'Save and close task' : 'Save call'}
             </Button>
             <Button
-              icon={busy === 'remind' ? <Spinner size="tiny" /> : <SendRegular />}
+              icon={busy === 'remind' ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
               disabled={busy !== null}
               onClick={() => void remind()}
             >
@@ -421,7 +421,7 @@ function EditTask({ task, onDone }: { task: FollowUpDetail; onDone: () => void }
         <Button
           appearance="primary"
           disabled={busy || !dueDate}
-          icon={busy ? <Spinner size="tiny" /> : undefined}
+          icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           onClick={() => void save()}
         >
           Save

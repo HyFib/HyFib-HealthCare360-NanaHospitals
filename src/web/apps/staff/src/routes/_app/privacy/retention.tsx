@@ -547,7 +547,7 @@ function CleanupDialog({ mode, onClose }: { mode: CleanupMode; onClose: () => vo
             </Button>
             <Button
               appearance="primary"
-              icon={run.isPending ? <Spinner size="tiny" /> : <BroomRegular />}
+              icon={run.isPending ? <Spinner size="tiny" aria-hidden /> : <BroomRegular />}
               disabled={run.isPending || !preview.data}
               onClick={() => run.mutate()}
               style={total > 0 && !run.isPending ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}

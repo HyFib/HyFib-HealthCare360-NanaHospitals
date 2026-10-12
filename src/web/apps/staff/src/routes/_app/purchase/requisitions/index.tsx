@@ -375,7 +375,7 @@ function NewRequisitionDialog({
             <Button
               appearance="primary"
               disabled={!valid || create.isPending}
-              icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => create.mutate()}
             >
               Send for approval

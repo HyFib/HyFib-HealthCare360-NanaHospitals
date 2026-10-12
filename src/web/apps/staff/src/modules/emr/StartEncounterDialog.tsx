@@ -172,7 +172,7 @@ function StartEncounterForm({ patientId, onClose }: { patientId: string; onClose
           <Button
             type="submit"
             appearance="primary"
-            icon={start.isPending ? <Spinner size="tiny" /> : <PlayRegular />}
+            icon={start.isPending ? <Spinner size="tiny" aria-hidden /> : <PlayRegular />}
             disabled={start.isPending}
           >
             Start

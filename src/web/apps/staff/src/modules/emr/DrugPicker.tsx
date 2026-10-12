@@ -97,7 +97,7 @@ export function DrugPicker({
       selectedOptions={[]}
       onChange={(event) => onChange(event.target.value)}
       onOptionSelect={(_, data) => pick(data.optionValue)}
-      expandIcon={master.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+      expandIcon={master.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
       positioning={{ autoSize: 'width' }}
       style={{ minWidth: 0, width: '100%' }}
     >

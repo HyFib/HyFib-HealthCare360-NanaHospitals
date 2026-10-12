@@ -145,7 +145,7 @@ function PoliciesPage() {
                   onChange={(_, d) => setNumber(d.value)}
                   maxLength={64}
                   autoComplete="off"
-                  contentAfter={find.isPending ? <Spinner size="extra-tiny" /> : <SearchRegular />}
+                  contentAfter={find.isPending ? <Spinner size="extra-tiny" aria-hidden /> : <SearchRegular />}
                   aria-label="Policy number"
                 />
               </Field>

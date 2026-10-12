@@ -189,7 +189,12 @@ function Body({ onClose, risk }: { onClose: () => void; risk: RiskDetail }) {
           <Button onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={busy}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
+          >
             Record review
           </Button>
         </DialogActions>

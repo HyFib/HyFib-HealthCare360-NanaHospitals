@@ -506,7 +506,9 @@ function InCall({ state, call }: { state: PatientCallState; call: PatientCall })
               <p className={styles.overlayText} role="status">
                 {overlay}
               </p>
-              {(state.peer === 'connecting' || state.peer === 'reconnecting') && <Spinner appearance="inverted" />}
+              {(state.peer === 'connecting' || state.peer === 'reconnecting') && (
+                <Spinner appearance="inverted" aria-hidden />
+              )}
               {state.peer === 'failed' && (
                 <Button
                   appearance="primary"
@@ -775,7 +777,7 @@ function ChatSheet({
             type="submit"
             appearance="primary"
             size="large"
-            icon={sending ? <Spinner size="tiny" /> : <SendRegular />}
+            icon={sending ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
             disabled={sending || !text.trim()}
           >
             {t('video.chat.send')}

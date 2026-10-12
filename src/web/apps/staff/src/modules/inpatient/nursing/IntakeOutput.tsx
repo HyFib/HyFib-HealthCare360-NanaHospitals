@@ -391,7 +391,7 @@ function AddEntryForm({ admissionId }: { admissionId: string }) {
         <Button
           type="submit"
           appearance="primary"
-          icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+          icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : <AddRegular />}
           disabled={!valid || add.isPending}
           style={{ minHeight: 40 }}
         >

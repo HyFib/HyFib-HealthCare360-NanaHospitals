@@ -251,7 +251,7 @@ export function TransferDialog({
               <Button
                 type="submit"
                 appearance="primary"
-                icon={transfer.isPending ? <Spinner size="tiny" /> : <ArrowSwapRegular />}
+                icon={transfer.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSwapRegular />}
                 disabled={transfer.isPending}
               >
                 {picked ? `Transfer to ${picked.label}` : 'Transfer'}

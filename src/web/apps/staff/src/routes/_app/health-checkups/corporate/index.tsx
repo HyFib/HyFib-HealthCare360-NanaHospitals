@@ -248,7 +248,7 @@ function NewBatchForm({
       <DrawerFooter>
         <Button
           appearance="primary"
-          icon={book.isPending ? <Spinner size="tiny" /> : <PeopleTeamRegular />}
+          icon={book.isPending ? <Spinner size="tiny" aria-hidden /> : <PeopleTeamRegular />}
           disabled={!valid || book.isPending}
           onClick={() => book.mutate()}
         >

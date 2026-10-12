@@ -303,7 +303,7 @@ export function DonorDrawer({
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {donor ? 'Save' : 'Register donor'}
           </Button>
@@ -604,7 +604,7 @@ export function ScreeningDialog({
                   disabled={!complete || screen.isPending}
                   // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
                   disabledFocusable={screen.isPending}
-                  icon={screen.isPending ? <Spinner size="tiny" /> : undefined}
+                  icon={screen.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                 >
                   Save screening
                 </Button>
@@ -813,7 +813,7 @@ export function CollectDialog({
                 // Keeps focus while recording, and when the screening goes out of date: a disabled button drops it.
                 // Enter can still submit, which is ignored.
                 disabledFocusable={stale || collect.isPending}
-                icon={collect.isPending ? <Spinner size="tiny" /> : <DropRegular />}
+                icon={collect.isPending ? <Spinner size="tiny" aria-hidden /> : <DropRegular />}
               >
                 Record donation
               </Button>
@@ -890,7 +890,7 @@ export function DeferDialog({ donor, onClose }: { donor: DonorDetail; onClose: (
                 disabled={defer.isPending}
                 // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
                 disabledFocusable={defer.isPending}
-                icon={defer.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={defer.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Defer donor
               </Button>

@@ -435,7 +435,7 @@ function ReportForm({
               </Caption1>
               <div className={styles.actions}>
                 <Button
-                  icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+                  icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
                   disabled={busy}
                   onClick={() => void form.handleSubmit((values) => save.mutate(values))()}
                   aria-keyshortcuts="Control+S"
@@ -444,7 +444,7 @@ function ReportForm({
                 </Button>
                 {status !== 'Reported' && (
                   <Button
-                    icon={submit.isPending ? <Spinner size="tiny" /> : <SendRegular />}
+                    icon={submit.isPending ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
                     appearance={canVerify ? 'secondary' : 'primary'}
                     disabled={busy}
                     onClick={() =>
@@ -459,7 +459,7 @@ function ReportForm({
                     <Switch checked={release} onChange={(_, data) => setRelease(data.checked)} label="Release now" />
                     <Button
                       appearance="primary"
-                      icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />}
+                      icon={sign.isPending ? <Spinner size="tiny" aria-hidden /> : <SignatureRegular />}
                       disabled={busy}
                       onClick={() =>
                         void form.handleSubmit(
@@ -577,7 +577,7 @@ function SignedReport({
           {canVerify && unsigned && (
             <Button
               appearance="primary"
-              icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />}
+              icon={sign.isPending ? <Spinner size="tiny" aria-hidden /> : <SignatureRegular />}
               disabled={sign.isPending}
               onClick={() => sign.mutate(null)}
             >
@@ -587,7 +587,7 @@ function SignedReport({
           {canVerify && report.status === 'Verified' && (
             <Button
               appearance="primary"
-              icon={release.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+              icon={release.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
               disabled={release.isPending}
               onClick={() => release.mutate()}
             >

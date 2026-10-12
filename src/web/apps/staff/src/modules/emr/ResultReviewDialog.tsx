@@ -245,7 +245,7 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
         {canAcknowledge && (
           <Button
             appearance="primary"
-            icon={acknowledge.isPending ? <Spinner size="tiny" /> : <CheckmarkRegular />}
+            icon={acknowledge.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkRegular />}
             disabled={acknowledge.isPending}
             onClick={() => acknowledge.mutate()}
           >

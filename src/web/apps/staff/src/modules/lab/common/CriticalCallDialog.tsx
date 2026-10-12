@@ -311,7 +311,7 @@ export function CriticalCallDialog({
                 disabled={busy}
                 // Keeps focus while busy: a disabled button drops it.
                 disabledFocusable={busy}
-                icon={busy ? <Spinner size="tiny" /> : <CallRegular />}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : <CallRegular />}
               >
                 {submitLabel}
               </Button>

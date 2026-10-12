@@ -156,7 +156,7 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
         <Button
           appearance="primary"
           disabled={!valid || create.isPending}
-          icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+          icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           onClick={() => create.mutate()}
         >
           Record request
@@ -218,7 +218,7 @@ function IssueBody({
         <Button
           appearance="primary"
           disabled={busy}
-          icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
+          icon={busy ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
           onClick={() => onConfirm(dueBack || null)}
         >
           Issue

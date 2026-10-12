@@ -411,7 +411,7 @@ function AssignDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () =
             <Button
               appearance="primary"
               disabled={!assignedTo.trim() || assign.isPending}
-              icon={assign.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={assign.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => assign.mutate()}
             >
               Assign
@@ -498,7 +498,7 @@ function ResolveDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () 
             <Button
               appearance="primary"
               disabled={!valid || resolve.isPending}
-              icon={resolve.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={resolve.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => resolve.mutate()}
             >
               Mark resolved

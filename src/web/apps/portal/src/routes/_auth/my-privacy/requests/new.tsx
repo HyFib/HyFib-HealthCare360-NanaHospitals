@@ -458,7 +458,7 @@ function PrivacyRequestForm({ kind }: { kind: RequestKind }) {
           size="large"
           className={styles.submit}
           disabled={busy}
-          icon={busy ? <Spinner size="tiny" /> : undefined}
+          icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
         >
           {busy ? t('common.sending') : t('myPrivacy.new.submit')}
         </Button>

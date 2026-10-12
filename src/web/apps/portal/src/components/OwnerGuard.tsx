@@ -33,7 +33,7 @@ export function OwnerGuard({ ownerId, children }: { ownerId: string | null | und
       action={
         <Button
           appearance="primary"
-          icon={switching ? <Spinner size="tiny" /> : <PersonSwapRegular />}
+          icon={switching ? <Spinner size="tiny" aria-hidden /> : <PersonSwapRegular />}
           disabled={switching}
           onClick={() => {
             setSwitching(true);

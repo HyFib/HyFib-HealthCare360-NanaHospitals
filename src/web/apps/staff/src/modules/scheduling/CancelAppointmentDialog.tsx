@@ -135,7 +135,7 @@ function CancelContent({ appointment, onClose }: { appointment: AppointmentRef; 
             disabled={cancel.isPending}
             // Keeps focus while cancelling (a disabled button drops it); Enter can still submit, which is ignored.
             disabledFocusable={cancel.isPending}
-            icon={cancel.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={cancel.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Cancel appointment
           </Button>

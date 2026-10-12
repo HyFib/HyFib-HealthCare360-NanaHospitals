@@ -389,7 +389,7 @@ export function ReportIncidentForm({
           type="submit"
           appearance="primary"
           size="large"
-          icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
+          icon={busy ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
           disabled={busy}
         >
           {isAnonymous ? 'Send anonymously' : 'Send report'}

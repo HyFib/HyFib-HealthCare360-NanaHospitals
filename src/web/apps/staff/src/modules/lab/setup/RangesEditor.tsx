@@ -369,7 +369,7 @@ export function RangesEditor({ test }: { test: LabTestDetail }) {
         </Button>
         <Button
           appearance="primary"
-          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={!dirty || !valid || save.isPending || rows.length > 50}
           onClick={() => save.mutate()}
         >

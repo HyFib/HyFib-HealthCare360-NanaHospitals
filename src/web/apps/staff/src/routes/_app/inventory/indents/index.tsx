@@ -415,7 +415,7 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
             <Button
               appearance="primary"
               disabled={!valid || raise.isPending}
-              icon={raise.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={raise.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => raise.mutate()}
             >
               Raise indent

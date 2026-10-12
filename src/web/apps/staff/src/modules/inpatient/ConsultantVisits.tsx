@@ -272,7 +272,7 @@ export function RecordVisitDialog({
                 type="submit"
                 appearance="primary"
                 disabled={record.isPending}
-                icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Record visit
               </Button>

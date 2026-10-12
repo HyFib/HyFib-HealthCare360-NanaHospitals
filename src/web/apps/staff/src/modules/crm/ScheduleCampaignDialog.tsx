@@ -152,7 +152,7 @@ function Body({ onClose, campaign }: { onClose: () => void; campaign: CampaignDe
             type="submit"
             appearance="primary"
             disabled={busy || audience.data?.count === 0}
-            icon={busy ? <Spinner size="tiny" /> : undefined}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Schedule
           </Button>

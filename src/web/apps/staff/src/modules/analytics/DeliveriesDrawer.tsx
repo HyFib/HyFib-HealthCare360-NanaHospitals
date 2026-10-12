@@ -165,7 +165,7 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
                           <Button
                             icon={
                               download.isPending && download.variables?.id === delivery.id ? (
-                                <Spinner size="tiny" />
+                                <Spinner size="tiny" aria-hidden />
                               ) : (
                                 <ArrowDownloadRegular />
                               )

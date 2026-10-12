@@ -281,14 +281,14 @@ function BookingForm({ defaults }: { defaults: SurgeryFormValues }) {
                 type="submit"
                 appearance="primary"
                 size="large"
-                icon={create.isPending && !requestOnly ? <Spinner size="tiny" /> : <SaveRegular />}
+                icon={create.isPending && !requestOnly ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
                 disabled={create.isPending}
               >
                 {scheduleNow ? 'Book surgery' : 'Save request'}
               </Button>
               {conflicts && (
                 <Button
-                  icon={create.isPending && requestOnly ? <Spinner size="tiny" /> : undefined}
+                  icon={create.isPending && requestOnly ? <Spinner size="tiny" aria-hidden /> : undefined}
                   disabled={create.isPending}
                   onClick={saveAsRequest}
                 >

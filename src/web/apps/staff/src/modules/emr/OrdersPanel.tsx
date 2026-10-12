@@ -454,7 +454,7 @@ export function OrderComposer({
           </Field>
           <Button
             appearance="primary"
-            icon={place.isPending ? <Spinner size="tiny" /> : <SendRegular />}
+            icon={place.isPending ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
             disabled={place.isPending || duplicates !== null}
             onClick={() => place.mutate(false)}
           >

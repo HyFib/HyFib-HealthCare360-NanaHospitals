@@ -451,7 +451,7 @@ function AmendBody({
         <Button
           appearance="primary"
           disabled={length < MIN_AMENDMENT_REASON || busy}
-          icon={busy ? <Spinner size="tiny" /> : undefined}
+          icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           onClick={() => onConfirm(reason.trim())}
         >
           Record amendment

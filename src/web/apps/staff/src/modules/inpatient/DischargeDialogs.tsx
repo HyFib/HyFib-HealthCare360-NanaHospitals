@@ -173,7 +173,7 @@ export function InitiateDischargeDialog({
               <Button
                 type="submit"
                 appearance="primary"
-                icon={initiate.isPending ? <Spinner size="tiny" /> : <ArrowExitRegular />}
+                icon={initiate.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowExitRegular />}
                 disabled={initiate.isPending}
               >
                 Start discharge
@@ -395,7 +395,7 @@ export function CompleteDischargeDialog({
               <Button
                 type="submit"
                 appearance="primary"
-                icon={complete.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+                icon={complete.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
                 disabled={complete.isPending}
                 // Keeps focus while recording (a disabled button drops it); Enter can still submit, which is ignored.
                 disabledFocusable={complete.isPending}

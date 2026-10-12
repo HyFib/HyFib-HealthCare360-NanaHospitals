@@ -237,7 +237,7 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
             {canRetry && (
               <MessageBarActions>
                 <Button
-                  icon={retry.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+                  icon={retry.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowClockwiseRegular />}
                   disabled={retry.isPending}
                   onClick={() => retry.mutate()}
                 >
@@ -609,7 +609,7 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                 type="submit"
                 appearance="primary"
                 disabled={add.isPending || (source === 'store' && (store.isPending || storeProblem !== null))}
-                icon={add.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 {source === 'store' ? 'Issue, record and bill' : 'Record and bill'}
               </Button>
@@ -669,7 +669,7 @@ function StoreItemPicker({
                 onPicked(item);
                 setTerm('');
               }}
-              expandIcon={items.isFetching ? <Spinner size="extra-tiny" /> : <BoxRegular />}
+              expandIcon={items.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : <BoxRegular />}
               clearable
               autoFocus
             >

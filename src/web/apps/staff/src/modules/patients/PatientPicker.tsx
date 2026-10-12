@@ -67,7 +67,7 @@ export function PatientPicker({
           onChange(picked ? { id: picked.id, uhid: picked.uhid, fullName: picked.fullName } : null);
           setTerm('');
         }}
-        expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+        expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         clearable
       >
         {debounced.length >= 3 && items.length === 0 && !results.isFetching && (

@@ -133,7 +133,7 @@ export function RequestRefundDialog({
                 disabled={!valid || request.isPending}
                 // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
                 disabledFocusable={request.isPending}
-                icon={request.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={request.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Request refund
               </Button>
@@ -274,7 +274,7 @@ export function PayRefundDialog({ refund, onClose }: { refund: RefundDto; onClos
                 disabled={!valid || pay.isPending}
                 // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
                 disabledFocusable={pay.isPending}
-                icon={pay.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={pay.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Mark as paid · {formatInr(refund.amount)}
               </Button>

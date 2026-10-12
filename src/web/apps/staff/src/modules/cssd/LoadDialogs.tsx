@@ -289,7 +289,7 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
                 type="submit"
                 appearance="primary"
                 disabled={!valid || create.isPending}
-                icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Create load ({total} packs)
               </Button>
@@ -448,7 +448,7 @@ export function CompleteLoadDialog({ load, onClose }: { load: LoadDto; onClose: 
                 type="submit"
                 appearance="primary"
                 disabled={!valid || complete.isPending}
-                icon={complete.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={complete.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                 style={willFail ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
               >
                 {willFail ? 'Record as failed' : 'Record cycle'}
@@ -546,7 +546,7 @@ export function BiologicalIndicatorDialog({ load, onClose }: { load: LoadDto; on
                 type="submit"
                 appearance="primary"
                 disabled={!result || record.isPending}
-                icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                 style={result === 'Fail' ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
               >
                 {result === 'Fail' ? (released ? 'Record failure and recall' : 'Record failure') : 'Record result'}

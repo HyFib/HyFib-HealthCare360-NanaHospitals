@@ -225,7 +225,7 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
       <div className={styles.footer}>
         <Button
           appearance="primary"
-          icon={save.isPending ? <Spinner size="tiny" /> : <BeakerRegular />}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <BeakerRegular />}
           disabled={!group || save.isPending}
           onClick={submit}
         >
@@ -370,7 +370,7 @@ export function SeparationPanel({ donation, now }: { donation: DonationDetail; n
         <Button
           appearance="primary"
           disabled={Boolean(problem) || !volumesValid || separate.isPending}
-          icon={separate.isPending ? <Spinner size="tiny" /> : undefined}
+          icon={separate.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           onClick={() => separate.mutate()}
         >
           Prepare {chosen.length} unit{chosen.length === 1 ? '' : 's'} and print labels

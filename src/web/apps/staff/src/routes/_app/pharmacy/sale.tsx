@@ -677,7 +677,7 @@ function CounterSalePage() {
               <Button
                 appearance="primary"
                 size="large"
-                icon={sell.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+                icon={sell.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
                 disabled={!ready || sell.isPending}
                 onClick={complete}
                 aria-keyshortcuts="F9"

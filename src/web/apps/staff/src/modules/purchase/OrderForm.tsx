@@ -513,7 +513,7 @@ export function OrderForm({
             {blockers.length > 0 && lines.length > 0 && <Caption1 className={styles.problem}>{blockers[0]}</Caption1>}
             <Button
               appearance="primary"
-              icon={save.isPending ? <Spinner size="tiny" /> : <SendRegular />}
+              icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
               disabled={blockers.length > 0 || save.isPending}
               onClick={() => save.mutate(true)}
             >

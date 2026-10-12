@@ -440,7 +440,7 @@ export function DiscountDialog({
                   apply.isPending ||
                   (preview !== null && !preview.ok && preview.kind === 'invalid')
                 }
-                icon={apply.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={apply.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 {needsApproval ? 'Request approval' : 'Apply discount'}
               </Button>

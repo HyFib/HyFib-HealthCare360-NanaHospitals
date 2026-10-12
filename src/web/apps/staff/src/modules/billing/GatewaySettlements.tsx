@@ -84,7 +84,7 @@ export function GatewaySettlements({
             <Input type="date" value={fetchDate} max={todayIso()} onChange={(_, d) => setFetchDate(d.value)} />
           </Field>
           <Button
-            icon={fetch.isPending ? <Spinner size="tiny" /> : <CloudArrowDownRegular />}
+            icon={fetch.isPending ? <Spinner size="tiny" aria-hidden /> : <CloudArrowDownRegular />}
             disabled={!fetchDate || fetch.isPending}
             onClick={() => fetch.mutate(fetchDate)}
           >

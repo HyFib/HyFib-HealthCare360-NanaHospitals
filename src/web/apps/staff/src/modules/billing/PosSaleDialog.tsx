@@ -188,7 +188,7 @@ export function PosSaleDialog({
               </form>
             ) : (
               <div className={styles.status} role="status" aria-live="polite">
-                {pending && <Spinner size="large" />}
+                {pending && <Spinner size="large" aria-hidden />}
                 {current.status === 'Approved' && (
                   <CheckmarkCircleRegular fontSize={48} color={tokens.colorPaletteGreenForeground1} />
                 )}
@@ -234,7 +234,7 @@ export function PosSaleDialog({
                   type="submit"
                   form="pos-start"
                   appearance="primary"
-                  icon={start.isPending ? <Spinner size="tiny" /> : <PaymentRegular />}
+                  icon={start.isPending ? <Spinner size="tiny" aria-hidden /> : <PaymentRegular />}
                   disabled={!parsed.ok || !terminal.trim() || start.isPending}
                 >
                   Send to terminal

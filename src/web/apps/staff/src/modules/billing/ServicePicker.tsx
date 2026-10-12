@@ -158,7 +158,7 @@ export function ServicePicker({
               setPrice(picked?.isPriceEditable ? amountInputText(picked.basePrice) : '');
               window.setTimeout(() => quantityRef.current?.select(), 0);
             }}
-            expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+            expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
             freeform
             clearable
             disabled={!enabled}
@@ -232,7 +232,7 @@ export function ServicePicker({
         )}
         <Button
           appearance="primary"
-          icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+          icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : <AddRegular />}
           disabled={!canAdd}
           onClick={submit}
         >

@@ -402,7 +402,7 @@ export function ConnectionDrawer({
               type="submit"
               appearance="primary"
               disabled={save.isPending}
-              icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
             >
               Save connection
             </Button>

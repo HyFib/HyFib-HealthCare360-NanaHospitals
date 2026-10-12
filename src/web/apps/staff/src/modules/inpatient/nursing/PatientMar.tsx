@@ -385,7 +385,7 @@ function AdHocDoseDialog({
               <Button
                 type="submit"
                 appearance="primary"
-                icon={add.isPending ? <Spinner size="tiny" /> : <PillRegular />}
+                icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : <PillRegular />}
                 disabled={!valid || add.isPending}
               >
                 {givenNow ? 'Record as given' : 'Add to chart'}

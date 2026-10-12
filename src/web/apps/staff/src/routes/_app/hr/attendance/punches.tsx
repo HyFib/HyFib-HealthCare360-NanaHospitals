@@ -287,7 +287,7 @@ function AssignPinDialog({ pin, onClose }: { pin: UnmatchedPinDto; onClose: () =
             <Button
               appearance="primary"
               disabled={busy || !employee}
-              icon={busy ? <Spinner size="tiny" /> : undefined}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => void assign()}
             >
               Assign PIN

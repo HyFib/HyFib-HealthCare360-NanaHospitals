@@ -339,7 +339,7 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
             {!signed && canWrite && (
               <Tooltip content="Save the note (Ctrl+S)" relationship="description">
                 <Button
-                  icon={note.save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+                  icon={note.save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
                   disabled={note.save.isPending || !isDirty}
                   onClick={() => note.save.mutate()}
                 >

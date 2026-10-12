@@ -292,7 +292,7 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
               <div className={styles.actions}>
                 <Button
                   appearance="primary"
-                  icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+                  icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
                   disabled={!dirty || problems.length > 0 || save.isPending}
                   onClick={() => save.mutate()}
                 >

@@ -85,8 +85,8 @@ describe('CollectDialog', () => {
 
     submit.focus();
     await userEvent.keyboard('{Enter}');
-    // The spinner shows while the request runs.
-    await within(submit).findByRole('progressbar');
+    // The button is busy while the request runs: its spinner is hidden from screen readers, which hear it is unavailable.
+    await waitFor(() => expect(submit).toHaveAttribute('aria-disabled', 'true'));
     dropFocusIfDisabled(submit);
 
     expect(submit).toHaveFocus();
