@@ -37,6 +37,7 @@ public partial class SetupWindow : Window
     private readonly DesktopSettings _settings;
     private int _step = 1;
     private Uri? _serverUri;
+    private DiscoveredServer? _discovered;
     private string? _caPem;
     private string? _fingerprint;
     private SystemInfo? _info;
@@ -164,7 +165,8 @@ public partial class SetupWindow : Window
                 _fingerprint = fingerprint;
                 _info = info;
                 // The announcement only speaks for the server it came from, not for an address typed instead.
-                ShowVerification(selected is not null && selected.CandidateUris().Contains(candidate) ? selected.CaFingerprint : null);
+                _discovered = selected is not null && selected.CandidateUris().Contains(candidate) ? selected : null;
+                ShowVerification(_discovered?.CaFingerprint);
                 return;
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or ServerProblemException or System.Security.Cryptography.CryptographicException)
@@ -266,7 +268,12 @@ public partial class SetupWindow : Window
     private void Finish(bool enrolled)
     {
         var sameServer = string.Equals(_settings.CaFingerprint, _fingerprint, StringComparison.Ordinal);
-        _settings.ServerUrl = _serverUri!.GetLeftPart(UriPartial.Authority) + "/";
+        _settings.ServerUrl = ServerFallback.Normalize(_serverUri!);
+
+        // The other addresses discovery found for this server, to try when this one stops answering (SRS DED-03), and for
+        // the same server those it answered on before. They are trusted only once the server answers there.
+        var others = (_discovered?.CandidateUris() ?? []).Select(ServerFallback.Normalize);
+        _settings.ServerAddresses = [.. ServerFallback.Remember(sameServer ? others.Concat(_settings.ServerAddresses) : others, _serverUri!)];
         _settings.CaCertificatePem = _caPem;
         _settings.CaFingerprint = _fingerprint;
         if (!enrolled && !sameServer)

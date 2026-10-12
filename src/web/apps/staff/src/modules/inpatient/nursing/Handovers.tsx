@@ -67,6 +67,14 @@ const useStyles = makeStyles({
   },
   sbar: { display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', gap: '4px 8px' },
   letter: { fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1 },
+  srOnly: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+  },
   text: { whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
   muted: { color: tokens.colorNeutralForeground3 },
   filters: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' },
@@ -98,8 +106,10 @@ function SbarBody({ h }: { h: HandoverDto }) {
         .filter(([, , value]) => value)
         .map(([letter, label, value]) => (
           <div key={letter} style={{ display: 'contents' }}>
-            <span className={styles.letter} aria-label={label} title={label}>
-              {letter}
+            {/* A plain span cannot carry a name (aria-label), so the word itself is there for screen readers. */}
+            <span className={styles.letter} title={label}>
+              <span aria-hidden>{letter}</span>
+              <span className={styles.srOnly}>{label}</span>
             </span>
             <Text className={styles.text}>{value}</Text>
           </div>

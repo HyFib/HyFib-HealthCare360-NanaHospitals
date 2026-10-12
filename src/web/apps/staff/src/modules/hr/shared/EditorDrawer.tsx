@@ -82,7 +82,7 @@ export function EditorDrawer({
               // While saving the button stays focusable (aria-disabled): a disabled button drops focus out of the open
               // drawer, and Fluent then returns it to the button that opened the drawer, behind it.
               disabledFocusable={busy}
-              icon={busy ? <Spinner size="tiny" /> : undefined}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
             >
               {submitLabel}
             </Button>

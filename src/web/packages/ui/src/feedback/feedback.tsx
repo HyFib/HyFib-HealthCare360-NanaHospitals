@@ -199,7 +199,8 @@ export function ConfirmDialog({
               // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out of
               // the open dialog, and Fluent then returns it to the button that opened the dialog, behind it.
               disabledFocusable={busy}
-              icon={busy ? <Spinner size="tiny" /> : undefined}
+              // Decorative: the button says it is busy by being unavailable (aria-disabled).
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               style={destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
             >
               {confirmLabel}

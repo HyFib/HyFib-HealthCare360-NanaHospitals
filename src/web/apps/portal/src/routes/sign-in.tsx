@@ -88,7 +88,9 @@ const useStyles = makeStyles({
       gap: '32px',
       padding: '48px',
       color: '#fff',
-      background: 'linear-gradient(150deg, #064F6B 0%, #0A7CA7 55%, #4A9AC0 100%)',
+      // Brand 50 to 70, as on the staff sign-in page: white text keeps at least 5.8:1 everywhere on it, and the 85–90 %
+      // white below at least 4.6:1 (WCAG AA). The gradient used to end in brand 100, where white text had 3.2:1.
+      background: 'linear-gradient(150deg, #064F6B 0%, #045E80 55%, #016D95 100%)',
     },
   },
   brandTop: {
@@ -119,7 +121,7 @@ const useStyles = makeStyles({
     fontSize: '22px',
     flexShrink: 0,
   },
-  brandFooter: { color: 'rgba(255,255,255,0.8)', fontSize: tokens.fontSizeBase300 },
+  brandFooter: { color: 'rgba(255,255,255,0.85)', fontSize: tokens.fontSizeBase300 },
   panel: { display: 'flex', flexDirection: 'column', minWidth: 0 },
   panelInner: {
     flex: 1,

@@ -7,6 +7,7 @@ import {
   DialogSurface,
   DialogTitle,
   Field,
+  FieldContextProvider,
   Input,
   makeStyles,
   mergeClasses,
@@ -39,7 +40,7 @@ import {
   useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useId, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { emrApi, emrKeys, emrQueries, type VitalsDto } from './api';
 import { VitalChipList } from './ChartSummary';
@@ -232,6 +233,7 @@ export function VitalsForm({
         ? 'warning'
         : 'none';
   const critical = flags.filter((f) => f.severity === 'Critical');
+  const bpMessageId = useId();
 
   return (
     <form
@@ -277,7 +279,11 @@ export function VitalsForm({
           </Field>
         </div>
         {numberInput('pulse', 'Pulse')}
-        <Field label="Blood pressure (mmHg)" validationMessage={bpMessage || undefined} validationState={bpState}>
+        <Field
+          label="Blood pressure (mmHg)"
+          validationMessage={bpMessage ? { id: bpMessageId, children: bpMessage } : undefined}
+          validationState={bpState}
+        >
           <div className={styles.bp}>
             <Input
               type="number"
@@ -287,13 +293,19 @@ export function VitalsForm({
               onChange={(_, d) => set('systolicBp', d.value === '' ? null : Number(d.value))}
             />
             <span className={styles.slash}>/</span>
-            <Input
-              type="number"
-              aria-label="Diastolic"
-              placeholder="80"
-              value={values.diastolicBp === null ? '' : String(values.diastolicBp)}
-              onChange={(_, d) => set('diastolicBp', d.value === '' ? null : Number(d.value))}
-            />
+            {/* A Field gives every control in it the id its label points to. The diastolic input stays out of the field
+                and is tied to its message by hand, so the two inputs never share an id. */}
+            <FieldContextProvider value={undefined}>
+              <Input
+                type="number"
+                aria-label="Diastolic"
+                aria-describedby={bpMessage ? bpMessageId : undefined}
+                aria-invalid={bpState === 'error' || undefined}
+                placeholder="80"
+                value={values.diastolicBp === null ? '' : String(values.diastolicBp)}
+                onChange={(_, d) => set('diastolicBp', d.value === '' ? null : Number(d.value))}
+              />
+            </FieldContextProvider>
           </div>
         </Field>
         <div>

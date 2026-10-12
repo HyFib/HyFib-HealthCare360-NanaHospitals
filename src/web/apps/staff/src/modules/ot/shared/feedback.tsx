@@ -256,7 +256,7 @@ export function ChargeStatusPanel({
       {canRetry && onRetry && (
         <MessageBarActions>
           <Button
-            icon={retrying ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+            icon={retrying ? <Spinner size="tiny" aria-hidden /> : <ArrowClockwiseRegular />}
             disabled={retrying}
             onClick={onRetry}
           >
@@ -403,7 +403,7 @@ function ReasonForm(props: ReasonDialogProps) {
               // the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It still
               // submits the form, which `submit` ignores while busy.
               disabledFocusable={props.busy}
-              icon={props.busy ? <Spinner size="tiny" /> : undefined}
+              icon={props.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               style={props.destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
             >
               {props.confirmLabel}

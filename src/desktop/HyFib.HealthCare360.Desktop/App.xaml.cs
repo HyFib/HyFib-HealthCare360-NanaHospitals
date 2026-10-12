@@ -61,9 +61,9 @@ public partial class App : Application
         ShowMainWindow(settings, e.Args);
     }
 
-    internal void ShowMainWindow(DesktopSettings settings, string[] args)
+    internal void ShowMainWindow(DesktopSettings settings, string[] args, string? notice = null)
     {
-        _main = new MainWindow(settings, args);
+        _main = new MainWindow(settings, args, notice);
         _main.Closed += (_, _) =>
         {
             if (_main?.RestartRequested != true)
@@ -85,6 +85,17 @@ public partial class App : Application
             current.Close();
             ShowMainWindow(DesktopSettings.Load(), []);
         }
+    }
+
+    /// <summary>
+    /// Reopens the main window on the server's other address, where it answered when its usual one did not
+    /// (<see cref="ServerFallback"/>, SRS DED-03). <paramref name="notice"/> says so from the tray.
+    /// </summary>
+    internal void SwitchServer(MainWindow current, string notice)
+    {
+        current.RestartRequested = true;
+        current.Close();
+        ShowMainWindow(DesktopSettings.Load(), [], notice);
     }
 
     protected override void OnExit(ExitEventArgs e)

@@ -42,8 +42,9 @@ export default tseslint.config(
   },
   {
     // Shared packages are libraries, not hot-reload boundaries: exporting hooks and helpers next to components is fine.
-    // Route files export `Route`; the TanStack Router plugin code-splits their components, so HMR still works.
-    files: ['packages/**/*.{ts,tsx}', 'apps/*/src/routes/**/*.tsx'],
+    // Route files export `Route`; the TanStack Router plugin code-splits their components, so HMR still works. Test
+    // helpers are never hot-reloaded.
+    files: ['packages/**/*.{ts,tsx}', 'apps/*/src/routes/**/*.tsx', 'apps/*/src/test/**/*.{ts,tsx}'],
     rules: { 'react-refresh/only-export-components': 'off' },
   },
   {

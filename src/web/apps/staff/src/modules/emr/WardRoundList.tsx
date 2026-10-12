@@ -144,7 +144,7 @@ export function WardRoundList({
                   isRestricted={p.isRestricted}
                 >
                   {p.isMlc && (
-                    <Tooltip content="Medico-legal case" relationship="label">
+                    <Tooltip content="Medico-legal case" relationship="description">
                       <Badge size="small" appearance="tint" color="warning">
                         MLC
                       </Badge>

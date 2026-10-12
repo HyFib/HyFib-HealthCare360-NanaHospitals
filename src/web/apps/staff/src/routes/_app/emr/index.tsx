@@ -111,20 +111,23 @@ const useStyles = makeStyles({
 
 function ClickItem({ onOpen, children }: { onOpen: () => void; children: ReactNode }) {
   const styles = useStyles();
+  // The button sits inside the list item: a list item that is itself a button is no longer one of the list's items.
   return (
-    <li
-      className={styles.item}
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
-    >
-      {children}
+    <li>
+      <div
+        className={styles.item}
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onOpen();
+          }
+        }}
+      >
+        {children}
+      </div>
     </li>
   );
 }

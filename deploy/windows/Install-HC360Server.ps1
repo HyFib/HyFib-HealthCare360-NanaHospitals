@@ -20,6 +20,10 @@
       which checks again as SYSTEM every day and at start-up for System health (SRS SEC-05).
     - Registers the "HC360Server" Windows service (virtual account NT SERVICE\HC360Server, delayed auto-start,
       automatic restart on failure) and its Event Log source.
+    - Has Windows restart this machine's PostgreSQL service when its process fails, and registers the "HC360 database
+      watchdog" scheduled task, which starts PostgreSQL again as SYSTEM, within a minute, when the database itself
+      crashed or was killed: PostgreSQL's service reports a clean stop then, so Windows would leave it stopped (SRS
+      DED-01). A stop by a person or a script is left alone.
     - Opens HTTPS for the staff app (7360) and for the patient portal, which has an address of its own (7361), and mDNS
       (UDP 5353) in Windows Firewall for Private/Domain networks only. Serial analysers reach the server through their
       lab agent on 7360. With -LabPorts it also opens the ports network analysers connect
@@ -127,6 +131,20 @@ function Stop-HC360Service {
         Stop-Service -Name $ServiceName -Force
         $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
     }
+}
+
+# Has Windows restart the service $Name when its process ends unexpectedly, or it stops with an error: after 5 seconds,
+# 15 seconds, then every minute, counting again after a day without a failure (SRS DED-01). Install-PostgreSQL.ps1 has
+# the same function.
+function Set-RestartOnFailure([string] $Name) {
+    sc.exe failure $Name reset= 86400 actions= restart/5000/restart/15000/restart/60000 | Out-Null
+    if ($LASTEXITCODE -eq 0) { sc.exe failureflag $Name 1 | Out-Null }
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Windows did not take the restart-on-failure settings of the service $Name (sc.exe exit code $LASTEXITCODE)." }
+}
+
+# The triggers of the database watchdog task: every minute from now for as long as Windows runs, and at each start-up.
+function New-EveryMinuteTriggers {
+    return @((New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)), (New-ScheduledTaskTrigger -AtStartup))
 }
 
 function Set-RestrictedAcl([string] $Path, [switch] $ServiceWrite) {
@@ -465,8 +483,7 @@ if (-not $existing) {
         -StartupType Automatic | Out-Null
 }
 sc.exe config $ServiceName obj= $ServiceAccount start= delayed-auto | Out-Null
-sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/restart/60000 | Out-Null
-sc.exe failureflag $ServiceName 1 | Out-Null
+Set-RestartOnFailure $ServiceName
 
 Set-RestrictedAcl -Path $DataDir -ServiceWrite
 Set-RestrictedAcl -Path $InstallDir
@@ -750,6 +767,46 @@ if ($postgres) {
     else {
         $how = if ($withPassword) { 'with its password' } else { "with its Windows account ($ServiceAccount)" }
         Write-Host "    The service signs in to the database $how."
+    }
+}
+
+# ---------------------------------------------------------------- database restarts
+# Windows restarts a service whose process ends unexpectedly. PostgreSQL's service process (pg_ctl) reports a clean stop
+# even when the database itself crashes or is killed, so Windows would then leave it stopped: the watchdog task checks
+# every minute, as SYSTEM, and starts it again when its data folder says it was not shut down cleanly (SRS DED-01,
+# REL-01). Someone who stops PostgreSQL shuts it down cleanly, and it stays stopped.
+if ($postgres) {
+    Write-Step "Having Windows start PostgreSQL ($($postgres.Name)) again when it fails"
+    Set-RestartOnFailure $postgres.Name
+    $watchArguments = "database watchdog --service `"$($postgres.Name)`" --pgdata `"$($postgres.DataDirectory.TrimEnd('\'))`" --data-dir `"$($DataDir.TrimEnd('\'))`""
+    $watchAction = New-ScheduledTaskAction -Execute $exe -Argument $watchArguments
+    $watchTriggers = New-EveryMinuteTriggers
+    $watchPrincipal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $watchSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+    Register-ScheduledTask -TaskName 'HC360 database watchdog' -TaskPath '\HyFib\' -Action $watchAction -Trigger $watchTriggers `
+        -Principal $watchPrincipal -Settings $watchSettings -Force `
+        -Description 'Starts PostgreSQL again when it stopped without being shut down, for HyFib HealthCare360 (SRS DED-01).' | Out-Null
+
+    # One check now, as SYSTEM, to see that the task can read the PostgreSQL service and its data folder.
+    $watchRecord = Join-Path $DataDir 'config\database-watchdog.json'
+    $since = Get-Date
+    Start-ScheduledTask -TaskName 'HC360 database watchdog' -TaskPath '\HyFib\'
+    $deadline = (Get-Date).AddSeconds(60)
+    while ((Get-Date) -lt $deadline -and -not ((Test-Path -LiteralPath $watchRecord) -and (Get-Item -LiteralPath $watchRecord).LastWriteTime -ge $since)) {
+        Start-Sleep -Seconds 2
+    }
+    if ((Test-Path -LiteralPath $watchRecord) -and (Get-Item -LiteralPath $watchRecord).LastWriteTime -ge $since) {
+        $watched = Get-Content -LiteralPath $watchRecord -Raw | ConvertFrom-Json
+        if ($watched.clusterState -eq 'Unknown') {
+            Write-Warning "The database watchdog cannot read PostgreSQL's data folder ($($postgres.DataDirectory)) as SYSTEM, so it cannot tell a clean stop from a crash: it starts PostgreSQL whenever it finds it stopped. To keep PostgreSQL stopped, set its service to start manually first."
+        }
+        else {
+            Write-Host "    The database watchdog checks PostgreSQL every minute."
+        }
+    }
+    else {
+        Write-Warning "The 'HC360 database watchdog' scheduled task did not run within a minute. Check it in Task Scheduler (HyFib folder): System health warns until it runs."
     }
 }
 
