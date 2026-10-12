@@ -58,6 +58,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+# What this script pipes to psql is UTF-8, as psql reads it (a folder's name may not be ASCII).
+$OutputEncoding = New-Object System.Text.UTF8Encoding $false
 
 $ReplicationRole = 'hc360_replicator'
 
@@ -256,8 +258,10 @@ function Get-CertificateFingerprint([string] $Path) {
 # ---------------------------------------------------------------- PostgreSQL
 
 # A command over the replication connection to the primary (READ_REPLICATION_SLOT, or a psql \echo), its rows as text.
+# Given with -c, not on standard input: Windows PowerShell can put a byte order mark before what it pipes, and the primary
+# then reads the command as SQL, which a replication connection refuses. It holds no secret.
 function Invoke-PrimaryQuery([string] $Query, [string] $ConnInfo) {
-    $output = $Query | & $psql -X -d "$ConnInfo replication=true" -v ON_ERROR_STOP=1 -q -A -t -f -
+    $output = & $psql -X -d "$ConnInfo replication=true" -v ON_ERROR_STOP=1 -q -A -t -c $Query
     if ($LASTEXITCODE -ne 0) { throw "The primary at ${PrimaryAddress}:$PrimaryPort refused the connection or '$Query'. The message above says why: the password, the certificate (-PrimaryCertificate), or the primary not letting this machine in (Enable-HC360Replication.ps1 -StandbyAddress <this machine's address>)." }
     return $output
 }

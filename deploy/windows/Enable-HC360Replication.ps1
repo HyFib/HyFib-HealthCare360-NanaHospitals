@@ -64,6 +64,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+# What this script pipes to psql is UTF-8, as psql reads it (a folder's name may not be ASCII).
+$OutputEncoding = New-Object System.Text.UTF8Encoding $false
 
 $ReplicationRole = 'hc360_replicator'
 $CertificateFile = 'hc360-server.crt'

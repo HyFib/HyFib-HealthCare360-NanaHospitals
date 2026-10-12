@@ -160,20 +160,6 @@ try {
     Assert ($LASTEXITCODE -eq 0) "its PostgreSQL runs as the service $standbyName on port $standbyPort"
 
     Write-Host 'New-HC360Standby.ps1 on the standby'
-    # What psql answers on a replication connection here (diagnostic, while the version check is being made to work).
-    & {
-        $ErrorActionPreference = 'Continue'
-        $probePass = Join-Path $work 'probe.pgpass'
-        [System.IO.File]::WriteAllText($probePass, "*:*:replication:hc360_replicator:$replicationPassword`n")
-        $probe = "host=127.0.0.1 port=5432 user=hc360_replicator dbname=replication password='' passfile='$($probePass.Replace('\', '/'))' sslmode=require replication=true"
-        foreach ($query in 'SHOW server_version_num', 'IDENTIFY_SYSTEM', 'READ_REPLICATION_SLOT hc360_standby', '\echo :SERVER_VERSION_NUM') {
-            $answer = $query | & (Join-Path $bin 'psql.exe') -X -d $probe -A -t -f - 2>&1
-            Write-Host "  probe stdin [$query] exit $LASTEXITCODE`: $(@($answer) -join ' / ')"
-            $answer = & (Join-Path $bin 'psql.exe') -X -d $probe -A -t -c $query 2>&1
-            Write-Host "  probe -c    [$query] exit $LASTEXITCODE`: $(@($answer) -join ' / ')"
-        }
-        Remove-Item -LiteralPath $probePass
-    }
     $certificate = Join-Path $primary.DataDirectory 'hc360-server.crt'
     $arguments = "-PrimaryAddress 127.0.0.1 -PrimaryPort 5432 -Port $standbyPort -PrimaryCertificate '$certificate' -PostgresSuperuser $superuser -WalArchiveDirectory '$archive'"
     Assert ((Invoke-DeployScript 'New-HC360Standby.ps1' $arguments $bothSecrets) -eq 0) 'it runs to the end'
