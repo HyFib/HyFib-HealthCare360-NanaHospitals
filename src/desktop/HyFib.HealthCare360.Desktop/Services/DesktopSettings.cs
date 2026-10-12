@@ -21,6 +21,13 @@ internal sealed class DesktopSettings
 
     public string? ServerUrl { get; set; }
 
+    /// <summary>
+    /// Addresses of the configured server to try when <see cref="ServerUrl"/> does not answer (SRS DED-03): those it
+    /// answered on, most recent first, then the others discovery found for it at setup. Each is used only once it
+    /// answers over a connection pinned to the hospital CA (<see cref="ServerFallback"/>).
+    /// </summary>
+    public List<string> ServerAddresses { get; set; } = [];
+
     /// <summary>The hospital's private CA certificate (public data) that every server certificate must chain to.</summary>
     public string? CaCertificatePem { get; set; }
 
@@ -105,6 +112,19 @@ internal sealed class DesktopSettings
 
         settings.ApplyPolicy();
         return settings;
+    }
+
+    /// <summary>Puts <paramref name="server"/> first among <see cref="ServerAddresses"/>; true when that changed them.</summary>
+    public bool RememberServer(Uri server)
+    {
+        var addresses = ServerFallback.Remember(ServerAddresses, server);
+        if (addresses.SequenceEqual(ServerAddresses, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        ServerAddresses = [.. addresses];
+        return true;
     }
 
     public void Save()

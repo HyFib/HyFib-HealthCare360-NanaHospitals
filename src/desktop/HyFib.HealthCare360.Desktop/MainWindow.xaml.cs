@@ -46,20 +46,29 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _retry = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly CancellationTokenSource _lifetime = new();
     private readonly List<StaffWindow> _windows = [];
+    private readonly string? _notice;
     private CoreWebView2Environment? _environment;
     private TrayNotifier? _tray;
     private bool _pageLoaded;
+
+    // While the staff app cannot load: tries in a row that the server did not answer, and when to look for it at its
+    // other addresses next (SRS DED-03).
+    private int _missedTries;
+    private DateTime _nextSearch;
+    private bool _searching;
 
     // Set on the connection's thread when a pinned check is offered a certificate that is not from the hospital CA;
     // cleared when a retry reaches the server and is offered the hospital's certificate. While set, the staff app is
     // not loaded.
     private RejectedCertificate? _rejected;
 
-    internal MainWindow(DesktopSettings settings, string[] args)
+    /// <param name="notice">Shown from the tray once the window is up, such as that the server moved to another address.</param>
+    internal MainWindow(DesktopSettings settings, string[] args, string? notice = null)
     {
         InitializeComponent();
         _settings = settings;
         _args = args;
+        _notice = notice;
         _server = settings.ServerUri ?? throw new InvalidOperationException("No server configured.");
         _trust = new ServerTrust(settings.CaCertificatePem!);
         _client = new ServerClient(_server, _trust);
@@ -106,13 +115,22 @@ public partial class MainWindow : Window
         core.DocumentTitleChanged += (_, _) => Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? "HealthCare360" : core.DocumentTitle;
 
         _tray = new TrayNotifier(() => Activate([]));
+        if (_notice is not null)
+        {
+            _tray.Show("HC360 Desktop", _notice);
+        }
+
         CreateBridge(core, new WindowInteropHelper(this).Handle).Attach();
         _network.Start();
         _scanner.Use(ScannerSetupStore.ForThisComputer().Load().Setup);
         _ = HeartbeatLoopAsync(_lifetime.Token);
 
         // The pinned check runs before the staff app (and the sign-in cookies it sends) goes to the server.
-        await _client.PingAsync(_lifetime.Token);
+        if (await _client.PingAsync(_lifetime.Token) is not null)
+        {
+            RememberServer();
+        }
+
         Navigate(DeepLinks.Resolve(_args) ?? _settings.StartPath);
     }
 
@@ -444,9 +462,13 @@ public partial class MainWindow : Window
         if (latency is null)
         {
             OfflineDetails.Text = $"{_server.Host} · last try {DateTime.Now:HH:mm:ss}";
+            _missedTries++;
+            await SearchElsewhereAsync();
             return;
         }
 
+        _missedTries = 0;
+        RememberServer();
         _retry.Stop();
         if (_pageLoaded)
         {
@@ -455,6 +477,71 @@ public partial class MainWindow : Window
         else
         {
             Navigate(DeepLinks.Resolve(_args) ?? _settings.StartPath);
+        }
+    }
+
+    /// <summary>
+    /// While the staff app cannot load and the server has not answered three tries in a row, looks for it at its other
+    /// addresses, at most once a minute (SRS DED-03), and opens the window again on the first where it answers. Never
+    /// when IT fixed the server in the machine policy, and never while the staff app is loaded, so no work is lost.
+    /// </summary>
+    private async Task SearchElsewhereAsync()
+    {
+        if (_settings.ServerFixedByPolicy || _searching || _missedTries < 3 || DateTime.UtcNow < _nextSearch)
+        {
+            return;
+        }
+
+        _searching = true;
+        _nextSearch = DateTime.UtcNow.AddMinutes(1);
+        try
+        {
+            OfflineDetails.Text = $"{_server.Host} · looking for the server at its other addresses…";
+            var other = await ServerFallback.FindAsync(_server, _settings, _trust.Fingerprint, _lifetime.Token);
+
+            // The usual address may have answered meanwhile (the retries go on), or a refused certificate locked the window.
+            if (other is null || !_retry.IsEnabled || Locked)
+            {
+                OfflineDetails.Text = $"{_server.Host} · last try {DateTime.Now:HH:mm:ss}";
+                return;
+            }
+
+            Log.Warning("The server does not answer at {Server}, but does at {Other}, which HC360 uses from now on", _server, other);
+            _settings.ServerUrl = ServerFallback.Normalize(other);
+            _settings.RememberServer(other);
+            _settings.Save();
+            ((App)Application.Current).SwitchServer(
+                this, $"HC360 now connects to the server at {other.Authority}, because {_server.Authority} did not answer. Sign in again to go on.");
+        }
+        catch (OperationCanceledException)
+        {
+            // The window is closing.
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Error(ex, "The server's new address could not be saved");
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    /// <summary>Puts the address the server just answered on first among those to try (SRS DED-03).</summary>
+    private void RememberServer()
+    {
+        if (!_settings.RememberServer(_server))
+        {
+            return;
+        }
+
+        try
+        {
+            _settings.Save();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Warning(ex, "The server's address could not be remembered");
         }
     }
 
@@ -469,6 +556,7 @@ public partial class MainWindow : Window
     private void HideOffline()
     {
         _retry.Stop();
+        _missedTries = 0;
         OfflinePanel.Visibility = Visibility.Collapsed;
     }
 
