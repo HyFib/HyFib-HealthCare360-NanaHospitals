@@ -37,7 +37,8 @@ deleted; the lists hide them unless *Show those not in use* is on.
 The editors:
 - read the record afresh when opened and send its `version` back, so a change made meanwhile by someone else is reported
   instead of overwritten;
-- ask before discarding unsaved changes: on closing the editor, leaving the screen, pressing Back or closing the window;
+- ask before discarding unsaved changes (SRS UX-08): on closing the editor, leaving the screen, pressing Back or closing
+  the window (the app-wide guard, see *Unsaved changes* in `docs/architecture/FRONTEND-GUIDE.md`);
 - save with Ctrl+S as well as the Save button;
 - show the server's field messages beside their fields;
 - mark every cached query stale after a save, so pickers, billing and prints use the new details.

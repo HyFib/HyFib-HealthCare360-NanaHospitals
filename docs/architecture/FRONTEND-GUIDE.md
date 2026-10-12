@@ -101,6 +101,8 @@ export const bedQueries = {
   `useFormDraft(form, key)` (auto-save to the workstation) and `useHotkey('mod+s', …)`. A page's shortcuts do nothing
   while a dialog or drawer is open over it; a shortcut that belongs to a dialog passes its surface as `within` (a ref
   on `DialogSurface` or `OverlayDrawer`).
+* Unsaved changes (SRS UX-08): every form a user types into asks before the typing is lost. See *Unsaved changes*
+  below for how a form gets the guard.
 * Patient context: show `PatientBannerWithFlags` (`src/modules/emr/PatientBannerWithFlags.tsx`) on every
   patient-specific screen. It is `PatientBanner` plus the patient's allergies and alerts (EHR-03), loaded for staff
   allowed to see them and kept live. A dialog or counter that acts on a patient without a banner shows
@@ -123,13 +125,68 @@ export const bedQueries = {
   `formatRelative`, `formatPhone`, `humanize` (enum → words). The hospital runs on IST (`HOSPITAL_TIME_ZONE`).
 * Charts: `EChart` from `@/lib/EChart` (line/bar/pie), lazy per route.
 
+### Unsaved changes (SRS UX-08)
+
+What users see, in both apps: with unsaved changes, closing a dialog or drawer (Cancel, the close button, Esc, a click
+outside) asks **Discard your changes?** (*Keep editing* / *Discard changes*), and leaving the screen (a menu link, Back,
+a link in a dialog, signing out, switching facility) asks **Leave without saving?** (*Stay* / *Discard changes*).
+Closing or reloading the window has the browser ask. After a successful save nothing asks; while a save runs, closing
+does nothing. One blocker in each app's root route (`src/shell/LeaveGuard.tsx`) asks for every form; forms only say
+whether they have changes. The mechanism is `@hc360/ui` `forms/unsavedChanges.tsx`.
+
+`dirty` is react-hook-form's `form.formState.isDirty`, or for fields kept in `useState`,
+`useValuesChanged({ title, notes, lines })` (compares with the values the form opened with; a dialog that stays mounted
+passes its `open` as the second argument) or `!sameValues(draft, saved)`.
+
+* **Shared components ask already:** `EditorDrawer` (its `dirty` prop is required), `MasterDrawer` (`useEditorGuard`),
+  the module `ReasonDialog`s (the typed reason counts; pass `dirty` for extra fields in `children`), and the portal's
+  `Sheet` (pass `guard`).
+* **A dialog or drawer of your own:**
+
+  ```tsx
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, open, onClose });
+  <Dialog open={open} onOpenChange={guard.onOpenChange}>
+    <DialogSurface>
+      <form>… <Button onClick={guard.requestClose} disabled={busy}>Cancel</Button> …</form>
+      {guard.dialogs}
+    </DialogSurface>
+  </Dialog>
+  ```
+
+  Pass `open` when the component stays mounted while closed. Render `{guard.dialogs}` inside the dialog's surface or the
+  drawer (the question opens in a layer of its own, over the form). After a save, close with the parent's `onClose`
+  (or `guard.close`), never `requestClose`. A result view
+  shown after saving is not dirty: `dirty: form.formState.isDirty && !result`. The portal imports `useUnsavedChanges`
+  from `@/lib/unsavedChanges` (its question is translated).
+* **A dialog whose form is a child mounted while it is open** (`{open && <Body />}`): the dialog takes
+  `const closing = useCloseRequests({ onClose })`, `onOpenChange={closing.onOpenChange}` and wraps the child in
+  `<CloseRequestScope value={closing}>`; the child calls `useUnsavedChanges` as above. Esc and a click outside then go
+  through the child's guard.
+* **A form that is the screen** (or a panel on it): `useLeaveGuard({ dirty, busy })`. After saving in place, reset the
+  form to what was saved (`form.reset(values)`) so it is no longer dirty. A save that navigates in its `onSuccess` is
+  let through while `busy`; one that navigates after `await mutateAsync(...)` calls `allowLeaving()` first. An editor
+  opened through the address (`?edit=`) passes `leaves` so that Back, which closes it, asks too. A form that keeps a
+  draft on the workstation (`useFormDraft`, `useDraft`) passes `leaveQuestion: LEAVE_KEEPING_DRAFT`, which says so and
+  is not destructive.
+* **Leaving outside the router** (sign-out, facility switch): `if (!(await confirmLeaving())) return;` before it starts;
+  the navigations that follow are let through. A session that ended (idle sign-out, revoked) navigates with
+  `ignoreBlocker: true`: nothing can be saved any more.
+* **Not guarded:** filters and searches, read-only views, password prompts, and dialogs whose only field is the
+  parameter of a one-step action (a date, a printer, one choice).
+* **Focus:** the question returns focus to where the user was (Cancel, the close button, the field Esc was pressed
+  in); the dialog's opener still needs `useRestoreFocusTarget()` for focus to come back to it after the dialog closes.
+* **Tests:** `apps/staff/src/test/unsavedChanges.test.tsx` and `packages/ui/src/forms/unsavedChanges.test.tsx`. In
+  jsdom, Tabster returns focus on closing a dialog only for keyboard users, so answer the question with the keyboard
+  (`button.focus()` + `{Enter}`) when a test checks where focus goes.
+
 ## 5. UX rules (non-negotiable)
 
 1. **Plain language** a nurse understands: "Admit patient", not "Create admission entity". Sentence case. No jargon,
    no codes without their meaning, no exclamation marks.
 2. **Fast for daily work**: the common path needs the fewest clicks; sensible defaults; `autoFocus` on the first field;
    Enter submits dialogs; keyboard shortcuts for console-style screens (show them in tooltips/labels).
-3. **Safe**: confirm irreversible actions; show who/when on clinical records; never lose typing (drafts);
+3. **Safe**: confirm irreversible actions; show who/when on clinical records; never lose typing (drafts, and the
+   unsaved-change guards above);
    disable submit while saving; show server-side safety alerts (e.g. drug interactions) prominently, not as toasts.
 4. **Every state designed**: loading skeleton, empty (with next step), error (with retry), no-permission.
 5. **Accessible**: every input has a label; icon-only buttons have `aria-label`; colour is never the only signal;

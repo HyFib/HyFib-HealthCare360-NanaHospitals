@@ -387,7 +387,7 @@ ageing).
 | `/analytics/reports` | Report catalogue by area with search (title, description, formula), counts per area, patient-list badges |
 | `/analytics/reports/$reportId` | Report inputs (applied as you change them; kept in the URL so views can be bookmarked and shared), headline figures, chart with a view switch, sortable/paged table with totals, row drill-down, notes, “How it is calculated”, Excel/CSV export (patient lists confirm first), add to dashboard, e-mail regularly |
 | `/analytics/dashboards` | Templates, mine and shared; new, copy, delete |
-| `/analytics/dashboards/$dashboardId` | Tiles (chart, table or headline figures; small/medium/full width) with a period override for all tiles; edit mode to add, change, reorder, resize and remove tiles with a live preview; unsaved-change guard |
+| `/analytics/dashboards/$dashboardId` | Tiles (chart, table or headline figures; small/medium/full width) with a period override for all tiles; edit mode to add, change, reorder, resize and remove tiles with a live preview; unsaved-change guard (SRS UX-08: Cancel, leaving and closing the window ask first) |
 | `/analytics/schedules` | Scheduled e-mails: status, list, create/change drawer (relative periods, IST time, recipients), send now, pause/resume, delivery history with re-download |
 | `/analytics/extracts` | BI extracts: active, late and failing extracts and the last refresh; the facility's folder and the refresh log (with copy buttons) and how to connect Power BI, or why HC360 cannot write the folder; list with file, schedule, data as of and state; the same drawer with a file name instead of recipients (CSV only, hourly allowed); refresh now, pause/resume, refresh history, delete |
 
