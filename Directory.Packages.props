@@ -18,7 +18,7 @@
   <ItemGroup Label="Web / security">
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.10" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.13" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="Otp.NET" Version="1.4.1" />
@@ -38,17 +38,17 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
     <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
-    <PackageVersion Include="Quartz.Extensions.Hosting" Version="4.2.1" />
+    <PackageVersion Include="Quartz.Extensions.Hosting" Version="4.3.0" />
     <PackageVersion Include="Makaretu.Dns.Multicast.New" Version="0.38.0" />
     <PackageVersion Include="System.Management" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup Label="Interoperability / documents">
-    <PackageVersion Include="Hl7.Fhir.R4" Version="6.5.0" />
+    <PackageVersion Include="Hl7.Fhir.R4" Version="6.6.0" />
     <PackageVersion Include="fo-dicom" Version="5.2.6" />
     <PackageVersion Include="ClosedXML" Version="0.105.1" />
     <PackageVersion Include="QRCoder" Version="1.8.0" />
-    <PackageVersion Include="Anthropic" Version="12.50.0" />
+    <PackageVersion Include="Anthropic" Version="12.53.0" />
   </ItemGroup>
 
   <ItemGroup Label="Desktop">
