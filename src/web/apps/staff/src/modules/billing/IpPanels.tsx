@@ -36,7 +36,17 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, todayIso, type PayerType } from '@hc360/core';
-import { ConfirmDialog, DataTable, ErrorState, LoadingState, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  LoadingState,
+  Section,
+  StatusBadge,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -519,8 +529,14 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ payerType, payerId, tariffPlanId, policyId, estimate, reprice, notes }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
         <form
           onSubmit={(event) => {
@@ -596,7 +612,7 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
               <ActionError error={save.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button
@@ -610,6 +626,7 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

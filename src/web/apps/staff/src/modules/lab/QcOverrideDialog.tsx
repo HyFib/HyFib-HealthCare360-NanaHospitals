@@ -17,6 +17,7 @@ import {
 import { ShieldErrorRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { westgardRuleText } from './labels';
+import { useUnsavedChanges } from '@hc360/ui';
 
 const useStyles = makeStyles({
   content: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -49,8 +50,10 @@ export function QcOverrideDialog({
   const [reason, setReason] = useState('');
   const valid = reason.trim().length >= 10;
 
+  const guard = useUnsavedChanges({ dirty: reason !== '', busy, onClose: onCancel });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !busy && onCancel()} modalType="alert">
+    <Dialog open onOpenChange={guard.onOpenChange} modalType="alert">
       <DialogSurface style={{ maxWidth: 600 }}>
         <form
           onSubmit={(event) => {
@@ -94,7 +97,7 @@ export function QcOverrideDialog({
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onCancel} disabled={busy}>
+              <Button onClick={guard.requestClose} disabled={busy}>
                 Cancel
               </Button>
               <Button
@@ -110,6 +113,7 @@ export function QcOverrideDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

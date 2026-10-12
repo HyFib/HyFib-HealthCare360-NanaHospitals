@@ -34,6 +34,8 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -89,12 +91,16 @@ export function MenuItemDrawer({ item, onClose }: { item: MenuItemDto | null; on
   });
   const serverError = save.error && !(isApiError(save.error) && save.error.isValidation) ? save.error : null;
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {item ? `Edit ${item.name}` : 'Add menu item'}
           </DrawerHeaderTitle>
@@ -180,9 +186,10 @@ export function MenuItemDrawer({ item, onClose }: { item: MenuItemDto | null; on
           >
             {item ? 'Save' : 'Add item'}
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }
@@ -215,8 +222,14 @@ export function StockDialog({ item, onClose }: { item: MenuItemDto; onClose: () 
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ kind, quantity, reason }),
+    busy: move.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !move.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <form
           onSubmit={(event) => {
@@ -273,7 +286,7 @@ export function StockDialog({ item, onClose }: { item: MenuItemDto; onClose: () 
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={move.isPending}>
+              <Button onClick={guard.requestClose} disabled={move.isPending}>
                 Cancel
               </Button>
               <Button
@@ -287,6 +300,7 @@ export function StockDialog({ item, onClose }: { item: MenuItemDto; onClose: () 
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -19,7 +19,18 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DataTrendingRegular, DeleteRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, isApiError, todayIso, useDebouncedValue } from '@hc360/core';
-import { ConfirmDialog, DataTable, EmptyState, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  FilterBar,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
@@ -272,8 +283,14 @@ function NewRequisitionDialog({
   });
   const update = (id: string, patch: Partial<RequisitionLine>) =>
     setLines(lines.map((l) => (l.item.id === id ? { ...l, ...patch } : l)));
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ storeId, requiredBy, remarks, lines }),
+    busy: create.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !create.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 880, width: '96vw' }}>
         <DialogBody>
           <DialogTitle>New purchase requisition</DialogTitle>
@@ -369,7 +386,7 @@ function NewRequisitionDialog({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={create.isPending}>
+            <Button onClick={guard.requestClose} disabled={create.isPending}>
               Cancel
             </Button>
             <Button
@@ -382,6 +399,7 @@ function NewRequisitionDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -219,4 +219,36 @@ describe('ConsentsPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Request emergency access' }));
     await waitFor(() => expect(listConsents).toHaveBeenCalledTimes(2));
   });
+
+  it('asks before Esc or Cancel throw a consent being recorded away (SRS UX-08)', async () => {
+    const user = userEvent.setup();
+    listConsents.mockResolvedValue([]);
+    renderWithProviders(<ConsentsPanel patientId="p1" />);
+    const record = await screen.findByRole('button', { name: 'Record consent' });
+    record.focus();
+    await user.keyboard('{Enter}');
+    const dialog = await screen.findByRole('dialog');
+    const kind = within(dialog).getByRole('combobox', { name: /^Consent/ });
+    await user.selectOptions(kind, 'DataSharing');
+
+    kind.focus();
+    await user.keyboard('{Escape}');
+    const question = await screen.findByRole('alertdialog', { name: 'Discard your changes?' });
+    within(question).getByRole('button', { name: 'Keep editing' }).focus();
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(dialog).toBeInTheDocument();
+    expect(kind).toHaveValue('DataSharing');
+    await waitFor(() => expect(kind).toHaveFocus());
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    within(await screen.findByRole('alertdialog'))
+      .getByRole('button', { name: 'Discard changes' })
+      .focus();
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(record).toHaveFocus());
+    expect(consentApi.capture).not.toHaveBeenCalled();
+  });
 });

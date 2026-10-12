@@ -28,7 +28,7 @@ import {
   SubtractCircleRegular,
 } from '@fluentui/react-icons';
 import { formatTime, isApiError } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactElement } from 'react';
 import { nursingApi, nursingKeys, type MarOutcome } from '../nursingApi';
@@ -181,8 +181,14 @@ export function RecordDoseDialog({
     }
   };
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ outcome, reason, earlier, administeredAt, batch, witness, notes }),
+    busy: record.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !record.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
         <form onSubmit={submit}>
           <DialogBody>
@@ -312,7 +318,7 @@ export function RecordDoseDialog({
               </Text>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={record.isPending}>
+              <Button onClick={guard.requestClose} disabled={record.isPending}>
                 {alreadyDone ? 'Close' : 'Cancel'}
               </Button>
               {!alreadyDone && (
@@ -328,6 +334,7 @@ export function RecordDoseDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

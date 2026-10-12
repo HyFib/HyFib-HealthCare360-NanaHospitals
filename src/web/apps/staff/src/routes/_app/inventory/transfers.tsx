@@ -43,6 +43,8 @@ import {
   PageHeader,
   Section,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -407,8 +409,14 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ fromStoreId, toStoreId, remarks, lines }),
+    busy: send.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !send.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 960, width: '96vw' }}>
         <DialogBody>
           <DialogTitle>Send stock to another store</DialogTitle>
@@ -518,7 +526,7 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={send.isPending}>
+            <Button onClick={guard.requestClose} disabled={send.isPending}>
               Cancel
             </Button>
             <Button
@@ -531,6 +539,7 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -17,7 +17,7 @@ import {
   type PrinterSetupInfo,
   type RolePrinter,
 } from '@hc360/core';
-import { ChoiceField, FormGrid, NumberField, Section, SelectField } from '@hc360/ui';
+import { ChoiceField, FormGrid, NumberField, Section, SelectField, useLeaveGuard } from '@hc360/ui';
 import { Controller, useForm, useWatch, type Control, type UseFormSetValue } from 'react-hook-form';
 import {
   CODE_OPTIONS,
@@ -86,6 +86,9 @@ export function PrinterSetupForm({
     const printer = form.getValues(role).printer;
     return printer === NO_PRINTER ? null : { printer };
   };
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: canEdit && form.formState.isDirty, busy: saving });
 
   return (
     <form className={styles.form} onSubmit={form.handleSubmit(onSave)} noValidate>

@@ -28,6 +28,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, useDebouncedValue } from '@hc360/core';
 import {
   applyServerErrors,
+  CloseRequestScope,
   DataTable,
   ErrorState,
   FilterBar,
@@ -39,7 +40,9 @@ import {
   StatusBadge,
   SwitchField,
   TextField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -112,10 +115,13 @@ const icdSchema = z.object({
 type IcdValues = z.infer<typeof icdSchema>;
 
 function IcdDrawer({ code, onClose }: { code: IcdCodeDto | 'new' | null; onClose: () => void }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <OverlayDrawer open={code !== null} position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open={code !== null} position="end" size="medium" onOpenChange={closing.onOpenChange}>
       {code !== null && (
-        <IcdForm key={code === 'new' ? 'new' : code.id} code={code === 'new' ? null : code} onClose={onClose} />
+        <CloseRequestScope value={closing}>
+          <IcdForm key={code === 'new' ? 'new' : code.id} code={code === 'new' ? null : code} onClose={onClose} />
+        </CloseRequestScope>
       )}
     </OverlayDrawer>
   );
@@ -161,11 +167,15 @@ function IcdForm({ code, onClose }: { code: IcdCodeDto | null; onClose: () => vo
     },
   });
   const fromFile = code?.source === 'Import' || code?.source === 'Seed';
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           {code ? code.code : 'Add ICD code'}
         </DrawerHeaderTitle>
@@ -230,8 +240,9 @@ function IcdForm({ code, onClose }: { code: IcdCodeDto | null; onClose: () => vo
         >
           Save
         </Button>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={guard.requestClose}>Cancel</Button>
       </DrawerFooter>
+      {guard.dialogs}
     </form>
   );
 }

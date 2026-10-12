@@ -19,7 +19,7 @@ import {
 import { ArrowSwapRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, FormGrid, SelectField, TextAreaField, useNotify } from '@hc360/ui';
+import { applyServerErrors, FormGrid, SelectField, TextAreaField, useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -128,8 +128,15 @@ export function TransferDialog({
   const serverError =
     transfer.error && !(isApiError(transfer.error) && transfer.error.isValidation) ? transfer.error : null;
 
+  const guard = useUnsavedChanges({
+    dirty: form.formState.isDirty || picked !== null,
+    busy: transfer.isPending,
+    open,
+    onClose: close,
+  });
+
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !transfer.isPending && close()}>
+    <Dialog open={open} onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 960, width: '100%' }}>
         <form onSubmit={form.handleSubmit((values) => transfer.mutate(values))} noValidate>
           <DialogBody>
@@ -245,7 +252,7 @@ export function TransferDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={close} disabled={transfer.isPending}>
+              <Button onClick={guard.requestClose} disabled={transfer.isPending}>
                 Cancel
               </Button>
               <Button
@@ -259,6 +266,7 @@ export function TransferDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -24,7 +24,7 @@ import {
 import { CallRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useDebouncedValue, type LookupItem } from '@hc360/core';
-import { FormGrid } from '@hc360/ui';
+import { FormGrid, useUnsavedChanges } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -144,8 +144,10 @@ export function CriticalCallDialog({
     });
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, open, onClose: onCancel });
+
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && !busy && onCancel()} modalType="alert">
+    <Dialog open={open} onOpenChange={guard.onOpenChange} modalType="alert">
       <DialogSurface style={{ maxWidth: 640 }}>
         <form onSubmit={(event) => void submit(event)} noValidate>
           <DialogBody>
@@ -302,7 +304,7 @@ export function CriticalCallDialog({
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onCancel} disabled={busy}>
+              <Button onClick={guard.requestClose} disabled={busy}>
                 {cancelLabel}
               </Button>
               <Button
@@ -318,6 +320,7 @@ export function CriticalCallDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

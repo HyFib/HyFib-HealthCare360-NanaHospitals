@@ -35,7 +35,7 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { draftStorageKey, formatDate, formatTime, useHotkey, useSession } from '@hc360/core';
-import { ErrorState, LoadingState, Section, useNotify } from '@hc360/ui';
+import { ErrorState, LEAVE_KEEPING_DRAFT, LoadingState, Section, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
@@ -767,6 +767,9 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
       </span>
     );
   };
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: dirtyLines.length > 0, busy: save.isPending, leaveQuestion: LEAVE_KEEPING_DRAFT });
 
   return (
     <div className={styles.root}>

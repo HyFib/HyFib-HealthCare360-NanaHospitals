@@ -12,6 +12,7 @@ import {
   Spinner,
   tokens,
 } from '@fluentui/react-components';
+import { useUnsavedChanges } from '@hc360/ui';
 import { useState, type ReactNode } from 'react';
 
 const useStyles = makeStyles({
@@ -57,77 +58,82 @@ export function ReasonDialog({
   const [reason, setReason] = useState('');
   const trimmed = reason.trim();
   const tooShort = trimmed.length < minLength;
+  // A typed reason is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({ dirty: reason !== '', busy, open, onClose: onCancel });
 
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && !busy && onCancel()} modalType="alert">
-      <DialogSurface style={{ maxWidth: 560 }}>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!tooShort && !busy) {
-              onConfirm(trimmed);
-            }
-          }}
-        >
-          <DialogBody>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogContent className={styles.content}>
-              {description}
-              {suggestions && suggestions.length > 0 && (
-                <div role="group" aria-label="Common reasons" className={styles.suggestions}>
-                  {suggestions.map((suggestion) => (
-                    <Button
-                      key={suggestion}
-                      size="small"
-                      shape="circular"
-                      appearance={reason === suggestion ? 'primary' : 'outline'}
-                      onClick={() => setReason(suggestion)}
-                    >
-                      {suggestion}
-                    </Button>
-                  ))}
-                </div>
-              )}
-              <Field
-                label={label}
-                required
-                hint={
-                  hint ??
-                  (minLength > 3
-                    ? `At least ${minLength} characters. This is recorded in the audit trail.`
-                    : 'This is recorded in the audit trail.')
-                }
-                validationState={reason && tooShort ? 'warning' : 'none'}
-              >
-                <Input
-                  value={reason}
-                  onChange={(_, data) => setReason(data.value.slice(0, maxLength))}
-                  autoFocus
-                  maxLength={maxLength}
-                />
-              </Field>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={onCancel} disabled={busy}>
-                Go back
-              </Button>
-              <Button
-                type="submit"
-                appearance="primary"
-                disabled={tooShort || busy}
-                // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out
-                // of the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It
-                // still submits the form, which is ignored while busy.
-                disabledFocusable={busy}
-                icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
-                style={destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
-              >
-                {confirmLabel}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </form>
-      </DialogSurface>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={guard.onOpenChange} modalType="alert">
+        <DialogSurface style={{ maxWidth: 560 }}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!tooShort && !busy) {
+                onConfirm(trimmed);
+              }
+            }}
+          >
+            <DialogBody>
+              <DialogTitle>{title}</DialogTitle>
+              <DialogContent className={styles.content}>
+                {description}
+                {suggestions && suggestions.length > 0 && (
+                  <div role="group" aria-label="Common reasons" className={styles.suggestions}>
+                    {suggestions.map((suggestion) => (
+                      <Button
+                        key={suggestion}
+                        size="small"
+                        shape="circular"
+                        appearance={reason === suggestion ? 'primary' : 'outline'}
+                        onClick={() => setReason(suggestion)}
+                      >
+                        {suggestion}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <Field
+                  label={label}
+                  required
+                  hint={
+                    hint ??
+                    (minLength > 3
+                      ? `At least ${minLength} characters. This is recorded in the audit trail.`
+                      : 'This is recorded in the audit trail.')
+                  }
+                  validationState={reason && tooShort ? 'warning' : 'none'}
+                >
+                  <Input
+                    value={reason}
+                    onChange={(_, data) => setReason(data.value.slice(0, maxLength))}
+                    autoFocus
+                    maxLength={maxLength}
+                  />
+                </Field>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={guard.requestClose} disabled={busy}>
+                  Go back
+                </Button>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={tooShort || busy}
+                  // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out
+                  // of the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It
+                  // still submits the form, which is ignored while busy.
+                  disabledFocusable={busy}
+                  icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
+                  style={destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
+                >
+                  {confirmLabel}
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </form>
+        </DialogSurface>
+      </Dialog>
+      {guard.dialogs}
+    </>
   );
 }

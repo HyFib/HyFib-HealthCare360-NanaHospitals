@@ -46,6 +46,8 @@ import {
   PageHeader,
   Section,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -565,8 +567,14 @@ function NewAdjustmentDialog({
   const update = (key: string, patch: Partial<AdjustLine>) =>
     setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ storeId, reason, remarks, lines }),
+    busy: create.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !create.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 960, width: '96vw' }}>
         <DialogBody>
           <DialogTitle>New stock adjustment</DialogTitle>
@@ -718,7 +726,7 @@ function NewAdjustmentDialog({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={create.isPending}>
+            <Button onClick={guard.requestClose} disabled={create.isPending}>
               Cancel
             </Button>
             <Button
@@ -731,6 +739,7 @@ function NewAdjustmentDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

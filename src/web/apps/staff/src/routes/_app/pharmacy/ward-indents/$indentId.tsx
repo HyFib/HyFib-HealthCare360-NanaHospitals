@@ -27,7 +27,18 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, formatRelative, isApiError, useHotkey } from '@hc360/core';
-import { DataTable, EmptyState, ErrorState, LoadingState, Page, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Page,
+  Section,
+  StatusBadge,
+  useLeaveGuard,
+  useNotify,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -255,6 +266,9 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
       .fetchQuery(pharmacyQueries.ipIssue(issueId))
       .then((detail) => printIpIssueSlip(detail, letterhead, { wardName: indent.wardName, bedLabel: indent.bedLabel }))
       .catch((error: unknown) => notify.error(error, 'The slip did not print'));
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: useValuesChanged({ quantities, batchIds }) && done === null, busy: issue.isPending });
 
   return (
     <Page>

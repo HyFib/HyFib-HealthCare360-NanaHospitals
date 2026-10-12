@@ -36,7 +36,7 @@ import {
   StarRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatTime, isApiError, humanize } from '@hc360/core';
-import { EmptyState, LoadingState, Pagination, Section, StatusBadge, useNotify } from '@hc360/ui';
+import { EmptyState, LoadingState, Pagination, Section, StatusBadge, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -234,6 +234,9 @@ export function OrderComposer({
   });
 
   const favouriteIds = new Set((favourites.data ?? []).map((f) => f.serviceItemId));
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: cart.length > 0 || clinicalNotes !== '', busy: place.isPending });
 
   return (
     <div className={styles.composer}>

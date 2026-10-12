@@ -19,7 +19,7 @@ import {
 import { DismissCircleRegular, StethoscopeRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, isApiError, useSession, type LookupItem } from '@hc360/core';
-import { applyServerErrors, DataTable, LookupField, TextAreaField, useNotify } from '@hc360/ui';
+import { applyServerErrors, DataTable, LookupField, TextAreaField, useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -206,8 +206,10 @@ export function RecordVisitDialog({
 
   const error = record.error && !(isApiError(record.error) && record.error.isValidation) ? record.error : null;
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: record.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !record.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form onSubmit={form.handleSubmit((v) => record.mutate(v))} noValidate>
           <DialogBody>
@@ -265,7 +267,7 @@ export function RecordVisitDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={record.isPending}>
+              <Button onClick={guard.requestClose} disabled={record.isPending}>
                 Cancel
               </Button>
               <Button
@@ -279,6 +281,7 @@ export function RecordVisitDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -13,12 +13,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
 import {
   applyServerErrors,
+  CloseRequestScope,
   NumberField,
   SelectField,
   SwitchField,
   TextAreaField,
   TextField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -60,9 +63,12 @@ export function ProgramDrawer({
   program: RpmProgramDto | null;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <OverlayDrawer open={open} position="end" size="small" onOpenChange={(_, d) => !d.open && onClose()}>
-      {open && <ProgramForm key={program?.id ?? 'new'} program={program} onClose={onClose} />}
+    <OverlayDrawer open={open} position="end" size="small" onOpenChange={closing.onOpenChange}>
+      <CloseRequestScope value={closing}>
+        {open && <ProgramForm key={program?.id ?? 'new'} program={program} onClose={onClose} />}
+      </CloseRequestScope>
     </OverlayDrawer>
   );
 }
@@ -117,11 +123,15 @@ function ProgramForm({ program, onClose }: { program: RpmProgramDto | null; onCl
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           {program ? program.name : 'Add programme'}
         </DrawerHeaderTitle>
@@ -172,8 +182,9 @@ function ProgramForm({ program, onClose }: { program: RpmProgramDto | null; onCl
         >
           {program ? 'Save' : 'Add programme'}
         </Button>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={guard.requestClose}>Cancel</Button>
       </DrawerFooter>
+      {guard.dialogs}
     </form>
   );
 }

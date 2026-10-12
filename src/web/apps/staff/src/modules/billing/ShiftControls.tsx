@@ -26,7 +26,7 @@ import {
   LockClosedRegular,
 } from '@fluentui/react-icons';
 import { formatInr, formatTime } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -287,8 +287,16 @@ export function CloseShiftDialog({
     },
   });
 
+  // The counted cash is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ declared, notes, counts }, open),
+    busy: close.isPending,
+    open,
+    onClose,
+  });
+
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && !close.isPending && onClose()} modalType="alert">
+    <Dialog open={open} onOpenChange={guard.onOpenChange} modalType="alert">
       <DialogSurface style={{ maxWidth: 620 }}>
         <DialogBody>
           <DialogTitle>Close shift at {shift.counter}</DialogTitle>
@@ -376,7 +384,7 @@ export function CloseShiftDialog({
             <ActionError error={close.error} onReload={() => void live.refetch()} />
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={close.isPending}>
+            <Button onClick={guard.requestClose} disabled={close.isPending}>
               Keep shift open
             </Button>
             <Button
@@ -389,6 +397,7 @@ export function CloseShiftDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

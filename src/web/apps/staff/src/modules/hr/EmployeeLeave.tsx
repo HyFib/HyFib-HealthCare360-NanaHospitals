@@ -17,6 +17,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, todayIso } from '@hc360/core';
 import {
   applyServerErrors,
+  CloseRequestScope,
   DataTable,
   FormGrid,
   NumberField,
@@ -24,7 +25,9 @@ import {
   SelectField,
   StatusBadge,
   TextAreaField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -252,10 +255,13 @@ export function AdjustBalanceDialog({
   employee: PickedEmployee;
   year: number;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
-        {open && <AdjustBody onClose={onClose} employee={employee} year={year} />}
+        <CloseRequestScope value={closing}>
+          {open && <AdjustBody onClose={onClose} employee={employee} year={year} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -293,6 +299,8 @@ function AdjustBody({ onClose, employee, year }: { onClose: () => void; employee
       setBusy(false);
     }
   };
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
 
   return (
     <form onSubmit={form.handleSubmit(onValid)} noValidate>
@@ -336,7 +344,7 @@ function AdjustBody({ onClose, employee, year }: { onClose: () => void; employee
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -349,6 +357,7 @@ function AdjustBody({ onClose, employee, year }: { onClose: () => void; employee
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

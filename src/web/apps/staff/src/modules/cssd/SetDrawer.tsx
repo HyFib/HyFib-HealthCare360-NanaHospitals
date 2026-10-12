@@ -26,6 +26,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Controller, useFieldArray, useForm } from 'react-hook-form';
@@ -137,12 +138,16 @@ export function SetDrawer({ set, onClose }: { set: InstrumentSetDto | null; onCl
   const itemsError = form.formState.errors.items?.message;
   const serverError = save.error && !(isApiError(save.error) && save.error.isValidation) ? save.error : null;
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {set ? `Edit ${set.name}` : 'Add instrument set'}
           </DrawerHeaderTitle>
@@ -273,9 +278,10 @@ export function SetDrawer({ set, onClose }: { set: InstrumentSetDto | null; onCl
           >
             {set ? 'Save' : 'Add set'}
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

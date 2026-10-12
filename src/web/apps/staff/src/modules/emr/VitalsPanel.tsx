@@ -29,7 +29,16 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, MoreHorizontalRegular, SaveRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError, useDebouncedValue } from '@hc360/core';
-import { DataTable, FormGrid, LoadingState, Section, useNotify } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  DataTable,
+  FormGrid,
+  LoadingState,
+  Section,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useId, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -174,6 +183,13 @@ export function VitalsForm({
         notify.error(error, 'Could not record the vitals');
       }
     },
+  });
+
+  // Typed measurements are not thrown away without asking (SRS UX-08), in the dialog and on the encounter screen.
+  const guard = useUnsavedChanges({
+    dirty: hasAnyMeasurement(values) || recordedAt !== '',
+    busy: save.isPending,
+    onClose: onCancel ?? noop,
   });
 
   const numberInput = (
@@ -345,7 +361,7 @@ export function VitalsForm({
         {preview.isFetching && <Spinner size="extra-tiny" label="Checking ranges…" labelPosition="after" />}
         {!hasAnyMeasurement(values) && <Caption1 className={styles.muted}>Enter at least one measurement.</Caption1>}
         {onCancel && (
-          <Button onClick={onCancel} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Close
           </Button>
         )}
@@ -358,9 +374,12 @@ export function VitalsForm({
           Record vitals
         </Button>
       </div>
+      {guard.dialogs}
     </form>
   );
 }
+
+function noop() {}
 
 export function RecordVitalsDialog({
   patientId,
@@ -373,15 +392,18 @@ export function RecordVitalsDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 880 }}>
         <DialogBody>
           <DialogTitle>Record vitals</DialogTitle>
           <DialogContent>
-            {open && (
-              <VitalsForm patientId={patientId} encounterId={encounterId} onCancel={onClose} onSaved={onClose} />
-            )}
+            <CloseRequestScope value={closing}>
+              {open && (
+                <VitalsForm patientId={patientId} encounterId={encounterId} onCancel={onClose} onSaved={onClose} />
+              )}
+            </CloseRequestScope>
           </DialogContent>
         </DialogBody>
       </DialogSurface>

@@ -32,7 +32,7 @@ import {
   ShieldKeyholeRegular,
 } from '@fluentui/react-icons';
 import { formatInr, formatRelative, isApiError, isIndianMobile, todayIso, useDraft, useHotkey } from '@hc360/core';
-import { EmptyState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import { EmptyState, Page, PageHeader, Section, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
@@ -346,6 +346,9 @@ function CounterSalePage() {
   };
 
   const errorItems = isApiError(sell.error) ? itemsFromErrorData(sell.error.data) : [];
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: cart.length > 0 && done === null, busy: sell.isPending });
 
   return (
     <Page>

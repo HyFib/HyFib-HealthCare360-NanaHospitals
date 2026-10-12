@@ -25,6 +25,7 @@ import { errorMessage, hasErrorCode } from '@/modules/lab/common/errors';
 import { DEVICE_FILE_TYPES, deviceFileProblem, uploadFile } from '@/modules/lab/common/files';
 import { cardiologyApi, type CardiologyStudyStatus, type CardiologyStudyType } from './api';
 import { studyTypeLongLabel } from './labels';
+import { useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 
 const useStyles = makeStyles({
   content: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -55,12 +56,15 @@ function Shell({
   errorFallback,
   submitLabel,
   canSubmit,
+  dirty,
   onSubmit,
   onClose,
   children,
 }: {
   study: CardiologyStudyRef;
   title: string;
+  /** The form has unsaved changes: closing it asks first (SRS UX-08). */
+  dirty: boolean;
   busy: boolean;
   error: unknown;
   errorFallback: string;
@@ -71,8 +75,9 @@ function Shell({
   children: ReactNode;
 }) {
   const styles = useStyles();
+  const guard = useUnsavedChanges({ dirty, busy, onClose });
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !busy && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <form
           onSubmit={(event) => {
@@ -98,7 +103,7 @@ function Shell({
               {children}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={busy}>
+              <Button onClick={guard.requestClose} disabled={busy}>
                 Cancel
               </Button>
               <Button
@@ -114,6 +119,7 @@ function Shell({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -130,6 +136,7 @@ export function ScheduleCardiologyDialog({
 }) {
   const [at, setAt] = useState(() => toZonedInput(study.scheduledAt ? new Date(study.scheduledAt) : new Date()));
   const [room, setRoom] = useState(study.room ?? '');
+  const dirty = useValuesChanged({ at, room });
   const instant = fromZonedInput(at);
   const schedule = useMutation({
     mutationFn: () => cardiologyApi.schedule(study.id, instant!, room.trim() || null),
@@ -144,6 +151,7 @@ export function ScheduleCardiologyDialog({
       errorFallback="The study could not be scheduled."
       submitLabel="Schedule"
       canSubmit={Boolean(instant)}
+      dirty={dirty}
       onSubmit={() => schedule.mutate()}
       onClose={onClose}
     >
@@ -171,6 +179,7 @@ export function StartCardiologyDialog({
   onDone: () => void;
 }) {
   const [device, setDevice] = useState(study.deviceName ?? '');
+  const dirty = useValuesChanged(device);
   const start = useMutation({
     mutationFn: () => cardiologyApi.start(study.id, device.trim() || null),
     onSuccess: onDone,
@@ -184,6 +193,7 @@ export function StartCardiologyDialog({
       errorFallback="The study could not be started."
       submitLabel="Start recording"
       canSubmit
+      dirty={dirty}
       onSubmit={() => start.mutate()}
       onClose={onClose}
     >
@@ -215,6 +225,7 @@ export function AttachFilesDialog({
   const styles = useStyles();
   const canUpload = usePermission('files.write');
   const [files, setFiles] = useState<File[]>([]);
+  const dirty = files.length > 0;
   const problems = files.map(deviceFileProblem).filter((problem): problem is string => problem !== null);
   const attach = useMutation({
     mutationFn: async () => {
@@ -238,6 +249,7 @@ export function AttachFilesDialog({
       errorFallback="The files could not be attached."
       submitLabel={files.length > 1 ? `Attach ${files.length} files` : 'Attach'}
       canSubmit={canUpload && files.length > 0 && files.length <= 20 && problems.length === 0}
+      dirty={dirty}
       onSubmit={() => attach.mutate()}
       onClose={onClose}
     >
@@ -289,6 +301,7 @@ export function CompleteCardiologyDialog({
 }) {
   const styles = useStyles();
   const [notes, setNotes] = useState('');
+  const dirty = notes !== '';
   const complete = useMutation({
     mutationFn: () => cardiologyApi.complete(study.id, notes.trim() || null),
     onSuccess: onDone,
@@ -303,6 +316,7 @@ export function CompleteCardiologyDialog({
       errorFallback="The study could not be completed."
       submitLabel="Complete study"
       canSubmit={study.fileCount > 0}
+      dirty={dirty}
       onSubmit={() => complete.mutate()}
       onClose={onClose}
     >

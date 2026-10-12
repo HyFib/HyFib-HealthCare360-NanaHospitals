@@ -24,6 +24,8 @@ import {
   UHID_MAX,
   type AddFamilyValues,
 } from './model';
+import { useUnsavedChanges } from '@/lib/unsavedChanges';
+import { sameValues } from '@hc360/ui';
 
 const useStyles = makeStyles({
   lead: { margin: 0, color: tokens.colorNeutralForeground2 },
@@ -66,6 +68,13 @@ export function AddFamilySheet({ open, onClose }: { open: boolean; onClose: () =
     setError(null);
     onClose();
   };
+  // What was typed is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({
+    dirty: !sameValues(values, emptyAddFamily()) || code !== '',
+    busy: busy !== null,
+    open,
+    onClose: close,
+  });
 
   const update = <K extends keyof AddFamilyValues>(field: K, value: AddFamilyValues[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -148,7 +157,7 @@ export function AddFamilySheet({ open, onClose }: { open: boolean; onClose: () =
       >
         {busy === 'send' ? t('common.sending') : t('family.add.send')}
       </Button>
-      <Button size="large" onClick={close} disabled={busy !== null}>
+      <Button size="large" onClick={guard.requestClose} disabled={busy !== null}>
         {t('common.notNow')}
       </Button>
     </>
@@ -159,6 +168,7 @@ export function AddFamilySheet({ open, onClose }: { open: boolean; onClose: () =
       open={open}
       title={sent ? t('family.code.title') : t('family.add')}
       onClose={close}
+      guard={guard}
       dismissible={busy === null}
       footer={footer}
     >

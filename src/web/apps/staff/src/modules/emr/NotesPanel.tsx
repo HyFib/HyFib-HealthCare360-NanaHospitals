@@ -36,13 +36,16 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatRelative, isApiError, useSession } from '@hc360/core';
 import {
   applyServerErrors,
+  CloseRequestScope,
   EmptyState,
   FormGrid,
   LoadingState,
   Pagination,
   SelectField,
   TextField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -266,10 +269,13 @@ function EditNoteDialog({
   patientId: string;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={note !== null} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={note !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760 }}>
-        {note && <EditNoteForm key={note.id} note={note} patientId={patientId} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {note && <EditNoteForm key={note.id} note={note} patientId={patientId} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -307,6 +313,8 @@ function EditNoteForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
       }
     },
   });
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
 
   return (
     <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
@@ -349,7 +357,7 @@ function EditNoteForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
@@ -362,6 +370,7 @@ function EditNoteForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }
@@ -375,10 +384,13 @@ function AddendumDialog({
   patientId: string;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={note !== null} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={note !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 680 }}>
-        {note && <AddendumForm note={note} patientId={patientId} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {note && <AddendumForm note={note} patientId={patientId} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -398,6 +410,8 @@ function AddendumForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
     },
     onError: (error) => notify.error(error, 'Could not add the addendum'),
   });
+  const guard = useUnsavedChanges({ dirty: body !== '', busy: save.isPending, onClose });
+
   return (
     <DialogBody>
       <DialogTitle>Add an addendum</DialogTitle>
@@ -417,13 +431,14 @@ function AddendumForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
         </Field>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={save.isPending}>
+        <Button onClick={guard.requestClose} disabled={save.isPending}>
           Cancel
         </Button>
         <Button appearance="primary" disabled={!body.trim() || save.isPending} onClick={() => save.mutate()}>
           Add addendum
         </Button>
       </DialogActions>
+      {guard.dialogs}
     </DialogBody>
   );
 }

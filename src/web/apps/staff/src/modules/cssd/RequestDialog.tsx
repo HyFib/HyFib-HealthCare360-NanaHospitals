@@ -19,7 +19,7 @@ import {
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, ChoiceField, SelectField, TextAreaField, useNotify } from '@hc360/ui';
+import { applyServerErrors, ChoiceField, SelectField, TextAreaField, useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useFieldArray, useForm } from 'react-hook-form';
@@ -115,8 +115,10 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
   }));
   const serverError = create.error && !(isApiError(create.error) && create.error.isValidation) ? create.error : null;
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: create.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !create.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
         <form onSubmit={form.handleSubmit((v) => create.mutate(v))} noValidate>
           <DialogBody>
@@ -239,7 +241,7 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={create.isPending}>
+              <Button onClick={guard.requestClose} disabled={create.isPending}>
                 Cancel
               </Button>
               <Button
@@ -253,6 +255,7 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

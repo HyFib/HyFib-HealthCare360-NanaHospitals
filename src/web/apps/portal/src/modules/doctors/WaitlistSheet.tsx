@@ -17,6 +17,7 @@ import { PREFERRED_SESSIONS, type PreferredSession, type PublicDoctor } from '@/
 import { useActiveProfile } from '@/shell/profileContext';
 import { appointmentApi, appointmentQueries } from '../appointments/api';
 import { PREFERRED_SESSION } from '../appointments/labels';
+import { useUnsavedChanges } from '@/lib/unsavedChanges';
 
 const useStyles = makeStyles({
   lead: { margin: 0, color: tokens.colorNeutralForeground2 },
@@ -90,6 +91,8 @@ export function WaitlistSheet({
     form.reset();
     onClose();
   };
+  // What was typed is not thrown away without asking (SRS UX-08); once on the list there is nothing to lose.
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty && !done, busy, open, onClose: close });
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
@@ -136,6 +139,7 @@ export function WaitlistSheet({
       open={open}
       title={t('waitlist.title')}
       onClose={close}
+      guard={guard}
       dismissible={!busy}
       footer={
         <>
@@ -148,7 +152,7 @@ export function WaitlistSheet({
           >
             {t('waitlist.submit')}
           </Button>
-          <Button size="large" onClick={close} disabled={busy}>
+          <Button size="large" onClick={guard.requestClose} disabled={busy}>
             {t('common.notNow')}
           </Button>
         </>

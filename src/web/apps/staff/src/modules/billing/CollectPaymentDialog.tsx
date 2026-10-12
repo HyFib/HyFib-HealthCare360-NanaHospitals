@@ -34,7 +34,7 @@ import {
   WalletRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, todayIso, useHotkey } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useServerDocuments } from '@/lib/documents';
@@ -51,7 +51,13 @@ import { useAttemptKey, useBillingPrint, useRefreshBilling } from './hooks';
 import { fromPaise, minBig, toPaise } from './money';
 import { PaymentLinkDialog } from './PaymentLinkDialog';
 import { PaymentPanel } from './PaymentPanel';
-import { checkPaymentLine, newPaymentLine, summariseSplit, type PaymentLineDraft } from './paymentRules';
+import {
+  checkPaymentLine,
+  newPaymentLine,
+  type PaymentLineDraft,
+  paymentLinesChanged,
+  summariseSplit,
+} from './paymentRules';
 import { PosSaleDialog } from './PosSaleDialog';
 import { OpenShiftDialog } from './ShiftControls';
 import { ActionError, KeyHint } from './ui';
@@ -199,9 +205,17 @@ export function CollectPaymentDialog({
     'code' in collect.error &&
     collect.error.code === 'billing.shift_required';
 
+  // What the cashier typed is not thrown away without asking (SRS UX-08); once collected there is nothing to lose.
+  const guard = useUnsavedChanges({
+    dirty: !done && (cashTendered !== '' || notes.trim() !== '' || paymentLinesChanged(lines, 'Cash', bill.dueAmount)),
+    busy: collect.isPending,
+    open,
+    onClose,
+  });
+
   return (
     <>
-      <Dialog open={open && side === null} onOpenChange={(_, data) => !data.open && !collect.isPending && onClose()}>
+      <Dialog open={open && side === null} onOpenChange={guard.onOpenChange}>
         <DialogSurface ref={surface} style={{ maxWidth: 820, width: '100%' }}>
           <DialogBody>
             <DialogTitle>{done ? 'Payment recorded' : 'Collect payment'}</DialogTitle>
@@ -368,7 +382,7 @@ export function CollectPaymentDialog({
                 </>
               ) : (
                 <>
-                  <Button onClick={onClose} disabled={collect.isPending}>
+                  <Button onClick={guard.requestClose} disabled={collect.isPending}>
                     Not now
                   </Button>
                   <Button
@@ -385,6 +399,7 @@ export function CollectPaymentDialog({
               )}
             </DialogActions>
           </DialogBody>
+          {guard.dialogs}
         </DialogSurface>
       </Dialog>
 

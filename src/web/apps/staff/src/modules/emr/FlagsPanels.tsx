@@ -23,6 +23,7 @@ import { formatDate, formatDateOnly, isApiError, todayIso } from '@hc360/core';
 import {
   applyServerErrors,
   ChoiceField,
+  CloseRequestScope,
   ConfirmDialog,
   DataTable,
   DateField,
@@ -31,7 +32,9 @@ import {
   StatusBadge,
   TextAreaField,
   TextField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -112,10 +115,13 @@ export function RecordAllergyDialog({
   onClose: () => void;
   onOpenExisting?: (allergyId: string) => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
-        {open && <RecordAllergyForm patientId={patientId} onClose={onClose} onOpenExisting={onOpenExisting} />}
+        <CloseRequestScope value={closing}>
+          {open && <RecordAllergyForm patientId={patientId} onClose={onClose} onOpenExisting={onOpenExisting} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -163,6 +169,8 @@ function RecordAllergyForm({
       }
     },
   });
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
 
   return (
     <form
@@ -217,7 +225,7 @@ function RecordAllergyForm({
           <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={500} />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
@@ -232,6 +240,7 @@ function RecordAllergyForm({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }
@@ -245,10 +254,13 @@ function UpdateAllergyDialog({
   patientId: string;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={allergy !== null} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={allergy !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
-        {allergy && <UpdateAllergyForm key={allergy.id} allergy={allergy} patientId={patientId} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {allergy && <UpdateAllergyForm key={allergy.id} allergy={allergy} patientId={patientId} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -305,6 +317,8 @@ function UpdateAllergyForm({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
       <DialogBody>
@@ -356,7 +370,7 @@ function UpdateAllergyForm({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             {voided ? 'Close' : 'Cancel'}
           </Button>
           {!voided && (
@@ -371,6 +385,7 @@ function UpdateAllergyForm({
           )}
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }
@@ -561,10 +576,13 @@ export function RaiseAlertDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 620 }}>
-        {open && <RaiseAlertForm patientId={patientId} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {open && <RaiseAlertForm patientId={patientId} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -600,6 +618,8 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
       }
     },
   });
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
 
   return (
     <form
@@ -644,7 +664,7 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
           </FormGrid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
@@ -659,6 +679,7 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

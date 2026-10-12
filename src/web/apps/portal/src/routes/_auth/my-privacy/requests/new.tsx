@@ -56,6 +56,7 @@ import {
 } from '@/modules/privacy/model';
 import { ReportCard } from '@/modules/reports/ReportParts';
 import { useActiveProfile } from '@/shell/profileContext';
+import { useLeaveGuard } from '@hc360/ui';
 
 /**
  * A privacy request from the portal: correct the patient's details, erase what the law allows, or raise a concern
@@ -264,6 +265,9 @@ function PrivacyRequestForm({ kind }: { kind: RequestKind }) {
       }
     }
   });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty && created === null, busy });
 
   if (created) {
     return (

@@ -34,7 +34,18 @@ import {
   OpenRegular,
 } from '@fluentui/react-icons';
 import { formatRelative } from '@hc360/core';
-import { ConfirmDialog, EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -359,8 +370,14 @@ function NewDashboardDialog({ onClose }: { onClose: () => void }) {
     onError: (error) => notify.error(error, 'Could not create the dashboard'),
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ name, description, shared }),
+    busy: create.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface>
         <form
           onSubmit={(event) => {
@@ -398,7 +415,7 @@ function NewDashboardDialog({ onClose }: { onClose: () => void }) {
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={guard.requestClose}>Cancel</Button>
               <Button
                 appearance="primary"
                 type="submit"
@@ -410,6 +427,7 @@ function NewDashboardDialog({ onClose }: { onClose: () => void }) {
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

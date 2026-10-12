@@ -34,6 +34,7 @@ import {
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -303,6 +304,9 @@ function BookAppointmentPage() {
       void navigate({ search: {}, replace: true });
     }
   };
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: booked === null && (slot !== null || form.formState.isDirty), busy: book.isPending });
 
   return (
     <Page>

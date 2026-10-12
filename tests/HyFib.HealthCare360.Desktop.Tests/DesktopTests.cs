@@ -285,7 +285,7 @@ public sealed class ServerTrustTests
     }
 
     /// <summary>A copy whose private key Windows TLS can use (it cannot use an in-memory key).</summary>
-    private static X509Certificate2 UsableForTls(X509Certificate2 certificate)
+    internal static X509Certificate2 UsableForTls(X509Certificate2 certificate)
     {
         using (certificate)
         {
@@ -293,7 +293,7 @@ public sealed class ServerTrustTests
         }
     }
 
-    private static X509Certificate2 CreateCa(string subject)
+    internal static X509Certificate2 CreateCa(string subject)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256);
@@ -316,7 +316,7 @@ public sealed class ServerTrustTests
         return issued.CopyWithPrivateKey(key);
     }
 
-    private static X509Certificate2 CreateServerCertificate(
+    internal static X509Certificate2 CreateServerCertificate(
         X509Certificate2 ca, string host, IPAddress address, string usage = "1.3.6.1.5.5.7.3.1")
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);

@@ -35,7 +35,15 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatTime, isApiError, type BloodGroup } from '@hc360/core';
-import { ConfirmDialog, DataTable, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  StatusBadge,
+  useLeaveGuard,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type KeyboardEvent } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
@@ -288,8 +296,14 @@ function CrossMatchDialog({
       onClose();
     },
   });
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ method, result, remarks }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
           <DialogTitle>
@@ -328,7 +342,7 @@ function CrossMatchDialog({
             <ActionError error={save.error} />
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={save.isPending}>
+            <Button onClick={guard.requestClose} disabled={save.isPending}>
               Cancel
             </Button>
             <Button
@@ -341,6 +355,7 @@ function CrossMatchDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -459,8 +474,14 @@ function EmergencyReleaseDialog({ request, onClose }: { request: BloodRequestDet
     },
   });
   const valid = doctor.trim().length > 2 && reason.trim().length >= 10 && confirmed;
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ doctor, reason, confirmed }),
+    busy: authorise.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()} modalType="alert">
+    <Dialog open onOpenChange={guard.onOpenChange} modalType="alert">
       <DialogSurface style={{ maxWidth: 600 }}>
         <DialogBody>
           <DialogTitle>Authorise uncross-matched blood</DialogTitle>
@@ -501,7 +522,7 @@ function EmergencyReleaseDialog({ request, onClose }: { request: BloodRequestDet
             <ActionError error={authorise.error} />
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={authorise.isPending}>
+            <Button onClick={guard.requestClose} disabled={authorise.isPending}>
               Cancel
             </Button>
             <Button
@@ -515,6 +536,7 @@ function EmergencyReleaseDialog({ request, onClose }: { request: BloodRequestDet
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -615,6 +637,9 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
   };
   const submit = () => (check?.emergency ? setConfirmEmergency(true) : issue.mutate());
   const notFound = isApiError(unit.error) && unit.error.status === 404;
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: number.trim() !== '' || collector.trim() !== '', busy: issue.isPending });
 
   return (
     <div className={styles.stack}>
@@ -853,8 +878,10 @@ function ReturnDialog({ issue, onClose }: { issue: BloodIssueDto; onClose: () =>
       onClose();
     },
   });
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ maintained, notes }), busy: accept.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
           <DialogTitle>
@@ -881,7 +908,7 @@ function ReturnDialog({ issue, onClose }: { issue: BloodIssueDto; onClose: () =>
             <ActionError error={accept.error} />
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={accept.isPending}>
+            <Button onClick={guard.requestClose} disabled={accept.isPending}>
               Cancel
             </Button>
             <Button
@@ -894,6 +921,7 @@ function ReturnDialog({ issue, onClose }: { issue: BloodIssueDto; onClose: () =>
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

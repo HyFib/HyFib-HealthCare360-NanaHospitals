@@ -37,10 +37,19 @@ import {
   SendRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatPhone, isApiError, todayIso } from '@hc360/core';
-import { ErrorState, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  ErrorState,
+  LoadingState,
+  StatusBadge,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { SendFeedbackLinkDialog } from '@/modules/feedback/SendFeedbackLinkDialog';
 import { StaffFeedbackDialog } from '@/modules/feedback/StaffFeedbackDialog';
@@ -90,16 +99,15 @@ const useStyles = makeStyles({
  */
 export function FollowUpDrawer({ followUpId, onClose }: { followUpId: string | null; onClose: () => void }) {
   const followUp = useQuery({ ...crmQueries.followUp(followUpId ?? ''), enabled: followUpId !== null });
+  // A call outcome being typed is not thrown away without asking (SRS UX-08).
+  const closing = useCloseRequests({ onClose });
   return (
-    <OverlayDrawer
-      open={followUpId !== null}
-      position="end"
-      size="medium"
-      onOpenChange={(_, d) => !d.open && onClose()}
-    >
+    <OverlayDrawer open={followUpId !== null} position="end" size="medium" onOpenChange={closing.onOpenChange}>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={closing.requestClose} />
+          }
         >
           {followUp.data ? followUp.data.patientName : 'Follow-up call'}
         </DrawerHeaderTitle>
@@ -107,9 +115,11 @@ export function FollowUpDrawer({ followUpId, onClose }: { followUpId: string | n
       <DrawerBody>
         {followUp.isLoading && <LoadingState />}
         {followUp.error && <ErrorState error={followUp.error} onRetry={() => void followUp.refetch()} />}
-        {followUp.data && (
-          <FollowUpBody key={`${followUp.data.id}:${followUp.data.version}`} task={followUp.data} onClose={onClose} />
-        )}
+        <CloseRequestScope value={closing}>
+          {followUp.data && (
+            <FollowUpBody key={`${followUp.data.id}:${followUp.data.version}`} task={followUp.data} onClose={onClose} />
+          )}
+        </CloseRequestScope>
       </DrawerBody>
     </OverlayDrawer>
   );
@@ -131,7 +141,13 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
   const [cancelling, setCancelling] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [sendingLink, setSendingLink] = useState(false);
+  const [editChanged, setEditChanged] = useState(false);
   const closes = outcome ? outcomeClosesTask(outcome, task.attempts) : false;
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ outcome, notes, nextDate }) || (editing && editChanged),
+    busy: busy !== null,
+    onClose,
+  });
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: crmKeys.followUps });
 
@@ -323,7 +339,16 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
         </>
       )}
 
-      {editing && <EditTask task={task} onDone={() => setEditing(false)} />}
+      {editing && (
+        <EditTask
+          task={task}
+          onChanged={setEditChanged}
+          onDone={() => {
+            setEditing(false);
+            setEditChanged(false);
+          }}
+        />
+      )}
 
       <ReasonDialog
         open={cancelling}
@@ -351,11 +376,21 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
           visitId={task.visitId}
         />
       )}
+      {guard.dialogs}
     </div>
   );
 }
 
-function EditTask({ task, onDone }: { task: FollowUpDetail; onDone: () => void }) {
+function EditTask({
+  task,
+  onChanged,
+  onDone,
+}: {
+  task: FollowUpDetail;
+  /** Whether the changes typed here are unsaved, for the drawer's own question on closing. */
+  onChanged: (changed: boolean) => void;
+  onDone: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [dueDate, setDueDate] = useState(task.dueDate);
@@ -371,6 +406,9 @@ function EditTask({ task, onDone }: { task: FollowUpDetail; onDone: () => void }
         : null;
   const [notes, setNotes] = useState(task.notes ?? '');
   const [busy, setBusy] = useState(false);
+  const changed = useValuesChanged({ dueDate, priority, assignee, notes });
+  useEffect(() => onChanged(changed), [changed, onChanged]);
+  const guard = useUnsavedChanges({ dirty: changed, busy, onClose: onDone });
 
   const save = async () => {
     setBusy(true);
@@ -426,10 +464,11 @@ function EditTask({ task, onDone }: { task: FollowUpDetail; onDone: () => void }
         >
           Save
         </Button>
-        <Button onClick={onDone} disabled={busy}>
+        <Button onClick={guard.requestClose} disabled={busy}>
           Cancel
         </Button>
       </div>
+      {guard.dialogs}
     </div>
   );
 }

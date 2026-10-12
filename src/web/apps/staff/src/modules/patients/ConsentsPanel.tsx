@@ -17,19 +17,23 @@ import {
   Spinner,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import { AddRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDate, formatDateTime, isApiError } from '@hc360/core';
 import {
   ChoiceField,
+  CloseRequestScope,
   DataTable,
   EmptyState,
   FormGrid,
   StatusBadge,
   TextAreaField,
   TextField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -92,6 +96,8 @@ interface Withdrawal {
  */
 export function ConsentsPanel({ patientId }: { patientId: string }) {
   const styles = useStyles();
+  // Closing the consent dialog returns focus to the button that opened it.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canRead = usePermission('patients.read');
@@ -148,7 +154,7 @@ export function ConsentsPanel({ patientId }: { patientId: string }) {
     <>
       {canManage && (
         <div className={styles.toolbar}>
-          <Button appearance="primary" icon={<AddRegular />} onClick={() => setRecording(true)}>
+          <Button {...restoreFocusTarget} appearance="primary" icon={<AddRegular />} onClick={() => setRecording(true)}>
             Record consent
           </Button>
         </div>
@@ -290,10 +296,13 @@ function RestrictedNotice({ onRequestAccess }: { onRequestAccess: () => void }) 
 }
 
 function RecordConsentDialog({ patientId, open, onClose }: { patientId: string; open: boolean; onClose: () => void }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
-        {open && <RecordConsentForm patientId={patientId} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {open && <RecordConsentForm patientId={patientId} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -329,6 +338,8 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
       setProblems(other);
     },
   });
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
 
   return (
     <form
@@ -447,7 +458,7 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
@@ -460,6 +471,7 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

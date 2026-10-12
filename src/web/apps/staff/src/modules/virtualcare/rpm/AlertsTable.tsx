@@ -16,7 +16,7 @@ import {
 } from '@fluentui/react-components';
 import { AlertUrgentRegular, CheckmarkCircleRegular, EyeRegular, PlugDisconnectedRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatRelative } from '@hc360/core';
-import { DataTable, StatusBadge, useNotify } from '@hc360/ui';
+import { CloseRequestScope, DataTable, StatusBadge, useCloseRequests, useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -187,10 +187,13 @@ function AlertActionDialog({
   acting: { alert: RpmAlertDto; action: AlertAction } | null;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={acting !== null} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={acting !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
-        {acting && <AlertActionContent key={`${acting.alert.id}-${acting.action}`} {...acting} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {acting && <AlertActionContent key={`${acting.alert.id}-${acting.action}`} {...acting} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -224,6 +227,8 @@ function AlertActionContent({
       void queryClient.invalidateQueries({ queryKey: rpmKeys.alerts });
     },
   });
+
+  const guard = useUnsavedChanges({ dirty: notes !== '', busy: act.isPending, onClose });
 
   return (
     <form
@@ -265,7 +270,7 @@ function AlertActionContent({
           </Field>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={act.isPending}>
+          <Button onClick={guard.requestClose} disabled={act.isPending}>
             Cancel
           </Button>
           <Button
@@ -278,6 +283,7 @@ function AlertActionContent({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

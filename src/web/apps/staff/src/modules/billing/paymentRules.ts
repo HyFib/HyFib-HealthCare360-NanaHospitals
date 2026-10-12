@@ -194,20 +194,49 @@ export function summariseSplit(
   };
 }
 
+const BLANK_LINE: PaymentLineDraft = {
+  key: '',
+  mode: 'Cash',
+  amount: '',
+  reference: '',
+  cardLast4: '',
+  cardNetwork: '',
+  chequeNumber: '',
+  chequeBank: '',
+  chequeDate: '',
+};
+
+/**
+ * Whether the cashier changed the payment lines from the single line a collection starts with (`newPaymentLine(mode,
+ * amount)`), so closing the dialog would lose what they typed (SRS UX-08).
+ */
+export function paymentLinesChanged(
+  lines: readonly PaymentLineDraft[],
+  mode: CounterPaymentMode,
+  amount: number | null,
+): boolean {
+  const [line] = lines;
+  if (lines.length !== 1 || !line) {
+    return true;
+  }
+  const start: PaymentLineDraft = {
+    ...BLANK_LINE,
+    key: line.key,
+    mode,
+    amount: amount !== null && amount > 0 ? amountInputText(amount) : '',
+  };
+  return (Object.keys(start) as (keyof PaymentLineDraft)[]).some((field) => line[field] !== start[field]);
+}
+
 let sequence = 0;
 
 /** A fresh line (the key only identifies the row on screen). */
 export function newPaymentLine(mode: CounterPaymentMode, amount: number | null): PaymentLineDraft {
   sequence += 1;
   return {
+    ...BLANK_LINE,
     key: `line-${sequence}`,
     mode,
     amount: amount !== null && amount > 0 ? amountInputText(amount) : '',
-    reference: '',
-    cardLast4: '',
-    cardNetwork: '',
-    chequeNumber: '',
-    chequeBank: '',
-    chequeDate: '',
   };
 }

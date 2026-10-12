@@ -23,6 +23,7 @@ import {
   RELATIONSHIP_MAX,
   type NomineeFormValues,
 } from './model';
+import { useUnsavedChanges } from '@/lib/unsavedChanges';
 
 const useStyles = makeStyles({
   lead: { margin: 0, color: tokens.colorNeutralForeground2 },
@@ -72,6 +73,8 @@ export function NomineeSheet({
     form.reset();
     onClose();
   };
+  // What was typed is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, open, onClose: close });
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
@@ -100,6 +103,7 @@ export function NomineeSheet({
       open={open}
       title={nominee ? t('myPrivacy.nominee.change') : t('myPrivacy.nominee.add')}
       onClose={close}
+      guard={guard}
       dismissible={!busy}
       footer={
         <>
@@ -112,7 +116,7 @@ export function NomineeSheet({
           >
             {busy ? t('common.saving') : t('myPrivacy.nominee.save')}
           </Button>
-          <Button size="large" onClick={close} disabled={busy}>
+          <Button size="large" onClick={guard.requestClose} disabled={busy}>
             {t('common.notNow')}
           </Button>
         </>

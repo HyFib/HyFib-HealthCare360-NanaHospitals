@@ -14,7 +14,15 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, FormGrid, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  CloseRequestScope,
+  FormGrid,
+  TextField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -50,9 +58,16 @@ export function BankDetailsDialog({
   onClose: () => void;
   employee: EmployeeDetail;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 620 }}>{open && <Body onClose={onClose} employee={employee} />}</DialogSurface>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
+      <DialogSurface style={{ maxWidth: 620 }}>
+        {open && (
+          <CloseRequestScope value={closing}>
+            <Body onClose={onClose} employee={employee} />
+          </CloseRequestScope>
+        )}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -97,6 +112,8 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
 
   // A shared account is changed only once someone ticks that it is meant to be shared.
   const blocked = busy || (shared !== null && !confirmShared);
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
 
   return (
     <form
@@ -162,7 +179,7 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -178,6 +195,7 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

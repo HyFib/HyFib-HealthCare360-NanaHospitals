@@ -22,7 +22,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, ChevronLeftRegular, ChevronRightRegular, PillRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatTime, isApiError, todayIso } from '@hc360/core';
-import { DataTable, StatusBadge, useNotify } from '@hc360/ui';
+import { DataTable, StatusBadge, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -290,8 +290,14 @@ function AdHocDoseDialog({
     (!needsWitness || witness.trim().length > 0) &&
     (givenNow || fromIstInput(scheduledAt) !== null);
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ orderId, drugName, dose, route, givenNow, scheduledAt, reason, batch, witness, notes }),
+    busy: add.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !add.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
         <form
           onSubmit={(event) => {
@@ -379,7 +385,7 @@ function AdHocDoseDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={add.isPending}>
+              <Button onClick={guard.requestClose} disabled={add.isPending}>
                 Cancel
               </Button>
               <Button
@@ -393,6 +399,7 @@ function AdHocDoseDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -20,7 +20,15 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, CheckmarkRegular, DeleteRegular, MoneyHandRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, todayIso } from '@hc360/core';
-import { ConfirmDialog, ErrorState, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  ErrorState,
+  LoadingState,
+  StatusBadge,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
@@ -118,8 +126,14 @@ export function CreatePayoutDialog({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ doctor, period, tds, notes, deductions }),
+    busy: create.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !create.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640, width: '100%' }}>
         <form
           onSubmit={(event) => {
@@ -227,7 +241,7 @@ export function CreatePayoutDialog({
               <ActionError error={create.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={create.isPending}>
+              <Button onClick={guard.requestClose} disabled={create.isPending}>
                 Cancel
               </Button>
               <Button
@@ -241,6 +255,7 @@ export function CreatePayoutDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

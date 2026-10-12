@@ -28,6 +28,7 @@ import {
   StatusBadge,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -191,8 +192,10 @@ function HolidayDialog({ open, onClose, year }: { open: boolean; onClose: () => 
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, open, onClose });
+
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate>
           <DialogBody>
@@ -216,7 +219,7 @@ function HolidayDialog({ open, onClose, year }: { open: boolean; onClose: () => 
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={save.isPending}>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
                 Cancel
               </Button>
               <Button
@@ -230,6 +233,7 @@ function HolidayDialog({ open, onClose, year }: { open: boolean; onClose: () => 
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

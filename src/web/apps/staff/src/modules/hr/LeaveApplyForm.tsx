@@ -12,7 +12,16 @@ import {
 import { AttachRegular, SendRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { todayIso } from '@hc360/core';
-import { applyServerErrors, ChoiceField, DateField, FormGrid, SelectField, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  DateField,
+  FormGrid,
+  SelectField,
+  TextAreaField,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useState, type ReactNode } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -147,6 +156,13 @@ export function LeaveApplyForm({
     }
   };
 
+  // In a dialog or on its own screen, the request is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({
+    dirty: form.formState.isDirty || file !== null,
+    busy,
+    onClose: onCancel ?? noop,
+  });
+
   return (
     <form onSubmit={form.handleSubmit(onValid)} noValidate className={styles.form}>
       {header}
@@ -268,7 +284,7 @@ export function LeaveApplyForm({
       )}
       <div className={styles.actions}>
         {onCancel && (
-          <Button onClick={onCancel} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
         )}
@@ -281,6 +297,9 @@ export function LeaveApplyForm({
           {submitLabel}
         </Button>
       </div>
+      {guard.dialogs}
     </form>
   );
 }
+
+function noop() {}

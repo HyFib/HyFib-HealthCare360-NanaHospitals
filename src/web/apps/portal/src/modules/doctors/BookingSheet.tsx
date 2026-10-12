@@ -23,6 +23,7 @@ import { useActiveProfile } from '@/shell/profileContext';
 import { useHospitalName } from '@/shell/hooks';
 import { appointmentApi, appointmentQueries } from '../appointments/api';
 import { payAppointment } from '../appointments/payment';
+import { useUnsavedChanges } from '@/lib/unsavedChanges';
 
 const useStyles = makeStyles({
   summary: {
@@ -120,6 +121,13 @@ export function BookingSheet({
       onSlotsChanged();
     }
   };
+  // What was typed is not thrown away without asking (SRS UX-08); once booked there is nothing to lose.
+  const guard = useUnsavedChanges({
+    dirty: form.formState.isDirty && phase.name !== 'done',
+    busy: working,
+    open,
+    onClose: close,
+  });
 
   const submit = form.handleSubmit(async (values) => {
     if (!slot) {
@@ -241,6 +249,7 @@ export function BookingSheet({
       open={open}
       title={t('booking.confirm.title')}
       onClose={close}
+      guard={guard}
       dismissible={!working}
       footer={
         <>
@@ -253,7 +262,7 @@ export function BookingSheet({
           >
             {phase.name === 'working' ? t(phase.label) : t('booking.book')}
           </Button>
-          <Button size="large" onClick={close} disabled={working}>
+          <Button size="large" onClick={guard.requestClose} disabled={working}>
             {t('common.notNow')}
           </Button>
         </>

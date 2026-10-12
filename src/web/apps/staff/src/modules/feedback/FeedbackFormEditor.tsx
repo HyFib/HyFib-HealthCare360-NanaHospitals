@@ -3,12 +3,6 @@ import {
   Button,
   Caption1,
   Checkbox,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
   Field,
   Input,
   makeStyles,
@@ -23,10 +17,9 @@ import {
 } from '@fluentui/react-components';
 import { SaveRegular } from '@fluentui/react-icons';
 import { isApiError, useHotkey } from '@hc360/core';
-import { Section, useNotify } from '@hc360/ui';
+import { Section, useLeaveGuard, useNotify, type LeaveQuestion } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { useBlocker } from '@tanstack/react-router';
-import { useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { MainAside, Stack } from '@/modules/hr/shared/layout';
 import { feedbackApi, feedbackKeys, type FeedbackFormDto, type SaveFeedbackFormRequest } from './api';
@@ -110,6 +103,13 @@ function sameDraft(a: Draft, b: Draft): boolean {
 
 type Errors = Partial<Record<keyof Draft, string>>;
 
+const LEAVE_FORM: LeaveQuestion = {
+  title: 'Leave without saving?',
+  body: 'Your changes to this feedback form are not saved.',
+  confirmLabel: 'Discard changes',
+  destructive: true,
+};
+
 function validate(d: Draft): Errors {
   const errors: Errors = {};
   const code = d.code.trim();
@@ -145,15 +145,11 @@ export function FeedbackFormEditor({
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
   const [previewAnswers, setPreviewAnswers] = useState<FeedbackAnswers>(EMPTY_ANSWERS);
-  const leaving = useRef(false);
 
   // Compared with what the server holds now, so saving (and the refetch after it) clears the flag.
   const dirty = canManage && !sameDraft(draft, toDraft(form));
-  const blocker = useBlocker({
-    shouldBlockFn: () => dirty && !leaving.current,
-    enableBeforeUnload: () => dirty,
-    withResolver: true,
-  });
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  const leave = useLeaveGuard({ dirty, busy, leaveQuestion: LEAVE_FORM });
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -197,7 +193,7 @@ export function FeedbackFormEditor({
         const id = await feedbackApi.createForm(request);
         notify.success('Form created', 'Print its QR code for posters and kiosks.');
         void queryClient.invalidateQueries({ queryKey: feedbackKeys.forms });
-        leaving.current = true;
+        leave.allowLeaving();
         onSaved(id);
       }
     } catch (error) {
@@ -409,21 +405,6 @@ export function FeedbackFormEditor({
           </Section>
         </Stack>
       </MainAside>
-
-      <Dialog open={blocker.status === 'blocked'} onOpenChange={(_, d) => !d.open && blocker.reset?.()}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>Leave without saving?</DialogTitle>
-            <DialogContent>Your changes to this feedback form are not saved.</DialogContent>
-            <DialogActions>
-              <Button onClick={() => blocker.reset?.()}>Stay</Button>
-              <Button appearance="primary" onClick={() => blocker.proceed?.()}>
-                Discard changes
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
     </>
   );
 }

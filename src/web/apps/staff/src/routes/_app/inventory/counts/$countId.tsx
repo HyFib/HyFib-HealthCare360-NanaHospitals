@@ -16,7 +16,17 @@ import {
 } from '@fluentui/react-components';
 import { DocumentArrowLeftRegular, PrintRegular, SaveRegular, SendRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, formatRelative, useDraft, useHotkey } from '@hc360/core';
-import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  ErrorState,
+  LEAVE_KEEPING_DRAFT,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useLeaveGuard,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -195,6 +205,13 @@ function CountSheet({ count }: { count: CountDetail }) {
 
   const setEntry = (line: CountLineDto, patch: Partial<Entry>) =>
     setEdits((prev) => ({ ...prev, [line.id]: { ...(prev[line.id] ?? serverEntry(line)), ...patch } }));
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: editable && dirty,
+    busy: save.isPending || submit.isPending || cancel.isPending,
+    leaveQuestion: LEAVE_KEEPING_DRAFT,
+  });
 
   return (
     <Page>

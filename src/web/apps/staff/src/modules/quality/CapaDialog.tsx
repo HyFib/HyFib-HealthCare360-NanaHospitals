@@ -11,7 +11,18 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { todayIso } from '@hc360/core';
-import { applyServerErrors, ChoiceField, DateField, FormGrid, SelectField, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  CloseRequestScope,
+  DateField,
+  FormGrid,
+  SelectField,
+  TextAreaField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -58,10 +69,13 @@ export function CapaDialog({
   context?: CapaContext;
   capa?: CapaDetail | null;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 680 }}>
-        {open && <Body onClose={onClose} context={context} capa={capa ?? null} />}
+        <CloseRequestScope value={closing}>
+          {open && <Body onClose={onClose} context={context} capa={capa ?? null} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -129,6 +143,8 @@ function Body({ onClose, context, capa }: { onClose: () => void; context?: CapaC
       : capa
         ? capa.capaNumber
         : null;
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
 
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate>
@@ -201,7 +217,7 @@ function Body({ onClose, context, capa }: { onClose: () => void; context?: CapaC
           </FormGrid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -214,6 +230,7 @@ function Body({ onClose, context, capa }: { onClose: () => void; context?: CapaC
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

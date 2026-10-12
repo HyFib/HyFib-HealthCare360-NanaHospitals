@@ -17,7 +17,7 @@ import {
   Switch,
 } from '@fluentui/react-components';
 import { isApiError, normalizePhone } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ignoreEscapeWhile } from '@/lib/dialogFocus';
@@ -43,10 +43,13 @@ interface Props {
  * straight away, exactly as when the patient answers a QR code or link.
  */
 export function StaffFeedbackDialog({ open, onClose, patient, visitId }: Props) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 680 }}>
-        {open && <Body onClose={onClose} fixedPatient={patient ?? null} fixedVisitId={visitId ?? null} />}
+        <CloseRequestScope value={closing}>
+          {open && <Body onClose={onClose} fixedPatient={patient ?? null} fixedVisitId={visitId ?? null} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -146,6 +149,12 @@ function Body({
   };
 
   const formsForbidden = isApiError(forms.error) && forms.error.status === 403;
+
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ patient, visit, chosenFormId, answers, wantsCallback, phone }),
+    busy: busy,
+    onClose,
+  });
 
   return (
     <form
@@ -273,7 +282,7 @@ function Body({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -288,6 +297,7 @@ function Body({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

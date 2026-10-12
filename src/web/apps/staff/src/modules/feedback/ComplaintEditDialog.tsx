@@ -14,7 +14,7 @@ import {
   Spinner,
 } from '@fluentui/react-components';
 import { isApiError } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
@@ -43,10 +43,13 @@ export function ComplaintEditDialog({
   onClose: () => void;
   complaint: ComplaintDetail;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
-        {open && <Body onClose={onClose} complaint={complaint} />}
+        <CloseRequestScope value={closing}>
+          {open && <Body onClose={onClose} complaint={complaint} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -108,6 +111,12 @@ function Body({ onClose, complaint }: { onClose: () => void; complaint: Complain
     }
   };
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ owner, priority, departmentId, category }),
+    busy: busy,
+    onClose,
+  });
+
   return (
     <form
       onSubmit={(event) => {
@@ -159,7 +168,7 @@ function Body({ onClose, complaint }: { onClose: () => void; complaint: Complain
           </Field>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -172,6 +181,7 @@ function Body({ onClose, complaint }: { onClose: () => void; complaint: Complain
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

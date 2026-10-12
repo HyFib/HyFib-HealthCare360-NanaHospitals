@@ -15,7 +15,7 @@ import {
   Textarea,
 } from '@fluentui/react-components';
 import { isApiError } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { fromIstInput, nowIstInput } from '@/modules/hr/shared/dates';
@@ -34,10 +34,13 @@ export function LeadActivityDialog({
   leadId: string;
   leadName: string;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 620 }}>
-        {open && <Body onClose={onClose} leadId={leadId} leadName={leadName} />}
+        <CloseRequestScope value={closing}>
+          {open && <Body onClose={onClose} leadId={leadId} leadName={leadName} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -53,6 +56,11 @@ function Body({ onClose, leadId, leadName }: { onClose: () => void; leadId: stri
   const [next, setNext] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ type, occurredAt, outcome, notes, next }),
+    busy,
+    onClose,
+  });
 
   const save = async () => {
     if (!outcome.trim() && !notes.trim()) {
@@ -128,7 +136,7 @@ function Body({ onClose, leadId, leadName }: { onClose: () => void; leadId: stri
           </Field>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -141,6 +149,7 @@ function Body({ onClose, leadId, leadName }: { onClose: () => void; leadId: stri
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

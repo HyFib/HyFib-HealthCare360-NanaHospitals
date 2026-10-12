@@ -28,6 +28,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -217,8 +218,10 @@ function EnquiryDialog({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
         <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
           <DialogBody>
@@ -277,13 +280,14 @@ function EnquiryDialog({
                   Register as patient
                 </Button>
               </Can>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={guard.requestClose}>Cancel</Button>
               <Button type="submit" appearance="primary" disabled={save.isPending}>
                 Save
               </Button>
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

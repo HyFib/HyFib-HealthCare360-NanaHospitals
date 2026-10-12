@@ -27,6 +27,7 @@ import {
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -243,7 +244,9 @@ function SettingsFormBody({
       }
       return changes.length + secrets.length;
     },
-    onSuccess: (saved) => {
+    onSuccess: (saved, submitted) => {
+      // What the form shows is saved now: leaving does not ask (SRS UX-08).
+      form.reset(submitted);
       if (saved === 0) {
         notify.info('Nothing to save', 'The settings are already like this.');
         return;
@@ -266,6 +269,9 @@ function SettingsFormBody({
   const secretKeys = specSecretKeys(spec);
   const replacingAny = secretKeys.some((key) => values[replaceFlagId(key)] === true);
   const noCredentials = secretKeys.length > 0 && secretKeys.every((key) => scoped.secretStatus[key] === 'not-set');
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: save.isPending });
 
   return (
     <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate>

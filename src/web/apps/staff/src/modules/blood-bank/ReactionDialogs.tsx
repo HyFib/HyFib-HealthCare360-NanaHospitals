@@ -27,6 +27,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -121,8 +122,10 @@ export function ReportReactionDialog({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: report.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 820 }}>
         <form onSubmit={form.handleSubmit((v) => report.mutate(v))} noValidate>
           <DialogBody>
@@ -190,7 +193,7 @@ export function ReportReactionDialog({
               <ActionError error={report.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={report.isPending}>
+              <Button onClick={guard.requestClose} disabled={report.isPending}>
                 Cancel
               </Button>
               <Button
@@ -204,6 +207,7 @@ export function ReportReactionDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -245,8 +249,10 @@ export function CloseReactionDialog({ reaction, onClose }: { reaction: Transfusi
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: close.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 680 }}>
         <form onSubmit={form.handleSubmit((v) => close.mutate(v))} noValidate>
           <DialogBody>
@@ -296,7 +302,7 @@ export function CloseReactionDialog({ reaction, onClose }: { reaction: Transfusi
               <ActionError error={close.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={close.isPending}>
+              <Button onClick={guard.requestClose} disabled={close.isPending}>
                 Cancel
               </Button>
               <Button
@@ -310,6 +316,7 @@ export function CloseReactionDialog({ reaction, onClose }: { reaction: Transfusi
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

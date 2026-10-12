@@ -11,7 +11,15 @@ import {
 } from '@fluentui/react-components';
 import { PlayRegular } from '@fluentui/react-icons';
 import { useSession } from '@hc360/core';
-import { FormGrid, LookupField, SelectField, TextAreaField } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  FormGrid,
+  LookupField,
+  SelectField,
+  TextAreaField,
+  useCloseRequests,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { searchPractitioners, toOptions, useDepartments } from '@/lib/lookups';
@@ -40,10 +48,13 @@ export function StartEncounterDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
-        {open && <StartEncounterForm patientId={patientId} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {open && <StartEncounterForm patientId={patientId} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -97,6 +108,8 @@ function StartEncounterForm({ patientId, onClose }: { patientId: string; onClose
       { onSuccess: onClose },
     );
   });
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: start.isPending, onClose });
 
   return (
     <form onSubmit={submit} noValidate>
@@ -166,7 +179,7 @@ function StartEncounterForm({ patientId, onClose }: { patientId: string; onClose
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={start.isPending}>
+          <Button onClick={guard.requestClose} disabled={start.isPending}>
             Cancel
           </Button>
           <Button
@@ -179,6 +192,7 @@ function StartEncounterForm({ patientId, onClose }: { patientId: string; onClose
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

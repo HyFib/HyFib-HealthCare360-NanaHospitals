@@ -37,6 +37,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -313,8 +314,10 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
     onError: (error) => applyServerErrors(error, form.setError),
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: add.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !add.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720 }}>
         <form onSubmit={form.handleSubmit((v) => add.mutate(v))} noValidate>
           <DialogBody>
@@ -443,7 +446,7 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={add.isPending}>
+              <Button onClick={guard.requestClose} disabled={add.isPending}>
                 Cancel
               </Button>
               <Button
@@ -457,6 +460,7 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

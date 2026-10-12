@@ -35,6 +35,7 @@ import {
   SwitchField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -454,12 +455,16 @@ function ItemEditor({
   const rx = requiresPrescription(schedule, isControlled);
   const register = requiresRegister(schedule, isControlled);
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open position="end" size="large" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {item ? item.name : 'Add item'}
           </DrawerHeaderTitle>
@@ -686,9 +691,10 @@ function ItemEditor({
               {item ? 'Save' : 'Add item'}
             </Button>
           )}
-          <Button onClick={onClose}>{canManage ? 'Cancel' : 'Close'}</Button>
+          <Button onClick={guard.requestClose}>{canManage ? 'Cancel' : 'Close'}</Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

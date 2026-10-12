@@ -17,7 +17,17 @@ import {
 import { AddRegular, DeleteRegular, EditRegular, PersonNoteRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatPhone, isApiError } from '@hc360/core';
-import { applyServerErrors, ConfirmDialog, FormGrid, Section, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  CloseRequestScope,
+  ConfirmDialog,
+  FormGrid,
+  Section,
+  TextField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useId, useState } from 'react';
@@ -196,11 +206,14 @@ function NomineeDialog({
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 580 }}>
         {open && (
-          <NomineeBody patientId={patientId} nominee={nominee} busy={busy} setBusy={setBusy} onClose={onClose} />
+          <CloseRequestScope value={closing}>
+            <NomineeBody patientId={patientId} nominee={nominee} busy={busy} setBusy={setBusy} onClose={onClose} />
+          </CloseRequestScope>
         )}
       </DialogSurface>
     </Dialog>
@@ -245,6 +258,8 @@ function NomineeBody({
       setBusy(false);
     }
   };
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
 
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate>
@@ -321,7 +336,7 @@ function NomineeBody({
           </Caption1>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -334,6 +349,7 @@ function NomineeBody({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

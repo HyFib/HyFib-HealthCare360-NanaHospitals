@@ -1,12 +1,6 @@
 import {
   Button,
   Caption1,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
   Field,
   Input,
   makeStyles,
@@ -30,10 +24,20 @@ import {
   SaveRegular,
 } from '@fluentui/react-icons';
 import { formatRelative, isApiError } from '@hc360/core';
-import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useLeaveGuard,
+  useNotify,
+  type LeaveQuestion,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
-import { useRef, useState } from 'react';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import {
   analyticsApi,
@@ -313,6 +317,13 @@ function DashboardViewer({
 
 // ------------------------------------------------------------------------------------------------ editor
 
+const LEAVE_DASHBOARD: LeaveQuestion = {
+  title: 'Leave without saving?',
+  body: 'Your changes to this dashboard are not saved.',
+  confirmLabel: 'Discard changes',
+  destructive: true,
+};
+
 function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail; catalogue: ReportCatalogue }) {
   const styles = useStyles();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -324,7 +335,6 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
   const [widgets, setWidgets] = useState<WidgetConfig[]>(() => dashboard.widgets.map(toConfig));
   const [editing, setEditing] = useState<{ index: number | null } | null>(null);
   const [conflict, setConflict] = useState(false);
-  const leaving = useRef(false);
   const reports = new Map(catalogue.reports.map((r) => [r.id, r]));
 
   const initial = JSON.stringify({
@@ -334,16 +344,13 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
     widgets: dashboard.widgets.map(toConfig),
   });
   const dirty = JSON.stringify({ name, description, shared, widgets }) !== initial;
-  const blocker = useBlocker({
-    shouldBlockFn: () => dirty && !leaving.current,
-    enableBeforeUnload: () => dirty && !leaving.current,
-    withResolver: true,
-  });
+  // Any navigation with unsaved changes asks first (SRS UX-08), Cancel too: it leaves the editor (`?edit`).
+  const leave = useLeaveGuard({ dirty, leaves: () => true, leaveQuestion: LEAVE_DASHBOARD });
 
-  // Cancel asks first when there are unsaved changes (the blocker below); after a save the editor closes directly.
+  // Cancel asks first when there are unsaved changes (the leave guard above); after a save the editor closes directly.
   const cancel = () => void navigate({ search: (prev) => ({ ...prev, edit: undefined }) });
   const close = () => {
-    leaving.current = true;
+    leave.allowLeaving();
     cancel();
   };
 
@@ -427,7 +434,7 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
           <MessageBarActions>
             <Button
               onClick={() => {
-                leaving.current = true;
+                leave.allowLeaving();
                 void queryClient.invalidateQueries({ queryKey: analyticsQueries.dashboard(dashboard.id).queryKey });
               }}
             >
@@ -513,21 +520,6 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
           onClose={() => setEditing(null)}
         />
       )}
-
-      <Dialog open={blocker.status === 'blocked'} onOpenChange={(_, data) => !data.open && blocker.reset?.()}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>Leave without saving?</DialogTitle>
-            <DialogContent>Your changes to this dashboard are not saved.</DialogContent>
-            <DialogActions>
-              <Button onClick={() => blocker.reset?.()}>Stay</Button>
-              <Button appearance="primary" onClick={() => blocker.proceed?.()}>
-                Discard changes
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
     </Page>
   );
 }

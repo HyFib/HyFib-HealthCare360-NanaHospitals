@@ -17,7 +17,7 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
 import { CriticalCallDialog } from './common/CriticalCallDialog';
@@ -125,6 +125,8 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ values, reason }), busy: amend.isPending, onClose });
+
   if (needCall) {
     return (
       <CriticalCallDialog
@@ -147,7 +149,7 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
   }
 
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !amend.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 820 }}>
         <form
           onSubmit={(event) => {
@@ -231,7 +233,7 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={amend.isPending}>
+              <Button onClick={guard.requestClose} disabled={amend.isPending}>
                 Cancel
               </Button>
               <Button
@@ -247,6 +249,7 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -24,6 +24,7 @@ import {
   SwitchField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -184,12 +185,16 @@ function StoreDrawer({ store, onClose }: { store: StoreDto | null; onClose: () =
       }
     },
   });
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
-    <OverlayDrawer open position="end" size="small" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open position="end" size="small" onOpenChange={guard.onOpenChange}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {store ? store.name : 'Add store'}
           </DrawerHeaderTitle>
@@ -238,9 +243,10 @@ function StoreDrawer({ store, onClose }: { store: StoreDto | null; onClose: () =
           >
             Save
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

@@ -24,7 +24,18 @@ import {
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, useSession } from '@hc360/core';
-import { applyServerErrors, ChoiceField, DateField, SelectField, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  CloseRequestScope,
+  DateField,
+  SelectField,
+  TextAreaField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -156,10 +167,13 @@ export function EnrollDialog({
   onClose: () => void;
   onEnrolled: (enrollmentId: string) => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
-        {open && <EnrollContent onClose={onClose} onEnrolled={onEnrolled} />}
+        <CloseRequestScope value={closing}>
+          {open && <EnrollContent onClose={onClose} onEnrolled={onEnrolled} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -211,6 +225,8 @@ function EnrollContent({ onClose, onEnrolled }: { onClose: () => void; onEnrolle
       }
     },
   });
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: enroll.isPending, onClose });
 
   return (
     <form onSubmit={form.handleSubmit((v) => enroll.mutate(v))} noValidate>
@@ -275,7 +291,7 @@ function EnrollContent({ onClose, onEnrolled }: { onClose: () => void; onEnrolle
           <TextAreaField control={form.control} name="notes" label="Notes (optional)" rows={2} maxLength={2000} />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={enroll.isPending}>
+          <Button onClick={guard.requestClose} disabled={enroll.isPending}>
             Cancel
           </Button>
           <Button
@@ -288,6 +304,7 @@ function EnrollContent({ onClose, onEnrolled }: { onClose: () => void; onEnrolle
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }
@@ -322,11 +339,14 @@ export function EditEnrollmentDialog({
   enrollment: RpmEnrollmentDetail | null;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={enrollment !== null} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={enrollment !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
         {enrollment && (
-          <EditContent key={`${enrollment.id}-${enrollment.version}`} enrollment={enrollment} onClose={onClose} />
+          <CloseRequestScope value={closing}>
+            <EditContent key={`${enrollment.id}-${enrollment.version}`} enrollment={enrollment} onClose={onClose} />
+          </CloseRequestScope>
         )}
       </DialogSurface>
     </Dialog>
@@ -385,6 +405,8 @@ function EditContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetail;
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form
       onSubmit={form.handleSubmit((v) => !save.isPending && save.mutate(v))}
@@ -434,7 +456,7 @@ function EditContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetail;
           <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={2000} />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
@@ -449,6 +471,7 @@ function EditContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetail;
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }
@@ -481,10 +504,13 @@ export function RecordReadingsDialog({
   enrollment: RpmEnrollmentDetail | null;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={enrollment !== null} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={enrollment !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
-        {enrollment && <RecordContent key={enrollment.id} enrollment={enrollment} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {enrollment && <RecordContent key={enrollment.id} enrollment={enrollment} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -553,6 +579,12 @@ function RecordContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetai
 
   const filled = rows.filter((row) => row.value.trim() !== '');
   const invalid = filled.some((row) => Number.isNaN(Number(row.value)));
+
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ rows, measuredAt }) && result === null,
+    busy: record.isPending,
+    onClose,
+  });
 
   return (
     <form
@@ -662,7 +694,7 @@ function RecordContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetai
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={record.isPending}>
+          <Button onClick={guard.requestClose} disabled={record.isPending}>
             {result ? 'Close' : 'Cancel'}
           </Button>
           <Button
@@ -675,6 +707,7 @@ function RecordContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetai
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

@@ -14,6 +14,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { isApiError } from '@hc360/core';
+import { useUnsavedChanges } from '@hc360/ui';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
 export interface ReasonDialogProps {
@@ -63,73 +64,82 @@ export function ReasonDialog(props: ReasonDialogProps) {
     }
   };
 
-  const close = () => {
-    setReason('');
-    props.onCancel();
-  };
+  // A typed reason is not thrown away without asking (SRS UX-08).
+  const guard = useUnsavedChanges({
+    dirty: reason !== '',
+    busy: props.busy,
+    open: props.open,
+    onClose: () => {
+      setReason('');
+      props.onCancel();
+    },
+  });
 
   return (
-    <Dialog open={props.open} onOpenChange={(_, data) => !data.open && !props.busy && close()} modalType="alert">
-      <DialogSurface style={{ maxWidth: 520 }}>
-        <form onSubmit={submit}>
-          <DialogBody>
-            <DialogTitle>{props.title}</DialogTitle>
-            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {props.description && (
-                // A block container, so descriptions may include lists.
-                <div style={{ fontSize: tokens.fontSizeBase300, lineHeight: tokens.lineHeightBase300 }}>
-                  {props.description}
-                </div>
-              )}
-              <Field
-                label={props.label ?? 'Reason'}
-                required={!props.optional}
-                hint={props.hint ?? (minLength > 3 ? `At least ${minLength} characters` : undefined)}
-              >
-                <Textarea
-                  value={reason}
-                  onChange={(_, data) => setReason(data.value)}
-                  placeholder={props.placeholder}
-                  maxLength={props.maxLength ?? 300}
-                  rows={3}
-                  resize="vertical"
-                  autoFocus
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      submit(event);
-                    }
-                  }}
-                />
-              </Field>
-              {props.error !== undefined && props.error !== null && (
-                <MessageBar intent="error" layout="multiline">
-                  <MessageBarBody>
-                    {isApiError(props.error) ? props.error.userMessage : 'The action failed. Please try again.'}
-                  </MessageBarBody>
-                </MessageBar>
-              )}
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={close} disabled={props.busy}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                appearance="primary"
-                disabled={!valid || props.busy}
-                // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out
-                // of the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It
-                // still submits the form, which `submit` ignores while busy.
-                disabledFocusable={props.busy}
-                icon={props.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
-                style={props.destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
-              >
-                {props.confirmLabel}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </form>
-      </DialogSurface>
-    </Dialog>
+    <>
+      <Dialog open={props.open} onOpenChange={guard.onOpenChange} modalType="alert">
+        <DialogSurface style={{ maxWidth: 520 }}>
+          <form onSubmit={submit}>
+            <DialogBody>
+              <DialogTitle>{props.title}</DialogTitle>
+              <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {props.description && (
+                  // A block container, so descriptions may include lists.
+                  <div style={{ fontSize: tokens.fontSizeBase300, lineHeight: tokens.lineHeightBase300 }}>
+                    {props.description}
+                  </div>
+                )}
+                <Field
+                  label={props.label ?? 'Reason'}
+                  required={!props.optional}
+                  hint={props.hint ?? (minLength > 3 ? `At least ${minLength} characters` : undefined)}
+                >
+                  <Textarea
+                    value={reason}
+                    onChange={(_, data) => setReason(data.value)}
+                    placeholder={props.placeholder}
+                    maxLength={props.maxLength ?? 300}
+                    rows={3}
+                    resize="vertical"
+                    autoFocus
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        submit(event);
+                      }
+                    }}
+                  />
+                </Field>
+                {props.error !== undefined && props.error !== null && (
+                  <MessageBar intent="error" layout="multiline">
+                    <MessageBarBody>
+                      {isApiError(props.error) ? props.error.userMessage : 'The action failed. Please try again.'}
+                    </MessageBarBody>
+                  </MessageBar>
+                )}
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={guard.requestClose} disabled={props.busy}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={!valid || props.busy}
+                  // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out
+                  // of the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It
+                  // still submits the form, which `submit` ignores while busy.
+                  disabledFocusable={props.busy}
+                  icon={props.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
+                  style={props.destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
+                >
+                  {props.confirmLabel}
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </form>
+        </DialogSurface>
+      </Dialog>
+      {guard.dialogs}
+    </>
   );
 }

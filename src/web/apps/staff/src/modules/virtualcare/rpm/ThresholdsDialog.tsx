@@ -19,7 +19,7 @@ import {
 } from '@fluentui/react-components';
 import { DeleteRegular } from '@fluentui/react-icons';
 import { isApiError } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { READING_TYPES, rpmApi, rpmKeys, type RpmEnrollmentDetail, type RpmReadingType } from './api';
@@ -85,11 +85,18 @@ export function ThresholdsDialog({
   enrollment: RpmEnrollmentDetail | null;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={enrollment !== null} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={enrollment !== null} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720 }}>
         {enrollment && (
-          <ThresholdsContent key={`${enrollment.id}-${enrollment.version}`} enrollment={enrollment} onClose={onClose} />
+          <CloseRequestScope value={closing}>
+            <ThresholdsContent
+              key={`${enrollment.id}-${enrollment.version}`}
+              enrollment={enrollment}
+              onClose={onClose}
+            />
+          </CloseRequestScope>
         )}
       </DialogSurface>
     </Dialog>
@@ -145,6 +152,8 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
 
   const setValue = (type: RpmReadingType, key: keyof Limits, value: string) =>
     setRows((current) => current.map((row) => (row.type === type ? { ...row, [key]: value } : row)));
+
+  const guard = useUnsavedChanges({ dirty: useValuesChanged(rows), busy: save.isPending, onClose });
 
   return (
     <form
@@ -237,7 +246,7 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
@@ -250,6 +259,7 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

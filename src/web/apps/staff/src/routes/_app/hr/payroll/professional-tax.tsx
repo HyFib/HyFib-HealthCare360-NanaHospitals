@@ -26,7 +26,17 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, EditRegular, MoneyRegular } from '@fluentui/react-icons';
 import { formatInr } from '@hc360/core';
-import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -197,8 +207,14 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
     }
   };
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ stateCode, stateName, frequency, months, rows }),
+    busy,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760, width: '100%' }}>
         <DialogBody>
           <DialogTitle>{schedule ? `Edit ${schedule.stateName} slabs` : 'Add professional tax state'}</DialogTitle>
@@ -340,7 +356,7 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
             </Caption1>
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={busy}>
+            <Button onClick={guard.requestClose} disabled={busy}>
               Cancel
             </Button>
             <Button
@@ -353,6 +369,7 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

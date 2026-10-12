@@ -25,12 +25,14 @@ import {
   applyServerErrors,
   ChoiceField,
   FormGrid,
+  LEAVE_KEEPING_DRAFT,
   LookupField,
   Page,
   PageHeader,
   Section,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -235,6 +237,13 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
 
   const submit = form.handleSubmit((values) => create.mutate(values));
   useHotkey('mod+s', () => void submit(), { allowInInputs: true, enabled: !create.isPending && !created });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: form.formState.isDirty && created === null,
+    busy: create.isPending,
+    leaveQuestion: LEAVE_KEEPING_DRAFT,
+  });
 
   if (created) {
     const { order } = created;

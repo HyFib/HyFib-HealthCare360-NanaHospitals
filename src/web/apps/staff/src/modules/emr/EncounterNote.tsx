@@ -19,7 +19,16 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, CalendarRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime } from '@hc360/core';
-import { DateField, FormGrid, SelectField, TextField, useNotify } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  DateField,
+  FormGrid,
+  SelectField,
+  TextField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useWatch, type Control } from 'react-hook-form';
@@ -404,9 +413,16 @@ export function AmendDialog({
   onConfirm: (reason: string) => void;
   onCancel: () => void;
 }) {
+  const closing = useCloseRequests({ onClose: onCancel });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onCancel()} modalType="alert">
-      <DialogSurface>{open && <AmendBody busy={busy} onConfirm={onConfirm} onCancel={onCancel} />}</DialogSurface>
+    <Dialog open={open} onOpenChange={closing.onOpenChange} modalType="alert">
+      <DialogSurface>
+        {open && (
+          <CloseRequestScope value={closing}>
+            <AmendBody busy={busy} onConfirm={onConfirm} onCancel={onCancel} />
+          </CloseRequestScope>
+        )}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -422,6 +438,8 @@ function AmendBody({
 }) {
   const [reason, setReason] = useState('');
   const length = reason.trim().length;
+  const guard = useUnsavedChanges({ dirty: reason !== '', busy: busy, onClose: onCancel });
+
   return (
     <DialogBody>
       <DialogTitle>Record the amendment</DialogTitle>
@@ -445,7 +463,7 @@ function AmendBody({
         </Field>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCancel} disabled={busy}>
+        <Button onClick={guard.requestClose} disabled={busy}>
           Go back
         </Button>
         <Button
@@ -457,6 +475,7 @@ function AmendBody({
           Record amendment
         </Button>
       </DialogActions>
+      {guard.dialogs}
     </DialogBody>
   );
 }

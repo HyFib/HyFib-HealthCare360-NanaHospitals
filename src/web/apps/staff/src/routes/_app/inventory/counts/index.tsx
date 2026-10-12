@@ -18,7 +18,16 @@ import {
 } from '@fluentui/react-components';
 import { ClipboardTaskListLtrRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError } from '@hc360/core';
-import { DataTable, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  FilterBar,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -200,8 +209,14 @@ function StartCountDialog({
       onStarted(result.id);
     },
   });
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ storeId, itemType, categoryId, remarks }),
+    busy: start.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !start.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <DialogBody>
           <DialogTitle>Start a stock count</DialogTitle>
@@ -245,7 +260,7 @@ function StartCountDialog({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={start.isPending}>
+            <Button onClick={guard.requestClose} disabled={start.isPending}>
               Cancel
             </Button>
             <Button
@@ -258,6 +273,7 @@ function StartCountDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

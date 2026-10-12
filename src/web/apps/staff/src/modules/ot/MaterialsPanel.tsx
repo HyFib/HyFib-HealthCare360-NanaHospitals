@@ -44,6 +44,7 @@ import {
   Section,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -460,8 +461,10 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
   const issuable = storePick ? issuableQuantity(storePick, lotNumber) : null;
   const short = issuable !== null && (quantity ?? 0) > issuable;
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty || picked !== null, busy: add.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720 }}>
         <form onSubmit={form.handleSubmit((values) => add.mutate(values))} noValidate>
           <DialogBody>
@@ -602,7 +605,7 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
               {isStockError(add.error) ? <StockError error={add.error} /> : <ActionError error={add.error} />}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={add.isPending}>
+              <Button onClick={guard.requestClose} disabled={add.isPending}>
                 Cancel
               </Button>
               <Button
@@ -616,6 +619,7 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

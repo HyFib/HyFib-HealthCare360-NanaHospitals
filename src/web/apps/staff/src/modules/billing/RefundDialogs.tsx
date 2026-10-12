@@ -15,7 +15,7 @@ import {
   Textarea,
 } from '@fluentui/react-components';
 import { formatInr } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { billingApi, type RefundDto } from './api';
@@ -87,8 +87,15 @@ export function RequestRefundDialog({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ amount, reason }, open),
+    busy: request.isPending,
+    open,
+    onClose,
+  });
+
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && !request.isPending && onClose()}>
+    <Dialog open={open} onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -124,7 +131,7 @@ export function RequestRefundDialog({
               <ActionError error={request.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={request.isPending}>
+              <Button onClick={guard.requestClose} disabled={request.isPending}>
                 Cancel
               </Button>
               <Button
@@ -140,6 +147,7 @@ export function RequestRefundDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

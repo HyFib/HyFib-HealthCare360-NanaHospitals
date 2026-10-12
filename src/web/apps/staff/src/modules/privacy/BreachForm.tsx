@@ -17,7 +17,17 @@ import {
 import { SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatRelative, isApiError, useHotkey } from '@hc360/core';
-import { applyServerErrors, FormGrid, NumberField, Section, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  FormGrid,
+  LEAVE_KEEPING_DRAFT,
+  NumberField,
+  Section,
+  TextAreaField,
+  TextField,
+  useLeaveGuard,
+  useNotify,
+} from '@hc360/ui';
 import { useId, useState, type ReactElement } from 'react';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import { useFormDraft } from '@/lib/useFormDraft';
@@ -219,6 +229,9 @@ export function BreachForm({
   };
 
   useHotkey('mod+s', () => void form.handleSubmit(submit)(), { allowInInputs: true, enabled: !busy });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy, leaveQuestion: LEAVE_KEEPING_DRAFT });
 
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate className={styles.form}>

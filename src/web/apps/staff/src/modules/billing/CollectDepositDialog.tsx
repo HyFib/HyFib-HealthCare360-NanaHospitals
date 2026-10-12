@@ -26,7 +26,7 @@ import {
   PrintRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, todayIso, useHotkey } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -34,7 +34,13 @@ import { billingApi, billingQueries, type ReceiptDto } from './api';
 import { useAttemptKey, useBillingPrint, useRefreshBilling } from './hooks';
 import { PaymentLinkDialog } from './PaymentLinkDialog';
 import { PaymentPanel } from './PaymentPanel';
-import { checkPaymentLine, newPaymentLine, summariseSplit, type PaymentLineDraft } from './paymentRules';
+import {
+  checkPaymentLine,
+  newPaymentLine,
+  type PaymentLineDraft,
+  paymentLinesChanged,
+  summariseSplit,
+} from './paymentRules';
 import { PosSaleDialog } from './PosSaleDialog';
 import { OpenShiftDialog } from './ShiftControls';
 import { ActionError, Amount, KeyHint } from './ui';
@@ -144,6 +150,14 @@ export function CollectDepositDialog({
     },
   });
 
+  // What the cashier typed is not thrown away without asking (SRS UX-08); once collected there is nothing to lose.
+  const guard = useUnsavedChanges({
+    dirty: !done && (cashTendered !== '' || notes.trim() !== '' || paymentLinesChanged(lines, 'Cash', null)),
+    busy: collect.isPending,
+    open,
+    onClose,
+  });
+
   const problems = lines.map((line) => checkPaymentLine(line, today)).filter((c) => !c.ok);
   const canCollect = !collect.isPending && summary.total > 0 && !summary.shortTendered;
   const submit = () => {
@@ -160,7 +174,7 @@ export function CollectDepositDialog({
 
   return (
     <>
-      <Dialog open={open && side === null} onOpenChange={(_, data) => !data.open && !collect.isPending && onClose()}>
+      <Dialog open={open && side === null} onOpenChange={guard.onOpenChange}>
         <DialogSurface ref={surface} style={{ maxWidth: 820, width: '100%' }}>
           <DialogBody>
             <DialogTitle>{done ? 'Advance received' : 'Collect IP advance'}</DialogTitle>
@@ -258,7 +272,7 @@ export function CollectDepositDialog({
                 </>
               ) : (
                 <>
-                  <Button onClick={onClose} disabled={collect.isPending}>
+                  <Button onClick={guard.requestClose} disabled={collect.isPending}>
                     Cancel
                   </Button>
                   <Button
@@ -275,6 +289,7 @@ export function CollectDepositDialog({
               )}
             </DialogActions>
           </DialogBody>
+          {guard.dialogs}
         </DialogSurface>
       </Dialog>
       {side === 'pos' && (

@@ -80,10 +80,12 @@ function LockPanel({ user }: { user: AuthUser }) {
     api.post('/api/v1/auth/lock').catch(() => undefined);
   }, []);
 
+  // Signing out a locked session ends it: the screens behind the lock are not asked about (they are not this
+  // person's to keep or discard).
   const signOut = async () => {
     await auth.logout();
     queryClient.clear();
-    await navigate({ to: '/login', search: {} });
+    await navigate({ to: '/login', search: {}, ignoreBlocker: true });
   };
 
   const unlock = async (event: FormEvent) => {

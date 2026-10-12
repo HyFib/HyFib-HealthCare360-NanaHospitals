@@ -183,6 +183,7 @@ const DIALOGS: DialogCase[] = [
       <EditorDrawer
         open={open}
         title="Edit the shift"
+        dirty={false}
         busy={busy}
         onSubmit={(event) => {
           event.preventDefault();

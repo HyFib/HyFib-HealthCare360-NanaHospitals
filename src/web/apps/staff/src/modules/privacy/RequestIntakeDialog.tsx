@@ -22,7 +22,15 @@ import {
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { FormGrid, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  CloseRequestScope,
+  FormGrid,
+  TextAreaField,
+  TextField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch, type FieldPath } from 'react-hook-form';
@@ -98,15 +106,18 @@ export function RequestIntakeDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const body = { busy, setBusy, onClose, onCreated };
+  const closing = useCloseRequests({ onClose, busy });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760 }}>
-        {open &&
-          (patientId ? (
-            <WithPatient {...body} patientId={patientId} />
-          ) : (
-            <IntakeBody {...body} initialPatient={null} />
-          ))}
+        <CloseRequestScope value={closing}>
+          {open &&
+            (patientId ? (
+              <WithPatient {...body} patientId={patientId} />
+            ) : (
+              <IntakeBody {...body} initialPatient={null} />
+            ))}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -168,6 +179,7 @@ function IntakeBody({
   const errors = form.formState.errors;
   const contactVisible = notRegistered || showContact || Boolean(errors.contactPhone || errors.contactEmail);
   const chosenFields = rows.map((row) => row.field);
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
 
   const submit = async (values: IntakeValues) => {
     setBusy(true);
@@ -518,7 +530,7 @@ function IntakeBody({
           </Caption1>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -531,6 +543,7 @@ function IntakeBody({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

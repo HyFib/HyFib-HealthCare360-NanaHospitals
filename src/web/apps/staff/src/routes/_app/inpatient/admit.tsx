@@ -42,6 +42,7 @@ import {
   applyServerErrors,
   DateField,
   FormGrid,
+  LEAVE_KEEPING_DRAFT,
   Page,
   PageHeader,
   Section,
@@ -49,6 +50,7 @@ import {
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -349,6 +351,13 @@ function AdmitPatientPage() {
 
   const serverError = admit.error && !(isApiError(admit.error) && admit.error.isValidation) ? admit.error : null;
   const consultantName = practitioners.data?.find((p) => p.id === consultantId)?.name;
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: form.formState.isDirty && created === null,
+    busy: admit.isPending,
+    leaveQuestion: LEAVE_KEEPING_DRAFT,
+  });
 
   return (
     <Page maxWidth={1400}>

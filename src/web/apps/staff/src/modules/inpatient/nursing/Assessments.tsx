@@ -20,7 +20,7 @@ import {
 } from '@fluentui/react-components';
 import { EmojiSadRegular, PersonWalkingRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatRelative, isApiError } from '@hc360/core';
-import { DataTable, useNotify } from '@hc360/ui';
+import { DataTable, useLeaveGuard, useNotify, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactElement } from 'react';
 import {
@@ -275,6 +275,9 @@ function MorseForm({ admissionId, onDone }: { admissionId: string; onDone: () =>
     />
   );
 
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: useValuesChanged({ input, notes }), busy: save.isPending });
+
   return (
     <section className={styles.form} aria-label="Morse fall scale">
       <Subtitle2 as="h3">Fall risk — Morse scale</Subtitle2>
@@ -336,6 +339,9 @@ function BradenForm({ admissionId, onDone }: { admissionId: string; onDone: () =
     mutationFn: () => nursingApi.addBraden(admissionId, { ...(input as BradenInput), notes: notes.trim() || null }),
     ...handlers('Braden score'),
   });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: useValuesChanged({ input, notes }), busy: save.isPending });
 
   return (
     <section className={styles.form} aria-label="Braden scale">
@@ -401,6 +407,9 @@ function PainForm({ admissionId, onDone }: { admissionId: string; onDone: () => 
       }),
     ...handlers('Pain score'),
   });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: useValuesChanged({ scale, value, location, character, notes }), busy: save.isPending });
 
   return (
     <section className={styles.form} aria-label="Pain assessment">

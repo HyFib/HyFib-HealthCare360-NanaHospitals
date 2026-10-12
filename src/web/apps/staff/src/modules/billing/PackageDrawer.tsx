@@ -18,7 +18,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, DismissRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { searchServices } from './api';
@@ -206,8 +206,14 @@ export function PackageDrawer({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ code, name, billing, price, usedFor, stay, planId, description, active, inclusions }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <OverlayDrawer open position="end" size="large" onOpenChange={guard.onOpenChange}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -219,7 +225,9 @@ export function PackageDrawer({
       >
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            action={
+              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+            }
           >
             {p ? p.name : 'New package'}
           </DrawerHeaderTitle>
@@ -409,11 +417,12 @@ export function PackageDrawer({
           >
             {p ? 'Save package' : 'Create package'}
           </Button>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
         </DrawerFooter>
       </form>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

@@ -22,6 +22,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
 import {
   applyServerErrors,
+  CloseRequestScope,
   ConfirmDialog,
   DataTable,
   DateField,
@@ -35,7 +36,9 @@ import {
   SelectField,
   StatusBadge,
   TextAreaField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -104,10 +107,13 @@ function AddDeficiencyDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
-        {open && <AddDeficiencyForm record={record} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {open && <AddDeficiencyForm record={record} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -146,6 +152,8 @@ function AddDeficiencyForm({ record, onClose }: { record: MedicalRecordDto; onCl
       }
     },
   });
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate>
       <DialogBody>
@@ -176,7 +184,7 @@ function AddDeficiencyForm({ record, onClose }: { record: MedicalRecordDto; onCl
           </FormGrid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
@@ -189,6 +197,7 @@ function AddDeficiencyForm({ record, onClose }: { record: MedicalRecordDto; onCl
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

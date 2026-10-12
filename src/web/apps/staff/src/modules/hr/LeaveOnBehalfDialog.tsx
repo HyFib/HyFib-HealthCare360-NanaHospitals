@@ -1,5 +1,5 @@
 import { Caption1, Dialog, DialogBody, DialogContent, DialogSurface, DialogTitle } from '@fluentui/react-components';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { hrApi, hrKeys, hrQueries } from './api';
@@ -21,10 +21,14 @@ export function LeaveOnBehalfDialog({
   onClose: () => void;
   employee?: PickedEmployee | null;
 }) {
+  // Esc and a click outside ask first once the leave form has changes (its own guard, SRS UX-08).
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 680 }}>
-        {open && <Body onClose={onClose} employee={employee ?? null} />}
+        <CloseRequestScope value={closing}>
+          {open && <Body onClose={onClose} employee={employee ?? null} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );

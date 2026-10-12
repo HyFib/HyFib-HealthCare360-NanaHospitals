@@ -50,7 +50,18 @@ import {
   useRealtimeEvent,
   useSession,
 } from '@hc360/core';
-import { EmptyState, ErrorState, LoadingState, Page, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Page,
+  Section,
+  StatusBadge,
+  useLeaveGuard,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -595,6 +606,12 @@ function EntryScreen({
     refillsLeft > 0 &&
     (!entry.refillValidUntil || entry.refillValidUntil >= todayIso());
   const errorItems = isApiError(submit.error) ? itemsFromErrorData(submit.error.data) : [];
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: useValuesChanged({ choices, discount, notes, payments }) && done === null,
+    busy: submit.isPending,
+  });
 
   return (
     <Page>
@@ -1145,8 +1162,10 @@ function SubstituteDialog({
     baseUnit: row.baseUnit,
   });
 
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ picked, reason, consent }), onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720, width: '95vw' }}>
         <DialogBody>
           <DialogTitle>Give another product for {line.drugName}</DialogTitle>
@@ -1218,7 +1237,7 @@ function SubstituteDialog({
                 Give the prescribed item
               </Button>
             )}
-            <Button onClick={onClose}>Cancel</Button>
+            <Button onClick={guard.requestClose}>Cancel</Button>
             <Button
               appearance="primary"
               disabled={!picked || problems.length > 0}
@@ -1228,6 +1247,7 @@ function SubstituteDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -1289,8 +1309,14 @@ function AuthorizeRefillsDialog({ entry, onClose }: { entry: QueueEntryDetail; o
       onClose();
     },
   });
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ refills, validUntil, note }),
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <DialogBody>
           <DialogTitle>Authorise refills</DialogTitle>
@@ -1327,7 +1353,7 @@ function AuthorizeRefillsDialog({ entry, onClose }: { entry: QueueEntryDetail; o
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={save.isPending}>
+            <Button onClick={guard.requestClose} disabled={save.isPending}>
               Cancel
             </Button>
             <Button
@@ -1341,6 +1367,7 @@ function AuthorizeRefillsDialog({ entry, onClose }: { entry: QueueEntryDetail; o
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -1368,8 +1395,10 @@ function RequestRefillDialog({ entry, onClose }: { entry: QueueEntryDetail; onCl
       onClose();
     },
   });
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ pickup, notes }), busy: request.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !request.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <DialogBody>
           <DialogTitle>Request a refill</DialogTitle>
@@ -1393,7 +1422,7 @@ function RequestRefillDialog({ entry, onClose }: { entry: QueueEntryDetail; onCl
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={request.isPending}>
+            <Button onClick={guard.requestClose} disabled={request.isPending}>
               Cancel
             </Button>
             <Button
@@ -1407,6 +1436,7 @@ function RequestRefillDialog({ entry, onClose }: { entry: QueueEntryDetail; onCl
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

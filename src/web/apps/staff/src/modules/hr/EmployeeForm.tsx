@@ -12,6 +12,7 @@ import {
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
 } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, type ReactNode } from 'react';
@@ -81,6 +82,8 @@ export function EmployeeForm(props: EmployeeFormProps) {
 
   useEffect(() => onFormReady?.(form), [form, onFormReady]);
   useHotkey('mod+s', () => void handleSubmit(props.onSubmit)(), { allowInInputs: true, enabled: !props.busy });
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: props.busy });
 
   return (
     <form onSubmit={handleSubmit(props.onSubmit)} noValidate className={styles.form} autoComplete="off">

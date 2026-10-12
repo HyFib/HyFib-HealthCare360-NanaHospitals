@@ -233,6 +233,7 @@ function LeaveTypeDrawer({ type, onClose }: { type: LeaveTypeDto | null; onClose
     <EditorDrawer
       open
       title={type ? type.name : 'Add leave type'}
+      dirty={form.formState.isDirty}
       onClose={onClose}
       onSubmit={form.handleSubmit((v) => save.mutate(v))}
       busy={save.isPending}

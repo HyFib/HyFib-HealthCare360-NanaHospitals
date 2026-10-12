@@ -15,7 +15,7 @@ import {
 } from '@fluentui/react-components';
 import { DeleteRegular, SaveRegular, SendRegular } from '@fluentui/react-icons';
 import { formatInr, isApiError, todayIso, useHotkey } from '@hc360/core';
-import { EmptyState, Section, useNotify } from '@hc360/ui';
+import { EmptyState, Section, useLeaveGuard, useNotify, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ItemLookup } from '@/modules/inventory/api';
@@ -269,6 +269,12 @@ export function OrderForm({
   };
   const update = (key: string, patch: Partial<OrderLine>) =>
     setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: useValuesChanged({ vendor, storeId, expected, terms, remarks, lines }),
+    busy: save.isPending,
+  });
 
   return (
     <div className={styles.layout}>

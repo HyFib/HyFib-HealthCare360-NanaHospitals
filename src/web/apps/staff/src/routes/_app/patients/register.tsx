@@ -16,7 +16,7 @@ import {
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, DocumentArrowLeftRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatRelative, isApiError, useSession } from '@hc360/core';
-import { applyServerErrors, Page, PageHeader, useNotify } from '@hc360/ui';
+import { applyServerErrors, LEAVE_KEEPING_DRAFT, Page, PageHeader, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -121,6 +121,8 @@ function RegisterPatientPage() {
       patientApi.register({ ...toPatientPayload(values), confirmedNotDuplicate: confirmed }),
     onSuccess: (result, { values }) => {
       draft.clear();
+      // Saved: what the form shows is no longer an unsaved change, so leaving from the result does not ask.
+      form?.reset(values);
       setDuplicates(null);
       setRegistered({
         id: result.id,
@@ -190,6 +192,7 @@ function RegisterPatientPage() {
         checkDuplicates
         onOpenCandidate={(c) => void navigate({ to: '/patients/$patientId', params: { patientId: c.id } })}
         onFormReady={setForm}
+        leaveQuestion={LEAVE_KEEPING_DRAFT}
         secondaryActions={
           <Button appearance="subtle" onClick={() => void navigate({ to: '/patients' })}>
             Cancel

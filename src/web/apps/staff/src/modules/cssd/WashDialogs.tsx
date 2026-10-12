@@ -23,7 +23,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { isApiError, useSession } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useStoredState } from '@/modules/inpatient/hooks';
@@ -92,8 +92,14 @@ export function StartWashDialog({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ washer, program, operator, notes, lines }),
+    busy: start.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !start.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 640 }}>
         <form
           onSubmit={(event) => {
@@ -192,7 +198,7 @@ export function StartWashDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={start.isPending}>
+              <Button onClick={guard.requestClose} disabled={start.isPending}>
                 Cancel
               </Button>
               <Button
@@ -206,6 +212,7 @@ export function StartWashDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -251,8 +258,14 @@ export function CompleteWashDialog({ wash, onClose }: { wash: WashCycleDto; onCl
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ temperature, minutes, inspection }),
+    busy: complete.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !complete.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -335,7 +348,7 @@ export function CompleteWashDialog({ wash, onClose }: { wash: WashCycleDto; onCl
               </Text>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={complete.isPending}>
+              <Button onClick={guard.requestClose} disabled={complete.isPending}>
                 Cancel
               </Button>
               <Button
@@ -350,6 +363,7 @@ export function CompleteWashDialog({ wash, onClose }: { wash: WashCycleDto; onCl
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

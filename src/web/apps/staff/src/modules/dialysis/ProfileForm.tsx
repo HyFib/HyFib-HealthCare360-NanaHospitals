@@ -23,6 +23,7 @@ import {
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -165,7 +166,9 @@ export function ProfileForm({
         isActive: v.isActive,
         version: profile?.version ?? null,
       }),
-    onSuccess: () => {
+    onSuccess: (_, values) => {
+      // What the form shows is saved now: leaving does not ask (SRS UX-08).
+      form.reset(values);
       notify.success(profile ? 'Dialysis profile saved' : 'Patient enrolled in the dialysis unit');
       void queryClient.invalidateQueries({ queryKey: dialysisKeys.all });
       onSaved?.();
@@ -174,6 +177,9 @@ export function ProfileForm({
       applyFormErrors(error, form.setError);
     },
   });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: save.isPending });
 
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate className={styles.stack}>

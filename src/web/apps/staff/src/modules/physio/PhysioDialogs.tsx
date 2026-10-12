@@ -28,6 +28,7 @@ import {
   TextAreaField,
   TextField,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -103,8 +104,10 @@ function FormDialog<T extends FieldValues>({
   children: ReactNode;
 }) {
   const styles = useStyles();
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !busy && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth }}>
         <form onSubmit={form.handleSubmit((values) => !busy && onSubmit(values))} noValidate>
           <DialogBody>
@@ -121,7 +124,7 @@ function FormDialog<T extends FieldValues>({
               <ActionError error={error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={busy}>
+              <Button onClick={guard.requestClose} disabled={busy}>
                 Cancel
               </Button>
               <Button
@@ -137,6 +140,7 @@ function FormDialog<T extends FieldValues>({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

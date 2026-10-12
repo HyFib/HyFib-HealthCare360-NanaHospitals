@@ -21,6 +21,7 @@ import { isApiError } from '@hc360/core';
 import {
   applyServerErrors,
   ChoiceField,
+  CloseRequestScope,
   ConfirmDialog,
   DateField,
   FormGrid,
@@ -29,7 +30,9 @@ import {
   SwitchField,
   TextAreaField,
   TextField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -117,9 +120,12 @@ export interface ScheduleDrawerProps {
 
 /** Adds a doctor's weekly OPD session on several weekdays at once, or edits/removes one session (PMS-01). */
 export function ScheduleDrawer(props: ScheduleDrawerProps) {
+  const closing = useCloseRequests({ onClose: props.onClose });
   return (
-    <OverlayDrawer open={props.open} position="end" size="medium" onOpenChange={(_, d) => !d.open && props.onClose()}>
-      {props.open && <ScheduleForm key={props.schedule?.id ?? 'new'} {...props} />}
+    <OverlayDrawer open={props.open} position="end" size="medium" onOpenChange={closing.onOpenChange}>
+      <CloseRequestScope value={closing}>
+        {props.open && <ScheduleForm key={props.schedule?.id ?? 'new'} {...props} />}
+      </CloseRequestScope>
     </OverlayDrawer>
   );
 }
@@ -269,11 +275,15 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending || remove.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           {schedule ? `${schedule.practitionerName} · ${schedule.weekday}` : 'Add OPD session'}
         </DrawerHeaderTitle>
@@ -438,7 +448,7 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
           >
             {schedule ? 'Save' : weekdays.length > 1 ? `Add ${weekdays.length} sessions` : 'Add session'}
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={guard.requestClose}>Cancel</Button>
           <span className={styles.spacer} />
           {schedule && (
             <Button appearance="subtle" icon={<DeleteRegular />} onClick={() => setConfirmDelete(true)}>
@@ -459,6 +469,7 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
         No new appointments can be booked in it. Future appointments already booked in this session are listed next so
         you can reschedule them.
       </ConfirmDialog>
+      {guard.dialogs}
     </form>
   );
 }

@@ -13,7 +13,17 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { todayIso } from '@hc360/core';
-import { applyServerErrors, ChoiceField, DateField, FormGrid, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  CloseRequestScope,
+  DateField,
+  FormGrid,
+  TextAreaField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useState } from 'react';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import { z } from 'zod';
@@ -61,17 +71,20 @@ export function RegularisationDialog({
   defaultDate?: string;
   submit: (employeeId: string | null, request: RequestRegularisationRequest) => Promise<unknown>;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 620 }}>
         {open && (
-          <Body
-            onClose={onClose}
-            employee={employee}
-            pickEmployee={pickEmployee}
-            defaultDate={defaultDate}
-            submit={submit}
-          />
+          <CloseRequestScope value={closing}>
+            <Body
+              onClose={onClose}
+              employee={employee}
+              pickEmployee={pickEmployee}
+              defaultDate={defaultDate}
+              submit={submit}
+            />
+          </CloseRequestScope>
         )}
       </DialogSurface>
     </Dialog>
@@ -132,6 +145,8 @@ function Body({
       setBusy(false);
     }
   };
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
 
   return (
     <form onSubmit={form.handleSubmit(onValid)} noValidate>
@@ -204,7 +219,7 @@ function Body({
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -217,6 +232,7 @@ function Body({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

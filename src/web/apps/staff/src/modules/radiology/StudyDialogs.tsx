@@ -25,6 +25,7 @@ import { fromZonedInput, toZonedInput } from '@/modules/lab/common/datetime';
 import { errorMessage } from '@/modules/lab/common/errors';
 import { radiologyApi, REPEAT_REASONS, type ImageRepeatReason, type ImagingStudyStatus } from './api';
 import { repeatReasonLabel } from './labels';
+import { useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 
 const useStyles = makeStyles({
   content: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -81,8 +82,14 @@ export function ScheduleDialog({
       }),
     onSuccess: onDone,
   });
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ at, room, station }),
+    busy: schedule.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !schedule.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <form
           onSubmit={(event) => {
@@ -129,7 +136,7 @@ export function ScheduleDialog({
               </div>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={schedule.isPending}>
+              <Button onClick={guard.requestClose} disabled={schedule.isPending}>
                 Cancel
               </Button>
               <Button
@@ -145,6 +152,7 @@ export function ScheduleDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -183,8 +191,14 @@ export function AcquireDialog({
     onSuccess: onDone,
   });
   const valid = !agentProblem && !volumeProblem;
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ contrast, agent, volume, dose, notes }),
+    busy: acquire.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !acquire.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
         <form
           onSubmit={(event) => {
@@ -231,7 +245,7 @@ export function AcquireDialog({
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={acquire.isPending}>
+              <Button onClick={guard.requestClose} disabled={acquire.isPending}>
                 Cancel
               </Button>
               <Button
@@ -247,6 +261,7 @@ export function AcquireDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -261,8 +276,10 @@ export function RepeatDialog({ study, onClose, onDone }: { study: StudyRef; onCl
     mutationFn: () => radiologyApi.recordRepeat(study.id, reason as ImageRepeatReason, note.trim() || null),
     onSuccess: onDone,
   });
+  const guard = useUnsavedChanges({ dirty: useValuesChanged({ reason, note }), busy: record.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !record.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
         <form
           onSubmit={(event) => {
@@ -299,7 +316,7 @@ export function RepeatDialog({ study, onClose, onDone }: { study: StudyRef; onCl
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={record.isPending}>
+              <Button onClick={guard.requestClose} disabled={record.isPending}>
                 Cancel
               </Button>
               <Button
@@ -315,6 +332,7 @@ export function RepeatDialog({ study, onClose, onDone }: { study: StudyRef; onCl
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

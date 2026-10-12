@@ -23,7 +23,7 @@ import {
 } from '@fluentui/react-components';
 import { FoodRegular } from '@fluentui/react-icons';
 import { isApiError, todayIso, useDebouncedValue, type LookupItem } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { searchPractitioners } from '@/lib/lookups';
@@ -143,8 +143,26 @@ export function DietOrderDialog({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({
+      dietTypeId,
+      preference,
+      restrictions,
+      otherRestriction,
+      allergies,
+      instructions,
+      fluid,
+      calories,
+      slots,
+      startDate,
+      doctor,
+    }),
+    busy: create.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !create.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720 }}>
         <form
           onSubmit={(event) => {
@@ -335,7 +353,7 @@ export function DietOrderDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={create.isPending}>
+              <Button onClick={guard.requestClose} disabled={create.isPending}>
                 Cancel
               </Button>
               <Button
@@ -351,6 +369,7 @@ export function DietOrderDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

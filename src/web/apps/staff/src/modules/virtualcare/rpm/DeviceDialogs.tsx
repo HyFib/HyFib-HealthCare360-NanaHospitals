@@ -20,7 +20,16 @@ import {
 } from '@fluentui/react-components';
 import { CheckmarkRegular, CopyRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { applyServerErrors, FormGrid, SelectField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  CloseRequestScope,
+  FormGrid,
+  SelectField,
+  TextField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -74,10 +83,13 @@ export function RegisterDeviceDialog({
   onClose: () => void;
   onRegistered: (key: DeviceKeyIssued) => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
-        {open && <RegisterContent enrollment={enrollment ?? null} onClose={onClose} onRegistered={onRegistered} />}
+        <CloseRequestScope value={closing}>
+          {open && <RegisterContent enrollment={enrollment ?? null} onClose={onClose} onRegistered={onRegistered} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -120,6 +132,8 @@ function RegisterContent({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: register.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((v) => register.mutate(v))} noValidate>
       <DialogBody>
@@ -161,7 +175,7 @@ function RegisterContent({
           </Caption1>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={register.isPending}>
+          <Button onClick={guard.requestClose} disabled={register.isPending}>
             Cancel
           </Button>
           <Button
@@ -174,6 +188,7 @@ function RegisterContent({
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

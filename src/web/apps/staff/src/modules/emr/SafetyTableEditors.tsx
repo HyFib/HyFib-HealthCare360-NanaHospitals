@@ -16,11 +16,14 @@ import { isApiError } from '@hc360/core';
 import {
   applyServerErrors,
   ChoiceField,
+  CloseRequestScope,
   NumberField,
   SwitchField,
   TextAreaField,
   TextField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -54,19 +57,17 @@ export function InteractionDrawer({
   interaction: DrugInteractionDto | 'new' | null;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <OverlayDrawer
-      open={interaction !== null}
-      position="end"
-      size="medium"
-      onOpenChange={(_, d) => !d.open && onClose()}
-    >
+    <OverlayDrawer open={interaction !== null} position="end" size="medium" onOpenChange={closing.onOpenChange}>
       {interaction !== null && (
-        <InteractionForm
-          key={interaction === 'new' ? 'new' : interaction.id}
-          interaction={interaction === 'new' ? null : interaction}
-          onClose={onClose}
-        />
+        <CloseRequestScope value={closing}>
+          <InteractionForm
+            key={interaction === 'new' ? 'new' : interaction.id}
+            interaction={interaction === 'new' ? null : interaction}
+            onClose={onClose}
+          />
+        </CloseRequestScope>
       )}
     </OverlayDrawer>
   );
@@ -112,11 +113,15 @@ function InteractionForm({ interaction, onClose }: { interaction: DrugInteractio
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           {interaction ? `${interaction.drugA} + ${interaction.drugB}` : 'Add interaction'}
         </DrawerHeaderTitle>
@@ -178,8 +183,9 @@ function InteractionForm({ interaction, onClose }: { interaction: DrugInteractio
         >
           Save
         </Button>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={guard.requestClose}>Cancel</Button>
       </DrawerFooter>
+      {guard.dialogs}
     </form>
   );
 }
@@ -200,14 +206,17 @@ type DoseLimitValues = z.infer<typeof doseLimitSchema>;
 
 /** Create or edit one maximum adult daily dose (summed per ingredient across all current medicines). */
 export function DoseLimitDrawer({ limit, onClose }: { limit: DoseLimitDto | 'new' | null; onClose: () => void }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <OverlayDrawer open={limit !== null} position="end" size="small" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer open={limit !== null} position="end" size="small" onOpenChange={closing.onOpenChange}>
       {limit !== null && (
-        <DoseLimitForm
-          key={limit === 'new' ? 'new' : limit.id}
-          limit={limit === 'new' ? null : limit}
-          onClose={onClose}
-        />
+        <CloseRequestScope value={closing}>
+          <DoseLimitForm
+            key={limit === 'new' ? 'new' : limit.id}
+            limit={limit === 'new' ? null : limit}
+            onClose={onClose}
+          />
+        </CloseRequestScope>
       )}
     </OverlayDrawer>
   );
@@ -251,6 +260,8 @@ function DoseLimitForm({ limit, onClose }: { limit: DoseLimitDto | null; onClose
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form
       onSubmit={form.handleSubmit((v) => {
@@ -265,7 +276,9 @@ function DoseLimitForm({ limit, onClose }: { limit: DoseLimitDto | null; onClose
     >
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           {limit ? limit.genericName : 'Add dose limit'}
         </DrawerHeaderTitle>
@@ -309,8 +322,9 @@ function DoseLimitForm({ limit, onClose }: { limit: DoseLimitDto | null; onClose
         >
           Save
         </Button>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={guard.requestClose}>Cancel</Button>
       </DrawerFooter>
+      {guard.dialogs}
     </form>
   );
 }

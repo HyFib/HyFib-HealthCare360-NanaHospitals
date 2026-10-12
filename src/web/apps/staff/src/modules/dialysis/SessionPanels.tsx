@@ -25,7 +25,9 @@ import {
   NumberField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -141,7 +143,9 @@ export function PreAssessmentPanel({ session, canRecord }: { session: DialysisSe
         temperatureC: v.temperatureC,
         targetUfMl: v.targetUfMl,
       }),
-    onSuccess: () => {
+    onSuccess: (_, values) => {
+      // What the form shows is saved now: leaving does not ask (SRS UX-08).
+      form.reset(values);
       notify.success('Pre-dialysis assessment saved');
       void queryClient.invalidateQueries({ queryKey: dialysisKeys.session(session.id) });
     },
@@ -149,6 +153,9 @@ export function PreAssessmentPanel({ session, canRecord }: { session: DialysisSe
       applyFormErrors(error, form.setError);
     },
   });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: editable && form.formState.isDirty, busy: save.isPending });
 
   if (!editable) {
     return session.preAssessedAt ? (
@@ -284,6 +291,21 @@ export function StartPanel({ session, canRecord }: { session: DialysisSessionDet
       notify.success('Dialysis started', 'The machine is now in use.');
       void queryClient.invalidateQueries({ queryKey: dialysisKeys.all });
     },
+  });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: useValuesChanged({
+      machineId,
+      dialyzer,
+      newSerial,
+      newBrand,
+      newModel,
+      newArea,
+      heparinLoading,
+      heparinHourly,
+    }),
+    busy: start.isPending,
   });
 
   if (!session.preAssessedAt) {
@@ -509,6 +531,9 @@ export function ReadingsPanel({ session, canRecord }: { session: DialysisSession
     { name: 'Venous pressure', points: readings.map((r) => ({ at: r.at, value: r.venousPressure })), dashed: true },
   ];
 
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: add.isPending });
+
   return (
     <div className={styles.stack}>
       {editable && (
@@ -663,6 +688,9 @@ export function CompletePanel({ session, canRecord }: { session: DialysisSession
       applyFormErrors(error, form.setError);
     },
   });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: complete.isPending });
 
   if (!canRecord || session.status !== 'InProgress') {
     return null;

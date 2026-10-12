@@ -21,7 +21,7 @@ import {
 } from '@fluentui/react-components';
 import { DeleteRegular, PersonRegular } from '@fluentui/react-icons';
 import { isApiError, type PagedResult } from '@hc360/core';
-import { EmptyState, useNotify } from '@hc360/ui';
+import { EmptyState, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/lib/api';
@@ -135,8 +135,14 @@ export function WardIndentDialog({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ admission, wardName, bedLabel, urgency, remarks, lines }),
+    busy: raise.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !raise.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 900, width: '96vw' }}>
         <DialogBody>
           <DialogTitle>Raise ward indent</DialogTitle>
@@ -345,7 +351,7 @@ export function WardIndentDialog({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={raise.isPending}>
+            <Button onClick={guard.requestClose} disabled={raise.isPending}>
               Cancel
             </Button>
             <Button
@@ -358,6 +364,7 @@ export function WardIndentDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

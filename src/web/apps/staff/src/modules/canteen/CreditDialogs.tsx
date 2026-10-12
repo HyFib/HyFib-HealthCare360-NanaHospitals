@@ -20,7 +20,7 @@ import {
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, MoneyRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatInr, isApiError } from '@hc360/core';
-import { DataTable, ErrorState, useNotify } from '@hc360/ui';
+import { DataTable, ErrorState, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { previousMonth } from '@/modules/inpatient/time';
@@ -157,8 +157,14 @@ export function PaymentDialog({ balance, onClose }: { balance: StaffBalanceDto |
       onClose();
     },
   });
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ code, amount, reference }),
+    busy: pay.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !pay.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 460 }}>
         <form
           onSubmit={(event) => {
@@ -213,7 +219,7 @@ export function PaymentDialog({ balance, onClose }: { balance: StaffBalanceDto |
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={pay.isPending}>
+              <Button onClick={guard.requestClose} disabled={pay.isPending}>
                 Cancel
               </Button>
               <Button
@@ -227,6 +233,7 @@ export function PaymentDialog({ balance, onClose }: { balance: StaffBalanceDto |
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -253,8 +260,14 @@ export function SettleDialog({ currentMonth, onClose }: { currentMonth: string; 
   const valid = Boolean(period) && reference.trim().length > 0;
   const skipped = result?.skipped ?? [];
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ period, reference }) && !result,
+    busy: settle.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !settle.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 560 }}>
         {result ? (
           <DialogBody>
@@ -330,7 +343,7 @@ export function SettleDialog({ currentMonth, onClose }: { currentMonth: string; 
                 )}
               </DialogContent>
               <DialogActions>
-                <Button onClick={onClose} disabled={settle.isPending}>
+                <Button onClick={guard.requestClose} disabled={settle.isPending}>
                   Cancel
                 </Button>
                 <Button
@@ -345,6 +358,7 @@ export function SettleDialog({ currentMonth, onClose }: { currentMonth: string; 
             </DialogBody>
           </form>
         )}
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

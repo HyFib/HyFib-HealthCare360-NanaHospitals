@@ -24,6 +24,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDate, formatDateOnly, formatDateTime, humanize, todayIso } from '@hc360/core';
 import {
   applyServerErrors,
+  CloseRequestScope,
   DataTable,
   DateField,
   EmptyState,
@@ -33,7 +34,9 @@ import {
   SwitchField,
   TextAreaField,
   TextField,
+  useCloseRequests,
   useNotify,
+  useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -150,10 +153,13 @@ function RecordImmunizationDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720 }}>
-        {open && <RecordImmunizationForm patientId={patientId} onClose={onClose} />}
+        <CloseRequestScope value={closing}>
+          {open && <RecordImmunizationForm patientId={patientId} onClose={onClose} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -213,6 +219,8 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate>
       <DialogBody>
@@ -250,7 +258,7 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
           <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={500} />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={save.isPending}>
+          <Button onClick={guard.requestClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
@@ -263,6 +271,7 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

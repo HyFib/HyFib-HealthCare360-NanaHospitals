@@ -13,7 +13,7 @@ import {
   Textarea,
 } from '@fluentui/react-components';
 import { isApiError, todayIso } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { CloseRequestScope, useCloseRequests, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { addDays } from '@/modules/hr/shared/dates';
@@ -33,10 +33,13 @@ export function FollowUpCreateDialog({
   onClose: () => void;
   patient?: PickedPatient | null;
 }) {
+  const closing = useCloseRequests({ onClose });
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open={open} onOpenChange={closing.onOpenChange}>
       <DialogSurface style={{ maxWidth: 600 }}>
-        {open && <Body onClose={onClose} initialPatient={patient ?? null} />}
+        <CloseRequestScope value={closing}>
+          {open && <Body onClose={onClose} initialPatient={patient ?? null} />}
+        </CloseRequestScope>
       </DialogSurface>
     </Dialog>
   );
@@ -53,6 +56,11 @@ function Body({ onClose, initialPatient }: { onClose: () => void; initialPatient
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ patient, type, dueDate, priority, assignee, notes }),
+    busy,
+    onClose,
+  });
 
   const save = async () => {
     const next: Record<string, string> = {};
@@ -135,7 +143,7 @@ function Body({ onClose, initialPatient }: { onClose: () => void; initialPatient
           </Field>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} disabled={busy}>
+          <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -148,6 +156,7 @@ function Body({ onClose, initialPatient }: { onClose: () => void; initialPatient
           </Button>
         </DialogActions>
       </DialogBody>
+      {guard.dialogs}
     </form>
   );
 }

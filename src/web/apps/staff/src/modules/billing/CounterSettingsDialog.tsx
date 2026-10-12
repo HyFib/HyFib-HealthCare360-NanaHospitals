@@ -14,7 +14,7 @@ import {
   Switch,
   Text,
 } from '@fluentui/react-components';
-import { useNotify } from '@hc360/ui';
+import { sameValues, useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useState } from 'react';
 import { saveCounterPrefs, useCounterPrefs, type CounterPrefs } from './counterPrefs';
 
@@ -42,8 +42,10 @@ export function CounterSettingsDialog({ open, onClose }: { open: boolean; onClos
     onClose();
   };
 
+  const guard = useUnsavedChanges({ dirty: !sameValues(draft, prefs), open, onClose });
+
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={open} onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -91,13 +93,14 @@ export function CounterSettingsDialog({ open, onClose }: { open: boolean; onClos
               />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={guard.requestClose}>Cancel</Button>
               <Button type="submit" appearance="primary">
                 Save
               </Button>
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

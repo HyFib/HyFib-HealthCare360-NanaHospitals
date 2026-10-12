@@ -21,7 +21,16 @@ import {
 import { DatabaseArrowRightRegular, DismissRegular, MailClockRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, useSession } from '@hc360/core';
-import { ChoiceField, SelectField, SwitchField, TextField, toFormPath, useNotify } from '@hc360/ui';
+import {
+  ChoiceField,
+  SelectField,
+  SwitchField,
+  TextField,
+  toFormPath,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -151,6 +160,7 @@ export function ScheduleDrawer({
     control: form.control,
     name: ['reportId', 'frequency', 'time', 'dayOfWeek', 'dayOfMonth', 'format', 'recipients', 'name', 'extractName'],
   });
+  const parametersChanged = useValuesChanged(parameters);
   const report = schedulable.find((r) => r.id === reportId);
   const values = report ? scheduleInputs(withDefaults(report.parameters, parameters)) : {};
   const hasPeriod = report?.parameters.some((p) => p.kind === 'Period') ?? false;
@@ -250,16 +260,19 @@ export function ScheduleDrawer({
           recipients.length === 1 ? '1 recipient' : `${recipients.length} recipients`,
         ].join(' · ');
 
+  const guard = useUnsavedChanges({
+    dirty: form.formState.isDirty || parametersChanged,
+    busy: save.isPending,
+    onClose,
+  });
+
   return (
-    <OverlayDrawer
-      open
-      position="end"
-      size="medium"
-      onOpenChange={(_, data) => !data.open && !save.isPending && onClose()}
-    >
+    <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} onClick={onClose} />}
+          action={
+            <Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} onClick={guard.requestClose} />
+          }
         >
           <span className={styles.title}>
             {extract ? <DatabaseArrowRightRegular aria-hidden /> : <MailClockRegular aria-hidden />}
@@ -498,8 +511,9 @@ export function ScheduleDrawer({
         >
           {extract ? (schedule ? 'Save extract' : 'Create extract') : schedule ? 'Save schedule' : 'Create schedule'}
         </Button>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={guard.requestClose}>Cancel</Button>
       </DrawerFooter>
+      {guard.dialogs}
     </OverlayDrawer>
   );
 }

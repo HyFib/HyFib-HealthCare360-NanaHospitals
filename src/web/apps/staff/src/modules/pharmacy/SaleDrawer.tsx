@@ -34,7 +34,15 @@ import {
   PrintRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, isApiError, todayIso } from '@hc360/core';
-import { DataTable, ErrorState, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  ErrorState,
+  LoadingState,
+  StatusBadge,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
@@ -378,8 +386,14 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
       onClose();
     },
   });
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ mode, amount, reference }),
+    busy: collect.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !collect.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <form
           onSubmit={(event) => {
@@ -429,7 +443,7 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={collect.isPending}>
+              <Button onClick={guard.requestClose} disabled={collect.isPending}>
                 Cancel
               </Button>
               <Button
@@ -443,6 +457,7 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -522,8 +537,14 @@ function ReturnDialog({
       [id]: { quantity: prev[id]?.quantity ?? '', restock: prev[id]?.restock ?? true, ...patch },
     }));
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ lines, reason, refundMode, reference }),
+    busy: submit.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !submit.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 820, width: '95vw' }}>
         <DialogBody>
           <DialogTitle>Return items from {sale.invoiceNumber}</DialogTitle>
@@ -620,7 +641,7 @@ function ReturnDialog({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={submit.isPending}>
+            <Button onClick={guard.requestClose} disabled={submit.isPending}>
               Cancel
             </Button>
             <Button
@@ -633,6 +654,7 @@ function ReturnDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

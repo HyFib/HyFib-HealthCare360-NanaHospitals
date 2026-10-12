@@ -20,7 +20,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, InfoRegular, PrintRegular } from '@fluentui/react-icons';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { PatientFlagsStrip } from '@/modules/emr/PatientFlagsStrip';
@@ -173,8 +173,14 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
 
   const preparation = [...new Set(target.tubes.flatMap((tube) => tube.preparation ?? []))];
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ selected, collectedAt, site, printLabels }) && labels === null,
+    busy: collect.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && !collect.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720 }}>
         {labels ? (
           <DialogBody>
@@ -329,7 +335,7 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                 />
               </DialogContent>
               <DialogActions>
-                <Button onClick={onClose} disabled={collect.isPending}>
+                <Button onClick={guard.requestClose} disabled={collect.isPending}>
                   Cancel
                 </Button>
                 <Button
@@ -350,6 +356,7 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
             </DialogBody>
           </form>
         )}
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

@@ -28,6 +28,7 @@ import {
   type FeedbackAnswers,
   type FeedbackQuestions,
 } from './model';
+import { useLeaveGuard } from '@hc360/ui';
 
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '24px' },
@@ -172,6 +173,9 @@ export function FeedbackForm({ questions, intro, privacyNote, defaultPhone, onSu
       setFormError(describeError(error, t, 'errors.saveTitle').message);
     }
   });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy });
 
   return (
     <form

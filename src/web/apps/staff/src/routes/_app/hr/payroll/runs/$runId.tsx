@@ -46,6 +46,8 @@ import {
   Section,
   StatusBadge,
   useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -567,8 +569,15 @@ function MarkPaidDialog({
   const [paidOn, setPaidOn] = useState(todayIso());
   const [reference, setReference] = useState('');
   const valid = Boolean(paidOn) && reference.trim().length > 0;
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ paidOn, reference }, open),
+    busy,
+    open,
+    onClose: onCancel,
+  });
+
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onCancel()}>
+    <Dialog open={open} onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <form
           onSubmit={(event) => {
@@ -590,7 +599,7 @@ function MarkPaidDialog({
               <Caption1>Every employee receives a "salary credited" notification.</Caption1>
             </DialogContent>
             <DialogActions>
-              <Button onClick={onCancel} disabled={busy}>
+              <Button onClick={guard.requestClose} disabled={busy}>
                 Cancel
               </Button>
               <Button
@@ -604,6 +613,7 @@ function MarkPaidDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

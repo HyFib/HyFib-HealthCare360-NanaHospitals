@@ -26,7 +26,17 @@ import {
   StopRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, isApiError } from '@hc360/core';
-import { DataTable, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  ErrorState,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -338,8 +348,10 @@ function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onCl
       onClose();
     },
   });
+  const guard = useUnsavedChanges({ dirty: useValuesChanged(approved), busy: approve.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !approve.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 720, width: '95vw' }}>
         <DialogBody>
           <DialogTitle>Approve indent {indent.number}</DialogTitle>
@@ -392,7 +404,7 @@ function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onCl
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={approve.isPending}>
+            <Button onClick={guard.requestClose} disabled={approve.isPending}>
               Cancel
             </Button>
             <Button
@@ -405,6 +417,7 @@ function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onCl
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );
@@ -452,8 +465,14 @@ function IssueDialog({
     },
   });
 
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ quantities, receivedBy, remarks }),
+    busy: issue.isPending,
+    onClose,
+  });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && !issue.isPending && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760, width: '95vw' }}>
         <DialogBody>
           <DialogTitle>Issue items for {indent.number}</DialogTitle>
@@ -525,7 +544,7 @@ function IssueDialog({
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={issue.isPending}>
+            <Button onClick={guard.requestClose} disabled={issue.isPending}>
               Cancel
             </Button>
             <Button
@@ -538,6 +557,7 @@ function IssueDialog({
             </Button>
           </DialogActions>
         </DialogBody>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

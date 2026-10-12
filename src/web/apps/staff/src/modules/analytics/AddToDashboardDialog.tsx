@@ -16,7 +16,7 @@ import {
   Select,
   Spinner,
 } from '@fluentui/react-components';
-import { useNotify } from '@hc360/ui';
+import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -115,9 +115,14 @@ export function AddToDashboardDialog({
   });
 
   const canSave = selected !== NEW || name.trim().length > 0;
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ target, name, title, chosenView, width }),
+    busy: save.isPending,
+    onClose,
+  });
 
   return (
-    <Dialog open onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface>
         <form
           onSubmit={(event) => {
@@ -182,7 +187,7 @@ export function AddToDashboardDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose}>Cancel</Button>
+              <Button onClick={guard.requestClose}>Cancel</Button>
               <Button
                 appearance="primary"
                 type="submit"
@@ -194,6 +199,7 @@ export function AddToDashboardDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

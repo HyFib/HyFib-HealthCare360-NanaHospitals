@@ -20,7 +20,15 @@ import {
 import { ArrowResetRegular, CheckmarkCircleRegular, DismissCircleRegular, DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, isApiError } from '@hc360/core';
-import { applyServerErrors, NumberField, SelectField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  CloseRequestScope,
+  NumberField,
+  SelectField,
+  useCloseRequests,
+  useNotify,
+  useUnsavedChanges,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { Controller, useForm, useWatch, type Control, type UseFormSetValue } from 'react-hook-form';
@@ -99,18 +107,21 @@ export function NumberSeriesDrawer({
 }) {
   const [base, setBase] = useState(series);
   const [round, setRound] = useState(0);
+  const closing = useCloseRequests({ onClose });
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
-      <NumberSeriesEditor
-        key={round}
-        series={base}
-        context={editorContext(list, base.key)}
-        onClose={onClose}
-        onChangedElsewhere={(latest) => {
-          setBase(latest);
-          setRound((value) => value + 1);
-        }}
-      />
+    <OverlayDrawer open position="end" size="medium" onOpenChange={closing.onOpenChange}>
+      <CloseRequestScope value={closing}>
+        <NumberSeriesEditor
+          key={round}
+          series={base}
+          context={editorContext(list, base.key)}
+          onClose={onClose}
+          onChangedElsewhere={(latest) => {
+            setBase(latest);
+            setRound((value) => value + 1);
+          }}
+        />
+      </CloseRequestScope>
     </OverlayDrawer>
   );
 }
@@ -159,11 +170,15 @@ function NumberSeriesEditor({
     },
   });
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
   return (
     <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
         <DrawerHeaderTitle
-          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          action={
+            <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={guard.requestClose} />
+          }
         >
           {series.name}
         </DrawerHeaderTitle>
@@ -175,8 +190,9 @@ function NumberSeriesEditor({
         <Button type="submit" appearance="primary" disabled={save.isPending || !form.formState.isDirty}>
           Save
         </Button>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={guard.requestClose}>Cancel</Button>
       </DrawerFooter>
+      {guard.dialogs}
     </form>
   );
 }

@@ -21,7 +21,7 @@ import {
 import { PersonAddRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { todayIso } from '@hc360/core';
-import { ChoiceField, DateField, FormGrid, LoadingState, useNotify } from '@hc360/ui';
+import { ChoiceField, DateField, FormGrid, LoadingState, useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -123,8 +123,10 @@ export function ScheduleSessionDialog({
 
   const notEnrolled = patient && profile.isSuccess && profile.data === null;
 
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: schedule.isPending, onClose });
+
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 760 }}>
         <form onSubmit={form.handleSubmit((values) => schedule.mutate(values))} noValidate>
           <DialogBody>
@@ -231,7 +233,7 @@ export function ScheduleSessionDialog({
               <ActionError error={schedule.error} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose} disabled={schedule.isPending}>
+              <Button onClick={guard.requestClose} disabled={schedule.isPending}>
                 Cancel
               </Button>
               <Button
@@ -245,6 +247,7 @@ export function ScheduleSessionDialog({
             </DialogActions>
           </DialogBody>
         </form>
+        {guard.dialogs}
       </DialogSurface>
     </Dialog>
   );

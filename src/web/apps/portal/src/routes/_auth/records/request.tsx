@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button, Field, makeStyles, Spinner, Textarea, tokens } from '@fluentui/react-components';
 import { CheckmarkCircleRegular } from '@fluentui/react-icons';
-import { applyServerErrors } from '@hc360/ui';
+import { applyServerErrors, useLeaveGuard } from '@hc360/ui';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -105,6 +105,9 @@ function RecordRequestPage() {
       }
     }
   });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty && created === null, busy });
 
   if (created) {
     return (
