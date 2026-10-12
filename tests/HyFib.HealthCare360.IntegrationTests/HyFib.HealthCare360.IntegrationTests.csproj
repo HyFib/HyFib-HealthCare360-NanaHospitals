@@ -5,6 +5,8 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\server\HyFib.HealthCare360.Server\HyFib.HealthCare360.Server.csproj" />
+    <!-- The load test's steps, run against the whole server (LoadTestTests). -->
+    <ProjectReference Include="..\..\tools\HyFib.HealthCare360.LoadTest\HyFib.HealthCare360.LoadTest.csproj" />
   </ItemGroup>
 
   <ItemGroup>

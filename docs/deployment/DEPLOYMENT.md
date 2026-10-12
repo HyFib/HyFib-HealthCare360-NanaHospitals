@@ -26,6 +26,8 @@ internet to work; SMS/WhatsApp, payment gateways, ABDM and the AI assistant use 
 - 1 TB NVMe SSD, plus a second disk or NAS share for backup copies.
 - WiFi 6 adapter; an Ethernet cable to the access point is better still.
 - A UPS with a USB connection, so HC360 can see power cuts (Administration › System health).
+- Before go-live, a load test on the same hardware shows it meets the SRS response times with the hospital's number of
+  users: install a test server there first and follow [docs/testing/LOAD-TESTS.md](../testing/LOAD-TESTS.md).
 - Windows with BitLocker (Pro, Enterprise or Server), turned on with the TPM for every fixed disk before HC360 holds
   patient data. The keys that open HC360's stored data are on the same machine (SRS SEC-05).
 

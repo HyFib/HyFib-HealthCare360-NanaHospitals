@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\HyFib.HealthCare360.LoadTest\HyFib.HealthCare360.LoadTest.csproj" />
+  </ItemGroup>
+</Project>
