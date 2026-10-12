@@ -178,7 +178,7 @@ What they all share:
 | **Patient portal sign-in** | A 6-digit code sent by SMS to the registered number, valid 5 minutes: one factor (AAL1), as strong as the phone number | 5 tries per code; 3 codes per number in 15 minutes |
 | **Video consultation guests** | The 256-bit token in the link sent to the patient, valid until 2 hours after the consultation's scheduled end. A guest waits until the doctor admits them, and the link reveals only the patient's first name | Too large to guess; 5 failed joins per connection |
 | **Enrolling a workstation or lab PC** | A code an administrator makes: 8 characters from 31 (about 40 bits), good for one device, for 30 minutes by default (5 minutes to 24 hours) | Too many to try in its lifetime at 60 a minute per address |
-| **HC360 Desktop and lab agents** | The device's id and its 256-bit secret, kept with DPAPI. Lab agents never sign anyone in, and relay only their own analysers. Revoking the device stops it | Too large to guess |
+| **HC360 Desktop and lab agents** | The device's id and its 256-bit secret, kept with DPAPI. Lab agents never sign anyone in, and relay only their own analysers. HC360 Desktop asks for and downloads its update with the same credential; what it gets is HyFib's signed package, which it checks itself (Release signing key, below). Revoking the device stops it | Too large to guess; the update allows 30 requests in 15 minutes per device |
 | **Attendance terminals, JSON punch API** | The serial number and a 256-bit device key | Too large to guess |
 | **Attendance terminals, ADMS** (ZKTeco, eSSL) | The serial number, which is printed on the terminal, and its fixed IP address when one is set: the ADMS protocol carries no key. This is the weakest pathway. Without an address, anyone on the network who knows a serial number can add punches in its name, so set the address of every terminal that pushes over ADMS in HR › Terminals (ASVS V6.3.4) | Only registered, active serials; refusals are logged |
 | **Patient monitors and their gateways** | A device key of 256 random bits that names its device | Too large to guess |
@@ -478,6 +478,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Database sign-in | None: the service's Windows account (`NT SERVICE\HC360Server`, SSPI), which `pg_hba.conf` and `pg_ident.conf` allow from this machine only | Windows | The server's PostgreSQL account | Nothing to rotate. Where the server signs in with a password instead (PostgreSQL on another machine), the password is in `config\hc360.settings.json` under machine DPAPI, and changed from System health every year or when someone who knew it leaves |
 | Integration credentials (SMS, WhatsApp, e-mail, payment, AI) | Secret settings in the database | The data encryption key | Each provider's API | At the provider, then saved in Administration › Settings |
 | Desktop and lab agent device secrets | Each workstation | DPAPI (user or machine) | A device's sign-in | Revoke and enrol the device again |
+| Release signing key (HyFib's, ECDSA P-256) | The `HC360_RELEASE_SIGNING_KEY` secret of the release workflow, and one copy offline at HyFib; the public keys are built into HC360 (`ReleaseKeys.cs`) | GitHub's encrypted secrets: only the release job reads it, from its environment, never on a command line or in a log | The manifest of each HC360 Desktop package, which the Server Node, HC360 Desktop and its updater check before they take, offer or install it (SRS DED-18; Release signing key, below) | A new pair every few years, at once on exposure or when someone who held it leaves: release with both public keys, then sign with the new one |
 | Passwords, refresh tokens, one-time codes | The database | PBKDF2-SHA512 (passwords), SHA-256 (tokens and codes) | Sign-in | Refresh tokens on every use; passwords rehashed when the work factor rises |
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.
@@ -506,6 +507,46 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   administrator rights, which the service does not have, so a scheduled task checks it as SYSTEM every day and at
   start-up, and the installer checks it too. System health shows the result, and warns when a disk is not encrypted,
   when protection is suspended or unfinished, and when the check has not run for three days.
+
+#### Release signing key
+HC360 Desktop updates itself from the Server Node (SRS DED-18), so workstations need no internet access. Each release's
+HC360 Desktop package comes with a manifest (product, version, file name, size, SHA-256, release date and the oldest
+server it works with), signed with HyFib's release signing key: ECDSA on the P-256 curve with SHA-256, HyFib's own key
+rather than a commercial code-signing certificate. The public keys HC360 trusts are built into its code
+(`src/shared/HyFib.HealthCare360.WindowsInterop/Updates/ReleaseKeys.cs`), so nothing on a workstation or the server can
+add one, and every copy of HC360 runs the same checks (`ReleasePackages`):
+- The **Server Node** takes a package in (`desktop publish`, which Install-HC360Server.ps1 runs for the package beside
+  the server package) only when its manifest is signed by a trusted key, is for HC360 Desktop, matches the package, is
+  not older than the one offered and fits this server's version. It checks the package again before offering it, so
+  one changed on disk afterwards is withdrawn.
+- **HC360 Desktop** asks for it with its device credential, over the connection pinned to the hospital CA, checks the
+  signature and that it is newer than itself before it downloads, and the size and SHA-256 after.
+- The **updater**, run as SYSTEM by the "HC360 Desktop update" task, trusts nothing in the staging folder, which every
+  user may write to: it checks the signature, the product, the version and the package itself, holds the package open
+  so nobody can change it until it is unpacked, unpacks only what it checked, and never writes or deletes there. It
+  installs only while HC360 Desktop is closed, never goes back a version, and puts the previous version back when an
+  installation fails. Users may start the task ("Restart to update") but not change it.
+
+An unsigned package is never installed by itself. Until HyFib has set up its key, releases are built unsigned (the
+release job's summary says so) and workstations are upgraded with `Install-HC360Desktop.ps1`, as before. IT can turn
+self-update off on a computer with `"autoUpdate": false` in its policy (`Install-HC360Desktop.ps1 -NoAutoUpdate`).
+
+**Setting up the key, once (HyFib):**
+1. On a computer HyFib trusts with the key, run `.\tools\release\Sign-HC360Release.ps1 -NewKey -KeyPath <file>`, with
+   the file on an encrypted drive. It writes the private key there, readable only by you, and prints the public key.
+2. Store the private key as the release workflow's secret, then delete the file:
+   `Get-Content -Raw <file> | gh secret set HC360_RELEASE_SIGNING_KEY --repo HyFib/HyFib-HealthCare360-NanaHospitals`
+   (or Settings › Secrets and variables › Actions). Keep one copy offline: an encrypted USB drive in the safe, or the
+   company password manager.
+3. Add the printed public key to `ReleaseKeys.Trusted` and merge that before tagging the first release to be signed.
+   The release workflow checks each signature against the keys built into that same release, and fails when the key is
+   not among them, rather than publish a package no workstation would take.
+
+**Rotating it** (every few years, at once if it may be exposed, or when someone who held it leaves): make a new pair as
+above, add the new public key beside the old one and release that version signed with the old key; then replace the
+secret with the new key, and remove the old public key a release or two later, once every workstation runs a version
+that trusts the new one. A key that was exposed is removed from `ReleaseKeys.Trusted` in the next release; until a
+workstation has that release it still trusts the old key, so tell hospitals to upgrade.
 
 ### Dependencies, secrets and code scanning
 CI runs these checks on every pull request and on main. A pull request cannot merge while one fails.
