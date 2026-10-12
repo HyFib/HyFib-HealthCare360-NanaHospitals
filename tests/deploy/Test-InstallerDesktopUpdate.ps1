@@ -92,7 +92,7 @@ try {
             Assert ($classes -contains 'MSFT_TaskBootTrigger' -and $classes -contains 'MSFT_TaskLogonTrigger') "at start-up and at sign-in (found: $($classes -join ', '))"
             $repeating = @($task.Triggers | Where-Object { $_.Repetition -and $_.Repetition.Interval -eq 'PT4H' })
             Assert ($repeating.Count -eq 1 -and [string]::IsNullOrEmpty($repeating[0].Repetition.Duration)) 'and every 4 hours for as long as Windows runs'
-            Assert ("$($task.Settings.MultipleInstancesPolicy)" -eq 'IgnoreNew') 'one run at a time'
+            Assert ("$($task.Settings.MultipleInstances)" -eq 'IgnoreNew') "one run at a time (found: $($task.Settings.MultipleInstances))"
 
             $scheduler = New-Object -ComObject Schedule.Service
             $scheduler.Connect()
