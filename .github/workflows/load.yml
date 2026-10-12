@@ -58,7 +58,9 @@ jobs:
           dotnet build src/server/HyFib.HealthCare360.Server/HyFib.HealthCare360.Server.csproj -c Release
           dotnet build tools/HyFib.HealthCare360.LoadTest/HyFib.HealthCare360.LoadTest.csproj -c Release
 
-      # Windows runners come with PostgreSQL installed (service stopped), as in ci.yml.
+      # Windows runners come with PostgreSQL installed (service stopped), as in ci.yml. The server does not create its
+      # database (Install-HC360Server.ps1 -CreateDatabase does): an empty one is made here, as the tests do, and the
+      # server's migrations fill it, as the superuser.
       - name: Start PostgreSQL
         shell: pwsh
         run: |
@@ -67,6 +69,10 @@ jobs:
           Start-Service -InputObject $service
           & (Join-Path $env:PGBIN 'pg_isready.exe') -h localhost -p 5432 -t 60
           if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL did not start.' }
+          $user = if ($env:PGUSER) { $env:PGUSER } else { 'postgres' }
+          if (-not $env:PGPASSWORD) { $env:PGPASSWORD = 'root' }
+          & (Join-Path $env:PGBIN 'psql.exe') -h localhost -p 5432 -U $user -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE hc360_load ENCODING 'UTF8'"
+          if ($LASTEXITCODE -ne 0) { throw 'The database could not be created.' }
 
       # A test server with demonstration data and its staff accounts, configured through HC360_ variables only. The
       # accounts' password is new for every run.
