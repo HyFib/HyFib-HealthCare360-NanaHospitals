@@ -17,12 +17,14 @@ import {
   ChoiceField,
   DateField,
   FormGrid,
+  type LeaveQuestion,
   NumberField,
   Section,
   SelectField,
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
 } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, type ReactNode } from 'react';
@@ -90,6 +92,8 @@ export interface PatientFormProps {
   identifierHints?: { abha?: string | null; aadhaarLast4?: string | null };
   extraSections?: ReactNode;
   secondaryActions?: ReactNode;
+  /** Asked instead of "Leave without saving?" (registration keeps a draft on this computer). */
+  leaveQuestion?: LeaveQuestion;
 }
 
 /**
@@ -109,6 +113,8 @@ export function PatientForm(props: PatientFormProps) {
 
   useEffect(() => onFormReady?.(form), [form, onFormReady]);
   useHotkey('mod+s', () => void handleSubmit(props.onSubmit)(), { allowInInputs: true, enabled: !props.busy });
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: props.busy, leaveQuestion: props.leaveQuestion });
 
   return (
     <form onSubmit={handleSubmit(props.onSubmit)} noValidate>

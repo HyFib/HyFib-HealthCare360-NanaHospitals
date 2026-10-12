@@ -29,7 +29,7 @@ import {
   DropRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, formatTime, isApiError } from '@hc360/core';
-import { DataTable, ErrorState, useNotify } from '@hc360/ui';
+import { DataTable, ErrorState, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import {
@@ -314,6 +314,9 @@ function AddEntryForm({ admissionId }: { admissionId: string }) {
       add.mutate();
     }
   };
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: volume !== '' || description !== '', busy: add.isPending });
 
   return (
     <form className={styles.form} onSubmit={submit} aria-label="Add intake or output">

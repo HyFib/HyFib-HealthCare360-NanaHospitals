@@ -17,7 +17,7 @@ import {
 } from '@fluentui/react-components';
 import { PeopleRegular, SaveRegular, ShieldCheckmarkRegular } from '@fluentui/react-icons';
 import { isApiError, useDebouncedValue, useHotkey, type Gender } from '@hc360/core';
-import { DataTable, Section, useNotify } from '@hc360/ui';
+import { DataTable, sameValues, Section, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useDepartments } from '@/lib/lookups';
@@ -184,6 +184,9 @@ export function CampaignEditor({
   };
 
   useHotkey('mod+s', () => void save(), { allowInInputs: true, enabled: !busy && canManage });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: !sameValues(draft, toDraft(campaign)), busy });
 
   return (
     <MainAside>

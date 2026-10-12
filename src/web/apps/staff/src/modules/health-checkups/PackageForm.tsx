@@ -31,6 +31,7 @@ import {
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -216,6 +217,9 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
 
   const departmentOptions = departments.data ?? [];
   const departmentName = (code: string | null) => departmentOptions.find((d) => d.code === code)?.name ?? code ?? '—';
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty || linesChanged, busy: save.isPending });
 
   return (
     <form onSubmit={submit} noValidate className={styles.stack}>

@@ -13,6 +13,7 @@ import {
   Section,
   SelectField,
   TextAreaField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -155,6 +156,9 @@ function RequestForm({ patient }: { patient: PickedPatient | null }) {
 
   const submit = form.handleSubmit((v) => create.mutate(v));
   useHotkey('mod+s', () => void submit(), { allowInInputs: true, enabled: !create.isPending });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: create.isPending });
 
   return (
     <Page maxWidth={1000}>

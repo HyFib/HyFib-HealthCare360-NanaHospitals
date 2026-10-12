@@ -23,7 +23,15 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatRelative, isApiError, useHotkey } from '@hc360/core';
-import { ConfirmDialog, DateField, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DateField,
+  LEAVE_KEEPING_DRAFT,
+  Section,
+  StatusBadge,
+  useLeaveGuard,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
@@ -329,6 +337,13 @@ export function DischargeSummaryEditor({
 
   const restorable =
     draft.saved && JSON.stringify(toContent(draft.saved.value)) !== JSON.stringify(toContent(defaults));
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: isDirty,
+    busy: save.isPending || sign.isPending || amend.isPending,
+    leaveQuestion: LEAVE_KEEPING_DRAFT,
+  });
 
   return (
     <div className={styles.stack}>

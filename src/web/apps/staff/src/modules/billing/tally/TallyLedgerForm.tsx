@@ -18,6 +18,7 @@ import {
   Section,
   SwitchField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -106,7 +107,9 @@ export function TallyLedgerForm({ map, canEdit }: { map: TallyLedgerMap; canEdit
 
   const save = useMutation({
     mutationFn: (values: LedgerForm) => tallyApi.saveLedgers(toLedgerMap(values)),
-    onSuccess: () => {
+    onSuccess: (_, values) => {
+      // What the form shows is saved now: leaving does not ask (SRS UX-08).
+      form.reset(values);
       void queryClient.invalidateQueries({ queryKey: tallyKeys.ledgers });
       void queryClient.invalidateQueries({ queryKey: tallyKeys.all });
       notify.success(
@@ -116,6 +119,9 @@ export function TallyLedgerForm({ map, canEdit }: { map: TallyLedgerMap; canEdit
     },
     onError: (error) => applyServerErrors(error, setError),
   });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: canEdit && formState.isDirty, busy: save.isPending });
 
   return (
     <form className={styles.form} onSubmit={handleSubmit((values) => save.mutate(values))} noValidate>

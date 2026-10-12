@@ -18,7 +18,7 @@ import {
 } from '@fluentui/react-components';
 import { BeakerRegular, DeleteRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatDateTime, type BloodGroup } from '@hc360/core';
-import { ConfirmDialog, DataTable, useNotify } from '@hc360/ui';
+import { ConfirmDialog, DataTable, sameValues, useLeaveGuard, useNotify, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { formatDuration } from '@/modules/ot/shared/datetime';
@@ -129,6 +129,17 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
       void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
     },
     onError: () => setConfirmReactive(false),
+  });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty:
+      canManage &&
+      !sameValues(
+        { group, tti },
+        { group: donation.bloodGroup === 'Unknown' ? '' : donation.bloodGroup, tti: donation.tti },
+      ),
+    busy: save.isPending,
   });
 
   if (!editable) {
@@ -303,6 +314,9 @@ export function SeparationPanel({ donation, now }: { donation: DonationDetail; n
 
   const update = (type: BloodComponentType, next: Partial<PlanRow>) =>
     setPlan((current) => ({ ...current, [type]: { ...current[type], ...next } }));
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: useValuesChanged(plan), busy: separate.isPending });
 
   return (
     <div className={styles.stack}>

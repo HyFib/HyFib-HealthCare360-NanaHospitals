@@ -18,7 +18,19 @@ import {
 } from '@fluentui/react-components';
 import { BoxArrowLeftRegular, DeleteRegular, DocumentArrowLeftRegular, SaveRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatInr, formatRelative, isApiError, todayIso, useDraft } from '@hc360/core';
-import { ConfirmDialog, EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  EmptyState,
+  ErrorState,
+  LEAVE_KEEPING_DRAFT,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useLeaveGuard,
+  useNotify,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -352,6 +364,13 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
     onError: () => setConfirmPost(false),
   });
   const serverError = create.error;
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({
+    dirty: useValuesChanged({ vendor, storeId, invoiceNumber, invoiceDate, receivedOn, invoiceTotal, remarks, lines }),
+    busy: create.isPending,
+    leaveQuestion: LEAVE_KEEPING_DRAFT,
+  });
 
   return (
     <Page>

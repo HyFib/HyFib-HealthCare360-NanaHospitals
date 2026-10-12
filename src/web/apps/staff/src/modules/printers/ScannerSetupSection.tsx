@@ -9,7 +9,7 @@ import {
 } from '@fluentui/react-components';
 import { ArrowSyncRegular, BarcodeScannerRegular, SaveRegular } from '@fluentui/react-icons';
 import { BridgeError, formatDateTime } from '@hc360/core';
-import { FormGrid, LoadingState, Section, SelectField, useNotify } from '@hc360/ui';
+import { FormGrid, LoadingState, Section, SelectField, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -166,6 +166,9 @@ function ScannerFields({
   const form = useForm<ScannerForm>({ defaultValues: toScannerForm(info.setup) });
   const port = useWatch({ control: form.control, name: 'port' });
   const serial = port !== NO_SCANNER;
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: canEdit && form.formState.isDirty, busy: saving });
+
   return (
     <form className={classes.body} onSubmit={form.handleSubmit(onSave)} noValidate>
       <FormGrid columns={3} minColumnWidth={160}>

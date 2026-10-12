@@ -13,7 +13,7 @@ import {
 import { CalendarAddRegular, DocumentArrowLeftRegular, SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, formatRelative, formatTime, todayIso, useHotkey } from '@hc360/core';
-import { LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import { LEAVE_KEEPING_DRAFT, LoadingState, Page, PageHeader, Section, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -161,6 +161,9 @@ function BookingForm({ defaults }: { defaults: SurgeryFormValues }) {
   useHotkey('mod+s', () => void submit(), { allowInInputs: true, enabled: !create.isPending });
 
   const conflicts = slotConflicts(create.error);
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: create.isPending, leaveQuestion: LEAVE_KEEPING_DRAFT });
 
   return (
     <Page maxWidth={1400}>

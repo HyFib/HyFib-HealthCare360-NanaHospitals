@@ -17,7 +17,15 @@ import {
 import { DocumentArrowLeftRegular, NoteRegular, SendRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, formatDateTime, formatRelative, formatTime, useHotkey } from '@hc360/core';
-import { applyServerErrors, EmptyState, ErrorState, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  EmptyState,
+  ErrorState,
+  LEAVE_KEEPING_DRAFT,
+  TextAreaField,
+  useLeaveGuard,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -111,6 +119,9 @@ export function NursingNotes({ admissionId, canWrite }: { admissionId: string; c
   });
   const submit = form.handleSubmit((v) => add.mutate(v));
   useHotkey('mod+enter', () => void submit(), { allowInInputs: true, enabled: canWrite && !add.isPending });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: canWrite && form.formState.isDirty, busy: add.isPending, leaveQuestion: LEAVE_KEEPING_DRAFT });
 
   return (
     <div>

@@ -21,11 +21,13 @@ import { formatRelative, useHotkey } from '@hc360/core';
 import {
   applyServerErrors,
   FormGrid,
+  LEAVE_KEEPING_DRAFT,
   Section,
   SelectField,
   SwitchField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useState } from 'react';
@@ -187,6 +189,9 @@ export function ReportIncidentForm({
   };
 
   useHotkey('mod+enter', () => void form.handleSubmit(submit)(), { allowInInputs: true, enabled: !busy });
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy, leaveQuestion: isAnonymous ? undefined : LEAVE_KEEPING_DRAFT });
 
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate className={styles.form}>

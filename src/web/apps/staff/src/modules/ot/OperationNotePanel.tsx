@@ -27,12 +27,14 @@ import {
   ErrorState,
   FormGrid,
   FullRow,
+  LEAVE_KEEPING_DRAFT,
   LoadingState,
   NumberField,
   Section,
   SelectField,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -225,6 +227,9 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
       postOpOrders.trim() ? `${postOpOrders.trimEnd()}\n${POST_OP_TEMPLATE}` : POST_OP_TEMPLATE,
       { shouldDirty: true },
     );
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: save.isPending, leaveQuestion: LEAVE_KEEPING_DRAFT });
 
   return (
     <Section

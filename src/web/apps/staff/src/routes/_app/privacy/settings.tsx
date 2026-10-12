@@ -13,6 +13,7 @@ import {
   Section,
   TextAreaField,
   TextField,
+  useLeaveGuard,
   useNotify,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -129,6 +130,9 @@ function SettingsForm({ view }: { view: PrivacySettingsView }) {
     },
   });
   const published = view.published;
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: save.isPending });
 
   return (
     <MainAside>

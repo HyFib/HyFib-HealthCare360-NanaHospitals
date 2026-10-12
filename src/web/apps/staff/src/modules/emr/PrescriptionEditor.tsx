@@ -34,7 +34,7 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatRelative, isApiError, useSession } from '@hc360/core';
-import { useNotify } from '@hc360/ui';
+import { LEAVE_KEEPING_DRAFT, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactElement } from 'react';
 import { Controller, useFieldArray, useForm, useWatch, type Control, type UseFormReturn } from 'react-hook-form';
@@ -704,6 +704,9 @@ export function PrescriptionEditor({
   const duplicates = duplicateGenerics(lines ?? []);
   const favouritesList = favourites.data ?? [];
   const controlledNames = (current?.items ?? []).filter((i) => i.isControlledDrug).map((i) => i.drugName);
+
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: isDirty, busy: save.isPending || sign.isPending, leaveQuestion: LEAVE_KEEPING_DRAFT });
 
   if (!canWrite) {
     return <Text className={styles.muted}>You can view prescriptions but not write them.</Text>;

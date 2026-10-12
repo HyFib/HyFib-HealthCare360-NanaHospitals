@@ -28,7 +28,18 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, formatDateTime, formatRelative, isApiError, todayIso } from '@hc360/core';
-import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  ErrorState,
+  LEAVE_KEEPING_DRAFT,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useLeaveGuard,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -164,6 +175,9 @@ function SummaryEditor({ booking, onSaved }: { booking: BookingDto; onSaved: (b:
     onError: (error) => notify.error(error, 'Could not save the summary'),
   });
   const restorable = draft.saved && JSON.stringify(draft.saved.value) !== JSON.stringify(defaults);
+  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
+  useLeaveGuard({ dirty: form.formState.isDirty, busy: save.isPending, leaveQuestion: LEAVE_KEEPING_DRAFT });
+
   return (
     <form className={styles.stack} onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
       {restorable && draft.saved && (
