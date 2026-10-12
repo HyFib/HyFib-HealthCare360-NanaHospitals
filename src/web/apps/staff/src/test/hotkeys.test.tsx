@@ -19,13 +19,13 @@ import {
   webLightTheme,
 } from '@fluentui/react-components';
 import { useHotkey } from '@hc360/core';
-import { ConfirmDialog } from '@hc360/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { MasterDrawer } from '@/modules/masters/MasterDrawer';
+import { useEditorGuard } from '@/modules/masters/useEditorGuard';
 
 // Shortcuts listen on the window, so keys pressed in a dialog reach the page's shortcuts too. These use Fluent's real
 // dialogs and drawers, which focus as in a browser thanks to src/test/setup.ts.
@@ -61,22 +61,8 @@ function PrescriptionScreen({ dispense }: { dispense: () => void }) {
 
 /** A masters editor: Ctrl+S saves the drawer's form, and closing it with unsaved changes asks first. */
 function SpecialtyEditor({ save }: { save: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-  const guard = {
-    close: () => setConfirming(false),
-    requestClose: () => setConfirming(true),
-    dialogs: (
-      <ConfirmDialog
-        open={confirming}
-        title="Discard your changes?"
-        confirmLabel="Discard changes"
-        onConfirm={() => setConfirming(false)}
-        onCancel={() => setConfirming(false)}
-      >
-        What you changed here has not been saved.
-      </ConfirmDialog>
-    ),
-  };
+  const [name, setName] = useState('');
+  const guard = useEditorGuard({ dirty: name !== '', busy: false, onClose: () => undefined });
   return (
     <MasterDrawer
       title="Edit specialty"
@@ -88,7 +74,7 @@ function SpecialtyEditor({ save }: { save: () => void }) {
         save();
       }}
     >
-      <Input aria-label="Name" />
+      <Input aria-label="Name" value={name} onChange={(_, data) => setName(data.value)} />
     </MasterDrawer>
   );
 }
@@ -140,6 +126,9 @@ describe('useHotkey', () => {
     expect(dispense).not.toHaveBeenCalled();
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Go back' }));
+    // The typed reason is not thrown away without asking.
+    const question = await screen.findByRole('alertdialog', { name: 'Discard your changes?' });
+    await userEvent.click(within(question).getByRole('button', { name: 'Discard changes' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     await userEvent.keyboard('{F9}');
     expect(dispense).toHaveBeenCalledTimes(1);
@@ -193,7 +182,7 @@ describe('useHotkey', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Close' }));
     const confirm = await screen.findByRole('alertdialog', { name: 'Discard your changes?' });
-    within(confirm).getByRole('button', { name: 'Cancel' }).focus();
+    within(confirm).getByRole('button', { name: 'Keep editing' }).focus();
     await userEvent.keyboard('{Control>}s{/Control}');
     expect(save).toHaveBeenCalledTimes(1);
   });

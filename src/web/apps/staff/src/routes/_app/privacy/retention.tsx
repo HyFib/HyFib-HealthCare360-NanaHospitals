@@ -428,6 +428,7 @@ function RetentionDrawer({ rule, onClose }: { rule: RetentionRuleDto; onClose: (
     <EditorDrawer
       open
       title={`How long to keep: ${rule.title.toLowerCase()}`}
+      dirty={form.formState.isDirty}
       onClose={onClose}
       onSubmit={form.handleSubmit((v) => v.value !== null && save.mutate(v.value))}
       busy={save.isPending}

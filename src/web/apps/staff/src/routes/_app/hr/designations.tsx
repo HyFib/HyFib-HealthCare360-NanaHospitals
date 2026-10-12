@@ -144,6 +144,7 @@ function DesignationDrawer({ designation, onClose }: { designation: DesignationD
     <EditorDrawer
       open
       title={designation ? designation.name : 'Add designation'}
+      dirty={form.formState.isDirty}
       onClose={onClose}
       onSubmit={form.handleSubmit((v) => save.mutate(v))}
       busy={save.isPending}

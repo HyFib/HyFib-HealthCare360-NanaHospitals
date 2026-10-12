@@ -50,7 +50,13 @@ export function SignedInFrame({ children, requireSession }: { children: ReactNod
       const reason = takeSessionEndReason();
       forgetLocalState(queryClient);
       if (requireSession || reason) {
-        void navigate({ to: '/sign-in', search: reason ? { ended: reason } : { redirect: href }, replace: true });
+        // The session is over: unsaved changes cannot be saved any more, so nothing holds the sign-in page back.
+        void navigate({
+          to: '/sign-in',
+          search: reason ? { ended: reason } : { redirect: href },
+          replace: true,
+          ignoreBlocker: true,
+        });
       }
     }
   }, [status, queryClient, navigate, href, requireSession]);

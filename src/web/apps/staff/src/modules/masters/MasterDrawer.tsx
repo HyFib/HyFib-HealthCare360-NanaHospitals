@@ -52,14 +52,20 @@ export function MasterDrawer({
 
   return (
     <>
-      <OverlayDrawer
-        ref={surface}
-        open
-        position="end"
-        size={size}
-        onOpenChange={(_, data) => !data.open && guard.requestClose()}
-      >
-        <form ref={form} onSubmit={onSubmit} noValidate style={{ display: 'contents' }}>
+      <OverlayDrawer ref={surface} open position="end" size={size} onOpenChange={guard.onOpenChange}>
+        <form
+          ref={form}
+          onSubmit={(event) => {
+            // Save stays focusable while saving, so Enter can still submit the form: one save at a time.
+            if (busy) {
+              event.preventDefault();
+            } else {
+              onSubmit(event);
+            }
+          }}
+          noValidate
+          style={{ display: 'contents' }}
+        >
           <DrawerHeader>
             <DrawerHeaderTitle
               action={
@@ -75,6 +81,9 @@ export function MasterDrawer({
               type="submit"
               appearance="primary"
               disabled={busy}
+              // While saving the button stays focusable (aria-disabled): a disabled button drops focus out of the open
+              // drawer, and Fluent then returns it to the button that opened the drawer, behind it.
+              disabledFocusable={busy}
               icon={busy ? <Spinner size="tiny" /> : undefined}
             >
               {submitLabel}
