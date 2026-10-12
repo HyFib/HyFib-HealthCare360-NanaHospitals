@@ -1,6 +1,6 @@
 import { LoadingState } from '@hc360/ui';
 import type { QueryClient } from '@tanstack/react-query';
-import { createRouter } from '@tanstack/react-router';
+import { createRouter, type RouterHistory } from '@tanstack/react-router';
 import { RouteError } from './shell/RouteError';
 import { routeTree } from './routeTree.gen';
 
@@ -8,9 +8,11 @@ export interface RouterContext {
   queryClient: QueryClient;
 }
 
-export function createAppRouter(queryClient: QueryClient) {
+/** `history` is for tests (memory history); the app uses the browser's. */
+export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {
   return createRouter({
     routeTree,
+    ...(history ? { history } : {}),
     context: { queryClient },
     defaultPreload: 'intent',
     // React Query owns caching; the router always asks it.

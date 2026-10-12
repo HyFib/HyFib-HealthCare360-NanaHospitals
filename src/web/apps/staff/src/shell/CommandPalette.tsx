@@ -55,9 +55,12 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
     cursor: 'pointer',
   },
-  active: { backgroundColor: tokens.colorNeutralBackground1Selected },
+  // The selected background takes the selected text colours: in the high-contrast theme that background is the
+  // highlight colour (cyan), on which the usual white text cannot be read.
+  active: { backgroundColor: tokens.colorNeutralBackground1Selected, color: tokens.colorNeutralForeground1Selected },
   optionText: { display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 },
   muted: { color: tokens.colorNeutralForeground3 },
+  activeMuted: { color: tokens.colorNeutralForeground3Selected },
   footer: {
     display: 'flex',
     gap: '16px',
@@ -219,7 +222,11 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                   <Text truncate wrap={false}>
                     {item.title}
                   </Text>
-                  <Caption1 className={styles.muted} truncate wrap={false}>
+                  <Caption1
+                    className={mergeClasses(styles.muted, index === active && styles.activeMuted)}
+                    truncate
+                    wrap={false}
+                  >
                     {item.subtitle}
                   </Caption1>
                 </span>

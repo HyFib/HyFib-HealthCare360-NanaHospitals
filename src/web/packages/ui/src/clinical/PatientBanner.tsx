@@ -165,7 +165,8 @@ export function PatientBanner({ patient, actions }: { patient: PatientBannerData
             {patient.uhid}
           </Badge>
           {patient.isVip && (
-            <Tooltip content="Restricted record — access is audited" relationship="label">
+            // A description: the badge says "Restricted" itself, and a plain element cannot be given a name.
+            <Tooltip content="Restricted record — access is audited" relationship="description">
               <Badge color="warning" icon={<ShieldKeyholeRegular />}>
                 Restricted
               </Badge>

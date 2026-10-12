@@ -73,6 +73,8 @@ export function PatientPhotoField({ value, onChange, name, error, disabled }: Pa
         color="colorful"
         name={name.trim() || undefined}
         image={photoUrl ? { src: photoUrl, alt: '' } : undefined}
+        // Says whether there is a photo; Fluent's own label is the name, and there is none before one is typed.
+        aria-label={photoUrl ? 'Photo' : 'No photo yet'}
       />
       <div className={styles.actions}>
         <Button icon={<CameraRegular />} disabled={locked} onClick={() => setCameraOpen(true)}>

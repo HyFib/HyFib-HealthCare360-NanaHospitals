@@ -127,6 +127,7 @@ const useStyles = makeStyles({
   },
   preview: { paddingLeft: '36px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
+  switchRow: { display: 'flex', alignItems: 'center', minHeight: '32px' },
   bottom: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 150px',
@@ -421,17 +422,21 @@ function LineRow({
             control={control}
             name={`lines.${index}.isControlledDrug`}
             render={({ field }) => (
+              // The field's label names the switch; a label of the switch's own would be a second one. Its state is
+              // announced as on or off, so the words beside it are for the eye.
               <Field label="Controlled medicine">
-                <Switch
-                  checked={field.value}
-                  onChange={(_, d) => {
-                    field.onChange(d.checked);
-                    if (d.checked && !form.getValues(`lines.${index}.controlledSchedule`)) {
-                      form.setValue(`lines.${index}.controlledSchedule`, 'H1', { shouldDirty: true });
-                    }
-                  }}
-                  label={field.value ? 'Schedule H1/X' : 'No'}
-                />
+                <div className={styles.switchRow}>
+                  <Switch
+                    checked={field.value}
+                    onChange={(_, d) => {
+                      field.onChange(d.checked);
+                      if (d.checked && !form.getValues(`lines.${index}.controlledSchedule`)) {
+                        form.setValue(`lines.${index}.controlledSchedule`, 'H1', { shouldDirty: true });
+                      }
+                    }}
+                  />
+                  <Text aria-hidden>{field.value ? 'Schedule H1/X' : 'No'}</Text>
+                </div>
               </Field>
             )}
           />

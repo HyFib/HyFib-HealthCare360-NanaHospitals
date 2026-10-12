@@ -61,7 +61,9 @@ const useStyles = makeStyles({
     '@media (max-width: 900px)': { gridTemplateColumns: '1fr' },
   },
   brand: {
-    background: `linear-gradient(145deg, #064F6B 0%, #0A7CA7 55%, #4A9AC0 100%)`,
+    // Brand 50 to 70: white text keeps at least 5.8:1 everywhere on it, and the 85 % white below at least 4.6:1
+    // (WCAG AA). The gradient used to end in brand 100, where white text had 3.2:1.
+    background: `linear-gradient(145deg, #064F6B 0%, #045E80 55%, #016D95 100%)`,
     color: '#fff',
     padding: '48px',
     display: 'flex',
@@ -79,7 +81,7 @@ const useStyles = makeStyles({
   },
   bullets: { display: 'grid', gap: '14px', margin: 0, padding: 0, listStyle: 'none' },
   bullet: { display: 'flex', gap: '10px', alignItems: 'center', fontSize: tokens.fontSizeBase400 },
-  footer: { color: 'rgba(255,255,255,0.7)', fontSize: tokens.fontSizeBase200 },
+  footer: { color: 'rgba(255,255,255,0.85)', fontSize: tokens.fontSizeBase200 },
   panel: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px 20px' },
   card: {
     width: '100%',

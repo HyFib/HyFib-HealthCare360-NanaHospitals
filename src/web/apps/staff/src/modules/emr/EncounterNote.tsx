@@ -194,7 +194,7 @@ export function ComplaintSection({
         </FormGrid>
       )}
       {!locked && activeTemplate && activeTemplate.commonComplaints.length > 0 && (
-        <div className={styles.chips} aria-label="Common complaints">
+        <div className={styles.chips} role="group" aria-label="Common complaints">
           <Caption1 className={styles.muted}>Common:</Caption1>
           {activeTemplate.commonComplaints.map((complaint) => (
             <Button

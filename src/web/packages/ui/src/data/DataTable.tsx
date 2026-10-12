@@ -172,14 +172,18 @@ export function DataTable<T>(props: DataTableProps<T>) {
             <TableRow>
               {columns.map((column) => {
                 const active = props.sort?.key === column.key;
+                const sortable = Boolean(column.sortable && props.onSortChange);
                 return (
+                  // Only a column that sorts is a button: in a sortable table Fluent makes every header one otherwise,
+                  // each a tab stop that does nothing (and the actions column's an empty one, without a name).
                   <TableHeaderCell
                     key={column.key}
                     className={colClass(column)}
                     style={column.width ? { width: column.width } : undefined}
+                    sortable={sortable}
                     sortDirection={active ? (props.sort?.desc ? 'descending' : 'ascending') : undefined}
                     onClick={
-                      column.sortable && props.onSortChange
+                      sortable
                         ? () => props.onSortChange?.({ key: column.key, desc: active ? !props.sort?.desc : false })
                         : undefined
                     }
@@ -192,6 +196,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
                 <TableHeaderCell
                   className={styles.actionsCell}
                   style={actionsWidth === undefined ? undefined : { width: actionsWidth, boxSizing: 'border-box' }}
+                  sortable={false}
                   aria-label="Actions"
                 />
               )}
