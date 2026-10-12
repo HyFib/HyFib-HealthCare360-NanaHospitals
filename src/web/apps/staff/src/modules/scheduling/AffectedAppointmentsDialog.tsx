@@ -152,7 +152,7 @@ function AffectedContent({ affected, onClose }: { affected: AffectedAppointment[
                           {isOpen(status) && (
                             <div className={styles.actions}>
                               {loadingId === a.id ? (
-                                <Spinner size="tiny" />
+                                <Spinner size="tiny" aria-label="Loading…" />
                               ) : (
                                 <>
                                   <Button

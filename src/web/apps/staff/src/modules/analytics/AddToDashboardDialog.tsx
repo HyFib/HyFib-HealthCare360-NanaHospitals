@@ -192,7 +192,7 @@ export function AddToDashboardDialog({
                 appearance="primary"
                 type="submit"
                 disabled={!canSave || save.isPending}
-                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Add tile
               </Button>

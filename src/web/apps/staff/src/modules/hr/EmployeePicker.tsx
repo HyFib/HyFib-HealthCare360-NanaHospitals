@@ -70,7 +70,7 @@ export function EmployeePicker({
           onChange(picked ? { id: picked.id, code: picked.employeeCode, name: picked.fullName } : null);
           setTerm('');
         }}
-        expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+        expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         clearable
       >
         {search.length >= 2 && items.length === 0 && !results.isFetching && (

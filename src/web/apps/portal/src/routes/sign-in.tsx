@@ -447,7 +447,7 @@ function SignInPage() {
                     appearance="primary"
                     size="large"
                     disabled={busy !== null || resendIn > 0}
-                    icon={busy === 'send' ? <Spinner size="tiny" /> : undefined}
+                    icon={busy === 'send' ? <Spinner size="tiny" aria-hidden /> : undefined}
                   >
                     {busy === 'send'
                       ? t('common.sending')
@@ -507,7 +507,7 @@ function SignInPage() {
                     appearance="primary"
                     size="large"
                     disabled={busy !== null || code.length !== OTP_LENGTH}
-                    icon={busy === 'verify' ? <Spinner size="tiny" /> : undefined}
+                    icon={busy === 'verify' ? <Spinner size="tiny" aria-hidden /> : undefined}
                   >
                     {busy === 'verify' ? t('auth.verifying') : t('auth.verify')}
                   </Button>

@@ -114,7 +114,7 @@ export function ProcedurePicker({ form }: { form: Form }) {
               }
             }}
             onBlur={field.onBlur}
-            expandIcon={procedures.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+            expandIcon={procedures.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
           >
             {(procedures.data ?? []).map((item) => (
               <Option key={item.id} value={item.id} text={item.name}>

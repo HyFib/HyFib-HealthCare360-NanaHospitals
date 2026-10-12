@@ -189,7 +189,7 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
             // Keeps focus while saving and when a shared account needs confirming: a disabled button drops it. Enter
             // can still submit, which is ignored while blocked.
             disabledFocusable={blocked}
-            icon={busy ? <Spinner size="tiny" /> : undefined}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Change account
           </Button>

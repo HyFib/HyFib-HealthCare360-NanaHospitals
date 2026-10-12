@@ -69,7 +69,7 @@ export function CapaActionButtons({
       {actions.includes('start') && (
         <Button
           size={size}
-          icon={busy && !dialog ? <Spinner size="tiny" /> : <PlayRegular />}
+          icon={busy && !dialog ? <Spinner size="tiny" aria-hidden /> : <PlayRegular />}
           disabled={busy}
           onClick={() => void run(() => qualityApi.startCapa(capa.id), 'Action started')}
         >

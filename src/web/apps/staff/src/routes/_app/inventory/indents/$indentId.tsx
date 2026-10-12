@@ -410,7 +410,7 @@ function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onCl
             <Button
               appearance="primary"
               disabled={invalid || nothing || approve.isPending}
-              icon={approve.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={approve.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => approve.mutate()}
             >
               Approve
@@ -550,7 +550,7 @@ function IssueDialog({
             <Button
               appearance="primary"
               disabled={chosen.length === 0 || invalid || issue.isPending}
-              icon={issue.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
+              icon={issue.isPending ? <Spinner size="tiny" aria-hidden /> : <PrintRegular />}
               onClick={() => issue.mutate()}
             >
               Issue and print slip

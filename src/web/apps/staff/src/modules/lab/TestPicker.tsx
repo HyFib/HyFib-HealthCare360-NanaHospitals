@@ -155,7 +155,7 @@ export function TestPicker({
           aria-expanded={results.length > 0}
           aria-controls={listId}
           aria-activedescendant={results[highlighted] ? `${listId}-${results[highlighted].id}` : undefined}
-          contentAfter={catalog.isFetching || remote.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+          contentAfter={catalog.isFetching || remote.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         />
       </Field>
 

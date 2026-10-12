@@ -413,7 +413,7 @@ export function PackageDrawer({
             type="submit"
             appearance="primary"
             disabled={!valid || save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {p ? 'Save package' : 'Create package'}
           </Button>

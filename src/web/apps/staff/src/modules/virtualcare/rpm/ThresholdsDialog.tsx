@@ -253,7 +253,7 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
             type="submit"
             appearance="primary"
             disabled={save.isPending || problems.some((p) => p !== null)}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Save limits
           </Button>

@@ -27,7 +27,7 @@ export function DocumentButtons({
   const printButton = (
     <Button
       appearance={printAppearance}
-      icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
+      icon={print.isPending ? <Spinner size="tiny" aria-hidden /> : <PrintRegular />}
       disabled={disabled}
       disabledFocusable={print.isPending}
       onClick={() => print.mutate(path)}
@@ -46,7 +46,7 @@ export function DocumentButtons({
         printButton
       )}
       <Button
-        icon={downloadPdf.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+        icon={downloadPdf.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowDownloadRegular />}
         disabled={disabled}
         disabledFocusable={downloadPdf.isPending}
         onClick={() => downloadPdf.mutate(path)}

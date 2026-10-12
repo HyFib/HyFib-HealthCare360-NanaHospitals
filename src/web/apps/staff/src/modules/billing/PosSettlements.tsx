@@ -197,7 +197,7 @@ export function ImportReportDialog({
                 onChange={(_, data) => setTrainingDate(data.value)}
               />
               <Button
-                icon={training.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+                icon={training.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowDownloadRegular />}
                 disabled={!trainingDate || training.isPending}
                 onClick={() => training.mutate(trainingDate)}
               >
@@ -212,7 +212,7 @@ export function ImportReportDialog({
             {!result && (
               <Button
                 appearance="primary"
-                icon={busy ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : <ArrowUploadRegular />}
                 disabled={!file || !acquirer.trim() || busy}
                 disabledFocusable={busy}
                 onClick={() => upload.mutate()}
@@ -322,7 +322,7 @@ export function PosToLookAt({ page, onPage }: { page: number; onPage: (page: num
     <>
       <div className={styles.toolbar}>
         <Button
-          icon={match.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+          icon={match.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowClockwiseRegular />}
           disabled={match.isPending}
           onClick={() => match.mutate()}
         >

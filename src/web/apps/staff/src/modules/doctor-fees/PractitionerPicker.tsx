@@ -51,7 +51,7 @@ export function PractitionerPicker({
           onChange(item ? { id: item.id, name: item.name } : null);
           setTerm('');
         }}
-        expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+        expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         clearable
         autoFocus={autoFocus}
       >

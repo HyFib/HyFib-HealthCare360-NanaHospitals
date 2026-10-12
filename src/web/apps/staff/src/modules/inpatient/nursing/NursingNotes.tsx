@@ -209,7 +209,7 @@ export function NursingNotes({ admissionId, canWrite }: { admissionId: string; c
             <Button
               type="submit"
               appearance="primary"
-              icon={add.isPending ? <Spinner size="tiny" /> : <SendRegular />}
+              icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
               disabled={add.isPending}
               aria-keyshortcuts="Control+Enter"
             >

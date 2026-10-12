@@ -41,7 +41,7 @@ export function DecisionButtons({
         <Button
           size={size}
           appearance="primary"
-          icon={busy === 'approve' ? <Spinner size="extra-tiny" /> : <CheckmarkRegular />}
+          icon={busy === 'approve' ? <Spinner size="extra-tiny" aria-hidden /> : <CheckmarkRegular />}
           disabled={busy !== null}
           onClick={() => void run(true, null)}
         >

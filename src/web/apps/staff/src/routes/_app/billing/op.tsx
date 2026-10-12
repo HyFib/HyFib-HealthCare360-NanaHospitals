@@ -204,7 +204,7 @@ function OpBillingPage() {
               <Input
                 value={lookupText}
                 onChange={(_, data) => setLookupText(data.value)}
-                contentAfter={lookup.isPending ? <Spinner size="extra-tiny" /> : <SearchRegular />}
+                contentAfter={lookup.isPending ? <Spinner size="extra-tiny" aria-hidden /> : <SearchRegular />}
                 placeholder="e.g. NHOB260000123"
                 aria-label="Visit or bill number"
               />
@@ -462,7 +462,7 @@ function PatientLevelStart({
     <>
       <Button
         appearance={subtle ? 'transparent' : 'primary'}
-        icon={start.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+        icon={start.isPending ? <Spinner size="tiny" aria-hidden /> : <AddRegular />}
         onClick={() => start.mutate({ visitId: null, patientId, chargeIds: null })}
         disabled={start.isPending}
       >
@@ -585,7 +585,7 @@ function VisitCard({
         ) : (
           <Button
             appearance={highlighted || group.charges.length > 0 ? 'primary' : 'secondary'}
-            icon={start.isPending ? <Spinner size="tiny" /> : <ReceiptAddRegular />}
+            icon={start.isPending ? <Spinner size="tiny" aria-hidden /> : <ReceiptAddRegular />}
             onClick={begin}
             disabled={start.isPending || (group.charges.length > 0 && selected.length === 0)}
             autoFocus={highlighted}

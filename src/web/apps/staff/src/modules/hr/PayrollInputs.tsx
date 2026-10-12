@@ -304,7 +304,7 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
                 type="submit"
                 appearance="primary"
                 disabled={busy}
-                icon={busy ? <Spinner size="tiny" /> : undefined}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Add
               </Button>
@@ -426,7 +426,7 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
             <Button
               appearance="primary"
               disabled={!ready || busy}
-              icon={busy ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : <ArrowUploadRegular />}
               onClick={() => void submit()}
             >
               Import {preview.lines.length || ''} line(s)

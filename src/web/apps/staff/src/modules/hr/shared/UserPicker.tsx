@@ -81,7 +81,7 @@ export function UserPicker({
           onChange(picked ? { id: picked.id, name: picked.name } : null);
           setTerm('');
         }}
-        expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+        expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         clearable={clearable}
       >
         {options.map((option) => (

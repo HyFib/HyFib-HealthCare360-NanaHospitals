@@ -304,7 +304,7 @@ export function EmployeeForm(props: EmployeeFormProps) {
           type="submit"
           appearance="primary"
           size="large"
-          icon={props.busy ? <Spinner size="tiny" /> : <SaveRegular />}
+          icon={props.busy ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={props.busy}
         >
           {props.submitLabel}

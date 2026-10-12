@@ -248,7 +248,7 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
                 type="submit"
                 appearance="primary"
                 disabled={create.isPending}
-                icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Send request
               </Button>

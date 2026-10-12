@@ -36,6 +36,23 @@ export default tseslint.config(
     files: ['**/*.{ts,tsx}'],
   },
   {
+    // A Fluent Spinner is a progress bar to a screen reader, and one without a name is read only as "progress bar"
+    // (axe aria-progressbar-name, SRS UX-10). Name one that stands for something loading (label, or aria-label to keep
+    // it small), and hide one beside words that already say so, such as a busy button's icon (aria-hidden).
+    files: ['**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "JSXOpeningElement[name.name='Spinner']:not(:has(JSXAttribute[name.name=/^(label|aria-label|aria-labelledby|aria-hidden)$/]))",
+          message:
+            'Give the Spinner a label or aria-label when it stands for something loading, or aria-hidden when the control it is in already says it is busy.',
+        },
+      ],
+    },
+  },
+  {
     // The tests hand javascript: links to the code that must refuse them.
     files: ['**/*.test.{ts,tsx}'],
     rules: { 'no-script-url': 'off' },

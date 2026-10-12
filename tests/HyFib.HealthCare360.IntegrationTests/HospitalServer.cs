@@ -460,6 +460,12 @@ public sealed class HospitalServer : IAsyncLifetime
             .Values["code"];
     }
 
+    /// <summary>
+    /// The test server's handler, for a client of its own, such as the load test's (tools/HyFib.HealthCare360.LoadTest),
+    /// as the staff app on the test's own address: sign-in is limited per address.
+    /// </summary>
+    public HttpMessageHandler CreateHandler() => new StaffAppClient(App.GetTestServer().CreateHandler(), AddressOfCurrentTest());
+
     private HttpClient CreateHttpClient(bool ownAddress = false, bool portal = false)
     {
         var http = App.GetTestClient();
@@ -475,6 +481,16 @@ public sealed class HospitalServer : IAsyncLifetime
         }
 
         return http;
+    }
+
+    private sealed class StaffAppClient(HttpMessageHandler inner, string address) : DelegatingHandler(inner)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Headers.TryAddWithoutValidation("X-HC360-Client", "web");
+            request.Headers.TryAddWithoutValidation(ClientAddressHeader, address);
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     // A private address that stays the same for the whole of the running test, and differs from other tests'.

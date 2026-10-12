@@ -131,7 +131,7 @@ export function ScheduleDialog({
                 disabled={schedule.isPending}
                 // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
                 disabledFocusable={schedule.isPending}
-                icon={schedule.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={schedule.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 {moving ? 'Move surgery' : 'Schedule'}
               </Button>
@@ -208,7 +208,7 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                 type="submit"
                 appearance="primary"
                 disabled={save.isPending || !gate.allowed}
-                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Save plan
               </Button>

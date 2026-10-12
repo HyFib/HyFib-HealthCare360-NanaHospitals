@@ -161,7 +161,7 @@ export function BulkVerifyDialog({
             <Button
               appearance="primary"
               disabled={loading || ids.length === 0 || verify.isPending}
-              icon={verify.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={verify.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => verify.mutate({ resultIds: ids, qcOverrideReason: null, criticalCall: null, release })}
             >
               Verify {ids.length} {ids.length === 1 ? 'result' : 'results'}

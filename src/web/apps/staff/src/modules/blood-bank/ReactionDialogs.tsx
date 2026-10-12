@@ -200,7 +200,7 @@ export function ReportReactionDialog({
                 type="submit"
                 appearance="primary"
                 disabled={report.isPending}
-                icon={report.isPending ? <Spinner size="tiny" /> : <HeartPulseWarningRegular />}
+                icon={report.isPending ? <Spinner size="tiny" aria-hidden /> : <HeartPulseWarningRegular />}
               >
                 Report reaction
               </Button>
@@ -309,7 +309,7 @@ export function CloseReactionDialog({ reaction, onClose }: { reaction: Transfusi
                 type="submit"
                 appearance="primary"
                 disabled={close.isPending}
-                icon={close.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={close.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Close investigation
               </Button>

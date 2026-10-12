@@ -63,6 +63,7 @@ public sealed class PatientsModule : IModule
     {
         PatientsRealtimeTopics.Register(services);
         services.AddScoped<PatientRegistrationService>();
+        services.AddScoped<Seed.LoadTestPatients>();
         services.AddScoped<PatientAccessGuard>();
         services.AddScoped<VisitService>();
         services.AddScoped<PortalPatientScope>();

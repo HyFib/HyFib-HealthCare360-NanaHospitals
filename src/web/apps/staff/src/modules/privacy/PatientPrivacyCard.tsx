@@ -339,7 +339,12 @@ function NomineeBody({
           <Button onClick={guard.requestClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={busy}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
+          >
             Save nominee
           </Button>
         </DialogActions>

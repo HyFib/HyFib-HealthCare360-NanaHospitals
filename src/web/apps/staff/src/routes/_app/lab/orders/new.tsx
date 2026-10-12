@@ -483,7 +483,7 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
               type="submit"
               appearance="primary"
               size="large"
-              icon={create.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+              icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
               disabled={create.isPending}
               aria-keyshortcuts="Control+S"
             >

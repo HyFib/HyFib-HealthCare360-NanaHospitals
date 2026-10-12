@@ -533,7 +533,7 @@ export function AssistantPanel({
             )}
             <Button
               appearance="primary"
-              icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
+              icon={busy ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
               disabled={!text.trim() || busy}
               onClick={() => void send()}
             >
@@ -568,7 +568,7 @@ function MicButton({
   return (
     <Tooltip content={label} relationship="label">
       <Button
-        icon={capture.phase === 'idle' ? <MicRegular /> : <Spinner size="tiny" />}
+        icon={capture.phase === 'idle' ? <MicRegular /> : <Spinner size="tiny" aria-hidden />}
         aria-label={label}
         onClick={capture.start}
         disabled={disabled || capture.phase !== 'idle'}

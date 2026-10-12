@@ -103,10 +103,21 @@ internal static class ServerCli
               CMS ICD-10-PCS order file (icd10pcs_order_YYYY.txt, or its zip) into the local code catalogue, as Medical
               records > ICD catalogue > Import does. --dry-run reads the file and says what would change, and changes nothing.
               Run it on the Server Node from an elevated prompt while the database is running.
+
+          loadtest patients --count <N>
+              Adds N synthetic patients, after any added before, for a load test of patient search over a large register
+              (SRS PERF-02: a million patients). Their UHIDs start with LT and nothing is sent to them. Only on a test
+              server set up with demonstration data (HealthCare360:SeedDemoData); see docs/testing/LOAD-TESTS.md.
+
+          loadtest accounts --count <N>
+              Makes the staff accounts loadtest01 to loadtestNN (Front Office), with the password in the
+              HC360_LOADTEST_PASSWORD environment variable, and prints their names for the load test's --accounts. An
+              account made before takes the new password. Only on a test server with demonstration data.
         """;
 
     public static bool IsCommand(string argument) =>
-        argument is "backup" or "catalogue" or "settings" or "database" or "certificates" or "disk-encryption" or "help" or "--help" or "-h";
+        argument is "backup" or "catalogue" or "settings" or "database" or "certificates" or "disk-encryption" or "loadtest" or "help" or "--help"
+            or "-h";
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -121,6 +132,8 @@ internal static class ServerCli
                 ["backup", "restore", ..] when options.ContainsKey("in") => await RestoreAsync(options),
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
                 ["catalogue", "import", ..] when options.ContainsKey("file") => await CatalogueCli.ImportAsync(options["file"], dryRun),
+                ["loadtest", "patients", ..] when options.ContainsKey("count") => await LoadTestCli.AddPatientsAsync(options["count"]),
+                ["loadtest", "accounts", ..] when options.ContainsKey("count") => await LoadTestCli.AddAccountsAsync(options["count"]),
                 ["settings", "protect", ..] => ProtectSettings(options),
                 ["database", "sign-in", "show", ..] => ShowDatabaseSignIn(options),
                 ["database", "sign-in", "windows", ..] => ChangeDatabaseSignIn(options, windows: true),

@@ -234,7 +234,7 @@ function RecordAllergyForm({
             disabled={save.isPending}
             // Keeps focus while saving (a disabled button drops it); Enter can still submit, which is ignored.
             disabledFocusable={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Record allergy
           </Button>
@@ -378,7 +378,7 @@ function UpdateAllergyForm({
               type="submit"
               appearance="primary"
               disabled={save.isPending}
-              icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
             >
               Save
             </Button>
@@ -670,7 +670,7 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
           <Button
             type="submit"
             appearance="primary"
-            icon={save.isPending ? <Spinner size="tiny" /> : <AlertUrgentRegular />}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <AlertUrgentRegular />}
             disabled={save.isPending}
             // Keeps focus while saving (a disabled button drops it); Enter can still submit, which is ignored.
             disabledFocusable={save.isPending}

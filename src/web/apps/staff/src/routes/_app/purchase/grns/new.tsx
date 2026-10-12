@@ -775,7 +775,7 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
               <Button
                 appearance="primary"
                 size="large"
-                icon={create.isPending ? <Spinner size="tiny" /> : <BoxArrowLeftRegular />}
+                icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : <BoxArrowLeftRegular />}
                 disabled={blockers.length > 0 || Boolean(licenceProblem) || create.isPending}
                 onClick={() => setConfirmPost(true)}
               >

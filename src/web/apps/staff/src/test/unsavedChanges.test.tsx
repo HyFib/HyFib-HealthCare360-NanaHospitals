@@ -147,13 +147,14 @@ describe('a dialog form with unsaved changes', () => {
 
   it('asks before Esc closes it, and returns focus to the field on keeping the typing', async () => {
     renderScreen();
-    const { field } = await openDialog();
+    const { dialog, field } = await openDialog();
     await userEvent.type(field, 'Allergic to latex');
 
     await userEvent.keyboard('{Escape}');
     const question = await screen.findByRole('alertdialog', { name: 'Discard your changes?' });
-    // Still open behind the question, which hides it from screen readers (Tabster) while it is up.
-    expect(screen.getByRole('dialog', { name: 'Add a note', hidden: true })).toBeInTheDocument();
+    // Still open behind the question, which hides it from screen readers (Tabster) while it is up: by then the hidden
+    // dialog has no accessible name to find it by.
+    expect(dialog).toBeInTheDocument();
     await waitFor(() => expect(within(question).getByRole('button', { name: 'Keep editing' })).toHaveFocus());
 
     await userEvent.keyboard('{Escape}');
@@ -338,13 +339,18 @@ describe('a dialog opened through the address', () => {
     try {
       await act(() => router.navigate({ to: '/' as never, search: { note: true } as never }));
       const dialog = await screen.findByRole('dialog', { name: 'Add a note' });
-      await userEvent.type(within(dialog).getByRole('textbox', { name: 'Note' }), 'Allergic to latex');
+      const field = within(dialog).getByRole('textbox', { name: 'Note' });
+      await userEvent.type(field, 'Allergic to latex');
 
       act(() => router.history.back());
       const question = await screen.findByRole('alertdialog', { name: 'Leave without saving?' });
-      await userEvent.click(within(question).getByRole('button', { name: 'Stay' }));
+      // From the keyboard: in jsdom, Tabster returns focus on closing a dialog only for keyboard users, and only with
+      // focus back inside does it show the dialog to screen readers again (Chrome does both for mouse users too).
+      within(question).getByRole('button', { name: 'Stay' }).focus();
+      await userEvent.keyboard('{Enter}');
 
       await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      await waitFor(() => expect(field).toHaveFocus());
       // Tabster shows the dialog to screen readers again a moment after the question closes.
       expect(await screen.findByRole('textbox', { name: 'Note' })).toHaveValue('Allergic to latex');
     } finally {

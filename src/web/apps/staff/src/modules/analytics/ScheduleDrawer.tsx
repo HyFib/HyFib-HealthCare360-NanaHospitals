@@ -507,7 +507,7 @@ export function ScheduleDrawer({
           disabled={save.isPending}
           // Keeps focus while saving (a disabled button drops it); Enter can still submit, which the form ignores.
           disabledFocusable={save.isPending}
-          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
         >
           {extract ? (schedule ? 'Save extract' : 'Create extract') : schedule ? 'Save schedule' : 'Create schedule'}
         </Button>

@@ -240,7 +240,7 @@ export function ScheduleSessionDialog({
                 type="submit"
                 appearance="primary"
                 disabled={schedule.isPending || Boolean(notEnrolled)}
-                icon={schedule.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={schedule.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Book session
               </Button>
@@ -326,7 +326,7 @@ export function AssignMachineDialog({
             <Button
               appearance="primary"
               disabled={!machineId || machineId === session.machineId || assign.isPending}
-              icon={assign.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={assign.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => assign.mutate()}
             >
               Assign machine
@@ -403,7 +403,7 @@ export function DisinfectionDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!method.trim() || record.isPending}
-                icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Record disinfection
               </Button>

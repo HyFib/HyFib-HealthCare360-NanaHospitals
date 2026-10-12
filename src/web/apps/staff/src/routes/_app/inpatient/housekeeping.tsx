@@ -173,7 +173,11 @@ function HousekeepingPage() {
                       <Button
                         size="small"
                         icon={
-                          start.isPending && start.variables?.id === t.id ? <Spinner size="tiny" /> : <PlayRegular />
+                          start.isPending && start.variables?.id === t.id ? (
+                            <Spinner size="tiny" aria-hidden />
+                          ) : (
+                            <PlayRegular />
+                          )
                         }
                         disabled={start.isPending}
                         onClick={() => start.mutate(t)}

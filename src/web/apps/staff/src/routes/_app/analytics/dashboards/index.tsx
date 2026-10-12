@@ -420,7 +420,7 @@ function NewDashboardDialog({ onClose }: { onClose: () => void }) {
                 appearance="primary"
                 type="submit"
                 disabled={!name.trim() || create.isPending}
-                icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Create and add tiles
               </Button>

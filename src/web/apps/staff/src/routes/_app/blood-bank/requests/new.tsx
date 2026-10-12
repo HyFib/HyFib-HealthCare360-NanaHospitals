@@ -263,7 +263,7 @@ function RequestForm({ patient }: { patient: PickedPatient | null }) {
             appearance="primary"
             size="large"
             disabled={create.isPending}
-            icon={create.isPending ? <Spinner size="tiny" /> : <DropRegular />}
+            icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : <DropRegular />}
           >
             Send request
           </Button>

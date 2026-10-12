@@ -173,7 +173,7 @@ export function ProfileList({
                   </span>
                 </span>
                 {switching === profile.id ? (
-                  <Spinner size="tiny" />
+                  <Spinner size="tiny" aria-hidden />
                 ) : (
                   current && <CheckmarkCircleRegular className={styles.check} aria-label={t('shell.profile.current')} />
                 )}

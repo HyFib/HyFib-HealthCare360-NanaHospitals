@@ -899,7 +899,7 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
           </Caption1>
           <div className={styles.actions}>
             <Button
-              icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+              icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
               disabled={busy}
               onClick={() => void form.handleSubmit((values) => save.mutate(values))()}
               aria-keyshortcuts="Control+S"
@@ -908,7 +908,7 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
             </Button>
             {status !== 'Reported' && (
               <Button
-                icon={submit.isPending ? <Spinner size="tiny" /> : <SendRegular />}
+                icon={submit.isPending ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
                 disabled={busy}
                 onClick={() => void form.handleSubmit((values) => submit.mutate(values))()}
               >
@@ -920,7 +920,7 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
                 <Switch checked={release} onChange={(_, data) => setRelease(data.checked)} label="Release now" />
                 <Button
                   appearance="primary"
-                  icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />}
+                  icon={sign.isPending ? <Spinner size="tiny" aria-hidden /> : <SignatureRegular />}
                   disabled={busy}
                   onClick={() => void form.handleSubmit((values) => sign.mutate({ values, call: null }))()}
                 >
@@ -1013,7 +1013,7 @@ function SignedReport({
           {canVerify && unsigned && (
             <Button
               appearance="primary"
-              icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />}
+              icon={sign.isPending ? <Spinner size="tiny" aria-hidden /> : <SignatureRegular />}
               disabled={sign.isPending}
               onClick={() => sign.mutate(null)}
             >
@@ -1023,7 +1023,7 @@ function SignedReport({
           {canVerify && report.status === 'Verified' && (
             <Button
               appearance="primary"
-              icon={release.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+              icon={release.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
               disabled={release.isPending}
               onClick={() => release.mutate()}
             >

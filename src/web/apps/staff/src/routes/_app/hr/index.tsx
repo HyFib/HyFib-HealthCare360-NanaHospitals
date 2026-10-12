@@ -144,7 +144,7 @@ function Overview() {
                   size="small"
                   appearance="transparent"
                   className={styles.kpiAction}
-                  icon={compute.isPending ? <Spinner size="extra-tiny" /> : <ArrowSyncRegular />}
+                  icon={compute.isPending ? <Spinner size="extra-tiny" aria-hidden /> : <ArrowSyncRegular />}
                   disabled={compute.isPending}
                   onClick={() => compute.mutate()}
                 >
@@ -346,7 +346,7 @@ function Overview() {
               }
             >
               {runs.isLoading ? (
-                <Spinner size="tiny" />
+                <Spinner size="tiny" aria-label="Loading…" />
               ) : latestRun ? (
                 <Button
                   appearance="subtle"

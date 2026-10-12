@@ -531,7 +531,7 @@ export function DictationFlow({
             )}
             <Button
               appearance="primary"
-              icon={making ? <Spinner size="tiny" /> : <SparkleRegular />}
+              icon={making ? <Spinner size="tiny" aria-hidden /> : <SparkleRegular />}
               disabled={making || inserting || listening || transcriptIssue !== null}
               onClick={() => void makeDraft()}
             >
@@ -551,7 +551,7 @@ export function DictationFlow({
               </Button>
               <Button
                 appearance="primary"
-                icon={inserting ? <Spinner size="tiny" /> : undefined}
+                icon={inserting ? <Spinner size="tiny" aria-hidden /> : undefined}
                 disabled={inserting || overflows.length > 0 || nothingToInsert}
                 onClick={() => void insert()}
               >
@@ -640,7 +640,7 @@ function VoiceControls({
   } else if (mode) {
     button = (
       <Button
-        icon={capture.phase === 'idle' ? <MicRegular /> : <Spinner size="tiny" />}
+        icon={capture.phase === 'idle' ? <MicRegular /> : <Spinner size="tiny" aria-hidden />}
         disabled={disabled || capture.phase !== 'idle'}
         onClick={capture.start}
       >

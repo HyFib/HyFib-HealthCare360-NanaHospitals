@@ -255,7 +255,7 @@ function OrderView({
             )}
             {canLabels && collectedCount > 0 && (
               <Button
-                icon={printing === 'all' ? <Spinner size="tiny" /> : <PrintRegular />}
+                icon={printing === 'all' ? <Spinner size="tiny" aria-hidden /> : <PrintRegular />}
                 // While printing it stays focusable (aria-disabled) and ignores clicks: a disabled button drops focus.
                 disabledFocusable={printing !== null}
                 onClick={() => void printLabels()}
@@ -289,7 +289,7 @@ function OrderView({
           {canCreate && (
             <MessageBarActions>
               <Button
-                icon={retryCharges.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+                icon={retryCharges.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSyncRegular />}
                 disabled={retryCharges.isPending}
                 onClick={() => retryCharges.mutate()}
               >

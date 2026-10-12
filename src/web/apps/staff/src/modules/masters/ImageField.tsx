@@ -110,7 +110,7 @@ export function ImagePicker({ label, hint, kind, value, onChange, error, disable
           ) : preview.data ? (
             <img src={preview.data} alt={`The ${spec.noun} as uploaded`} className={styles.image} />
           ) : preview.isLoading ? (
-            <Spinner size="tiny" />
+            <Spinner size="tiny" aria-label={`Loading the ${spec.noun}`} />
           ) : (
             <Caption1 className={styles.empty}>Can't show the {spec.noun}</Caption1>
           )}

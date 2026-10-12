@@ -248,7 +248,7 @@ export function NoteComposer({
         <Button
           type="submit"
           appearance="primary"
-          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={save.isPending}
         >
           Save note
@@ -364,7 +364,7 @@ function EditNoteForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Save changes
           </Button>

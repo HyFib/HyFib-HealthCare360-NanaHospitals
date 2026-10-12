@@ -238,7 +238,7 @@ function SummaryEditor({ booking, onSaved }: { booking: BookingDto; onSaved: (b:
           <Button
             type="submit"
             appearance="primary"
-            icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
             disabled={save.isPending}
           >
             Save summary

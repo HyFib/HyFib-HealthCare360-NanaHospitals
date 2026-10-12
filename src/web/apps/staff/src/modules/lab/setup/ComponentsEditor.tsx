@@ -159,7 +159,7 @@ export function ComponentsEditor({ test }: { test: LabTestDetail }) {
       <div className={styles.footer}>
         <Button
           appearance="primary"
-          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={!dirty || rows.length === 0 || rows.length > 100 || save.isPending}
           onClick={() => save.mutate()}
         >

@@ -137,7 +137,7 @@ export function PolicyNumberReveal({ policyId, masked }: { policyId: string; mas
               <Button
                 appearance="primary"
                 disabled={!purpose || busy}
-                icon={busy ? <Spinner size="tiny" /> : <EyeRegular />}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : <EyeRegular />}
                 onClick={() => void reveal()}
               >
                 Show number

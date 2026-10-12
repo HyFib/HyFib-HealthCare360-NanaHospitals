@@ -316,7 +316,7 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
                 appearance="primary"
                 disabled={!canPrepare || busy}
                 onClick={() => prepare.mutate()}
-                icon={prepare.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={prepare.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Preview changes
               </Button>
@@ -325,7 +325,7 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
                 appearance="primary"
                 disabled={prepared.prices.length === 0 || busy}
                 onClick={() => apply.mutate()}
-                icon={apply.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={apply.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Save {prepared.prices.length} price{prepared.prices.length === 1 ? '' : 's'}
               </Button>

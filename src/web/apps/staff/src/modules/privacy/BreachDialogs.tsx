@@ -223,7 +223,7 @@ function StepBody({
             type="submit"
             appearance="primary"
             disabled={command.busy}
-            icon={command.busy ? <Spinner size="tiny" /> : undefined}
+            icon={command.busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {text.confirm}
           </Button>

@@ -348,7 +348,7 @@ export function ProfileForm({
           type="submit"
           appearance="primary"
           size="large"
-          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={save.isPending}
         >
           {profile ? 'Save profile' : 'Enrol patient'}

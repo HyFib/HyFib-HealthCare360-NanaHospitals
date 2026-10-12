@@ -71,7 +71,7 @@ export function ServicePicker({
           }
           setTerm('');
         }}
-        expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+        expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         positioning={{ autoSize: 'width' }}
       >
         {items.map((service) => (

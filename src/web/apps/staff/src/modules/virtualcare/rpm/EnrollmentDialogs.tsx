@@ -298,7 +298,7 @@ function EnrollContent({ onClose, onEnrolled }: { onClose: () => void; onEnrolle
             type="submit"
             appearance="primary"
             disabled={enroll.isPending}
-            icon={enroll.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={enroll.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Enrol patient
           </Button>
@@ -465,7 +465,7 @@ function EditContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetail;
             disabled={save.isPending}
             // Keeps focus while saving (a disabled button drops it); Enter can still submit, which is ignored.
             disabledFocusable={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Save
           </Button>
@@ -701,7 +701,7 @@ function RecordContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetai
             type="submit"
             appearance="primary"
             disabled={filled.length === 0 || invalid || record.isPending}
-            icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Save {filled.length > 1 ? `${filled.length} readings` : 'reading'}
           </Button>

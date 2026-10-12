@@ -266,7 +266,7 @@ function StartCountDialog({
             <Button
               appearance="primary"
               disabled={!storeId || start.isPending}
-              icon={start.isPending ? <Spinner size="tiny" /> : undefined}
+              icon={start.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => start.mutate()}
             >
               Start count

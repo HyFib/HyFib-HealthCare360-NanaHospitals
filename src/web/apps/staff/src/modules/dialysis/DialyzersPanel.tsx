@@ -277,7 +277,7 @@ function RegisterDialyzerDialog({ patientId, onClose }: { patientId: string; onC
                 type="submit"
                 appearance="primary"
                 disabled={register.isPending}
-                icon={register.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={register.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Register
               </Button>

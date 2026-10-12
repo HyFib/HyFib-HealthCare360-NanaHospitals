@@ -193,7 +193,7 @@ export function VideoStage({
   } else if (!state.remote) {
     overlay = (
       <>
-        <Spinner appearance="inverted" size="small" />
+        <Spinner appearance="inverted" size="small" aria-hidden />
         <Text className={styles.overlayText} weight="semibold">
           Waiting for {patientName} to join
         </Text>

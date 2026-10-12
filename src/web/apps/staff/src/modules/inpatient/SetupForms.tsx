@@ -256,7 +256,7 @@ export function WardDrawer({ ward, onClose }: { ward: WardDto | null; onClose: (
             type="submit"
             appearance="primary"
             disabled={save.isPending}
-            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             {ward ? 'Save' : 'Add ward'}
           </Button>
@@ -576,7 +576,7 @@ export function BulkBedsDialog({
                 type="submit"
                 appearance="primary"
                 disabled={save.isPending || labels.length === 0}
-                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Add {labels.length || ''} beds
               </Button>

@@ -365,14 +365,14 @@ function EditorForm({
         <div className={styles.actions}>
           <Button
             type="submit"
-            icon={busy === 'save' ? <Spinner size="tiny" /> : <SaveRegular />}
+            icon={busy === 'save' ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
             disabled={busy !== null || (!dirty && Boolean(investigation))}
           >
             Save analysis
           </Button>
           <Button
             appearance="primary"
-            icon={busy === 'complete' ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+            icon={busy === 'complete' ? <Spinner size="tiny" aria-hidden /> : <CheckmarkCircleRegular />}
             disabled={busy !== null || gaps.length > 0}
             onClick={() => void complete()}
           >

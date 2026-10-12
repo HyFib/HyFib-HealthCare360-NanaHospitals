@@ -932,7 +932,7 @@ export function PrescriptionEditor({
               </Caption1>
             )}
             <Button
-              icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+              icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
               disabled={save.isPending || runCheck.isPending || sign.isPending}
               onClick={() => save.mutate()}
             >
@@ -940,7 +940,7 @@ export function PrescriptionEditor({
             </Button>
             <Button
               appearance={liveCheck ? 'secondary' : 'primary'}
-              icon={runCheck.isPending ? <Spinner size="tiny" /> : <ShieldCheckmarkRegular />}
+              icon={runCheck.isPending ? <Spinner size="tiny" aria-hidden /> : <ShieldCheckmarkRegular />}
               disabled={runCheck.isPending || sign.isPending}
               onClick={() => runCheck.mutate()}
             >
@@ -959,7 +959,7 @@ export function PrescriptionEditor({
               >
                 <Button
                   appearance="primary"
-                  icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />}
+                  icon={sign.isPending ? <Spinner size="tiny" aria-hidden /> : <SignatureRegular />}
                   disabled={!liveCheck || blockers.length > 0 || sign.isPending || notPrescriber}
                   onClick={() => sign.mutate()}
                 >

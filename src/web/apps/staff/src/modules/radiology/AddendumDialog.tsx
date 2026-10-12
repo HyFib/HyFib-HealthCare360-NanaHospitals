@@ -140,7 +140,7 @@ export function AddendumDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!text.trim() || add.isPending}
-                icon={add.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 {critical ? 'Continue to the call' : 'Sign and add'}
               </Button>

@@ -65,7 +65,7 @@ export function AdmissionPicker({
           onChange(picked ? toPickedAdmission(picked) : null);
           setTerm('');
         }}
-        expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}
+        expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         clearable
       >
         {debounced.length >= 3 && items.length === 0 && !results.isFetching && (

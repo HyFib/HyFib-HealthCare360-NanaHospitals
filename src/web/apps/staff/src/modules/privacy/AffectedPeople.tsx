@@ -346,7 +346,7 @@ function AddPeopleBody({
             type="submit"
             appearance="primary"
             disabled={busy || total === 0 || tooMany}
-            icon={busy ? <Spinner size="tiny" /> : undefined}
+            icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Add to the list
           </Button>

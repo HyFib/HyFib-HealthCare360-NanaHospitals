@@ -238,7 +238,7 @@ function CountSheet({ count }: { count: CountDetail }) {
               <>
                 <Button onClick={() => setConfirm('cancel')}>Cancel count</Button>
                 <Button
-                  icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+                  icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
                   disabled={!dirty || invalid.length > 0 || save.isPending}
                   onClick={() => save.mutate()}
                 >

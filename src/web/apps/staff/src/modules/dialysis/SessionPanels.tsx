@@ -229,7 +229,7 @@ export function PreAssessmentPanel({ session, canRecord }: { session: DialysisSe
         <Button
           type="submit"
           appearance="primary"
-          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={save.isPending}
         >
           Save pre-dialysis assessment
@@ -420,7 +420,7 @@ export function StartPanel({ session, canRecord }: { session: DialysisSessionDet
         <Button
           appearance="primary"
           size="large"
-          icon={start.isPending ? <Spinner size="tiny" /> : <PlayRegular />}
+          icon={start.isPending ? <Spinner size="tiny" aria-hidden /> : <PlayRegular />}
           disabled={!ready || start.isPending}
           onClick={() => start.mutate()}
         >
@@ -562,7 +562,7 @@ export function ReadingsPanel({ session, canRecord }: { session: DialysisSession
             <Button
               type="submit"
               appearance="primary"
-              icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+              icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : <AddRegular />}
               disabled={add.isPending}
             >
               Add reading

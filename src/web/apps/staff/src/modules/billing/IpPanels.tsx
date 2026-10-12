@@ -619,7 +619,7 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
                 type="submit"
                 appearance="primary"
                 disabled={!valid || save.isPending}
-                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Save
               </Button>
@@ -777,7 +777,7 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
             )}
             <Button
               appearance="primary"
-              icon={finalBill.isPending ? <Spinner size="tiny" /> : <DocumentCheckmarkRegular />}
+              icon={finalBill.isPending ? <Spinner size="tiny" aria-hidden /> : <DocumentCheckmarkRegular />}
               onClick={() => finalBill.mutate()}
               disabled={finalBill.isPending}
             >
@@ -856,7 +856,7 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
                 appearance="primary"
                 onClick={() => interim.mutate()}
                 disabled={interim.isPending}
-                icon={interim.isPending ? <Spinner size="tiny" /> : undefined}
+                icon={interim.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Draft interim bill
               </Button>
