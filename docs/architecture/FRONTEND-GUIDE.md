@@ -133,13 +133,88 @@ export const bedQueries = {
    disable submit while saving; show server-side safety alerts (e.g. drug interactions) prominently, not as toasts.
 4. **Every state designed**: loading skeleton, empty (with next step), error (with retry), no-permission.
 5. **Accessible**: every input has a label; icon-only buttons have `aria-label`; colour is never the only signal;
-   dialogs trap focus (Fluent does); tables are keyboard navigable (DataTable does).
+   dialogs trap focus (Fluent does); tables are keyboard navigable (DataTable does). Check new screens with axe (§6).
 6. **Responsive**: works at 1280×720 workstations and 768 px tablets; hide low-priority columns, stack forms.
 7. **India**: INR with Indian digit grouping, DD MMM YYYY dates, IST, 10-digit mobiles, GST where money is shown.
 8. **Privacy**: show only what the task needs (mask phone numbers in lists; full details on the profile), and never put
    patient data in URLs beyond ids.
 
-## 6. Verify before you report
+## 6. Accessibility (SRS UX-10)
+
+The target is WCAG 2.2 AA: contrast, visible focus, names for screen readers, and targets of at least 24 px, in the
+light, dark and high-contrast themes (UX-01). Fluent components bring most of it. What a screen adds (labels,
+icon-only buttons, its own ARIA, its own colours) is checked automatically where jsdom can, and in a browser where it
+cannot.
+
+**Automated checks.** `expectNoAxeViolations(context?)` from `@hc360/ui/testing` runs axe-core with every rule for WCAG
+2.0, 2.1 and 2.2 at levels A and AA. Without an argument it checks the whole page: do that once a dialog, drawer, menu
+or popover is open, because Fluent renders them in a portal, outside a component's container. A failing test lists
+each problem, the element and how to fix it. It fails on what axe only asks a person to review, too: axe reports some
+problems only that way (two fields with the same id; an `aria-label` on a plain `div` or `span` that has text, which
+screen readers never read). The few review results that are right as they are, such as the page behind an open modal
+dialog, are listed with the reason in `REVIEWED` in `packages/ui/src/testing/axe.ts`.
+
+| Checked | Where |
+|---|---|
+| The check itself: what it fails on and what it leaves alone | `packages/ui/src/testing/axe.test.ts` |
+| Shared components: DataTable (rows, sorting, loading, empty, error, paging), form fields with and without errors, ConfirmDialog, badges, states, page anatomy, patient banner | `packages/ui/src/accessibility.test.tsx` |
+| Staff frame: navigation (wide, and over the screen on a tablet), top bar, command palette, notifications, account menu, lock screen, sign-in | `apps/staff/src/test/accessibility/shell.test.tsx` |
+| Staff screens, whole, with canned data: patients, registration, queue, appointments, bills, OP billing (visits to bill, a draft bill), doctor's worklist and consultation, lab result entry, dispensing, bed board, nursing station, an admission | `apps/staff/src/test/accessibility/*.test.tsx`, data in `fixtures/` |
+| Staff dialogs and drawers the modules share (reason dialogs, editor drawers), open and busy | `apps/staff/src/test/accessibility/dialogs.test.tsx` |
+| Portal pages: sign-in, home (phone and computer, English and Hindi), appointments, reports, profile | `apps/portal/src/accessibility.test.tsx` |
+
+**Adding a check for a screen.** Render the screen whole against canned data (`src/test/appScreen.tsx`), and check it
+once its data is on screen, not its skeleton:
+
+```tsx
+// apps/staff/src/test/accessibility/<area>.test.tsx: copy the vi.mock of RealtimeProvider, and the afterEach that
+// expects server.unanswered to be empty, from frontOffice.test.tsx.
+describe('ward transfers', SCREEN_TESTS, () => {
+  it('the list', async () => {
+    server = fakeServer({ 'GET /api/v1/inpatient/transfers': paged(TRANSFERS) });
+    openScreen('/inpatient/transfers'); // the real router, shell and screen, signed in
+    expect(await screen.findByText('Asha Devi', {}, SLOW)).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+});
+```
+
+* `fakeServer` answers by method and path, and lists what it could not answer in `unanswered`. Answer everything the
+  screen asks for, or the check sees an error state instead of the screen. Type the canned data with the module's DTOs,
+  and put data a browser check could use too in `fixtures/` (no test framework in there).
+* `SLOW` and `SCREEN_TESTS` allow for the first screen of a file, which also loads its route's code.
+* Then open its dialogs, menus and other states as a user does (user-event), and check again.
+* Fix a problem in the component. If a rule truly cannot apply, pass `{ skip: { '<rule id>': '<why>' } }`.
+
+**What needs a browser.** jsdom does no layout and paints nothing. The checks above therefore leave out colour contrast
+(axe could only say "cannot tell") and target size (every box is 0 × 0 at the same spot, so axe would call each control
+covered by the next, and pass it). They cannot see focus rings, clipping, overlap or zoom either. After changing
+colours, a theme, focus styles or the size of controls, check in a browser:
+
+1. Serve the screens with canned data: a throwaway `apps/staff/preview.html` and `src/__preview__/main.tsx`. It answers
+   `/api/*` with `createFakeFetch(answers)` from `src/test/fakeApi.ts` (the fixtures the tests use), signs in
+   `STAFF_USER`, and renders `createAppRouter(queryClient, createMemoryHistory({ initialEntries: [path] }))`. Start
+   Vite on a port of its own (`pnpm exec vite --port 5373 --strictPort --host 127.0.0.1` from `apps/staff`, never
+   5360). Delete both files afterwards.
+2. Put `axe-core/axe.min.js` into the page with a `<script>`, and run every WCAG A/AA rule:
+   `axe.run({ include: document, exclude: '[data-tabster-dummy]' }, { runOnly: { type: 'tag', values: WCAG_TAGS } })`.
+   Do it in the light, dark and high-contrast themes (`localStorage['hc360:theme']`), at 1280 px and at 768 px, and
+   with the palette, menus, drawers and dialogs open.
+3. Turn transitions off in the page first (`* { transition: none !important }`). A page in a hidden tab or pane never
+   finishes a transition, so after a change of theme the colours axe measures would be the old theme's.
+4. Look at what axe could not decide. It cannot measure text on a gradient or an image (the sign-in pages' brand
+   panel) or text that overlaps something: work out those contrasts by hand.
+5. Press Tab through the screen: every stop must show a focus ring that is not hidden behind something else.
+
+Tabster's focus sentinels (`[data-tabster-dummy]`) are left out of every check: they are hidden from screen readers and
+pass focus on the moment they get it, but axe reports each one.
+
+**Colours of your own.** Use theme tokens, and pair them: a background token with the foreground token of the same
+state (`colorNeutralBackground1Selected` with `colorNeutralForeground1Selected`, `…Hover` with `…Hover`). In the
+high-contrast theme the selected and hover backgrounds are the highlight colour (cyan), on which the usual white text
+has 1.5:1.
+
+## 7. Verify before you report
 
 ```
 cd src/web

@@ -245,7 +245,7 @@ The UI detects the host (`window.chrome?.webview`) and degrades gracefully in a 
 * **Forms:** React Hook Form + Zod schemas that mirror the server validators, with draft auto-save for long free-text forms.
 * **Design system (`@hc360/ui`):** PageHeader, DataTable (server-side paging, sorting, row actions, keyboard navigation, skeleton/empty/error states), FormSection/FormGrid, typed field components, StatusBadge, KpiCard, PatientBanner, EntityDrawer, ConfirmDialog, Barcode/QR.
 * **Printing (`@hc360/core`):** `printDocument` lays out a page (A4, A5, 80 mm, labels, wristbands), `letterheadHtml` puts the facility letterhead at its top, and both follow the print templates set in Hospital setup (pre-printed stationery, logo, closing note; HMS-04, UX-09). `printHtml` sends the page to this computer's printer for that kind of page inside HC360 Desktop, or to the print dialog in a browser. Documents patients receive are made on the server instead (ADR-012).
-* **Accessibility:** Fluent components (ARIA-complete), visible focus, a skip link, reduced-motion support, WCAG 2.2 AA contrast in all themes.
+* **Accessibility (UX-10):** Fluent components (ARIA-complete), visible focus, a skip link, reduced-motion support, WCAG 2.2 AA contrast in all themes. axe-core checks the shared components, the staff shell, the main staff screens and the portal's main pages for WCAG 2.2 A/AA problems in the Vitest suites; contrast and target size, which jsdom cannot measure, are checked in a browser (FRONTEND-GUIDE.md §6).
 
 ---
 
