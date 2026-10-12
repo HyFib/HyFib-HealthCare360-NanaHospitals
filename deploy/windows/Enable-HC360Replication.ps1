@@ -599,13 +599,14 @@ Restart-PostgresIfNeeded $postgres
 if ((Get-Setting 'ssl') -ne 'on') { throw 'PostgreSQL did not turn TLS on: its log says why.' }
 
 if ($WalArchiveDirectory) {
-    # One file now, to see that PostgreSQL's account can write the archive.
+    # One file now, to see that PostgreSQL's account can write the archive. The account's change above wrote WAL, so
+    # there is a file to close.
+    $before = [long] (Invoke-Sql 'SELECT archived_count FROM pg_stat_archiver' 'read the archiver')
     $null = Invoke-Sql 'SELECT pg_switch_wal()' 'start a new WAL file'
     $archived = $false
     for ($i = 0; $i -lt 30 -and -not $archived; $i++) {
         Start-Sleep -Seconds 1
-        $state = Invoke-Sql "SELECT coalesce(last_archived_time > coalesce(last_failed_time, '-infinity'), false) FROM pg_stat_archiver" 'read the archiver'
-        $archived = $state -eq 't'
+        $archived = [long] (Invoke-Sql 'SELECT archived_count FROM pg_stat_archiver' 'read the archiver') -gt $before
     }
     if ($archived) { Write-Host "    PostgreSQL archives the WAL to $WalArchiveDirectory." }
     else { Write-Warning "PostgreSQL has not archived a WAL file to $WalArchiveDirectory yet. Its log says why: often its service account ($($service.StartName)) cannot write there. System health warns while archiving fails." }

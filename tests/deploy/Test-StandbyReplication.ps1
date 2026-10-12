@@ -111,7 +111,7 @@ try {
     Write-Host 'The primary, as Install-PostgreSQL.ps1 leaves it'
     # Install-PostgreSQL.ps1 writes pg_hba.conf without rules for replication, which the runner's has, and listens on
     # localhost only.
-    $hba = @(Read-TextLines $primary.HbaFile | ForEach-Object { if ($_ -match '^\s*(local|host\w*)\s+replication\s') { "#ci $_" } else { $_ } })
+    $hba = foreach ($line in (Read-TextLines $primary.HbaFile)) { if ($line -match '^\s*(local|host\w*)\s+replication\s') { "#ci $line" } else { $line } }
     Write-TextLines $primary.HbaFile $hba
     $null = Invoke-Sql 5432 "ALTER SYSTEM SET listen_addresses = 'localhost'"
     Restart-Primary
@@ -138,7 +138,7 @@ try {
     Assert ($archived.Count -ge 1) "WAL is archived ($($archived.Count) file(s) in the archive)"
     Assert ((Invoke-Sql 5432 'SELECT failed_count FROM pg_stat_archiver') -eq '0') 'with no failure'
     Assert ((Invoke-DeployScript 'Enable-HC360Replication.ps1' $enable $bothSecrets) -eq 0) 'it runs again'
-    Assert (@(Read-TextLines $primary.HbaFile | Where-Object { $_ -like '# BEGIN HC360 replication*' }).Count -eq 1) 'and pg_hba.conf still has one block'
+    Assert (@((Read-TextLines $primary.HbaFile) | Where-Object { $_ -like '# BEGIN HC360 replication*' }).Count -eq 1) 'and pg_hba.conf still has one block'
 
     Write-Host 'A standby machine, as Install-PostgreSQL.ps1 leaves it'
     New-Item -ItemType Directory -Force -Path $standbyRoot | Out-Null
@@ -239,6 +239,8 @@ finally {
         & (Join-Path $bin 'pg_ctl.exe') unregister -N $standbyName | Out-Null
     }
     Get-NetFirewallRule -Group 'HyFib HealthCare360 replication' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+    # pg_hba.conf first: each new connection reads it on Windows, so the statements below can sign in again.
+    [System.IO.File]::WriteAllBytes($primary.HbaFile, $hbaBefore)
     try {
         $null = Invoke-Sql 5432 "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'hc360_standby' AND NOT active"
         $null = Invoke-Sql 5432 'DROP TABLE IF EXISTS hc360_standby_ci'
@@ -248,7 +250,6 @@ finally {
         }
     }
     catch { Write-Warning "The runner's PostgreSQL could not be put back as it was: $($_.Exception.Message)" }
-    [System.IO.File]::WriteAllBytes($primary.HbaFile, $hbaBefore)
     try { Restart-Primary } catch { Write-Warning $_.Exception.Message }
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
