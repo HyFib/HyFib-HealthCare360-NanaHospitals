@@ -79,13 +79,14 @@ jobs:
         with:
           global-json-file: global.json
 
-      # Only what ships: the server (with every module), HC360 Desktop and the lab agent. Building the solution would
-      # also put the tests in the database, and paths-ignore does not apply to a compiled language.
+      # Only what ships: the server (with every module), HC360 Desktop and its updater, and the lab agent. Building the
+      # solution would also put the tests in the database, and paths-ignore does not apply to a compiled language.
       - if: matrix.language == 'csharp'
         name: Build
         run: |
           dotnet build src/server/HyFib.HealthCare360.Server/HyFib.HealthCare360.Server.csproj -c Release
           dotnet build src/desktop/HyFib.HealthCare360.Desktop/HyFib.HealthCare360.Desktop.csproj -c Release
+          dotnet build src/desktop/HyFib.HealthCare360.DesktopUpdater/HyFib.HealthCare360.DesktopUpdater.csproj -c Release
           dotnet build src/agent/HyFib.HealthCare360.LabAgent/HyFib.HealthCare360.LabAgent.csproj -c Release
 
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2

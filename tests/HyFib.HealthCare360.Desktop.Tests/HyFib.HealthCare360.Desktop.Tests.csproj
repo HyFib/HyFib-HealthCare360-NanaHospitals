@@ -6,5 +6,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\desktop\HyFib.HealthCare360.Desktop\HyFib.HealthCare360.Desktop.csproj" />
+    <ProjectReference Include="..\..\src\desktop\HyFib.HealthCare360.DesktopUpdater\HyFib.HealthCare360.DesktopUpdater.csproj" />
   </ItemGroup>
 </Project>

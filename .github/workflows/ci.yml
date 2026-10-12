@@ -68,6 +68,11 @@ jobs:
         shell: pwsh
         run: tests/deploy/Test-DatabaseWatchdog.ps1 -Server src/server/HyFib.HealthCare360.Server/bin/Release/net10.0/HyFib.HealthCare360.Server.exe
 
+      # The release publishes HC360 Desktop's updater as one trimmed, self-contained file (Publish-HC360.ps1), which only
+      # a publish checks, and a release cannot run in a pull request.
+      - name: Publish the HC360 Desktop updater as the release does
+        run: dotnet publish src/desktop/HyFib.HealthCare360.DesktopUpdater/HyFib.HealthCare360.DesktopUpdater.csproj -c Release -r win-x64 --self-contained true -o ${{ runner.temp }}/desktop-updater -p:DebugType=None -p:DebugSymbols=false
+
   installer:
     name: Server installer (PowerShell 5.1 and 7)
     runs-on: windows-latest
@@ -100,6 +105,24 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerServiceRestart.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
           pwsh -NoProfile -File tests/deploy/Test-InstallerServiceRestart.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
+      # HC360 Desktop's self-update (SRS DED-18): the update task, the updater's folder, and the package the server takes in.
+      - name: Test the installers' set-up of HC360 Desktop's self-update
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerDesktopUpdate.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerDesktopUpdate.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
+      # The release workflow's signing of the HC360 Desktop package, with a throwaway key (a real release cannot run here).
+      - name: Test the release's signing of the HC360 Desktop package
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-ReleaseSigning.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-ReleaseSigning.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
   web:
