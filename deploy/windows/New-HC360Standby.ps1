@@ -255,9 +255,9 @@ function Get-CertificateFingerprint([string] $Path) {
 
 # ---------------------------------------------------------------- PostgreSQL
 
-# A query over the replication connection to the primary (SHOW, READ_REPLICATION_SLOT), its rows as text.
+# A command over the replication connection to the primary (READ_REPLICATION_SLOT, or a psql \echo), its rows as text.
 function Invoke-PrimaryQuery([string] $Query, [string] $ConnInfo) {
-    $output = $Query | & $psql -X -d "$ConnInfo replication=true" -A -t -f -
+    $output = $Query | & $psql -X -d "$ConnInfo replication=true" -v ON_ERROR_STOP=1 -q -A -t -f -
     if ($LASTEXITCODE -ne 0) { throw "The primary at ${PrimaryAddress}:$PrimaryPort refused the connection or '$Query'. The message above says why: the password, the certificate (-PrimaryCertificate), or the primary not letting this machine in (Enable-HC360Replication.ps1 -StandbyAddress <this machine's address>)." }
     return $output
 }
@@ -323,12 +323,17 @@ try {
 
     Write-Step "Checking the connection to the primary at ${PrimaryAddress}:$PrimaryPort"
     $checkConnInfo = New-PrimaryConnInfo $PrimaryAddress $PrimaryPort $ReplicationRole (Resolve-Path -LiteralPath $PrimaryCertificate).Path $tempPassFile $SlotName
-    $primaryVersion = [int] (Invoke-PrimaryQuery 'SHOW server_version_num' $checkConnInfo)
+    # The version the primary gave when the connection opened: psql has it without asking the server anything.
+    $answer = "$(Invoke-PrimaryQuery '\echo :SERVER_VERSION_NUM' $checkConnInfo)".Trim()
+    if ($answer -notmatch '^\d{5,}$') { throw "The primary did not give its PostgreSQL version over the replication connection (psql answered '$answer')." }
+    $primaryVersion = [int] $answer
     if ([math]::Floor($primaryVersion / 10000) -ne [int] $localVersion) {
         throw "The primary runs PostgreSQL $([math]::Floor($primaryVersion / 10000)), this machine $localVersion. A standby needs the same version: install it with Install-PostgreSQL.ps1 -Version $([math]::Floor($primaryVersion / 10000))."
     }
-    $slot = @(Invoke-PrimaryQuery "READ_REPLICATION_SLOT $SlotName" $checkConnInfo)
-    if (-not $slot -or -not ($slot[0] -split '\|')[0]) { throw "The primary has no replication slot $SlotName. Run Enable-HC360Replication.ps1 there first." }
+    # slot_type|restart_lsn|restart_tli, all empty for a slot the primary does not have.
+    $slot = "$(Invoke-PrimaryQuery "READ_REPLICATION_SLOT $SlotName" $checkConnInfo)".Trim()
+    if ($slot -notmatch '\|') { throw "The primary did not answer READ_REPLICATION_SLOT (psql answered '$slot')." }
+    if (-not ($slot -split '\|')[0]) { throw "The primary has no replication slot $SlotName. Run Enable-HC360Replication.ps1 there first." }
     Write-Host "    The primary takes this machine over TLS, runs PostgreSQL $([math]::Floor($primaryVersion / 10000)) and has the slot $SlotName."
 
     # ---------------------------------------------------------------- copy the primary

@@ -367,7 +367,10 @@ function ConvertTo-SqlLiteral([string] $Value) { return "'" + $Value.Replace("'"
 function Restart-PostgresIfNeeded($Postgres) {
     $null = Invoke-Sql 'SELECT pg_reload_conf()' 'reload its configuration'
     Start-Sleep -Seconds 1
-    $pending = @(Invoke-Sql 'SELECT name FROM pg_settings WHERE pending_restart' 'read the settings that wait for a restart' | Where-Object { $_ })
+    # pg_file_settings reads the files again in this connection, and names each setting it cannot apply without a
+    # restart. pg_settings.pending_restart is not enough on Windows: a new connection's process does not inherit it.
+    $pending = @(Invoke-Sql "SELECT name FROM pg_file_settings WHERE error = 'setting could not be applied' UNION SELECT name FROM pg_settings WHERE pending_restart ORDER BY 1" 'read the settings that wait for a restart' |
+        Where-Object { $_ })
     if (-not $pending) { return }
     Write-Step "Restarting PostgreSQL for $($pending -join ', ')"
     $hc360 = Get-Service -Name $HC360Service -ErrorAction SilentlyContinue

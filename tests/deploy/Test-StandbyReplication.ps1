@@ -92,7 +92,10 @@ function Restart-Primary {
 function Invoke-DeployScript([string] $Script, [string] $Arguments, [hashtable] $Secrets) {
     $path = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..\deploy\windows\$Script")).Path
     $secretArguments = @($Secrets.Keys | ForEach-Object { "-$_ (ConvertTo-SecureString `$env:HC360_CI_$_ -AsPlainText -Force)" }) -join ' '
-    $command = "& '$path' $Arguments $secretArguments; exit 0"
+    # Warnings and a failure are written as text: on its own, Windows PowerShell writes them to a redirected error stream
+    # as serialized objects (CLIXML). Native commands' own errors still go straight to the log.
+    $command = "`$ProgressPreference = 'SilentlyContinue'; try { & '$path' $Arguments $secretArguments 3>&1 | ForEach-Object { `"WARNING: `$_`" }; exit 0 } " +
+        "catch { 'FAILED: ' + `$_.Exception.Message; `$_.InvocationInfo.PositionMessage; exit 1 }"
     foreach ($name in $Secrets.Keys) { Set-Item -Path "Env:\HC360_CI_$name" -Value $Secrets[$name] }
     try {
         Write-Host "  run   $Script $Arguments"
@@ -157,6 +160,20 @@ try {
     Assert ($LASTEXITCODE -eq 0) "its PostgreSQL runs as the service $standbyName on port $standbyPort"
 
     Write-Host 'New-HC360Standby.ps1 on the standby'
+    # What psql answers on a replication connection here (diagnostic, while the version check is being made to work).
+    & {
+        $ErrorActionPreference = 'Continue'
+        $probePass = Join-Path $work 'probe.pgpass'
+        [System.IO.File]::WriteAllText($probePass, "*:*:replication:hc360_replicator:$replicationPassword`n")
+        $probe = "host=127.0.0.1 port=5432 user=hc360_replicator dbname=replication password='' passfile='$($probePass.Replace('\', '/'))' sslmode=require replication=true"
+        foreach ($query in 'SHOW server_version_num', 'IDENTIFY_SYSTEM', 'READ_REPLICATION_SLOT hc360_standby', '\echo :SERVER_VERSION_NUM') {
+            $answer = $query | & (Join-Path $bin 'psql.exe') -X -d $probe -A -t -f - 2>&1
+            Write-Host "  probe stdin [$query] exit $LASTEXITCODE`: $(@($answer) -join ' / ')"
+            $answer = & (Join-Path $bin 'psql.exe') -X -d $probe -A -t -c $query 2>&1
+            Write-Host "  probe -c    [$query] exit $LASTEXITCODE`: $(@($answer) -join ' / ')"
+        }
+        Remove-Item -LiteralPath $probePass
+    }
     $certificate = Join-Path $primary.DataDirectory 'hc360-server.crt'
     $arguments = "-PrimaryAddress 127.0.0.1 -PrimaryPort 5432 -Port $standbyPort -PrimaryCertificate '$certificate' -PostgresSuperuser $superuser -WalArchiveDirectory '$archive'"
     Assert ((Invoke-DeployScript 'New-HC360Standby.ps1' $arguments $bothSecrets) -eq 0) 'it runs to the end'
