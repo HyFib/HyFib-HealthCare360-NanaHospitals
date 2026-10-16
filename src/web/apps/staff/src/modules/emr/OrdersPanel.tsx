@@ -36,7 +36,16 @@ import {
   StarRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatTime, isApiError, humanize } from '@hc360/core';
-import { EmptyState, LoadingState, Pagination, Section, StatusBadge, useLeaveGuard, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  EmptyState,
+  LoadingState,
+  Pagination,
+  Section,
+  StatusBadge,
+  useLeaveGuard,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -153,6 +162,7 @@ export function OrderComposer({
   const [priority, setPriority] = useState<OrderPriority>('Routine');
   const [clinicalNotes, setClinicalNotes] = useState('');
   const [duplicates, setDuplicates] = useState<DuplicateOrderLine[] | null>(null);
+  const [removing, setRemoving] = useState<{ id: string; label: string } | null>(null);
   const favourites = useQuery(emrQueries.favourites('Order'));
   const orderSets = useQuery(orderQueries.orderSets());
   const groupInfo = ORDER_GROUPS.find((g) => g.id === group) ?? ORDER_GROUPS[0];
@@ -196,8 +206,14 @@ export function OrderComposer({
 
   const removeFavourite = useMutation({
     mutationFn: (id: string) => emrApi.removeFavourite(id),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: emrKeys.favourites('Order') }),
-    onError: (error) => notify.error(error, 'Could not remove the favourite'),
+    onSuccess: () => {
+      setRemoving(null);
+      void queryClient.invalidateQueries({ queryKey: emrKeys.favourites('Order') });
+    },
+    onError: (error) => {
+      setRemoving(null);
+      notify.error(error, 'Could not remove the favourite');
+    },
   });
 
   const place = useMutation({
@@ -345,7 +361,7 @@ export function OrderComposer({
                   appearance="subtle"
                   icon={<DismissRegular />}
                   aria-label={`Remove ${favourite.label} from favourites`}
-                  onClick={() => removeFavourite.mutate(favourite.id)}
+                  onClick={() => setRemoving({ id: favourite.id, label: favourite.label })}
                 />
               )}
             </span>
@@ -465,6 +481,17 @@ export function OrderComposer({
           </Button>
         </div>
       )}
+      <ConfirmDialog
+        open={removing !== null}
+        title={`Remove ${removing?.label ?? 'this favourite'} from favourites?`}
+        confirmLabel="Remove"
+        destructive
+        busy={removeFavourite.isPending}
+        onConfirm={() => removing && removeFavourite.mutate(removing.id)}
+        onCancel={() => setRemoving(null)}
+      >
+        It no longer appears as a one-click order here. Orders already placed are not changed.
+      </ConfirmDialog>
     </div>
   );
 }
