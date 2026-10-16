@@ -36,15 +36,67 @@ public sealed class PrescriptionSignatureSettings(ISettingsService settings)
                 _ => PrescriptionSignaturePolicy.Off,
             }
             : PrescriptionSignaturePolicy.Off;
+}
+
+/// <summary>
+/// The final copy of a signed prescription (ERX-04): printed, downloaded as a PDF by staff or on the portal, and sent
+/// with the "prescription shared" message. Every copy re-checks the doctor's DSC signature
+/// (<see cref="PrescriptionDigitalSignatureService.Check"/>) and states it ("Digitally signed by …") only while it is
+/// <see cref="DigitalSignatureState.Valid"/>; an Untrusted or Invalid one prints as "Signed electronically". Where the
+/// hospital requires the DSC, no copy is issued without a valid one (<see cref="Problem"/>).
+/// </summary>
+public sealed class PrescriptionFinalCopies(HospitalDbContext db, PrescriptionSignatureSettings settings, DscTrustStore trust)
+{
+    public const string RequiredCode = "prescription.digital_signature_required";
+
+    public const string UntrustedCode = "prescription.digital_signature_untrusted";
+
+    public const string InvalidCode = "prescription.digital_signature_invalid";
+
+    /// <summary>The DSC signature re-checked now, under the facility's policy.</summary>
+    public async Task<PrescriptionDigitalSignatureDto> CheckAsync(Prescription prescription, CancellationToken ct) =>
+        await PrescriptionDigitalSignatureService.CheckAsync(db, trust.Current, prescription, await settings.PolicyAsync(prescription.FacilityId, ct), ct);
 
     /// <summary>
-    /// Why the prescription cannot be printed, downloaded or shared as the final copy: under <c>"required"</c>, until
-    /// the doctor has signed it with their DSC. Null when it can.
+    /// Why the final copy cannot be issued (null when <see cref="PrescriptionDigitalSignatureDto.FinalCopyAvailable"/>):
+    /// where the hospital requires the doctor's DSC, until the prescribing doctor signs it with theirs
+    /// (<see cref="RequiredCode"/>), while its certificate does not chain to a CCA India root in the server's DSC trust
+    /// folder (<see cref="UntrustedCode"/>: a DSC is then treated as missing), or when the signature does not check out
+    /// (<see cref="InvalidCode"/>). The caller checks that the prescription is signed.
     /// </summary>
-    public async Task<Error?> FinalCopyProblemAsync(Prescription prescription, CancellationToken ct) =>
-        !prescription.IsDigitallySigned && await PolicyAsync(prescription.FacilityId, ct) == PrescriptionSignaturePolicy.Required
-            ? Error.Rule("prescription.digital_signature_required",
-                "This hospital issues prescriptions only once the doctor has signed them with their DSC. Sign it with your DSC in HC360 Desktop.")
+    public static Error? Problem(PrescriptionDigitalSignatureDto signature) => signature.FinalCopyAvailable
+        ? null
+        : signature.State switch
+        {
+            DigitalSignatureState.Untrusted => Error.Rule(UntrustedCode,
+                "HC360 cannot confirm the doctor's DSC on this prescription: its certificate does not chain to a CCA India root installed on the "
+                + "server. It is issued only once that is fixed: ask IT to check the server's DSC trust folder."),
+            DigitalSignatureState.Invalid => Error.Rule(InvalidCode,
+                "The doctor's DSC signature on this prescription does not check out: the prescription or its signature was changed after signing. "
+                + "Do not issue it; repeat it to issue a new prescription."),
+            _ => Error.Rule(RequiredCode,
+                "This hospital issues prescriptions only once the prescribing doctor has signed them with their DSC, in HC360 Desktop."),
+        };
+
+    /// <summary>
+    /// <see cref="Problem"/> for the patient portal: the same code, in a few words for the patient (the portal words it
+    /// by the code, in the patient's language).
+    /// </summary>
+    public static Error? PatientProblem(PrescriptionDigitalSignatureDto signature) => Problem(signature) is not { } problem
+        ? null
+        : Error.Rule(problem.Code, problem.Code == RequiredCode
+            ? "Your doctor has not digitally signed this prescription yet."
+            : "This prescription cannot be issued right now. Please contact the hospital.");
+
+    /// <summary>
+    /// What the printed copy says of the DSC signature: null ("Signed electronically") unless it is
+    /// <see cref="DigitalSignatureState.Valid"/>, and the registration number as the doctor signed it, not as the
+    /// practitioner master has it today.
+    /// </summary>
+    public static PrescriptionPrintSignature? PrintSignature(Prescription p, PrescriptionDigitalSignatureDto signature) =>
+        signature.State == DigitalSignatureState.Valid && p.SignedContent is { } content
+            ? new PrescriptionPrintSignature(p.SignerName!, PrescriptionCanonicalForm.TryReadParties(content)?.RegistrationNumber, p.SignerSerialNumber!,
+                p.DigitallySignedAt!.Value, p.SignedContentHash!)
             : null;
 }
 
@@ -64,6 +116,7 @@ public sealed class PrescriptionDigitalSignatureService(
     HospitalDbContext db,
     PrescriptionService prescriptions,
     PrescriptionSignatureSettings settings,
+    PrescriptionFinalCopies finalCopies,
     DscTrustStore trust,
     ICurrentUser currentUser,
     IAuditLogger audit,
@@ -162,8 +215,7 @@ public sealed class PrescriptionDigitalSignatureService(
     }
 
     /// <summary>The signature re-checked now; the caller has loaded the prescription through the access guard.</summary>
-    public async Task<PrescriptionDigitalSignatureDto> StatusAsync(Prescription prescription, CancellationToken ct) =>
-        await CheckAsync(db, trust.Current, prescription, await settings.PolicyAsync(prescription.FacilityId, ct), ct);
+    public Task<PrescriptionDigitalSignatureDto> StatusAsync(Prescription prescription, CancellationToken ct) => finalCopies.CheckAsync(prescription, ct);
 
     /// <summary><see cref="Check"/>, with the patient the bytes were signed for looked up (<see cref="SignedForCurrentPatientAsync"/>).</summary>
     public static async Task<PrescriptionDigitalSignatureDto> CheckAsync(HospitalDbContext db, DscTrustAnchors anchors, Prescription p,
@@ -175,7 +227,8 @@ public sealed class PrescriptionDigitalSignatureService(
     /// those bytes and is still on the record they were signed for (<paramref name="signedForCurrentPatient"/>), and
     /// that the certificate chains to a root in <paramref name="anchors"/>. <see cref="DigitalSignatureState.Valid"/>
     /// when all hold; <see cref="DigitalSignatureState.Untrusted"/> when only the chain does not (the roots were changed
-    /// since); <see cref="DigitalSignatureState.Invalid"/> otherwise.
+    /// since); <see cref="DigitalSignatureState.Invalid"/> otherwise. A signature that does not check out has no chain
+    /// to report: the one stored when it was attached is not repeated as if it still held.
     /// </summary>
     public static PrescriptionDigitalSignatureDto Check(
         Prescription p,
@@ -186,7 +239,7 @@ public sealed class PrescriptionDigitalSignatureService(
         if (p.DigitalSignature is not { } signature || p.SignedContent is not { } content)
         {
             return new PrescriptionDigitalSignatureDto(DigitalSignatureState.NotSigned, policy, null, null, null, null, null, null, null, false, null, false,
-                null);
+                null, FinalCopyAvailable(policy, DigitalSignatureState.NotSigned));
         }
 
         var cms = DetachedCms.Verify(content, signature, anchors);
@@ -199,8 +252,16 @@ public sealed class PrescriptionDigitalSignatureService(
                 + $"certificate as a DSC from a licensed Certifying Authority ({cms.Chain?.Summary}).")
             : (DigitalSignatureState.Valid, "The signature is valid.");
         return new PrescriptionDigitalSignatureDto(state, policy, p.DigitallySignedAt, p.SignerName, p.SignerSubject, p.SignerSerialNumber, p.SignerIssuer,
-            p.SignerThumbprint, p.SignedContentHash, recordMatches, cms.Chain?.Summary ?? p.SignerChainStatus, chainTrusted, message);
+            p.SignerThumbprint, p.SignedContentHash, recordMatches, cms.Chain?.Summary ?? NotChecked, chainTrusted, message,
+            FinalCopyAvailable(policy, state));
     }
+
+    /// <summary>What the chain reads when the signature does not check out, so it was not built.</summary>
+    public const string NotChecked = "Not checked: the signature does not check out";
+
+    /// <summary>The DSC rules let the prescription be printed, downloaded and shared (<see cref="PrescriptionFinalCopies"/>).</summary>
+    public static bool FinalCopyAvailable(PrescriptionSignaturePolicy policy, DigitalSignatureState state) =>
+        policy != PrescriptionSignaturePolicy.Required || state == DigitalSignatureState.Valid;
 
     /// <summary>
     /// The stored prescription, with the parties recorded in the signed bytes (the patient's record as signed for,

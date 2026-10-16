@@ -7,13 +7,16 @@ namespace HyFib.HealthCare360.Modules.Clinical.Documents;
 
 /// <summary>
 /// The signed prescription as a PDF, for the "prescription shared" message: WhatsApp sends it in the template's document
-/// header when the template has one, e-mail attaches it. It is made when the message goes out; a prescription cancelled
-/// by then is not sent, nor one that still needs the doctor's DSC signature (<see cref="PrescriptionSignatureSettings"/>).
+/// header when the template has one, e-mail attaches it. It is made when the message goes out, with the DSC signature as
+/// it checks out then. There is none for a prescription cancelled by then, nor for one the DSC rules do not let the
+/// hospital issue (<see cref="PrescriptionFinalCopies"/>): the message then goes without it, or not at all on a WhatsApp
+/// template with a document header. Where the DSC is required the message is queued only once the doctor has signed
+/// with it, so that happens only when the setting or the trust folder changed in between.
 /// </summary>
 internal sealed class PrescriptionDocumentSource(
     HospitalDbContext db,
     PrescriptionPrintBuilder builder,
-    PrescriptionSignatureSettings signatures,
+    PrescriptionFinalCopies finalCopies,
     DocumentAssets assets,
     IPdfRenderer renderer)
     : INotificationDocumentSource
@@ -26,12 +29,18 @@ internal sealed class PrescriptionDocumentSource(
     {
         var prescription = await db.Set<Prescription>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(p => p.Items)
             .FirstOrDefaultAsync(p => p.Id == id && p.Status == PrescriptionStatus.Signed, cancellationToken);
-        if (prescription is null || await signatures.FinalCopyProblemAsync(prescription, cancellationToken) is not null)
+        if (prescription is null)
         {
             return null;
         }
 
-        var model = await builder.BuildAsync(prescription, cancellationToken);
+        var signature = await finalCopies.CheckAsync(prescription, cancellationToken);
+        if (PrescriptionFinalCopies.Problem(signature) is not null)
+        {
+            return null;
+        }
+
+        var model = await builder.BuildAsync(prescription, signature, cancellationToken);
         return await DocumentPdf.CreateAsync(await PrescriptionDocument.BuildAsync(model, assets, cancellationToken), renderer, cancellationToken);
     }
 }

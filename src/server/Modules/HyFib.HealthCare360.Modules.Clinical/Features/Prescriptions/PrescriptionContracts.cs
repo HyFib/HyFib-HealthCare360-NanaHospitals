@@ -70,6 +70,10 @@ public sealed record PrescriptionItemDto(
     bool IsControlledDrug,
     string? ControlledSchedule);
 
+/// <summary>
+/// A prescription. <see cref="FinalCopyAvailable"/> is false while the hospital requires the doctor's DSC (ERX-04) and
+/// the prescription has no valid one: it is then not printed, downloaded or shared (the pharmacy queue is not held back).
+/// </summary>
 public sealed record PrescriptionDto(
     Guid Id,
     string PrescriptionNumber,
@@ -95,7 +99,8 @@ public sealed record PrescriptionDto(
     uint Version,
     bool IsDigitallySigned = false,
     DateTimeOffset? DigitallySignedAt = null,
-    string? DigitalSignerName = null);
+    string? DigitalSignerName = null,
+    bool FinalCopyAvailable = true);
 
 public sealed record PrescriptionListItem(
     Guid Id,
@@ -161,7 +166,8 @@ public sealed record PrescriptionPrintModel(
 
 /// <summary>
 /// The doctor's DSC signature as the printed copy states it: "Digitally signed by {SignerName} ({RegistrationNumber}) —
-/// certificate {SerialNumber}, {SignedAt}", with the SHA-256 of the signed bytes.
+/// certificate {SerialNumber}, {SignedAt}", with the SHA-256 of the signed bytes. Only a signature that checks out now
+/// (<see cref="DigitalSignatureState.Valid"/>) is printed; <see cref="RegistrationNumber"/> is the one the doctor signed.
 /// </summary>
 public sealed record PrescriptionPrintSignature(string SignerName, string? RegistrationNumber, string SerialNumber, DateTimeOffset SignedAt, string ContentHash);
 
@@ -228,7 +234,10 @@ public enum PrescriptionSignaturePolicy
     /// <summary>Doctors may sign with their DSC; prescriptions without one print as before.</summary>
     Optional,
 
-    /// <summary>A prescription is printed, downloaded or shared only once signed with the doctor's DSC.</summary>
+    /// <summary>
+    /// A prescription is printed, downloaded or shared only once signed with the doctor's DSC, and only while that
+    /// signature is valid; the patient is told it is ready only then.
+    /// </summary>
     Required,
 }
 
@@ -253,7 +262,11 @@ public sealed record AttachDigitalSignatureRequest(string Signature);
 /// The DSC signature of a prescription as the server re-checked it now. <see cref="ContentMatchesRecord"/> is false when
 /// the stored prescription no longer gives the signed bytes (the record was changed outside HC360).
 /// <see cref="ChainStatus"/> is "Trusted" or why the certificate does not chain to a CCA India root installed on the
-/// server; <see cref="ChainTrusted"/> says which. A signature is accepted only from a trusted certificate.
+/// server; <see cref="ChainTrusted"/> says which. A signature is accepted only from a trusted certificate. When the
+/// signature itself does not check out, the chain is not built and <see cref="ChainStatus"/> says so.
+/// <see cref="FinalCopyAvailable"/>: the DSC rules let the prescription be printed, downloaded and shared — always,
+/// unless <see cref="Policy"/> is <see cref="PrescriptionSignaturePolicy.Required"/>, and then only with a
+/// <see cref="DigitalSignatureState.Valid"/> signature (a draft or a cancelled prescription is never printed anyway).
 /// </summary>
 public sealed record PrescriptionDigitalSignatureDto(
     DigitalSignatureState State,
@@ -268,7 +281,8 @@ public sealed record PrescriptionDigitalSignatureDto(
     bool ContentMatchesRecord,
     string? ChainStatus,
     bool ChainTrusted,
-    string? Message);
+    string? Message,
+    bool FinalCopyAvailable = true);
 
 public sealed class PrescriptionItemRequestValidator : AbstractValidator<PrescriptionItemRequest>
 {

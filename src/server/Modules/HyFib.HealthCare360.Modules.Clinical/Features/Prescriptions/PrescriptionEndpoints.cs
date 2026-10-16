@@ -116,24 +116,24 @@ internal static class PrescriptionEndpoints
     /// QR code points at the portal's public verification page when the hospital's public address is configured.
     /// </summary>
     private static async Task<IResult> Print(Guid id, PrescriptionService prescriptions, PrescriptionPrintBuilder builder, ClinicalAccess access,
-        PrescriptionSignatureSettings signatures, CancellationToken ct)
+        PrescriptionFinalCopies finalCopies, CancellationToken ct)
     {
-        var (model, problem) = await OpenAsync(id, n => $"Printed prescription {n}", prescriptions, builder, access, signatures, ct);
+        var (model, problem) = await OpenAsync(id, n => $"Printed prescription {n}", prescriptions, builder, access, finalCopies, ct);
         return problem ?? TypedResults.Ok(model);
     }
 
     /// <summary>The A5 prescription as the staff app prints it: the same document as the PDF and the patient's copy.</summary>
     private static async Task<IResult> Document(Guid id, PrescriptionService prescriptions, PrescriptionPrintBuilder builder, ClinicalAccess access,
-        PrescriptionSignatureSettings signatures, DocumentAssets assets, CancellationToken ct)
+        PrescriptionFinalCopies finalCopies, DocumentAssets assets, CancellationToken ct)
     {
-        var (model, problem) = await OpenAsync(id, n => $"Printed prescription {n}", prescriptions, builder, access, signatures, ct);
+        var (model, problem) = await OpenAsync(id, n => $"Printed prescription {n}", prescriptions, builder, access, finalCopies, ct);
         return problem ?? TypedResults.Ok((await PrescriptionDocument.BuildAsync(model!, assets, ct)).ToDto());
     }
 
     private static async Task<IResult> Pdf(Guid id, PrescriptionService prescriptions, PrescriptionPrintBuilder builder, ClinicalAccess access,
-        PrescriptionSignatureSettings signatures, DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
+        PrescriptionFinalCopies finalCopies, DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
     {
-        var (model, problem) = await OpenAsync(id, n => $"Downloaded prescription {n} as a PDF", prescriptions, builder, access, signatures, ct);
+        var (model, problem) = await OpenAsync(id, n => $"Downloaded prescription {n} as a PDF", prescriptions, builder, access, finalCopies, ct);
         return problem ?? await (await PrescriptionDocument.BuildAsync(model!, assets, ct)).ToPdfAsync(renderer, ct);
     }
 
@@ -192,11 +192,11 @@ internal static class PrescriptionEndpoints
     }
 
     // Every way of printing a prescription applies the same rules: the restricted-record guard (in LoadAsync), signed
-    // prescriptions only (and, where the hospital requires it, signed with the doctor's DSC), and an entry in the PHI
-    // access audit saying what was done with it.
+    // prescriptions only (and, where the hospital requires it, with a valid DSC signature: PrescriptionFinalCopies), and
+    // an entry in the PHI access audit saying what was done with it.
     private static async Task<(PrescriptionPrintModel? Model, IResult? Problem)> OpenAsync(
         Guid id, Func<string, string> action, PrescriptionService prescriptions, PrescriptionPrintBuilder builder, ClinicalAccess access,
-        PrescriptionSignatureSettings signatures, CancellationToken ct)
+        PrescriptionFinalCopies finalCopies, CancellationToken ct)
     {
         var loaded = await prescriptions.LoadAsync(id, ct);
         if (loaded.IsFailure)
@@ -210,7 +210,8 @@ internal static class PrescriptionEndpoints
             return (null, Error.Rule("prescription.not_printable", "Only signed prescriptions can be printed or shared.").ToProblem());
         }
 
-        if (await signatures.FinalCopyProblemAsync(p, ct) is { } unsigned)
+        var signature = await finalCopies.CheckAsync(p, ct);
+        if (PrescriptionFinalCopies.Problem(signature) is { } unsigned)
         {
             return (null, unsigned.ToProblem());
         }
@@ -221,6 +222,6 @@ internal static class PrescriptionEndpoints
             return (null, opened.Error!.ToProblem());
         }
 
-        return (await builder.BuildAsync(p, ct), null);
+        return (await builder.BuildAsync(p, signature, ct), null);
     }
 }

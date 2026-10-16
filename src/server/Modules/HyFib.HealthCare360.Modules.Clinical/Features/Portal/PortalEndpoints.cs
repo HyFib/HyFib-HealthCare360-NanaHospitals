@@ -68,8 +68,12 @@ internal static class PortalEndpoints
             names.GetValueOrDefault(p.PractitionerId), p.Medicines, p.RefillsRemaining)));
     }
 
+    /// <summary>
+    /// One prescription. Where the hospital requires the doctor's DSC and the prescription has no valid one, it is shown
+    /// without its verification token or QR address, and says it is not issued yet (<c>finalCopyAvailable</c>).
+    /// </summary>
     private static async Task<IResult> GetPrescription(Guid id, PortalPatientScope scope, HospitalDbContext db, IAuditLogger audit, ISettingsService settings,
-        CancellationToken ct)
+        PrescriptionFinalCopies finalCopies, CancellationToken ct)
     {
         var p = await db.Set<Prescription>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(x => x.Items)
             .FirstOrDefaultAsync(x => x.Id == id && x.Status != PrescriptionStatus.Draft, ct);
@@ -93,20 +97,22 @@ internal static class PortalEndpoints
             return new PortalPrescriptionLine(i.DrugName, i.GenericName, i.Strength, i.DosageForm, i.Dose, i.FrequencyText, english, hindi, i.DurationDays,
                 i.Quantity, i.Instructions);
         }).ToList();
-        var token = p.Status == PrescriptionStatus.Signed ? p.VerificationToken : null;
+        var signature = await finalCopies.CheckAsync(p, ct);
+        var token = p.Status == PrescriptionStatus.Signed && signature.FinalCopyAvailable ? p.VerificationToken : null;
         var publicAddress = token is null ? null : await PortalAddress.BaseUrlAsync(settings, p.FacilityId, ct);
         return TypedResults.Ok(new PortalPrescriptionDetail(p.Id, p.PrescriptionNumber, p.PatientId, p.Status, p.SignedAt, prescriber?.DisplayName,
             prescriber?.Qualification, prescriber?.RegistrationNumber, facility, p.Advice, lines, p.RefillsRemaining,
-            token, PrescriptionVerificationLinks.Url(publicAddress, token)));
+            token, PrescriptionVerificationLinks.Url(publicAddress, token), signature.FinalCopyAvailable, signature.State));
     }
 
     /// <summary>
     /// The prescription as a PDF: the same A5 document the hospital prints. Only a signed prescription is issued as a
-    /// document (the print rule), and, where the hospital requires it, once the doctor signed it with their DSC; a
-    /// cancelled one can still be read on the portal but not downloaded.
+    /// document (the print rule), and, where the hospital requires it, only with a valid DSC signature (422 with the
+    /// code of <see cref="PrescriptionFinalCopies.Problem"/> and words for the patient); a cancelled one can still be read
+    /// on the portal but not downloaded.
     /// </summary>
     private static async Task<IResult> PrescriptionPdf(Guid id, PortalPatientScope scope, HospitalDbContext db, IAuditLogger audit,
-        PrescriptionPrintBuilder builder, PrescriptionSignatureSettings signatures, DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
+        PrescriptionPrintBuilder builder, PrescriptionFinalCopies finalCopies, DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
     {
         var p = await db.Set<Prescription>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(x => x.Items)
             .FirstOrDefaultAsync(x => x.Id == id && x.Status != PrescriptionStatus.Draft, ct);
@@ -126,13 +132,14 @@ internal static class PortalEndpoints
             return Error.Rule("prescription.not_printable", "Only signed prescriptions can be printed or shared.").ToProblem();
         }
 
-        if (await signatures.FinalCopyProblemAsync(p, ct) is { } unsigned)
+        var signature = await finalCopies.CheckAsync(p, ct);
+        if (PrescriptionFinalCopies.PatientProblem(signature) is { } unsigned)
         {
             return unsigned.ToProblem();
         }
 
         await audit.PatientRecordAccessedAsync(p.PatientId, $"Downloaded prescription {p.PrescriptionNumber} as a PDF (patient portal)", ct);
-        var document = await PrescriptionDocument.BuildAsync(await builder.BuildAsync(p, ct), assets, ct);
+        var document = await PrescriptionDocument.BuildAsync(await builder.BuildAsync(p, signature, ct), assets, ct);
         return await document.ToPdfAsync(renderer, ct);
     }
 

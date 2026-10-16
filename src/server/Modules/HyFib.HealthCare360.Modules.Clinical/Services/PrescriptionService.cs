@@ -28,6 +28,7 @@ public sealed class PrescriptionService(
     IRealtimePublisher realtime,
     INotificationService notifications,
     PrescriptionSignatureSettings signatureSettings,
+    PrescriptionFinalCopies finalCopies,
     TimeProvider time)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
@@ -261,10 +262,11 @@ public sealed class PrescriptionService(
     public async Task<PrescriptionDto> ToDtoAsync(Prescription p, CancellationToken ct)
     {
         var names = await PrintQueries.PractitionerNamesAsync(db, [p.PractitionerId], ct);
-        return ToDto(p, names.GetValueOrDefault(p.PractitionerId));
+        var finalCopy = p.Status == PrescriptionStatus.Draft || (await finalCopies.CheckAsync(p, ct)).FinalCopyAvailable;
+        return ToDto(p, names.GetValueOrDefault(p.PractitionerId), finalCopy);
     }
 
-    public static PrescriptionDto ToDto(Prescription p, string? practitionerName) => new(
+    public static PrescriptionDto ToDto(Prescription p, string? practitionerName, bool finalCopyAvailable = true) => new(
         p.Id, p.PrescriptionNumber, p.PatientId, p.EncounterId, p.VisitId, p.AdmissionId, p.PractitionerId, practitionerName, p.IsInpatient, p.Status,
         p.PrescribedAt, p.SignedAt, p.Notes, p.Advice, p.RefillsAllowed, p.RefillsRemaining, p.RefillOfPrescriptionId, p.SafetyOverrideReason,
         p.CancelledAt, p.CancelReason,
@@ -274,7 +276,8 @@ public sealed class PrescriptionService(
         p.Version,
         p.IsDigitallySigned,
         p.DigitallySignedAt,
-        p.SignerName);
+        p.SignerName,
+        finalCopyAvailable);
 
     private async Task<Result<IReadOnlyList<SafetyAlert>>> SignCoreAsync(Prescription prescription, string? overrideReason, bool acknowledgeWarnings,
         bool confirmControlledDrugs, CancellationToken ct)

@@ -16,6 +16,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Templates;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Clinical.Services.Catalogue;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 
@@ -42,8 +43,10 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<PrescriptionService>();
         services.AddScoped<PrescriptionPrintBuilder>();
         services.AddScoped<PrescriptionSignatureSettings>();
+        services.AddScoped<PrescriptionFinalCopies>();
         services.AddScoped<PrescriptionDigitalSignatureService>();
         services.AddSingleton<DscTrustStore>();
+        services.AddScoped<IHealthWarningSource, DscTrustHealthWarnings>();
         services.AddScoped<PatientRecordQueries>();
         services.AddScoped<TimelineQueries>();
         services.AddScoped<WorklistQueries>();
