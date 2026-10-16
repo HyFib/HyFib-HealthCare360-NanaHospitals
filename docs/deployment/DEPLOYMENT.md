@@ -277,7 +277,9 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - To stop sending report PDFs by e-mail and WhatsApp, set `diagnostics.reports.sendPdf` to `false`, and use a
      WhatsApp template without a document header (untick "Document header"). A template with a header can't go
      without its PDF, so those WhatsApp messages would be skipped; the SMS and e-mail still go.
-7. **Administration › System health**: everything should be green, and the WiFi signal above 60%.
+7. **Administration › System health**: everything should be green, and the WiFi signal above 60%. It also shows each
+   integration set up in step 6 as Administration › Integrations does, and when the hospital CA and the server
+   certificate expire.
 
 ## 5. Install HC360 Desktop on workstations
 
@@ -880,6 +882,8 @@ A planned failover, at a quiet hour, proves the steps and that the people on cal
 | A serial analyser shows "COM port problem" | The message gives the Windows error. "Access to the port is denied": another program has the port open. Otherwise check the COM number in Device Manager on the lab PC |
 | An analyser sends results but none arrive | Integration log (Administration › Integrations) for refused messages. Network analysers: is the analyser's IP the one in its connection, and the port open in the firewall? Serial: compare baud rate, parity and stop bits with the analyser's settings |
 | "PDFs can't be made on this server" (System health), or a PDF download fails | Is Microsoft Edge installed for all users? Set `HealthCare360:Pdf:BrowserPath` if it is somewhere unusual. The log says why the browser did not start. Printing from the screens still works |
+| "… is failing: the latest call failed" (System health) | Administration › Integrations shows the last error for that integration, and its log says more. Correct the settings or the provider's side, then *Send a test*: the warning clears once a call succeeds. An integration no longer used can be switched off instead |
+| "The hospital CA expires on …" or "… expired" (System health) | The CA is made for ten years when the server first starts and is never made again by itself, because every workstation, tablet and HC360 Desktop trusts it. Contact HyFib support to plan replacing it before then. "The server certificate expires on …" instead means the automatic renewal 30 days before expiry failed: the log says why |
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
 | WhatsApp refuses the report message (error 132012) | The WhatsApp template has no document header but "Document header" is ticked in HC360, or the other way round. Make them match |
 | A modality cannot read the worklist | Administration › Integrations › Modality worklist: is it listening, and what is the last error? The modality's AE title and IP address must match its entry exactly, and the firewall rule must list its address. Refusals are logged once per ten minutes per network, so wait or look at the refused count |
