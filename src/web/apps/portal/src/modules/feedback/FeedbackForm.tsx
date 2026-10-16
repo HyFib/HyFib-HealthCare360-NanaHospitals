@@ -12,7 +12,7 @@ import {
   useId,
 } from '@fluentui/react-components';
 import { isApiError } from '@hc360/core';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Controller, useForm, useWatch, type Control, type Resolver } from 'react-hook-form';
 import { Notice } from '@/components/States';
 import { useT } from '@/i18n';
@@ -115,10 +115,20 @@ export interface FeedbackFormProps {
   onSubmit: (body: SubmitFeedbackRequest) => Promise<void>;
   /** Lets the page handle an error itself (for example a link that was used meanwhile). Return true when handled. */
   onError?: (error: unknown) => boolean;
+  /** Shown under the send button while sending, such as "Checking your browser…". */
+  status?: ReactNode;
 }
 
 /** Star ratings for the form's aspects, the 0–10 recommendation score, a comment and an optional call-back. */
-export function FeedbackForm({ questions, intro, privacyNote, defaultPhone, onSubmit, onError }: FeedbackFormProps) {
+export function FeedbackForm({
+  questions,
+  intro,
+  privacyNote,
+  defaultPhone,
+  onSubmit,
+  onError,
+  status,
+}: FeedbackFormProps) {
   const styles = useStyles();
   const t = useT();
   const [formError, setFormError] = useState<string | null>(null);
@@ -331,6 +341,7 @@ export function FeedbackForm({ questions, intro, privacyNote, defaultPhone, onSu
       >
         {busy ? t('common.sending') : t('feedback.submit')}
       </Button>
+      {status}
     </form>
   );
 }

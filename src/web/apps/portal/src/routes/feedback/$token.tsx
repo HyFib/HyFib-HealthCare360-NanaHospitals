@@ -1,11 +1,13 @@
 import { makeStyles, tokens } from '@fluentui/react-components';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, redirect } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { CheckingBrowser } from '@/components/CheckingBrowser';
 import { PortalPage } from '@/components/PortalPage';
 import { ErrorBlock, Notice, PageSpinner } from '@/components/States';
 import { useT, type MessageKey } from '@/i18n';
 import { forgetLinkToken, keepLinkToken, linkTokenFor, TOKEN_PLACEHOLDER } from '@/lib/linkToken';
+import { prepareProof } from '@/lib/proofOfWork';
 import type { FeedbackReceipt } from '@/lib/types';
 import { publicFeedbackApi, publicFeedbackQueries } from '@/modules/feedback/api';
 import { FeedbackForm } from '@/modules/feedback/FeedbackForm';
@@ -45,6 +47,14 @@ function FeedbackLinkPage() {
   const [receipt, setReceipt] = useState<FeedbackReceipt | null>(null);
   const [lateProblem, setLateProblem] = useState<LinkProblem | null>(null);
   const problem: LinkProblem | null = token === null ? 'invalid' : (lateProblem ?? linkProblem(invitation.error));
+  const [checking, setChecking] = useState(false);
+  const ready = Boolean(invitation.data) && problem === null && receipt === null;
+  // Solved while the patient fills the form in, so sending does not wait for it (SRS SEC-06).
+  useEffect(() => {
+    if (ready) {
+      prepareProof('feedback');
+    }
+  }, [ready]);
 
   let content;
   if (receipt) {
@@ -69,11 +79,12 @@ function FeedbackLinkPage() {
           questions={form}
           intro={form.introText}
           privacyNote={t('feedback.personal')}
+          status={<CheckingBrowser active={checking} />}
           onSubmit={async (body) => {
             if (!token) {
               return;
             }
-            const result = await publicFeedbackApi.submitInvitation(token, body);
+            const result = await publicFeedbackApi.submitInvitation(token, body, setChecking);
             forgetLinkToken('feedback');
             setReceipt(result);
           }}

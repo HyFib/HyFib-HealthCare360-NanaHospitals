@@ -48,6 +48,10 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
   requests.push({ method, url });
+  // The anti-automation check (lib/proofOfWork): a challenge with almost no work, which this server does not check.
+  if (url.includes('/api/v1/public/challenge')) {
+    return json({ required: true, challenge: '1.otp.1.1.00.sig', bits: 1, expiresAt: null });
+  }
   if (url.includes('/api/v1/auth/otp/request') && signInRefused) {
     return new Response(
       JSON.stringify({

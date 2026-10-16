@@ -27,6 +27,9 @@ export function describeError(error: unknown, t: Translate, title: MessageKey = 
       return { title: t(title), message: t('errors.tooMany'), retryable: true, reference };
     case error.status === 401:
       return { title: t(title), message: t('errors.sessionEnded'), retryable: false, reference };
+    // The anti-automation check (lib/proofOfWork) refused the request; asking again solves a fresh challenge.
+    case error.code === 'request.check_failed':
+      return { title: t(title), message: t('errors.checkFailed'), retryable: true, reference };
     case error.status === 403:
       return { title: t(title), message: t('errors.forbidden'), retryable: false, reference };
     case error.status === 404:

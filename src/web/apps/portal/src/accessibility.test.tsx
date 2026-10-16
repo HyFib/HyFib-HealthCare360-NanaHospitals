@@ -217,6 +217,8 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
   switch (`${method} ${pathname}`) {
     case 'GET /api/v1/system/info':
       return answer({ facilityName: 'Nana Hospitals', features: { patientPortal: true, telehealth: true } });
+    case 'POST /api/v1/public/challenge':
+      return answer({ required: true, challenge: '1.otp.1.1.00.sig', bits: 1, expiresAt: null });
     case 'POST /api/v1/auth/otp/request':
       return answer(CHALLENGE);
     case 'GET /api/v1/portal/profiles':

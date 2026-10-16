@@ -32,6 +32,15 @@ and `npx eslint apps/portal`.
 
 ## Sign-in, session and family members
 
+* **Anti-automation (SRS SEC-06).** Asking for a code, giving it, and sending feedback from a poster, kiosk or personal
+  link need a proof of work (`src/lib/proofOfWork`). The page asks `POST /api/v1/public/challenge` for a challenge as
+  soon as the form appears, solves it in a Web Worker with WebCrypto (`solver.worker.ts`; SHA-256 with 14 leading zero
+  bits by default, well under a second on a mid-range phone), and sends the answer in `X-HC360-Proof` with the request.
+  Nothing shows unless it takes longer than 1.5 seconds; then a polite status says "Checking your browser…". When the
+  server refuses a proof (403 `request.check_failed`, for instance because it asks more work of the number after
+  failures), the page solves a fresh challenge and tries once more. There is no puzzle and no third party. The server
+  side, its settings and the reasoning behind the difficulty are in SECURITY.md, "Anti-automation on the portal".
+
 * **OTP sign-in.** `auth.requestOtp` → `POST /api/v1/auth/otp/request`, then `auth.verifyOtp` →
   `POST /api/v1/auth/otp/verify`. The page never says whether a number is registered. The resend button backs off
   (30 s, 60 s, 2 min, then 5 min), so patients do not hit the server limit. A code that seems to expire implausibly (a
@@ -108,6 +117,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Area | Endpoints |
 |---|---|
 | System | `GET /api/v1/system/info` (hospital name, and whether the portal and video consultations are switched on), `GET /health/live` (connection check) |
+| Anti-automation | `POST /api/v1/public/challenge {action: otp\|feedback, subject?}` → `{required, challenge, bits, expiresAt, algorithm}`; the proof goes in `X-HC360-Proof: {challenge}:{nonce}` |
 | Profiles | `GET /api/v1/portal/profiles` |
 | Family on other numbers | `GET /api/v1/portal/family/` → `{linked[{linkId, patientId, fullName, uhid, relation, source, linkedAt}], sharedWith[{linkId, patientId, patientName, accountPhoneMasked, relation, linkedAt}]}`; `POST /api/v1/portal/family/codes {uhid, phone, relation}` → `{codeId, expiresAt}` (the same answer whether or not they match; 422 `portal.family_code_throttled`, `portal.family_own_number`; 409 `portal.family_already_linked`); `POST …/codes/{codeId}/verify {code}` → the relative (400 on a wrong code, 422 `portal.family_code_expired` once it is used up); `POST …/links/{linkId}/end` → 204 |
 | Doctors (public) | `GET /api/v1/public/doctors/filters`, `GET /api/v1/public/doctors`, `GET /api/v1/public/doctors/{id}`, `GET /api/v1/public/doctors/{id}/slots` |

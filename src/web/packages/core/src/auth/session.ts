@@ -172,14 +172,15 @@ export const auth = {
     return accept(await authFetch('mfa', { challengeId, code }));
   },
 
-  async requestOtp(phone: string) {
-    return authFetch('otp/request', { phone }) as Promise<
+  /** `headers` carries the portal's proof of work (`X-HC360-Proof`), which the server asks for here. */
+  async requestOtp(phone: string, headers?: Record<string, string>) {
+    return authFetch('otp/request', { phone }, headers) as Promise<
       AuthResult & { challengeId: string; expiresAt: string; maskedPhone: string }
     >;
   },
 
-  async verifyOtp(challengeId: string, code: string) {
-    return accept(await authFetch('otp/verify', { challengeId, code }));
+  async verifyOtp(challengeId: string, code: string, headers?: Record<string, string>) {
+    return accept(await authFetch('otp/verify', { challengeId, code }, headers));
   },
 
   /** Adopts tokens returned by other auth endpoints (change password, MFA enable, facility switch). */
