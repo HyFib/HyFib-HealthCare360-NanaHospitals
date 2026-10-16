@@ -217,7 +217,7 @@ export const common = defineMessages({
     'document.preparingPdf': 'आपका PDF तैयार हो रहा है…',
     'document.print': 'प्रिंट करें',
     'document.pdfHint':
-      'PDF डाउनलोड करने पर आपको अस्पताल की आधिकारिक प्रति मिलती है, जो अंग्रेज़ी में होती है। प्रिंट करने पर इस पेज की प्रति हिंदी में मिलती है।',
+      'PDF डाउनलोड करने पर आपको अस्पताल की आधिकारिक प्रति मिलती है। प्रिंट करने पर इस पेज की प्रति हिंदी में मिलती है।',
     'document.pdfSaved': 'PDF आपके डाउनलोड में सहेज दिया गया है।',
     'document.pdfFailed': 'PDF डाउनलोड नहीं हो सका',
     'document.pdfUnavailable.title': 'अभी हम PDF नहीं बना पा रहे हैं',

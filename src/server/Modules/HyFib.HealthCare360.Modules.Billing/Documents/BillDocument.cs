@@ -18,7 +18,8 @@ internal sealed record GstSummaryRow(string Sac, decimal Rate, decimal Taxable, 
 /// totals with the payer's and the patient's share, the amount in words, the GST summary, the payments received
 /// (advances adjusted included), the signature lines and the footer notes. The counter prints this document and the
 /// patient downloads it as a PDF, so both copies are the same. Ported from the staff app's A4 bill print; the 80 mm
-/// counter copy stays in the browser.
+/// counter copy stays in the browser. Its labels are in the language it is made in (<see cref="DocumentText"/>, PP-06):
+/// the patient's on the portal and in messages, English at the counter; amounts, codes and dates print as they are.
 /// </summary>
 internal static class BillDocument
 {
@@ -51,37 +52,41 @@ internal static class BillDocument
         """;
 
     /// <summary>The bill under the letterhead of the facility that issued it, as its bills template says (HMS-04).</summary>
-    public static async Task<PrintableDocument> BuildAsync(BillDetail bill, DocumentAssets assets, CancellationToken cancellationToken) =>
-        Build(bill, await assets.LetterheadAsync(bill.FacilityId, PrintTemplateCatalog.Bill, cancellationToken));
+    public static async Task<PrintableDocument> BuildAsync(BillDetail bill, DocumentAssets assets, DocumentText text, CancellationToken cancellationToken) =>
+        Build(bill, await assets.LetterheadAsync(bill.FacilityId, PrintTemplateCatalog.Bill, cancellationToken), text);
 
-    public static PrintableDocument Build(BillDetail bill, DocumentLetterhead letterhead)
+    public static PrintableDocument Build(BillDetail bill, DocumentLetterhead letterhead, DocumentText? text = null)
     {
-        var title = Title(bill);
-        var closing = $"This is a computer-generated {LowerFirst(title)}." + (letterhead.Note is { } note ? $" {note}" : "");
+        text ??= DocumentText.English;
+        var title = Title(bill, text);
+        // "This is a computer-generated tax invoice": the title inside the sentence, in lower case in English.
+        var closing = text.Format("doc.bill.computer_generated", ("title", text.IsEnglish ? LowerFirst(title) : title))
+            + (letterhead.Note is { } note ? $" {note}" : "");
         var notes = string.IsNullOrWhiteSpace(bill.Notes) ? Html.Empty : Html.Of($"<div class=\"foot\">{Html.Lines(bill.Notes)}</div>");
         return new PrintableDocument
         {
             Title = bill.BillNumber is { } number ? $"{title} {number}" : title,
             FileName = FileName(bill),
-            Footer = Footer(bill),
+            Footer = Footer(bill, text),
+            Language = text.Language,
             Styles = Styles,
             Template = letterhead.Template,
             Body = Html.Of($"""
                 <div class="bill">
-                  {Stamp(bill)}
-                  {Header(letterhead, title, [("Bill no.", bill.BillNumber ?? "Draft"), ("Date", DocumentFormat.DateTime(bill.FinalizedAt ?? bill.CreatedAt))])}
-                  {PatientBox(bill)}
-                  {Cancellation(bill)}
-                  {LinesTable(bill)}
+                  {Stamp(bill, text)}
+                  {Header(letterhead, title, [(text["doc.bill.number"], bill.BillNumber ?? text["doc.bill.draft"]), (text["doc.date"], DocumentFormat.DateTime(bill.FinalizedAt ?? bill.CreatedAt))], text)}
+                  {PatientBox(bill, text)}
+                  {Cancellation(bill, text)}
+                  {LinesTable(bill, text)}
                   <div class="keep">
-                    {TotalsTable(bill)}
-                    <div class="words">Payable by patient: {AmountInWords.Rupees(bill.PatientAmount)}</div>
+                    {TotalsTable(bill, text)}
+                    <div class="words">{text.Format("doc.bill.payable_by_patient_words", ("words", AmountInWords.Rupees(bill.PatientAmount)))}</div>
                   </div>
-                  {GstTable(bill)}
-                  {PaymentsTable(bill)}
+                  {GstTable(bill, text)}
+                  {PaymentsTable(bill, text)}
                   {notes}
                   <div class="keep">
-                    <div class="sign"><div>Patient / attendant</div><div>Authorised signatory</div></div>
+                    <div class="sign"><div>{text["doc.bill.sign_patient"]}</div><div>{text["doc.bill.sign_authorised"]}</div></div>
                     <div class="foot">{closing}</div>
                   </div>
                 </div>
@@ -93,22 +98,23 @@ internal static class BillDocument
     /// "Tax invoice" when any line carries GST, otherwise "Bill of supply"; IP bills add "IP bill" or "IP final bill".
     /// A draft is an estimate, not a bill.
     /// </summary>
-    public static string Title(BillDetail bill)
+    public static string Title(BillDetail bill, DocumentText? text = null)
     {
+        text ??= DocumentText.English;
         if (bill.Status == BillStatus.Draft)
         {
-            return "Estimate (draft bill)";
+            return text["doc.bill.estimate"];
         }
 
-        var kind = bill.IsTaxInvoice ? "Tax invoice" : "Bill of supply";
-        return bill.Type == BillType.InPatient ? $"{kind} · {(bill.IsFinalBill ? "IP final bill" : "IP bill")}" : kind;
+        var kind = bill.IsTaxInvoice ? text["doc.bill.tax_invoice"] : text["doc.bill.bill_of_supply"];
+        return bill.Type == BillType.InPatient ? $"{kind} · {(bill.IsFinalBill ? text["doc.bill.ip_final_bill"] : text["doc.bill.ip_bill"])}" : kind;
     }
 
     /// <summary>The word printed across every page of a copy that is not a valid bill.</summary>
-    public static string? Watermark(BillDetail bill) => bill.Status switch
+    public static string? Watermark(BillDetail bill, DocumentText? text = null) => bill.Status switch
     {
-        BillStatus.Cancelled or BillStatus.Refunded => "CANCELLED",
-        BillStatus.Draft => "DRAFT",
+        BillStatus.Cancelled or BillStatus.Refunded => (text ?? DocumentText.English)["doc.bill.stamp_cancelled"],
+        BillStatus.Draft => (text ?? DocumentText.English)["doc.bill.stamp_draft"],
         _ => null,
     };
 
@@ -118,71 +124,78 @@ internal static class BillDocument
         : $"bill-draft-{bill.Uhid ?? "patient"}-{DocumentFormat.ToIst(bill.CreatedAt).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}";
 
     /// <summary>"Ravi Kumar · UHID NH26000123 · Bill NHOB260000001", at the foot of every page.</summary>
-    public static string Footer(BillDetail bill) => string.Join(" · ", new[]
+    public static string Footer(BillDetail bill, DocumentText? text = null)
     {
-        bill.PatientName,
-        bill.Uhid is { } uhid ? $"UHID {uhid}" : null,
-        bill.BillNumber is { } number ? $"Bill {number}" : "Estimate (draft bill)",
-    }.Where(part => !string.IsNullOrWhiteSpace(part)));
+        text ??= DocumentText.English;
+        return string.Join(" · ", new[]
+        {
+            bill.PatientName,
+            bill.Uhid is { } uhid ? $"UHID {uhid}" : null,
+            bill.BillNumber is { } number ? text.Format("doc.bill.footer_number", ("number", number)) : text["doc.bill.estimate"],
+        }.Where(part => !string.IsNullOrWhiteSpace(part)));
+    }
 
     /// <summary>
     /// From the gross amount to the net amount, the payer's and the patient's share, credits, and (once finalized) what
     /// was paid and what is still due or to be refunded.
     /// </summary>
-    public static IReadOnlyList<BillTotalRow> Totals(BillDetail bill)
+    public static IReadOnlyList<BillTotalRow> Totals(BillDetail bill, DocumentText? text = null)
     {
-        var rows = new List<BillTotalRow> { new("Gross amount", bill.GrossAmount) };
+        text ??= DocumentText.English;
+        var rows = new List<BillTotalRow> { new(text["doc.bill.gross_amount"], bill.GrossAmount) };
         if (bill.PackageCoveredAmount != 0)
         {
-            rows.Add(new("Less: covered by package", -bill.PackageCoveredAmount));
+            rows.Add(new(text["doc.bill.less_package"], -bill.PackageCoveredAmount));
         }
 
         if (bill.TariffDiscountAmount != 0)
         {
-            rows.Add(new("Less: tariff concession", -bill.TariffDiscountAmount));
+            rows.Add(new(text["doc.bill.less_tariff"], -bill.TariffDiscountAmount));
         }
 
         var staffDiscount = bill.LineDiscountAmount + bill.BillDiscountAmount;
         if (staffDiscount != 0)
         {
-            rows.Add(new(string.IsNullOrWhiteSpace(bill.DiscountReason) ? "Less: discount" : $"Less: discount ({bill.DiscountReason})", -staffDiscount));
+            rows.Add(new(
+                string.IsNullOrWhiteSpace(bill.DiscountReason) ? text["doc.bill.less_discount"] : text.Format("doc.bill.less_discount_reason", ("reason", bill.DiscountReason)),
+                -staffDiscount));
         }
 
         if (bill.IsTaxInvoice)
         {
-            rows.Add(new("Taxable value", bill.TaxableAmount));
+            rows.Add(new(text["doc.bill.taxable_value"], bill.TaxableAmount));
             rows.Add(new("CGST", bill.CgstAmount));
             rows.Add(new("SGST", bill.SgstAmount));
         }
 
         if (bill.RoundOffAmount != 0)
         {
-            rows.Add(new("Round off", bill.RoundOffAmount));
+            rows.Add(new(text["doc.bill.round_off"], bill.RoundOffAmount));
         }
 
-        rows.Add(new("Net amount", bill.NetAmount, Strong: true));
+        rows.Add(new(text["doc.bill.net_amount"], bill.NetAmount, Strong: true));
         if (bill.PayerAmount != 0)
         {
-            rows.Add(new($"Payable by {bill.PayerName ?? "insurer"}", bill.PayerAmount));
-            rows.Add(new("Payable by patient", bill.PatientAmount, Strong: true));
+            rows.Add(new(text.Format("doc.bill.payable_by", ("payer", bill.PayerName ?? text["doc.bill.insurer"])), bill.PayerAmount));
+            rows.Add(new(text["doc.bill.payable_by_patient"], bill.PatientAmount, Strong: true));
         }
 
         if (bill.CreditAmount != 0)
         {
-            rows.Add(new("Credit notes / write-off", -bill.CreditAmount));
+            rows.Add(new(text["doc.bill.credit_notes"], -bill.CreditAmount));
         }
 
         if (bill.Status != BillStatus.Draft)
         {
-            rows.Add(new("Paid", bill.PaidAmount));
+            rows.Add(new(text["doc.bill.paid"], bill.PaidAmount));
             if (bill.RefundedAmount != 0)
             {
-                rows.Add(new("Refunded", -bill.RefundedAmount));
+                rows.Add(new(text["doc.bill.refunded"], -bill.RefundedAmount));
             }
 
             rows.Add(bill.RefundableAmount > 0
-                ? new("Refundable to patient", bill.RefundableAmount, Strong: true)
-                : new("Balance due", bill.DueAmount, Strong: true));
+                ? new(text["doc.bill.refundable"], bill.RefundableAmount, Strong: true)
+                : new(text["doc.bill.balance_due"], bill.DueAmount, Strong: true));
         }
 
         return rows;
@@ -202,9 +215,10 @@ internal static class BillDocument
     /// left; the title with the number and date on the right. On pre-printed stationery the left keeps only the tax ids,
     /// which a tax invoice must show whatever the paper has on it.
     /// </summary>
-    public static Html Header(DocumentLetterhead letterhead, string title, IReadOnlyList<(string Label, string Value)> meta)
+    public static Html Header(DocumentLetterhead letterhead, string title, IReadOnlyList<(string Label, string Value)> meta, DocumentText? text = null)
     {
-        var contact = string.Join(" · ", new[] { letterhead.Phone is { } phone ? $"Phone {phone}" : null, letterhead.Email }.Where(c => c is not null));
+        text ??= DocumentText.English;
+        var contact = string.Join(" · ", new[] { letterhead.Phone is { } phone ? text.Format("doc.phone", ("phone", phone)) : null, letterhead.Email }.Where(c => c is not null));
         var tax = string.Join(" · ", new[] { letterhead.Gstin is { } gstin ? $"GSTIN {gstin}" : null, letterhead.Pan is { } pan ? $"PAN {pan}" : null }.Where(t => t is not null));
         if (!letterhead.Template.PrintsLetterhead)
         {
@@ -229,7 +243,7 @@ internal static class BillDocument
                     {Muted(letterhead.Address)}
                     {Muted(contact)}
                     {Muted(tax)}
-                    {Muted(letterhead.RegistrationNumber is { } registration ? $"Registration {registration}" : null)}
+                    {Muted(letterhead.RegistrationNumber is { } registration ? text.Format("doc.bill.registration", ("number", registration)) : null)}
                   </div>
                 </div>
               </td>
@@ -242,38 +256,48 @@ internal static class BillDocument
     }
 
     /// <summary>"Cash + Upi" (a receipt's mode summary) as words: "Cash + UPI".</summary>
-    public static string ModesLabel(string? summary) => string.IsNullOrWhiteSpace(summary)
+    public static string ModesLabel(string? summary, DocumentText? text = null) => string.IsNullOrWhiteSpace(summary)
         ? DocumentFormat.Missing
-        : string.Join(" + ", summary.Split('+', StringSplitOptions.TrimEntries).Select(ModeLabel));
+        : string.Join(" + ", summary.Split('+', StringSplitOptions.TrimEntries).Select(mode => ModeLabel(mode, text ?? DocumentText.English)));
 
-    public static string StatusLabel(BillStatus status) => status switch
+    /// <summary>The status in words; a status added later without words of its own prints its name.</summary>
+    public static string StatusLabel(BillStatus status, DocumentText? text = null) => Label(text, status switch
     {
-        BillStatus.Finalized => "Unpaid",
-        BillStatus.PartiallyPaid => "Partly paid",
-        BillStatus.Refunded => "Cancelled, refunded",
-        _ => status.ToString(),
-    };
+        BillStatus.Draft => "doc.bill.status.draft",
+        BillStatus.Finalized => "doc.bill.status.unpaid",
+        BillStatus.PartiallyPaid => "doc.bill.status.partly_paid",
+        BillStatus.Paid => "doc.bill.status.paid",
+        BillStatus.Cancelled => "doc.bill.status.cancelled",
+        BillStatus.Refunded => "doc.bill.status.refunded",
+        _ => null,
+    }) ?? status.ToString();
 
-    public static string PayerLabel(PayerType payerType) => payerType switch
+    /// <summary>The payer type in words; a type added later without words of its own prints its name.</summary>
+    public static string PayerLabel(PayerType payerType, DocumentText? text = null) => Label(text, payerType switch
     {
-        PayerType.Self => "Self pay",
-        PayerType.GovernmentScheme => "Government scheme",
-        _ => payerType.ToString(),
-    };
+        PayerType.Self => "doc.bill.payer.self",
+        PayerType.Insurance => "doc.bill.payer.insurance",
+        PayerType.Corporate => "doc.bill.payer.corporate",
+        PayerType.GovernmentScheme => "doc.bill.payer.government_scheme",
+        PayerType.Staff => "doc.bill.payer.staff",
+        PayerType.Charity => "doc.bill.payer.charity",
+        _ => null,
+    }) ?? payerType.ToString();
 
-    private static Html Stamp(BillDetail bill) => Watermark(bill) is { } stamp ? Html.Of($"<div class=\"stamp\">{stamp}</div>") : Html.Empty;
+    private static Html Stamp(BillDetail bill, DocumentText text) =>
+        Watermark(bill, text) is { } stamp ? Html.Of($"<div class=\"stamp\">{stamp}</div>") : Html.Empty;
 
-    private static Html PatientBox(BillDetail bill)
+    private static Html PatientBox(BillDetail bill, DocumentText text)
     {
-        var tariff = string.IsNullOrWhiteSpace(bill.TariffPlanName) ? Html.Empty : Html.Of($"<div>Tariff: {bill.TariffPlanName}</div>");
-        var coPay = bill.CoPayPercent > 0 ? Html.Of($"<div>Co-pay: {Percent(bill.CoPayPercent)}</div>") : Html.Empty;
-        var package = bill.Package is { } p ? Html.Of($"<div>Package: {p.Name}</div>") : Html.Empty;
+        var tariff = string.IsNullOrWhiteSpace(bill.TariffPlanName) ? Html.Empty : Html.Of($"<div>{text["doc.bill.tariff"]}: {bill.TariffPlanName}</div>");
+        var coPay = bill.CoPayPercent > 0 ? Html.Of($"<div>{text["doc.bill.co_pay"]}: {Percent(bill.CoPayPercent)}</div>") : Html.Empty;
+        var package = bill.Package is { } p ? Html.Of($"<div>{text["doc.bill.package"]}: {p.Name}</div>") : Html.Empty;
         return Html.Of($"""
             <div class="box grid">
-              <div>Patient: <b>{bill.PatientName ?? DocumentFormat.Missing}</b></div>
+              <div>{text["doc.patient"]}: <b>{bill.PatientName ?? DocumentFormat.Missing}</b></div>
               <div>UHID: <b>{bill.Uhid ?? DocumentFormat.Missing}</b></div>
-              <div>Status: {StatusLabel(bill.Status)}</div>
-              <div>Payer: {bill.PayerName ?? PayerLabel(bill.PayerType)}</div>
+              <div>{text["doc.bill.status"]}: {StatusLabel(bill.Status, text)}</div>
+              <div>{text["doc.bill.payer"]}: {bill.PayerName ?? PayerLabel(bill.PayerType, text)}</div>
               {tariff}
               {package}
               {coPay}
@@ -281,60 +305,60 @@ internal static class BillDocument
             """);
     }
 
-    private static Html Cancellation(BillDetail bill) => bill.Status is BillStatus.Cancelled or BillStatus.Refunded
-        ? Html.Of($"<div class=\"box\"><b>Cancelled</b> on {DocumentFormat.DateTime(bill.CancelledAt)}{(string.IsNullOrWhiteSpace(bill.CancelReason) ? "" : $": {bill.CancelReason}")}</div>")
+    private static Html Cancellation(BillDetail bill, DocumentText text) => bill.Status is BillStatus.Cancelled or BillStatus.Refunded
+        ? Html.Of($"<div class=\"box\"><b>{text["doc.bill.cancelled"]}</b> {text.Format("doc.bill.cancelled_on", ("at", DocumentFormat.DateTime(bill.CancelledAt)))}{(string.IsNullOrWhiteSpace(bill.CancelReason) ? "" : $": {bill.CancelReason}")}</div>")
         : Html.Empty;
 
-    private static Html LinesTable(BillDetail bill)
+    private static Html LinesTable(BillDetail bill, DocumentText text)
     {
         // The package column only when a package covers something; the GST columns only on a tax invoice.
         var package = bill.Lines.Any(l => l.PackageCoveredAmount != 0);
         var tax = bill.IsTaxInvoice;
-        var packageHead = package ? Html.Of($"<th class=\"num\">Package</th>") : Html.Empty;
-        var taxHead = tax ? Html.Of($"<th class=\"num\">Taxable</th><th class=\"num\">GST</th><th class=\"num\">CGST</th><th class=\"num\">SGST</th>") : Html.Empty;
+        var packageHead = package ? Html.Of($"<th class=\"num\">{text["doc.bill.package"]}</th>") : Html.Empty;
+        var taxHead = tax ? Html.Of($"<th class=\"num\">{text["doc.bill.taxable"]}</th><th class=\"num\">GST</th><th class=\"num\">CGST</th><th class=\"num\">SGST</th>") : Html.Empty;
         var rows = bill.Lines.Select((line, index) => Html.Of($"""
             <tr>
               <td>{index + 1}</td>
-              <td>{line.Description}{(line.IsReturn ? Html.Of($"<span class=\"tag\">Return</span>") : Html.Empty)}<div class="muted">{LineDetail(line)}</div></td>
+              <td>{line.Description}{(line.IsReturn ? Html.Of($"<span class=\"tag\">{text["doc.bill.return"]}</span>") : Html.Empty)}<div class="muted">{LineDetail(line)}</div></td>
               <td>{line.SacCode ?? DocumentFormat.Missing}</td>
               <td class="num">{Quantity(line.Quantity)}</td>
               <td class="num">{DocumentFormat.Money(line.UnitPrice)}</td>
               <td class="num">{DocumentFormat.Money(line.GrossAmount)}</td>
               {(package ? Html.Of($"<td class=\"num\">{DocumentFormat.Money(line.PackageCoveredAmount)}</td>") : Html.Empty)}
               <td class="num">{DocumentFormat.Money(line.TariffDiscountAmount + line.LineDiscountAmount + line.BillDiscountShare)}</td>
-              {(tax ? TaxCells(line) : Html.Empty)}
+              {(tax ? TaxCells(line, text) : Html.Empty)}
               <td class="num">{DocumentFormat.Money(line.NetAmount)}</td>
             </tr>
             """));
         return Html.Of($"""
             <table class="lines">
-              <thead><tr><th>#</th><th>Service</th><th>SAC</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th>{packageHead}<th class="num">Discount</th>{taxHead}<th class="num">Net</th></tr></thead>
+              <thead><tr><th>#</th><th>{text["doc.bill.service"]}</th><th>SAC</th><th class="num">{text["doc.bill.qty"]}</th><th class="num">{text["doc.bill.rate"]}</th><th class="num">{text["doc.bill.amount"]}</th>{packageHead}<th class="num">{text["doc.bill.discount"]}</th>{taxHead}<th class="num">{text["doc.bill.net"]}</th></tr></thead>
               <tbody>{rows}</tbody>
             </table>
             """);
     }
 
-    private static Html TaxCells(BillLineDto line) => Html.Of(
-        $"<td class=\"num\">{DocumentFormat.Money(line.TaxableAmount)}</td><td class=\"num\">{(line.TaxRate > 0 ? Percent(line.TaxRate) : "Exempt")}</td><td class=\"num\">{DocumentFormat.Money(line.CgstAmount)}</td><td class=\"num\">{DocumentFormat.Money(line.SgstAmount)}</td>");
+    private static Html TaxCells(BillLineDto line, DocumentText text) => Html.Of(
+        $"<td class=\"num\">{DocumentFormat.Money(line.TaxableAmount)}</td><td class=\"num\">{(line.TaxRate > 0 ? Percent(line.TaxRate) : text["doc.bill.exempt"])}</td><td class=\"num\">{DocumentFormat.Money(line.CgstAmount)}</td><td class=\"num\">{DocumentFormat.Money(line.SgstAmount)}</td>");
 
-    private static Html TotalsTable(BillDetail bill)
+    private static Html TotalsTable(BillDetail bill, DocumentText text)
     {
-        var rows = Totals(bill).Select(row => row.Strong
+        var rows = Totals(bill, text).Select(row => row.Strong
             ? Html.Of($"<tr class=\"strong\"><td>{row.Label}</td><td class=\"num\">{DocumentFormat.Money(row.Amount)}</td></tr>")
             : Html.Of($"<tr><td>{row.Label}</td><td class=\"num\">{DocumentFormat.Money(row.Amount)}</td></tr>"));
         return Html.Of($"<table class=\"totals\"><tbody>{rows}</tbody></table>");
     }
 
-    private static Html GstTable(BillDetail bill)
+    private static Html GstTable(BillDetail bill, DocumentText text)
     {
         var rows = bill.IsTaxInvoice ? GstSummary(bill.Lines) : [];
         return rows.Count == 0
             ? Html.Empty
             : Html.Of($"""
                 <section class="keep">
-                  <h3>GST summary</h3>
+                  <h3>{text["doc.bill.gst_summary"]}</h3>
                   <table class="lines">
-                    <thead><tr><th>SAC</th><th class="num">Taxable value</th><th class="num">CGST rate</th><th class="num">CGST</th><th class="num">SGST rate</th><th class="num">SGST</th></tr></thead>
+                    <thead><tr><th>SAC</th><th class="num">{text["doc.bill.taxable_value"]}</th><th class="num">{text["doc.bill.cgst_rate"]}</th><th class="num">CGST</th><th class="num">{text["doc.bill.sgst_rate"]}</th><th class="num">SGST</th></tr></thead>
                     <tbody>{rows.Select(g => Html.Of($"<tr><td>{g.Sac}</td><td class=\"num\">{DocumentFormat.Money(g.Taxable)}</td><td class=\"num\">{Percent(g.Rate / 2)}</td><td class=\"num\">{DocumentFormat.Money(g.Cgst)}</td><td class=\"num\">{Percent(g.Rate / 2)}</td><td class=\"num\">{DocumentFormat.Money(g.Sgst)}</td></tr>"))}</tbody>
                   </table>
                 </section>
@@ -342,13 +366,13 @@ internal static class BillDocument
     }
 
     // Every receipt against the bill, including IP advances and patient advances adjusted ("Advance adjusted").
-    private static Html PaymentsTable(BillDetail bill) => bill.Receipts.Count == 0
+    private static Html PaymentsTable(BillDetail bill, DocumentText text) => bill.Receipts.Count == 0
         ? Html.Empty
         : Html.Of($"""
-            <h3>Payments received</h3>
+            <h3>{text["doc.bill.payments_received"]}</h3>
             <table class="lines">
-              <thead><tr><th>Receipt</th><th>Date</th><th>Mode</th><th class="num">Amount</th></tr></thead>
-              <tbody>{bill.Receipts.Select(r => Html.Of($"<tr><td>{r.ReceiptNumber}</td><td>{DocumentFormat.DateTime(r.ReceivedAt)}</td><td>{ModesLabel(r.Modes)}</td><td class=\"num\">{DocumentFormat.Money(r.Amount)}</td></tr>"))}</tbody>
+              <thead><tr><th>{text["doc.bill.receipt"]}</th><th>{text["doc.date"]}</th><th>{text["doc.bill.mode"]}</th><th class="num">{text["doc.bill.amount"]}</th></tr></thead>
+              <tbody>{bill.Receipts.Select(r => Html.Of($"<tr><td>{r.ReceiptNumber}</td><td>{DocumentFormat.DateTime(r.ReceivedAt)}</td><td>{ModesLabel(r.Modes, text)}</td><td class=\"num\">{DocumentFormat.Money(r.Amount)}</td></tr>"))}</tbody>
             </table>
             """);
 
@@ -356,17 +380,24 @@ internal static class BillDocument
     private static string LineDetail(BillLineDto line) =>
         string.Join(" · ", new[] { line.ServiceCode, line.PractitionerName, DocumentFormat.Date(line.ServiceDate) }.Where(part => !string.IsNullOrWhiteSpace(part)));
 
-    private static string ModeLabel(string mode) => Enum.TryParse<PaymentMode>(mode, out var parsed) && Enum.IsDefined(parsed)
-        ? parsed switch
+    // A mode added later without words of its own prints its name, and text that is no mode prints as it is.
+    private static string ModeLabel(string mode, DocumentText text) => Enum.TryParse<PaymentMode>(mode, out var parsed) && Enum.IsDefined(parsed)
+        ? Label(text, parsed switch
         {
-            PaymentMode.Upi => "UPI",
-            PaymentMode.NetBanking => "Bank transfer",
-            PaymentMode.PaymentGateway => "Online payment",
-            PaymentMode.Insurance => "Insurance settlement",
-            PaymentMode.Advance => "Advance adjusted",
-            _ => parsed.ToString(),
-        }
+            PaymentMode.Cash => "doc.bill.mode.cash",
+            PaymentMode.Card => "doc.bill.mode.card",
+            PaymentMode.Upi => "doc.bill.mode.upi",
+            PaymentMode.NetBanking => "doc.bill.mode.bank_transfer",
+            PaymentMode.Cheque => "doc.bill.mode.cheque",
+            PaymentMode.PaymentGateway => "doc.bill.mode.online",
+            PaymentMode.Insurance => "doc.bill.mode.insurance",
+            PaymentMode.Wallet => "doc.bill.mode.wallet",
+            PaymentMode.Advance => "doc.bill.mode.advance",
+            _ => null,
+        }) ?? parsed.ToString()
         : mode;
+
+    private static string? Label(DocumentText? text, string? key) => key is null ? null : (text ?? DocumentText.English)[key];
 
     // Quantities as the counter keys them: 1, 1.5, 0.25 (stored with three decimals).
     private static string Quantity(decimal quantity) => quantity.ToString("0.###", CultureInfo.InvariantCulture);

@@ -239,6 +239,11 @@ UHID and report number, and "Page X of Y". Values are encoded, so text typed int
 The frame follows the **Reports** print template (Hospital setup › Print templates): pre-printed stationery, the logo,
 and a closing note at the end (see `docs/modules/print-templates.md`).
 
+The frame, the report titles, the patient block, the lab table's headings, notes and banners, and the radiology and
+cardiology section headings are in the language the report is made in (PP-06): English for staff, the patient's on the
+portal and in the "report ready" message (print-templates.md, *The patient's language*). Test and section names,
+values, units, reference intervals, flag codes, the modality and the cardiology measurements stay as written.
+
 | Document | Made from | File name | What it prints |
 |---|---|---|---|
 | Lab report | `LabReportView` | `lab-report-<accession>` | Tests by section with value, flag, unit and reference interval; cultures with organism and antibiogram; interpretations, amendments; notes for partial, auto-verified and amended reports. Banner "Preliminary copy for the laboratory: not released" on an unreleased copy |

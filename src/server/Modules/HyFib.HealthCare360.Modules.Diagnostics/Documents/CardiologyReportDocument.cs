@@ -21,54 +21,61 @@ internal static class CardiologyReportDocument
 
         """;
 
-    public static Task<PrintableDocument> BuildAsync(CardiologyReportView view, ReportDocumentFrame frame, CancellationToken cancellationToken)
+    public static Task<PrintableDocument> BuildAsync(CardiologyReportView view, ReportDocumentFrame frame, DocumentText text, CancellationToken cancellationToken)
     {
-        var name = $"Cardiology report {view.AccessionNumber}";
+        var name = text.Format("doc.cardiology.document_title", ("number", view.AccessionNumber));
         return frame.BuildAsync(
             new ReportFrame(
-                Title(view.StudyType),
+                Title(view.StudyType, text),
                 name,
                 $"cardiology-report-{view.AccessionNumber}",
                 ReportDocumentFrame.Footer(view.Patient, name),
                 view.Letterhead,
-                PatientRows(view),
-                Body(view),
+                PatientRows(view, text),
+                Body(view, text),
                 view.Signatories,
                 view.VerificationCode,
                 view.VerificationUrl,
-                StatusBanner(view.Status),
-                Notes(view),
-                Styles),
+                StatusBanner(view.Status, text),
+                Notes(view, text),
+                Styles,
+                text),
             cancellationToken);
     }
 
     /// <summary>"ECG report", "Echo report"…; a study of another type is a "Cardiology report".</summary>
-    public static string Title(CardiologyStudyType type) => type switch
+    public static string Title(CardiologyStudyType type, DocumentText? text = null) => (text ?? DocumentText.English)[type switch
     {
-        CardiologyStudyType.Ecg => "ECG report",
-        CardiologyStudyType.Echo => "Echo report",
-        CardiologyStudyType.Tmt => "TMT report",
-        CardiologyStudyType.Holter => "Holter report",
-        CardiologyStudyType.Abpm => "ABPM report",
-        _ => "Cardiology report",
-    };
+        CardiologyStudyType.Ecg => "doc.cardiology.title.ecg",
+        CardiologyStudyType.Echo => "doc.cardiology.title.echo",
+        CardiologyStudyType.Tmt => "doc.cardiology.title.tmt",
+        CardiologyStudyType.Holter => "doc.cardiology.title.holter",
+        CardiologyStudyType.Abpm => "doc.cardiology.title.abpm",
+        _ => "doc.cardiology.title.other",
+    }];
 
     /// <summary>Identity, referral and the key times.</summary>
-    public static IReadOnlyList<(string Label, string? Value)> PatientRows(CardiologyReportView view) =>
-    [
-        ("Patient", view.Patient.Name),
-        ("Age / sex", $"{view.Patient.Age ?? DocumentFormat.Missing} / {LabReportDocument.GenderShort(view.Patient.Gender)}"),
-        ("UHID", view.Patient.Uhid),
-        ("Accession no.", view.AccessionNumber),
-        ("Referred by", view.ReferredBy ?? "Self"),
-        ("Ordered", DocumentFormat.DateTime(view.OrderedAt)),
-        ("Recorded", DocumentFormat.DateTime(view.AcquiredAt)),
-        ("Reported", RadiologyReportDocument.Reported(view.ReleasedAt, view.VerifiedAt)),
-    ];
-
-    /// <summary>The study, the critical finding note, the measurements, the conclusion and the recommendations.</summary>
-    public static Html Body(CardiologyReportView view)
+    public static IReadOnlyList<(string Label, string? Value)> PatientRows(CardiologyReportView view, DocumentText? text = null)
     {
+        text ??= DocumentText.English;
+        return
+        [
+            .. ReportDocumentFrame.IdentityRows(view.Patient, text),
+            (text["doc.accession_number"], view.AccessionNumber),
+            (text["doc.referred_by"], view.ReferredBy ?? text["doc.self"]),
+            (text["doc.ordered"], DocumentFormat.DateTime(view.OrderedAt)),
+            (text["doc.cardiology.recorded"], DocumentFormat.DateTime(view.AcquiredAt)),
+            (text["doc.reported"], RadiologyReportDocument.Reported(view.ReleasedAt, view.VerifiedAt, text)),
+        ];
+    }
+
+    /// <summary>
+    /// The study, the critical finding note, the measurements, the conclusion and the recommendations. The measurement
+    /// names stay in English, as clinicians write them.
+    /// </summary>
+    public static Html Body(CardiologyReportView view, DocumentText? text = null)
+    {
+        text ??= DocumentText.English;
         var rows = MeasurementRows(view);
         var table = rows.Count == 0
             ? Html.Empty
@@ -78,10 +85,10 @@ internal static class CardiologyReportDocument
         return Html.Of($"""
             <h2>{view.StudyName}</h2>
             <div class="small">{LongLabel(view.StudyType)}</div>
-            {RadiologyReportDocument.CriticalNote(view.IsCriticalFinding)}
+            {RadiologyReportDocument.CriticalNote(view.IsCriticalFinding, text)}
             {table}
-            {(conclusion.IsEmpty ? Html.Empty : Html.Of($"<h3>Conclusion</h3><div class=\"impression\">{conclusion}</div>"))}
-            {(recommendations.IsEmpty ? Html.Empty : Html.Of($"<h3>Recommendations</h3>{recommendations}"))}
+            {(conclusion.IsEmpty ? Html.Empty : Html.Of($"<h3>{text["doc.cardiology.conclusion"]}</h3><div class=\"impression\">{conclusion}</div>"))}
+            {(recommendations.IsEmpty ? Html.Empty : Html.Of($"<h3>{text["doc.cardiology.recommendations"]}</h3>{recommendations}"))}
             """);
     }
 
@@ -152,19 +159,19 @@ internal static class CardiologyReportDocument
     };
 
     /// <summary>A banner for a copy that is not the final, released report.</summary>
-    public static string? StatusBanner(DiagnosticReportStatus status) => status switch
+    public static string? StatusBanner(DiagnosticReportStatus status, DocumentText? text = null) => status switch
     {
         DiagnosticReportStatus.Released => null,
-        DiagnosticReportStatus.Verified => "Signed, not yet released",
-        _ => "Draft: not signed by the cardiologist",
+        DiagnosticReportStatus.Verified => (text ?? DocumentText.English)["doc.report.signed_not_released"],
+        _ => (text ?? DocumentText.English)["doc.cardiology.draft"],
     };
 
     /// <summary>How many device recordings are stored with the report (they are not printed).</summary>
-    public static IReadOnlyList<string> Notes(CardiologyReportView view) => view.Files.Count switch
+    public static IReadOnlyList<string> Notes(CardiologyReportView view, DocumentText? text = null) => view.Files.Count switch
     {
         0 => [],
-        1 => ["1 device recording is stored with this report."],
-        var count => [$"{count} device recordings are stored with this report."],
+        1 => [(text ?? DocumentText.English)["doc.cardiology.one_recording"]],
+        var count => [(text ?? DocumentText.English).Format("doc.cardiology.recordings", ("count", count.ToString(Html.Culture)))],
     };
 
     public static string LongLabel(CardiologyStudyType type) => type switch

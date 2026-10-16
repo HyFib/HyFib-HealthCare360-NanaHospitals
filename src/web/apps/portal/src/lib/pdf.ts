@@ -4,7 +4,8 @@ import { safeFileName, saveBlob } from './print';
 
 /**
  * The hospital's official PDF of a document (a report, prescription, discharge summary or bill). The server makes it
- * from the same template it prints and sends, so it is the English copy with the letterhead, signatures and QR check.
+ * from the same template it prints and sends, with the letterhead, signatures and QR check, and its labels in the
+ * patient's language (the prescription is always English and Hindi).
  */
 
 /** The server's code when it cannot make PDFs right now (HTTP 503). The page can still print its own copy. */

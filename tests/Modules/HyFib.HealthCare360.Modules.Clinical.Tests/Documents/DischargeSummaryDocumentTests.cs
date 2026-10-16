@@ -107,7 +107,7 @@ public sealed class DischargeSummaryDocumentTests
         var print = Print(DischargeSummaryStatus.Draft);
         print = print with { Consultant = print.Consultant! with { SignatureFileId = signature } };
 
-        var document = await DischargeSummaryDocument.BuildAsync(print, PrescriptionDocumentTests.Assets((signature, "image/png", [1, 2, 3])), Ct);
+        var document = await DischargeSummaryDocument.BuildAsync(print, PrescriptionDocumentTests.Assets((signature, "image/png", [1, 2, 3])), DocumentText.English, Ct);
         var html = document.ToHtml();
 
         html.ShouldContain("<div class=\"draft\">DRAFT — not signed</div>");
@@ -125,7 +125,7 @@ public sealed class DischargeSummaryDocumentTests
         print = print with { Letterhead = print.Letterhead! with { LogoFileId = logo }, Consultant = print.Consultant! with { SignatureFileId = signature } };
 
         var html = (await DischargeSummaryDocument.BuildAsync(
-            print, PrescriptionDocumentTests.Assets((logo, "image/png", [1, 2, 3]), (signature, "image/png", [7, 8, 9])), Ct)).ToHtml();
+            print, PrescriptionDocumentTests.Assets((logo, "image/png", [1, 2, 3]), (signature, "image/png", [7, 8, 9])), DocumentText.English, Ct)).ToHtml();
 
         html.ShouldContain($"<img class=\"logo\" src=\"data:image/png;base64,{Convert.ToBase64String(new byte[] { 1, 2, 3 })}\" alt=\"\">");
         html.ShouldContain(
@@ -160,6 +160,28 @@ public sealed class DischargeSummaryDocumentTests
         html.ShouldNotContain("<b>");
         html.ShouldNotContain("<Rao>");
         document.Footer!.ShouldStartWith("Asha <Rao> · UHID NH-000123");
+    }
+
+    [Fact]
+    public void For_a_patient_who_reads_hindi_the_headings_are_hindi_and_the_doctors_text_is_printed_as_written()
+    {
+        var document = DischargeSummaryDocument.Build(Print(), null, null, text: DocumentText.Hindi);
+        var html = document.ToHtml();
+
+        document.Language.ShouldBe("hi");
+        document.Title.ShouldBe("डिस्चार्ज सारांश NH-000123");
+        document.Footer.ShouldBe("Asha Rao · UHID NH-000123 · डिस्चार्ज सारांश · छुट्टी 25 Sep 2026");
+        html.ShouldContain("<html lang=\"hi\">");
+        html.ShouldContain("<h2 class=\"summary-title\">डिस्चार्ज सारांश</h2>");
+        html.ShouldContain("<div class=\"small\">हस्ताक्षरित 25 Sep 2026, 1:30 pm</div>");
+        html.ShouldContain("<div class=\"label\">रोगी</div><div>Asha Rao</div>");
+        html.ShouldContain("<div class=\"label\">भर्ती / छुट्टी</div><div>20 Sep 2026 → 25 Sep 2026</div>");
+        html.ShouldContain("<h3>निदान</h3><div class=\"pre\">Acute subendocardial myocardial infarction<br>Type 2 diabetes mellitus<br>ICD-10: I21.4, E11.9</div>");
+        html.ShouldContain("<h3>छुट्टी पर दी गई दवाएँ</h3><div class=\"pre\">Aspirin 75 mg once a day</div>");
+        html.ShouldContain("<h3>दोबारा दिखाना (फ़ॉलो-अप)</h3><div>03 Oct 2026 को दोबारा दिखाएँ। Cardiology OPD with reports</div>");
+        html.ShouldContain("आपात स्थिति में अस्पताल के आपातकालीन विभाग (कैज़ुअल्टी) में आएँ या अस्पताल को फ़ोन करें।");
+        html.ShouldContain("@font-face { font-family: \"HC360 Devanagari\"");
+        html.ShouldNotContain("Presenting complaints");
     }
 
     private static DischargeSummaryPrint Print(DischargeSummaryStatus status = DischargeSummaryStatus.Signed) => new(

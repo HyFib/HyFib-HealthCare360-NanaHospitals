@@ -44,6 +44,29 @@ describe('session', () => {
     expect(headers.get('X-HC360-Idle')).toBe('270');
   });
 
+  it('asks for and checks a portal sign-in code in the language given, and names none when none is given', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () =>
+        refreshAnswer({ challengeId: 'c1', expiresAt: null, maskedPhone: '******3210' } as AuthResult),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await auth.requestOtp('+919876543210', 'hi');
+    await auth.verifyOtp('c1', '123456', 'hi');
+    await auth.requestOtp('+919876543210');
+
+    const sent = fetchMock.mock.calls.map(([url, init]) => [
+      url,
+      new Headers((init as RequestInit).headers).get('X-HC360-Language'),
+    ]);
+    expect(sent).toEqual([
+      ['/api/v1/auth/otp/request', 'hi'],
+      ['/api/v1/auth/otp/verify', 'hi'],
+      ['/api/v1/auth/otp/request', null],
+    ]);
+  });
+
   it('locks the screen when the server says the session is locked, and keeps the screens behind it', async () => {
     vi.stubGlobal(
       'fetch',

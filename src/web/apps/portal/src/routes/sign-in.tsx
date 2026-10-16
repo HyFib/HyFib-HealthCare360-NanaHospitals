@@ -26,7 +26,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { PortalUnavailable } from '@/components/FeatureOff';
 import { TextLink } from '@/components/links';
 import { formatCountdown } from '@/i18n/format';
-import { useT } from '@/i18n';
+import { useLanguage, useT } from '@/i18n';
 import { describeError, errorCode, fieldError } from '@/lib/errors';
 import { usePortalFeatures } from '@/lib/features';
 import { useFeatureRefusals } from '@/lib/featureSwitches';
@@ -196,6 +196,7 @@ interface Challenge {
 function SignInPage() {
   const styles = useStyles();
   const t = useT();
+  const { language } = useLanguage();
   const { redirect: target, ended } = Route.useSearch();
   const hospital = useHospitalName();
   const queryClient = useQueryClient();
@@ -230,7 +231,7 @@ function SignInPage() {
     setError(null);
     setNotice(null);
     try {
-      const result = await auth.requestOtp(toE164(digits));
+      const result = await auth.requestOtp(toE164(digits), language);
       const receivedAt = Date.now();
       const count = sent + 1;
       setSent(count);
@@ -280,7 +281,7 @@ function SignInPage() {
     setError(null);
     setNotice(null);
     try {
-      await auth.verifyOtp(challenge.id, value);
+      await auth.verifyOtp(challenge.id, value, language);
       // A new person may be signing in on this tab: nothing cached from an earlier session may be shown.
       queryClient.removeQueries({ queryKey: ['portal'] });
       let profiles: { id: string }[] = [];

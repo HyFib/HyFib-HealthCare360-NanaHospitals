@@ -19,7 +19,8 @@ const useStyles = makeStyles({
  * The actions for a document the patient can keep.
  *
  * With `pdf` (the API path of the server's PDF of this document): "Download PDF", the hospital's official copy (the
- * English document it prints and sends), and "Print", the page's own copy in the patient's language.
+ * document it prints and sends, with its labels in the language chosen in the portal, which the API client sends),
+ * and "Print", the page's own copy in the patient's language.
  *
  * Without it (documents the server does not make, such as the privacy summary): "Print or save as PDF" and
  * "Download a copy", an HTML file of the page's copy.

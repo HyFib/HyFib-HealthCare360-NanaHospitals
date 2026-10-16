@@ -1,4 +1,12 @@
-import { ApiError, CORRELATION_HEADER, featureOf, isFeatureDisabled, isSessionLocked, toApiError } from './errors';
+import {
+  ApiError,
+  CORRELATION_HEADER,
+  featureOf,
+  isFeatureDisabled,
+  isSessionLocked,
+  LANGUAGE_HEADER,
+  toApiError,
+} from './errors';
 
 export type ClientType = 'web' | 'desktop' | 'portal';
 
@@ -32,6 +40,12 @@ export interface ApiClientConfig {
    * server locks a session left unused even when the app did not. The request still fails.
    */
   onSessionLocked?: () => void;
+  /**
+   * The language the user chose in the app (for example `hi`), sent as `X-HC360-Language` on every request: the server
+   * writes its messages and documents for patients in it, ahead of the preference on the patient's record. Leave it
+   * out (the staff app) to send none.
+   */
+  getLanguage?: () => string | undefined;
 }
 
 /** A downloaded file, the name the server gave it (Content-Disposition) and the response headers (notices). */
@@ -78,6 +92,10 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       const headers = new Headers(options.headers);
       headers.set('Accept', 'application/json');
       headers.set('X-HC360-Client', config.clientType);
+      const language = config.getLanguage?.();
+      if (language) {
+        headers.set(LANGUAGE_HEADER, language);
+      }
       if (!headers.has(CORRELATION_HEADER)) {
         headers.set(CORRELATION_HEADER, correlationId);
       }

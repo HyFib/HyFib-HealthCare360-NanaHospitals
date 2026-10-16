@@ -4,6 +4,7 @@ import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useLanguageStore } from './i18n';
 import { useFeatureRefusals } from './lib/featureSwitches';
 import { createPortalRouter } from './router';
 
@@ -30,7 +31,7 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-const requests: { method: string; url: string }[] = [];
+const requests: { method: string; url: string; language: string | null }[] = [];
 
 /** Set by a test to make the anonymous privacy contact endpoint fail (it is rate-limited in production). */
 let privacyContactFails = false;
@@ -41,13 +42,23 @@ let switches = { patientPortal: true, telehealth: true };
 /** Set by a test: the portal was turned off after the page loaded, so sign-in is refused. */
 let signInRefused = false;
 
+/** Set by a test: a sign-in code is sent, so the page asks for it. */
+let codeSent = false;
+
 /** The first page of a run also loads its lazily split route code. */
 const SLOW = { timeout: 8000 };
 
 const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-  requests.push({ method, url });
+  requests.push({ method, url, language: new Headers(init?.headers).get('X-HC360-Language') });
+  if (url.includes('/api/v1/auth/otp/request') && codeSent) {
+    return json({
+      challengeId: 'challenge-1',
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      maskedPhone: '******3210',
+    });
+  }
   if (url.includes('/api/v1/auth/otp/request') && signInRefused) {
     return new Response(
       JSON.stringify({
@@ -122,6 +133,7 @@ beforeEach(() => {
   privacyContactFails = false;
   switches = { patientPortal: true, telehealth: true };
   signInRefused = false;
+  codeSent = false;
   useFeatureRefusals.getState().clear();
   vi.stubGlobal('fetch', fakeServer);
 });
@@ -129,6 +141,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   sessionStorage.clear();
+  useLanguageStore.getState().setLanguage('en');
 });
 
 function openAt(path: string) {
@@ -144,6 +157,25 @@ function openAt(path: string) {
   );
   return history;
 }
+
+describe('sign-in', () => {
+  it("asks for the code and checks it in the language the patient reads, so the server's refusals come in it", async () => {
+    codeSent = true;
+    useLanguageStore.getState().setLanguage('hi');
+    openAt('/portal/sign-in');
+
+    await userEvent.type(await screen.findByRole('textbox', { name: /मोबाइल नंबर/ }, SLOW), '9876543210');
+    await userEvent.click(screen.getByRole('button', { name: 'कोड भेजें' }));
+    await userEvent.type(await screen.findByRole('textbox', { name: /6 अंकों का कोड/ }, SLOW), '123456');
+
+    await waitFor(() => expect(requests.some((request) => request.url.includes('/otp/verify'))).toBe(true));
+    const otp = requests.filter((request) => request.url.includes('/api/v1/auth/otp/'));
+    expect(otp.map((request) => [request.url.split('/api/v1/auth/')[1], request.language])).toEqual([
+      ['otp/request', 'hi'],
+      ['otp/verify', 'hi'],
+    ]);
+  });
+});
 
 describe('links the hospital sends', () => {
   it('opens a personal feedback link without sign-in and takes the token out of the address bar', async () => {

@@ -22,6 +22,24 @@ describe('api client', () => {
     );
   });
 
+  it('sends the language chosen in the app, and no language when it has none', async () => {
+    const languages: (string | null)[] = [];
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      languages.push(new Headers(init.headers).get('X-HC360-Language'));
+      return jsonResponse(200, {});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    let language: string | undefined = 'hi';
+
+    const client = createApiClient({ ...baseConfig, clientType: 'portal', getLanguage: () => language });
+    await client.get('/api/v1/portal/bills');
+    language = undefined;
+    await client.get('/api/v1/portal/bills');
+    await createApiClient(baseConfig).get('/api/v1/patients');
+
+    expect(languages).toEqual(['hi', null, null]);
+  });
+
   it('retries a POST after a network failure with the same idempotency key', async () => {
     const keys: string[] = [];
     const fetchMock = vi

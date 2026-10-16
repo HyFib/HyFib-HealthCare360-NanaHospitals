@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Localization;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Portal;
 
@@ -113,10 +114,11 @@ internal static class PortalReportEndpoints
 
     /// <summary>The released report as a PDF: the same document the hospital prints and sends.</summary>
     private static async Task<IResult> LabPdf(
-        Guid id, LabReportBuilder builder, ReportDocumentFrame frame, IPdfRenderer renderer, PortalPatientScope scope, IAuditLogger audit, CancellationToken ct)
+        Guid id, LabReportBuilder builder, ReportDocumentFrame frame, IPdfRenderer renderer, PortalPatientScope scope, IAuditLogger audit, HttpContext http,
+        CancellationToken ct)
     {
         var (view, problem) = await OpenLabAsync(id, n => $"Downloaded lab report {n} as a PDF (patient portal)", builder, scope, audit, ct);
-        return problem ?? await (await LabReportDocument.BuildAsync(view!, releasedOnly: true, frame, ct)).ToPdfAsync(renderer, ct);
+        return problem ?? await (await LabReportDocument.BuildAsync(view!, releasedOnly: true, frame, DocumentText.For(http.PatientLanguage()), ct)).ToPdfAsync(renderer, ct);
     }
 
     private static async Task<(LabReportView? View, IResult? Problem)> OpenLabAsync(
@@ -148,10 +150,10 @@ internal static class PortalReportEndpoints
     /// <summary>The released report as a PDF: the same document the hospital prints and sends.</summary>
     private static async Task<IResult> RadiologyPdf(
         Guid id, RadiologyReportService reports, ReportDocumentFrame frame, IPdfRenderer renderer, PortalPatientScope scope, IAuditLogger audit,
-        CancellationToken ct)
+        HttpContext http, CancellationToken ct)
     {
         var (view, problem) = await OpenRadiologyAsync(id, n => $"Downloaded radiology report {n} as a PDF (patient portal)", reports, scope, audit, ct);
-        return problem ?? await (await RadiologyReportDocument.BuildAsync(view!, frame, ct)).ToPdfAsync(renderer, ct);
+        return problem ?? await (await RadiologyReportDocument.BuildAsync(view!, frame, DocumentText.For(http.PatientLanguage()), ct)).ToPdfAsync(renderer, ct);
     }
 
     private static async Task<(RadiologyReportView? View, IResult? Problem)> OpenRadiologyAsync(
@@ -183,10 +185,10 @@ internal static class PortalReportEndpoints
     /// <summary>The released report as a PDF: the same document the hospital prints and sends.</summary>
     private static async Task<IResult> CardiologyPdf(
         Guid id, CardiologyService cardiology, ReportDocumentFrame frame, IPdfRenderer renderer, PortalPatientScope scope, IAuditLogger audit,
-        CancellationToken ct)
+        HttpContext http, CancellationToken ct)
     {
         var (view, problem) = await OpenCardiologyAsync(id, n => $"Downloaded cardiology report {n} as a PDF (patient portal)", cardiology, scope, audit, ct);
-        return problem ?? await (await CardiologyReportDocument.BuildAsync(view!, frame, ct)).ToPdfAsync(renderer, ct);
+        return problem ?? await (await CardiologyReportDocument.BuildAsync(view!, frame, DocumentText.For(http.PatientLanguage()), ct)).ToPdfAsync(renderer, ct);
     }
 
     private static async Task<(CardiologyReportView? View, IResult? Problem)> OpenCardiologyAsync(

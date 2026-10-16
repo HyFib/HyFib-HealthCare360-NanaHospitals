@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Localization;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Portal;
 
@@ -75,7 +76,7 @@ internal static class PortalBillEndpoints
 
     /// <summary>The bill as a PDF: the same A4 document the counter prints, for the bills the patient can see above.</summary>
     private static async Task<IResult> Pdf(
-        Guid id, PortalPatientScope scope, HospitalDbContext db, DocumentAssets assets, IPdfRenderer renderer, IAuditLogger audit, TimeProvider time,
+        Guid id, PortalPatientScope scope, HospitalDbContext db, DocumentAssets assets, IPdfRenderer renderer, IAuditLogger audit, TimeProvider time, HttpContext http,
         CancellationToken ct)
     {
         var bill = await FindVisibleAsync(db, scope, id, ct);
@@ -91,7 +92,7 @@ internal static class PortalBillEndpoints
         }
 
         await audit.PatientRecordAccessedAsync(detail.PatientId, $"Downloaded bill {detail.BillNumber} as a PDF (patient portal)", ct);
-        return await (await BillDocument.BuildAsync(detail, assets, ct)).ToPdfAsync(renderer, ct);
+        return await (await BillDocument.BuildAsync(detail, assets, DocumentText.For(http.PatientLanguage()), ct)).ToPdfAsync(renderer, ct);
     }
 
     /// <summary>Creates a hosted-checkout order for the bill's balance.</summary>
