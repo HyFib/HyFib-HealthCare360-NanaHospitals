@@ -28,8 +28,13 @@ public sealed class AppointmentPaymentService(
 
     public bool IsAvailable => Gateway is not null;
 
-    /// <summary>Creates a gateway order for the fee, or switches the booking to pay-at-hospital. The caller saves.</summary>
-    public async Task<PaymentCheckout?> StartCheckoutAsync(Appointment appointment, CancellationToken ct)
+    /// <summary>
+    /// Creates a gateway order for the fee, or switches the booking to pay-at-hospital. With <paramref name="hosted"/> it
+    /// creates a payment link instead, for when the portal cannot open the gateway's checkout (its script is blocked):
+    /// the patient pays on the gateway's own page and the portal confirms it with <see cref="VerifyWithGatewayAsync"/>.
+    /// The caller saves; before replacing an order the appointment already has, call <see cref="SettleOutstandingOrderAsync"/>.
+    /// </summary>
+    public async Task<PaymentCheckout?> StartCheckoutAsync(Appointment appointment, bool hosted, CancellationToken ct)
     {
         if (Gateway is null || appointment.FeeAmount <= 0 || !appointment.IsOpen)
         {
@@ -44,7 +49,7 @@ public sealed class AppointmentPaymentService(
 
         try
         {
-            var order = await Gateway.CreateOrderAsync(
+            var request =
                 new CreatePaymentOrder(
                     appointment.FeeAmount,
                     Currency,
@@ -53,9 +58,10 @@ public sealed class AppointmentPaymentService(
                     patient?.FullName,
                     patient?.Phone,
                     patient?.Email,
-                    new Dictionary<string, string> { ["appointmentId"] = appointment.Id.ToString(), ["module"] = "scheduling" }),
-                appointment.FacilityId,
-                ct);
+                    new Dictionary<string, string> { ["appointmentId"] = appointment.Id.ToString(), ["module"] = "scheduling" });
+            var order = hosted
+                ? await Gateway.CreatePaymentLinkAsync(request, appointment.FacilityId, ct)
+                : await Gateway.CreateOrderAsync(request, appointment.FacilityId, ct);
 
             var attached = appointment.AttachPaymentOrder(order.Provider, order.OrderId);
             if (attached.IsFailure)
@@ -72,6 +78,40 @@ public sealed class AppointmentPaymentService(
             appointment.ChoosePayAtHospital();
             return null;
         }
+    }
+
+    /// <summary>
+    /// What became of the order the appointment already has, asked before a new one replaces it: an appointment keeps one
+    /// order, so a replaced order that was paid after all would be found by neither the webhook nor the re-check, and the
+    /// patient could pay twice. A captured order is recorded (the caller saves); one still being paid, or a gateway that
+    /// cannot say, stops a new order. An order that was never paid may be replaced.
+    /// </summary>
+    public async Task<Result> SettleOutstandingOrderAsync(Appointment appointment, CancellationToken ct)
+    {
+        if (Gateway is null || appointment.GatewayOrderId is not { } orderId || appointment.PaymentStatus == AppointmentPaymentStatus.PaidOnline)
+        {
+            return Result.Success();
+        }
+
+        PaymentStatusResult status;
+        try
+        {
+            status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not read the status of gateway order {OrderId} before replacing it for appointment {AppointmentId}", orderId, appointment.Id);
+            return Error.Rule("payment.gateway_unavailable", "The payment gateway could not be reached. Try again shortly.");
+        }
+
+        return status switch
+        {
+            { Status: GatewayPaymentStatus.Captured, PaymentId: { } paymentId } =>
+                appointment.MarkPaidOnline(orderId, paymentId, status.AmountPaid ?? appointment.FeeAmount, PaidAt(status, time.GetUtcNow())),
+            { Status: GatewayPaymentStatus.Captured or GatewayPaymentStatus.Pending } =>
+                Error.Rule("payment.in_progress", "A payment for this appointment is still being processed. Check its status again in a few minutes."),
+            _ => Result.Success(),
+        };
     }
 
     /// <summary>

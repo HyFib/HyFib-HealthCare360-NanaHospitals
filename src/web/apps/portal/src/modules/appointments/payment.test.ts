@@ -63,6 +63,18 @@ describe('paying for an appointment on the gateway’s hosted page (SRS PP-03)',
     expect(hasPendingAppointmentPayment('appt-1')).toBe(true);
   });
 
+  it('keeps it to check again while the gateway cannot be reached, so Pay is not offered a second time', async () => {
+    await payAppointment('appt-1', hostedOrder, context);
+    vi.mocked(appointmentApi.verifyPayment).mockRejectedValue(
+      new ApiError({ status: 422, title: 'Unreachable', code: 'payment.gateway_unavailable' }),
+    );
+    expect(await confirmReturnedPayment('appt-1')).toEqual({ status: 'pending' });
+
+    vi.mocked(appointmentApi.verifyPayment).mockRejectedValue(new ApiError({ status: 0, title: 'Offline' }));
+    expect(await confirmReturnedPayment('appt-1')).toEqual({ status: 'pending' });
+    expect(hasPendingAppointmentPayment('appt-1')).toBe(true);
+  });
+
   it('forgets it and reports the server’s answer when the check fails otherwise', async () => {
     await payAppointment('appt-1', hostedOrder, context);
     const refusal = new ApiError({ status: 422, title: 'Unavailable', code: 'payment.unavailable' });
@@ -70,5 +82,59 @@ describe('paying for an appointment on the gateway’s hosted page (SRS PP-03)',
 
     expect(await confirmReturnedPayment('appt-1')).toEqual({ status: 'error', error: refusal });
     expect(hasPendingAppointmentPayment('appt-1')).toBe(false);
+  });
+});
+
+describe('starting an appointment payment', () => {
+  const assign = vi.fn();
+
+  beforeEach(() => {
+    vi.mocked(appointmentApi.startPayment).mockReset();
+    vi.stubGlobal('location', { ...window.location, assign });
+    assign.mockReset();
+  });
+
+  afterEach(() => {
+    clearPendingPayment();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('counts it as paid when the order it already had was paid after all', async () => {
+    vi.mocked(appointmentApi.startPayment).mockRejectedValue(
+      new ApiError({ status: 409, title: 'Paid', code: 'appointment.already_paid' }),
+    );
+
+    expect(await payAppointment('appt-1', null, context)).toEqual({ status: 'paid' });
+  });
+
+  it('opens a hosted payment page when the gateway’s checkout cannot load here', async () => {
+    // The checkout script is refused (a blocked domain or a strict network) as soon as it is added.
+    const append = document.head.appendChild.bind(document.head);
+    vi.spyOn(document.head, 'appendChild').mockImplementation(<T extends Node>(node: T): T => {
+      append(node);
+      if (node instanceof HTMLScriptElement) {
+        node.onerror?.(new Event('error'));
+      }
+      return node;
+    });
+    vi.mocked(appointmentApi.startPayment).mockResolvedValue({
+      ...hostedOrder,
+      provider: 'razorpay',
+      orderId: 'plink_1',
+    });
+    const order: PaymentCheckout = {
+      ...hostedOrder,
+      provider: 'razorpay',
+      checkoutKey: 'rzp_live_x',
+      paymentLinkUrl: null,
+    };
+
+    const result = await payAppointment('appt-1', order, context);
+
+    expect(appointmentApi.startPayment).toHaveBeenCalledWith('appt-1', { hosted: true });
+    expect(result).toEqual({ status: 'redirected' });
+    expect(assign).toHaveBeenCalledWith('https://pay.example.com/l/abc');
+    expect(hasPendingAppointmentPayment('appt-1')).toBe(true);
   });
 });

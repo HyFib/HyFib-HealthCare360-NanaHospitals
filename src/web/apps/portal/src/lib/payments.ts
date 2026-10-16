@@ -30,6 +30,11 @@ export interface CheckoutContext {
   language: Language;
   /** Remembered in this tab so the page can confirm the payment when the patient comes back from a hosted page. */
   pending?: PendingPayment;
+  /**
+   * Asks the server for a hosted payment page when the gateway's checkout cannot open here (its script is blocked by the
+   * network or the browser) and the order came without one. Null when none could be made.
+   */
+  hostedLink?: () => Promise<string | null>;
 }
 
 export type PendingPayment =
@@ -121,9 +126,11 @@ export async function runCheckout(checkout: PaymentCheckout, context: CheckoutCo
     try {
       Razorpay = await loadRazorpay();
     } catch {
-      return isUsablePaymentLink(checkout.paymentLinkUrl)
-        ? openHostedPage(checkout.paymentLinkUrl, context)
-        : { kind: 'unavailable' };
+      if (isUsablePaymentLink(checkout.paymentLinkUrl)) {
+        return openHostedPage(checkout.paymentLinkUrl, context);
+      }
+      const link = context.hostedLink ? await context.hostedLink() : null;
+      return isUsablePaymentLink(link) ? openHostedPage(link, context) : { kind: 'unavailable' };
     }
     return new Promise<CheckoutOutcome>((resolve) => {
       let failedOnce = false;
@@ -197,6 +204,18 @@ export function peekPendingPayment(billId: string): Extract<PendingPayment, { ki
   return value?.kind === 'bill' && value.billId === billId && typeof value.orderRowId === 'string'
     ? { kind: 'bill', billId, orderRowId: value.orderRowId }
     : null;
+}
+
+/** The payment this tab sent the patient to a hosted page for, whatever it pays (read only). */
+export function peekAnyPendingPayment(): PendingPayment | null {
+  const value = readPendingPayment();
+  if (value?.kind === 'bill' && typeof value.billId === 'string' && typeof value.orderRowId === 'string') {
+    return { kind: 'bill', billId: value.billId, orderRowId: value.orderRowId };
+  }
+  if (value?.kind === 'appointment' && typeof value.appointmentId === 'string') {
+    return { kind: 'appointment', appointmentId: value.appointmentId };
+  }
+  return null;
 }
 
 /** Whether this tab sent the patient to a hosted page to pay for `appointmentId` (read only). */

@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as OpenRouteImport } from './routes/_open'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthHomeRouteImport } from './routes/_auth/home'
+import { Route as OpenPaymentReturnRouteImport } from './routes/_open/payment-return'
 import { Route as OpenPrivacyRouteImport } from './routes/_open/privacy'
 import { Route as FeedbackTokenRouteImport } from './routes/feedback/$token'
 import { Route as TelehealthSessionIdRouteImport } from './routes/telehealth/$sessionId'
@@ -71,6 +72,11 @@ const AuthHomeRoute = AuthHomeRouteImport.update({
   id: '/home',
   path: '/home',
   getParentRoute: () => AuthRoute,
+} as any)
+const OpenPaymentReturnRoute = OpenPaymentReturnRouteImport.update({
+  id: '/payment-return',
+  path: '/payment-return',
+  getParentRoute: () => OpenRoute,
 } as any)
 const OpenPrivacyRoute = OpenPrivacyRouteImport.update({
   id: '/privacy',
@@ -254,6 +260,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/home': typeof AuthHomeRoute
+  '/payment-return': typeof OpenPaymentReturnRoute
   '/privacy': typeof OpenPrivacyRoute
   '/feedback/$token': typeof FeedbackTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
@@ -293,6 +300,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/home': typeof AuthHomeRoute
+  '/payment-return': typeof OpenPaymentReturnRoute
   '/privacy': typeof OpenPrivacyRoute
   '/feedback/$token': typeof FeedbackTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
@@ -335,6 +343,7 @@ export interface FileRoutesById {
   '/_open': typeof OpenRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/_auth/home': typeof AuthHomeRoute
+  '/_open/payment-return': typeof OpenPaymentReturnRoute
   '/_open/privacy': typeof OpenPrivacyRoute
   '/feedback/$token': typeof FeedbackTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
@@ -376,6 +385,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/home'
+    | '/payment-return'
     | '/privacy'
     | '/feedback/$token'
     | '/telehealth/$sessionId'
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/home'
+    | '/payment-return'
     | '/privacy'
     | '/feedback/$token'
     | '/telehealth/$sessionId'
@@ -456,6 +467,7 @@ export interface FileRouteTypes {
     | '/_open'
     | '/sign-in'
     | '/_auth/home'
+    | '/_open/payment-return'
     | '/_open/privacy'
     | '/feedback/$token'
     | '/telehealth/$sessionId'
@@ -539,6 +551,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/home'
       preLoaderRoute: typeof AuthHomeRouteImport
       parentRoute: typeof AuthRoute
+    }
+    '/_open/payment-return': {
+      id: '/_open/payment-return'
+      path: '/payment-return'
+      fullPath: '/payment-return'
+      preLoaderRoute: typeof OpenPaymentReturnRouteImport
+      parentRoute: typeof OpenRoute
     }
     '/_open/privacy': {
       id: '/_open/privacy'
@@ -842,6 +861,7 @@ const AuthRouteChildren: AuthRouteChildren = {
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
 interface OpenRouteChildren {
+  OpenPaymentReturnRoute: typeof OpenPaymentReturnRoute
   OpenPrivacyRoute: typeof OpenPrivacyRoute
   OpenDoctorsDoctorIdRoute: typeof OpenDoctorsDoctorIdRoute
   OpenDoctorsIndexRoute: typeof OpenDoctorsIndexRoute
@@ -850,6 +870,7 @@ interface OpenRouteChildren {
 }
 
 const OpenRouteChildren: OpenRouteChildren = {
+  OpenPaymentReturnRoute: OpenPaymentReturnRoute,
   OpenPrivacyRoute: OpenPrivacyRoute,
   OpenDoctorsDoctorIdRoute: OpenDoctorsDoctorIdRoute,
   OpenDoctorsIndexRoute: OpenDoctorsIndexRoute,

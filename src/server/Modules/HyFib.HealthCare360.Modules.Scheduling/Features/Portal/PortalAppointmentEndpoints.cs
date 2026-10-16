@@ -117,7 +117,7 @@ internal static class PortalAppointmentEndpoints
         string? message = null;
         if (request.PayOnline)
         {
-            checkout = await payments.StartCheckoutAsync(appointment, ct);
+            checkout = await payments.StartCheckoutAsync(appointment, hosted: false, ct);
             if (checkout is null)
             {
                 message = "Online payment is not available right now. Your appointment is booked; please pay at the hospital.";
@@ -190,10 +190,14 @@ internal static class PortalAppointmentEndpoints
     }
 
     /// <summary>Creates (or re-creates) a gateway order for an unpaid booking.</summary>
+    /// <param name="hosted">A payment link (the gateway's own page) instead of a checkout order, when the portal cannot
+    /// open the gateway's checkout.</param>
     private static async Task<IResult> StartPayment(
         Guid id,
+        bool? hosted,
         PortalPatientScope patients,
         AppointmentPaymentService payments,
+        AppointmentBookingService booking,
         HospitalDbContext db,
         CancellationToken ct)
     {
@@ -213,7 +217,22 @@ internal static class PortalAppointmentEndpoints
             return Error.Rule("appointment.not_open", "Only upcoming appointments can be paid online.").ToProblem();
         }
 
-        var checkout = await payments.StartCheckoutAsync(appointment, ct);
+        // The order the appointment already has may have been paid after all (on another tab, or a hosted page whose
+        // patient never came back): it is recorded rather than replaced, so nobody pays twice.
+        var settled = await payments.SettleOutstandingOrderAsync(appointment, ct);
+        if (appointment.PaymentStatus == AppointmentPaymentStatus.PaidOnline)
+        {
+            await db.SaveChangesAsync(ct);
+            await booking.PublishAsync(appointment, ct);
+            return Error.Conflict("appointment.already_paid", "This appointment is already paid.").ToProblem();
+        }
+
+        if (settled.IsFailure)
+        {
+            return settled.Error!.ToProblem();
+        }
+
+        var checkout = await payments.StartCheckoutAsync(appointment, hosted ?? false, ct);
         await db.SaveChangesAsync(ct);
         return checkout is null
             ? Error.Rule("payment.unavailable", "Online payment is not available right now. Please pay at the hospital.").ToProblem()

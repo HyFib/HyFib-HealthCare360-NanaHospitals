@@ -168,14 +168,23 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 
   After any of these, `POST …/payments/{orderRowId}/verify` asks the server to confirm with the gateway server to
   server. The check is safe to repeat ("Check payment status"). The portal never handles card numbers or UPI PINs.
-* **Appointments.** Paying online uses `…/payment`, then opens the gateway the same three ways as a bill:
+* **Appointments.** Paying online uses `…/payment`, then:
   * **Razorpay:** Checkout, then `…/payment/confirm` with Razorpay's order id, payment id and signature.
-  * **Hosted payment link:** the page opens the link and remembers the appointment in this tab. Back on the
-    appointment's page, `…/payment/verify` confirms it with the gateway, server to server. While the gateway has not
-    reported it yet, the page says so and offers "Check payment status"; the Pay button stays hidden meanwhile.
+  * **Gateway's own page, when Checkout cannot load here** (its script is blocked by the network or the browser):
+    the page asks for `…/payment?hosted=true`, a payment link, opens it and remembers the appointment in this tab.
+    The gateway sends the patient back to `/portal/payment-return`, which opens the appointment, and its page confirms
+    the payment with `…/payment/verify`, server to server. Until the outcome is known (not reported yet, gateway
+    unreachable, or offline) the page says so and offers "Check payment status", and Pay stays hidden.
   * **Training gateway (simulator):** confirmed with `…/payment/verify`.
 
-  A payment problem never loses the booked slot.
+  Before the server replaces an appointment's order with a new one, it asks the gateway what became of the old one:
+  a payment taken after all is recorded (the portal is told "already paid"), and while one is still being processed,
+  or the gateway cannot say, no new order is made. An appointment keeps one order, so a replaced order that was paid
+  would otherwise be found by neither the webhook nor the re-check. A payment problem never loses the booked slot.
+* **Return page.** `/portal/payment-return` is where the gateway sends patients back from its own page: set
+  `integrations.payment.paymentLinkCallbackUrl` to `https://<portal address>/portal/payment-return`. It opens the
+  bill or appointment this tab was paying for; anyone else (for example a patient who paid a link the hospital sent
+  by SMS) is thanked, as the gateway's webhook records their payment anyway.
 * **When the page is closed after paying.** The patient is still credited. The gateway's webhook, or the server's
   re-check every few minutes, records the bill's receipt or confirms the booking and receipts its advance; the bill
   or appointment shows it the next time the patient looks. Receipts are dated when the gateway took the money, not

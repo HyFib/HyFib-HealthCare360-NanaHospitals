@@ -29,13 +29,27 @@ export async function payAppointment(
     try {
       order = await appointmentApi.startPayment(appointmentId);
     } catch (error) {
-      return isApiError(error) && error.status === 422
+      // The order it already had was paid after all (another tab, or a hosted page the patient never came back from).
+      if (isApiError(error) && error.code === 'appointment.already_paid') {
+        return { status: 'paid' };
+      }
+      return isApiError(error) && error.status === 422 && error.code === 'payment.unavailable'
         ? { status: 'not-paid', messageKey: 'payment.unavailable' }
         : { status: 'error', error };
     }
   }
 
-  const outcome = await runCheckout(order, { ...context, pending: { kind: 'appointment', appointmentId } });
+  const outcome = await runCheckout(order, {
+    ...context,
+    pending: { kind: 'appointment', appointmentId },
+    hostedLink: async () => {
+      try {
+        return (await appointmentApi.startPayment(appointmentId, { hosted: true })).paymentLinkUrl;
+      } catch {
+        return null;
+      }
+    },
+  });
   switch (outcome.kind) {
     case 'completed':
       try {
@@ -73,10 +87,14 @@ export type ReturnedPaymentResult =
   | { status: 'pending' }
   | { status: 'error'; error: unknown };
 
+/** Answers that do not settle whether the patient paid: the check is simply asked again later. */
+const UNSETTLED = new Set(['payment.not_captured', 'payment.in_progress', 'payment.gateway_unavailable']);
+
 /**
  * Confirms a payment made on the gateway's hosted page, by the server's own check with the gateway. Safe to repeat.
- * The remembered payment is forgotten once the outcome is known; while the gateway has not reported it yet, it is kept
- * so the patient can check again ("Check payment status"), and the gateway's webhook may mark it paid meanwhile.
+ * The remembered payment is forgotten only once the outcome is known. While it is not (the gateway has not reported the
+ * payment, could not be reached, or the network failed), it is kept so the patient can check again ("Check payment
+ * status") instead of being offered Pay a second time; the gateway's webhook may mark it paid meanwhile.
  */
 export async function confirmReturnedPayment(appointmentId: string): Promise<ReturnedPaymentResult> {
   try {
@@ -84,7 +102,9 @@ export async function confirmReturnedPayment(appointmentId: string): Promise<Ret
     clearPendingPayment();
     return { status: 'paid' };
   } catch (error) {
-    if (isApiError(error) && error.code === 'payment.not_captured') {
+    const unsettled =
+      !isApiError(error) || error.status === 0 || error.status >= 500 || UNSETTLED.has(error.code ?? '');
+    if (unsettled) {
       return { status: 'pending' };
     }
     clearPendingPayment();

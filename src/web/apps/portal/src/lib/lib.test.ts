@@ -21,6 +21,7 @@ import {
   isTrainingGateway,
   isUsablePaymentLink,
   hasPendingAppointmentPayment,
+  peekAnyPendingPayment,
   peekPendingPayment,
   rememberPendingPayment,
 } from './payments';
@@ -236,6 +237,14 @@ describe('payments', () => {
     expect(peekPendingPayment('appt-1')).toBeNull();
     clearPendingPayment();
     expect(hasPendingAppointmentPayment('appt-1')).toBe(false);
+  });
+
+  it('tells the return page what this tab was paying for', () => {
+    expect(peekAnyPendingPayment()).toBeNull();
+    rememberPendingPayment({ kind: 'appointment', appointmentId: 'appt-1' });
+    expect(peekAnyPendingPayment()).toEqual({ kind: 'appointment', appointmentId: 'appt-1' });
+    rememberPendingPayment({ kind: 'bill', billId: 'bill-1', orderRowId: 'order-1' });
+    expect(peekAnyPendingPayment()).toEqual({ kind: 'bill', billId: 'bill-1', orderRowId: 'order-1' });
   });
 
   it('does not take a bill payment for an appointment one', () => {
