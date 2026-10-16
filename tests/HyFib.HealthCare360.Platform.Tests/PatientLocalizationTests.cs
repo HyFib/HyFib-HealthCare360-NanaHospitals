@@ -177,6 +177,16 @@ public sealed class PatientLocalizationTests
     }
 
     [Fact]
+    public async Task A_refused_proof_of_work_reaches_a_hindi_reader_in_hindi()
+    {
+        var problem = await BodyOf(await ProblemAsync(new Error(AntiAutomationEndpoints.FailedCode, AntiAutomationEndpoints.FailedMessage, ErrorType.Forbidden), "hi"));
+
+        problem.GetProperty("title").GetString().ShouldBe("अनुमति नहीं है");
+        problem.GetProperty("detail").GetString().ShouldBe("हम आपका अनुरोध पूरा नहीं कर सके। कृपया फिर से कोशिश करें।");
+        problem.GetProperty("code").GetString().ShouldBe(AntiAutomationEndpoints.FailedCode);
+    }
+
+    [Fact]
     public async Task A_message_with_a_name_in_it_keeps_the_name()
     {
         var problem = await BodyOf(await ProblemAsync(

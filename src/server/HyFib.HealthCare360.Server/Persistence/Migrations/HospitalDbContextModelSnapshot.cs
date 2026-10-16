@@ -9173,6 +9173,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
 
+                    b.Property<DateTimeOffset?>("PatientNoticeHeldAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("patient_notice_held_at");
+
                     b.Property<DateTimeOffset?>("PatientNotifiedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("patient_notified_at");
@@ -9302,6 +9306,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("IsDeleted")
                         .HasDatabaseName("ix_prescriptions_is_deleted");
+
+                    b.HasIndex("PatientNoticeHeldAt")
+                        .HasDatabaseName("ix_prescriptions_patient_notice_held_at")
+                        .HasFilter("patient_notice_held_at IS NOT NULL");
 
                     b.HasIndex("PrescriptionNumber")
                         .IsUnique()

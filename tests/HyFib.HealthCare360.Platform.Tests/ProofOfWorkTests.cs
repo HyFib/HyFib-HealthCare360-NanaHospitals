@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.Platform.Security;
@@ -167,7 +168,7 @@ public sealed class ProofOfWorkTests
     [Fact]
     public void Every_three_failures_ask_for_two_more_bits_up_to_the_most()
     {
-        var suspicion = new AutomationSuspicion(_cache, _time);
+        var suspicion = new AutomationSuspicion(_cache, _time, _key);
 
         suspicion.RequiredBits(14, 18, "10.0.0.1", null).ShouldBe(14);
         RecordFailures(suspicion, 2, "10.0.0.1", null);
@@ -182,7 +183,7 @@ public sealed class ProofOfWorkTests
     [Fact]
     public void Failures_for_a_number_raise_the_work_for_it_from_any_address()
     {
-        var suspicion = new AutomationSuspicion(_cache, _time);
+        var suspicion = new AutomationSuspicion(_cache, _time, _key);
         RecordFailures(suspicion, 3, "10.0.0.1", "98765 43210");
 
         // The number is matched however it is written.
@@ -191,9 +192,27 @@ public sealed class ProofOfWorkTests
     }
 
     [Fact]
+    public void Numbers_are_kept_only_as_hashes_keyed_by_the_server()
+    {
+        var suspicion = new AutomationSuspicion(_cache, _time, _key);
+        var number = SharedKernel.Phone.Normalize("9876543210")!;
+        var plain = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(number)), 0, 16);
+
+        RecordFailures(suspicion, 1, "10.0.0.4", "98765 43210");
+
+        // India's mobile numbers are few enough to hash every one: a plain hash would give the number back.
+        var keys = _cache.Keys.OfType<string>().Where(k => k.StartsWith("pow:fail:subject:", StringComparison.Ordinal)).ToList();
+        keys.ShouldHaveSingleItem().ShouldBe("pow:fail:subject:" + suspicion.SubjectHash(number));
+        keys.ShouldAllBe(k => !k.Contains(plain) && !k.Contains("9876543210"));
+        suspicion.SubjectHash("+91 98765 43210").ShouldBe(suspicion.SubjectHash(number), "the number however it is written");
+        new AutomationSuspicion(_cache, _time, RandomNumberGenerator.GetBytes(32)).SubjectHash(number)
+            .ShouldNotBe(suspicion.SubjectHash(number), "another server's key, another hash");
+    }
+
+    [Fact]
     public void The_count_falls_back_only_after_a_quiet_quarter_of_an_hour()
     {
-        var suspicion = new AutomationSuspicion(_cache, _time);
+        var suspicion = new AutomationSuspicion(_cache, _time, _key);
         RecordFailures(suspicion, 2, "10.0.0.3", null);
         _time.Advance(TimeSpan.FromMinutes(10));
         RecordFailures(suspicion, 1, "10.0.0.3", null);
@@ -254,6 +273,37 @@ public sealed class ProofOfWorkTests
 
         challenge.Bits.ShouldBe(AntiAutomationSettings.Ceiling);
     }
+
+    [Fact]
+    public void The_most_work_ever_asked_is_done_on_a_slow_phone_within_the_challenges_life()
+    {
+        // WebCrypto SHA-256 in a worker on a mid-range phone: 20,000 to 50,000 a second (AntiAutomationSettings.DefaultBits).
+        const double SlowPhoneHashesPerSecond = 20_000;
+
+        // The tries a solution takes are geometric: one in twenty takes ln 20 (some three) times the average.
+        var unlucky = TimeSpan.FromSeconds(Math.Pow(2, AntiAutomationSettings.Ceiling) / SlowPhoneHashesPerSecond * Math.Log(20));
+
+        unlucky.ShouldBeLessThan(AntiAutomation.ChallengeLifetime);
+        AntiAutomationSettings.DefaultMaxBits.ShouldBeLessThanOrEqualTo(AntiAutomationSettings.Ceiling);
+    }
+
+    [Theory]
+    [InlineData(AntiAutomationSettings.MaxBits, "20", null)]
+    [InlineData(AntiAutomationSettings.MaxBits, "\"18\"", null)]
+    [InlineData(AntiAutomationSettings.MaxBits, "21", "Enter a whole number of bits from 0 to 20.")]
+    [InlineData(AntiAutomationSettings.MaxBits, "24", "Enter a whole number of bits from 0 to 20.")]
+    [InlineData(AntiAutomationSettings.Bits, "0", null)]
+    [InlineData(AntiAutomationSettings.Bits, "-1", "Enter a whole number of bits from 0 to 20.")]
+    [InlineData(AntiAutomationSettings.Bits, "14.5", "Enter a whole number of bits from 0 to 20.")]
+    [InlineData(AntiAutomationSettings.Bits, "\"lots\"", "Enter a whole number of bits from 0 to 20.")]
+    [InlineData(AntiAutomationSettings.Bits, "{\"bits\":14}", "Enter a whole number of bits from 0 to 20.")]
+    [InlineData(AntiAutomationSettings.Bits, "null", null)]
+    [InlineData(AntiAutomationSettings.Enabled, "false", null)]
+    [InlineData(AntiAutomationSettings.Enabled, "\"True\"", null)]
+    [InlineData(AntiAutomationSettings.Enabled, "\"yes\"", "Enter true or false.")]
+    [InlineData("ui.idleLockMinutes", "999", null)]
+    public void The_settings_are_checked_before_they_are_saved(string key, string json, string? problem) =>
+        AntiAutomationSettings.Problem(key, JsonNode.Parse(json)).ShouldBe(problem);
 
     [Fact]
     public async Task A_refusal_is_audited_once_per_address_and_reason_and_raises_the_work()
@@ -343,7 +393,7 @@ public sealed class ProofOfWorkTests
         settings.GetAsync<JsonElement?>(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(call => values.TryGetValue(call.Arg<string>(), out var value) ? JsonSerializer.SerializeToElement(value) : (JsonElement?)null);
         audit = Substitute.For<IAuditLogger>();
-        return new AntiAutomation(Pow, new AutomationSuspicion(_cache, _time), settings, audit, _cache, _time);
+        return new AntiAutomation(Pow, new AutomationSuspicion(_cache, _time, _key), settings, audit, _cache, _time);
     }
 
     private sealed class Clock(DateTimeOffset now) : TimeProvider

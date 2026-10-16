@@ -7,8 +7,11 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.SharedKernel;
 using HyFib.HealthCare360.WindowsInterop.DigitalSignatures;
+using Microsoft.Extensions.Configuration;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Tests;
 
@@ -136,6 +139,123 @@ public sealed class PrescriptionDigitalSignatureTests
     }
 
     [Fact]
+    public void A_trust_folder_the_server_cannot_read_trusts_nothing_and_says_why_instead_of_failing_every_check()
+    {
+        using var pki = new TestPki();
+        var root = Directory.CreateTempSubdirectory("hc360-dsc-data-").FullName;
+        try
+        {
+            var denied = true;
+            var store = new DscTrustStore(new ConfigurationBuilder().Build(), new DataDirectories(new PlatformOptions { DataDirectory = root }))
+            {
+                ListFiles = folder => denied ? throw new UnauthorizedAccessException($"Access to the path '{folder}' is denied.") : DscTrustAnchors.Files(folder),
+            };
+            Directory.CreateDirectory(store.Folder);
+            File.WriteAllBytes(Path.Combine(store.Folder, "cca-india-2022.cer"), pki.Root.RawData);
+
+            var unreadable = store.Current;
+
+            unreadable.IsEmpty.ShouldBeTrue();
+            unreadable.FolderProblem.ShouldBe($"Access to the path '{store.Folder}' is denied.");
+            var signed = SignedWithDsc(pki);
+            PrescriptionDigitalSignatureService.Check(signed, PrescriptionSignaturePolicy.Required, unreadable, signedForCurrentPatient: true)
+                .State.ShouldBe(DigitalSignatureState.Untrusted, "the prescription is as signed; its DSC cannot be confirmed");
+            var warning = DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Required, unreadable, store.Folder).ShouldHaveSingleItem();
+            warning.Code.ShouldBe(DscTrustHealthWarnings.UnreadableCode);
+            warning.Severity.ShouldBe("critical");
+            warning.Message.ShouldContain("cannot read the DSC trust folder");
+
+            // Once the service's account may read it again, the next check reads the roots.
+            denied = false;
+            store.Current.Roots.Select(c => c.Thumbprint).ShouldBe([pki.Root.Thumbprint]);
+            store.Current.FolderProblem.ShouldBeNull();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_refused_trust_folder_is_unreadable_even_where_Directory_Exists_would_call_it_missing()
+    {
+        // Windows answers Directory.Exists with false for a folder this account may not read, as Linux does below a
+        // folder it may not enter. The folder here does not exist, so only the refused listing says it is there.
+        var root = Directory.CreateTempSubdirectory("hc360-dsc-data-").FullName;
+        try
+        {
+            var store = new DscTrustStore(new ConfigurationBuilder().Build(), new DataDirectories(new PlatformOptions { DataDirectory = root }))
+            {
+                ListFiles = folder => throw new UnauthorizedAccessException($"Access to the path '{folder}' is denied."),
+            };
+            Directory.Exists(store.Folder).ShouldBeFalse();
+
+            var anchors = store.Current;
+
+            anchors.IsEmpty.ShouldBeTrue();
+            anchors.FolderProblem.ShouldBe($"Access to the path '{store.Folder}' is denied.");
+            DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Required, anchors, store.Folder).ShouldHaveSingleItem()
+                .Code.ShouldBe(DscTrustHealthWarnings.UnreadableCode, "a refused folder is not an empty one");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_missing_trust_folder_lists_no_files_and_is_no_problem()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "hc360-dsc-missing-" + Guid.NewGuid().ToString("N"));
+
+        DscTrustAnchors.Files(missing).ShouldBeEmpty();
+        var anchors = DscTrustAnchors.Load(missing);
+        anchors.IsEmpty.ShouldBeTrue();
+        anchors.FolderProblem.ShouldBeNull("a folder nobody created yet is the 'empty' warning, not 'unreadable'");
+    }
+
+    [Fact]
+    public void A_trust_folder_without_read_permission_trusts_nothing_and_says_why()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Unix permissions; on Windows the test above covers the same path with a listing that is refused.");
+            return;
+        }
+
+        var folder = Directory.CreateTempSubdirectory("hc360-dsc-trust-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "root.cer"), "unused");
+            File.SetUnixFileMode(folder, UnixFileMode.None);
+            Assert.SkipWhen(CanList(folder), "This account reads any folder whatever its permissions (root).");
+
+            var anchors = DscTrustAnchors.Load(folder);
+
+            anchors.IsEmpty.ShouldBeTrue();
+            anchors.FolderProblem.ShouldNotBeNullOrWhiteSpace();
+        }
+        finally
+        {
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            Directory.Delete(folder, recursive: true);
+        }
+
+        static bool CanList(string folder)
+        {
+            try
+            {
+                _ = Directory.EnumerateFiles(folder).ToList();
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+    }
+
+    [Fact]
     public void The_signature_is_detached_sha256_with_the_signers_certificate_and_signing_time()
     {
         using var certificate = Certificate();
@@ -212,6 +332,54 @@ public sealed class PrescriptionDigitalSignatureTests
         cms.ComputeSignature(new CmsSigner(certificate) { DigestAlgorithm = new Oid("2.16.840.1.101.3.4.2.1") }, silent: true);
 
         DetachedCms.Verify(content, cms.Encode()).Problem.ShouldBe(CmsProblem.NoSigningTime);
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0x17, 0x03, 0x41, 0x42, 0x43 })] // a UTCTime that is not a time
+    [InlineData(new byte[] { 0x04, 0x02, 0x00, 0x00 })] // not a time at all
+    public void A_signing_time_that_cannot_be_read_is_refused_not_thrown(byte[] signingTime)
+    {
+        using var certificate = Certificate();
+        var content = "{}"u8.ToArray();
+        var cms = new SignedCms(new ContentInfo(content), detached: true);
+        var signer = new CmsSigner(certificate) { DigestAlgorithm = new Oid("2.16.840.1.101.3.4.2.1") };
+        signer.SignedAttributes.Add(new AsnEncodedData(new Oid("1.2.840.113549.1.9.5"), signingTime));
+        cms.ComputeSignature(signer, silent: true);
+
+        var check = DetachedCms.Verify(content, cms.Encode());
+
+        check.IsValid.ShouldBeFalse();
+        check.Problem.ShouldBe(CmsProblem.NoSigningTime);
+        check.Message.ShouldBe("The signature's signing time cannot be read.");
+    }
+
+    [Fact]
+    public void A_certificate_whose_key_usage_cannot_be_read_is_refused_not_thrown()
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest("CN=Dr Meera Shah, O=Personal, C=IN", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509Extension("2.5.29.15", [0x05, 0x00], critical: true)); // key usage that is not a bit string
+        using var certificate = request.CreateSelfSigned(Now.AddDays(-1), Now.AddYears(2));
+        var content = "{}"u8.ToArray();
+
+        var check = DetachedCms.Verify(content, DetachedCms.Sign(content, certificate, Now, silent: true));
+
+        check.IsValid.ShouldBeFalse();
+        check.Problem.ShouldBe(CmsProblem.NotForSigning);
+        SigningCertificates.CanSign(certificate, Now).ShouldBeFalse("nor is it offered on the desktop");
+    }
+
+    [Fact]
+    public void A_certificate_whose_basic_constraints_cannot_be_read_is_not_taken_for_a_persons()
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest("CN=Dr Meera Shah, O=Personal, C=IN", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, critical: true));
+        request.CertificateExtensions.Add(new X509Extension("2.5.29.19", [0x05, 0x00], critical: true)); // basic constraints that are not a sequence
+        using var certificate = request.CreateSelfSigned(Now.AddDays(-1), Now.AddYears(2));
+        var content = "{}"u8.ToArray();
+
+        DetachedCms.Verify(content, DetachedCms.Sign(content, certificate, Now, silent: true)).Problem.ShouldBe(CmsProblem.CertificateAuthority);
     }
 
     [Fact]
@@ -437,6 +605,13 @@ public sealed class PrescriptionDigitalSignatureTests
         problem.Message.ShouldBe("Your doctor has not digitally signed this prescription yet.");
         problem.Message.ShouldNotContain("HC360 Desktop");
         PrescriptionFinalCopies.PatientProblem(pending with { Policy = PrescriptionSignaturePolicy.Optional, FinalCopyAvailable = true }).ShouldBeNull();
+
+        // In the patient's language too, as the portal's other refusals are (patient texts, PP-06).
+        foreach (var state in new[] { DigitalSignatureState.NotSigned, DigitalSignatureState.Untrusted, DigitalSignatureState.Invalid })
+        {
+            var refused = PrescriptionFinalCopies.PatientProblem(pending with { State = state }).ShouldNotBeNull();
+            PatientTexts.Catalog.TranslateMessage(PatientLanguages.Hindi, refused.Message).ShouldNotBeNull(refused.Message);
+        }
     }
 
     [Fact]
@@ -499,6 +674,38 @@ public sealed class PrescriptionDigitalSignatureTests
     }
 
     [Fact]
+    public void A_message_held_for_the_dsc_is_let_go_once_whether_it_was_sent_or_not()
+    {
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+        prescription.HoldPatientNotice(Now);
+        prescription.HoldPatientNotice(Now.AddMinutes(1));
+        prescription.PatientNoticeHeldAt.ShouldBe(Now, "held from the first time");
+
+        prescription.MarkPatientNotified(Now.AddMinutes(5)).ShouldBeTrue();
+        prescription.PatientNoticeHeldAt.ShouldBeNull("sent: no longer held");
+        prescription.HoldPatientNotice(Now.AddMinutes(6));
+        prescription.PatientNoticeHeldAt.ShouldBeNull("the patient was told already");
+
+        var noPhone = PrescriptionCanonicalFormTests.Signed();
+        noPhone.HoldPatientNotice(Now);
+        noPhone.ReleasePatientNotice();
+        noPhone.PatientNoticeHeldAt.ShouldBeNull();
+        noPhone.PatientNotifiedAt.ShouldBeNull("let go without a message");
+
+        var cancelled = PrescriptionCanonicalFormTests.Signed();
+        cancelled.HoldPatientNotice(Now);
+        cancelled.Cancel("Wrong patient", Now);
+        cancelled.PatientNoticeHeldAt.ShouldBeNull("a cancelled prescription is never announced");
+
+        var draft = new Prescription { PrescriptionNumber = "NHRX1" };
+        draft.HoldPatientNotice(Now);
+        draft.PatientNoticeHeldAt.ShouldBeNull();
+        var inpatient = new Prescription { PrescriptionNumber = "NHRX2", IsInpatient = true };
+        inpatient.HoldPatientNotice(Now);
+        inpatient.PatientNoticeHeldAt.ShouldBeNull("in-patients are not sent the message");
+    }
+
+    [Fact]
     public void System_health_warns_when_dsc_signing_is_on_and_the_trust_folder_is_empty()
     {
         using var pki = new TestPki();
@@ -515,6 +722,17 @@ public sealed class PrescriptionDigitalSignatureTests
         required.Message.ShouldContain("cannot be printed or shared");
         DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Optional, DscTrustAnchors.Of([pki.Root], ["broken.crt: not a certificate"]), folder)
             .ShouldHaveSingleItem().Code.ShouldBe(DscTrustHealthWarnings.UnreadableCode);
+    }
+
+    /// <summary>A signed prescription with a DSC signature from <paramref name="pki"/>'s doctor, as the server keeps it.</summary>
+    private static Prescription SignedWithDsc(TestPki pki)
+    {
+        using var doctor = pki.Doctor();
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+        var content = PrescriptionCanonicalForm.Build(prescription, PrescriptionCanonicalFormTests.Parties);
+        prescription.AttachDigitalSignature(Evidence(content, DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca]))).IsSuccess
+            .ShouldBeTrue();
+        return prescription;
     }
 
     private static PrescriptionDigitalSignature Evidence(byte[]? content = null, byte[]? signature = null) => new(

@@ -123,6 +123,70 @@ describe('session', () => {
     otherWindow.close();
   });
 
+  it("takes turns with the app's other windows to refresh, so the browser never keeps a cookie the server retired", async () => {
+    // The server as AuthService answers a refresh: it replaces the cookie; one presented again (an answer lost on the
+    // WiFi) gets another, and the replacement it gave before is retired; a retired one ends the session.
+    let cookie = 'rt-1';
+    let issued = 1;
+    let ended = false;
+    const replacedBy = new Map<string, string>();
+    const retired = new Set<string>();
+    const presented: string[] = [];
+    // The first request reaches the server first but its answer comes back last, as on a busy WiFi link.
+    const delays = [
+      [1, 30],
+      [5, 1],
+    ];
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const fetchMock = vi.fn(async () => {
+      const [toServer, back] = delays[presented.length] ?? [1, 1];
+      const sent = cookie;
+      presented.push(sent);
+      await sleep(toServer!);
+      if (ended || retired.has(sent)) {
+        ended = true;
+        return new Response(JSON.stringify({ code: 'auth.session_ended' }), { status: 401 });
+      }
+      const before = replacedBy.get(sent);
+      if (before) {
+        retired.add(before);
+      }
+      const next = `rt-${++issued}`;
+      replacedBy.set(sent, next);
+      await sleep(back!);
+      cookie = next; // Set-Cookie, as the answer arrives
+      return refreshAnswer({ accessToken: `token-${next}`, expiresAt: null, user: user() });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    // Web Locks as the browser gives them: one holder of a name at a time, among all of this site's windows.
+    const held = new Map<string, Promise<unknown>>();
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: (name: string, callback: () => Promise<unknown>) => {
+          const turn = (held.get(name) ?? Promise.resolve()).then(callback);
+          const released = turn.catch(() => undefined);
+          held.set(name, released);
+          return turn;
+        },
+      },
+    });
+    // Two of the app's windows: each has its own copy of the session code, as each page does.
+    vi.resetModules();
+    const first = await import('./session');
+    vi.resetModules();
+    const second = await import('./session');
+
+    // Both refresh at once, as every window does when the screen is unlocked in another.
+    await Promise.all([first.auth.refresh(), second.auth.refresh()]);
+    const later = await first.auth.refresh();
+
+    expect(presented).toEqual(['rt-1', 'rt-2', 'rt-3']);
+    expect(ended).toBe(false);
+    expect(later).toBe('token-rt-4');
+    expect(first.useSession.getState().status).toBe('authenticated');
+    expect(second.useSession.getState().accessToken).toBe('token-rt-3');
+  });
+
   it('does not unlock a locked screen by itself: only the PIN does', () => {
     useSession.setState({ locked: true, user: user() });
 

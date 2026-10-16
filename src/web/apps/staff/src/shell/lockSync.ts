@@ -22,8 +22,9 @@ interface LockMessage {
 /**
  * The app's windows on this computer (browser tabs, HC360 Desktop's second windows) share one session, whose lock the
  * server keeps (SRS UX-11). Locking one window locks the others at once, so none keeps showing patient data, and
- * unlocking one unlocks the others as soon as the server, asked by each, confirms it. Every window keeps its screens as
- * they were.
+ * unlocking one unlocks the others as soon as the server, asked by each, confirms it. They ask in turn, never at once
+ * (`auth.refresh` takes turns with the other windows), since they share the refresh cookie the server replaces at each
+ * refresh. Every window keeps its screens as they were.
  */
 export function useLockSync(): void {
   const queryClient = useQueryClient();
@@ -59,7 +60,8 @@ export function useLockSync(): void {
         apply(true);
         return;
       }
-      // Unlocked in another window: the server unlocked the session, and gives this window a token without the lock.
+      // Unlocked in another window: the server unlocked the session, and gives this window a token without the lock
+      // (after the other windows' refreshes, if they asked first).
       void auth.refresh().then(() => {
         const now = useSession.getState();
         if (now.status === 'authenticated' && now.locked && now.user?.restriction !== 'locked') {

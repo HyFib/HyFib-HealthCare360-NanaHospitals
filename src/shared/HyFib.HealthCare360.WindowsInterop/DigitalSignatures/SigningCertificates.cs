@@ -78,20 +78,40 @@ public static class SigningCertificates
         return utc >= certificate.NotBefore.ToUniversalTime() && utc <= certificate.NotAfter.ToUniversalTime();
     }
 
-    /// <summary>The key usage extension allows digital signatures or non-repudiation.</summary>
+    /// <summary>
+    /// The key usage extension allows digital signatures or non-repudiation. One that cannot be read (.NET decodes it only
+    /// when it is read) allows nothing.
+    /// </summary>
     public static bool AllowsSigning(X509Certificate2 certificate)
     {
         ArgumentNullException.ThrowIfNull(certificate);
-        var usage = certificate.Extensions.OfType<X509KeyUsageExtension>().FirstOrDefault();
-        return usage is not null
-            && (usage.KeyUsages & (X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.NonRepudiation)) != 0;
+        try
+        {
+            var usage = certificate.Extensions.OfType<X509KeyUsageExtension>().FirstOrDefault();
+            return usage is not null
+                && (usage.KeyUsages & (X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.NonRepudiation)) != 0;
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return false;
+        }
     }
 
-    /// <summary>Not a CA: no basic constraints extension, or one that says so.</summary>
+    /// <summary>
+    /// Not a CA: no basic constraints extension, or one that says so. A certificate whose basic constraints cannot be
+    /// read is not taken for a person's.
+    /// </summary>
     public static bool IsEndEntity(X509Certificate2 certificate)
     {
         ArgumentNullException.ThrowIfNull(certificate);
-        return certificate.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is not { CertificateAuthority: true };
+        try
+        {
+            return certificate.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is not { CertificateAuthority: true };
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

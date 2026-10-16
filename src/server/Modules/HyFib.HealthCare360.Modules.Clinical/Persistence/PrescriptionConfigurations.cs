@@ -33,6 +33,9 @@ internal sealed class PrescriptionConfiguration : IEntityTypeConfiguration<Presc
         b.HasIndex(x => x.EncounterId);
         b.HasIndex(x => x.VisitId);
         b.HasIndex(x => x.AdmissionId);
+
+        // The messages held for the doctor's DSC, which PrescriptionNoticeRelease looks through every few minutes: a few rows.
+        b.HasIndex(x => x.PatientNoticeHeldAt).HasFilter("patient_notice_held_at IS NOT NULL");
     }
 }
 

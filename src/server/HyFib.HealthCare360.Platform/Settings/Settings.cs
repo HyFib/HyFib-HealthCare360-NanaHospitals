@@ -231,6 +231,12 @@ internal static class SettingsEndpoints
                 return Error.Field("key", "Use letters, digits, dots, dashes or underscores.").ToProblem();
             }
 
+            // A setting with rules of its own is refused here, not read leniently later (a default, or the nearest value allowed).
+            if (AntiAutomationSettings.Problem(key, request.Value) is { } problem)
+            {
+                return Error.Field("value", problem).ToProblem();
+            }
+
             // SetAsync encrypts *.secret keys even when the request leaves "secret" unset.
             var secret = request.Secret || SecretSettingKeys.IsSecret(key);
             await settings.SetAsync(key, request.Value, request.FacilityId, secret, request.Version, ct);

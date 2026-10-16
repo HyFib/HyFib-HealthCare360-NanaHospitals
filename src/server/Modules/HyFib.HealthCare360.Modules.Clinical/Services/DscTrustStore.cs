@@ -13,7 +13,9 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 /// CCA India root certificates there, downloaded from cca.gov.in with their thumbprints checked against the ones the CCA
 /// publishes; a doctor's DSC signature is accepted only when the certificate chains to one of them
 /// (<see cref="DscTrustAnchors"/>). Until then DSC signing is refused with a message saying so. The folder is read again
-/// when its files change, so adding a root needs no restart.
+/// when its files change, so adding a root needs no restart. A folder the server cannot read (its permissions, a disk
+/// error) trusts nothing, as an empty one does, and says why (<see cref="DscTrustAnchors.FolderProblem"/>): signature
+/// checks then report Untrusted and System health warns, instead of every check failing.
 /// </summary>
 public sealed class DscTrustStore(IConfiguration configuration, DataDirectories directories)
 {
@@ -30,17 +32,20 @@ public sealed class DscTrustStore(IConfiguration configuration, DataDirectories 
         ? Path.GetFullPath(Environment.ExpandEnvironmentVariables(configured), directories.Root)
         : Path.Combine(directories.Certificates, DefaultFolderName);
 
+    /// <summary>Lists the folder's certificate files (<see cref="DscTrustAnchors.Files"/>); a test stands in a folder that cannot be read.</summary>
+    internal Func<string, IReadOnlyList<string>> ListFiles { get; init; } = DscTrustAnchors.Files;
+
     /// <summary>The certificates in the folder now.</summary>
     public DscTrustAnchors Current
     {
         get
         {
-            var stamp = Stamp();
+            var (files, stamp, problem) = List();
             lock (_gate)
             {
                 if (_stamp != stamp)
                 {
-                    _anchors = DscTrustAnchors.Load(Folder);
+                    _anchors = problem is null ? DscTrustAnchors.Read(files) : DscTrustAnchors.Unreadable(problem);
                     _stamp = stamp;
                 }
 
@@ -49,20 +54,27 @@ public sealed class DscTrustStore(IConfiguration configuration, DataDirectories 
         }
     }
 
-    // The files' names, sizes and times: a cheap test for a change, made on every check.
-    private string Stamp()
+    // The files, and a stamp of their names, sizes and times: a cheap test for a change, made on every check. The files
+    // are read from this same listing, so a folder that turns unreadable (or disappears) between two looks at it cannot
+    // fail the check. A file removed after the listing has no size: it is read as a problem, and the next check, which no
+    // longer lists it, reads the folder again.
+    private (IReadOnlyList<string> Files, string Stamp, string? Problem) List()
     {
         try
         {
-            return string.Join('|', DscTrustAnchors.Files(Folder).Select(path =>
+            var files = ListFiles(Folder);
+            return (files, string.Join('|', files.Select(path =>
             {
                 var file = new FileInfo(path);
-                return $"{file.Name}:{file.Length}:{file.LastWriteTimeUtc.Ticks}";
-            }));
+                return file.Exists ? $"{file.Name}:{file.Length}:{file.LastWriteTimeUtc.Ticks}" : $"{file.Name}:gone";
+            })), null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return string.Empty;
+            // A missing folder lists as empty (DscTrustAnchors.Files), so this one is there and cannot be read: not asked of
+            // Directory.Exists, which answers false for a folder this account may not read. The reason is the stamp, so the
+            // folder is read again once it can be (or fails another way).
+            return ([], "unreadable:" + ex.Message, ex.Message);
         }
     }
 }
@@ -73,7 +85,8 @@ public sealed class DscTrustStore(IConfiguration configuration, DataDirectories 
 /// because DSC signing is refused and signatures already made no longer show or print as DSC signatures (where the DSC is
 /// required those prescriptions cannot be printed or shared). That is what a reinstall, a restore on new hardware or a
 /// failover to the standby leaves when nobody installs the CCA India roots again: the folder is not in the backups.
-/// Files the folder holds that are not certificates are a warning too.
+/// A folder the server cannot read is the same warning, saying so (<see cref="UnreadableCode"/>); files the folder holds
+/// that are not certificates are a warning too.
 /// </summary>
 internal sealed class DscTrustHealthWarnings(HospitalDbContext db, DscTrustStore trust) : IHealthWarningSource
 {
@@ -102,6 +115,17 @@ internal sealed class DscTrustHealthWarnings(HospitalDbContext db, DscTrustStore
         }
 
         var warnings = new List<HealthWarning>();
+        if (anchors.FolderProblem is { } problem)
+        {
+            // Nothing in it can be trusted, as for an empty folder, but installing the roots again would not help.
+            warnings.Add(new(UnreadableCode, policy == PrescriptionSignaturePolicy.Required ? "critical" : "warning",
+                $"Doctors sign prescriptions with their DSC, but HC360 cannot read the DSC trust folder ({folder}): {problem} DSC signing is "
+                + "refused, and signatures already made are not shown or printed as DSC signatures"
+                + (policy == PrescriptionSignaturePolicy.Required ? ", so those prescriptions cannot be printed or shared" : string.Empty)
+                + ". Let the HC360 service's account read the folder and its files (DEPLOYMENT.md, section 4, step 7)."));
+            return warnings;
+        }
+
         if (anchors.IsEmpty)
         {
             warnings.Add(new(EmptyCode, policy == PrescriptionSignaturePolicy.Required ? "critical" : "warning",

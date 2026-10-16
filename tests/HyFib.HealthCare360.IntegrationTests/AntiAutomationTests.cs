@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -259,6 +260,55 @@ public sealed class AntiAutomationTests(HospitalServer server)
         // The proof is still good: the corrected form gets past the check (to a link that does not exist).
         using var corrected = await SendWithProofAsync(kiosk, path, Feedback, proof);
         corrected.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task A_number_that_is_not_a_mobile_number_neither_spends_its_proof_nor_counts_as_a_failure()
+    {
+        var portal = server.AnonymousWithoutProof();
+        var before = (await ChallengeAsync(portal, null)).Bits;
+        var proof = await SolvedProofAsync(portal, null);
+
+        foreach (var phone in new[] { "12345", "", "not a number" })
+        {
+            using var invalid = await SendWithProofAsync(portal, new OtpRequest(phone), proof);
+            invalid.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            (await invalid.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("errors").GetProperty("phone")[0].GetString()
+                .ShouldBe("Enter a valid 10-digit mobile number.");
+        }
+
+        (await ChallengeAsync(portal, null)).Bits.ShouldBe(before);
+
+        // The proof is still good: the corrected number gets its code.
+        using var corrected = await SendWithProofAsync(portal, new OtpRequest(NewMobile()), proof);
+        corrected.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task The_work_cannot_be_set_beyond_what_a_phone_does_within_a_challenges_life()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        try
+        {
+            using (var tooMuch = await admin.SendRawAsync(HttpMethod.Put, $"/api/v1/admin/settings/{AntiAutomationSettings.MaxBits}",
+                new SaveSettingRequest(JsonValue.Create(22), null, false, null)))
+            {
+                tooMuch.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+                (await tooMuch.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("errors").GetProperty("value")[0].GetString()
+                    .ShouldBe("Enter a whole number of bits from 0 to 20.");
+            }
+
+            using (var allowed = await admin.SendRawAsync(HttpMethod.Put, $"/api/v1/admin/settings/{AntiAutomationSettings.MaxBits}",
+                new SaveSettingRequest(JsonValue.Create(20), null, false, null)))
+            {
+                allowed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+            }
+        }
+        finally
+        {
+            await using var scope = server.Services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>().RemoveAsync(AntiAutomationSettings.MaxBits, null, Ct);
+        }
     }
 
     [Fact]

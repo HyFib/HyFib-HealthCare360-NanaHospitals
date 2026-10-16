@@ -340,3 +340,6 @@ Points we would most like checked:
 | 92 | `message.field.patient` | Choose a registered patient. | कोई पंजीकृत रोगी चुनें। | |
 | 93 | `message.field.patient_merged` | This record was merged into another one. Choose the patient's current record. | यह रिकॉर्ड किसी दूसरे रिकॉर्ड में मिला दिया गया है। रोगी का मौजूदा रिकॉर्ड चुनें। | |
 | 94 | `message.field.practitioner` | Choose an active doctor. | कोई सक्रिय डॉक्टर चुनें। | |
+| 95 | `message.request.check_failed` | We could not complete this request. Please try again. | हम आपका अनुरोध पूरा नहीं कर सके। कृपया फिर से कोशिश करें। | |
+| 96 | `message.prescription.dsc_not_signed` | Your doctor has not digitally signed this prescription yet. | आपके डॉक्टर ने अभी इस पर्चे पर डिजिटल हस्ताक्षर नहीं किए हैं। | |
+| 97 | `message.prescription.cannot_issue` | This prescription cannot be issued right now. Please contact the hospital. | यह पर्चा अभी जारी नहीं किया जा सकता। कृपया अस्पताल से संपर्क करें। | |
