@@ -5,10 +5,14 @@ import {
   groupByDay,
   istDay,
   parseChartTab,
+  parseEncounterTypes,
   parseTypes,
   prettyTitle,
+  serializeEncounterTypes,
   serializeTypes,
+  TIMELINE_ENCOUNTER_TYPES,
   timelineTarget,
+  toggleEncounterType,
   toggleType,
   type TimelineEntry,
 } from './timeline';
@@ -46,6 +50,33 @@ describe('type filter', () => {
     expect(toggleType(['Order', 'Note'], 'Order')).toEqual(['Note']);
     expect(toggleType(['Order'], 'Order')).toBeUndefined();
   });
+
+  it('includes procedures', () => {
+    expect(parseTypes('Procedure')).toEqual(['Procedure']);
+    expect(serializeTypes(['Note', 'Procedure', 'Result'])).toBe('Result,Procedure,Note');
+  });
+});
+
+describe('kind-of-care filter', () => {
+  it('parses and drops unknown kinds of encounter', () => {
+    expect(parseEncounterTypes('InPatient,Emergency,Ward,InPatient')).toEqual(['InPatient', 'Emergency']);
+    expect(parseEncounterTypes(' ')).toBeUndefined();
+    expect(parseEncounterTypes('Ward')).toBeUndefined();
+    expect(parseEncounterTypes(undefined)).toBeUndefined();
+  });
+
+  it('serialises in a stable order and treats every kind as no filter', () => {
+    expect(serializeEncounterTypes(['Emergency', 'OutPatient'])).toBe('OutPatient,Emergency');
+    expect(serializeEncounterTypes([...TIMELINE_ENCOUNTER_TYPES])).toBeUndefined();
+    expect(serializeEncounterTypes([])).toBeUndefined();
+    expect(serializeEncounterTypes(undefined)).toBeUndefined();
+  });
+
+  it('toggles kinds on and off', () => {
+    expect(toggleEncounterType(undefined, 'Telehealth')).toEqual(['Telehealth']);
+    expect(toggleEncounterType(['Telehealth', 'HealthCheckup'], 'Telehealth')).toEqual(['HealthCheckup']);
+    expect(toggleEncounterType(['InPatient'], 'InPatient')).toBeUndefined();
+  });
 });
 
 describe('groupByDay', () => {
@@ -80,6 +111,7 @@ describe('navigation', () => {
     expect(timelineTarget(entry({ type: 'Immunization' }))).toEqual({ kind: 'tab', tab: 'immunisations' });
     expect(timelineTarget(entry({ type: 'DischargeSummary' }))).toEqual({ kind: 'tab', tab: 'admissions' });
     expect(timelineTarget(entry({ type: 'Result', encounterId: 'e3' }))).toEqual({ kind: 'tab', tab: 'orders' });
+    expect(timelineTarget(entry({ type: 'Procedure', encounterId: 'e4' }))).toEqual({ kind: 'tab', tab: 'procedures' });
   });
 
   it('parses chart tabs from the URL', () => {

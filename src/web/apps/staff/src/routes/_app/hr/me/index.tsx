@@ -1,7 +1,7 @@
 import { Button, Caption1, makeStyles, mergeClasses, Text, tokens } from '@fluentui/react-components';
 import { CalendarAddRegular, CalendarEditRegular, PersonRegular } from '@fluentui/react-icons';
 import { formatDateOnly, humanize, todayIso } from '@hc360/core';
-import { DataTable, KpiCard, Section, StatusBadge } from '@hc360/ui';
+import { DataTable, ErrorState, KpiCard, Section, StatusBadge } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -85,9 +85,18 @@ function Overview({
   const mainBalances = (balances.data ?? []).filter((b) => b.available > 0 || b.availed > 0);
 
   const days = Array.from({ length: 14 }, (_, index) => addDays(today, index));
+  // The roster says so in its own section; anything else that failed would otherwise read as nothing to show.
+  const failed = [attendance, balances, requests, credentials].filter((q) => q.error);
 
   return (
     <>
+      {failed.length > 0 && (
+        <ErrorState
+          title="Some of your HR details could not be loaded"
+          error={failed[0]?.error}
+          onRetry={() => failed.forEach((q) => void q.refetch())}
+        />
+      )}
       <KpiGrid>
         <KpiCard
           label="Today"
@@ -120,11 +129,13 @@ function Overview({
         />
         <KpiCard
           label={`Present in ${monthLabel(year, month, true)}`}
-          value={attendance.data ? formatDays(totals.present) : '…'}
+          value={attendance.data ? formatDays(totals.present) : attendance.error ? '—' : '…'}
           hint={
-            totals.missing > 0
-              ? `${totals.missing} missed punch(es): ask for a correction`
-              : `${formatDays(totals.paidLeave)} day(s) on leave`
+            !attendance.data
+              ? undefined
+              : totals.missing > 0
+                ? `${totals.missing} missed punch(es): ask for a correction`
+                : `${formatDays(totals.paidLeave)} day(s) on leave`
           }
           onClick={() => void navigate({ to: '/hr/me/attendance' })}
         />
@@ -151,6 +162,8 @@ function Overview({
         <Section title="My roster" description="The next two weeks">
           {roster.isLoading ? (
             <Caption1>Loading…</Caption1>
+          ) : roster.error ? (
+            <ErrorState error={roster.error} onRetry={() => void roster.refetch()} />
           ) : (
             <div>
               {days.map((date) => {

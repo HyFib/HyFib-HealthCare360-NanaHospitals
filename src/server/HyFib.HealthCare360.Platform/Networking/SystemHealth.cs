@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Organization;
@@ -41,7 +42,12 @@ public sealed record BackupInfo(bool Enabled, DateTimeOffset? LastSuccessAt, Dat
 
 public sealed record OutboxInfo(int Pending, int FailedLast24Hours, DateTimeOffset? OldestPendingAt);
 
-public sealed record CertificateInfo(string? CaFingerprint, DateTimeOffset? ServerExpiresAt, IReadOnlyList<string> SubjectAlternativeNames);
+/// <summary>
+/// The hospital CA and the server certificate it issued. <see cref="CaExpiresAt"/> is null with an administrator-supplied
+/// certificate, whose issuer HC360 does not hold.
+/// </summary>
+public sealed record CertificateInfo(string? CaFingerprint, DateTimeOffset? ServerExpiresAt, IReadOnlyList<string> SubjectAlternativeNames,
+    DateTimeOffset? CaExpiresAt = null);
 
 public sealed record PowerInfo(bool Available, bool? OnBattery, int? ChargePercent, string? Source);
 
@@ -56,6 +62,7 @@ public sealed record SystemHealthReport(
     OutboxInfo Outbox,
     CertificateInfo Certificate,
     PowerInfo Power,
+    IReadOnlyList<IntegrationHealth> Integrations,
     IReadOnlyList<HealthWarning> Warnings,
     DateTimeOffset GeneratedAt);
 
@@ -79,6 +86,7 @@ public sealed class SystemHealthService(
     IPdfRenderer pdf,
     SigningKeyStore signingKey,
     IFieldKeyRing dataKeys,
+    IIntegrationHealthSource integrationHealth,
     TimeProvider time)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
@@ -87,6 +95,9 @@ public sealed class SystemHealthService(
     public static readonly TimeSpan SigningKeyPeriod = TimeSpan.FromDays(365);
 
     public static readonly TimeSpan DataKeyPeriod = TimeSpan.FromDays(2 * 365);
+
+    /// <summary>How long before a certificate expires System health starts to say so: the server certificate and the CA alike.</summary>
+    public static readonly TimeSpan CertificateWarningPeriod = TimeSpan.FromDays(30);
 
     public async Task<SystemHealthReport> BuildAsync(CancellationToken ct)
     {
@@ -123,8 +134,10 @@ public sealed class SystemHealthService(
                 .CountAsync(m => m.Status == OutboxStatus.Failed && (m.ProcessedAt ?? m.CreatedAt) > dayAgo, ct),
             await db.Set<OutboxMessage>().Where(m => m.Status == OutboxStatus.Pending).OrderBy(m => m.CreatedAt).Select(m => (DateTimeOffset?)m.CreatedAt).FirstOrDefaultAsync(ct));
 
-        var certificate = new CertificateInfo(certificates.CaFingerprint, certificates.ServerExpiresAt, certificates.SubjectAlternativeNames);
+        var certificate = new CertificateInfo(certificates.CaFingerprint, certificates.ServerExpiresAt, certificates.SubjectAlternativeNames,
+            certificates.CaExpiresAt);
         var power = ReadPower();
+        var integrations = await integrationHealth.ListAsync(ct);
 
         var warnings = new List<HealthWarning>();
         if (!database.Reachable)
@@ -161,10 +174,7 @@ public sealed class SystemHealthService(
             warnings.Add(new("backup.stale", "critical", "No successful backup in the last 36 hours."));
         }
 
-        if (certificate.ServerExpiresAt is { } expires && expires - now < TimeSpan.FromDays(30))
-        {
-            warnings.Add(new("cert.expiring", "warning", $"The server certificate expires on {expires:dd MMM yyyy}."));
-        }
+        warnings.AddRange(CertificateWarnings(certificate, now));
 
         if (network.Wifi is { IsConnected: true, DetailsAvailable: false } hidden)
         {
@@ -201,6 +211,8 @@ public sealed class SystemHealthService(
             warnings.Add(new("outbox.backlog", "warning", "Outbound messages are queued for more than 30 minutes (internet down?)."));
         }
 
+        warnings.AddRange(IntegrationWarnings(integrations));
+
         // Reports, prescriptions and bills are printed and sent as server-made documents: say so when that is broken.
         if (pdf.Status is { Available: false } pdfStatus)
         {
@@ -233,7 +245,47 @@ public sealed class SystemHealthService(
                     "Nobody holds the recovery key for the backups, so they cannot be restored on new hardware. Make one under Backups › Recovery key."));
         }
 
-        return new SystemHealthReport(server, network, database, storage, backup, outbox, certificate, power, warnings, now);
+        return new SystemHealthReport(server, network, database, storage, backup, outbox, certificate, power, integrations, warnings, now);
+    }
+
+    /// <summary>
+    /// The server certificate is issued again by itself before it expires, so a warning about it means that failed. The
+    /// hospital CA is never made again by itself: every workstation, tablet and HC360 Desktop trusts it, so replacing it
+    /// needs planning, and once it has expired nothing trusts the server.
+    /// </summary>
+    public static IReadOnlyList<HealthWarning> CertificateWarnings(CertificateInfo certificate, DateTimeOffset now)
+    {
+        var warnings = new List<HealthWarning>();
+        if (certificate.ServerExpiresAt is { } expires && expires - now < CertificateWarningPeriod)
+        {
+            warnings.Add(new("cert.expiring", "warning", $"The server certificate expires on {expires:dd MMM yyyy}."));
+        }
+
+        if (certificate.CaExpiresAt is { } caExpires && caExpires <= now)
+        {
+            warnings.Add(new("cert.ca_expired", "critical",
+                $"The hospital CA expired on {caExpires:dd MMM yyyy}: workstations, tablets and HC360 Desktop no longer trust this server. Contact HyFib support."));
+        }
+        else if (certificate.CaExpiresAt is { } caExpiring && caExpiring - now < CertificateWarningPeriod)
+        {
+            warnings.Add(new("cert.ca_expiring", "warning",
+                $"The hospital CA expires on {caExpiring:dd MMM yyyy}. Workstations, tablets and HC360 Desktop all trust it, so plan replacing it with HyFib support now."));
+        }
+
+        return warnings;
+    }
+
+    /// <summary>
+    /// One warning naming every integration that is switched on and whose latest call failed, as the integrations
+    /// dashboard says. Those that are off, or failed earlier but work again, are left to that dashboard.
+    /// </summary>
+    public static IReadOnlyList<HealthWarning> IntegrationWarnings(IReadOnlyList<IntegrationHealth> integrations)
+    {
+        var failing = integrations.Where(i => i.Enabled && i.Health == IntegrationHealth.Failing).Select(i => i.DisplayName).ToList();
+        return failing.Count == 0
+            ? []
+            : [new("integrations.failing", "warning",
+                $"{string.Join(", ", failing)} {(failing.Count == 1 ? "is" : "are")} failing: the latest call failed. See Administration › Integrations.")];
     }
 
     public static string ProductVersion =>

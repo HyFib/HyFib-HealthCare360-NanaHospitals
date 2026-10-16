@@ -167,83 +167,91 @@ export function WidgetEditorDialog({
   return (
     <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface className={styles.surface}>
-        <DialogBody>
-          <DialogTitle>{initial ? 'Change tile' : 'Add a tile'}</DialogTitle>
-          <DialogContent>
-            {!report ? (
-              <ReportPicker catalogue={catalogue} onChoose={choose} />
-            ) : (
-              <div className={styles.layout}>
-                <div className={styles.column}>
-                  <div className={styles.chosen}>
-                    <div>
-                      <Caption1 className={styles.muted}>Report</Caption1>
-                      <Text block weight="semibold">
-                        {report.title}
-                      </Text>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            save();
+          }}
+          noValidate
+        >
+          <DialogBody>
+            <DialogTitle>{initial ? 'Change tile' : 'Add a tile'}</DialogTitle>
+            <DialogContent>
+              {!report ? (
+                <ReportPicker catalogue={catalogue} onChoose={choose} />
+              ) : (
+                <div className={styles.layout}>
+                  <div className={styles.column}>
+                    <div className={styles.chosen}>
+                      <div>
+                        <Caption1 className={styles.muted}>Report</Caption1>
+                        <Text block weight="semibold">
+                          {report.title}
+                        </Text>
+                      </div>
+                      <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => setReportId(null)}>
+                        Choose another
+                      </Button>
                     </div>
-                    <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => setReportId(null)}>
-                      Choose another
-                    </Button>
-                  </div>
-                  <Field label="Tile title">
-                    <Input
-                      value={title}
-                      maxLength={80}
-                      placeholder={report.title}
-                      onChange={(_, data) => setTitle(data.value)}
-                    />
-                  </Field>
-                  <Field label="Show as">
-                    <ViewSwitcher views={availableViews(report.chart, 'dashboard')} value={view} onChange={setView} />
-                  </Field>
-                  <Field label="Width">
-                    <RadioGroup
-                      layout="horizontal"
-                      value={String(width)}
-                      onChange={(_, data) => setWidth(Number(data.value) as WidgetWidth)}
-                    >
-                      {WIDGET_WIDTHS.map((option) => (
-                        <Radio key={option.value} value={String(option.value)} label={option.label} />
-                      ))}
-                    </RadioGroup>
-                  </Field>
-                  {report.parameters.length > 0 && (
-                    <Field label="Inputs" hint="Use a period such as “This month” so the tile stays current.">
-                      <ReportParameterForm
-                        parameters={report.parameters}
-                        values={values}
-                        onChange={setParameters}
-                        periods={catalogue.periods}
-                        errors={fieldErrors}
-                        mode="widget"
-                        canConsolidate={catalogue.canConsolidate}
-                        range={preview.data ? { from: preview.data.from, to: preview.data.to } : null}
-                        maxDays={report.maxDays}
+                    <Field label="Tile title">
+                      <Input
+                        value={title}
+                        maxLength={80}
+                        placeholder={report.title}
+                        onChange={(_, data) => setTitle(data.value)}
                       />
                     </Field>
-                  )}
+                    <Field label="Show as">
+                      <ViewSwitcher views={availableViews(report.chart, 'dashboard')} value={view} onChange={setView} />
+                    </Field>
+                    <Field label="Width">
+                      <RadioGroup
+                        layout="horizontal"
+                        value={String(width)}
+                        onChange={(_, data) => setWidth(Number(data.value) as WidgetWidth)}
+                      >
+                        {WIDGET_WIDTHS.map((option) => (
+                          <Radio key={option.value} value={String(option.value)} label={option.label} />
+                        ))}
+                      </RadioGroup>
+                    </Field>
+                    {report.parameters.length > 0 && (
+                      <Field label="Inputs" hint="Use a period such as “This month” so the tile stays current.">
+                        <ReportParameterForm
+                          parameters={report.parameters}
+                          values={values}
+                          onChange={setParameters}
+                          periods={catalogue.periods}
+                          errors={fieldErrors}
+                          mode="widget"
+                          canConsolidate={catalogue.canConsolidate}
+                          range={preview.data ? { from: preview.data.from, to: preview.data.to } : null}
+                          maxDays={report.maxDays}
+                        />
+                      </Field>
+                    )}
+                  </div>
+                  <div className={styles.preview} aria-label="Preview">
+                    <Subtitle2>{title.trim() || report.title}</Subtitle2>
+                    <WidgetBody
+                      widget={{ title: title || report.title, view, width }}
+                      result={preview.data}
+                      error={invalid ? null : preview.error}
+                      loading={preview.isPending}
+                      onRetry={() => void preview.refetch()}
+                    />
+                  </div>
                 </div>
-                <div className={styles.preview} aria-label="Preview">
-                  <Subtitle2>{title.trim() || report.title}</Subtitle2>
-                  <WidgetBody
-                    widget={{ title: title || report.title, view, width }}
-                    result={preview.data}
-                    error={invalid ? null : preview.error}
-                    loading={preview.isPending}
-                    onRetry={() => void preview.refetch()}
-                  />
-                </div>
-              </div>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={guard.requestClose}>Cancel</Button>
-            <Button appearance="primary" disabled={!report || invalid} onClick={save}>
-              {initial ? 'Update tile' : 'Add tile'}
-            </Button>
-          </DialogActions>
-        </DialogBody>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={guard.requestClose}>Cancel</Button>
+              <Button type="submit" appearance="primary" disabled={!report || invalid}>
+                {initial ? 'Update tile' : 'Add tile'}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
         {guard.dialogs}
       </DialogSurface>
     </Dialog>

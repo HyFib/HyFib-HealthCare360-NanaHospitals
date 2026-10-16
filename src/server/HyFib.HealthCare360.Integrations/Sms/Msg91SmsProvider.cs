@@ -57,7 +57,7 @@ internal sealed class Msg91SmsProvider(HttpClient http, ISmsTemplateCatalog temp
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             var (success, requestId, error) = ParseResponse(response.IsSuccessStatusCode, body);
             await trace.LogAsync(IntegrationNames.Sms, Key, "send", success, started, message.Reference, summary,
-                IntegrationHttp.Summarize(response, body), success ? null : error);
+                IntegrationHttp.Summarize(response, requestId), success ? null : error);
             return success ? SendResult.Ok(requestId) : SendResult.Fail(error!);
         }
         catch (Exception ex) when (IntegrationErrors.IsCallFailure(ex, cancellationToken))

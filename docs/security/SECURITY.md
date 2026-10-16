@@ -126,7 +126,8 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - **How long:** a session ends 12 hours after sign-in (one clinical shift), or after 2 hours nobody has used it. A
     patient portal session ends after 20 minutes unused, because portals run on shared and family phones. Together
     with the lock below, these meet NIST SP 800-63B at AAL2: sign in again within 12 hours, and give a secret again
-    after 30 minutes unused.
+    after 30 minutes unused. The server will not start with `HealthCare360:Security:SessionHours` above 12 or
+    `AccessTokenMinutes` above 15 (SRS SEC-02); it names the setting to change (`PlatformOptionsValidator`).
   - **What counts as use:** a key press, click, touch or scroll in the app, which the app reports with each token
     refresh. The refresh itself does not count, since the app refreshes every few minutes in the background. A video
     consultation in progress counts as use on the portal.
@@ -343,7 +344,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - The AI endpoints' answers (dictation transcripts, SOAP drafts, interpreted commands) are never stored
     (`.WithoutStoredResponse()`). The key still stops a retry from running again, so there is no second AI call or
     quota charge. The retry gets 409 `idempotency.answer_not_kept`, and the user asks again.
-- Optimistic concurrency: a record changed by someone else is never silently overwritten.
+- Optimistic concurrency: a record changed by someone else is never silently overwritten. Edits send the version
+  (`xmin`) they loaded and get 409 when it has moved on; settings, print templates and feature switches do too
+  (REL-04). A change sent without a version, as older clients send it, still saves.
 
 ### Application hardening
 - **Separate addresses** (ASVS V3.5.4). The staff app, the patient portal and the API reference each have an origin of
@@ -480,7 +483,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
-| Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years |
+| Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires |
 | Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby or replacement hardware; kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
 | PostgreSQL TLS certificate (warm standby) | `hc360-server.key` in PostgreSQL's data folder, copied to the standby with the database | File permissions: PostgreSQL's service account and Administrators | The replication stream between the Server Nodes | Made by `Enable-HC360Replication.ps1`, valid 10 years; made again when it is within 30 days of expiry (copy the new `hc360-server.crt` to the standby) |
 | Replication password (warm standby) | On the primary, only its SCRAM verifier, in PostgreSQL; on the standby, `hc360-standby\replication.pgpass` beside the data folder; the hospital's password safe | File permissions on the standby: PostgreSQL's service account and Administrators | Streaming the database to the standby's address | Run `Enable-HC360Replication.ps1` with a new password, then `New-HC360Standby.ps1` with it |
@@ -615,6 +618,7 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | CodeQL alert | Where | How it was handled |
 |---|---|---|
 | Clear-text storage of sensitive information (high) | `IdentitySeeder.CreateInitialAdministratorAsync` | False positive: what it flags is the log line giving the path of `initial-admin-password.txt`, which CodeQL takes for a password because the file's name contains the word. Marked with a `codeql[...]` comment there; with Code Security on, also dismiss as "false positive". The file itself does hold the first administrator's one-time password, so the installer can show it. That is an accepted risk: the data directory is open only to administrators and the service, and HC360 deletes the file as soon as `admin` sets a new password (and at start-up if that already happened) |
+| Clear-text storage of sensitive information (high) | Portal `lib/payments.ts` `rememberPendingPayment` | False positive: before the gateway's own payment page opens, the tab keeps which bill or appointment it pays, so the page can confirm the payment when the patient comes back. That is a random id and an order row id, no personal or clinical data, in `sessionStorage`, which ends with the tab; CodeQL takes the word "appointment" for health data. Marked with a `codeql[...]` comment there; with Code Security on, also dismiss as "false positive" |
 | Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. With Code Security on, dismiss as "false positive" |
 | Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). With Code Security on, dismiss as "false positive" |
 

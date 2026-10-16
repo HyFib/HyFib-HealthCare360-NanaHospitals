@@ -96,7 +96,11 @@ export function DepartmentQueues({ dashboard }: { dashboard?: FrontOfficeDashboa
 
   return (
     <Section title="Department queues" description="Waiting patients and the token being served">
-      {departments.length === 0 ? (
+      {!d && live.error ? (
+        <ErrorState error={live.error} onRetry={() => void live.refetch()} />
+      ) : !d ? (
+        <Text className={styles.muted}>Loading…</Text>
+      ) : departments.length === 0 ? (
         <Text className={styles.muted}>No tokens issued yet today.</Text>
       ) : (
         <div className={styles.rows}>
@@ -130,7 +134,9 @@ export function VisitsByType({ dashboard }: { dashboard?: FrontOfficeDashboard }
   const max = Math.max(1, ...items.map((i) => i.count));
   return (
     <Section title="Visits by type" description="Today">
-      {items.length === 0 ? (
+      {!dashboard ? (
+        <Text className={styles.muted}>Loading…</Text>
+      ) : items.length === 0 ? (
         <Text className={styles.muted}>No visits yet today.</Text>
       ) : (
         <div className={styles.bars}>

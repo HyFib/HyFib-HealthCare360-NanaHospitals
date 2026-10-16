@@ -23,7 +23,19 @@ describe('hubErrorMessage', () => {
 
 describe('hubReconnectDelay', () => {
   it('backs off to every 30 seconds and never gives up', () => {
-    expect([0, 1, 2, 3, 4, 5, 50].map(hubReconnectDelay)).toEqual([0, 2_000, 5_000, 10_000, 20_000, 30_000, 30_000]);
+    expect([0, 1, 2, 3, 4, 5, 50].map((count) => hubReconnectDelay(count, () => 0))).toEqual([
+      0, 2_000, 5_000, 10_000, 20_000, 30_000, 30_000,
+    ]);
+  });
+
+  it('adds up to a second of jitter, so screens cut off together do not reconnect together', () => {
+    expect(hubReconnectDelay(1, () => 0.5)).toBe(2_500);
+    expect(hubReconnectDelay(5, () => 0.999)).toBe(30_999);
+    for (let i = 0; i < 50; i++) {
+      const delay = hubReconnectDelay(2);
+      expect(delay).toBeGreaterThanOrEqual(5_000);
+      expect(delay).toBeLessThan(6_000);
+    }
   });
 });
 

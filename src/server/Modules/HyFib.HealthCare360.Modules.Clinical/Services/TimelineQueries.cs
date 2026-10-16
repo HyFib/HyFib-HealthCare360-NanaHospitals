@@ -6,11 +6,21 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
-public sealed record TimelineFilter(IReadOnlySet<TimelineEntryType> Types, DateOnly? From, DateOnly? To, Guid? DepartmentId);
+/// <summary>
+/// What the timeline shows. <see cref="Types"/> are kinds of entry (encounters, vitals, notes…); <see cref="EncounterTypes"/>
+/// are kinds of care (OP, IP, ER, telehealth, health checkup) and, like <see cref="DepartmentId"/>, keep the encounters of
+/// that kind and every entry recorded in one. Empty sets mean no filter.
+/// </summary>
+public sealed record TimelineFilter(
+    IReadOnlySet<TimelineEntryType> Types,
+    DateOnly? From,
+    DateOnly? To,
+    Guid? DepartmentId,
+    IReadOnlySet<EncounterType> EncounterTypes);
 
 /// <summary>
 /// The longitudinal EHR timeline (EHR-01/02) across OP, IP, ER, telehealth and health-checkup care, filterable by type,
-/// department and date. Each source is queried for its newest (skip + take) rows only and the results are merged, so
+/// kind of encounter, department and date. Each source is queried for its newest (skip + take) rows only and the results are merged, so
 /// deep histories page efficiently without a database-wide UNION. Entries from every facility are included.
 /// </summary>
 public sealed class TimelineQueries(HospitalDbContext db)
@@ -38,17 +48,41 @@ public sealed class TimelineQueries(HospitalDbContext db)
             .Where(n => (from == null || n.CreatedAt >= from) && (to == null || n.CreatedAt < to));
         var results = Facilityless<ResultReview>().Where(r => r.PatientId == patientId)
             .Where(r => (from == null || r.ReleasedAt >= from) && (to == null || r.ReleasedAt < to));
+        var procedures = Facilityless<ProcedureRecord>().Where(p => p.PatientId == patientId && p.Status != ProcedureStatus.EnteredInError)
+            .Where(p => (from == null || p.PerformedAt >= from) && (to == null || p.PerformedAt < to));
+        var immunizations = db.Set<Immunization>().AsNoTracking().Where(i => i.PatientId == patientId && !i.IsEnteredInError)
+            .Where(i => (fromDate == null || i.AdministeredOn >= fromDate) && (toDate == null || i.AdministeredOn <= toDate));
+        var summaries = Facilityless<DischargeSummary>().Where(s => s.PatientId == patientId && s.Status != DischargeSummaryStatus.Draft)
+            .Where(s => (from == null || s.CreatedAt >= from) && (to == null || s.CreatedAt < to));
 
-        if (filter.DepartmentId is { } departmentId)
+        // A department or a kind of care narrows the timeline to the matching encounters and what was recorded in them.
+        var scoped = filter.DepartmentId is not null || filter.EncounterTypes.Count > 0;
+        if (scoped)
         {
-            var inDepartment = Facilityless<Encounter>().Where(e => e.PatientId == patientId && e.DepartmentId == departmentId).Select(e => (Guid?)e.Id);
-            encounters = encounters.Where(e => e.DepartmentId == departmentId);
-            vitals = vitals.Where(v => inDepartment.Contains(v.EncounterId));
-            diagnoses = diagnoses.Where(d => inDepartment.Contains(d.EncounterId));
-            prescriptions = prescriptions.Where(p => inDepartment.Contains(p.EncounterId));
-            orders = orders.Where(o => inDepartment.Contains(o.EncounterId));
-            notes = notes.Where(n => inDepartment.Contains(n.EncounterId));
-            results = results.Where(r => inDepartment.Contains(r.EncounterId));
+            var inScope = Facilityless<Encounter>().Where(e => e.PatientId == patientId);
+            if (filter.DepartmentId is { } departmentId)
+            {
+                inScope = inScope.Where(e => e.DepartmentId == departmentId);
+                encounters = encounters.Where(e => e.DepartmentId == departmentId);
+            }
+
+            if (filter.EncounterTypes.Count > 0)
+            {
+                var kinds = filter.EncounterTypes.ToList();
+                inScope = inScope.Where(e => kinds.Contains(e.Type));
+                encounters = encounters.Where(e => kinds.Contains(e.Type));
+            }
+
+            var ids = inScope.Select(e => (Guid?)e.Id);
+            vitals = vitals.Where(v => ids.Contains(v.EncounterId));
+            diagnoses = diagnoses.Where(d => ids.Contains(d.EncounterId));
+            prescriptions = prescriptions.Where(p => ids.Contains(p.EncounterId));
+            orders = orders.Where(o => ids.Contains(o.EncounterId));
+            notes = notes.Where(n => ids.Contains(n.EncounterId));
+            results = results.Where(r => ids.Contains(r.EncounterId));
+            procedures = procedures.Where(p => ids.Contains(p.EncounterId));
+            immunizations = immunizations.Where(i => ids.Contains(i.EncounterId));
+            summaries = summaries.Where(s => ids.Contains(s.EncounterId));
         }
 
         var sources = new Dictionary<TimelineEntryType, SourceLoader>
@@ -84,29 +118,27 @@ public sealed class TimelineQueries(HospitalDbContext db)
                 r => new TimelineEntry(TimelineEntryType.Result, r.ReportId, r.ReleasedAt, r.Title, r.Kind.ToString(), r.ReviewedAt == null ? "Awaiting review" : "Reviewed",
                     r.EncounterId, r.HasCriticalFindings),
                 take, token),
-        };
-
-        if (filter.DepartmentId is null)
-        {
-            // Patient-level records have no department; they appear only on the unfiltered timeline.
-            sources[TimelineEntryType.Immunization] = (take, token) => LoadAsync(
-                db.Set<Immunization>().AsNoTracking().Where(i => i.PatientId == patientId && !i.IsEnteredInError)
-                    .Where(i => (fromDate == null || i.AdministeredOn >= fromDate) && (toDate == null || i.AdministeredOn <= toDate)),
-                i => i.AdministeredOn,
+            [TimelineEntryType.Procedure] = (take, token) => LoadAsync(procedures, p => p.PerformedAt,
+                p => new TimelineEntry(TimelineEntryType.Procedure, p.Id, p.PerformedAt, p.Code == null ? p.Display : $"{p.Code} {p.Display}",
+                    p.Outcome, p.Status.ToString(), p.EncounterId, false),
+                take, token),
+            [TimelineEntryType.Immunization] = (take, token) => LoadAsync(immunizations, i => i.AdministeredOn,
                 i => new TimelineEntry(TimelineEntryType.Immunization, i.Id, ClinicalClock.StartOfDayUtc(i.AdministeredOn), i.VaccineName,
                     i.DoseNumber is { } dose ? $"Dose {dose.ToString(CultureInfo.InvariantCulture)}" : null, i.IsExternal ? "Recorded from card" : "Given here", i.EncounterId, false),
-                take, token);
+                take, token),
+            [TimelineEntryType.DischargeSummary] = (take, token) => LoadAsync(summaries, s => s.CreatedAt,
+                s => new TimelineEntry(TimelineEntryType.DischargeSummary, s.Id, s.SignedAt ?? s.CreatedAt, "Discharge summary", s.Diagnoses, s.Status.ToString(), s.EncounterId, false),
+                take, token),
+        };
+
+        if (!scoped)
+        {
+            // Patient documents belong to no encounter (and so to no department or kind of care): only the unfiltered timeline shows them.
             sources[TimelineEntryType.Document] = (take, token) => LoadAsync(
                 db.Set<PatientDocument>().AsNoTracking().Where(d => d.PatientId == patientId)
                     .Where(d => (from == null || d.CreatedAt >= from) && (to == null || d.CreatedAt < to)),
                 d => d.CreatedAt,
                 d => new TimelineEntry(TimelineEntryType.Document, d.Id, d.CreatedAt, d.Title, d.Source, d.Type.ToString(), null, false),
-                take, token);
-            sources[TimelineEntryType.DischargeSummary] = (take, token) => LoadAsync(
-                Facilityless<DischargeSummary>().Where(s => s.PatientId == patientId && s.Status != DischargeSummaryStatus.Draft)
-                    .Where(s => (from == null || s.CreatedAt >= from) && (to == null || s.CreatedAt < to)),
-                s => s.CreatedAt,
-                s => new TimelineEntry(TimelineEntryType.DischargeSummary, s.Id, s.SignedAt ?? s.CreatedAt, "Discharge summary", s.Diagnoses, s.Status.ToString(), s.EncounterId, false),
                 take, token);
         }
 

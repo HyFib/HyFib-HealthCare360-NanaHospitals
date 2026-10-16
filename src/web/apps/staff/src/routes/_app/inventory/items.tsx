@@ -252,6 +252,13 @@ function ItemsPage() {
           emptyDescription={
             canManage ? 'Add items with their HSN code, GST rate and drug schedule before receiving stock.' : undefined
           }
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => set({ edit: 'new' })}>
+                Add item
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={items.data?.totalCount}

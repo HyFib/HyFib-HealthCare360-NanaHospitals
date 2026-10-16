@@ -64,7 +64,7 @@ internal sealed class GenericHttpSmsProvider(HttpClient http, IntegrationTrace t
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             var (success, id, error) = Evaluate(generic, response.IsSuccessStatusCode, (int)response.StatusCode, body);
             await trace.LogAsync(IntegrationNames.Sms, Key, "send", success, started, message.Reference, summary,
-                IntegrationHttp.Summarize(response, body), error);
+                IntegrationHttp.Summarize(response, id), error);
             return success ? SendResult.Ok(id) : SendResult.Fail(error!);
         }
         catch (Exception ex) when (IntegrationErrors.IsCallFailure(ex, cancellationToken))
@@ -101,7 +101,8 @@ internal sealed class GenericHttpSmsProvider(HttpClient http, IntegrationTrace t
 
         if (!string.IsNullOrEmpty(options.SuccessContains) && !body.Contains(options.SuccessContains, StringComparison.OrdinalIgnoreCase))
         {
-            return (false, null, "The SMS gateway did not confirm the message: " + IntegrationTrace.Truncate(body, 200));
+            // Not the answer itself: it goes to the integration log and the notification's error, and gateways echo the text.
+            return (false, null, $"The SMS gateway did not confirm the message: its answer does not contain \"{options.SuccessContains}\".");
         }
 
         string? id = null;

@@ -72,7 +72,11 @@ function DrugSafetyPage() {
           </TabList>
         </div>
         {tab === 'interactions' ? (
-          <InteractionsTable canManage={canManage} onEdit={setEditingInteraction} />
+          <InteractionsTable
+            canManage={canManage}
+            onEdit={setEditingInteraction}
+            onAdd={() => setEditingInteraction('new')}
+          />
         ) : (
           <DoseLimitsTable canManage={canManage} onEdit={setEditingLimit} />
         )}
@@ -86,9 +90,11 @@ function DrugSafetyPage() {
 function InteractionsTable({
   canManage,
   onEdit,
+  onAdd,
 }: {
   canManage: boolean;
   onEdit: (interaction: DrugInteractionDto) => void;
+  onAdd: () => void;
 }) {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -174,6 +180,13 @@ function InteractionsTable({
         ]}
         emptyTitle="No interactions match"
         emptyDescription={canManage ? 'Add an interaction to have it checked on every prescription.' : undefined}
+        emptyAction={
+          canManage ? (
+            <Button appearance="primary" icon={<AddRegular />} onClick={onAdd}>
+              Add interaction
+            </Button>
+          ) : undefined
+        }
         page={page}
         pageSize={25}
         totalCount={interactions.data?.totalCount}

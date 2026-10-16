@@ -81,7 +81,7 @@ function matches(link: NavLink & { module: string }, term: string): boolean {
 }
 
 /**
- * Ctrl+K: jump to any screen the user may open, or find a patient by UHID, mobile number or name
+ * Ctrl+K: jump to any screen the user may open, or find a patient by UHID, mobile number, ABHA number or name
  * (SRS UX-03: any record within 3 keystrokes).
  */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -170,7 +170,9 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           size="large"
           appearance="underline"
           placeholder={
-            canSearchPatients ? 'Search patients by UHID, mobile or name, or jump to a screen' : 'Jump to a screen'
+            canSearchPatients
+              ? 'Search patients by UHID, mobile, ABHA or name, or jump to a screen'
+              : 'Jump to a screen'
           }
           contentBefore={<SearchRegular />}
           contentAfter={patients.isFetching ? <Spinner size="tiny" aria-hidden /> : undefined}
@@ -183,57 +185,60 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           autoFocus
           input={{
             role: 'combobox',
-            'aria-expanded': true,
-            'aria-controls': listId,
+            // Collapsed while there is nothing to choose: the list then is not shown at all.
+            'aria-expanded': items.length > 0,
+            'aria-controls': items.length > 0 ? listId : undefined,
             'aria-activedescendant': items[active] ? optionId(active) : undefined,
             'aria-autocomplete': 'list',
           }}
         />
-        <ul className={styles.list} id={listId} role="listbox" aria-label="Results">
-          {items.length === 0 && (
-            <li className={styles.empty} role="presentation">
-              {debounced.length >= 3 && patients.isFetching
-                ? 'Searching…'
-                : 'No matches. Try a UHID, a 10-digit mobile number or part of a name.'}
-            </li>
-          )}
-          {items.map((item, index) => (
-            <li key={item.id} role="presentation">
-              {index === 0 && item.kind === 'patient' && (
-                <Caption1 as="p" className={styles.group}>
-                  Patients
-                </Caption1>
-              )}
-              {index === firstScreen && (
-                <Caption1 as="p" className={styles.group}>
-                  Screens
-                </Caption1>
-              )}
-              <div
-                id={optionId(index)}
-                role="option"
-                aria-selected={index === active}
-                className={mergeClasses(styles.option, index === active && styles.active)}
-                onMouseEnter={() => setActive(index)}
-                onClick={() => go(item)}
-              >
-                {item.kind === 'patient' ? <PersonRegular fontSize={20} /> : <ArrowRightRegular fontSize={20} />}
-                <span className={styles.optionText}>
-                  <Text truncate wrap={false}>
-                    {item.title}
-                  </Text>
-                  <Caption1
-                    className={mergeClasses(styles.muted, index === active && styles.activeMuted)}
-                    truncate
-                    wrap={false}
-                  >
-                    {item.subtitle}
+        {/* With nothing to choose there is no list, only a status: a listbox must hold options (WCAG 1.3.1). */}
+        {items.length === 0 ? (
+          <p className={styles.empty} role="status">
+            {debounced.length >= 3 && patients.isFetching
+              ? 'Searching…'
+              : 'No matches. Try a UHID, a 10-digit mobile number, an ABHA number or part of a name.'}
+          </p>
+        ) : (
+          <ul className={styles.list} id={listId} role="listbox" aria-label="Results">
+            {items.map((item, index) => (
+              <li key={item.id} role="presentation">
+                {index === 0 && item.kind === 'patient' && (
+                  <Caption1 as="p" className={styles.group}>
+                    Patients
                   </Caption1>
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
+                )}
+                {index === firstScreen && (
+                  <Caption1 as="p" className={styles.group}>
+                    Screens
+                  </Caption1>
+                )}
+                <div
+                  id={optionId(index)}
+                  role="option"
+                  aria-selected={index === active}
+                  className={mergeClasses(styles.option, index === active && styles.active)}
+                  onMouseEnter={() => setActive(index)}
+                  onClick={() => go(item)}
+                >
+                  {item.kind === 'patient' ? <PersonRegular fontSize={20} /> : <ArrowRightRegular fontSize={20} />}
+                  <span className={styles.optionText}>
+                    <Text truncate wrap={false}>
+                      {item.title}
+                    </Text>
+                    <Caption1
+                      className={mergeClasses(styles.muted, index === active && styles.activeMuted)}
+                      truncate
+                      wrap={false}
+                    >
+                      {item.subtitle}
+                    </Caption1>
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className={styles.footer}>
           <Caption1>↑ ↓ to move</Caption1>
           <Caption1>Enter to open</Caption1>

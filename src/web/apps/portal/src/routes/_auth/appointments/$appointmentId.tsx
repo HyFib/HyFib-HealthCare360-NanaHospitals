@@ -20,11 +20,12 @@ import { useLanguage, useT } from '@/i18n';
 import { useFormat } from '@/i18n/useFormat';
 import { usePortalFeatures } from '@/lib/features';
 import { isGuid } from '@/lib/ids';
+import { hasPendingAppointmentPayment } from '@/lib/payments';
 import { useToast } from '@/lib/toast';
 import type { PortalAppointment } from '@/lib/types';
 import { appointmentApi, appointmentQueries } from '@/modules/appointments/api';
 import { APPOINTMENT_STATUS, isOpenAppointment, PAYMENT_STATUS, VISIT_TYPE } from '@/modules/appointments/labels';
-import { payAppointment } from '@/modules/appointments/payment';
+import { confirmReturnedPayment, payAppointment } from '@/modules/appointments/payment';
 import { videoQueries } from '@/modules/video/api';
 import { useHospitalName } from '@/shell/hooks';
 import { useActiveProfile } from '@/shell/profileContext';
@@ -101,6 +102,29 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState<'cancel' | 'pay' | null>(null);
   const [paymentNote, setPaymentNote] = useState<string | null>(null);
+  // A payment made on the gateway's own page (the patient is now back here) is confirmed first, by the server's check.
+  const [returned, setReturned] = useState(
+    () => appointment.paymentStatus !== 'PaidOnline' && hasPendingAppointmentPayment(appointment.id),
+  );
+  const returnCheck = useQuery({
+    queryKey: ['portal', profile.id, 'appointment-payment-verify', appointment.id],
+    queryFn: async () => {
+      const result = await confirmReturnedPayment(appointment.id);
+      if (result.status !== 'pending') {
+        setReturned(false);
+        if (result.status === 'paid') {
+          toast.success(t('payment.success'), t('appointment.paid'));
+        } else {
+          toast.failure(result.error, t);
+        }
+        void queryClient.invalidateQueries({ queryKey: appointmentQueries.all(profile.id) });
+      }
+      return result;
+    },
+    enabled: returned,
+    retry: false,
+    staleTime: Infinity,
+  });
 
   const open = isOpenAppointment(appointment.status);
   // While the hospital has video consultations turned off, a video appointment can only be cancelled here.
@@ -138,6 +162,10 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
         description: `${appointment.practitionerName} · ${f.dateTime(appointment.startsAt)}`,
         language,
       });
+      if (result.status === 'redirected') {
+        // The gateway's own page is opening in this tab; this page confirms the payment when the patient is back.
+        return;
+      }
       if (result.status === 'paid') {
         toast.success(t('payment.success'), t('appointment.paid'));
       } else if (result.status === 'not-paid') {
@@ -196,6 +224,19 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
         />
       </section>
 
+      {returned && returnCheck.isFetching && <Notice intent="info">{t('payment.verifying')}</Notice>}
+      {returned && !returnCheck.isFetching && returnCheck.data?.status === 'pending' && (
+        <Notice
+          intent="info"
+          action={
+            <Button size="small" onClick={() => void returnCheck.refetch()}>
+              {t('payment.checkAgain')}
+            </Button>
+          }
+        >
+          {t('payment.pending')}
+        </Notice>
+      )}
       {paymentNote && <Notice intent="warning">{paymentNote}</Notice>}
       {open && videoOff && <Notice intent="info">{t('features.videoOff.booked')}</Notice>}
       {changeClosed && <Notice intent="info">{t('appointment.changeClosed')}</Notice>}
@@ -218,7 +259,7 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
                 {t('appointment.joinVideo')}
               </ButtonLink>
             ))}
-          {appointment.canPay && (
+          {appointment.canPay && !returned && (
             <Button
               appearance={appointment.isTelehealth ? 'secondary' : 'primary'}
               size="large"

@@ -159,6 +159,10 @@ export function BookingSheet({
           description: `${doctor.name} · ${f.dateTime(slot.startsAt)}`,
           language,
         });
+        if (payment.status === 'redirected') {
+          // This page is being left for the gateway's own page; the appointment's page confirms it on return.
+          return;
+        }
         if (payment.status === 'paid') {
           paid = true;
           void queryClient.invalidateQueries({ queryKey: appointmentQueries.all(values.patientId) });

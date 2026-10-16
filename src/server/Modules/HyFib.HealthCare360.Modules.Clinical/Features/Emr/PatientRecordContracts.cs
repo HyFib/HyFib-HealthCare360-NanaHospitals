@@ -89,6 +89,7 @@ public enum TimelineEntryType
     Document,
     DischargeSummary,
     Result,
+    Procedure,
 }
 
 /// <summary>One row of the longitudinal EHR timeline (EHR-01/02).</summary>

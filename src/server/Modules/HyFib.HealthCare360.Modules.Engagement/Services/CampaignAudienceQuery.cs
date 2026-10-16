@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
 
@@ -8,7 +9,8 @@ namespace HyFib.HealthCare360.Modules.Engagement.Services;
 /// Builds the audience of a marketing campaign (CRM-03). The DPDP Act 2023 allows marketing only with consent, so the
 /// consent filter is not optional and not part of the segment: a patient qualifies only when they hold a granted,
 /// unrevoked <see cref="ConsentType.MarketingCommunication"/> consent that no later refusal supersedes. Deceased,
-/// inactive and merged records and patients without a mobile number are never included. Written against plain
+/// inactive and merged records and patients without a mobile number are never included. A WhatsApp campaign also needs
+/// the patient's number to have opted in to WhatsApp, with no STOP in force (<see cref="ReachableOnWhatsApp"/>). Written against plain
 /// <see cref="IQueryable{T}"/> (no provider-specific functions) so the same rules are unit-tested in memory and
 /// translated to SQL in production.
 /// </summary>
@@ -70,6 +72,13 @@ public static class CampaignAudienceQuery
 
         return audience;
     }
+
+    /// <summary>
+    /// Patients whose mobile number may get campaigns on WhatsApp (INT-WA): it opted in (desk, portal or START) and has no
+    /// STOP in force. The number is the patient's registered one, in E.164 as the opt-in records it.
+    /// </summary>
+    public static IQueryable<Patient> ReachableOnWhatsApp(IQueryable<Patient> patients, IQueryable<WhatsAppOptIn> optIns, IQueryable<WhatsAppOptOut> optOuts) =>
+        patients.Where(p => optIns.Any(o => o.Phone == p.Phone) && !optOuts.Any(o => o.Phone == p.Phone && o.OptedOut));
 
     /// <summary>Granted, not revoked, and not superseded by a later recorded refusal.</summary>
     public static Expression<Func<Patient, bool>> HasActiveMarketingConsent(IQueryable<PatientConsent> consents) =>

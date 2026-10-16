@@ -122,6 +122,70 @@ public sealed class AppointmentPaymentTests
         await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task An_order_paid_after_all_is_recorded_rather_than_replaced()
+    {
+        var appointment = BookedWithOrder("order_8");
+        var gateway = Gateway(new PaymentStatusResult("order_8", GatewayPaymentStatus.Captured, "pay_8", 600m, "upi", null));
+
+        var result = await Service(gateway).SettleOutstandingOrderAsync(appointment, TestContext.Current.CancellationToken);
+
+        result.IsSuccess.ShouldBeTrue();
+        appointment.PaymentStatus.ShouldBe(AppointmentPaymentStatus.PaidOnline);
+        appointment.GatewayPaymentId.ShouldBe("pay_8");
+    }
+
+    [Fact]
+    public async Task An_order_still_being_paid_is_not_replaced()
+    {
+        var appointment = BookedWithOrder("order_9");
+        var gateway = Gateway(new PaymentStatusResult("order_9", GatewayPaymentStatus.Pending, null, null, null, null));
+
+        var result = await Service(gateway).SettleOutstandingOrderAsync(appointment, TestContext.Current.CancellationToken);
+
+        result.Error!.Code.ShouldBe("payment.in_progress");
+        appointment.GatewayOrderId.ShouldBe("order_9");
+    }
+
+    [Fact]
+    public async Task No_new_order_is_made_while_the_gateway_cannot_say_what_became_of_the_last()
+    {
+        var appointment = BookedWithOrder("order_10");
+        var gateway = Substitute.For<IPaymentGateway>();
+        gateway.GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).ThrowsAsync(new HttpRequestException("offline"));
+
+        var result = await Service(gateway).SettleOutstandingOrderAsync(appointment, TestContext.Current.CancellationToken);
+
+        result.Error!.Code.ShouldBe("payment.gateway_unavailable");
+    }
+
+    [Theory]
+    [InlineData(GatewayPaymentStatus.Created)]
+    [InlineData(GatewayPaymentStatus.Failed)]
+    [InlineData(GatewayPaymentStatus.Expired)]
+    [InlineData(GatewayPaymentStatus.Cancelled)]
+    public async Task An_order_that_was_never_paid_may_be_replaced(GatewayPaymentStatus status)
+    {
+        var appointment = BookedWithOrder("order_11");
+        var gateway = Gateway(new PaymentStatusResult("order_11", status, null, null, null, null));
+
+        var result = await Service(gateway).SettleOutstandingOrderAsync(appointment, TestContext.Current.CancellationToken);
+
+        result.IsSuccess.ShouldBeTrue();
+        appointment.PaymentStatus.ShouldNotBe(AppointmentPaymentStatus.PaidOnline);
+    }
+
+    [Fact]
+    public async Task The_gateway_is_not_asked_when_there_is_no_order_to_replace()
+    {
+        var appointment = Booked(Start, AppointmentChannel.Portal);
+        var gateway = Substitute.For<IPaymentGateway>();
+
+        (await Service(gateway).SettleOutstandingOrderAsync(appointment, TestContext.Current.CancellationToken)).IsSuccess.ShouldBeTrue();
+
+        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
     private static Appointment BookedWithOrder(string orderId)
     {
         var appointment = Booked(Start, AppointmentChannel.Portal);

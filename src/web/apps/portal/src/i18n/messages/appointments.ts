@@ -76,6 +76,10 @@ export const appointmentMessages = defineMessages({
     'payment.secure':
       "Payments are handled by the hospital's payment partner. This portal never sees your card number or UPI PIN.",
     'payment.training': 'The hospital payment system is in training mode. No real money is taken.',
+    'payment.return.title': 'Thank you',
+    'payment.return.body':
+      'If your payment went through, the hospital records it within a few minutes, and it shows on your bill or appointment.',
+    'payment.return.opening': 'Taking you back to your payment…',
   },
   hi: {
     'appointments.title': 'अपॉइंटमेंट',
@@ -149,5 +153,9 @@ export const appointmentMessages = defineMessages({
     'payment.secure':
       'भुगतान अस्पताल के पेमेंट पार्टनर द्वारा किया जाता है। यह पोर्टल आपका कार्ड नंबर या UPI PIN कभी नहीं देखता।',
     'payment.training': 'अस्पताल की भुगतान प्रणाली प्रशिक्षण मोड में है। कोई असली राशि नहीं ली जाती।',
+    'payment.return.title': 'धन्यवाद',
+    'payment.return.body':
+      'अगर आपका भुगतान हो गया है, तो अस्पताल कुछ मिनटों में उसे दर्ज कर लेगा, और वह आपके बिल या अपॉइंटमेंट पर दिखेगा।',
+    'payment.return.opening': 'आपको आपके भुगतान पर वापस ले जा रहे हैं…',
   },
 });

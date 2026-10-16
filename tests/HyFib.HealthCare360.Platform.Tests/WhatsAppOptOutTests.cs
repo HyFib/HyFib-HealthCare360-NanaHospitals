@@ -53,6 +53,55 @@ public sealed class WhatsAppOptOutTests
     public void A_stop_stops_non_essential_whatsapp_messages_including_templates_of_modules(string templateKey) =>
         WhatsAppOptOutPolicy.Stops(NotificationChannel.WhatsApp, templateKey, numberOptedOut: true).ShouldBeTrue();
 
+    [Theory]
+    [InlineData("appointment.reminder")]
+    [InlineData("followup.reminder")]
+    [InlineData("feedback.request")]
+    [InlineData("campaign.message")]
+    [InlineData("pharmacy.refill_reminder")]
+    [InlineData("rpm.device_silent")]
+    public void Reminders_feedback_requests_and_campaigns_need_a_whatsapp_opt_in(string templateKey) =>
+        WhatsAppOptOutPolicy.NeedsOptIn(templateKey).ShouldBeTrue();
+
+    [Theory]
+    [InlineData("auth.otp")]
+    [InlineData("appointment.confirmed")]
+    [InlineData("lab.report_ready")]
+    [InlineData("bill.shared")]
+    [InlineData("bill.receipt")]
+    [InlineData("payment.link")]
+    [InlineData("telehealth.link")]
+    [InlineData("prescription.shared")]
+    public void Messages_about_the_patients_own_care_need_no_opt_in(string templateKey) =>
+        WhatsAppOptOutPolicy.NeedsOptIn(templateKey).ShouldBeFalse();
+
+    [Fact]
+    public void Every_built_in_template_that_needs_an_opt_in_also_stops_after_stop()
+    {
+        WhatsAppOptOutPolicy.OptInTemplates.Intersect(WhatsAppOptOutPolicy.EssentialTemplates).ShouldBeEmpty();
+        var builtIn = DefaultNotificationTemplates.All.Select(t => t.Key).ToHashSet(StringComparer.Ordinal);
+        WhatsAppOptOutPolicy.OptInTemplates.Where(builtIn.Contains).ShouldAllBe(k => WhatsAppOptOutPolicy.StoppedTemplates.Contains(k));
+    }
+
+    [Fact]
+    public void A_number_is_reachable_for_reminders_only_when_opted_in_and_not_stopped()
+    {
+        var at = Stop;
+        new WhatsAppConsentStatus(true, at, WhatsAppOptInSource.RegistrationDesk, null, false, null).Reachable.ShouldBeTrue();
+        new WhatsAppConsentStatus(true, at, WhatsAppOptInSource.Portal, null, true, at).Reachable.ShouldBeFalse();
+        WhatsAppConsentStatus.None.Reachable.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_opt_in_lookup_is_indexed_on_the_number()
+    {
+        using var db = ModelOnlyContext();
+
+        var entity = db.Model.FindEntityType(typeof(WhatsAppOptIn))!;
+        entity.GetTableName().ShouldBe("whatsapp_opt_ins");
+        entity.GetIndexes().ShouldContain(i => i.Properties[0].Name == nameof(WhatsAppOptIn.Phone));
+    }
+
     [Fact]
     public void Sign_in_codes_still_go_out_on_whatsapp_after_a_stop() =>
         WhatsAppOptOutPolicy.Stops(NotificationChannel.WhatsApp, "auth.otp", numberOptedOut: true).ShouldBeFalse();

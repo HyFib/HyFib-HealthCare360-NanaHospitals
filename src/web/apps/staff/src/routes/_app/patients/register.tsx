@@ -26,7 +26,12 @@ import { useFormDraft } from '@/lib/useFormDraft';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import { patientApi, patientKeys, type DuplicateCandidate } from '@/modules/patients/api';
 import { PatientForm } from '@/modules/patients/PatientForm';
-import { emptyPatientForm, toPatientPayload, type PatientFormValues } from '@/modules/patients/validation';
+import {
+  emptyPatientForm,
+  toPatientPayload,
+  whatsAppOptInOf,
+  type PatientFormValues,
+} from '@/modules/patients/validation';
 
 interface RegisterSearch {
   name?: string;
@@ -118,7 +123,11 @@ function RegisterPatientPage() {
 
   const register = useMutation({
     mutationFn: ({ values, confirmed }: { values: PatientFormValues; confirmed: boolean }) =>
-      patientApi.register({ ...toPatientPayload(values), confirmedNotDuplicate: confirmed }),
+      patientApi.register({
+        ...toPatientPayload(values),
+        whatsAppOptIn: whatsAppOptInOf(values),
+        confirmedNotDuplicate: confirmed,
+      }),
     onSuccess: (result, { values }) => {
       draft.clear();
       // Saved: what the form shows is no longer an unsaved change, so leaving from the result does not ask.
@@ -190,6 +199,7 @@ function RegisterPatientPage() {
         busy={register.isPending}
         submitLabel="Register and issue UHID"
         checkDuplicates
+        askWhatsAppOptIn
         onOpenCandidate={(c) => void navigate({ to: '/patients/$patientId', params: { patientId: c.id } })}
         onFormReady={setForm}
         leaveQuestion={LEAVE_KEEPING_DRAFT}

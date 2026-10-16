@@ -128,6 +128,13 @@ function PackagesPage() {
           ]}
           emptyTitle="No packages yet"
           emptyDescription="Create a package, then assign it from an admitted patient's IP account or from a draft OP bill."
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                New package
+              </Button>
+            ) : undefined
+          }
           size="small"
         />
       </Section>

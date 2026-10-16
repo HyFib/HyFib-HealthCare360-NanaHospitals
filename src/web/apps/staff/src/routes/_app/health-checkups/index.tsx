@@ -268,6 +268,17 @@ function CheckupDayPage() {
           emptyDescription={
             canManage ? 'Use Book check-up to book one, or Corporate batches for a company drive.' : undefined
           }
+          emptyAction={
+            canManage ? (
+              <Button
+                appearance="primary"
+                icon={<CalendarAddRegular />}
+                onClick={() => void navigate({ to: '/health-checkups/book' })}
+              >
+                Book check-up
+              </Button>
+            ) : undefined
+          }
           page={filters.page ?? 1}
           pageSize={50}
           totalCount={bookings.data?.totalCount}

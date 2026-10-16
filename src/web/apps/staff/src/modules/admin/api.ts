@@ -104,6 +104,21 @@ export interface HealthWarning {
   message: string;
 }
 
+/**
+ * IntegrationHealth: one integration as System health shows it (SRS DED-17). `health` uses the integrations dashboard's
+ * words; the last error is only on that dashboard.
+ */
+export interface IntegrationHealthSummary {
+  name: string;
+  displayName: string;
+  enabled: boolean;
+  configured: boolean;
+  health: string;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  failuresLast24Hours: number;
+}
+
 export interface WifiConnectionInfo {
   interfaceDescription: string;
   isConnected: boolean;
@@ -261,8 +276,16 @@ export interface SystemHealthReport {
     lastSizeBytes: number | null;
   };
   outbox: { pending: number; failedLast24Hours: number; oldestPendingAt: string | null };
-  certificate: { caFingerprint: string | null; serverExpiresAt: string | null; subjectAlternativeNames: string[] };
+  certificate: {
+    caFingerprint: string | null;
+    serverExpiresAt: string | null;
+    subjectAlternativeNames: string[];
+    /** Null with an administrator-supplied certificate, whose issuer HC360 does not hold. */
+    caExpiresAt: string | null;
+  };
   power: { available: boolean; onBattery: boolean | null; chargePercent: number | null; source: string | null };
+  /** Empty when the integrations are not loaded (never on a real server). */
+  integrations: IntegrationHealthSummary[];
   warnings: HealthWarning[];
   generatedAt: string;
 }
@@ -322,6 +345,8 @@ export interface SettingDto {
   hasValue: boolean;
   description: string | null;
   updatedAt: string | null;
+  /** Sent back with a change, so a save over someone else's newer one is refused (409) rather than lost (REL-04). */
+  version: number;
 }
 
 export interface BackupRunDto {

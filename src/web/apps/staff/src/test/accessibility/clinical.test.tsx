@@ -27,6 +27,7 @@ import type {
 } from '@/modules/emr/prescriptionsApi';
 import type { VitalFlag } from '@/modules/emr/vitals';
 import type { WardRound, WardRoundPatient } from '@/modules/inpatient/api';
+import type { VisitListItem } from '@/modules/patients/api';
 import {
   fakeServer,
   openScreen,
@@ -1115,6 +1116,27 @@ const LETTERHEAD: Letterhead = { name: 'Nana Hospitals, Pune' };
 
 const patientPath = `/api/v1/emr/patients/${ASHA.patientId}`;
 
+/** Today's visit, whose payer the banner shows. */
+const VISIT: VisitListItem = {
+  id: '0192a000-0000-7000-8000-0000000000e1',
+  visitNumber: 'OP2600981',
+  ...ASHA,
+  type: 'OutPatient',
+  status: 'InProgress',
+  departmentId: null,
+  departmentName: 'General Medicine',
+  practitionerId: null,
+  practitionerName: 'Dr. Meera Iyer',
+  visitedAt: new Date().toISOString(),
+  completedAt: null,
+  isFollowUp: false,
+  isFreeFollowUp: false,
+  payerType: 'Self',
+  isMlc: false,
+  tokenLabel: 'GM-12',
+  tokenStatus: 'InService',
+};
+
 let server: ReturnType<typeof fakeServer>;
 
 beforeEach(() => {
@@ -1131,6 +1153,7 @@ beforeEach(() => {
     [`GET ${patientPath}/vitals`]: paged(VITALS),
     [`GET ${patientPath}/diagnoses`]: DIAGNOSES,
     [`GET ${patientPath}/notes`]: paged(NOTES),
+    [`GET /api/v1/patients/${ASHA.patientId}/visits`]: paged([VISIT]),
     'GET /api/v1/emr/templates': TEMPLATES,
     [`GET /api/v1/emr/templates/${TEMPLATE_ID}`]: TEMPLATE,
     'GET /api/v1/emr/favourites': (request: FakeRequest) =>
@@ -1183,6 +1206,7 @@ describe('doctor screens', SCREEN_TESTS, () => {
   it('encounter (consultation)', async () => {
     openScreen(`/emr/encounters/${ENCOUNTER_ID}`);
     expect(await screen.findByText('Allergies: Penicillin (anaphylaxis), Sulfonamides', {}, SLOW)).toBeInTheDocument();
+    expect(await screen.findByText('Payer: Self-pay', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('Dictate with AI', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('Template investigations (2)', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('104/min', {}, SLOW)).toBeInTheDocument();

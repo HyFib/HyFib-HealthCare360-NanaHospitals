@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.DoctorFees;
@@ -11,6 +12,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Features.Tally;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Billing.Services;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -59,8 +61,11 @@ public sealed class BillingModule : IModule
         services.AddScoped<GatewayRefundTracker>();
         services.AddScoped<PrepaymentChecker>();
         services.AddScoped<GatewayReconciliationRunner>();
+        services.AddScoped<PosRecheckRunner>();
         services.AddScoped<GatewayWebhookLog>();
         services.AddScoped<PosSettlementService>();
+        services.AddScoped<BillSharing>();
+        services.AddScoped<INotificationDocumentSource, BillDocumentSource>();
 
         // Replace the Platform's "billing not installed" fallbacks; ChargeService is shared so a request has one unit of work.
         services.Replace(ServiceDescriptor.Scoped<IChargePoster>(sp => sp.GetRequiredService<ChargeService>()));
@@ -68,6 +73,7 @@ public sealed class BillingModule : IModule
 
         services.AddHostedService<TallyDayBookScheduler>();
         services.AddHostedService<GatewayReconciliationJob>();
+        services.AddHostedService<PosRecheckJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

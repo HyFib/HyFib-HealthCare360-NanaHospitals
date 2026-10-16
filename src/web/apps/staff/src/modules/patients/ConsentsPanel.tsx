@@ -60,6 +60,7 @@ import {
   otherGivenNote,
   recordedNotice,
   signedByText,
+  whatsAppSummary,
   withdrawalEffect,
   withdrawnNotice,
   withdrawnText,
@@ -80,6 +81,7 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   details: { display: 'flex', flexDirection: 'column', gap: '8px' },
+  whatsApp: { marginBottom: '12px' },
 });
 
 interface Withdrawal {
@@ -152,6 +154,7 @@ export function ConsentsPanel({ patientId }: { patientId: string }) {
 
   return (
     <>
+      <WhatsAppChoices patientId={patientId} canManage={canManage} />
       {canManage && (
         <div className={styles.toolbar}>
           <Button {...restoreFocusTarget} appearance="primary" icon={<AddRegular />} onClick={() => setRecording(true)}>
@@ -240,6 +243,50 @@ export function ConsentsPanel({ patientId }: { patientId: string }) {
         onCancel={closeWithdrawal}
       />
     </>
+  );
+}
+
+/**
+ * The WhatsApp choices of the patient's number (INT-WA), above the consents: they belong to the number, not to a
+ * consent form. Staff record the patient's agreement here; a STOP can be lifted only by the number's holder.
+ */
+function WhatsAppChoices({ patientId, canManage }: { patientId: string; canManage: boolean }) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const status = useQuery(patientQueries.whatsApp(patientId));
+  const record = useMutation({
+    mutationFn: () => consentApi.whatsAppOptIn(patientId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(patientKeys.whatsApp(patientId), updated);
+      notify.success('WhatsApp opt-in recorded', 'Reminders and updates can now go to the patient on WhatsApp.');
+    },
+    onError: (error) => notify.error(error, 'The WhatsApp opt-in was not recorded'),
+  });
+
+  if (!status.data) {
+    return null;
+  }
+
+  const summary = whatsAppSummary(status.data);
+  return (
+    <MessageBar intent={summary.intent} layout="multiline" className={styles.whatsApp}>
+      <MessageBarBody>
+        <MessageBarTitle>{summary.title}</MessageBarTitle>
+        {summary.body}
+      </MessageBarBody>
+      {canManage && summary.canRecord && (
+        <MessageBarActions>
+          <Button
+            disabled={record.isPending}
+            icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
+            onClick={() => record.mutate()}
+          >
+            Record WhatsApp opt-in
+          </Button>
+        </MessageBarActions>
+      )}
+    </MessageBar>
   );
 }
 

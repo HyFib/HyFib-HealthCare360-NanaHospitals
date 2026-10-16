@@ -81,5 +81,8 @@ export function toTemplate(values: PrintTemplateForm, item: PrintTemplateItem): 
 }
 
 export function toSaveRequest(values: PrintTemplateForm, item: PrintTemplateItem): SavePrintTemplateRequest {
-  return { template: toTemplate(values, item), forThisFacility: values.scope === 'facility' };
+  const forThisFacility = values.scope === 'facility';
+  // The version of the template this one replaces, so a save over someone else's newer one is refused (REL-04).
+  const version = forThisFacility ? item.facilityVersion : item.hospitalWideVersion;
+  return { template: toTemplate(values, item), forThisFacility, ...(version === null ? {} : { version }) };
 }

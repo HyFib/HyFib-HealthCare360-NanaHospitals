@@ -94,6 +94,11 @@ export interface PatientFormProps {
   secondaryActions?: ReactNode;
   /** Asked instead of "Leave without saving?" (registration keeps a draft on this computer). */
   leaveQuestion?: LeaveQuestion;
+  /**
+   * Show the WhatsApp opt-in switch (registration). For a registered patient it is recorded from their consents, as it
+   * belongs to the number rather than to the form.
+   */
+  askWhatsAppOptIn?: boolean;
 }
 
 /**
@@ -109,6 +114,7 @@ export function PatientForm(props: PatientFormProps) {
   });
   const { control, handleSubmit } = form;
   const ageMode = useWatch({ control, name: 'ageMode' });
+  const phone = useWatch({ control, name: 'phone' });
   const { onFormReady } = props;
 
   useEffect(() => onFormReady?.(form), [form, onFormReady]);
@@ -255,6 +261,22 @@ export function PatientForm(props: PatientFormProps) {
                 options={LANGUAGES.map((l) => ({ value: l, label: l }))}
               />
             </FormGrid>
+            {props.askWhatsAppOptIn && (
+              <>
+                <div style={{ height: 12 }} />
+                <SwitchField
+                  control={control}
+                  name="whatsAppOptIn"
+                  label="Patient agrees to WhatsApp reminders and updates on this number"
+                  disabled={!phone.trim()}
+                  hint={
+                    phone.trim()
+                      ? 'Ask the patient. Reminders, feedback requests and offers go on WhatsApp only with this agreement; bills and reports go unless the number replies STOP.'
+                      : 'Enter the mobile number first.'
+                  }
+                />
+              </>
+            )}
             <div style={{ height: 12 }} />
             <FormGrid columns={3}>
               <TextField control={control} name="address.line1" label="House / street" autoComplete="off" />

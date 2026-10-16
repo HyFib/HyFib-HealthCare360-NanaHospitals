@@ -136,8 +136,8 @@ export function CampaignEditor({
   const segmentKey = useDebouncedValue(JSON.stringify(toSegment(draft)), 500);
   const segment = useMemo(() => JSON.parse(segmentKey) as SegmentInput, [segmentKey]);
   const preview = useQuery({
-    queryKey: ['crm', 'campaigns', 'preview', segment],
-    queryFn: () => crmApi.previewAudience(segment),
+    queryKey: ['crm', 'campaigns', 'preview', segment, draft.channel],
+    queryFn: () => crmApi.previewAudience(segment, draft.channel),
     enabled: canManage && Object.keys(problems({ ...draft, name: 'x', message: 'x' })).length === 0,
     staleTime: 30_000,
     retry: false,
@@ -367,7 +367,8 @@ export function CampaignEditor({
             <MessageBar intent="info" icon={<ShieldCheckmarkRegular />} layout="multiline">
               <MessageBarBody>
                 Only patients who agreed to marketing messages, have a mobile number and are active are counted (DPDP
-                Act). Consent is checked again when each message is sent.
+                Act). On WhatsApp, the patient’s number must also have opted in to WhatsApp and not replied STOP.
+                Consent is checked again when each message is sent.
               </MessageBarBody>
             </MessageBar>
           </Stack>

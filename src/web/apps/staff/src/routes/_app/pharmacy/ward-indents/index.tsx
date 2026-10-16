@@ -178,6 +178,13 @@ function WardIndentsPage() {
               ? 'Raise an indent for an admitted patient when the ward needs medicines.'
               : 'New indents appear here as the wards raise them.'
           }
+          emptyAction={
+            canRaise ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setRaising(true)}>
+                Raise ward indent
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={indents.data?.totalCount}

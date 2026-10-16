@@ -78,7 +78,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment; Download PDF or print a bill; receipts (print) |
 | `/records`, `/records/discharge/{id}`, `/records/request` | yes | Health summary, discharge summaries (Download PDF or print), request a copy of records |
 | `/my-feedback`, `/my-feedback/{formId}` | yes | Feedback forms and the patient's feedback with complaint status |
-| `/profile`, `/profile/preferences` | yes | Details, family, language, SMS and WhatsApp choices, sign out |
+| `/profile`, `/profile/preferences` | yes | Details, family, language, SMS and WhatsApp choices, sign out. "Messages on WhatsApp" records the number's WhatsApp opt-in (or opt-out, as a STOP would), and lifts a STOP the number sent; it can be changed only when signed in with the patient's own number, and is shown read-only, with the reason, to a family member on another number |
 | `/profile/family` | yes | Family on other numbers: the relatives the account sees (Remove), add a relative with a code sent to their number, and the accounts that see the records of someone on this number (Stop sharing) |
 | `/feedback/{token}` | no | Personal feedback link (SMS after a visit or stay) |
 | `/feedback/form/{token}` | no | QR poster form. Add `?kiosk=true` on a kiosk tablet, which then resets itself after each response |
@@ -168,9 +168,23 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 
   After any of these, `POST …/payments/{orderRowId}/verify` asks the server to confirm with the gateway server to
   server. The check is safe to repeat ("Check payment status"). The portal never handles card numbers or UPI PINs.
-* **Appointments.** Paying online uses `…/payment`, then `…/payment/confirm` with Razorpay's order id, payment id and
-  signature. The training gateway gives no signature, so its payments are confirmed with `…/payment/verify`, a
-  server-to-server check. A payment problem never loses the booked slot.
+* **Appointments.** Paying online uses `…/payment`, then:
+  * **Razorpay:** Checkout, then `…/payment/confirm` with Razorpay's order id, payment id and signature.
+  * **Gateway's own page, when Checkout cannot load here** (its script is blocked by the network or the browser):
+    the page asks for `…/payment?hosted=true`, a payment link, opens it and remembers the appointment in this tab.
+    The gateway sends the patient back to `/portal/payment-return`, which opens the appointment, and its page confirms
+    the payment with `…/payment/verify`, server to server. Until the outcome is known (not reported yet, gateway
+    unreachable, or offline) the page says so and offers "Check payment status", and Pay stays hidden.
+  * **Training gateway (simulator):** confirmed with `…/payment/verify`.
+
+  Before the server replaces an appointment's order with a new one, it asks the gateway what became of the old one:
+  a payment taken after all is recorded (the portal is told "already paid"), and while one is still being processed,
+  or the gateway cannot say, no new order is made. An appointment keeps one order, so a replaced order that was paid
+  would otherwise be found by neither the webhook nor the re-check. A payment problem never loses the booked slot.
+* **Return page.** `/portal/payment-return` is where the gateway sends patients back from its own page: set
+  `integrations.payment.paymentLinkCallbackUrl` to `https://<portal address>/portal/payment-return`. It opens the
+  bill or appointment this tab was paying for; anyone else (for example a patient who paid a link the hospital sent
+  by SMS) is thanked, as the gateway's webhook records their payment anyway.
 * **When the page is closed after paying.** The patient is still credited. The gateway's webhook, or the server's
   re-check every few minutes, records the bill's receipt or confirms the booking and receipts its advance; the bill
   or appointment shows it the next time the patient looks. Receipts are dated when the gateway took the money, not
@@ -246,9 +260,6 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 
 ## Known gaps (server follow-ups)
 
-* **Hosted payment pages for appointments.** Appointments are paid with Razorpay Checkout (or the training gateway).
-  The server would now confirm a payment made on a hosted page (by the webhook or its re-check), but the portal still
-  opens a hosted payment link for bills only.
 * **Refund status in the portal.** Patients do not see where a refund stands; the hospital tells them.
 * **English-only server text.** Business-rule messages (409 and 422 details, validation messages) arrive in English
   only and are shown as sent.

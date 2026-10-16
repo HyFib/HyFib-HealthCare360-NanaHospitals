@@ -1,4 +1,4 @@
-import { ApiError, featureOf, isFeatureDisabled, isSessionLocked, toApiError } from './errors';
+import { ApiError, CORRELATION_HEADER, featureOf, isFeatureDisabled, isSessionLocked, toApiError } from './errors';
 
 export type ClientType = 'web' | 'desktop' | 'portal';
 
@@ -61,6 +61,8 @@ const MAX_ATTEMPTS = 3;
  *   duplicate a bill, payment or order;
  * - transient failures (network, 502/503/504) are retried with exponential backoff + jitter;
  * - a 401 triggers one token refresh and replay; a 423 (the screen is locked) does not, it waits for the PIN;
+ * - every request carries an `X-Correlation-Id`, the same on each retry, which the server logs and echoes, so the
+ *   reference a user quotes finds the request in the server's logs (SRS OBS-04);
  * - Problem Details become typed {@link ApiError}s with field errors for forms.
  */
 export function createApiClient(config: ApiClientConfig): ApiClient {
@@ -69,12 +71,16 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     const isAuthCall = path.startsWith('/api/v1/auth/');
     const idempotencyKey = unsafe && !isAuthCall ? (options.idempotencyKey ?? crypto.randomUUID()) : undefined;
     const url = buildUrl(config.baseUrl ?? '', path, options.query);
+    const correlationId = crypto.randomUUID();
     let refreshed = false;
 
     for (let attempt = 1; ; attempt++) {
       const headers = new Headers(options.headers);
       headers.set('Accept', 'application/json');
       headers.set('X-HC360-Client', config.clientType);
+      if (!headers.has(CORRELATION_HEADER)) {
+        headers.set(CORRELATION_HEADER, correlationId);
+      }
       const token = config.getAccessToken();
       if (token) {
         headers.set('Authorization', `Bearer ${token}`);

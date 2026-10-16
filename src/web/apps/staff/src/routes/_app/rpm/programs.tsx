@@ -82,6 +82,13 @@ function ProgramsPage() {
           ]}
           emptyTitle="No programmes"
           emptyDescription={canManage ? 'Add a programme before enrolling patients.' : undefined}
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing({ program: null })}>
+                Add programme
+              </Button>
+            ) : undefined
+          }
           size="small"
         />
       </Section>

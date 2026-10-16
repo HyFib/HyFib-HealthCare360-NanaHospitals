@@ -262,6 +262,8 @@ describe('ReportParameterForm', () => {
     await userEvent.clear(days);
     await userEvent.type(days, '90{Enter}');
     expect(days).toHaveFocus();
+    // Enter in a number input applies the number; it does not save the tile as well.
+    expect(onSave).not.toHaveBeenCalled();
 
     await userEvent.clear(from);
     await userEvent.type(from, '2026-09-15');
@@ -272,5 +274,18 @@ describe('ReportParameterForm', () => {
       ...TILE,
       parameters: { period: 'custom', from: '2026-09-15', to: '2026-09-30', days: '90' },
     });
+  });
+
+  it('saves the tile with Enter in its title', async () => {
+    const onSave = vi.fn();
+    renderWithProviders(
+      <WidgetEditorDialog catalogue={CATALOGUE} initial={TILE} newId="w2" onSave={onSave} onClose={() => {}} />,
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Change tile' });
+    const title = within(dialog).getByRole('textbox', { name: 'Tile title' });
+
+    await userEvent.clear(title);
+    await userEvent.type(title, 'Overdue bills{Enter}');
+    expect(onSave).toHaveBeenCalledWith({ ...TILE, title: 'Overdue bills' });
   });
 });

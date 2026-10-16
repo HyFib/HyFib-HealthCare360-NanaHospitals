@@ -49,6 +49,7 @@ public sealed class HospitalCaTransferTests : IDisposable
         using var server = new LanCertificateManager(standby, new PlatformOptions { DataDirectory = standby.Root }, standbyKeys, NullLogger<LanCertificateManager>.Instance);
         server.EnsureCertificates();
         server.CaFingerprint.ShouldBe(primaryFingerprint, "the standby announces the CA workstations pinned");
+        server.CaExpiresAt.ShouldBe(imported.ExpiresAt, "System health shows when the imported CA expires");
         ChainsTo(server.ServerCertificate, primaryCaPem).ShouldBeTrue("its server certificate is issued by the hospital CA");
     }
 

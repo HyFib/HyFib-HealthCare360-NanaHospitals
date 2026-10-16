@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Tests.Support;
+using HyFib.HealthCare360.Platform.Contracts;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Tests.Ot;
 
@@ -57,6 +58,28 @@ public sealed class SurgicalSafetyChecklistTests
 
         booking.Status.ShouldBe(SurgeryStatus.Completed);
         booking.MinutesInTheatre.ShouldBe(185 - 60);
+    }
+
+    [Fact]
+    public void A_completed_surgery_is_announced_for_the_patients_record()
+    {
+        var booking = TestData.InProgress();
+        booking.Laterality = Laterality.Right;
+        booking.ProcedureCode = "0FT44ZZ";
+        booking.ConfirmSafety(SafetyPhase.SignOut, Phase(SafetyPhase.SignOut), TestData.Staff(TestData.Now.AddHours(3))).IsSuccess.ShouldBeTrue();
+        booking.DomainEvents.ShouldBeEmpty("Nothing is announced before the operation is over.");
+
+        booking.Complete(TestData.Now.AddHours(3).AddMinutes(5)).IsSuccess.ShouldBeTrue();
+
+        var completed = booking.DomainEvents.OfType<SurgeryCompleted>().ShouldHaveSingleItem();
+        completed.SurgeryBookingId.ShouldBe(booking.Id);
+        completed.PatientId.ShouldBe(booking.PatientId);
+        completed.SurgeonId.ShouldBe(booking.SurgeonId);
+        completed.ProcedureName.ShouldBe("Laparoscopic cholecystectomy");
+        completed.ProcedureCode.ShouldBe("0FT44ZZ");
+        completed.Side.ShouldBe(ProcedureSide.Right);
+        completed.StartedAt.ShouldBe(TestData.Now.AddMinutes(80));
+        completed.CompletedAt.ShouldBe(TestData.Now.AddHours(3).AddMinutes(5));
     }
 
     [Fact]

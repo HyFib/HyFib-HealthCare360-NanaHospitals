@@ -26,6 +26,9 @@ if (args.Length > 0 && ServerCli.IsCommand(args[0]))
     return await ServerCli.RunAsync(args);
 }
 
+// --role all|api|worker sets HealthCare360:Role (SCAL-05).
+args = ServerArguments.Map(args);
+
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
@@ -39,6 +42,8 @@ var directories = new DataDirectories(platformOptions);
 directories.EnsureCreated();
 builder.Configuration.AddProtectedJsonFile(ProtectedSettings.PathIn(directories));
 builder.Configuration.AddEnvironmentVariables("HC360_");
+// The command line again, last, so a switch such as --role wins over the site settings file, as it would over appsettings.
+builder.Configuration.AddCommandLine(args);
 platformOptions = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? platformOptions;
 
 builder.Services.AddWindowsService(options => options.ServiceName = "HyFib HealthCare360");
@@ -165,6 +170,9 @@ if (builder.Configuration["OpenTelemetry:OtlpEndpoint"] is { Length: > 0 } otlp)
 
 var app = builder.Build();
 
+// First, so the request log and the exception handler's entries carry the request's correlation id (OBS-04).
+app.UseCorrelationId();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
@@ -200,19 +208,24 @@ foreach (var (extension, type) in new[] { (".html", "text/html"), (".js", "text/
 {
     contentTypes.Mappings[extension] = type + "; charset=utf-8";
 }
-app.UseDefaultFiles();
-app.UseStaticFiles(new StaticFileOptions
+
+// A worker node (--role worker) serves no app: only its health checks (UseServerApplication).
+if (platformOptions.ServesApi)
 {
-    ContentTypeProvider = contentTypes,
-    OnPrepareResponse = static context =>
+    app.UseDefaultFiles();
+    app.UseStaticFiles(new StaticFileOptions
     {
-        // Vite emits content-hashed assets: cache them for a year; always revalidate HTML.
-        var headers = context.Context.Response.Headers;
-        headers.CacheControl = context.Context.Request.Path.StartsWithSegments("/assets") || context.Context.Request.Path.StartsWithSegments("/portal/assets")
-            ? "public, max-age=31536000, immutable"
-            : "no-cache";
-    },
-});
+        ContentTypeProvider = contentTypes,
+        OnPrepareResponse = static context =>
+        {
+            // Vite emits content-hashed assets: cache them for a year; always revalidate HTML.
+            var headers = context.Context.Response.Headers;
+            headers.CacheControl = context.Context.Request.Path.StartsWithSegments("/assets") || context.Context.Request.Path.StartsWithSegments("/portal/assets")
+                ? "public, max-age=31536000, immutable"
+                : "no-cache";
+        },
+    });
+}
 
 app.UseSerilogRequestLogging(logging =>
 {
@@ -220,6 +233,9 @@ app.UseSerilogRequestLogging(logging =>
         exception is not null || http.Response.StatusCode >= 500 ? LogEventLevel.Error
         : http.Request.Path.StartsWithSegments("/health") ? LogEventLevel.Verbose
         : LogEventLevel.Information;
+
+    // The request log is written by Serilog directly, outside the logging scope the correlation middleware opens.
+    logging.EnrichDiagnosticContext = static (diagnostics, http) => diagnostics.Set("CorrelationId", http.TraceIdentifier);
 
     // Patient link tokens travel in the path: those requests are logged with their route template (see LoggedPath).
     logging.GetMessageTemplateProperties = static (http, _, elapsed, status) =>
@@ -236,7 +252,7 @@ app.UseServerApplication();
 // The reference and its schema answer only on their own address (ListenerPaths), which listens on the server machine
 // alone: the API's shape is not published to the hospital network, and the reference's script shares no origin, and no
 // cookie, with the staff app.
-if (apiReferenceOn)
+if (apiReferenceOn && platformOptions.ServesApi)
 {
     app.MapOpenApi().AllowAnonymous();
     app.MapScalarApiReference("/docs", scalar => scalar.WithTitle("HC360 API")).AllowAnonymous();
@@ -244,29 +260,32 @@ if (apiReferenceOn)
 
 // Portal pages opened from SMS links carry the patient's token in the path (/portal/feedback/{token}). The page is sent
 // without rewriting the path, so this endpoint stays current and logs and traces record its route template.
-app.MapFallback("/portal/{**path}", async context =>
+if (platformOptions.ServesApi)
 {
-    if (!await TrySendAppPageAsync(context, app.Environment, "portal/index.html"))
+    app.MapFallback("/portal/{**path}", async context =>
     {
-        context.Response.StatusCode = StatusCodes.Status404NotFound;
-    }
-}).AllowAnonymous().WithSensitivePath();
-app.MapFallback(async context =>
-{
-    if (await TrySendAppPageAsync(context, app.Environment, "index.html"))
+        if (!await TrySendAppPageAsync(context, app.Environment, "portal/index.html"))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+        }
+    }).AllowAnonymous().WithSensitivePath();
+    app.MapFallback(async context =>
     {
-        return;
-    }
+        if (await TrySendAppPageAsync(context, app.Environment, "index.html"))
+        {
+            return;
+        }
 
-    context.Response.ContentType = "text/html; charset=utf-8";
-    await context.Response.WriteAsync("""
-        <!doctype html><html lang="en"><head><meta charset="utf-8"><title>HC360 Server</title></head>
-        <body style="font-family:Segoe UI,system-ui,sans-serif;padding:2rem">
-        <h1>HyFib HealthCare360 server is running</h1>
-        <p>The staff UI is not bundled in this build. In development run <code>pnpm dev</code> in <code>src/web</code>.</p>
-        </body></html>
-        """);
-}).AllowAnonymous();
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync("""
+            <!doctype html><html lang="en"><head><meta charset="utf-8"><title>HC360 Server</title></head>
+            <body style="font-family:Segoe UI,system-ui,sans-serif;padding:2rem">
+            <h1>HyFib HealthCare360 server is running</h1>
+            <p>The staff UI is not bundled in this build. In development run <code>pnpm dev</code> in <code>src/web</code>.</p>
+            </body></html>
+            """);
+    }).AllowAnonymous();
+}
 
 await app.InitializeDatabaseAsync();
 await app.RunAsync();

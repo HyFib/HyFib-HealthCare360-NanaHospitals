@@ -104,124 +104,134 @@ export function BreakdownDialog({
   return (
     <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 620, width: '95vw' }}>
-        <DialogBody>
-          <DialogTitle>Report equipment breakdown</DialogTitle>
-          <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 280 }}>
-            {asset ? (
-              <div className={styles.asset}>
-                <WrenchRegular fontSize={22} aria-hidden />
-                <div className={styles.grow}>
-                  <Text weight="semibold">{asset.name}</Text>
-                  <Caption1 block>
-                    {asset.assetTag}
-                    {asset.location ? ` · ${asset.location}` : ''}
-                  </Caption1>
-                </div>
-                <Badge appearance="tint" color={criticalityTone[asset.criticality]}>
-                  {asset.criticality}
-                </Badge>
-                {!preset && (
-                  <Button size="small" onClick={() => setAsset(null)}>
-                    Change
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <SearchPicker<AssetListItem>
-                label="Equipment"
-                required
-                autoFocus
-                placeholder="Asset tag (scan the label), name, model or serial number"
-                queryKey={['assets', 'picker']}
-                fetch={(search, signal) =>
-                  api
-                    .get<PagedResult<AssetListItem>>('/api/v1/assets', { query: { search, pageSize: 10 }, signal })
-                    .then((r) => r.items)
-                }
-                getKey={(a) => a.id}
-                bestMatch={(items, typed) =>
-                  items.find((a) => a.assetTag.toUpperCase() === typed.trim().toUpperCase()) ?? items[0]
-                }
-                emptyText="No equipment matches. Check the tag on the label."
-                onPick={(a) =>
-                  setAsset({
-                    id: a.id,
-                    assetTag: a.assetTag,
-                    name: a.name,
-                    location: a.location ?? a.departmentName,
-                    criticality: a.criticality,
-                  })
-                }
-                renderOption={(a) => (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, width: '100%' }}>
-                    <span>
-                      <Text weight="semibold">{a.name}</Text>
-                      <Caption1 block>
-                        {a.assetTag}
-                        {a.model ? ` · ${a.model}` : ''}
-                        {a.location ? ` · ${a.location}` : a.departmentName ? ` · ${a.departmentName}` : ''}
-                      </Caption1>
-                    </span>
-                    <Caption1>{assetStatusLabel[a.status]}</Caption1>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid && !report.isPending) {
+              report.mutate();
+            }
+          }}
+          noValidate
+        >
+          <DialogBody>
+            <DialogTitle>Report equipment breakdown</DialogTitle>
+            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 280 }}>
+              {asset ? (
+                <div className={styles.asset}>
+                  <WrenchRegular fontSize={22} aria-hidden />
+                  <div className={styles.grow}>
+                    <Text weight="semibold">{asset.name}</Text>
+                    <Caption1 block>
+                      {asset.assetTag}
+                      {asset.location ? ` · ${asset.location}` : ''}
+                    </Caption1>
                   </div>
-                )}
+                  <Badge appearance="tint" color={criticalityTone[asset.criticality]}>
+                    {asset.criticality}
+                  </Badge>
+                  {!preset && (
+                    <Button size="small" onClick={() => setAsset(null)}>
+                      Change
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <SearchPicker<AssetListItem>
+                  label="Equipment"
+                  required
+                  autoFocus
+                  placeholder="Asset tag (scan the label), name, model or serial number"
+                  queryKey={['assets', 'picker']}
+                  fetch={(search, signal) =>
+                    api
+                      .get<PagedResult<AssetListItem>>('/api/v1/assets', { query: { search, pageSize: 10 }, signal })
+                      .then((r) => r.items)
+                  }
+                  getKey={(a) => a.id}
+                  bestMatch={(items, typed) =>
+                    items.find((a) => a.assetTag.toUpperCase() === typed.trim().toUpperCase()) ?? items[0]
+                  }
+                  emptyText="No equipment matches. Check the tag on the label."
+                  onPick={(a) =>
+                    setAsset({
+                      id: a.id,
+                      assetTag: a.assetTag,
+                      name: a.name,
+                      location: a.location ?? a.departmentName,
+                      criticality: a.criticality,
+                    })
+                  }
+                  renderOption={(a) => (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, width: '100%' }}>
+                      <span>
+                        <Text weight="semibold">{a.name}</Text>
+                        <Caption1 block>
+                          {a.assetTag}
+                          {a.model ? ` · ${a.model}` : ''}
+                          {a.location ? ` · ${a.location}` : a.departmentName ? ` · ${a.departmentName}` : ''}
+                        </Caption1>
+                      </span>
+                      <Caption1>{assetStatusLabel[a.status]}</Caption1>
+                    </div>
+                  )}
+                />
+              )}
+              <Field
+                label="What is wrong?"
+                required
+                hint="What happened and what you see, e.g. alarm keeps sounding, screen blank after power on"
+              >
+                <Textarea
+                  value={issue}
+                  rows={3}
+                  maxLength={2000}
+                  onChange={(_, d) => setIssue(d.value)}
+                  autoFocus={Boolean(preset)}
+                />
+              </Field>
+              <Field label="Priority">
+                <Select value={priority} onChange={(_, d) => setPriority(d.value as TicketPriority | '')}>
+                  <option value="">Based on how critical the equipment is</option>
+                  {TICKET_PRIORITIES.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Switch
+                checked={down}
+                onChange={(_, d) => setDown(d.checked)}
+                label="The equipment cannot be used until it is repaired"
               />
-            )}
-            <Field
-              label="What is wrong?"
-              required
-              hint="What happened and what you see, e.g. alarm keeps sounding, screen blank after power on"
-            >
-              <Textarea
-                value={issue}
-                rows={3}
-                maxLength={2000}
-                onChange={(_, d) => setIssue(d.value)}
-                autoFocus={Boolean(preset)}
-              />
-            </Field>
-            <Field label="Priority">
-              <Select value={priority} onChange={(_, d) => setPriority(d.value as TicketPriority | '')}>
-                <option value="">Based on how critical the equipment is</option>
-                {TICKET_PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Switch
-              checked={down}
-              onChange={(_, d) => setDown(d.checked)}
-              label="The equipment cannot be used until it is repaired"
-            />
-            {down && (
-              <Caption1>
-                It is marked under maintenance and the biomedical engineers are notified straight away.
-              </Caption1>
-            )}
-            {report.error && (
-              <MessageBar intent="error">
-                <MessageBarBody>
-                  {isApiError(report.error) ? report.error.userMessage : 'Not reported. Try again.'}
-                </MessageBarBody>
-              </MessageBar>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={guard.requestClose} disabled={report.isPending}>
-              Cancel
-            </Button>
-            <Button
-              appearance="primary"
-              disabled={!valid || report.isPending}
-              icon={report.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
-              onClick={() => report.mutate()}
-            >
-              Report breakdown
-            </Button>
-          </DialogActions>
-        </DialogBody>
+              {down && (
+                <Caption1>
+                  It is marked under maintenance and the biomedical engineers are notified straight away.
+                </Caption1>
+              )}
+              {report.error && (
+                <MessageBar intent="error">
+                  <MessageBarBody>
+                    {isApiError(report.error) ? report.error.userMessage : 'Not reported. Try again.'}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={guard.requestClose} disabled={report.isPending}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || report.isPending}
+                icon={report.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
+              >
+                Report breakdown
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
         {guard.dialogs}
       </DialogSurface>
     </Dialog>

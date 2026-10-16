@@ -25,6 +25,7 @@ import { Route as AppAdminSystemRouteImport } from './routes/_app/admin/system'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppAnalyticsIndexRouteImport } from './routes/_app/analytics/index'
 import { Route as AppAnalyticsExtractsRouteImport } from './routes/_app/analytics/extracts'
+import { Route as AppAnalyticsKpisRouteImport } from './routes/_app/analytics/kpis'
 import { Route as AppAnalyticsSchedulesRouteImport } from './routes/_app/analytics/schedules'
 import { Route as AppAssetsIndexRouteImport } from './routes/_app/assets/index'
 import { Route as AppAssetsAssetIdRouteImport } from './routes/_app/assets/$assetId'
@@ -386,6 +387,11 @@ const AppAnalyticsIndexRoute = AppAnalyticsIndexRouteImport.update({
 const AppAnalyticsExtractsRoute = AppAnalyticsExtractsRouteImport.update({
   id: '/analytics/extracts',
   path: '/analytics/extracts',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAnalyticsKpisRoute = AppAnalyticsKpisRouteImport.update({
+  id: '/analytics/kpis',
+  path: '/analytics/kpis',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAnalyticsSchedulesRoute = AppAnalyticsSchedulesRouteImport.update({
@@ -1879,6 +1885,7 @@ export interface FileRoutesByFullPath {
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
+  '/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/assets/$assetId': typeof AppAssetsAssetIdRoute
   '/assets/condemnations': typeof AppAssetsCondemnationsRoute
@@ -2178,6 +2185,7 @@ export interface FileRoutesByTo {
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
+  '/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/assets/$assetId': typeof AppAssetsAssetIdRoute
   '/assets/condemnations': typeof AppAssetsCondemnationsRoute
@@ -2479,6 +2487,7 @@ export interface FileRoutesById {
   '/_app/admin/system': typeof AppAdminSystemRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/analytics/extracts': typeof AppAnalyticsExtractsRoute
+  '/_app/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/_app/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/_app/assets/$assetId': typeof AppAssetsAssetIdRoute
   '/_app/assets/condemnations': typeof AppAssetsCondemnationsRoute
@@ -2780,6 +2789,7 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/admin/users'
     | '/analytics/extracts'
+    | '/analytics/kpis'
     | '/analytics/schedules'
     | '/assets/$assetId'
     | '/assets/condemnations'
@@ -3079,6 +3089,7 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/admin/users'
     | '/analytics/extracts'
+    | '/analytics/kpis'
     | '/analytics/schedules'
     | '/assets/$assetId'
     | '/assets/condemnations'
@@ -3379,6 +3390,7 @@ export interface FileRouteTypes {
     | '/_app/admin/system'
     | '/_app/admin/users'
     | '/_app/analytics/extracts'
+    | '/_app/analytics/kpis'
     | '/_app/analytics/schedules'
     | '/_app/assets/$assetId'
     | '/_app/assets/condemnations'
@@ -3782,6 +3794,13 @@ declare module '@tanstack/react-router' {
       path: '/analytics/extracts'
       fullPath: '/analytics/extracts'
       preLoaderRoute: typeof AppAnalyticsExtractsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics/kpis': {
+      id: '/_app/analytics/kpis'
+      path: '/analytics/kpis'
+      fullPath: '/analytics/kpis'
+      preLoaderRoute: typeof AppAnalyticsKpisRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/analytics/schedules': {
@@ -5774,6 +5793,7 @@ interface AppRouteChildren {
   AppAdminSystemRoute: typeof AppAdminSystemRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAnalyticsExtractsRoute: typeof AppAnalyticsExtractsRoute
+  AppAnalyticsKpisRoute: typeof AppAnalyticsKpisRoute
   AppAnalyticsSchedulesRoute: typeof AppAnalyticsSchedulesRoute
   AppAssetsAssetIdRoute: typeof AppAssetsAssetIdRoute
   AppAssetsCondemnationsRoute: typeof AppAssetsCondemnationsRoute
@@ -6072,6 +6092,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminSystemRoute: AppAdminSystemRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAnalyticsExtractsRoute: AppAnalyticsExtractsRoute,
+  AppAnalyticsKpisRoute: AppAnalyticsKpisRoute,
   AppAnalyticsSchedulesRoute: AppAnalyticsSchedulesRoute,
   AppAssetsAssetIdRoute: AppAssetsAssetIdRoute,
   AppAssetsCondemnationsRoute: AppAssetsCondemnationsRoute,

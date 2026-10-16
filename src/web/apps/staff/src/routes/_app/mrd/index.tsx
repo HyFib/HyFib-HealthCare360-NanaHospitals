@@ -1,6 +1,6 @@
 import { Button, Caption1, makeStyles, Text, tokens } from '@fluentui/react-components';
 import { formatDateOnly } from '@hc360/core';
-import { Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
+import { ErrorState, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import type { KeyboardEvent } from 'react';
@@ -69,7 +69,9 @@ function MrdOverviewPage() {
               </Button>
             }
           >
-            {(coding.data?.items.length ?? 0) === 0 ? (
+            {coding.error ? (
+              <ErrorState error={coding.error} onRetry={() => void coding.refetch()} />
+            ) : (coding.data?.items.length ?? 0) === 0 ? (
               <Text className={styles.muted}>{coding.isLoading ? 'Loading…' : 'Nothing waiting for coding.'}</Text>
             ) : (
               <ul className={styles.list}>
@@ -105,7 +107,9 @@ function MrdOverviewPage() {
               </Button>
             }
           >
-            {(overdue.data?.items.length ?? 0) === 0 ? (
+            {overdue.error ? (
+              <ErrorState error={overdue.error} onRetry={() => void overdue.refetch()} />
+            ) : (overdue.data?.items.length ?? 0) === 0 ? (
               <Text className={styles.muted}>{overdue.isLoading ? 'Loading…' : 'No overdue charts.'}</Text>
             ) : (
               <ul className={styles.list}>

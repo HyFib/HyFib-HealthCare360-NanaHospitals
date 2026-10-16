@@ -1,3 +1,6 @@
+/** The server logs every request under this id and sends it back (CorrelationIdMiddleware, SRS OBS-04). */
+export const CORRELATION_HEADER = 'X-Correlation-Id';
+
 /** RFC 9457 Problem Details as produced by the HC360 server. */
 export interface ProblemDetails {
   type?: string;
@@ -68,7 +71,14 @@ export async function toApiError(response: Response): Promise<ApiError> {
     // Body was not JSON — fall back to a status-based title.
   }
 
-  return new ApiError({ ...problem, status: response.status, title: problem.title ?? defaultTitle(response.status) });
+  // The id the server logged the request under, for support, when the body does not carry one of its own.
+  const referenceId = problem.referenceId ?? problem.traceId ?? response.headers.get(CORRELATION_HEADER) ?? undefined;
+  return new ApiError({
+    ...problem,
+    referenceId,
+    status: response.status,
+    title: problem.title ?? defaultTitle(response.status),
+  });
 }
 
 function defaultTitle(status: number): string {

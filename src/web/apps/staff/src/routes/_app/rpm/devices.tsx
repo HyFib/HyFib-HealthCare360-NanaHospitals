@@ -278,6 +278,13 @@ function DevicesPage() {
           }
           emptyTitle={filter ? 'No devices match' : 'No devices registered'}
           emptyDescription={canManage ? 'Register a device, then give it to a monitored patient.' : undefined}
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setRegistering(true)}>
+                Register device
+              </Button>
+            ) : undefined
+          }
           size="small"
         />
       </Section>

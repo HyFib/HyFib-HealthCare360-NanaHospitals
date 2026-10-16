@@ -13,6 +13,7 @@ import {
 import {
   ArrowClockwiseRegular,
   BoardRegular,
+  BookInformationRegular,
   ChevronRightRegular,
   DataTrendingRegular,
   DocumentTableRegular,
@@ -176,6 +177,9 @@ function ExecutiveDashboardPage() {
             </Tooltip>
             <Button icon={<BoardRegular />} onClick={() => void navigate({ to: '/analytics/dashboards' })}>
               Dashboards
+            </Button>
+            <Button icon={<BookInformationRegular />} onClick={() => void navigate({ to: '/analytics/kpis' })}>
+              KPI definitions
             </Button>
             <Button
               appearance="primary"

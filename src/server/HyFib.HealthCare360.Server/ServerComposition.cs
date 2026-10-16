@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
 using HyFib.HealthCare360.Platform;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
+using Microsoft.Extensions.Options;
 using HyFib.HealthCare360.Platform.Persistence;
 using Npgsql;
 
@@ -37,11 +39,17 @@ public static class ServerComposition
         }
     }
 
-    /// <summary>Authentication, authorization and every API endpoint, after the host's own middleware.</summary>
+    /// <summary>
+    /// Authentication, authorization and every API endpoint, after the host's own middleware. A worker node
+    /// (<c>--role worker</c>, SCAL-05) runs the background jobs only: it answers its health checks and nothing else.
+    /// </summary>
     public static void UseServerApplication(this WebApplication app)
     {
         app.UseHospitalPlatform();
-        app.MapHospitalPlatform();
+        if (app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value.ServesApi)
+        {
+            app.MapHospitalPlatform();
+        }
 
         app.MapHealthChecks("/health/live", new() { Predicate = _ => false }).AllowAnonymous();
         app.MapHealthChecks("/health/ready", new() { Predicate = check => check.Tags.Contains("ready") }).AllowAnonymous();

@@ -1,10 +1,23 @@
 using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
 
 /// <summary>A patient's messaging choices and when each last changed.</summary>
-public sealed record CommunicationPreferences(bool Marketing, bool Updates, DateTimeOffset? MarketingChangedAt, DateTimeOffset? UpdatesChangedAt);
+/// <param name="WhatsApp">The patient's number gets reminders and updates on WhatsApp: opted in, and no STOP in force.</param>
+/// <param name="WhatsAppEditable">
+/// The portal user may change <paramref name="WhatsApp"/>: they signed in with the patient's own number. WhatsApp choices
+/// belong to the number, so a family member signed in with another number sees them but can't change them.
+/// </param>
+public sealed record CommunicationPreferences(
+    bool Marketing,
+    bool Updates,
+    DateTimeOffset? MarketingChangedAt,
+    DateTimeOffset? UpdatesChangedAt,
+    bool WhatsApp = false,
+    DateTimeOffset? WhatsAppChangedAt = null,
+    bool WhatsAppEditable = false);
 
 /// <summary>
 /// Messaging consent under the DPDP Act 2023, which requires that withdrawing consent be as easy as giving it. It
@@ -17,8 +30,12 @@ public sealed record CommunicationPreferences(bool Marketing, bool Updates, Date
 /// A withdrawal revokes every active grant and records the refusal with its source. An explicit opt-out is recorded
 /// even for a patient who never opted in, so the request itself is documented. A STOP or START on WhatsApp comes from a
 /// number, not a patient, so it records only what it changes (<see cref="WhatsAppReplyConsent"/>).
+/// <para>
+/// WhatsApp itself is a third choice, of the number rather than the patient (<see cref="WhatsAppConsent"/>): reminders
+/// and campaigns go on WhatsApp only to a number that opted in, on top of the consent above.
+/// </para>
 /// </summary>
-public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUser currentUser, TimeProvider time)
+public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUser currentUser, WhatsAppConsent numbers, TimeProvider time)
 {
     private const int MaxReasonLength = 300;
     private const int MaxNotesLength = 1000;
@@ -37,7 +54,10 @@ public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUs
         return latest is { Granted: true, RevokedAt: null };
     }
 
-    public async Task<CommunicationPreferences> PreferencesAsync(Guid patientId, CancellationToken ct)
+    public Task<CommunicationPreferences> PreferencesAsync(Guid patientId, CancellationToken ct) => PreferencesAsync(patientId, null, ct);
+
+    /// <param name="accountPhone">The number the portal user signed in with (E.164): WhatsApp is theirs to change only on it.</param>
+    public async Task<CommunicationPreferences> PreferencesAsync(Guid patientId, string? accountPhone, CancellationToken ct)
     {
         var history = await db.Set<PatientConsent>().AsNoTracking()
             .Where(c => c.PatientId == patientId && (c.Type == ConsentType.MarketingCommunication || c.Type == ConsentType.SmsWhatsAppUpdates))
@@ -50,11 +70,21 @@ public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUs
                 .Select(at => (DateTimeOffset?)at)
                 .Max();
 
+        var phone = await PhoneAsync(patientId, ct);
+        var number = await numbers.StatusAsync(phone, ct);
+        DateTimeOffset? whatsAppChanged = (number.OptedInAt, number.OptedOutAt) switch
+        {
+            ({ } a, { } b) => a > b ? a : b,
+            (var a, var b) => a ?? b,
+        };
         return new CommunicationPreferences(
             await HasActiveConsentAsync(patientId, ct),
             await HasTransactionalConsentAsync(patientId, ct),
             LastChange(ConsentType.MarketingCommunication),
-            LastChange(ConsentType.SmsWhatsAppUpdates));
+            LastChange(ConsentType.SmsWhatsAppUpdates),
+            number.Reachable,
+            whatsAppChanged,
+            phone is not null && phone == accountPhone);
     }
 
     /// <summary>Explicit marketing opt-out (link, staff or portal); always documented.</summary>
@@ -71,11 +101,32 @@ public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUs
     }
 
     /// <summary>The patient's own choices from the portal; only actual changes are recorded.</summary>
-    public async Task<Result> SetPreferencesAsync(Guid patientId, bool marketing, bool updates, string via, CancellationToken ct)
+    /// <param name="whatsApp">WhatsApp on or off for the patient's number; null leaves it as it is.</param>
+    /// <param name="accountPhone">The number the portal user signed in with: only its holder changes its WhatsApp choice.</param>
+    public async Task<Result> SetPreferencesAsync(
+        Guid patientId, bool marketing, bool updates, string via, CancellationToken ct, bool? whatsApp = null, string? accountPhone = null)
     {
         if (!await db.Set<Patient>().AnyAsync(p => p.Id == patientId, ct))
         {
             return Error.NotFound(nameof(Patient), patientId);
+        }
+
+        if (whatsApp is { } wanted)
+        {
+            var phone = await PhoneAsync(patientId, ct);
+            if (wanted != (await numbers.StatusAsync(phone, ct)).Reachable)
+            {
+                if (phone is null || phone != accountPhone)
+                {
+                    return Error.Rule("portal.whatsapp_not_holder",
+                        "WhatsApp messages can be switched on or off only by signing in with the patient's own mobile number.");
+                }
+
+                // Signed in with this number, so the person is its holder: switching on lifts a STOP it sent, as START would.
+                _ = wanted
+                    ? await numbers.OptInAsync(phone, patientId, WhatsAppOptInSource.Portal, null, byNumberHolder: true, ct)
+                    : await numbers.OptOutAsync(phone, null, ct);
+            }
         }
 
         if (marketing != await HasActiveConsentAsync(patientId, ct))
@@ -121,6 +172,9 @@ public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUs
 
         return changed;
     }
+
+    private Task<string?> PhoneAsync(Guid patientId, CancellationToken ct) =>
+        db.Set<Patient>().Where(p => p.Id == patientId).Select(p => p.Phone).FirstOrDefaultAsync(ct);
 
     private Task ChangeAsync(Guid patientId, ConsentType type, bool granted, string via, CancellationToken ct)
     {

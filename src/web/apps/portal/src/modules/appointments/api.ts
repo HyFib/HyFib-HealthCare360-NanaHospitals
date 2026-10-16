@@ -49,7 +49,13 @@ export const appointmentApi = {
     api.post<void>(`${base}/${id(appointmentId)}/cancel`, { reason }),
   reschedule: (appointmentId: string, startsAt: string, reason: string | null) =>
     api.post<PortalAppointment>(`${base}/${id(appointmentId)}/reschedule`, { startsAt, reason }),
-  startPayment: (appointmentId: string) => api.post<PaymentCheckout>(`${base}/${id(appointmentId)}/payment`),
+  /** `hosted`: a payment link (the gateway's own page) instead of a checkout order, when checkout cannot open here. */
+  startPayment: (appointmentId: string, options?: { hosted: boolean }) =>
+    api.post<PaymentCheckout>(
+      `${base}/${id(appointmentId)}/payment`,
+      undefined,
+      options?.hosted ? { query: { hosted: 'true' } } : undefined,
+    ),
   confirmPayment: (appointmentId: string, body: ConfirmPaymentRequest) =>
     api.post<PortalAppointment>(`${base}/${id(appointmentId)}/payment/confirm`, body),
   /** Server-to-server check with the gateway, for checkouts that return no signature (the training gateway). */

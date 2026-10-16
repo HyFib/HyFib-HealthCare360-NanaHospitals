@@ -48,13 +48,17 @@ internal sealed record AiTextSettings(bool Enabled, string Provider, string Mode
 
 /// <summary>
 /// Server speech-to-text (<c>ai.speech</c>): <c>none</c> (default — HC360 Desktop uses offline Windows speech) or
-/// <c>whisper</c>, an OpenAI-compatible transcription endpoint such as an on-prem faster-whisper server.
+/// <c>whisper</c>, an OpenAI-compatible transcription endpoint such as an on-prem faster-whisper server. Dictation audio
+/// is PHI, so it is sent only while <c>ai.enabled</c> is on, as for the text service (SEC-12), and only over https.
 /// </summary>
 internal sealed record SpeechSettings
 {
     public string Provider { get; init; } = AiProviders.None;
 
-    /// <summary>Full transcription URL, for example <c>http://stt.lan:8000/v1/audio/transcriptions</c>.</summary>
+    /// <summary>
+    /// Full transcription URL, for example <c>https://stt.lan:8000/v1/audio/transcriptions</c>. Plain http is accepted only
+    /// for a server on this machine (<c>localhost</c>), where the audio never crosses the network.
+    /// </summary>
     public string? Url { get; init; }
 
     public string Model { get; init; } = "whisper-1";
@@ -64,14 +68,30 @@ internal sealed record SpeechSettings
     public int TimeoutSeconds { get; init; } = 120;
 }
 
-internal sealed record SpeechConfig(SpeechSettings Settings, Uri? Endpoint, string? ApiKey)
+internal sealed record SpeechConfig(SpeechSettings Settings, Uri? Endpoint, string? ApiKey, bool AiEnabled)
 {
     public bool IsUsable => Reason is null;
 
     public string? Reason =>
         !string.Equals(Settings.Provider, AiProviders.Whisper, StringComparison.OrdinalIgnoreCase)
             ? "Server speech-to-text is not configured; HC360 Desktop dictates with offline Windows speech."
-            : Endpoint is null ? "The speech-to-text URL (ai.speech.url) is not a valid http(s) address." : null;
+            : !AiEnabled ? "AI features are turned off for this facility (setting ai.enabled)."
+            : Endpoint is null ? "The speech-to-text URL (ai.speech.url) must be an https address without a user name or password (plain http only to localhost)."
+            : null;
+
+    /// <summary>
+    /// The transcription endpoint, when <paramref name="url"/> is one audio may be sent to: an absolute https URL without
+    /// embedded credentials, as the integrations require of internet providers, or plain http to this machine only.
+    /// </summary>
+    public static Uri? TryCreateEndpoint(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var parsed) || !string.IsNullOrEmpty(parsed.UserInfo))
+        {
+            return null;
+        }
+
+        return parsed.Scheme == Uri.UriSchemeHttps || (parsed.Scheme == Uri.UriSchemeHttp && parsed.IsLoopback) ? parsed : null;
+    }
 }
 
 /// <summary>Per-user quotas (<c>ai.limits</c>), on top of the 20-requests-per-minute burst limiter.</summary>
@@ -104,17 +124,14 @@ internal sealed partial class AiSettingsReader(ISettingsService settings, ICurre
     public async Task<SpeechConfig> GetSpeechConfigAsync(CancellationToken cancellationToken)
     {
         var speech = await TryGetAsync<SpeechSettings>(AiSettingKeys.Speech, cancellationToken) ?? new SpeechSettings();
-        Uri? endpoint = null;
-        if (Uri.TryCreate(speech.Url?.Trim(), UriKind.Absolute, out var parsed)
-            && (parsed.Scheme == Uri.UriSchemeHttps || parsed.Scheme == Uri.UriSchemeHttp) && string.IsNullOrEmpty(parsed.UserInfo))
-        {
-            endpoint = parsed;
-        }
+        var enabled = await TryGetAsync<bool?>(AiSettingKeys.Enabled, cancellationToken) ?? false;
+        var endpoint = SpeechConfig.TryCreateEndpoint(speech.Url);
 
-        var apiKey = string.Equals(speech.Provider, AiProviders.Whisper, StringComparison.OrdinalIgnoreCase)
+        // The key is decrypted only when it would actually be used.
+        var apiKey = enabled && endpoint is not null && string.Equals(speech.Provider, AiProviders.Whisper, StringComparison.OrdinalIgnoreCase)
             ? await ReadSecretAsync(AiSettingKeys.SpeechSecret, "apiKey", cancellationToken)
             : null;
-        return new SpeechConfig(speech, endpoint, apiKey);
+        return new SpeechConfig(speech, endpoint, apiKey, enabled);
     }
 
     public async Task<AiLimits> GetLimitsAsync(CancellationToken cancellationToken) =>

@@ -176,6 +176,13 @@ function VendorsPage() {
           ]}
           emptyTitle={search.q ? 'No vendor matches' : 'No vendors yet'}
           emptyDescription={canManage ? 'Add suppliers with their GSTIN and drug licence before ordering.' : undefined}
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => set({ edit: 'new' })}>
+                Add vendor
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={vendors.data?.totalCount}

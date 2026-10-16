@@ -5,7 +5,7 @@ import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { Can } from '@/lib/permissions';
+import { Can, usePermission } from '@/lib/permissions';
 import { PATIENT_CATEGORIES, patientQueries, type PatientCategory } from '@/modules/patients/api';
 
 interface PatientsSearch {
@@ -32,6 +32,7 @@ export const Route = createFileRoute('/_app/patients/')({
 function PatientsPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  const canRegister = usePermission('patients.register');
   const [term, setTerm] = useState(search.q ?? '');
   const debounced = useDebouncedValue(term.trim(), 300);
 
@@ -172,6 +173,17 @@ function PatientsPage() {
           ]}
           emptyTitle={search.q ? 'No patients match your search' : 'No patients registered yet'}
           emptyDescription={search.q ? 'Check the UHID or mobile number, or register the patient as new.' : undefined}
+          emptyAction={
+            canRegister ? (
+              <Button
+                appearance="primary"
+                icon={<PersonAddRegular />}
+                onClick={() => void navigate({ to: '/patients/register' })}
+              >
+                Register patient
+              </Button>
+            ) : undefined
+          }
           page={page}
           pageSize={25}
           totalCount={patients.data?.totalCount}

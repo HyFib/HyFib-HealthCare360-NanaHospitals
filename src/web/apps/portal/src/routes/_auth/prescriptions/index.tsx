@@ -2,7 +2,7 @@ import { Button, makeStyles, tokens } from '@fluentui/react-components';
 import { ArrowRepeatAllRegular, PillRegular } from '@fluentui/react-icons';
 import { EmptyState } from '@hc360/ui';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { CardLink } from '@/components/links';
 import { ListRow, RowCard } from '@/components/ListRow';
 import { PortalPage } from '@/components/PortalPage';
@@ -28,6 +28,7 @@ function PrescriptionsPage() {
   const styles = useStyles();
   const t = useT();
   const f = useFormat();
+  const navigate = useNavigate();
   const { profile } = useActiveProfile();
   const list = useInfiniteQuery(prescriptionQueries.list(profile.id));
   const refills = useQuery(prescriptionQueries.refills(profile.id));
@@ -78,7 +79,16 @@ function PrescriptionsPage() {
         ) : list.isError ? (
           <ErrorBlock error={list.error} onRetry={() => void list.refetch()} />
         ) : rows.length === 0 ? (
-          <EmptyState icon={<PillRegular />} title={t('rx.empty.title')} description={t('rx.empty.body')} />
+          <EmptyState
+            icon={<PillRegular />}
+            title={t('rx.empty.title')}
+            description={t('rx.empty.body')}
+            action={
+              <Button appearance="primary" size="large" onClick={() => void navigate({ to: '/doctors' })}>
+                {t('nav.findDoctor')}
+              </Button>
+            }
+          />
         ) : (
           <>
             {rows.map((rx) => {

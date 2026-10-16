@@ -279,6 +279,7 @@ function ChooseTargetDialog({ onClose, onChosen }: { onClose: () => void; onChos
                 rows={bills.data?.items}
                 loading={bills.isLoading}
                 error={bills.error}
+                onRetry={() => void bills.refetch()}
                 getRowId={(b) => b.id}
                 onRowClick={(b) => onChosen({ kind: 'bill', billId: b.id, due: b.dueAmount })}
                 size="small"
@@ -305,6 +306,7 @@ function ChooseTargetDialog({ onClose, onChosen }: { onClose: () => void; onChos
                 rows={accounts.data?.items}
                 loading={accounts.isLoading}
                 error={accounts.error}
+                onRetry={() => void accounts.refetch()}
                 getRowId={(a) => a.id}
                 onRowClick={(a) => onChosen({ kind: 'ip', ipAccountId: a.id })}
                 size="small"

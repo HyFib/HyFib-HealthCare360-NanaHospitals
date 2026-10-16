@@ -13,13 +13,16 @@ import { ArrowClockwiseRegular, ArrowDownloadRegular } from '@fluentui/react-ico
 import { formatDateTime, formatRelative, formatTime, humanize } from '@hc360/core';
 import { ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMemo, useState, type ReactNode } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
+import { usePermission } from '@/lib/permissions';
 import { adminQueries, formatBytes, type SystemHealthReport, type WifiSample } from '@/modules/admin/api';
 import { DatabasePassword } from '@/modules/admin/DatabasePassword';
 import { EncryptionKeys } from '@/modules/admin/EncryptionKeys';
 import { encryptionSummary } from '@/modules/admin/diskEncryption';
+import { healthDisplay } from '@/modules/admin/integrationsApi';
+import { expiryTone, integrationsSummary, integrationTone } from '@/modules/admin/systemHealth';
 
 export const Route = createFileRoute('/_app/admin/system')({
   component: SystemHealthPage,
@@ -66,7 +69,10 @@ function EncryptionRow({ report }: { report: NonNullable<SystemHealthReport['sto
   );
 }
 
-/** Health of the dedicated WiFi server machine (SRS DED-13): link quality, database, disk, backups, certificate, UPS. */
+/**
+ * Health of the dedicated WiFi server machine (SRS DED-13, DED-17): link quality, database, disk, backups, certificates,
+ * integrations, UPS.
+ */
 function SystemHealthPage() {
   const styles = useStyles();
   const health = useQuery(adminQueries.health());
@@ -133,7 +139,13 @@ function SystemHealthPage() {
           </Select>
         }
       >
-        {samples.data && samples.data.length > 0 ? (
+        {samples.error ? (
+          <ErrorState
+            error={samples.error}
+            title="Could not load the WiFi samples"
+            onRetry={() => void samples.refetch()}
+          />
+        ) : samples.data && samples.data.length > 0 ? (
           <WifiChart samples={samples.data} />
         ) : (
           <Caption1 className={styles.label}>
@@ -205,17 +217,21 @@ function SystemHealthPage() {
             <Row label="Oldest">{h.outbox.oldestPendingAt ? formatRelative(h.outbox.oldestPendingAt) : 'None'}</Row>
           </div>
         </Section>
-        <Section title="Security certificate">
+        <Section title="Security certificates">
           <div className={styles.rows}>
             <Row label="CA fingerprint">
               <span className={styles.mono}>{h.certificate.caFingerprint}</span>
             </Row>
-            <Row label="Server certificate expires">
+            <Row label="CA expires" tone={expiryTone(h.certificate.caExpiresAt)}>
+              {h.certificate.caExpiresAt ? formatDateTime(h.certificate.caExpiresAt) : 'Not issued by HC360'}
+            </Row>
+            <Row label="Server certificate expires" tone={expiryTone(h.certificate.serverExpiresAt)}>
               {h.certificate.serverExpiresAt ? formatDateTime(h.certificate.serverExpiresAt) : '—'}
             </Row>
             <Row label="Valid for">{h.certificate.subjectAlternativeNames.join(', ')}</Row>
           </div>
         </Section>
+        <IntegrationsCard h={h} />
         <Section title="Encryption keys">
           <EncryptionKeys />
         </Section>
@@ -252,6 +268,37 @@ function SystemHealthPage() {
         </Section>
       </div>
     </Page>
+  );
+}
+
+/** Each integration that is set up, as the integrations dashboard has it (SRS DED-17); the details are there. */
+function IntegrationsCard({ h }: { h: SystemHealthReport }) {
+  const styles = useStyles();
+  const canOpen = usePermission('admin.integrations.manage');
+  const summary = integrationsSummary(h.integrations);
+  const setUp = h.integrations.filter((row) => row.configured);
+  return (
+    <Section
+      title="Integrations"
+      actions={canOpen ? <Link to="/admin/integrations">Open integrations</Link> : undefined}
+    >
+      <div className={styles.rows}>
+        <Row label="Overall" tone={summary.tone}>
+          {summary.text}
+        </Row>
+        {setUp.map((row) => (
+          <Row key={row.name} label={row.displayName} tone={integrationTone(row)}>
+            {healthDisplay(row.health).label}
+            {row.enabled && (row.lastSuccessAt || row.lastFailureAt) && (
+              <Caption1 block className={styles.label}>
+                {row.lastSuccessAt ? `Worked ${formatRelative(row.lastSuccessAt)}` : 'Never worked'}
+                {row.lastFailureAt ? ` · last problem ${formatRelative(row.lastFailureAt)}` : ''}
+              </Caption1>
+            )}
+          </Row>
+        ))}
+      </div>
+    </Section>
   );
 }
 

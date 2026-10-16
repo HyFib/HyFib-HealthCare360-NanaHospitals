@@ -95,6 +95,13 @@ function CategoriesPage() {
           ]}
           emptyTitle="No categories yet"
           emptyDescription="Add categories such as Tablets, Injections, Sutures and Linen to group items."
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Add category
+              </Button>
+            ) : undefined
+          }
         />
       </Section>
       {editing && <CategoryDrawer category={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

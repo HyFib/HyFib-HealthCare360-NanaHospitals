@@ -74,7 +74,7 @@ The official **Anthropic C# SDK** (`Anthropic` NuGet, 12.50.0), `client.Beta.Mes
 | `ai.model` | Model id, default `claude-opus-5-5` |
 | `ai.timeoutSeconds` | 10–300, default 90. It bounds the whole call to the AI service, the SDK's retries included. |
 | `ai.anthropic.secret` (encrypted) | The API key, as a JSON string or `{ "apiKey": "…" }` |
-| `ai.speech` | `{ provider: "none" \| "whisper", url, model ("whisper-1"), language ("en"), timeoutSeconds (120) }`. `none` (the default) means HC360 Desktop dictates with offline Windows speech. |
+| `ai.speech` | `{ provider: "none" \| "whisper", url, model ("whisper-1"), language ("en"), timeoutSeconds (120) }`. `none` (the default) means HC360 Desktop dictates with offline Windows speech. Audio is sent only while `ai.enabled` is on, and only to an `https://` URL without credentials (plain `http://` only to `localhost`): dictation is PHI (SEC-12). |
 | `ai.speech.secret` (encrypted) | Optional bearer key for the Whisper-compatible server |
 | `ai.limits` | `{ perUserPerHour: 60, perUserPerDay: 300 }` |
 
@@ -86,7 +86,7 @@ Malformed values disable the feature instead of failing the request. They are lo
 |---|---|---|---|
 | POST | `/api/v1/ai/assistant/command` | `ai.assistant.use` | `{ text, context: { route, patientId } }` → `{ intent, parameters, confirmationText, requiresConfirmation, source ("rules" \| "ai") }`. Always answered; AI is used only as a fallback. |
 | POST | `/api/v1/ai/clinical/structure-note` | `ai.dictation.use` | `{ transcript, specialty, patientId }` → `ClinicalNoteDraft`. 503 `ai.disabled`, 429 `ai.quota`, 502 `ai.provider_failed`. |
-| POST | `/api/v1/ai/voice/transcribe` | `ai.dictation.use` or `ai.assistant.use` | multipart `audio` (WebM, WAV or Ogg, ≤ 10 MB; the declared type must match the file signature), `language` (ISO 639-1), `patientId` → `{ text, provider, language, durationMs }`. 503 `ai.speech_disabled` when no server STT is configured. Antiforgery is disabled because this is a bearer API. |
+| POST | `/api/v1/ai/voice/transcribe` | `ai.dictation.use` or `ai.assistant.use` | multipart `audio` (WebM, WAV or Ogg, ≤ 10 MB; the declared type must match the file signature), `language` (ISO 639-1), `patientId` → `{ text, provider, language, durationMs }`. 503 `ai.speech_disabled` when no server STT is configured, `ai.enabled` is off or the URL is not https. Antiforgery is disabled because this is a bearer API. |
 | GET | `/api/v1/ai/status` | any AI permission | → `{ enabled, provider, model, reason, serverSpeechToText, speechProvider, speechReason, timeoutSeconds }`, so the UI knows which AI actions to show and how long to wait for a draft (`timeoutSeconds` + 30 s) |
 | GET | `/api/v1/ai/usage` | `ai.settings.manage` | paging + `purpose, userId, from, to` → `PagedResult<AiUsageDto>` with the user's display name (never text) |
 

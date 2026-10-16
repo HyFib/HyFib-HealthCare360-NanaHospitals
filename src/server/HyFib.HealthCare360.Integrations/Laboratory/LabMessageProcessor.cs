@@ -103,7 +103,8 @@ internal sealed class LabMessageProcessor(IServiceScopeFactory scopes, LabGatewa
         var resultCount = results.Sum(r => r.Results.Count);
         await trace.LogAsync(IntegrationNames.Lab, Provider(instrument), "results", outcome.Accepted, started, reference,
             LabPhiMasking.Mask(rawMessage, instrument.Protocol), outcome.Accepted ? $"{resultCount} result(s) accepted" : "refused",
-            outcome.Accepted ? null : sink is null ? NoSink : outcome.Error, IntegrationDirection.Inbound);
+            outcome.Accepted ? null : sink is null ? NoSink : outcome.Error, IntegrationDirection.Inbound,
+            await FacilityAsync(sink, instrument, cancellationToken));
         state.RecordMessage(instrument.Code, outcome.Accepted, outcome.Error);
         return outcome;
     }
@@ -117,6 +118,7 @@ internal sealed class LabMessageProcessor(IServiceScopeFactory scopes, LabGatewa
         var reference = string.Join(",", sampleIds.Take(10));
         var sink = scope.ServiceProvider.GetService<IInstrumentResultSink>();
         HostQueryAnswer answer;
+        Guid? facilityId = null;
         if (sink is null)
         {
             logger.LogWarning("Host query from instrument {Instrument} refused: {Reason}", instrument.Code, NoSink);
@@ -126,7 +128,9 @@ internal sealed class LabMessageProcessor(IServiceScopeFactory scopes, LabGatewa
         {
             try
             {
-                if (LabOrderQueue.OffReason(await sink.GetInstrumentAsync(instrument.Code, cancellationToken), instrument) is { } off)
+                var profile = await sink.GetInstrumentAsync(instrument.Code, cancellationToken);
+                facilityId = profile?.FacilityId;
+                if (LabOrderQueue.OffReason(profile, instrument) is { } off)
                 {
                     answer = HostQueryAnswer.Off(off);
                 }
@@ -153,7 +157,8 @@ internal sealed class LabMessageProcessor(IServiceScopeFactory scopes, LabGatewa
 
         var answered = answer.Status == HostQueryStatus.Answered;
         await trace.LogAsync(IntegrationNames.Lab, Provider(instrument), "query", answered, started, reference,
-            LabPhiMasking.Mask(rawMessage, instrument.Protocol), answered ? $"{answer.Orders.Count} order(s)" : "refused", answer.Error, IntegrationDirection.Inbound);
+            LabPhiMasking.Mask(rawMessage, instrument.Protocol), answered ? $"{answer.Orders.Count} order(s)" : "refused", answer.Error, IntegrationDirection.Inbound,
+            facilityId);
         state.RecordMessage(instrument.Code, answered, answer.Error);
         return answer;
     }
@@ -223,7 +228,8 @@ internal sealed class LabMessageProcessor(IServiceScopeFactory scopes, LabGatewa
         }
 
         await trace.LogAsync(IntegrationNames.Lab, Provider(instrument), operation, delivered, trace.Start(), reference,
-            LabPhiMasking.Mask(rawMessage, instrument.Protocol), delivered ? $"{downloads.Count} order(s) sent" : null, error, IntegrationDirection.Outbound);
+            LabPhiMasking.Mask(rawMessage, instrument.Protocol), delivered ? $"{downloads.Count} order(s) sent" : null, error, IntegrationDirection.Outbound,
+            await FacilityAsync(scope.ServiceProvider.GetService<IInstrumentResultSink>(), instrument, CancellationToken.None));
         if (!delivered)
         {
             state.RecordMessage(instrument.Code, false, error);
@@ -236,10 +242,33 @@ internal sealed class LabMessageProcessor(IServiceScopeFactory scopes, LabGatewa
         var trace = scope.ServiceProvider.GetRequiredService<IntegrationTrace>();
         var direction = operation.EndsWith("orders", StringComparison.Ordinal) ? IntegrationDirection.Outbound : IntegrationDirection.Inbound;
         await trace.LogAsync(IntegrationNames.Lab, Provider(instrument), operation, success, trace.Start(), reference,
-            LabPhiMasking.Mask(rawMessage, instrument.Protocol), response is null ? null : LabPhiMasking.Mask(response, instrument.Protocol), error, direction);
+            LabPhiMasking.Mask(rawMessage, instrument.Protocol), response is null ? null : LabPhiMasking.Mask(response, instrument.Protocol), error, direction,
+            await FacilityAsync(scope.ServiceProvider.GetService<IInstrumentResultSink>(), instrument, CancellationToken.None));
         if (!success)
         {
             state.RecordMessage(instrument.Code, false, error);
+        }
+    }
+
+    /// <summary>
+    /// The facility the analyser belongs to in Lab setup, for the log row: listeners run outside any request, so there
+    /// is no signed-in facility. Null when the LIS is not loaded or cannot say; the row is then not tied to a facility.
+    /// </summary>
+    private async Task<Guid?> FacilityAsync(IInstrumentResultSink? sink, LabInstrumentSettings instrument, CancellationToken cancellationToken)
+    {
+        if (sink is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return (await sink.GetInstrumentAsync(instrument.Code, cancellationToken))?.FacilityId;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogDebug(ex, "The facility of instrument {Instrument} could not be read for the integration log", instrument.Code);
+            return null;
         }
     }
 

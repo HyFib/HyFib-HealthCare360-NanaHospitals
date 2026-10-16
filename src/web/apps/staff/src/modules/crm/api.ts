@@ -2,6 +2,7 @@ import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { PatientCategory } from '@/modules/patients/api';
+import type { CommunicationEntry, CommunicationKind } from './communications';
 import type {
   CampaignChannel,
   CampaignStatus,
@@ -514,7 +515,23 @@ export const crmQueries = {
       refetchOnWindowFocus: false,
       retry: false,
     }),
+  communications: (patientId: string, filters: { kind?: CommunicationKind; page?: number }) =>
+    queryOptions({
+      queryKey: ['crm', 'patient360', patientId, 'communications', filters],
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CommunicationEntry>>(`/api/v1/crm/patients/${patientId}/communications`, {
+          query: { ...filters, pageSize: COMMUNICATIONS_PAGE_SIZE },
+          signal,
+        }),
+      placeholderData: keepPreviousData,
+      // Audited like the view itself, so no silent refetches either.
+      staleTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      retry: false,
+    }),
 };
+
+export const COMMUNICATIONS_PAGE_SIZE = 10;
 
 // ------------------------------------------------------------------ commands
 
@@ -551,8 +568,9 @@ export const crmApi = {
       ? api.put<void>(`/api/v1/crm/referring-doctors/${id}`, request)
       : api.post<string>('/api/v1/crm/referring-doctors', request),
 
-  previewAudience: (segment: SegmentInput) =>
-    api.post<AudiencePreview>('/api/v1/crm/campaigns/audience-preview', segment),
+  /** For a WhatsApp campaign, only numbers that opted in to WhatsApp count. */
+  previewAudience: (segment: SegmentInput, channel?: CampaignChannel) =>
+    api.post<AudiencePreview>('/api/v1/crm/campaigns/audience-preview', segment, { query: { channel } }),
   createCampaign: (request: SaveCampaignRequest) => api.post<string>('/api/v1/crm/campaigns', request),
   updateCampaign: (id: string, request: SaveCampaignRequest) => api.put<void>(`/api/v1/crm/campaigns/${id}`, request),
   scheduleCampaign: (id: string, scheduledAt: string) =>

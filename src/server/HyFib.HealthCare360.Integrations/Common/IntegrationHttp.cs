@@ -37,6 +37,7 @@ internal static class IntegrationHttp
                 client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HealthCare360/1.0");
             })
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler)
+            .AddHttpMessageHandler<CorrelationIdForwardingHandler>()
             .AddStandardResilienceHandler(options =>
             {
                 options.AttemptTimeout.Timeout = attemptTimeout;
@@ -129,7 +130,13 @@ internal static class IntegrationHttp
     public static string? Property(JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) ? Text(value) : null;
 
-    /// <summary>Response text for the integration log (bounded; the platform logger masks phones/e-mails/secrets).</summary>
-    public static string Summarize(HttpResponseMessage response, string? body) =>
-        $"HTTP {(int)response.StatusCode} {IntegrationTrace.Truncate(body, 500)}";
+    /// <summary>
+    /// Response summary for the integration log: the HTTP status and the provider's message id, never the body. Gateways
+    /// echo the recipient, the message text (a patient's name, a report or an OTP) and sometimes the key, in forms the
+    /// platform logger's masking cannot all recognise (SEC-10).
+    /// </summary>
+    public static string Summarize(HttpResponseMessage response, string? messageId) =>
+        string.IsNullOrEmpty(messageId)
+            ? $"HTTP {(int)response.StatusCode}"
+            : $"HTTP {(int)response.StatusCode} id={IntegrationTrace.Truncate(messageId, 128)}";
 }

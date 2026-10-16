@@ -73,6 +73,10 @@ public sealed record PatientSummary(
     bool IsDeceased,
     Guid? PhotoFileId);
 
+/// <param name="WhatsAppOptIn">
+/// The patient agreed at the desk to get reminders and updates on WhatsApp on <paramref name="Phone"/> (INT-WA); recorded
+/// as a registration-desk opt-in with the registering user.
+/// </param>
 public sealed record RegisterPatientRequest(
     string? Title,
     string FirstName,
@@ -104,7 +108,8 @@ public sealed record RegisterPatientRequest(
     Guid? PhotoFileId,
     bool IsVip,
     string? Notes,
-    bool ConfirmedNotDuplicate);
+    bool ConfirmedNotDuplicate,
+    bool WhatsAppOptIn = false);
 
 public sealed record UpdatePatientRequest(
     string? Title,
@@ -250,6 +255,8 @@ public sealed class RegisterPatientRequestValidator : AbstractValidator<Register
         RuleFor(x => x.Phone).PhoneNumber();
         RuleFor(x => x.AlternatePhone).PhoneNumber();
         RuleFor(x => x.EmergencyContactPhone).PhoneNumber();
+        RuleFor(x => x.WhatsAppOptIn).Equal(false).When(x => string.IsNullOrWhiteSpace(x.Phone))
+            .WithMessage("Enter the mobile number the patient wants WhatsApp messages on.");
         RuleFor(x => x.Email).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x.Address!.PinCode).PinCode().When(x => !string.IsNullOrWhiteSpace(x.Address?.PinCode));
         RuleFor(x => x.AbhaNumber).AbhaNumber();

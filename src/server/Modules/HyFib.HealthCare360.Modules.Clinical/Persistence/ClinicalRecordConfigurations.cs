@@ -157,6 +157,29 @@ internal sealed class ImmunizationConfiguration : IEntityTypeConfiguration<Immun
     }
 }
 
+internal sealed class ProcedureRecordConfiguration : IEntityTypeConfiguration<ProcedureRecord>
+{
+    public void Configure(EntityTypeBuilder<ProcedureRecord> b)
+    {
+        b.ToTable("procedure_records", ClinicalSchema.Name);
+        b.Property(x => x.Code).HasMaxLength(32);
+        b.Property(x => x.CodeSystem).HasMaxLength(32);
+        b.Property(x => x.Display).HasMaxLength(300);
+        b.Property(x => x.PerformerName).HasMaxLength(200);
+        b.Property(x => x.BodySite).HasMaxLength(100);
+        b.Property(x => x.Outcome).HasMaxLength(1000);
+        b.Property(x => x.Notes).HasMaxLength(2000);
+        b.Property(x => x.StatusReason).HasMaxLength(300);
+        b.Ignore(x => x.IsEnteredInError);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.PatientId, x.PerformedAt });
+        b.HasIndex(x => x.EncounterId);
+
+        // A completed operation is recorded once, however often the theatre's completion is retried.
+        b.HasIndex(x => x.SurgeryBookingId).IsUnique().HasFilter("surgery_booking_id IS NOT NULL");
+    }
+}
+
 internal sealed class ResultReviewConfiguration : IEntityTypeConfiguration<ResultReview>
 {
     public void Configure(EntityTypeBuilder<ResultReview> b)

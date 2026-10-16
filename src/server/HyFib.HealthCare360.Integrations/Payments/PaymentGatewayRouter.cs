@@ -12,18 +12,22 @@ internal sealed class PaymentGatewayRouter(IEnumerable<IPaymentProvider> provide
 
     public async Task<PaymentOrder> CreateOrderAsync(CreatePaymentOrder request, Guid? facilityId, CancellationToken cancellationToken)
     {
+        // Each call is logged against the facility whose account it uses: webhooks and re-checks have no signed-in user.
+        using var facility = IntegrationTrace.ForFacility(facilityId);
         var (provider, config) = await ResolveAsync(facilityId, cancellationToken);
         return await provider.CreateOrderAsync(request, config.Settings!, config.Secrets, cancellationToken);
     }
 
     public async Task<PaymentOrder> CreatePaymentLinkAsync(CreatePaymentOrder request, Guid? facilityId, CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(facilityId);
         var (provider, config) = await ResolveAsync(facilityId, cancellationToken);
         return await provider.CreatePaymentLinkAsync(request, config.Settings!, config.Secrets, cancellationToken);
     }
 
     public async Task<PaymentStatusResult> GetStatusAsync(string orderId, Guid? facilityId, CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(facilityId);
         try
         {
             var (provider, config) = await ResolveAsync(facilityId, cancellationToken);
@@ -39,6 +43,7 @@ internal sealed class PaymentGatewayRouter(IEnumerable<IPaymentProvider> provide
         string paymentId, decimal amount, string reason, string? idempotencyKey, Guid? facilityId,
         CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(facilityId);
         try
         {
             var (provider, config) = await ResolveAsync(facilityId, cancellationToken);
@@ -57,6 +62,7 @@ internal sealed class PaymentGatewayRouter(IEnumerable<IPaymentProvider> provide
     /// </summary>
     public async Task<PaymentSettlementReport> GetSettlementsAsync(DateOnly settledOn, Guid? facilityId, CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(facilityId);
         var (provider, config, problem) = await ResolveForReadingAsync(facilityId, cancellationToken);
         if (provider is null)
         {
@@ -77,6 +83,7 @@ internal sealed class PaymentGatewayRouter(IEnumerable<IPaymentProvider> provide
     /// <summary>A refund's status at the gateway; when the gateway cannot be asked, Pending with the reason.</summary>
     public async Task<RefundStatusResult> GetRefundStatusAsync(string refundId, Guid? facilityId, CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(facilityId);
         var (provider, config, problem) = await ResolveForReadingAsync(facilityId, cancellationToken);
         if (provider is null)
         {

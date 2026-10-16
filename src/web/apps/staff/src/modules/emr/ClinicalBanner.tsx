@@ -16,6 +16,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { patientApi } from '@/modules/patients/api';
+import { usePatientPayer } from '@/modules/patients/payer';
 import { PatientBannerWithPhoto } from '@/modules/patients/PatientBannerWithPhoto';
 import type { PatientClinicalSummary } from './api';
 import { flagFields } from './flags';
@@ -45,11 +46,16 @@ function bannerData(summary: PatientClinicalSummary): PatientBannerData {
 
 /**
  * The persistent clinical banner (EHR-03): identity, allergies and alerts from the Clinical module, always visible
- * (sticky) on the chart and the encounter workspace.
+ * (sticky) on the chart and the encounter workspace, with the payer of the patient's current visit (UX-04).
  */
 export function ClinicalBanner({ summary, actions }: { summary: PatientClinicalSummary; actions?: ReactNode }) {
+  const payer = usePatientPayer(summary.patient.id);
   return (
-    <PatientBannerWithPhoto patient={bannerData(summary)} photoFileId={summary.patient.photoFileId} actions={actions} />
+    <PatientBannerWithPhoto
+      patient={{ ...bannerData(summary), payer }}
+      photoFileId={summary.patient.photoFileId}
+      actions={actions}
+    />
   );
 }
 

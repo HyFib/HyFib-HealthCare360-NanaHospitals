@@ -203,6 +203,13 @@ function IndentsPage() {
           ]}
           emptyTitle={search.q ? 'No indent with that number' : 'No open indents'}
           emptyDescription={canRaise ? 'Raise an indent to ask the central store for items.' : undefined}
+          emptyAction={
+            canRaise ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => set({ raise: true })}>
+                Raise indent
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={indents.data?.totalCount}

@@ -100,27 +100,18 @@ internal sealed class KpiService(ReportingDbContextFactory contexts, ReportingDa
         var kpis = new List<KpiValue>();
         if (operations)
         {
-            kpis.Add(Kpi("opVisits", "OP visits", "count", current.OpVisits, previous.OpVisits, true, "op-visit-trend",
-                "Out-patient, emergency, day-care, telehealth and health-checkup check-ins, excluding cancelled visits.", Trend(current.OpDaily, start, end)));
-            kpis.Add(Kpi("admissions", "Admissions", "count", current.Admissions, previous.Admissions, true, "ip-admissions-discharges",
-                "In-patient admissions in the period (cancelled admissions excluded).", Trend(current.AdmissionDaily, start, end)));
-            kpis.Add(Kpi("occupancy", "Bed occupancy", "percent", current.Occupancy, previous.Occupancy, true, "bed-occupancy",
-                "Inpatient days (midnight census) ÷ (beds in service × days) × 100.", null));
-            kpis.Add(Kpi("alos", "Average length of stay", "days", current.Alos, previous.Alos, false, "alos",
-                "Total length of stay of patients discharged in the period ÷ discharges (IST calendar days, at least one).", null));
-            kpis.Add(Kpi("labTat", "Lab turnaround (median)", "minutes", current.LabTat, previous.LabTat, false, "lab-volume-tat",
-                "Median minutes from lab order to report release for tests ordered in the period.", null));
-            kpis.Add(Kpi("nps", "Net Promoter Score", "score", current.Nps, previous.Nps, true, "feedback-nps",
-                "% promoters (9–10) − % detractors (0–6) among feedback responses in the period.", null));
+            kpis.Add(Kpi(KpiDefinitions.OpVisits, current.OpVisits, previous.OpVisits, Trend(current.OpDaily, start, end)));
+            kpis.Add(Kpi(KpiDefinitions.Admissions, current.Admissions, previous.Admissions, Trend(current.AdmissionDaily, start, end)));
+            kpis.Add(Kpi(KpiDefinitions.Occupancy, current.Occupancy, previous.Occupancy, null));
+            kpis.Add(Kpi(KpiDefinitions.Alos, current.Alos, previous.Alos, null));
+            kpis.Add(Kpi(KpiDefinitions.LabTat, current.LabTat, previous.LabTat, null));
+            kpis.Add(Kpi(KpiDefinitions.Nps, current.Nps, previous.Nps, null));
         }
 
         if (finance)
         {
-            kpis.Add(Kpi("revenue", "Revenue", "inr", current.Revenue, previous.Revenue, true, "daily-revenue",
-                "Net billed (bills finalized in the period, after discounts, incl. GST) plus pharmacy sales less returns.", Trend(current.RevenueDaily, start, end)));
-            kpis.Add(Kpi("collections", "Collections", "inr", current.Collections, previous.Collections, true, "collections-by-mode",
-                "Money received at billing and pharmacy counters (all modes except advance adjustments and credit) less refunds paid.",
-                Trend(current.CollectionDaily, start, end)));
+            kpis.Add(Kpi(KpiDefinitions.Revenue, current.Revenue, previous.Revenue, Trend(current.RevenueDaily, start, end)));
+            kpis.Add(Kpi(KpiDefinitions.Collections, current.Collections, previous.Collections, Trend(current.CollectionDaily, start, end)));
         }
 
         var set = new KpiSet(start, end, previousFrom, previousTo, scope.Value.Name, kpis, now, reporting.SourceLabel);
@@ -128,9 +119,16 @@ internal sealed class KpiService(ReportingDbContextFactory contexts, ReportingDa
         return set;
     }
 
-    private static KpiValue Kpi(
-        string key, string label, string unit, decimal? value, decimal? previous, bool higherIsBetter, string reportId, string definition, IReadOnlyList<KpiPoint>? trend) =>
-        new(key, label, unit, value, previous, KpiMath.ChangePercent(value, previous), higherIsBetter, reportId, definition, trend);
+    private static KpiValue Kpi(KpiDefinition definition, decimal? value, decimal? previous, IReadOnlyList<KpiPoint>? trend) =>
+        new(definition.Key, definition.Label, definition.Unit, value, previous, KpiMath.ChangePercent(value, previous), definition.HigherIsBetter,
+            definition.ReportId, definition.Formula, trend);
+
+    /// <summary>Whether the actor sees a KPI on the dashboard (and so in the KPI catalogue).</summary>
+    public static bool CanSee(KpiDefinition definition, ReportActor actor) => definition.Audience switch
+    {
+        KpiAudience.Finance => actor.Has(AnalyticsPermissions.FinanceRead),
+        _ => actor.HasAny(Audience.Operations),
+    };
 
     private static IReadOnlyList<KpiPoint>? Trend(IReadOnlyDictionary<DateOnly, decimal>? daily, DateOnly from, DateOnly to) =>
         daily is null ? null : Enumerable.Range(0, AnalyticsClock.Days(from, to)).Select(i => from.AddDays(i)).Select(d => new KpiPoint(d, daily.GetValueOrDefault(d))).ToList();

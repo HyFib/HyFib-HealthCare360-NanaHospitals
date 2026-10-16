@@ -27,13 +27,15 @@ internal sealed record ExternalPayment(
 /// <summary>
 /// Receipts (MB-04, OPB-05/06, IPB-01): split payments at the counter, IP advances, POS/gateway captures, advance
 /// adjustments and payer settlements. Every receipt number is allocated inside the transaction that records the money,
-/// the patient is sent the "bill.receipt" SMS through the outbox, and PaymentReceived is raised for patient money.
+/// the patient is sent the "bill.receipt" SMS through the outbox (and the bill on WhatsApp once a payment settles it,
+/// see <see cref="BillSharing"/>), and PaymentReceived is raised for patient money.
 /// </summary>
 public sealed class ReceiptService(
     HospitalDbContext db,
     INumberSeries numbers,
     ShiftService shifts,
     INotificationService notifications,
+    BillSharing bills,
     IRealtimePublisher realtime,
     ICurrentUser currentUser,
     TimeProvider time)
@@ -88,7 +90,7 @@ public sealed class ReceiptService(
         }
 
         db.Add(receipt);
-        await QueueReceiptMessageAsync(receipt, bill.BillNumber, ct);
+        await QueueReceiptMessageAsync(receipt, bill.BillNumber, bill, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         await realtime.ToFacilityAsync(bill.FacilityId, "billing.bill.changed", new { bill.Id, bill.PatientId, bill.Status }, ct);
@@ -145,7 +147,7 @@ public sealed class ReceiptService(
         }
 
         db.Add(receipt);
-        await QueueReceiptMessageAsync(receipt, $"advance, admission {account.AdmissionNumber}", ct);
+        await QueueReceiptMessageAsync(receipt, $"advance, admission {account.AdmissionNumber}", null, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return receipt.Id;
@@ -209,7 +211,7 @@ public sealed class ReceiptService(
         }
 
         db.Add(receipt);
-        await QueueReceiptMessageAsync(receipt, bill?.BillNumber ?? $"advance, admission {account?.AdmissionNumber}", ct);
+        await QueueReceiptMessageAsync(receipt, bill?.BillNumber ?? $"advance, admission {account?.AdmissionNumber}", bill, ct);
         return receipt;
     }
 
@@ -332,7 +334,8 @@ public sealed class ReceiptService(
         ReceivedByName = currentUser.DisplayName ?? currentUser.UserName,
     };
 
-    private async Task QueueReceiptMessageAsync(Receipt receipt, string? documentNumber, CancellationToken ct)
+    /// <param name="bill">The bill the payment is for, already updated with it: once it is settled, it goes on WhatsApp.</param>
+    private async Task QueueReceiptMessageAsync(Receipt receipt, string? documentNumber, Bill? bill, CancellationToken ct)
     {
         if (receipt.Payments.All(p => p.Mode == PaymentMode.Advance))
         {
@@ -359,6 +362,11 @@ public sealed class ReceiptService(
             },
             [NotificationChannel.Sms],
             TimeSpan.FromDays(1));
+
+        if (bill is not null)
+        {
+            await bills.QueueOnPaymentAsync(bill, ct);
+        }
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

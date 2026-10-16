@@ -191,6 +191,11 @@ function ClaimsPage() {
           ]}
           emptyTitle="No claims here"
           emptyDescription="Raise a claim from a finalised bill with an insurer share."
+          emptyAction={
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
+              New claim
+            </Button>
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={claims.data?.totalCount}

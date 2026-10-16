@@ -1,7 +1,7 @@
 import { Button, makeStyles, Tab, TabList } from '@fluentui/react-components';
 import { ArrowUploadRegular, PaymentRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, todayIso } from '@hc360/core';
-import { KpiCard, Page, PageHeader, Section } from '@hc360/ui';
+import { ErrorState, KpiCard, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -81,6 +81,7 @@ function CardSettlementsPage() {
           </Button>
         }
       />
+      {summary.error && <ErrorState error={summary.error} onRetry={() => void summary.refetch()} />}
       {summary.data && (
         <div className={styles.kpis}>
           <KpiCard

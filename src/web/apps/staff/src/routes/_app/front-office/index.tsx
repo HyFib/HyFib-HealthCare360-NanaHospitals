@@ -50,10 +50,13 @@ function FrontOfficeOverview() {
         }
       />
       <FrontOfficeKpis />
-      <div className={styles.grid}>
-        <DepartmentQueues dashboard={dashboard.data} />
-        <VisitsByType dashboard={dashboard.data} />
-      </div>
+      {/* When the dashboard cannot be read the KPIs say so, with a retry; empty queues would read as a quiet day. */}
+      {!dashboard.error && (
+        <div className={styles.grid}>
+          <DepartmentQueues dashboard={dashboard.data} />
+          <VisitsByType dashboard={dashboard.data} />
+        </div>
+      )}
     </Page>
   );
 }

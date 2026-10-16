@@ -145,6 +145,13 @@ function DialysisMachinesPage() {
           emptyDescription={
             canManageMachines ? 'Add each machine with the sero category it is dedicated to.' : undefined
           }
+          emptyAction={
+            canManageMachines ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Add machine
+              </Button>
+            ) : undefined
+          }
         />
       </Section>
       {editing && <MachineDrawer machine={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

@@ -57,6 +57,7 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddScoped<NotificationLogUpdater>();
         services.AddScoped<WhatsAppInboundStore>();
         services.AddScoped<IntegrationStatusService>();
+        services.AddScoped<IIntegrationHealthSource, IntegrationHealthSource>();
         services.AddScoped<IntegrationTestService>();
         return services;
     }

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
@@ -198,6 +199,12 @@ public sealed class OutboxDispatcher(
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(HandlerTimeout);
+
+            // The send carries the id of the request that queued it, in the log and to the provider (OBS-04).
+            using var correlation = CorrelationContext.Begin(message.CorrelationId);
+            using var logScope = message.CorrelationId is null
+                ? null
+                : logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = message.CorrelationId });
             try
             {
                 await handler.HandleAsync(message, timeout.Token);

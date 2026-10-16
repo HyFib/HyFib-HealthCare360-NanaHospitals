@@ -9,7 +9,8 @@ import type { PaymentCheckout } from './types';
  *
  * Providers (Integrations/Payments): "razorpay" → Razorpay Standard Checkout (script loaded only when the patient taps
  * Pay); "simulator" → training gateway whose orders are captured at once on the server; any provider that returns
- * a hosted payment link → the page is opened in this tab.
+ * a hosted payment link → the page is opened in this tab, and the bill or appointment it pays is remembered so its
+ * page confirms the payment when the patient comes back.
  */
 
 export type CheckoutOutcome =
@@ -29,13 +30,17 @@ export interface CheckoutContext {
   language: Language;
   /** Remembered in this tab so the page can confirm the payment when the patient comes back from a hosted page. */
   pending?: PendingPayment;
+  /**
+   * Asks the server for a hosted payment page when the gateway's checkout cannot open here (its script is blocked by the
+   * network or the browser) and the order came without one. Null when none could be made.
+   */
+  hostedLink?: () => Promise<string | null>;
 }
 
-export interface PendingPayment {
-  kind: 'bill';
-  billId: string;
-  orderRowId: string;
-}
+export type PendingPayment =
+  | { kind: 'bill'; billId: string; orderRowId: string }
+  /** An appointment has one gateway order at a time, which the server checks by itself. */
+  | { kind: 'appointment'; appointmentId: string };
 
 const RAZORPAY_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
 const SCRIPT_TIMEOUT_MS = 15_000;
@@ -121,9 +126,11 @@ export async function runCheckout(checkout: PaymentCheckout, context: CheckoutCo
     try {
       Razorpay = await loadRazorpay();
     } catch {
-      return isUsablePaymentLink(checkout.paymentLinkUrl)
-        ? openHostedPage(checkout.paymentLinkUrl, context)
-        : { kind: 'unavailable' };
+      if (isUsablePaymentLink(checkout.paymentLinkUrl)) {
+        return openHostedPage(checkout.paymentLinkUrl, context);
+      }
+      const link = context.hostedLink ? await context.hostedLink() : null;
+      return isUsablePaymentLink(link) ? openHostedPage(link, context) : { kind: 'unavailable' };
     }
     return new Promise<CheckoutOutcome>((resolve) => {
       let failedOnce = false;
@@ -175,26 +182,49 @@ function openHostedPage(url: string, context: CheckoutContext): CheckoutOutcome 
 
 export function rememberPendingPayment(pending: PendingPayment): void {
   try {
+    // False positive: what is kept is the random id of the patient's own bill or appointment, no personal or clinical
+    // data, in this tab only (sessionStorage ends with the tab). CodeQL takes the word "appointment" for health data.
+    // codeql[js/clear-text-storage-of-sensitive-data]
     sessionStorage.setItem(SESSION_KEYS.pendingPayment, JSON.stringify(pending));
   } catch {
     // Without storage the patient can still tap "Check payment status".
   }
 }
 
-/** The payment this tab started on a hosted page for `billId`, if any (read only; see `clearPendingPayment`). */
-export function peekPendingPayment(billId: string): PendingPayment | null {
+function readPendingPayment(): Record<string, unknown> | null {
   try {
     const raw = sessionStorage.getItem(SESSION_KEYS.pendingPayment);
-    if (!raw) {
-      return null;
-    }
-    const value = JSON.parse(raw) as Partial<PendingPayment>;
-    return value.kind === 'bill' && value.billId === billId && typeof value.orderRowId === 'string'
-      ? { kind: 'bill', billId, orderRowId: value.orderRowId }
-      : null;
+    const value: unknown = raw ? JSON.parse(raw) : null;
+    return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null;
   } catch {
     return null;
   }
+}
+
+/** The payment this tab started on a hosted page for `billId`, if any (read only; see `clearPendingPayment`). */
+export function peekPendingPayment(billId: string): Extract<PendingPayment, { kind: 'bill' }> | null {
+  const value = readPendingPayment();
+  return value?.kind === 'bill' && value.billId === billId && typeof value.orderRowId === 'string'
+    ? { kind: 'bill', billId, orderRowId: value.orderRowId }
+    : null;
+}
+
+/** The payment this tab sent the patient to a hosted page for, whatever it pays (read only). */
+export function peekAnyPendingPayment(): PendingPayment | null {
+  const value = readPendingPayment();
+  if (value?.kind === 'bill' && typeof value.billId === 'string' && typeof value.orderRowId === 'string') {
+    return { kind: 'bill', billId: value.billId, orderRowId: value.orderRowId };
+  }
+  if (value?.kind === 'appointment' && typeof value.appointmentId === 'string') {
+    return { kind: 'appointment', appointmentId: value.appointmentId };
+  }
+  return null;
+}
+
+/** Whether this tab sent the patient to a hosted page to pay for `appointmentId` (read only). */
+export function hasPendingAppointmentPayment(appointmentId: string): boolean {
+  const value = readPendingPayment();
+  return value?.kind === 'appointment' && value.appointmentId === appointmentId;
 }
 
 /** Forgets the hosted-page payment once its outcome is known. */

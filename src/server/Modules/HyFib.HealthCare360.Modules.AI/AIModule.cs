@@ -56,6 +56,7 @@ public sealed class AIModule : IModule
                 client.MaxResponseContentBufferSize = 1024 * 1024;
             })
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler)
+            .AddHttpMessageHandler<CorrelationIdForwardingHandler>()
             .AddStandardResilienceHandler(options =>
             {
                 // Transcribing 10 MB of audio on a CPU-only on-prem server can take minutes; the upload is never retried.
