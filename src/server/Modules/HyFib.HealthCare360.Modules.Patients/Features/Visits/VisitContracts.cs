@@ -25,6 +25,24 @@ public sealed record VisitListItem(
     string? TokenLabel,
     TokenStatus? TokenStatus);
 
+/// <summary>
+/// The patient's payer for the banner (<c>GET /api/v1/patients/{id}/payer</c>, UX-04; <see cref="PatientPayerRule"/>).
+/// The payer's name, policy number (masked) and the policy's last valid day are filled in only for staff who may read
+/// payers and policies, and only for a third-party payer with a policy that is active and in date today.
+/// </summary>
+/// <param name="IsCurrentVisit">The payer of an open visit; false for the last visit's ("Last payer").</param>
+public sealed record PatientPayer(
+    Guid VisitId,
+    bool IsCurrentVisit,
+    PayerType PayerType,
+    Guid? PayerId,
+    string? PayerName,
+    string? PolicyNumber,
+    DateOnly? ValidUntil);
+
+/// <summary><see cref="Current"/> is null when the patient has had no visit (in this facility).</summary>
+public sealed record PatientPayerResponse(PatientPayer? Current);
+
 public sealed record VisitDetail(
     Guid Id,
     string VisitNumber,

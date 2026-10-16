@@ -17,6 +17,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
@@ -96,6 +97,18 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         account.PayerId.ShouldBe(insurer.Id);
         account.PolicyId.ShouldBe(policy.Id, "the account picks up the policy valid on the admission date");
         account.BedServiceCode.ShouldBe("BED-GEN");
+
+        // Patient banner (UX-04): the admission's visit is open, so its insurer is the payer. The billing counter, which
+        // reads payers and policies, sees the insurer's name and the in-date policy; the doctor sees the payer type only.
+        var bannerPayer = (await billing.GetAsync<PatientPayerResponse>($"/api/v1/patients/{patient.Id}/payer")).Current.ShouldNotBeNull();
+        bannerPayer.IsCurrentVisit.ShouldBeTrue();
+        bannerPayer.PayerType.ShouldBe(PayerType.Insurance);
+        bannerPayer.PayerId.ShouldBe(insurer.Id);
+        bannerPayer.PayerName.ShouldBe(insurer.Name);
+        bannerPayer.PolicyNumber.ShouldBe(policy.PolicyNumberMasked);
+        bannerPayer.ValidUntil.ShouldBe(policy.ValidTo);
+        var doctorsBanner = (await doctor.GetAsync<PatientPayerResponse>($"/api/v1/patients/{patient.Id}/payer")).Current.ShouldNotBeNull();
+        (doctorsBanner.PayerType, doctorsBanner.PayerName, doctorsBanner.PolicyNumber, doctorsBanner.ValidUntil).ShouldBe((PayerType.Insurance, null, null, null));
 
         // TPA desk: requests cashless pre-authorisation; the insurer approves part of the estimate.
         var preAuth = await ObtainPreAuthorisationAsync(tpaDesk, policy.Id, admission.Id);
