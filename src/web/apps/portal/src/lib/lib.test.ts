@@ -20,6 +20,7 @@ import {
   clearPendingPayment,
   isTrainingGateway,
   isUsablePaymentLink,
+  hasPendingAppointmentPayment,
   peekPendingPayment,
   rememberPendingPayment,
 } from './payments';
@@ -226,6 +227,20 @@ describe('payments', () => {
     expect(peekPendingPayment('bill-1')).not.toBeNull();
     clearPendingPayment();
     expect(peekPendingPayment('bill-1')).toBeNull();
+  });
+
+  it('remembers a hosted-page payment for its own appointment only, never as a bill', () => {
+    rememberPendingPayment({ kind: 'appointment', appointmentId: 'appt-1' });
+    expect(hasPendingAppointmentPayment('appt-2')).toBe(false);
+    expect(hasPendingAppointmentPayment('appt-1')).toBe(true);
+    expect(peekPendingPayment('appt-1')).toBeNull();
+    clearPendingPayment();
+    expect(hasPendingAppointmentPayment('appt-1')).toBe(false);
+  });
+
+  it('does not take a bill payment for an appointment one', () => {
+    rememberPendingPayment({ kind: 'bill', billId: 'appt-1', orderRowId: 'order-1' });
+    expect(hasPendingAppointmentPayment('appt-1')).toBe(false);
   });
 });
 

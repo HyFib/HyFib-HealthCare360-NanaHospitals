@@ -168,9 +168,14 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 
   After any of these, `POST …/payments/{orderRowId}/verify` asks the server to confirm with the gateway server to
   server. The check is safe to repeat ("Check payment status"). The portal never handles card numbers or UPI PINs.
-* **Appointments.** Paying online uses `…/payment`, then `…/payment/confirm` with Razorpay's order id, payment id and
-  signature. The training gateway gives no signature, so its payments are confirmed with `…/payment/verify`, a
-  server-to-server check. A payment problem never loses the booked slot.
+* **Appointments.** Paying online uses `…/payment`, then opens the gateway the same three ways as a bill:
+  * **Razorpay:** Checkout, then `…/payment/confirm` with Razorpay's order id, payment id and signature.
+  * **Hosted payment link:** the page opens the link and remembers the appointment in this tab. Back on the
+    appointment's page, `…/payment/verify` confirms it with the gateway, server to server. While the gateway has not
+    reported it yet, the page says so and offers "Check payment status"; the Pay button stays hidden meanwhile.
+  * **Training gateway (simulator):** confirmed with `…/payment/verify`.
+
+  A payment problem never loses the booked slot.
 * **When the page is closed after paying.** The patient is still credited. The gateway's webhook, or the server's
   re-check every few minutes, records the bill's receipt or confirms the booking and receipts its advance; the bill
   or appointment shows it the next time the patient looks. Receipts are dated when the gateway took the money, not
@@ -246,9 +251,6 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 
 ## Known gaps (server follow-ups)
 
-* **Hosted payment pages for appointments.** Appointments are paid with Razorpay Checkout (or the training gateway).
-  The server would now confirm a payment made on a hosted page (by the webhook or its re-check), but the portal still
-  opens a hosted payment link for bills only.
 * **Refund status in the portal.** Patients do not see where a refund stands; the hospital tells them.
 * **English-only server text.** Business-rule messages (409 and 422 details, validation messages) arrive in English
   only and are shown as sent.
