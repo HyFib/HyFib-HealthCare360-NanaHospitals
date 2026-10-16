@@ -115,6 +115,15 @@ jobs:
           pwsh -NoProfile -File tests/deploy/Test-InstallerServiceRestart.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
+      # Windows Update's active hours on the Server Node (SRS DED-15), written to throwaway keys.
+      - name: Test the installer's Windows Update active hours
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerUpdateHours.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerUpdateHours.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       # What the warm standby scripts write (pg_hba.conf, postgresql.conf, the SCRAM verifier, the TLS certificate). The
       # .NET job runs the scripts themselves against a real primary and standby.
       - name: Test the warm standby scripts (Enable-HC360Replication.ps1, New-HC360Standby.ps1)

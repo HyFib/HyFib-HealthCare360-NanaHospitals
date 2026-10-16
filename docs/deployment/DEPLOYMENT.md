@@ -105,6 +105,9 @@ The installer:
 - Opens the firewall, for Private networks only: HTTPS for the staff app (7360) and the patient portal (7361), and
   mDNS.
 - Keeps the machine and its WiFi adapter from sleeping.
+- Sets Windows Update's active hours to 06:00–23:00, so updates restart the server only overnight. Choose other hours
+  with `-UpdateActiveHoursStart` and `-UpdateActiveHoursEnd` (at most 18 apart, as Windows allows); an upgrade keeps
+  the hours set before.
 - Starts HC360 and checks that it is ready: up, and reaching the database.
 
 At the end it prints two things. Write them down:

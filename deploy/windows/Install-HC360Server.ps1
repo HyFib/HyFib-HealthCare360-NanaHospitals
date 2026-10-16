@@ -28,7 +28,9 @@
       (UDP 5353) in Windows Firewall for Private/Domain networks only. Serial analysers reach the server through their
       lab agent on 7360. With -LabPorts it also opens the ports network analysers connect
       to (Lab setup > Analysers > Connection), limited to -LabAnalyserAddresses when given.
-    - Tunes the machine for an always-on WiFi server: no sleep/hibernate, WiFi adapter never powered down.
+    - Tunes the machine for an always-on WiFi server: no sleep/hibernate, WiFi adapter never powered down, and Windows
+      Update's active hours set to -UpdateActiveHoursStart..-UpdateActiveHoursEnd (default 06:00-23:00), so updates do
+      not restart the server during clinical hours (SRS DED-15).
     - With -HospitalCaFile, installs the hospital CA exported on another Server Node ("certificates export-ca"), so
       workstations that pinned it trust this server too (a warm standby, or replacement hardware).
     - Offers the release's HC360 Desktop package to the enrolled workstations, which then update themselves from the
@@ -73,6 +75,10 @@ param(
     [string] $DatabaseName = 'hc360',
     [string] $SecondaryBackupDir,
     [switch] $SkipPowerTuning,
+    # The hours (0-23) Windows Update must not restart the server in, at most 18 apart as Windows allows. Restarts for
+    # updates then happen overnight, from -UpdateActiveHoursEnd to -UpdateActiveHoursStart.
+    [ValidateRange(0, 23)] [int] $UpdateActiveHoursStart = 6,
+    [ValidateRange(0, 23)] [int] $UpdateActiveHoursEnd = 23,
     [switch] $SkipFirewall,
     # Ports network (TCP) analysers connect to, as set in Lab setup > Analysers > Connection, e.g. 5100,5200.
     [int[]] $LabPorts,
@@ -175,6 +181,30 @@ function New-EveryMinuteTriggers {
 # The newest HC360 Desktop package of a release beside the server package (SRS DED-18): in the folder the server package
 # was extracted to, or the one above it, where the release's files were downloaded. Null when there is none. Whether it
 # is signed is for the server to check (desktop publish).
+# Why Windows would not take these active hours, or $null. Windows allows at most 18 of them, and they may run past
+# midnight (22 to 6).
+function Get-ActiveHoursProblem([int] $Start, [int] $End) {
+    $span = ($End - $Start + 24) % 24
+    if ($span -eq 0) { return "-UpdateActiveHoursStart and -UpdateActiveHoursEnd are both $Start`: give the hours Windows Update must not restart the server in." }
+    if ($span -gt 18) { return "Windows allows at most 18 active hours, and $Start to $End is $span. Leave the server a quieter time for updates." }
+    return $null
+}
+
+# Windows Update's active hours, set by policy (which the Settings app cannot undo) and as the machine's own setting
+# (for editions that ignore the policy). The keys are parameters for the tests.
+function Set-UpdateActiveHours([int] $Start, [int] $End,
+    [string] $PolicyKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate',
+    [string] $SettingsKey = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings') {
+    foreach ($key in $PolicyKey, $SettingsKey) {
+        if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key -Force | Out-Null }
+    }
+    Set-ItemProperty -LiteralPath $PolicyKey -Name SetActiveHours -Value 1 -Type DWord
+    Set-ItemProperty -LiteralPath $PolicyKey -Name ActiveHoursStart -Value $Start -Type DWord
+    Set-ItemProperty -LiteralPath $PolicyKey -Name ActiveHoursEnd -Value $End -Type DWord
+    Set-ItemProperty -LiteralPath $SettingsKey -Name ActiveHoursStart -Value $Start -Type DWord
+    Set-ItemProperty -LiteralPath $SettingsKey -Name ActiveHoursEnd -Value $End -Type DWord
+}
+
 function Find-DesktopPackage([string] $PackagePath) {
     $pattern = '^HC360-Desktop-(?<numbers>\d+\.\d+\.\d+(?:\.\d+)?)(?:-[0-9A-Za-z.-]+)?-win-[a-z0-9]+\.zip$'
     $extracted = Split-Path -Parent ([System.IO.Path]::GetFullPath($PackagePath))
@@ -532,6 +562,16 @@ if ($installedPort -and -not $PSBoundParameters.ContainsKey('HttpsPort')) { $Htt
 $installedPortalPort = $settingsBefore['HealthCare360:PortalHttpsPort'] -as [int]
 if ($installedPortalPort -and -not $PSBoundParameters.ContainsKey('PortalHttpsPort')) { $PortalHttpsPort = $installedPortalPort }
 if ($PortalHttpsPort -eq $HttpsPort) { throw "The patient portal needs a port of its own: -PortalHttpsPort and -HttpsPort are both $HttpsPort." }
+if (-not $SkipPowerTuning) {
+    # Without the parameters an upgrade keeps the active hours set before (by this installer, or by IT through the policy).
+    $activeHoursBefore = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate' -ErrorAction SilentlyContinue
+    if ($activeHoursBefore -and $activeHoursBefore.PSObject.Properties['ActiveHoursStart'] -and $activeHoursBefore.PSObject.Properties['ActiveHoursEnd']) {
+        if (-not $PSBoundParameters.ContainsKey('UpdateActiveHoursStart')) { $UpdateActiveHoursStart = [int] $activeHoursBefore.ActiveHoursStart }
+        if (-not $PSBoundParameters.ContainsKey('UpdateActiveHoursEnd')) { $UpdateActiveHoursEnd = [int] $activeHoursBefore.ActiveHoursEnd }
+    }
+    $activeHoursProblem = Get-ActiveHoursProblem $UpdateActiveHoursStart $UpdateActiveHoursEnd
+    if ($activeHoursProblem) { throw "$activeHoursProblem Nothing has been changed." }
+}
 
 # ---------------------------------------------------------------- stop an existing service (upgrade)
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -746,6 +786,8 @@ if (-not $SkipPowerTuning) {
         }
         catch { Write-Warning "Could not change power management for '$($_.Name)': $($_.Exception.Message)" }
     }
+    Set-UpdateActiveHours $UpdateActiveHoursStart $UpdateActiveHoursEnd
+    Write-Host ("    Windows Update will not restart the server between {0:00}:00 and {1:00}:00." -f $UpdateActiveHoursStart, $UpdateActiveHoursEnd)
 }
 
 # ---------------------------------------------------------------- start and verify
