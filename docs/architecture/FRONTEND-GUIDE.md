@@ -91,7 +91,13 @@ export const bedQueries = {
   lays out its columns from the header (fixed layout). It measures the `rowActions` buttons itself and gives their
   column the widest row's width, so no width is needed. To line them up at the end of the column, wrap them in a flex
   container with `justifyContent: 'flex-end'`, as the appointments list does. Cell text stays on one line unless the
-  cell sets `whiteSpace: 'normal'`; let long text wrap rather than force the table wider than the screen.
+  cell sets `whiteSpace: 'normal'`; let long text wrap rather than force the table wider than the screen. Columns
+  without a `width` share what the others leave equally, down to nothing: give the one that matters (the patient, the
+  service) a `minWidth`, below which the table scrolls sideways in its box, and the less important ones a `width`, in
+  pixels or in per cent to grow with the table. Size for Segoe UI, which is wider than the fonts of a Mac or a Linux
+  desktop. A name with badges (`WorklistPatient`): a wrapping flex row, the name `<Text wrap={false} truncate
+  title={name}>` with `minWidth: 0` so that it ends in an ellipsis, and the badges in a group that goes onto a line of
+  its own when the cell is narrow.
 * Feedback: `LoadingState`, `EmptyState` (always say what to do next), `ErrorState` (never raw errors),
   `StatusBadge` (colour from the status word), `KpiCard`, `ConfirmDialog` (every destructive/irreversible action),
   `useNotify()` toasts (success after saves; `notify.error(error, 'Could not …')` on failures).
@@ -287,6 +293,14 @@ has it. To add a screen, add an entry to the spec's list: its path, the canned a
 jsdom checks, typed with the module's DTOs) and what shows once its data is there. Fix what it finds in the component
 or, better, in the theme or the shared component it comes from; `{ skip: { '<rule id>': '<why>' } }` is only for a rule
 that cannot apply.
+
+**Fonts.** CI's Ubuntu runner has none of the theme's named fonts, so Chromium paints there in DejaVu Sans, which is
+about as wide as Segoe UI on Windows. A Mac, or a Linux desktop whose fonts stand in for those names (Inter, Noto
+Sans…), paints narrower text, and a column that fits there can overflow in CI: axe then cannot tell the colours behind
+text that spills over its neighbours, and fails the check. On Linux, check with the runner's fonts:
+`FONTCONFIG_FILE="$PWD/a11y/fonts.conf" pnpm test:a11y` (`src/web/a11y/fonts.conf`; DejaVu Sans must be installed).
+It is not set in `playwright.config.ts`: Chromium on Windows and macOS does not use fontconfig, and a Linux machine
+that sets a `FONTCONFIG_FILE` of its own needs to keep it.
 
 Tabster's focus sentinels (`[data-tabster-dummy]`) are left out of every check: they are hidden from screen readers and
 pass focus on the moment they get it, but axe reports each one.

@@ -82,14 +82,19 @@ export const Route = createFileRoute('/_app/emr/')({
 });
 
 const useStyles = makeStyles({
-  layout: {
+  // The lists beside the queue where both fit, below it where they do not, side by side as far as they fit there. The
+  // queue's columns need about 880 px; squeezed beside the lists into less (616 px in a 1,280 px window with the
+  // navigation open) the patient's name had a few characters' width. A media query cannot tell, as the navigation may
+  // be open or closed at the same window width: the lists wrap below once the queue would be narrower than that.
+  layout: { display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start' },
+  main: { flex: '999 1 0px', minWidth: 'min(100%, 880px)' },
+  side: {
+    flex: '1 1 320px',
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 340px)',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))',
     gap: '16px',
     alignItems: 'start',
-    '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
   },
-  side: { display: 'flex', flexDirection: 'column', gap: '16px' },
   list: { display: 'flex', flexDirection: 'column', gap: '2px', margin: 0, padding: 0, listStyle: 'none' },
   item: {
     display: 'flex',
@@ -328,7 +333,7 @@ function WorklistPage() {
         <ErrorState error={worklist.error} onRetry={() => void worklist.refetch()} />
       ) : (
         <div className={styles.layout}>
-          <Section flush>
+          <Section flush className={styles.main}>
             <TabList
               className={styles.tabs}
               selectedValue={view}
@@ -369,6 +374,7 @@ function WorklistPage() {
                     {
                       key: 'patient',
                       header: 'Patient',
+                      minWidth: 200,
                       render: (e) => (
                         <WorklistPatient
                           name={e.patientName}
@@ -392,7 +398,14 @@ function WorklistPage() {
                         </WorklistPatient>
                       ),
                     },
-                    { key: 'reason', header: 'Reason', priority: 'low', render: (e) => e.chiefComplaint ?? '—' },
+                    // The reason gives way to the patient: cut short with an ellipsis, the whole of it in the title.
+                    {
+                      key: 'reason',
+                      header: 'Reason',
+                      width: '15%',
+                      priority: 'low',
+                      render: (e) => <span title={e.chiefComplaint ?? undefined}>{e.chiefComplaint ?? '—'}</span>,
+                    },
                     {
                       key: 'wait',
                       header: 'Waiting',
