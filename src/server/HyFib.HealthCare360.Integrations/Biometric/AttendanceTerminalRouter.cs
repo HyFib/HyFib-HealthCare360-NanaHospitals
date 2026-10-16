@@ -16,6 +16,8 @@ internal sealed class AttendanceTerminalRouter(IEnumerable<IAttendanceTerminalPr
 
     public async Task<AttendanceTerminalRead> ReadAsync(AttendanceTerminal terminal, CancellationToken cancellationToken)
     {
+        // Terminals are read by a job with no signed-in user: the log rows count against the terminal's facility.
+        using var facility = IntegrationTrace.ForFacility(terminal.FacilityId);
         var (provider, config, error) = await ResolveAsync(terminal.FacilityId, cancellationToken);
         return provider is null
             ? AttendanceTerminalRead.Failed(error!)
@@ -24,12 +26,14 @@ internal sealed class AttendanceTerminalRouter(IEnumerable<IAttendanceTerminalPr
 
     public async Task<string?> SetClockAsync(AttendanceTerminal terminal, DateTime localTime, CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(terminal.FacilityId);
         var (provider, config, error) = await ResolveAsync(terminal.FacilityId, cancellationToken);
         return provider is null ? error : await provider.SetClockAsync(terminal, localTime, config!.Settings!, config.Secrets, cancellationToken);
     }
 
     public async Task<string?> PunchOnTrainingTerminalAsync(AttendanceTerminal terminal, string pin, DateTime localTime, CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(terminal.FacilityId);
         var (provider, _, error) = await ResolveAsync(terminal.FacilityId, cancellationToken);
         if (provider is null)
         {

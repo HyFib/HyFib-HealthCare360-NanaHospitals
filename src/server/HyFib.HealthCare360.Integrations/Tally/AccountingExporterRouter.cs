@@ -28,6 +28,8 @@ internal sealed class AccountingExporterRouter(
 
     public async Task<AccountingExportResult> PushVouchersAsync(IReadOnlyList<AccountingVoucher> vouchers, Guid? facilityId, CancellationToken cancellationToken)
     {
+        // Day-book posting runs from the outbox, with no signed-in user: the log rows count against the facility posted for.
+        using var facility = IntegrationTrace.ForFacility(facilityId);
         var (provider, config, connection) = await ResolveAsync(facilityId, cancellationToken);
         if (provider is not null)
         {
@@ -44,6 +46,7 @@ internal sealed class AccountingExporterRouter(
 
     public async Task<AccountingReadBack> ReadBackAsync(DateOnly date, IReadOnlyList<AccountingVoucher> expected, Guid? facilityId, CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(facilityId);
         var (provider, config, connection) = await ResolveAsync(facilityId, cancellationToken);
         if (provider is null)
         {

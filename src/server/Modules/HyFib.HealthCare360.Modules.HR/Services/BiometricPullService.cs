@@ -117,7 +117,7 @@ public sealed class BiometricPullService(
             await integrationLog.LogAsync(new IntegrationLogEntry(BiometricIngestionService.IntegrationName,
                 BiometricIngestionService.ProviderName(device.Connection == BiometricConnection.Pull ? PunchSource.Pull : PunchSource.Adms),
                 "terminal.quiet", IntegrationDirection.Inbound, false, Reference: device.SerialNumber,
-                Error: $"Not heard from since {since}."), ct);
+                Error: $"Not heard from since {since}.", FacilityId: device.FacilityId), ct);
             await notifications.NotifyPermissionHoldersAsync(HRPermissions.AttendanceManage, device.FacilityId,
                 $"Attendance terminal {device.Name} not heard from",
                 $"Nothing has come from {device.Name} since {since}. {why} Punches made on it stay on the terminal until it is reached.",

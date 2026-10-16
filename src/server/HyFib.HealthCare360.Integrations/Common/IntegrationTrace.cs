@@ -10,6 +10,12 @@ internal sealed class IntegrationTrace(IIntegrationLogger logger, TimeProvider t
 {
     public long Start() => time.GetTimestamp();
 
+    /// <summary>
+    /// Tags the rows written beneath it with the facility whose settings the call uses (see <see cref="IntegrationLogScope"/>);
+    /// routers open one around each provider call, because outbox and job work has no signed-in facility.
+    /// </summary>
+    public static IDisposable ForFacility(Guid? facilityId) => IntegrationLogScope.ForFacility(facilityId);
+
     public Task LogAsync(
         string integration,
         string provider,
@@ -20,11 +26,12 @@ internal sealed class IntegrationTrace(IIntegrationLogger logger, TimeProvider t
         string? request = null,
         string? response = null,
         string? error = null,
-        IntegrationDirection direction = IntegrationDirection.Outbound) =>
+        IntegrationDirection direction = IntegrationDirection.Outbound,
+        Guid? facilityId = null) =>
         // CancellationToken.None: the trace must be written even when the caller gave up — that is when it matters most.
         logger.LogAsync(
             new IntegrationLogEntry(integration, provider, operation, direction, success, time.GetElapsedTime(started),
-                Truncate(reference, 128), request, response, Truncate(error, 2000)),
+                Truncate(reference, 128), request, response, Truncate(error, 2000), facilityId),
             CancellationToken.None);
 
     public static string? Truncate(string? value, int max) => value is null || value.Length <= max ? value : value[..max];

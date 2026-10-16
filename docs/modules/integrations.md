@@ -41,6 +41,17 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
   logger then masks phone numbers, e-mails and secrets as a second line of defence. Raw analyser messages are logged
   only after `LabPhiMasking` has removed names, dates of birth, addresses and phones, and has cut identifiers to their
   last four characters.
+* **Facility of a log row.** The dashboard's health and the log list count a row for the signed-in facility when it
+  carries that facility or none, so a row without one counts for every facility. Each row therefore takes the facility
+  the call was made for, in this order: `IntegrationLogEntry.FacilityId` (or `IntegrationTrace.LogAsync(…, facilityId)`),
+  then the facility of the innermost `IntegrationLogScope.ForFacility` around the call, then the signed-in user's.
+  Background work has no signed-in user, so the routers open a scope for the facility whose settings they use: SMS,
+  WhatsApp and e-mail for the message's facility (outbox sends), payments for the facility named (webhooks, gateway
+  reconciliation, re-checks), Tally for the facility posted for, PACS for the facility named (`PacsLinkJob`), and
+  attendance terminals for the terminal's facility. The modality worklist uses the modality's facility, analyser
+  messages the analyser's facility in Lab setup, and HR's push and pull rows the terminal's facility. Rows still
+  without a facility count for every facility: refused worklist associations, inbound webhooks, the lab agent relay
+  and analysers whose facility the LIS cannot give.
 * **Transport.** Each HTTP provider is a typed `HttpClient` behind the standard resilience handler. Cloud APIs use a
   15 s attempt timeout and a 20 s total; Tally uses 20 s for both, because the day book posts from an outbox message
   that has 30 s in all (see [Tally Prime](#tally-prime-int-tally)). Unsafe methods (POST) are **never retried** at the HTTP

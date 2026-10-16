@@ -51,7 +51,7 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
         if (refusal is not null)
         {
             await integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, "zkteco-adms", "device.refused", IntegrationDirection.Inbound, false,
-                Reference: serial, Error: refusal), ct);
+                Reference: serial, Error: refusal, FacilityId: device?.FacilityId), ct);
             return null;
         }
 
@@ -141,7 +141,7 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
         await db.SaveChangesAsync(ct);
         await integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, ProviderName(source), "punches.received",
             IntegrationDirection.Inbound, true, Reference: device.SerialNumber,
-            Response: $"accepted={accepted} duplicates={duplicates} unknownPins={unknown} rejected={rejected}"), ct);
+            Response: $"accepted={accepted} duplicates={duplicates} unknownPins={unknown} rejected={rejected}", FacilityId: device.FacilityId), ct);
         return new PunchIngestResult(accepted, duplicates, unknown, rejected);
     }
 
@@ -189,7 +189,7 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
         device.OfflineSince is null
             ? Task.CompletedTask
             : integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, ProviderName(device.Connection == BiometricConnection.Pull ? PunchSource.Pull : PunchSource.Adms),
-                "terminal.back", IntegrationDirection.Inbound, true, Reference: device.SerialNumber), ct);
+                "terminal.back", IntegrationDirection.Inbound, true, Reference: device.SerialNumber, FacilityId: device.FacilityId), ct);
 
     internal static string ProviderName(PunchSource source) => source switch
     {
