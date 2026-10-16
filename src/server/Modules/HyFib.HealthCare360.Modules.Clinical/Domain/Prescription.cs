@@ -43,6 +43,24 @@ public sealed record PrescriptionSignature(
     bool ControlledDrugsConfirmed);
 
 /// <summary>
+/// The doctor's Digital Signature Certificate signature over the prescription's canonical bytes (ERX-04), as checked
+/// by the server: the detached CMS/PKCS#7 signature, the exact bytes signed (<see cref="PrescriptionCanonicalForm"/>)
+/// and their SHA-256, and the signer's certificate.
+/// </summary>
+public sealed record PrescriptionDigitalSignature(
+    byte[] Signature,
+    byte[] Content,
+    string ContentHash,
+    DateTimeOffset SignedAt,
+    Guid? UserId,
+    string SignerName,
+    string SignerSubject,
+    string SignerSerialNumber,
+    string SignerIssuer,
+    string SignerThumbprint,
+    string ChainStatus);
+
+/// <summary>
 /// An e-prescription (ERX-01..06). Drafts are freely editable; signing runs the safety checks (in the service),
 /// allocates a verification token for the printed QR code and raises <see cref="PrescriptionSigned"/>, which puts
 /// it in the OP or IP pharmacy queue — no paper is needed for dispensing.
@@ -83,6 +101,40 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
     public string? SafetyAlerts { get; private set; }
 
     public bool ControlledDrugsConfirmed { get; private set; }
+
+    /// <summary>
+    /// The detached CMS/PKCS#7 signature made with the doctor's DSC in HC360 Desktop (ERX-04); null until then. Once
+    /// set it never changes: the prescription is signed, so its content cannot change either, and a different
+    /// prescription (a repeat) is a new prescription that needs its own signature.
+    /// </summary>
+    public byte[]? DigitalSignature { get; private set; }
+
+    /// <summary>The exact bytes the DSC signed (<see cref="PrescriptionCanonicalForm"/>).</summary>
+    public byte[]? SignedContent { get; private set; }
+
+    /// <summary>Lower-case hex SHA-256 of <see cref="SignedContent"/>, printed and shown on the verification page.</summary>
+    public string? SignedContentHash { get; private set; }
+
+    /// <summary>The signing time in the signature (checked against the server's clock when it was attached).</summary>
+    public DateTimeOffset? DigitallySignedAt { get; private set; }
+
+    public Guid? DigitallySignedByUserId { get; private set; }
+
+    /// <summary>The certificate's common name: the doctor's name on an Indian DSC.</summary>
+    public string? SignerName { get; private set; }
+
+    public string? SignerSubject { get; private set; }
+    public string? SignerSerialNumber { get; private set; }
+    public string? SignerIssuer { get; private set; }
+
+    /// <summary>SHA-1 thumbprint, as the Windows certificate store shows it.</summary>
+    public string? SignerThumbprint { get; private set; }
+
+    /// <summary>Whether the certificate chained to a root the server trusts when it was attached (reported, not required).</summary>
+    public string? SignerChainStatus { get; private set; }
+
+    public bool IsDigitallySigned => DigitalSignature is not null;
+
     public DateTimeOffset? CancelledAt { get; private set; }
     public string? CancelReason { get; private set; }
     public List<PrescriptionItem> Items { get; set; } = [];
@@ -142,6 +194,41 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
 
         Raise(new PrescriptionSigned(Id, PrescriptionNumber, PatientId, VisitId, AdmissionId, FacilityId, PractitionerId, IsInpatient,
             Items.OrderBy(i => i.Sequence).Select(ToLine).ToList(), now));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Keeps the doctor's DSC signature, which the caller has verified against <see cref="PrescriptionCanonicalForm"/>.
+    /// Only a signed prescription takes one, and only once: a signed prescription never changes, so a changed
+    /// prescription is a new one (repeat) with its own signature.
+    /// </summary>
+    public Result AttachDigitalSignature(PrescriptionDigitalSignature signature)
+    {
+        ArgumentNullException.ThrowIfNull(signature);
+        if (Status != PrescriptionStatus.Signed)
+        {
+            return Error.Rule("prescription.not_signed", Status == PrescriptionStatus.Draft
+                ? "Sign the prescription before signing it with your DSC."
+                : "This prescription is cancelled.");
+        }
+
+        if (IsDigitallySigned)
+        {
+            return Error.Conflict("prescription.already_digitally_signed",
+                "This prescription is already signed with a DSC and cannot change. Repeat it to issue a new prescription.");
+        }
+
+        DigitalSignature = signature.Signature;
+        SignedContent = signature.Content;
+        SignedContentHash = signature.ContentHash;
+        DigitallySignedAt = signature.SignedAt;
+        DigitallySignedByUserId = signature.UserId;
+        SignerName = signature.SignerName;
+        SignerSubject = signature.SignerSubject;
+        SignerSerialNumber = signature.SignerSerialNumber;
+        SignerIssuer = signature.SignerIssuer;
+        SignerThumbprint = signature.SignerThumbprint;
+        SignerChainStatus = signature.ChainStatus;
         return Result.Success();
     }
 

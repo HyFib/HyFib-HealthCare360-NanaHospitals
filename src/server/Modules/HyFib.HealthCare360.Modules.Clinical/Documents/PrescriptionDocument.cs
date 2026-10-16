@@ -7,8 +7,9 @@ namespace HyFib.HealthCare360.Modules.Clinical.Documents;
 /// <summary>
 /// The A5 e-prescription (ERX-04, PP-02): clinical letterhead with the facility logo and the prescriber's block, the
 /// patient strip, known allergies, diagnosis, ℞ with each medicine's directions in English and the Hindi line under
-/// them, Schedule H1/X tags, advice, follow-up, the QR code that verifies the prescription, and the digital signature
-/// with the prescriber's signature image. The same document is printed at the counter, downloaded from the portal and
+/// them, Schedule H1/X tags, advice, follow-up, the QR code that verifies the prescription, and the signature with the
+/// prescriber's signature image: "Digitally signed by …" with the certificate when the doctor signed it with their DSC,
+/// else "Signed electronically on …" (signed in HC360, which is not a digital signature under the IT Act). The same document is printed at the counter, downloaded from the portal and
 /// sent with the "prescription shared" message.
 /// </summary>
 internal static class PrescriptionDocument
@@ -22,6 +23,8 @@ internal static class PrescriptionDocument
         .controlled { display: inline-block; border: 1px solid #B00020; color: #B00020; font-size: 7.5pt; padding: 0 4px; border-radius: 3px; margin-left: 4px; }
         .qr .qr-img { display: block; width: 26mm; height: 26mm; }
         .qr .mono { word-break: break-all; }
+        .dsc { max-width: 62mm; }
+        .dsc.mono { word-break: break-all; font-size: 7pt; }
 
         """;
 
@@ -61,7 +64,7 @@ internal static class PrescriptionDocument
             ? Html.Of($"<div><span class=\"label\">Diagnosis</span> {string.Join("; ", model.Diagnoses)}</div>")
             : Html.Empty;
         var refills = model.RefillsAllowed > 0 ? Html.Of($"<div class=\"small\">Refills allowed: {model.RefillsAllowed}</div>") : Html.Empty;
-        var signed = model.SignedAt is { } at ? Html.Of($"<div class=\"small\">Digitally signed on {DocumentFormat.DateTime(at)}</div>") : Html.Empty;
+        var signed = SignatureLine(model);
         return Html.Of($"""
             {ClinicalDocumentParts.Letterhead(model.Letterhead, logo, ClinicalDocumentParts.Prescriber(model.Prescriber), template)}
             {warning}
@@ -86,6 +89,24 @@ internal static class PrescriptionDocument
               {ClinicalDocumentParts.Signature(signed, signature, model.Prescriber?.DisplayName ?? "Doctor")}
             </div>
             """);
+    }
+
+    /// <summary>
+    /// "Digitally signed by Dr Meera Shah (MMC-55821) — certificate 1A2B3C, 25 Sep 2026, 3:45 pm" and the SHA-256 of the
+    /// signed bytes (the verification page shows it too) for a DSC signature; "Signed electronically on …" otherwise.
+    /// </summary>
+    public static Html SignatureLine(PrescriptionPrintModel model)
+    {
+        if (model.DigitalSignature is { } dsc)
+        {
+            var signer = dsc.RegistrationNumber is { Length: > 0 } registration ? $"{dsc.SignerName} ({registration})" : dsc.SignerName;
+            return Html.Of($"""
+                <div class="small dsc">Digitally signed by {signer} — certificate {dsc.SerialNumber}, {DocumentFormat.DateTime(dsc.SignedAt)}</div>
+                <div class="small dsc mono">SHA-256 {dsc.ContentHash}</div>
+                """);
+        }
+
+        return model.SignedAt is { } at ? Html.Of($"<div class=\"small\">Signed electronically on {DocumentFormat.DateTime(at)}</div>") : Html.Empty;
     }
 
     /// <summary>"5 days", "1 day", and whole weeks from two weeks on ("3 weeks"), as the staff app writes durations.</summary>

@@ -8,9 +8,14 @@ namespace HyFib.HealthCare360.Modules.Clinical.Documents;
 /// <summary>
 /// The signed prescription as a PDF, for the "prescription shared" message: WhatsApp sends it in the template's document
 /// header when the template has one, e-mail attaches it. It is made when the message goes out; a prescription cancelled
-/// by then is not sent.
+/// by then is not sent, nor one that still needs the doctor's DSC signature (<see cref="PrescriptionSignatureSettings"/>).
 /// </summary>
-internal sealed class PrescriptionDocumentSource(HospitalDbContext db, PrescriptionPrintBuilder builder, DocumentAssets assets, IPdfRenderer renderer)
+internal sealed class PrescriptionDocumentSource(
+    HospitalDbContext db,
+    PrescriptionPrintBuilder builder,
+    PrescriptionSignatureSettings signatures,
+    DocumentAssets assets,
+    IPdfRenderer renderer)
     : INotificationDocumentSource
 {
     public const string DocumentKind = "clinical.prescription";
@@ -21,7 +26,7 @@ internal sealed class PrescriptionDocumentSource(HospitalDbContext db, Prescript
     {
         var prescription = await db.Set<Prescription>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(p => p.Items)
             .FirstOrDefaultAsync(p => p.Id == id && p.Status == PrescriptionStatus.Signed, cancellationToken);
-        if (prescription is null)
+        if (prescription is null || await signatures.FinalCopyProblemAsync(prescription, cancellationToken) is not null)
         {
             return null;
         }

@@ -118,7 +118,8 @@ public sealed class PrescriptionDocumentTests
         body.ShouldContain("<h3>Advice</h3><div class=\"pre\">Walk 30 minutes a day.<br>Avoid sweets.</div>");
         body.ShouldContain("<h3>Follow-up</h3><div>Review on 03 Oct 2026. Bring your sugar chart.</div>");
         body.ShouldContain("Refills allowed: 2");
-        body.ShouldContain("Digitally signed on 25 Sep 2026, 3:45 pm");
+        body.ShouldContain("Signed electronically on 25 Sep 2026, 3:45 pm");
+        body.ShouldNotContain("Digitally signed", Case.Sensitive, "only a DSC signature is a digital signature");
     }
 
     [Fact]
@@ -211,7 +212,7 @@ public sealed class PrescriptionDocumentTests
         var html = (await PrescriptionDocument.BuildAsync(model, Assets((signature, "image/png", [1, 2, 3])), Ct)).ToHtml();
 
         html.ShouldNotContain("class=\"sign-img\"");
-        html.ShouldNotContain("Digitally signed");
+        html.ShouldNotContain("Signed electronically");
         html.ShouldContain("<div class=\"label\">Date</div><div>—</div>");
     }
 

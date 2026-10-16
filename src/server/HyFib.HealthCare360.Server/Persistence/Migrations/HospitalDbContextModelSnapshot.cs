@@ -9136,6 +9136,18 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
 
+                    b.Property<byte[]>("DigitalSignature")
+                        .HasColumnType("bytea")
+                        .HasColumnName("digital_signature");
+
+                    b.Property<DateTimeOffset?>("DigitallySignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("digitally_signed_at");
+
+                    b.Property<Guid?>("DigitallySignedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("digitally_signed_by_user_id");
+
                     b.Property<Guid?>("EncounterId")
                         .HasColumnType("uuid")
                         .HasColumnName("encounter_id");
@@ -9203,6 +9215,45 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("SignedByUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("signed_by_user_id");
+
+                    b.Property<byte[]>("SignedContent")
+                        .HasColumnType("bytea")
+                        .HasColumnName("signed_content");
+
+                    b.Property<string>("SignedContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("signed_content_hash");
+
+                    b.Property<string>("SignerChainStatus")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("signer_chain_status");
+
+                    b.Property<string>("SignerIssuer")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("signer_issuer");
+
+                    b.Property<string>("SignerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("signer_name");
+
+                    b.Property<string>("SignerSerialNumber")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("signer_serial_number");
+
+                    b.Property<string>("SignerSubject")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("signer_subject");
+
+                    b.Property<string>("SignerThumbprint")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("signer_thumbprint");
 
                     b.Property<string>("Status")
                         .IsRequired()

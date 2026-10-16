@@ -92,7 +92,10 @@ public sealed record PrescriptionDto(
     DateTimeOffset? CancelledAt,
     string? CancelReason,
     IReadOnlyList<PrescriptionItemDto> Items,
-    uint Version);
+    uint Version,
+    bool IsDigitallySigned = false,
+    DateTimeOffset? DigitallySignedAt = null,
+    string? DigitalSignerName = null);
 
 public sealed record PrescriptionListItem(
     Guid Id,
@@ -153,9 +156,20 @@ public sealed record PrescriptionPrintModel(
     int RefillsAllowed,
     string? VerificationToken,
     string? VerificationPath,
-    string? VerificationUrl);
+    string? VerificationUrl,
+    PrescriptionPrintSignature? DigitalSignature = null);
 
-/// <summary>Anonymous verification answer: deliberately free of patient data.</summary>
+/// <summary>
+/// The doctor's DSC signature as the printed copy states it: "Digitally signed by {SignerName} ({RegistrationNumber}) —
+/// certificate {SerialNumber}, {SignedAt}", with the SHA-256 of the signed bytes.
+/// </summary>
+public sealed record PrescriptionPrintSignature(string SignerName, string? RegistrationNumber, string SerialNumber, DateTimeOffset SignedAt, string ContentHash);
+
+/// <summary>
+/// Anonymous verification answer: deliberately free of patient data. <see cref="DigitalSignature"/> is the DSC
+/// signature as the server re-checked it for this request (null when the prescription has none);
+/// <see cref="SignaturePath"/> downloads it as a .p7s for an independent check.
+/// </summary>
 public sealed record PrescriptionVerification(
     bool Found,
     string? Status,
@@ -164,7 +178,83 @@ public sealed record PrescriptionVerification(
     string? RegistrationNumber,
     string? Facility,
     DateOnly? IssuedOn,
+    int ItemCount,
+    string? PrescriptionNumber = null,
+    PublicDigitalSignature? DigitalSignature = null,
+    string? SignaturePath = null);
+
+/// <summary>What anyone may see of a DSC signature: no patient data, only the signer, the certificate and the hash.</summary>
+public sealed record PublicDigitalSignature(
+    DigitalSignatureState State,
+    string SignerName,
+    string CertificateSerialNumber,
+    string CertificateIssuer,
+    DateTimeOffset SignedAt,
+    string ContentHash,
+    bool ChainTrusted,
+    string Message);
+
+public enum DigitalSignatureState
+{
+    /// <summary>Not signed with a DSC.</summary>
+    NotSigned = 0,
+
+    /// <summary>The signature checks out against the signed bytes, and the bytes against the prescription as stored.</summary>
+    Valid,
+
+    /// <summary>The signature, the signed bytes or the stored prescription were changed.</summary>
+    Invalid,
+}
+
+/// <summary>Whether a facility's doctors sign prescriptions with their DSC (<c>clinical.prescriptions.signature</c>).</summary>
+public enum PrescriptionSignaturePolicy
+{
+    /// <summary>The default: no DSC signing is offered.</summary>
+    Off = 0,
+
+    /// <summary>Doctors may sign with their DSC; prescriptions without one print as before.</summary>
+    Optional,
+
+    /// <summary>A prescription is printed, downloaded or shared only once signed with the doctor's DSC.</summary>
+    Required,
+}
+
+/// <summary>
+/// The bytes HC360 Desktop signs (<see cref="PrescriptionCanonicalForm"/>), base64, with what the doctor is shown when
+/// choosing the certificate.
+/// </summary>
+public sealed record PrescriptionSigningContent(
+    Guid PrescriptionId,
+    string PrescriptionNumber,
+    string Format,
+    string Content,
+    string ContentHash,
+    string PatientName,
+    string PatientUhid,
     int ItemCount);
+
+/// <summary>The DSC signature from HC360 Desktop: DER-encoded detached CMS/PKCS#7 SignedData, base64.</summary>
+public sealed record AttachDigitalSignatureRequest(string Signature);
+
+/// <summary>
+/// The DSC signature of a prescription as the server re-checked it now. <see cref="ContentMatchesRecord"/> is false when
+/// the stored prescription no longer gives the signed bytes (the record was changed outside HC360).
+/// <see cref="ChainStatus"/> is "Trusted" or why the certificate does not chain to a root this server trusts; it is
+/// reported, not required.
+/// </summary>
+public sealed record PrescriptionDigitalSignatureDto(
+    DigitalSignatureState State,
+    PrescriptionSignaturePolicy Policy,
+    DateTimeOffset? SignedAt,
+    string? SignerName,
+    string? SignerSubject,
+    string? CertificateSerialNumber,
+    string? CertificateIssuer,
+    string? CertificateThumbprint,
+    string? ContentHash,
+    bool ContentMatchesRecord,
+    string? ChainStatus,
+    string? Message);
 
 public sealed class PrescriptionItemRequestValidator : AbstractValidator<PrescriptionItemRequest>
 {
@@ -224,6 +314,15 @@ public sealed class RefillPrescriptionRequestValidator : AbstractValidator<Refil
     public RefillPrescriptionRequestValidator() =>
         RuleFor(x => x.OverrideReason).MinimumLength(10).MaximumLength(1000).When(x => !string.IsNullOrWhiteSpace(x.OverrideReason))
             .WithMessage("Explain the clinical reason for overriding (at least 10 characters).");
+}
+
+public sealed class AttachDigitalSignatureRequestValidator : AbstractValidator<AttachDigitalSignatureRequest>
+{
+    /// <summary>A CMS signature with one certificate is a few kilobytes; 64 KB of base64 is ample.</summary>
+    public const int MaxLength = 65_536;
+
+    public AttachDigitalSignatureRequestValidator() =>
+        RuleFor(x => x.Signature).NotEmpty().MaximumLength(MaxLength).WithMessage("Send the DSC signature from HC360 Desktop.");
 }
 
 public sealed class CancelPrescriptionRequestValidator : AbstractValidator<CancelPrescriptionRequest>

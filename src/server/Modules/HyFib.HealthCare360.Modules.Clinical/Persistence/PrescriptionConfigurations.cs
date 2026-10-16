@@ -15,7 +15,15 @@ internal sealed class PrescriptionConfiguration : IEntityTypeConfiguration<Presc
         b.Property(x => x.SafetyOverrideReason).HasMaxLength(1000);
         b.Property(x => x.SafetyAlerts).HasColumnType("jsonb");
         b.Property(x => x.CancelReason).HasMaxLength(300);
+        b.Property(x => x.SignedContentHash).HasMaxLength(64);
+        b.Property(x => x.SignerName).HasMaxLength(200);
+        b.Property(x => x.SignerSubject).HasMaxLength(1000);
+        b.Property(x => x.SignerSerialNumber).HasMaxLength(128);
+        b.Property(x => x.SignerIssuer).HasMaxLength(1000);
+        b.Property(x => x.SignerThumbprint).HasMaxLength(128);
+        b.Property(x => x.SignerChainStatus).HasMaxLength(1000);
         b.Ignore(x => x.HasControlledDrugs);
+        b.Ignore(x => x.IsDigitallySigned);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.PrescriptionId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.PrescriptionNumber).IsUnique();

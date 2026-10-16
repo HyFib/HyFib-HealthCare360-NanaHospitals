@@ -102,10 +102,11 @@ internal static class PortalEndpoints
 
     /// <summary>
     /// The prescription as a PDF: the same A5 document the hospital prints. Only a signed prescription is issued as a
-    /// document (the print rule); a cancelled one can still be read on the portal but not downloaded.
+    /// document (the print rule), and, where the hospital requires it, once the doctor signed it with their DSC; a
+    /// cancelled one can still be read on the portal but not downloaded.
     /// </summary>
     private static async Task<IResult> PrescriptionPdf(Guid id, PortalPatientScope scope, HospitalDbContext db, IAuditLogger audit,
-        PrescriptionPrintBuilder builder, DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
+        PrescriptionPrintBuilder builder, PrescriptionSignatureSettings signatures, DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
     {
         var p = await db.Set<Prescription>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(x => x.Items)
             .FirstOrDefaultAsync(x => x.Id == id && x.Status != PrescriptionStatus.Draft, ct);
@@ -123,6 +124,11 @@ internal static class PortalEndpoints
         if (p.Status != PrescriptionStatus.Signed)
         {
             return Error.Rule("prescription.not_printable", "Only signed prescriptions can be printed or shared.").ToProblem();
+        }
+
+        if (await signatures.FinalCopyProblemAsync(p, ct) is { } unsigned)
+        {
+            return unsigned.ToProblem();
         }
 
         await audit.PatientRecordAccessedAsync(p.PatientId, $"Downloaded prescription {p.PrescriptionNumber} as a PDF (patient portal)", ct);

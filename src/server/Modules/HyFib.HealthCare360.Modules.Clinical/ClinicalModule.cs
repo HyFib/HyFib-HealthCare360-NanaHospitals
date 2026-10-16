@@ -41,6 +41,8 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<PrescriptionSafetyService>();
         services.AddScoped<PrescriptionService>();
         services.AddScoped<PrescriptionPrintBuilder>();
+        services.AddScoped<PrescriptionSignatureSettings>();
+        services.AddScoped<PrescriptionDigitalSignatureService>();
         services.AddScoped<PatientRecordQueries>();
         services.AddScoped<TimelineQueries>();
         services.AddScoped<WorklistQueries>();

@@ -27,6 +27,7 @@ public sealed class PrescriptionService(
     IAuditLogger audit,
     IRealtimePublisher realtime,
     INotificationService notifications,
+    PrescriptionSignatureSettings signatureSettings,
     TimeProvider time)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
@@ -149,7 +150,7 @@ public sealed class PrescriptionService(
             return signed.Error!;
         }
 
-        await QueuePatientNoticeAsync(prescription, ct);
+        await QueueSignedNoticeAsync(prescription, ct);
         await db.SaveChangesAsync(ct);
         await PublishSignedAsync(prescription, ct);
         return new SignPrescriptionResult(await ToDtoAsync(prescription, ct), signed.Value);
@@ -236,7 +237,7 @@ public sealed class PrescriptionService(
         }
 
         db.Add(refill);
-        await QueuePatientNoticeAsync(refill, ct);
+        await QueueSignedNoticeAsync(refill, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         await PublishSignedAsync(refill, ct);
@@ -270,7 +271,10 @@ public sealed class PrescriptionService(
         p.Items.OrderBy(i => i.Sequence).Select(i => new PrescriptionItemDto(i.Id, i.Sequence, i.DrugItemId, i.DrugName, i.GenericName, i.Strength,
             i.DosageForm, i.Route, i.Dose, i.Frequency, i.CustomFrequency, i.FrequencyText, i.DosesPerDay, i.DurationDays, i.Quantity, i.Instructions,
             i.IsControlledDrug, i.ControlledSchedule)).ToList(),
-        p.Version);
+        p.Version,
+        p.IsDigitallySigned,
+        p.DigitallySignedAt,
+        p.SignerName);
 
     private async Task<Result<IReadOnlyList<SafetyAlert>>> SignCoreAsync(Prescription prescription, string? overrideReason, bool acknowledgeWarnings,
         bool confirmControlledDrugs, CancellationToken ct)
@@ -348,11 +352,20 @@ public sealed class PrescriptionService(
     private Task PublishSignedAsync(Prescription prescription, CancellationToken ct) =>
         realtime.PublishAsync(Topics.Pharmacy(prescription.FacilityId), "pharmacy.prescription.signed", new { prescription.Id, prescription.IsInpatient }, ct);
 
+    // Where the facility requires the doctor's DSC (ERX-04), the patient is told once it is signed with it.
+    private async Task QueueSignedNoticeAsync(Prescription prescription, CancellationToken ct)
+    {
+        if (await signatureSettings.PolicyAsync(prescription.FacilityId, ct) != PrescriptionSignaturePolicy.Required)
+        {
+            await QueuePatientNoticeAsync(prescription, ct);
+        }
+    }
+
     /// <summary>
     /// Tells OP patients the prescription is on the portal (outbox message, committed with the signature). The message
     /// names the prescription's PDF: WhatsApp sends it in the template's document header when the template has one.
     /// </summary>
-    private async Task QueuePatientNoticeAsync(Prescription prescription, CancellationToken ct)
+    internal async Task QueuePatientNoticeAsync(Prescription prescription, CancellationToken ct)
     {
         if (prescription.IsInpatient)
         {
