@@ -61,7 +61,7 @@ docs/                       Requirements (SRS), architecture, module API referen
 ## Developer quick start
 
 Prerequisites:
-- .NET SDK 10.0.301 or later (see `global.json`).
+- .NET SDK 10.0.401 or later (see `global.json`).
 - Node 22 or later, with pnpm 10.
 - Docker (for the development database).
 - The WebView2 Runtime (Windows 11 includes it).
