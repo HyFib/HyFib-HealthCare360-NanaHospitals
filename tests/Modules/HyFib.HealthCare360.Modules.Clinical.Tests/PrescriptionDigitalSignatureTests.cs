@@ -7,8 +7,10 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.SharedKernel;
 using HyFib.HealthCare360.WindowsInterop.DigitalSignatures;
+using Microsoft.Extensions.Configuration;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Tests;
 
@@ -132,6 +134,85 @@ public sealed class PrescriptionDigitalSignatureTests
         finally
         {
             Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_trust_folder_the_server_cannot_read_trusts_nothing_and_says_why_instead_of_failing_every_check()
+    {
+        using var pki = new TestPki();
+        var root = Directory.CreateTempSubdirectory("hc360-dsc-data-").FullName;
+        try
+        {
+            var denied = true;
+            var store = new DscTrustStore(new ConfigurationBuilder().Build(), new DataDirectories(new PlatformOptions { DataDirectory = root }))
+            {
+                ListFiles = folder => denied ? throw new UnauthorizedAccessException($"Access to the path '{folder}' is denied.") : DscTrustAnchors.Files(folder),
+            };
+            Directory.CreateDirectory(store.Folder);
+            File.WriteAllBytes(Path.Combine(store.Folder, "cca-india-2022.cer"), pki.Root.RawData);
+
+            var unreadable = store.Current;
+
+            unreadable.IsEmpty.ShouldBeTrue();
+            unreadable.FolderProblem.ShouldBe($"Access to the path '{store.Folder}' is denied.");
+            var signed = SignedWithDsc(pki);
+            PrescriptionDigitalSignatureService.Check(signed, PrescriptionSignaturePolicy.Required, unreadable, signedForCurrentPatient: true)
+                .State.ShouldBe(DigitalSignatureState.Untrusted, "the prescription is as signed; its DSC cannot be confirmed");
+            var warning = DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Required, unreadable, store.Folder).ShouldHaveSingleItem();
+            warning.Code.ShouldBe(DscTrustHealthWarnings.UnreadableCode);
+            warning.Severity.ShouldBe("critical");
+            warning.Message.ShouldContain("cannot read the DSC trust folder");
+
+            // Once the service's account may read it again, the next check reads the roots.
+            denied = false;
+            store.Current.Roots.Select(c => c.Thumbprint).ShouldBe([pki.Root.Thumbprint]);
+            store.Current.FolderProblem.ShouldBeNull();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_trust_folder_without_read_permission_trusts_nothing_and_says_why()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Unix permissions; on Windows the test above covers the same path with a listing that is refused.");
+            return;
+        }
+
+        var folder = Directory.CreateTempSubdirectory("hc360-dsc-trust-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "root.cer"), "unused");
+            File.SetUnixFileMode(folder, UnixFileMode.None);
+            Assert.SkipWhen(CanList(folder), "This account reads any folder whatever its permissions (root).");
+
+            var anchors = DscTrustAnchors.Load(folder);
+
+            anchors.IsEmpty.ShouldBeTrue();
+            anchors.FolderProblem.ShouldNotBeNullOrWhiteSpace();
+        }
+        finally
+        {
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            Directory.Delete(folder, recursive: true);
+        }
+
+        static bool CanList(string folder)
+        {
+            try
+            {
+                _ = Directory.EnumerateFiles(folder).ToList();
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
         }
     }
 
@@ -515,6 +596,17 @@ public sealed class PrescriptionDigitalSignatureTests
         required.Message.ShouldContain("cannot be printed or shared");
         DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Optional, DscTrustAnchors.Of([pki.Root], ["broken.crt: not a certificate"]), folder)
             .ShouldHaveSingleItem().Code.ShouldBe(DscTrustHealthWarnings.UnreadableCode);
+    }
+
+    /// <summary>A signed prescription with a DSC signature from <paramref name="pki"/>'s doctor, as the server keeps it.</summary>
+    private static Prescription SignedWithDsc(TestPki pki)
+    {
+        using var doctor = pki.Doctor();
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+        var content = PrescriptionCanonicalForm.Build(prescription, PrescriptionCanonicalFormTests.Parties);
+        prescription.AttachDigitalSignature(Evidence(content, DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca]))).IsSuccess
+            .ShouldBeTrue();
+        return prescription;
     }
 
     private static PrescriptionDigitalSignature Evidence(byte[]? content = null, byte[]? signature = null) => new(

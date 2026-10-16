@@ -212,11 +212,15 @@ thumbprints checked against the ones the CCA publishes; if signatures arrive wit
 licensed CAs' certificates can go there too (they are used to build chains, never trusted on their own). HC360 does
 not ship the roots. The folder is read again when its files change. It is in neither the database nor the backups, so
 a reinstall, a restore on new hardware or a failover to the standby needs the roots copied again (DEPLOYMENT.md,
-sections 4, 8 and 9). While DSC signing is on (`clinical.prescriptions.signature` not off, at any facility) System
-health warns when the folder holds no root (`prescriptions.dsc_trust_empty`, critical where the DSC is required) or
-files that are not certificates (`prescriptions.dsc_trust_unreadable`); Clinical adds these through Platform's
-`IHealthWarningSource` (`DscTrustHealthWarnings`). While it holds no root, DSC signing is refused
-before the doctor enters a PIN (`prescription.signature_not_set_up`). The check is offline (no revocation lists, no
+sections 4, 8 and 9). A folder the server cannot read (its permissions, a disk error) trusts nothing, as an empty one
+does, and is not an error: every check then reports the signatures as Untrusted, and where the DSC is required those
+prescriptions are refused with 422 `prescription.digital_signature_untrusted`, never a 500. While DSC signing is on
+(`clinical.prescriptions.signature` not off, at any facility) System health warns when the folder holds no root
+(`prescriptions.dsc_trust_empty`, critical where the DSC is required), when it cannot be read
+(`prescriptions.dsc_trust_unreadable` with the reason, critical where the DSC is required) or when it holds files that
+are not certificates (`prescriptions.dsc_trust_unreadable`, a warning); Clinical adds these through Platform's
+`IHealthWarningSource` (`DscTrustHealthWarnings`). While it holds no root, or cannot be read, DSC signing is refused
+before the doctor enters a PIN (`prescription.signature_not_set_up`, saying which). The check is offline (no revocation lists, no
 downloads; the hospital LAN has no route to the CAs), so a revoked DSC is not detected; the QR page says so. A
 self-signed certificate (`New-SelfSignedCertificate`), a domain user certificate or any other certificate that may sign
 is refused (`prescription.signature_untrusted`), whatever the setting.

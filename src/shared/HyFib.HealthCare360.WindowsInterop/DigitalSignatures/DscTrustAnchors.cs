@@ -16,11 +16,16 @@ public sealed class DscTrustAnchors
     /// <summary>The files read from the folder: DER or PEM, a PEM file may hold several certificates.</summary>
     public static readonly IReadOnlyList<string> FileExtensions = [".cer", ".crt", ".der", ".pem"];
 
-    private DscTrustAnchors(X509Certificate2Collection roots, X509Certificate2Collection intermediates, IReadOnlyList<string> problems)
+    private DscTrustAnchors(
+        X509Certificate2Collection roots,
+        X509Certificate2Collection intermediates,
+        IReadOnlyList<string> problems,
+        string? folderProblem = null)
     {
         Roots = roots;
         Intermediates = intermediates;
         Problems = problems;
+        FolderProblem = folderProblem;
     }
 
     /// <summary>No folder, or an empty one: no DSC can be trusted.</summary>
@@ -35,7 +40,20 @@ public sealed class DscTrustAnchors
     /// <summary>Files in the folder that could not be read as certificates, for the person setting it up.</summary>
     public IReadOnlyList<string> Problems { get; }
 
+    /// <summary>
+    /// Why the folder itself could not be read (its permissions, a disk error), or null when it could: such a folder
+    /// trusts nothing, as an empty one does.
+    /// </summary>
+    public string? FolderProblem { get; }
+
     public bool IsEmpty => Roots.Count == 0;
+
+    /// <summary>A folder that could not be read: no DSC can be trusted, and <see cref="FolderProblem"/> says why.</summary>
+    public static DscTrustAnchors Unreadable(string problem)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(problem);
+        return new DscTrustAnchors([], [], [], problem);
+    }
 
     public static DscTrustAnchors Of(IEnumerable<X509Certificate2> certificates, IReadOnlyList<string>? problems = null)
     {
@@ -50,18 +68,37 @@ public sealed class DscTrustAnchors
         return new DscTrustAnchors(roots, intermediates, problems ?? []);
     }
 
-    /// <summary>Reads every certificate file in <paramref name="directory"/>; a missing folder trusts nothing.</summary>
+    /// <summary>
+    /// Reads every certificate file in <paramref name="directory"/>. A missing folder trusts nothing, and so does one that
+    /// cannot be listed (<see cref="Unreadable"/>): the caller's checks then find no root, rather than failing.
+    /// </summary>
     public static DscTrustAnchors Load(string directory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
-        if (!Directory.Exists(directory))
+        IReadOnlyList<string> files;
+        try
         {
-            return None;
+            files = Files(directory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Removed while it was being listed: a missing folder.
+            return Directory.Exists(directory) ? Unreadable(ex.Message) : None;
         }
 
+        return Read(files);
+    }
+
+    /// <summary>
+    /// Reads the certificate files <paramref name="paths"/>; one that is not a certificate, or cannot be read, is named in
+    /// <see cref="Problems"/>.
+    /// </summary>
+    public static DscTrustAnchors Read(IEnumerable<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
         var certificates = new List<X509Certificate2>();
         var problems = new List<string>();
-        foreach (var path in Files(directory))
+        foreach (var path in paths)
         {
             try
             {
@@ -76,7 +113,9 @@ public sealed class DscTrustAnchors
         return Of(certificates, problems);
     }
 
-    /// <summary>The certificate files in <paramref name="directory"/>, by name.</summary>
+    /// <summary>The certificate files in <paramref name="directory"/>, by name; none when it does not exist.</summary>
+    /// <exception cref="IOException">The folder cannot be listed (a disk error, or removed meanwhile).</exception>
+    /// <exception cref="UnauthorizedAccessException">The folder's permissions do not let this account list it.</exception>
     public static IReadOnlyList<string> Files(string directory) =>
         Directory.Exists(directory)
             ? [.. Directory.EnumerateFiles(directory)
