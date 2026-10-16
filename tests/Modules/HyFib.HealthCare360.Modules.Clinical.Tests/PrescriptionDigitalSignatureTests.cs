@@ -177,6 +177,44 @@ public sealed class PrescriptionDigitalSignatureTests
     }
 
     [Fact]
+    public void A_refused_trust_folder_is_unreadable_even_where_Directory_Exists_would_call_it_missing()
+    {
+        // Windows answers Directory.Exists with false for a folder this account may not read, as Linux does below a
+        // folder it may not enter. The folder here does not exist, so only the refused listing says it is there.
+        var root = Directory.CreateTempSubdirectory("hc360-dsc-data-").FullName;
+        try
+        {
+            var store = new DscTrustStore(new ConfigurationBuilder().Build(), new DataDirectories(new PlatformOptions { DataDirectory = root }))
+            {
+                ListFiles = folder => throw new UnauthorizedAccessException($"Access to the path '{folder}' is denied."),
+            };
+            Directory.Exists(store.Folder).ShouldBeFalse();
+
+            var anchors = store.Current;
+
+            anchors.IsEmpty.ShouldBeTrue();
+            anchors.FolderProblem.ShouldBe($"Access to the path '{store.Folder}' is denied.");
+            DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Required, anchors, store.Folder).ShouldHaveSingleItem()
+                .Code.ShouldBe(DscTrustHealthWarnings.UnreadableCode, "a refused folder is not an empty one");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_missing_trust_folder_lists_no_files_and_is_no_problem()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "hc360-dsc-missing-" + Guid.NewGuid().ToString("N"));
+
+        DscTrustAnchors.Files(missing).ShouldBeEmpty();
+        var anchors = DscTrustAnchors.Load(missing);
+        anchors.IsEmpty.ShouldBeTrue();
+        anchors.FolderProblem.ShouldBeNull("a folder nobody created yet is the 'empty' warning, not 'unreadable'");
+    }
+
+    [Fact]
     public void A_trust_folder_without_read_permission_trusts_nothing_and_says_why()
     {
         if (OperatingSystem.IsWindows())

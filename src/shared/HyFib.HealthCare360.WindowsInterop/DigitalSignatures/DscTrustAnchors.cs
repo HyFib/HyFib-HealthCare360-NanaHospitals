@@ -82,8 +82,8 @@ public sealed class DscTrustAnchors
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Removed while it was being listed: a missing folder.
-            return Directory.Exists(directory) ? Unreadable(ex.Message) : None;
+            // A missing folder lists as empty (Files), so this one is there and cannot be read.
+            return Unreadable(ex.Message);
         }
 
         return Read(files);
@@ -114,14 +114,27 @@ public sealed class DscTrustAnchors
     }
 
     /// <summary>The certificate files in <paramref name="directory"/>, by name; none when it does not exist.</summary>
-    /// <exception cref="IOException">The folder cannot be listed (a disk error, or removed meanwhile).</exception>
+    /// <remarks>
+    /// The folder is listed rather than tested with <see cref="Directory.Exists(string)"/> first: that answers false for a
+    /// folder this account may not read (on Windows, and on Linux below a folder it may not enter), which would make a
+    /// folder the server is refused look empty instead of unreadable.
+    /// </remarks>
+    /// <exception cref="IOException">The folder cannot be listed (a disk error).</exception>
     /// <exception cref="UnauthorizedAccessException">The folder's permissions do not let this account list it.</exception>
-    public static IReadOnlyList<string> Files(string directory) =>
-        Directory.Exists(directory)
-            ? [.. Directory.EnumerateFiles(directory)
+    public static IReadOnlyList<string> Files(string directory)
+    {
+        try
+        {
+            return [.. Directory.EnumerateFiles(directory)
                 .Where(p => FileExtensions.Contains(Path.GetExtension(p), StringComparer.OrdinalIgnoreCase))
-                .Order(StringComparer.Ordinal)]
-            : [];
+                .Order(StringComparer.Ordinal)];
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // Not there (or removed while it was being listed).
+            return [];
+        }
+    }
 
     /// <summary>Subject and issuer are the same name: a root (or a self-signed certificate).</summary>
     public static bool IsSelfIssued(X509Certificate2 certificate)

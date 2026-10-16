@@ -71,9 +71,10 @@ public sealed class DscTrustStore(IConfiguration configuration, DataDirectories 
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Removed while it was being listed: a missing folder. Otherwise the reason is the stamp, so the folder is read
-            // again once it can be (or fails another way).
-            return Directory.Exists(Folder) ? ([], "unreadable:" + ex.Message, ex.Message) : ([], string.Empty, null);
+            // A missing folder lists as empty (DscTrustAnchors.Files), so this one is there and cannot be read: not asked of
+            // Directory.Exists, which answers false for a folder this account may not read. The reason is the stamp, so the
+            // folder is read again once it can be (or fails another way).
+            return ([], "unreadable:" + ex.Message, ex.Message);
         }
     }
 }
