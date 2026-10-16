@@ -16,7 +16,8 @@ type Handler = (envelope: RealtimeEnvelope) => void;
 /**
  * One SignalR connection per app (/hubs/events). Reconnects forever with backoff (hospital WiFi drops are
  * normal), re-subscribes topics after reconnecting and asks React Query to refetch everything so screens
- * never show stale queues or bed boards (SRS DED-09).
+ * never show stale queues or bed boards (SRS DED-09). That includes starting again after the connection closed
+ * for good, which SignalR does not count as a reconnect.
  */
 export class RealtimeClient {
   private readonly connection: HubConnection;
@@ -24,6 +25,8 @@ export class RealtimeClient {
   private readonly handlers = new Set<Handler>();
   private startPromise: Promise<void> | null = null;
   private stopped = false;
+  /** Events may have been missed: the connection closed, or a start failed, since it was last connected. */
+  private missedEvents = false;
 
   constructor(
     url: string,
@@ -50,6 +53,9 @@ export class RealtimeClient {
     });
     this.connection.onclose(() => {
       useConnection.getState().setRealtime('disconnected');
+      if (!this.stopped) {
+        this.missedEvents = true;
+      }
       this.retryLater();
     });
   }
@@ -62,8 +68,17 @@ export class RealtimeClient {
         await this.connection.start();
         useConnection.getState().setRealtime('connected');
         await this.resubscribe();
+        // Started again after the connection closed (automatic reconnection gave up, or the first start failed):
+        // events sent meanwhile were missed, so screens refresh as they do after a reconnect.
+        if (this.missedEvents) {
+          this.missedEvents = false;
+          this.onReconnected();
+        }
       } catch {
         useConnection.getState().setRealtime('disconnected');
+        if (!this.stopped) {
+          this.missedEvents = true;
+        }
         this.retryLater();
       } finally {
         this.startPromise = null;
