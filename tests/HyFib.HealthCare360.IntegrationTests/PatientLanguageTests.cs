@@ -1,33 +1,41 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
+using HyFib.HealthCare360.Modules.Billing.Documents;
+using HyFib.HealthCare360.Modules.Billing.Features.Bills;
+using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
-/// SRS PP-06 through the whole server: a refusal the portal shows is written in the patient's language (the preferred
-/// language on their record, else the portal's Accept-Language), with its machine code unchanged; staff answers stay in
-/// English.
+/// SRS PP-06 through the whole server: what the server writes for a patient is in their language. On the portal the
+/// language the patient chose there (X-HC360-Language) wins; without one, the preferred language on the patient's
+/// record, then Accept-Language, then English. A document sent with a message follows the record. The machine code
+/// never changes, and staff answers stay in English.
 /// </summary>
 public sealed class PatientLanguageTests(HospitalServer server)
 {
+    private const string LanguageHeader = "X-HC360-Language";
     private const string OwnNumberHindi = "आपके अपने नंबर से पंजीकृत सभी लोग पहले से आपके परिवार में हैं।";
     private const string OwnNumberEnglish = "Everyone registered with your own number is already in your family.";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task The_records_preference_wins_over_the_browsers_language()
+    public async Task Without_a_choice_in_the_portal_the_records_preference_wins_over_the_browsers_language()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var (patient, phone) = await RegisterPatientAsync(frontOffice, "Hindi");
         var portal = await server.SignInToPortalAsync(phone);
         portal.Http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US");
 
-        using var response = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/family/codes",
-            new RequestFamilyCodeRequest(patient.Uhid, phone, FamilyRelation.Parent));
+        using var response = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/family/codes", OwnNumber(patient, phone));
 
         response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
         response.Content.Headers.ContentLanguage.ShouldBe(["hi"]);
@@ -38,32 +46,78 @@ public sealed class PatientLanguageTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task Without_a_preference_the_portals_language_decides_and_english_is_the_default()
+    public async Task The_language_chosen_in_the_portal_wins_over_the_records_preference_for_refusals_and_pdfs()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var (patient, phone) = await RegisterPatientAsync(frontOffice, "Hindi");
+        var bill = await FinalizedBillAsync(patient.Id);
+        var portal = await server.SignInToPortalAsync(phone);
+        portal.Http.DefaultRequestHeaders.Add(LanguageHeader, "en");
+
+        using (var refused = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/family/codes", OwnNumber(patient, phone)))
+        {
+            refused.Content.Headers.ContentLanguage.ShouldBeEmpty();
+            (await ProblemOf(refused)).GetProperty("detail").GetString().ShouldBe(OwnNumberEnglish);
+        }
+
+        (await PdfLanguageAsync(portal, $"/api/v1/portal/bills/{bill.Id}/pdf")).ShouldBe("en");
+
+        // The same patient without a choice in the request: the record's Hindi.
+        portal.Http.DefaultRequestHeaders.Remove(LanguageHeader);
+        (await PdfLanguageAsync(portal, $"/api/v1/portal/bills/{bill.Id}/pdf")).ShouldBe("hi");
+    }
+
+    [Fact]
+    public async Task Without_a_choice_or_a_preference_the_browsers_language_decides_and_english_is_the_default()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var (patient, phone) = await RegisterPatientAsync(frontOffice, null);
         var portal = await server.SignInToPortalAsync(phone);
-        var request = new RequestFamilyCodeRequest(patient.Uhid, phone, FamilyRelation.Parent);
 
         portal.Http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("hi-IN");
-        using (var hindi = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/family/codes", request))
+        using (var hindi = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/family/codes", OwnNumber(patient, phone)))
         {
             (await ProblemOf(hindi)).GetProperty("detail").GetString().ShouldBe(OwnNumberHindi);
         }
 
         portal.Http.DefaultRequestHeaders.AcceptLanguage.Clear();
-        using (var english = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/family/codes", request))
+        using (var english = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/family/codes", OwnNumber(patient, phone)))
         {
             (await ProblemOf(english)).GetProperty("detail").GetString().ShouldBe(OwnNumberEnglish);
+        }
+
+        portal.Http.DefaultRequestHeaders.Add(LanguageHeader, "hi");
+        using (var chosen = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/family/codes", OwnNumber(patient, phone)))
+        {
+            (await ProblemOf(chosen)).GetProperty("detail").GetString().ShouldBe(OwnNumberHindi);
         }
     }
 
     [Fact]
-    public async Task Staff_answers_stay_in_english_whatever_the_browser_says()
+    public async Task A_bill_sent_with_a_message_follows_the_records_preference()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var (hindiPatient, _) = await RegisterPatientAsync(frontOffice, "हिन्दी");
+        var (plainPatient, _) = await RegisterPatientAsync(frontOffice, null);
+        var hindiBill = await FinalizedBillAsync(hindiPatient.Id);
+        var plainBill = await FinalizedBillAsync(plainPatient.Id);
+
+        var hindi = await SentDocumentAsync(hindiBill.Id);
+        var plain = await SentDocumentAsync(plainBill.Id);
+
+        hindi.ShouldContain("<html lang=\"hi\">");
+        hindi.ShouldContain("आपूर्ति बिल (Bill of supply)");
+        plain.ShouldContain("<html lang=\"en\">");
+        plain.ShouldContain("<div class=\"h-title\">Bill of supply</div>");
+    }
+
+    [Fact]
+    public async Task Staff_answers_stay_in_english_whatever_the_request_says()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var (patient, phone) = await RegisterPatientAsync(frontOffice, "Hindi");
         frontOffice.Http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("hi-IN");
+        frontOffice.Http.DefaultRequestHeaders.Add(LanguageHeader, "hi");
 
         using var response = await frontOffice.SendRawAsync(HttpMethod.Post, $"/api/v1/patients/{patient.Id}/portal-family",
             new LinkFamilyMemberRequest(phone, FamilyRelation.Parent, "Patient", true));
@@ -72,6 +126,49 @@ public sealed class PatientLanguageTests(HospitalServer server)
         response.Content.Headers.ContentLanguage.ShouldBeEmpty();
         (await ProblemOf(response)).GetProperty("detail").GetString()
             .ShouldBe("The patient is registered with this mobile number, so its portal account sees the record already.");
+    }
+
+    private static RequestFamilyCodeRequest OwnNumber(PatientCreated patient, string phone) => new(patient.Uhid, phone, FamilyRelation.Parent);
+
+    /// <summary>
+    /// The language of the portal's PDF: with a PDF browser on this machine, whether the PDF carries the Hindi font (an
+    /// English bill of a patient with a Latin name has no Devanagari in it); without one, the language of the "cannot
+    /// make the PDF" answer, which the same request decides.
+    /// </summary>
+    private async Task<string> PdfLanguageAsync(ApiClient portal, string path)
+    {
+        using var response = await portal.SendRawAsync(HttpMethod.Get, path);
+        if (!server.Services.GetRequiredService<IPdfRenderer>().Status.Available)
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+            var title = (await ProblemOf(response)).GetProperty("title").GetString();
+            return title == "PDF नहीं बन सका" ? "hi" : title == "The PDF could not be made" ? "en" : $"unexpected: {title}";
+        }
+
+        response.EnsureSuccessStatusCode();
+        var pdf = Encoding.Latin1.GetString(await response.Content.ReadAsByteArrayAsync(Ct));
+        return pdf.Contains("NotoSansDevanagari", StringComparison.Ordinal) ? "hi" : "en";
+    }
+
+    // The PDF the "bill shared" message would carry, as the document source makes it, with the PDF browser replaced by
+    // one that keeps the page it was given.
+    private async Task<string> SentDocumentAsync(Guid billId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var renderer = new KeepingRenderer();
+        var source = ActivatorUtilities.CreateInstance<BillDocumentSource>(scope.ServiceProvider, (IPdfRenderer)renderer);
+
+        (await source.CreateAsync(billId, Ct)).ShouldNotBeNull();
+        return renderer.Html.ShouldNotBeNull();
+    }
+
+    private async Task<BillDetail> FinalizedBillAsync(Guid patientId)
+    {
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var service = (await billing.GetAsync<List<ServiceItemDto>>("/api/v1/masters/lookups/services?search=REG-NEW")).Single(s => s.Code == "REG-NEW");
+        await billing.PostAsync<ChargeDto>("/api/v1/billing/charges", new PostChargeRequest(patientId, null, null, service.Id, 1m, null, null, null, null, null));
+        var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(null, patientId, null));
+        return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
     private static async Task<JsonElement> ProblemOf(HttpResponseMessage response)
@@ -92,5 +189,18 @@ public sealed class PatientLanguageTests(HospitalServer server)
             Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
             ConfirmedNotDuplicate: true));
         return (patient, phone);
+    }
+
+    private sealed class KeepingRenderer : IPdfRenderer
+    {
+        public string? Html { get; private set; }
+
+        public PdfRendererStatus Status { get; } = new(true, "test", null);
+
+        public Task<byte[]> RenderAsync(PdfSource source, CancellationToken cancellationToken)
+        {
+            Html = source.Html;
+            return Task.FromResult("%PDF-1.7"u8.ToArray());
+        }
     }
 }

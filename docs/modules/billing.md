@@ -307,8 +307,8 @@ out-patient visits, or both. Packages made before out-patient bills could use th
 ## The printed bill
 The A4 bill is made on the server (`Documents/BillDocument.cs`) from `BillDetail` and the facility letterhead, so the
 copy printed at the counter, the staff PDF and the patient's PDF are the same document. The 80 mm counter copy is still
-printed by the staff app. Its labels are in the language it is made in (PP-06): English at the counter, the patient's
-on the portal and with the "bill shared" message, where a Hindi bill is titled "कर बीजक (Tax invoice)" or "आपूर्ति बिल
+printed by the staff app. Its labels are in the language it is made in (PP-06): English at the counter, the one
+chosen in the portal for a portal download, the record's preferred language with the "bill shared" message, where a Hindi bill is titled "कर बीजक (Tax invoice)" or "आपूर्ति बिल
 (Bill of supply)"; amounts, codes and the amount in words stay as they are (print-templates.md, *The patient's
 language*).
 

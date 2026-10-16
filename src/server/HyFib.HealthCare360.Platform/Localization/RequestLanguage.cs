@@ -52,14 +52,26 @@ public static class RequestLanguageExtensions
 /// <summary>
 /// Picks the language of the server's text for patient-facing requests (SRS PP-06): the portal's API
 /// (<c>/api/v1/portal</c>), the public pages' (<c>/api/v1/public</c>), OTP sign-in, any call the portal app makes
-/// (<c>X-HC360-Client: portal</c>) and any call made with a patient's sign-in. The language is the signed-in patient's
-/// preferred language on their record when HC360 writes it, else the most preferred one of Accept-Language that it
-/// writes, else English. Staff requests stay in English. The preference is cached for five minutes per patient.
-/// It runs after authentication, so it knows the patient, and sets <see cref="CultureInfo.CurrentUICulture"/> for the
-/// request (the validators' built-in messages follow it); number and date formats (CurrentCulture) are left alone.
+/// (<c>X-HC360-Client: portal</c>) and any call made with a patient's sign-in. The language is, in this order:
+/// <list type="number">
+/// <item>the language the patient chose in the portal (<see cref="LanguageHeader"/>, which the portal sends on every
+/// call): an explicit choice wins, so a page in English gets English refusals and PDFs;</item>
+/// <item>the signed-in patient's preferred language on their record, when HC360 writes it (a call with a patient's
+/// token but no choice in it);</item>
+/// <item>the most preferred language of Accept-Language that HC360 writes;</item>
+/// <item>English.</item>
+/// </list>
+/// Staff requests stay in English. The preference is cached for five minutes per patient and read only when the
+/// request names no choice. What the server sends on its own (a document with a message) has no request: it follows the
+/// record (<see cref="RequestLanguageExtensions.LanguageOfAsync"/>). The middleware runs after authentication, so it
+/// knows the patient, and sets <see cref="CultureInfo.CurrentUICulture"/> for the request (the validators' built-in
+/// messages follow it); number and date formats (CurrentCulture) are left alone.
 /// </summary>
 public sealed class RequestLanguageMiddleware(RequestDelegate next, IMemoryCache cache)
 {
+    /// <summary>The language the patient chose in the portal ("hi"), sent by its API client on every call.</summary>
+    public const string LanguageHeader = "X-HC360-Language";
+
     private static readonly TimeSpan PreferenceLifetime = TimeSpan.FromMinutes(5);
     private static readonly string[] PatientPaths = ["/api/v1/portal", "/api/v1/public", "/api/v1/auth/otp"];
 
@@ -71,7 +83,8 @@ public sealed class RequestLanguageMiddleware(RequestDelegate next, IMemoryCache
             return;
         }
 
-        var language = await PreferenceAsync(context, preferences)
+        var language = PatientLanguages.FromAcceptLanguage(context.Request.Headers[LanguageHeader])
+            ?? await PreferenceAsync(context, preferences)
             ?? PatientLanguages.FromAcceptLanguage(context.Request.Headers.AcceptLanguage)
             ?? PatientLanguages.Default;
         context.Features.Set(new RequestLanguage(language));

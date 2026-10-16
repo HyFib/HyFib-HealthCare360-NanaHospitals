@@ -106,7 +106,7 @@ as they are. The amount in words on a bill stays in English.
 | Copy | Language |
 |---|---|
 | Printed or downloaded by staff (`GET …/document`, `GET …/pdf`) | English |
-| Downloaded from the portal (`GET /api/v1/portal/…/pdf`) | The patient's: the preferred language on the signed-in patient's record when it is English or Hindi, else the portal's (Accept-Language), else English |
+| Downloaded from the portal (`GET /api/v1/portal/…/pdf`) | The request's: the language chosen in the portal (`X-HC360-Language`); without one, the preferred language on the signed-in patient's record when it is English or Hindi, then Accept-Language, then English |
 | Sent with a message (`INotificationDocumentSource`) | The preferred language on the document's patient's record, else English |
 | The prescription, wherever it goes | English with the Hindi after every label (ERX-04), and the Hindi directions under each medicine |
 

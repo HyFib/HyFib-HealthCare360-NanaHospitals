@@ -15,8 +15,9 @@ namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
 /// SRS PP-06 on the server: the text HC360 writes for patients (portal error messages and the documents they receive)
-/// is in the patient's language. The language is the signed-in patient's preference, else Accept-Language, else English;
-/// staff requests stay in English; every text exists in every language.
+/// is in the patient's language. The language is the one chosen in the portal (X-HC360-Language), else the signed-in
+/// patient's preference, else Accept-Language, else English; staff requests stay in English; every text exists in every
+/// language.
 /// </summary>
 public sealed class PatientLocalizationTests
 {
@@ -54,13 +55,41 @@ public sealed class PatientLocalizationTests
         PatientLanguages.FromAcceptLanguage([header]).ShouldBe(language);
 
     [Fact]
-    public async Task A_signed_in_patients_preference_wins_over_the_browsers_language()
+    public async Task The_language_chosen_in_the_portal_wins_over_the_records_preference()
+    {
+        var patient = Guid.NewGuid();
+        var preferences = new FakePreferences { [patient] = "Hindi" };
+
+        var language = await LanguageOfAsync("/api/v1/portal/bills", Patient(patient), acceptLanguage: "hi-IN", preferences, chosen: "en");
+
+        language.ShouldBe("en");
+        preferences.Reads.ShouldBe(0, "an explicit choice needs no look-up");
+        (await LanguageOfAsync("/api/v1/portal/bills", Patient(Guid.NewGuid()), acceptLanguage: "en", chosen: "hi")).ShouldBe("hi");
+        (await LanguageOfAsync("/api/v1/auth/otp/request", Anonymous(), acceptLanguage: null, chosen: "hi")).ShouldBe("hi");
+    }
+
+    [Fact]
+    public async Task Without_a_choice_a_signed_in_patients_preference_wins_over_the_browsers_language()
     {
         var patient = Guid.NewGuid();
 
         var language = await LanguageOfAsync("/api/v1/portal/bills", Patient(patient), acceptLanguage: "en-US,en", preferences: new() { [patient] = "Hindi" });
 
         language.ShouldBe("hi");
+        (await LanguageOfAsync("/api/v1/portal/bills", Patient(patient), acceptLanguage: "en", preferences: new() { [patient] = "Hindi" }, chosen: "tamil"))
+            .ShouldBe("hi", "a choice HC360 does not write is no choice");
+    }
+
+    [Fact]
+    public async Task A_document_sent_with_a_message_follows_the_records_preference()
+    {
+        var patient = Guid.NewGuid();
+        var preferences = new FakePreferences { [patient] = "हिन्दी", [Guid.Empty] = "Marathi" };
+
+        (await preferences.LanguageOfAsync(patient, Ct)).ShouldBe("hi");
+        (await preferences.LanguageOfAsync(Guid.Empty, Ct)).ShouldBe("en");
+        (await preferences.LanguageOfAsync(Guid.NewGuid(), Ct)).ShouldBe("en");
+        (await preferences.LanguageOfAsync(null, Ct)).ShouldBe("en");
     }
 
     [Fact]
@@ -92,7 +121,7 @@ public sealed class PatientLocalizationTests
     [Fact]
     public async Task Staff_requests_stay_in_english_whatever_the_browser_says()
     {
-        var feature = await FeatureOfAsync("/api/v1/patients", Staff(), acceptLanguage: "hi-IN,hi", client: "web");
+        var feature = await FeatureOfAsync("/api/v1/patients", Staff(), acceptLanguage: "hi-IN,hi", client: "web", chosen: "hi");
 
         feature.ShouldBeNull();
     }
@@ -318,19 +347,22 @@ public sealed class PatientLocalizationTests
     }
 
     private static async Task<string> LanguageOfAsync(
-        string path, ClaimsPrincipal user, string? acceptLanguage, FakePreferences? preferences = null, IMemoryCache? cache = null, string? client = null) =>
-        (await FeatureOfAsync(path, user, acceptLanguage, client, preferences, cache))?.Code ?? "(none)";
+        string path, ClaimsPrincipal user, string? acceptLanguage, FakePreferences? preferences = null, IMemoryCache? cache = null, string? client = null,
+        string? chosen = null) =>
+        (await FeatureOfAsync(path, user, acceptLanguage, client, preferences, cache, chosen))?.Code ?? "(none)";
 
     private static async Task<RequestLanguage?> FeatureOfAsync(
-        string path, ClaimsPrincipal user, string? acceptLanguage, string? client = null, FakePreferences? preferences = null, IMemoryCache? cache = null)
+        string path, ClaimsPrincipal user, string? acceptLanguage, string? client = null, FakePreferences? preferences = null, IMemoryCache? cache = null,
+        string? chosen = null)
     {
         RequestLanguage? seen = null;
-        await RunAsync(path, user, acceptLanguage, client, preferences ?? new FakePreferences(), cache, http => seen = http.Features.Get<RequestLanguage>());
+        await RunAsync(path, user, acceptLanguage, client, preferences ?? new FakePreferences(), cache, http => seen = http.Features.Get<RequestLanguage>(), chosen);
         return seen;
     }
 
     private static async Task RunAsync(
-        string path, ClaimsPrincipal user, string? acceptLanguage, string? client, FakePreferences preferences, IMemoryCache? cache, Action<HttpContext> handler)
+        string path, ClaimsPrincipal user, string? acceptLanguage, string? client, FakePreferences preferences, IMemoryCache? cache, Action<HttpContext> handler,
+        string? chosen = null)
     {
         using var ownCache = cache is null ? new MemoryCache(new MemoryCacheOptions()) : null;
         var http = new DefaultHttpContext { User = user };
@@ -343,6 +375,11 @@ public sealed class PatientLocalizationTests
         if (client is not null)
         {
             http.Request.Headers["X-HC360-Client"] = client;
+        }
+
+        if (chosen is not null)
+        {
+            http.Request.Headers[RequestLanguageMiddleware.LanguageHeader] = chosen;
         }
 
         var middleware = new RequestLanguageMiddleware(context =>

@@ -263,11 +263,12 @@ Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSend
 **Text for patients in their language (PP-06).** The text the server writes for patients is in English or Hindi, from
 one catalogue per language (`Platform/Localization/Resources/patient-texts-{en,hi}.json`, `PatientTexts`; another
 language is one more file). `RequestLanguageMiddleware` picks the language of a patient-facing request (portal, public
-and OTP endpoints, the portal app, a patient's sign-in): the preferred language on the signed-in patient's record, else
-Accept-Language (the portal sends its own), else English. `ProblemLocalization` then writes that request's Problem
+and OTP endpoints, the portal app, a patient's sign-in): the language chosen in the portal (`X-HC360-Language`, sent
+with every portal call), else the preferred language on the signed-in patient's record, else Accept-Language, else
+English. `ProblemLocalization` then writes that request's Problem
 Details title, detail and field messages in it, matched on their English text, and keeps the machine `code`. Documents
 take a `DocumentText` (their labels in one language): the portal's PDFs use the request's language, the copies sent
-in messages the patient's preference, the staff app English; the prescription is always English and Hindi (ERX-04).
+in messages the record's preference, the staff app English; the prescription is always English and Hindi (ERX-04).
 A document with Devanagari text in it embeds Noto Sans Devanagari (`DocumentFonts`), and the browser shapes it. Staff
 answers are not touched.
 

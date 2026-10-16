@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ApiError, CORRELATION_HEADER, toApiError } from '../api/errors';
+import { ApiError, CORRELATION_HEADER, LANGUAGE_HEADER, toApiError } from '../api/errors';
 import type { ClientType } from '../api/client';
 
 export interface FacilityOption {
@@ -151,6 +151,10 @@ async function authFetch(path: string, body?: unknown, headers?: Record<string, 
   return response.status === 204 ? {} : ((await response.json()) as AuthResult);
 }
 
+function languageHeader(language: string | undefined): Record<string, string> | undefined {
+  return language ? { [LANGUAGE_HEADER]: language } : undefined;
+}
+
 function accept(result: AuthResult): AuthResult {
   if (result.accessToken) {
     useSession.getState().setAuth(result);
@@ -172,14 +176,15 @@ export const auth = {
     return accept(await authFetch('mfa', { challengeId, code }));
   },
 
-  async requestOtp(phone: string) {
-    return authFetch('otp/request', { phone }) as Promise<
+  /** `language`: the one the patient chose in the portal, so that a refusal (too many codes…) comes in it. */
+  async requestOtp(phone: string, language?: string) {
+    return authFetch('otp/request', { phone }, languageHeader(language)) as Promise<
       AuthResult & { challengeId: string; expiresAt: string; maskedPhone: string }
     >;
   },
 
-  async verifyOtp(challengeId: string, code: string) {
-    return accept(await authFetch('otp/verify', { challengeId, code }));
+  async verifyOtp(challengeId: string, code: string, language?: string) {
+    return accept(await authFetch('otp/verify', { challengeId, code }, languageHeader(language)));
   },
 
   /** Adopts tokens returned by other auth endpoints (change password, MFA enable, facility switch). */

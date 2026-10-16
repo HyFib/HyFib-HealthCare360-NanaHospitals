@@ -212,17 +212,29 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 
 ## The server's text in the patient's language (PP-06)
 
-The API client sends the portal's language as Accept-Language (`getLanguage` of `createApiClient`). For portal, public
-and OTP requests, and any request with a patient's sign-in, the server writes its own text in the patient's language:
-the preferred language on the signed-in patient's record when it is English or Hindi ("Hindi", "hi", "हिन्दी"),
-else Accept-Language, else English. The record's preference is read once per patient every five minutes.
+The portal sends the language the patient chose in it with every call, the OTP sign-in included, as
+`X-HC360-Language: en|hi` (`getLanguage` of `createApiClient`, the `language` argument of `auth.requestOtp` and
+`auth.verifyOtp`). For portal, public and OTP requests, and any request with a patient's sign-in, the server writes
+its own text in this order:
+
+1. the language chosen in the portal (`X-HC360-Language`): what the patient sees on screen wins, so a patient whose
+   record says Hindi but who reads the portal in English gets English refusals and PDFs;
+2. without a choice in the request (a call with a patient's token from elsewhere), the preferred language on the
+   signed-in patient's record when it is English or Hindi ("Hindi", "hi", "हिन्दी"), read once per patient every five
+   minutes;
+3. Accept-Language;
+4. English.
+
+What the server sends on its own has no request: a document attached to a WhatsApp, SMS or e-mail message follows
+the record's preferred language, else English.
 
 * **Refusals.** The Problem Details `title`, `detail` and field messages of a refusal (400, 409, 422 and the others)
   are in that language, and the answer says so (`Content-Language: hi`). The `code` and the field names never change,
   so the portal's own handling of codes is unaffected. A message without a translation is sent in English, as before.
   The portal shows business-rule messages as sent, so a Hindi reader now sees the server's reason in Hindi; transport
   and status problems (no connection, 401, 403, 404, 429, 5xx) are still worded by the portal itself.
-* **PDFs.** `…/pdf` answers in the same language (see print-templates.md, *The patient's language*).
+* **PDFs.** `…/pdf` answers in the same language as the request, so in the portal's (see print-templates.md, *The
+  patient's language*).
 * **Texts.** One catalogue per language in `src/server/HyFib.HealthCare360.Platform/Localization/Resources`
   (`patient-texts-en.json`, `patient-texts-hi.json`); a server message is matched on its English text. The Hindi is
   listed for review by a native speaker in [../requirements/hindi-review.md](../requirements/hindi-review.md).
@@ -259,7 +271,7 @@ else Accept-Language, else English. The record's preference is read once per pat
 * **Downloads:** the PDF helper (the server's file name from Content-Disposition, safe names, "cannot make PDFs right
   now" without retries, other failures, never saving a web page as a PDF); Download PDF end to end in jsdom on the lab,
   scan and heart test reports, the prescription, the discharge summary and the bill (the busy button, the 503 message,
-  the usual error message, Hindi, printing the page's copy, the PDF asked for in Hindi); and the downloaded HTML copy (its font rule and language).
+  the usual error message, Hindi, printing the page's copy, the PDF asked for in Hindi with `X-HC360-Language`); and the downloaded HTML copy (its font rule and language).
 * **Family on other numbers:** the add form's checks and the request it sends, how long the code works on a phone with
   a wrong clock, the server's refusals in the patient's language, the add sheet in jsdom (the details step, the code
   step, a wrong code, a used-up code back to the details, throttling), and the page end to end in jsdom (the link from

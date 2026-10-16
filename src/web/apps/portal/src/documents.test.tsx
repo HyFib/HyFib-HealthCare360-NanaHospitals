@@ -352,7 +352,7 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
   const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const method = (init?.method ?? 'GET').toUpperCase();
   const { pathname } = new URL(raw, 'https://portal.test');
-  calls.push({ method, path: pathname, language: new Headers(init?.headers).get('Accept-Language') });
+  calls.push({ method, path: pathname, language: new Headers(init?.headers).get('X-HC360-Language') });
   const pdfName = PDF_NAMES[pathname];
   if (method === 'GET' && pdfName) {
     return pdfAnswer(pdfName);
@@ -569,7 +569,7 @@ describe('Download PDF', () => {
     expect(document.getElementById('hc360-print-root')?.innerHTML).toContain('दवा का पर्चा');
     expect(calls.some((call) => call.path.endsWith('/pdf'))).toBe(false);
 
-    // The server writes the PDF in the patient's language: their record's preference, else the one sent here.
+    // The server writes the PDF in the language chosen here, whatever the patient's record prefers.
     await user.click(screen.getByRole('button', { name: 'PDF डाउनलोड करें' }));
     expect(await findToast('PDF आपके डाउनलोड में सहेज दिया गया है।')).toBeInTheDocument();
     expect(saved).toHaveLength(1);

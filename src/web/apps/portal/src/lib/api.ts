@@ -17,6 +17,6 @@ export const api = createApiClient({
   onReachability: (reachable) => useConnection.getState().setReachable(reachable),
   // The hospital turned the portal or video consultations off while this page was open: explain, don't fail.
   onFeatureDisabled: (feature) => useFeatureRefusals.getState().refuse(feature),
-  // The server writes its refusals and the PDFs in the patient's language: their record's preference, else this one.
+  // The language the patient chose here: the server writes its refusals and the PDFs in it (X-HC360-Language).
   getLanguage: () => useLanguageStore.getState().language,
 });
