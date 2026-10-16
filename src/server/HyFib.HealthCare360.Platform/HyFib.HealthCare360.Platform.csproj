@@ -37,6 +37,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Security\Resources\common-passwords.txt" />
     <EmbeddedResource Include="Security\Resources\breached-passwords.gcs" />
+    <EmbeddedResource Include="Localization\Resources\patient-texts-*.json" />
+    <EmbeddedResource Include="Documents\Fonts\*.woff2" />
   </ItemGroup>
 
   <ItemGroup>

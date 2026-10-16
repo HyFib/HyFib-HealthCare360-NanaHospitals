@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Queue;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Patients;
@@ -69,6 +70,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<PortalPatientScope>();
         services.AddScoped<PortalFamilyService>();
         services.AddScoped<IPortalAccountResolver, PortalAccountResolver>();
+        services.AddScoped<IPatientLanguageSource, PatientLanguageSource>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

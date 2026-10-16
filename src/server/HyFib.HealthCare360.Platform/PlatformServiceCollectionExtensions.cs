@@ -9,6 +9,7 @@ using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Jobs;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Networking;
@@ -68,7 +69,8 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddHttpContextAccessor();
         services.AddMemoryCache();
-        services.AddProblemDetails();
+        // Patient-facing answers in the patient's language (PP-06, RequestLanguageMiddleware); staff answers unchanged.
+        services.AddProblemDetails(problems => problems.CustomizeProblemDetails = ProblemLocalization.Localize);
         services.AddExceptionHandler<GlobalExceptionHandler>();
 
         var dataProtection = services.AddDataProtection()
@@ -264,6 +266,7 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddScoped<IBillingStatusProvider, NullBillingStatusProvider>();
         services.TryAddScoped<IPortalAccountResolver, NullPortalAccountResolver>();
         services.TryAddScoped<IVerifiedCodingSource, NullVerifiedCodingSource>();
+        services.TryAddScoped<IPatientLanguageSource, NullPatientLanguageSource>();
 
         services.AddSignalR(hub =>
         {
@@ -336,6 +339,9 @@ public static class PlatformServiceCollectionExtensions
         app.UseExceptionHandler();
         app.UseRouting();
         app.UseAuthentication();
+        // After authentication, so a patient's answers follow their preferred language; ahead of everything that may
+        // answer with Problem Details.
+        app.UseMiddleware<RequestLanguageMiddleware>();
         // After authentication, so the per-user buckets (the global limit, AI) key on the signed-in user rather than on the
         // address; sign-in, OTP and public endpoints stay per address.
         app.UseRateLimiter();

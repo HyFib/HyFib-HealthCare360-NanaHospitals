@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -180,4 +181,11 @@ internal sealed class PortalAccountResolver(HospitalDbContext db) : IPortalAccou
             .FirstOrDefaultAsync(cancellationToken);
         return patient is null ? null : new PortalAccount(patient.Id, patient.FullName);
     }
+}
+
+/// <summary>The free-text preferred language on a patient's record, for the text HC360 writes for them (PP-06).</summary>
+internal sealed class PatientLanguageSource(HospitalDbContext db) : IPatientLanguageSource
+{
+    public Task<string?> PreferredLanguageAsync(Guid patientId, CancellationToken cancellationToken) =>
+        db.Set<Patient>().AsNoTracking().Where(p => p.Id == patientId).Select(p => p.PreferredLanguage).FirstOrDefaultAsync(cancellationToken);
 }
