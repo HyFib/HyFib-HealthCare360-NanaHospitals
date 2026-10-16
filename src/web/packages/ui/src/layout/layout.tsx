@@ -54,7 +54,14 @@ const useStyles = makeStyles({
   sectionBody: { padding: '12px 16px 16px' },
   sectionBodyFlush: { padding: '8px 0 0' },
   sectionDescription: { color: tokens.colorNeutralForeground3 },
-  grid: { display: 'grid', gap: '12px 16px', alignItems: 'start' },
+  grid: {
+    display: 'grid',
+    gap: '12px 16px',
+    alignItems: 'start',
+    // An item as wide as its column at most, whatever it holds: a field with a unit or a second input beside it spilled
+    // over the next column (WCAG 1.4.10).
+    '& > *': { minWidth: 0 },
+  },
   filterBar: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'end' },
 });
 

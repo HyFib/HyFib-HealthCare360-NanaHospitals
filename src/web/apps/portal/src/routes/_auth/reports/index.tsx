@@ -23,6 +23,9 @@ export const Route = createFileRoute('/_auth/reports/')({
 });
 
 const useStyles = makeStyles({
+  // The four kinds wrap onto a second row on a phone rather than run off its edge, where "Heart tests" was cut in half
+  // (WCAG 1.4.10).
+  tabs: { flexWrap: 'wrap' },
   list: { display: 'flex', flexDirection: 'column', gap: '10px' },
   month: {
     margin: '12px 0 2px',
@@ -64,6 +67,7 @@ function ReportsPage() {
   return (
     <PortalPage title={t('reports.title')} subtitle={t('reports.subtitle')}>
       <TabList
+        className={styles.tabs}
         selectedValue={kind ?? 'all'}
         onTabSelect={(_, data) =>
           void navigate({

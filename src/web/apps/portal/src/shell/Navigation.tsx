@@ -60,7 +60,8 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorBrandBackground2,
     color: tokens.colorBrandForeground1,
     fontWeight: tokens.fontWeightSemibold,
-    ':hover': { backgroundColor: tokens.colorBrandBackground2Hover, color: tokens.colorBrandForeground1 },
+    // On the darker hovered tint, the darker brand text: colorBrandForeground1 has 4.3:1 there, this 5.3:1 and more.
+    ':hover': { backgroundColor: tokens.colorBrandBackground2Hover, color: tokens.colorBrandForeground2 },
     '::before': {
       content: '""',
       position: 'absolute',
