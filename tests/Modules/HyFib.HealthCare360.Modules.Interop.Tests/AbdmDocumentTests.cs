@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
@@ -372,7 +371,23 @@ public sealed class AbdmDocumentTests
             $"{name}.json differs from the document the code builds: write the fixtures again (HC360_WRITE_ABDM_FIXTURES=1) and validate them.");
     }
 
-    private static string FixtureDirectory([CallerFilePath] string source = "") => Path.Combine(Path.GetDirectoryName(source)!, "Fixtures", "Abdm");
+    /// <summary>
+    /// Fixtures/Abdm in the source tree (written there with HC360_WRITE_ABDM_FIXTURES=1), found from the repository root
+    /// above the test's output folder. Not from the caller's file path: CI builds are deterministic and map source paths
+    /// to <c>/_/</c>, a folder that does not exist when the tests run (TestSourcePathTests, ArchitectureTests).
+    /// </summary>
+    private static string FixtureDirectory()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "HyFib.HealthCare360.slnx")))
+            {
+                return Path.Combine(directory.FullName, "tests", "Modules", "HyFib.HealthCare360.Modules.Interop.Tests", "Fixtures", "Abdm");
+            }
+        }
+
+        throw new InvalidOperationException("The repository root was not found above the test's folder.");
+    }
 
     private static string FullUrl<T>(R4.Bundle bundle, Func<T, bool>? match = null)
         where T : R4.Resource =>
