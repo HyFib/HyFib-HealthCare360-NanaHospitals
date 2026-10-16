@@ -103,6 +103,21 @@ export function isFeatureSettingKey(key: string): boolean {
   return key.startsWith('features.');
 }
 
+/**
+ * What an administrator must know before changing a setting, shown as a warning beside it (null for most settings).
+ * Unlocking with Windows Hello (`ui.biometricUnlock`, off unless true) is the case: Windows Hello proves who owns the
+ * Windows login, not who owns the HC360 account (SRS UX-11).
+ */
+export function settingWarning(key: string): string | null {
+  return key === 'ui.biometricUnlock'
+    ? 'Turn this on only where every staff member signs in to Windows with their own account. Windows Hello answers ' +
+        'for whoever owns the Windows login, not for the HC360 user: on a computer where staff share one Windows ' +
+        "login, as at many nursing stations and counters, anyone who knows that login's Windows Hello PIN, or whose " +
+        "finger or face is set up on it, could unlock a colleague's locked screen. For a facility with shared logins, " +
+        'leave it off there (false for that facility).'
+    : null;
+}
+
 // ---------------------------------------------------------------------------------------------------- ids
 
 const safeId = (text: string) => text.replace(/[^A-Za-z0-9]/g, '_');

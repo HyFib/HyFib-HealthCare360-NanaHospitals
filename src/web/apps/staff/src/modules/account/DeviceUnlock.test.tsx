@@ -1,5 +1,7 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
+import type * as Core from '@hc360/core';
 import {
+  bridge,
   rememberedUnlockKeys,
   rememberUnlockKey,
   useSession,
@@ -14,6 +16,22 @@ import { api } from '@/lib/api';
 import { DeviceUnlock } from './DeviceUnlock';
 
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
+
+// In a browser by default; a test can put the page in HC360 Desktop, which says whether the computer is a kiosk.
+const desktop = vi.hoisted(() => ({ on: false }));
+vi.mock('@hc360/core', async (importOriginal) => {
+  const core = await importOriginal<typeof Core>();
+  return {
+    ...core,
+    bridge: {
+      ...core.bridge,
+      get isDesktop() {
+        return desktop.on;
+      },
+      deviceInfo: vi.fn(),
+    },
+  };
+});
 
 const user = (biometricUnlock = true): AuthUser => ({
   id: 'u1',
@@ -82,6 +100,7 @@ describe('DeviceUnlock', () => {
     vi.mocked(api.delete).mockReset();
   });
   afterEach(() => {
+    desktop.on = false;
     vi.unstubAllGlobals();
     Reflect.deleteProperty(navigator, 'credentials');
     localStorage.clear();
@@ -111,6 +130,9 @@ describe('DeviceUnlock', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Set up this device' }));
     const dialog = await screen.findByRole('alertdialog');
+    expect(
+      within(dialog).getByText(/only on a computer you sign in to with your own Windows account/),
+    ).toBeInTheDocument();
     await userEvent.clear(within(dialog).getByLabelText('Name for this device'));
     await userEvent.type(within(dialog).getByLabelText('Name for this device'), 'OPD Reception 2');
     await userEvent.type(within(dialog).getByLabelText(/Your password/), 'Correct-Horse-1');
@@ -147,12 +169,52 @@ describe('DeviceUnlock', () => {
     await waitFor(() => expect(rememberedUnlockKeys('u1')).toEqual([]));
   });
 
-  it('says so, and offers nothing to set up, where the hospital turned it off', async () => {
+  it('says so, and offers nothing to set up, where the hospital has not turned it on', async () => {
     deviceWithWindowsHello();
     vi.mocked(api.get).mockResolvedValue([]);
     renderPage(user(false));
 
-    expect(await screen.findByText(/Your hospital has turned this off/)).toBeInTheDocument();
+    expect(await screen.findByText(/Your hospital has not turned this on/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Set up this device' })).not.toBeInTheDocument();
+  });
+
+  it('warns against setting it up where HC360 Desktop says the computer is a kiosk', async () => {
+    deviceWithWindowsHello();
+    desktop.on = true;
+    vi.mocked(bridge.deviceInfo).mockResolvedValue({
+      deviceId: 'd1',
+      deviceSecret: null,
+      deviceName: 'Registration kiosk',
+      machineName: 'KIOSK-1',
+      appVersion: '1.4.0',
+      osVersion: 'Windows 11',
+      kiosk: true,
+    });
+    vi.mocked(api.get).mockResolvedValue([]);
+    renderPage();
+
+    expect(await screen.findByText(/set up as a kiosk, which many people use/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Set up this device' }));
+    expect(within(await screen.findByRole('alertdialog')).getByText(/set up as a kiosk/)).toBeInTheDocument();
+  });
+
+  it('gives no kiosk warning on an ordinary workstation', async () => {
+    deviceWithWindowsHello();
+    desktop.on = true;
+    vi.mocked(bridge.deviceInfo).mockResolvedValue({
+      deviceId: 'd2',
+      deviceSecret: null,
+      deviceName: 'OPD Reception 2',
+      machineName: 'OPD-PC-2',
+      appVersion: '1.4.0',
+      osVersion: 'Windows 11',
+      kiosk: false,
+    });
+    vi.mocked(api.get).mockResolvedValue([]);
+    renderPage();
+
+    await waitFor(() => expect(bridge.deviceInfo).toHaveBeenCalled());
+    expect(await screen.findByRole('button', { name: 'Set up this device' })).toBeInTheDocument();
+    expect(screen.queryByText(/set up as a kiosk/)).not.toBeInTheDocument();
   });
 });

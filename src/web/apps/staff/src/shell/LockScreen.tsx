@@ -80,6 +80,13 @@ export function LockScreen() {
   return locked && user ? <LockPanel user={user} /> : null;
 }
 
+/** The server's refusals that mean this device will not unlock this screen, however often it is tried. */
+const DEVICE_REFUSALS = new Set([
+  'auth.biometric_unlock_none',
+  'auth.biometric_unlock_off',
+  'auth.biometric_unlock_shared_device',
+]);
+
 /**
  * The keys of the user this browser holds, when the hospital allows unlocking with them and this page can use them:
  * the device is asked only when it has one.
@@ -193,7 +200,9 @@ function LockPanel({ user }: { user: AuthUser }) {
         await signOut();
         return;
       }
-      if (isApiError(err) && (err.code === 'auth.biometric_unlock_none' || err.code === 'auth.biometric_unlock_off')) {
+      // No key on the server, turned off, or a kiosk or display board, which nobody's Windows Hello may unlock: the
+      // device is not offered again on this screen.
+      if (isApiError(err) && err.code && DEVICE_REFUSALS.has(err.code)) {
         if (err.code === 'auth.biometric_unlock_none') {
           forgetUnlockKeys(user.id);
         }

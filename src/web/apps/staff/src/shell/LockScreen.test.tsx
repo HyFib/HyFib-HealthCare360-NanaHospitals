@@ -199,6 +199,31 @@ describe('LockScreen', () => {
     expect(screen.getByLabelText('PIN')).toBeInTheDocument();
   });
 
+  it('stops offering the device where the server says the computer is a kiosk or a display board', async () => {
+    rememberUnlockKey('u1', 'AQID');
+    const get = deviceWithWindowsHello(async () => signed);
+    vi.mocked(api.post).mockImplementation(async (path: string) => {
+      if (path === '/api/v1/auth/unlock/webauthn/options') {
+        throw new ApiError({
+          status: 403,
+          title: 'Forbidden',
+          detail: 'This computer is enrolled as a kiosk or a display that everyone uses. Use your PIN or password.',
+          code: 'auth.biometric_unlock_shared_device',
+        });
+      }
+      return undefined;
+    });
+    renderLocked();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Unlock with/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/kiosk/);
+    expect(get).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /^Unlock with/ })).not.toBeInTheDocument();
+    expect(useSession.getState().locked).toBe(true);
+    expect(screen.getByLabelText('PIN')).toBeInTheDocument();
+  });
+
   it('forgets a key removed since, and falls back to the PIN', async () => {
     rememberUnlockKey('u1', 'CQ');
     const get = deviceWithWindowsHello(async () => signed);

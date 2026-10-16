@@ -12,6 +12,7 @@ import {
 import { DeleteRegular, FingerprintRegular } from '@fluentui/react-icons';
 import {
   attestationJson,
+  bridge,
   creationOptions,
   deviceUnlockLabel,
   forgetUnlockKeys,
@@ -47,6 +48,10 @@ class DeviceError extends Error {}
  * Quick unlock with the device's Windows Hello, fingerprint or face (SRS UX-11): set up this device after giving the
  * password, see the devices set up, and remove any of them. A device set up here only unlocks a screen that locked
  * while its owner was signed in; signing in always needs the password.
+ *
+ * Windows Hello answers for whoever owns the Windows login, not for the HC360 user, so setting it up warns that it is
+ * only for a computer the person signs in to with their own Windows account, and more strongly where HC360 Desktop
+ * says the computer is a kiosk. A shared Windows login cannot be told from a personal one here.
  */
 export function DeviceUnlock() {
   const styles = useStyles();
@@ -57,12 +62,23 @@ export function DeviceUnlock() {
   const [remembered, setRemembered] = useState<string[]>(() => (user ? rememberedUnlockKeys(user.id) : []));
   const [settingUp, setSettingUp] = useState(false);
   const [removing, setRemoving] = useState<WebAuthnCredentialInfo | null>(null);
+  const [kiosk, setKiosk] = useState(false);
   const unavailable = webAuthnUnavailableReason();
   const allowed = user?.biometricUnlock === true;
   const label = deviceUnlockLabel();
 
   useEffect(() => {
     void platformAuthenticatorAvailable().then(setPlatform);
+  }, []);
+
+  // HC360 Desktop says whether IT set this computer up as a kiosk (its policy), which many people use.
+  useEffect(() => {
+    if (bridge.isDesktop) {
+      void bridge.deviceInfo().then(
+        (info) => setKiosk(info.kiosk === true),
+        () => setKiosk(false),
+      );
+    }
   }, []);
 
   const credentials = useQuery({
@@ -118,7 +134,7 @@ export function DeviceUnlock() {
   });
 
   const blocked = !allowed
-    ? 'Your hospital has turned this off. Unlock your screen with your PIN or password.'
+    ? 'Your hospital has not turned this on. Unlock your screen with your PIN or password.'
     : (unavailable ??
       (platform === false
         ? 'This device has no Windows Hello, fingerprint reader or face camera that HealthCare360 can use.'
@@ -137,18 +153,21 @@ export function DeviceUnlock() {
           <MessageBarBody>{blocked}</MessageBarBody>
         </MessageBar>
       ) : (
-        <div>
-          <Button
-            appearance="primary"
-            icon={<FingerprintRegular />}
-            disabled={platform !== true || thisDeviceSetUp}
-            onClick={() => {
-              setUp.reset();
-              setSettingUp(true);
-            }}
-          >
-            {thisDeviceSetUp ? 'This device is set up' : 'Set up this device'}
-          </Button>
+        <div className={styles.stack}>
+          {kiosk && <KioskWarning label={label} />}
+          <div>
+            <Button
+              appearance="primary"
+              icon={<FingerprintRegular />}
+              disabled={platform !== true || thisDeviceSetUp}
+              onClick={() => {
+                setUp.reset();
+                setSettingUp(true);
+              }}
+            >
+              {thisDeviceSetUp ? 'This device is set up' : 'Set up this device'}
+            </Button>
+          </div>
         </div>
       )}
       <DataTable
@@ -197,6 +216,7 @@ export function DeviceUnlock() {
       <SetUpDialog
         open={settingUp}
         label={label}
+        kiosk={kiosk}
         busy={setUp.isPending}
         error={setUp.error}
         onConfirm={(name, password) => setUp.mutate({ name, password })}
@@ -217,6 +237,18 @@ export function DeviceUnlock() {
   );
 }
 
+/** HC360 Desktop on this computer is a kiosk: whoever is at it could use its Windows Hello. */
+function KioskWarning({ label }: { label: string }) {
+  return (
+    <MessageBar intent="warning" layout="multiline">
+      <MessageBarBody>
+        HC360 Desktop on this computer is set up as a kiosk, which many people use. Do not set up {label} here: anyone
+        who can unlock this computer&apos;s Windows login with it could unlock your screen. Use your PIN or password.
+      </MessageBarBody>
+    </MessageBar>
+  );
+}
+
 /** What this device is called, as the person would say it. */
 function defaultDeviceName(): string {
   const agent = typeof navigator === 'undefined' ? '' : navigator.userAgent;
@@ -226,6 +258,7 @@ function defaultDeviceName(): string {
 function SetUpDialog({
   open,
   label,
+  kiosk,
   busy,
   error,
   onConfirm,
@@ -233,6 +266,7 @@ function SetUpDialog({
 }: {
   open: boolean;
   label: string;
+  kiosk: boolean;
   busy: boolean;
   error: unknown;
   onConfirm: (name: string, password: string) => void;
@@ -289,6 +323,17 @@ function SetUpDialog({
           After your password, {label} asks you to show your face, touch the fingerprint reader or enter your Windows
           Hello PIN. Nothing about your face or finger leaves this device.
         </Text>
+        {kiosk ? (
+          <KioskWarning label={label} />
+        ) : (
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>
+              Set this up only on a computer you sign in to with your own Windows account, not one that colleagues
+              share. The device answers for whoever owns its Windows login, not for you: on a shared login, anyone who
+              knows its Windows Hello PIN, or whose finger or face is set up on it, could unlock your screen.
+            </MessageBarBody>
+          </MessageBar>
+        )}
         <Field label="Name for this device" hint="For example, the room or desk it is in.">
           <Input value={name} maxLength={64} onChange={(_, d) => setName(d.value)} />
         </Field>
