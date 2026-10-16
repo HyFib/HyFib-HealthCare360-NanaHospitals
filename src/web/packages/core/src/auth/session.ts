@@ -112,24 +112,88 @@ export function configureAuth(options: { clientType: ClientType }): void {
   clientType = options.clientType;
 }
 
+// The app's windows on this computer (browser tabs, HC360 Desktop's second windows) share one session, so use of any of
+// them is use of all: each tells the others, at most every few seconds, so none locks the screen under someone working
+// in another.
+const ACTIVITY_SHARE_MS = 5_000;
+const activityChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('hc360:activity');
+// Outside a browser (tests run in Node), the channel must not keep the process alive.
+(activityChannel as { unref?: () => void } | null)?.unref?.();
+let lastShared = 0;
+activityChannel?.addEventListener('message', () => {
+  lastActivity = Date.now();
+});
+
 /**
  * Notes that someone is using the app now. Key presses, clicks, touches and scrolling count by themselves; an app calls
- * this for use the browser does not see, such as a video consultation in progress.
+ * this for use the browser does not see, such as a video consultation in progress. It counts for the app's other
+ * windows too.
  */
 export function markActivity(): void {
-  lastActivity = Date.now();
+  const now = Date.now();
+  lastActivity = now;
+  if (activityChannel && now - lastShared >= ACTIVITY_SHARE_MS) {
+    lastShared = now;
+    activityChannel.postMessage(null);
+  }
 }
 
-// The same signs of use as the idle lock (useIdle), so the server and the screen agree on when it was last used.
+// The signs of use the idle lock (useIdle) and the server both count from, so they agree on when it was last used.
 if (typeof window !== 'undefined') {
   for (const name of ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'] as const) {
     window.addEventListener(name, markActivity, { passive: true, capture: true });
   }
 }
 
+/** When someone last used the app, in this window or another of its windows (milliseconds since the epoch). */
+export function lastActivityAt(): number {
+  return lastActivity;
+}
+
 /** Whole seconds since someone last used the app. */
 export function idleSeconds(): number {
   return Math.max(0, Math.floor((Date.now() - lastActivity) / 1000));
+}
+
+/**
+ * Resolves once the screen is unlocked (true), or the session is over (false): for a request the server refused because
+ * the screen is locked, to be sent again when it can be answered. Rejects when `signal` aborts first.
+ */
+export function whenUnlocked(signal?: AbortSignal): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const settle = (state: { status: SessionStatus; locked: boolean }): boolean => {
+      if (state.status === 'anonymous') {
+        resolve(false);
+        return true;
+      }
+      if (!state.locked && state.status === 'authenticated') {
+        resolve(true);
+        return true;
+      }
+      return false;
+    };
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    if (settle(useSession.getState())) {
+      return;
+    }
+    const stop = () => {
+      unsubscribe();
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      stop();
+      reject(signal?.reason);
+    };
+    const unsubscribe = useSession.subscribe((state) => {
+      if (settle(state)) {
+        stop();
+      }
+    });
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 async function authFetch(path: string, body?: unknown, headers?: Record<string, string>): Promise<AuthResult> {
