@@ -182,6 +182,9 @@ function openHostedPage(url: string, context: CheckoutContext): CheckoutOutcome 
 
 export function rememberPendingPayment(pending: PendingPayment): void {
   try {
+    // False positive: what is kept is the random id of the patient's own bill or appointment, no personal or clinical
+    // data, in this tab only (sessionStorage ends with the tab). CodeQL takes the word "appointment" for health data.
+    // codeql[js/clear-text-storage-of-sensitive-data]
     sessionStorage.setItem(SESSION_KEYS.pendingPayment, JSON.stringify(pending));
   } catch {
     // Without storage the patient can still tap "Check payment status".
