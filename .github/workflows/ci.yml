@@ -68,6 +68,14 @@ jobs:
         shell: pwsh
         run: tests/deploy/Test-DatabaseWatchdog.ps1 -Server src/server/HyFib.HealthCare360.Server/bin/Release/net10.0/HyFib.HealthCare360.Server.exe
 
+      # The warm standby (SRS DED-20, REL-02) with the real scripts, in Windows PowerShell 5.1 as on a Server Node: a second
+      # PostgreSQL on this runner becomes a standby of the runner's own over TLS, with WAL archiving; HC360 refuses to run
+      # against it; it is promoted; and -Remove closes the primary again. Last, as it restarts the runner's PostgreSQL.
+      - name: Check a warm standby streams from the runner's PostgreSQL and can take over
+        shell: pwsh
+        timeout-minutes: 10
+        run: tests/deploy/Test-StandbyReplication.ps1 -Server src/server/HyFib.HealthCare360.Server/bin/Release/net10.0/HyFib.HealthCare360.Server.exe
+
   installer:
     name: Server installer (PowerShell 5.1 and 7)
     runs-on: windows-latest
@@ -100,6 +108,16 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerServiceRestart.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
           pwsh -NoProfile -File tests/deploy/Test-InstallerServiceRestart.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
+      # What the warm standby scripts write (pg_hba.conf, postgresql.conf, the SCRAM verifier, the TLS certificate). The
+      # .NET job runs the scripts themselves against a real primary and standby.
+      - name: Test the warm standby scripts (Enable-HC360Replication.ps1, New-HC360Standby.ps1)
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-StandbyScripts.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-StandbyScripts.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
   web:
