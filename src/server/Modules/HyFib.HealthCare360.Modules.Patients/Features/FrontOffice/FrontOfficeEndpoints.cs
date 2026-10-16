@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
@@ -32,6 +33,18 @@ public sealed record CaptureConsentRequest(
     ConsentType Type, string? ConsentVersion, bool Granted, string? WitnessName, string? SignedByRelation, string? SignedByName, Guid? DocumentFileId, string? Notes);
 
 public sealed record RevokeConsentRequest(string Reason);
+
+/// <summary>
+/// The WhatsApp choices of the patient's mobile number (INT-WA), shown with the consents. They belong to the number, so
+/// family members registered with it share them.
+/// </summary>
+/// <param name="Phone">The number, masked; null when the patient has none.</param>
+/// <param name="CapturedByName">Who recorded the latest opt-in at the desk or in the portal; null for a START reply.</param>
+/// <param name="OptedOut">A STOP reply (or the portal's "off") is in force: only sign-in codes go on WhatsApp.</param>
+/// <param name="Reachable">Reminders and campaigns may go on WhatsApp: opted in, and no STOP in force.</param>
+public sealed record WhatsAppConsentDto(
+    string? Phone, bool OptedIn, DateTimeOffset? OptedInAt, WhatsAppOptInSource? Source, string? CapturedByName, bool OptedOut,
+    DateTimeOffset? OptedOutAt, bool Reachable);
 
 public sealed record PatientDocumentDto(
     Guid Id, Guid FileId, PatientDocumentType Type, string Title, DateOnly? DocumentDate, string? Source, string? Notes, DateTimeOffset CreatedAt,
@@ -132,6 +145,8 @@ internal static class FrontOfficeEndpoints
         var patients = app.MapGroup("/api/v1/patients").WithTags("Patients");
         patients.MapGet("/{patientId:guid}/consents", ListConsents).RequirePermission(PatientsPermissions.Read);
         patients.MapPost("/{patientId:guid}/consents", CaptureConsent).RequirePermission(PatientsPermissions.Consents).WithValidation<CaptureConsentRequest>();
+        patients.MapGet("/{patientId:guid}/whatsapp", WhatsAppStatus).RequirePermission(PatientsPermissions.Read);
+        patients.MapPost("/{patientId:guid}/whatsapp/opt-in", WhatsAppOptIn).RequirePermission(PatientsPermissions.Consents);
         patients.MapPost("/consents/{consentId:guid}/revoke", RevokeConsent).RequirePermission(PatientsPermissions.Consents).WithValidation<RevokeConsentRequest>();
         patients.MapGet("/{patientId:guid}/documents", ListDocuments).RequirePermission(PatientsPermissions.Documents);
         patients.MapPost("/{patientId:guid}/documents", AttachDocument).RequirePermission(PatientsPermissions.Documents).WithValidation<AttachDocumentRequest>();
@@ -358,6 +373,58 @@ internal static class FrontOfficeEndpoints
             .ToListAsync(ct);
         await audit.PatientRecordAccessedAsync(patientId, "Viewed consents", ct);
         return TypedResults.Ok(consents);
+    }
+
+    private static async Task<IResult> WhatsAppStatus(
+        Guid patientId, HospitalDbContext db, PatientAccessGuard guard, WhatsAppConsent whatsApp, CancellationToken ct)
+    {
+        var access = await guard.EnsureCanOpenAsync(patientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        var phone = await db.Set<Patient>().Where(p => p.Id == patientId).Select(p => p.Phone).FirstOrDefaultAsync(ct);
+        return TypedResults.Ok(await WhatsAppDtoAsync(db, whatsApp, phone, ct));
+    }
+
+    /// <summary>
+    /// The patient told the desk they want WhatsApp messages: recorded with the user and the time. A STOP the number sent
+    /// stays in force (families share numbers); only a START reply or the portal on that number lifts it.
+    /// </summary>
+    private static async Task<IResult> WhatsAppOptIn(
+        Guid patientId, HospitalDbContext db, PatientAccessGuard guard, WhatsAppConsent whatsApp, ICurrentUser user, IAuditLogger audit, CancellationToken ct)
+    {
+        var access = await guard.EnsureCanOpenAsync(patientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        var patient = await db.Set<Patient>().Where(p => p.Id == patientId).Select(p => new { p.Phone }).FirstOrDefaultAsync(ct);
+        if (patient is null)
+        {
+            return Error.NotFound(nameof(Patient), patientId).ToProblem();
+        }
+
+        if (!await whatsApp.OptInAsync(patient.Phone, patientId, WhatsAppOptInSource.RegistrationDesk, user.FacilityId, byNumberHolder: false, ct))
+        {
+            return Error.Rule("patient.no_mobile", "Add the patient's mobile number first: the WhatsApp opt-in is for that number.").ToProblem();
+        }
+
+        await db.SaveChangesAsync(ct);
+        await audit.PatientRecordAccessedAsync(patientId, "Recorded a WhatsApp opt-in", ct);
+        return TypedResults.Ok(await WhatsAppDtoAsync(db, whatsApp, patient.Phone, ct));
+    }
+
+    private static async Task<WhatsAppConsentDto> WhatsAppDtoAsync(HospitalDbContext db, WhatsAppConsent whatsApp, string? phone, CancellationToken ct)
+    {
+        var status = await whatsApp.StatusAsync(phone, ct);
+        var capturedBy = status.CapturedByUserId is { } userId
+            ? await db.Set<User>().Where(u => u.Id == userId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct)
+            : null;
+        return new WhatsAppConsentDto(
+            Phone.Mask(phone), status.OptedIn, status.OptedInAt, status.Source, capturedBy, status.OptedOut, status.OptedOutAt, status.Reachable);
     }
 
     private static async Task<IResult> CaptureConsent(Guid patientId, CaptureConsentRequest request, HospitalDbContext db, PatientAccessGuard guard,

@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Files;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Patients.Services;
@@ -36,6 +37,7 @@ public sealed class PatientRegistrationService(
     IFieldProtector protector,
     ICurrentUser currentUser,
     IAuditLogger audit,
+    WhatsAppConsent whatsApp,
     TimeProvider time)
 {
     private const int StrongDuplicateScore = 75;
@@ -138,6 +140,12 @@ public sealed class PatientRegistrationService(
             CapturedByUserId = currentUser.UserId,
             Notes = "Transactional SMS/WhatsApp updates accepted at registration.",
         });
+        if (request.WhatsAppOptIn)
+        {
+            // Recorded for the number, as WhatsApp's own opt-in is; a STOP the number sent earlier stays in force.
+            await whatsApp.OptInAsync(patient.Phone, patient.Id, WhatsAppOptInSource.RegistrationDesk, facilityId, byNumberHolder: false, ct);
+        }
+
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 

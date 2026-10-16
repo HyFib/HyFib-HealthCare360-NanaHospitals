@@ -78,7 +78,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment; Download PDF or print a bill; receipts (print) |
 | `/records`, `/records/discharge/{id}`, `/records/request` | yes | Health summary, discharge summaries (Download PDF or print), request a copy of records |
 | `/my-feedback`, `/my-feedback/{formId}` | yes | Feedback forms and the patient's feedback with complaint status |
-| `/profile`, `/profile/preferences` | yes | Details, family, language, SMS and WhatsApp choices, sign out |
+| `/profile`, `/profile/preferences` | yes | Details, family, language, SMS and WhatsApp choices, sign out. "Messages on WhatsApp" records the number's WhatsApp opt-in (or opt-out, as a STOP would), and lifts a STOP the number sent; it can be changed only when signed in with the patient's own number, and is shown read-only, with the reason, to a family member on another number |
 | `/profile/family` | yes | Family on other numbers: the relatives the account sees (Remove), add a relative with a code sent to their number, and the accounts that see the records of someone on this number (Stop sharing) |
 | `/feedback/{token}` | no | Personal feedback link (SMS after a visit or stay) |
 | `/feedback/form/{token}` | no | QR poster form. Add `?kiosk=true` on a kiosk tablet, which then resets itself after each response |

@@ -85,6 +85,11 @@ export const feedbackMessages = defineMessages({
     'preferences.changed': 'Last changed on {date}',
     'preferences.saved': 'Your choices are saved.',
     'preferences.otp': 'Sign-in codes (OTP) are always sent when you ask for one.',
+    'preferences.whatsApp': 'Messages on WhatsApp',
+    'preferences.whatsApp.hint':
+      'Switch on to get reminders on WhatsApp as well. Switching off stops every WhatsApp message except sign-in codes.',
+    'preferences.whatsApp.holderOnly':
+      'Only the person whose mobile number this is can change it, by signing in with that number.',
   },
   hi: {
     'feedback.title': 'फ़ीडबैक',
@@ -169,5 +174,10 @@ export const feedbackMessages = defineMessages({
     'preferences.changed': 'आख़िरी बदलाव {date} को',
     'preferences.saved': 'आपकी पसंद सहेज ली गई है।',
     'preferences.otp': 'साइन-इन कोड (OTP) माँगने पर हमेशा भेजे जाते हैं।',
+    'preferences.whatsApp': 'WhatsApp पर संदेश',
+    'preferences.whatsApp.hint':
+      'WhatsApp पर रिमाइंडर भी पाने के लिए इसे चालू करें। बंद करने पर साइन-इन कोड के अलावा WhatsApp पर कोई संदेश नहीं आएगा।',
+    'preferences.whatsApp.holderOnly':
+      'इसे केवल वही व्यक्ति बदल सकते हैं जिनका यह मोबाइल नंबर है, उसी नंबर से साइन इन करके।',
   },
 });

@@ -14,6 +14,7 @@ import {
   signedByText,
   withdrawalEffect,
   withdrawnNotice,
+  whatsAppSummary,
   withdrawnText,
 } from './consents';
 
@@ -181,5 +182,56 @@ describe('recording a consent', () => {
   it('otherwise names the consent', () => {
     expect(recordedNotice('Telehealth', true)).toEqual({ title: 'Consent recorded', body: 'Video consultations' });
     expect(recordedNotice('Anaesthesia', true).body).toBe('Anaesthesia');
+  });
+});
+
+describe('WhatsApp choices of the number', () => {
+  const none = {
+    phone: '+91******3210',
+    optedIn: false,
+    optedInAt: null,
+    source: null,
+    capturedByName: null,
+    optedOut: false,
+    optedOutAt: null,
+    reachable: false,
+  } as const;
+
+  it('offers to record an opt-in only for a number that has neither opted in nor replied STOP', () => {
+    expect(whatsAppSummary(none, when)).toMatchObject({ intent: 'info', canRecord: true });
+    expect(whatsAppSummary({ ...none, phone: null }, when)).toMatchObject({
+      title: 'No mobile number',
+      canRecord: false,
+    });
+    expect(whatsAppSummary({ ...none, optedIn: true, reachable: true }, when).canRecord).toBe(false);
+  });
+
+  it('says where and by whom the opt-in was given', () => {
+    expect(
+      whatsAppSummary(
+        {
+          ...none,
+          optedIn: true,
+          reachable: true,
+          optedInAt: '2026-10-01T05:00:00Z',
+          source: 'Portal',
+          capturedByName: null,
+        },
+        when,
+      ).body,
+    ).toBe('Opted in in the patient portal on <2026-10-01T05:00:00Z>.');
+    expect(whatsAppSummary({ ...none, optedIn: true, reachable: true, source: 'WhatsAppStart' }, when).body).toBe(
+      'Opted in by replying START on WhatsApp.',
+    );
+  });
+
+  it('puts a STOP above every opt-in, and says only the number’s holder can lift it', () => {
+    const stopped = whatsAppSummary(
+      { ...none, optedIn: true, optedOut: true, optedOutAt: '2026-10-02T05:00:00Z' },
+      when,
+    );
+    expect(stopped).toMatchObject({ intent: 'warning', canRecord: false });
+    expect(stopped.body).toContain('Since <2026-10-02T05:00:00Z> it gets only sign-in codes on WhatsApp');
+    expect(stopped.body).toContain('replying START');
   });
 });

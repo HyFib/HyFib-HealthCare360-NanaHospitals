@@ -210,7 +210,10 @@ public static class PersonalDataCatalogue
             "What you agreed to, or refused, and when: treatment, data sharing, messages, video consultation, research.",
             "To show what you agreed to, and to respect it.",
             "Required to prove consent was given.", PersonalDataRetention.WithRecords,
-            [new("patients.patient_consents", "Consent records")]),
+            [
+                new("patients.patient_consents", "Consent records"),
+                new("platform.whatsapp_opt_ins", "WhatsApp opt-ins"),
+            ]),
         new("documents", "Documents and photos",
             "Documents you gave us or that were scanned into your record, and your photo for identification.",
             "To keep your documents with your record, and to identify you safely.",

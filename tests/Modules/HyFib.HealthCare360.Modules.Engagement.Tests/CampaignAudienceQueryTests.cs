@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Engagement.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.SharedKernel;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Tests;
@@ -233,5 +234,31 @@ public sealed class CampaignAudienceQueryTests
         AddVisit(withoutConsent, Now.AddDays(-5), department: Cardiology);
 
         Audience(Segment(minAge: 18, gender: Gender.Female, city: "Chennai", departments: [Cardiology])).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_whatsapp_campaign_reaches_only_numbers_that_opted_in_and_did_not_reply_stop()
+    {
+        var optedIn = AddPatient(name: "Opted in", phone: "+919800000001");
+        var neverAsked = AddPatient(name: "Never asked", phone: "+919800000002");
+        var stopped = AddPatient(name: "Stopped", phone: "+919800000003");
+        var startedAgain = AddPatient(name: "Started again", phone: "+919800000004");
+        List<WhatsAppOptIn> optIns =
+        [
+            new() { Phone = "+919800000001", Source = WhatsAppOptInSource.RegistrationDesk, OptedInAt = Now.AddDays(-10) },
+            new() { Phone = "+919800000003", Source = WhatsAppOptInSource.Portal, OptedInAt = Now.AddDays(-10) },
+            new() { Phone = "+919800000004", Source = WhatsAppOptInSource.WhatsAppStart, OptedInAt = Now.AddDays(-1) },
+        ];
+        List<WhatsAppOptOut> optOuts =
+        [
+            new() { Phone = "+919800000003", OptedOut = true, ChangedAt = Now.AddDays(-2) },
+            new() { Phone = "+919800000004", OptedOut = false, ChangedAt = Now.AddDays(-1) },
+        ];
+
+        var everyone = Audience(Segment());
+        everyone.ShouldBe([optedIn, neverAsked, stopped, startedAgain], ignoreOrder: true);
+
+        CampaignAudienceQuery.ReachableOnWhatsApp(everyone.AsQueryable(), optIns.AsQueryable(), optOuts.AsQueryable())
+            .ShouldBe([optedIn, startedAgain], ignoreOrder: true);
     }
 }

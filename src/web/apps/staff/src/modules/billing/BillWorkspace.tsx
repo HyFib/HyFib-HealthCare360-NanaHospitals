@@ -31,6 +31,7 @@ import {
   MoreHorizontalRegular,
   PrintRegular,
   ReceiptRegular,
+  SendRegular,
   TagPercentRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, useHotkey } from '@hc360/core';
@@ -102,7 +103,7 @@ function cancelDescription(bill: BillDetail): string {
 /**
  * One bill, from draft to paid (OPB, IPB): services with returns shown as returns, discounts within the user's limit
  * or sent for approval, finalisation (allocates the gap-free bill number), collection, printing and the A4 bill as a
- * PDF, and afterwards credit notes, refunds and cancellation. Keyboard: F2 add service, F4 discount, F8 finalise /
+ * PDF (also sent to the patient on WhatsApp), and afterwards credit notes, refunds and cancellation. Keyboard: F2 add service, F4 discount, F8 finalise /
  * collect, F9 print.
  */
 export function BillWorkspace({
@@ -133,6 +134,7 @@ export function BillWorkspace({
   const canCancel = usePermission('billing.bills.cancel');
   const canRequestRefund = usePermission('billing.refunds.request');
   const canCredit = usePermission('billing.refunds.approve');
+  const canSend = usePermission(['billing.op.create', 'billing.ip.manage', 'billing.payments.collect']);
 
   const isDraft = bill.status === 'Draft';
   const isCancelled = bill.status === 'Cancelled' || bill.status === 'Refunded';
@@ -208,6 +210,17 @@ export function BillWorkspace({
           : undefined,
       );
     },
+  });
+
+  // The bill's PDF on WhatsApp (INT-WA): queued at once, delivered through the outbox like every patient message.
+  const sendOnWhatsApp = useMutation({
+    mutationFn: () => billingApi.sendOnWhatsApp(bill.id),
+    onSuccess: () =>
+      notify.success(
+        `Bill ${bill.billNumber} sent on WhatsApp`,
+        'It goes to the patient’s mobile number with the bill as a PDF. Delivery shows in the notification log.',
+      ),
+    onError: (error) => notify.error(error, 'The bill was not sent on WhatsApp'),
   });
 
   const openDialog = (kind: DialogKind) => () => setDialog(kind);
@@ -429,6 +442,15 @@ export function BillWorkspace({
                   {hasDue && canCollect && (
                     <MenuItem icon={<LinkRegular />} onClick={openDialog('link')}>
                       Send payment link
+                    </MenuItem>
+                  )}
+                  {!isDraft && !isCancelled && canSend && (
+                    <MenuItem
+                      icon={sendOnWhatsApp.isPending ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
+                      disabled={sendOnWhatsApp.isPending}
+                      onClick={() => sendOnWhatsApp.mutate()}
+                    >
+                      Send on WhatsApp
                     </MenuItem>
                   )}
                   {bill.ipAccountId && (

@@ -62,16 +62,29 @@ internal sealed class WhatsAppOptOutConfiguration : IEntityTypeConfiguration<Wha
 }
 
 /// <summary>
-/// Which messages still reach a number that replied STOP on WhatsApp. Only messages that must reach the person for
-/// security are essential. Everything else stops on WhatsApp, including messages the patient asked for just now (such
-/// as a video consultation's join link), because the patient still has SMS, e-mail and the portal. Template keys not
-/// listed here, such as templates added by a module or an administrator, are not essential.
+/// Which WhatsApp messages reach a number, in three tiers (INT-WA):
+/// <list type="number">
+/// <item>Essential: only messages that must reach the person for security. They go even after STOP.</item>
+/// <item>Service messages about care the patient is having now (an appointment booked, a report ready, a bill, a
+/// payment link): they go unless the number replied STOP (or switched WhatsApp off in the portal). As in the consent
+/// model, they need no separate consent: the patient gave the number for them at registration.</item>
+/// <item>Reminders, feedback requests and campaigns (<see cref="OptInTemplates"/>): the hospital starts them, so they
+/// go only to a number with a recorded WhatsApp opt-in (<see cref="WhatsAppOptIn"/>), and never after STOP. The module
+/// that queues them still checks the patient's own consent as well (updates or marketing).</item>
+/// </list>
+/// A STOP stops everything but essential messages, including messages the patient asked for just now (such as a video
+/// consultation's join link), because the patient still has SMS, e-mail and the portal. Template keys not listed here,
+/// such as templates added by a module or an administrator, are service messages.
 /// </summary>
 public static class WhatsAppOptOutPolicy
 {
     /// <summary>Recorded on the notification log of a message that was not sent because of the opt-out.</summary>
     public const string SuppressedReason =
-        "Not sent: this number replied STOP on WhatsApp. It gets only sign-in codes on WhatsApp until it replies START.";
+        "Not sent: this number replied STOP on WhatsApp (or switched WhatsApp off in the patient portal). It gets only sign-in codes on WhatsApp until it replies START or switches WhatsApp on again.";
+
+    /// <summary>Recorded on the notification log of a reminder or campaign message to a number that never opted in.</summary>
+    public const string NotOptedInReason =
+        "Not sent: this number has not opted in to reminders on WhatsApp. Record the opt-in on the patient's consents, or the patient can switch WhatsApp on in the patient portal or reply START.";
 
     /// <summary>Sent on WhatsApp even after STOP.</summary>
     public static IReadOnlySet<string> EssentialTemplates { get; } = new HashSet<string>(StringComparer.Ordinal)
@@ -104,7 +117,23 @@ public static class WhatsAppOptOutPolicy
         "auth.credentials_changed",
     };
 
+    /// <summary>
+    /// Messages the hospital starts rather than the patient's care: they go on WhatsApp only to numbers that opted in.
+    /// Built-in and module templates alike; a campaign with a template of its own is limited to opted-in numbers when
+    /// its audience is built.
+    /// </summary>
+    public static IReadOnlySet<string> OptInTemplates { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "appointment.reminder", "followup.reminder", "feedback.request",
+
+        // Modules: marketing campaigns (Engagement), refill reminders (Pharmacy), "no readings lately" (VirtualCare).
+        "campaign.message", "pharmacy.refill_reminder", "rpm.device_silent",
+    };
+
     public static bool IsEssential(string templateKey) => EssentialTemplates.Contains(templateKey);
+
+    /// <summary>Does this template go on WhatsApp only to numbers that opted in?</summary>
+    public static bool NeedsOptIn(string templateKey) => OptInTemplates.Contains(templateKey);
 
     /// <summary>Does an opt-out stop this message? It stops only WhatsApp, and never an essential message.</summary>
     public static bool Stops(NotificationChannel channel, string templateKey, bool numberOptedOut) =>
@@ -114,7 +143,10 @@ public static class WhatsAppOptOutPolicy
     public static Expression<Func<WhatsAppOptOut, bool>> InForceFor(string phone) => o => o.Phone == phone && o.OptedOut;
 }
 
-/// <summary>Keeps the number's WhatsApp opt-out in step with its latest STOP or START reply, in the webhook's transaction.</summary>
+/// <summary>
+/// Keeps the number's WhatsApp opt-out in step with its latest STOP or START reply, in the webhook's transaction. A
+/// START is also the number's opt-in, recorded as one (<see cref="WhatsAppOptInSource.WhatsAppStart"/>).
+/// </summary>
 internal sealed class WhatsAppOptOutRecorder(HospitalDbContext db) : IDomainEventHandler<WhatsAppOptOutChanged>
 {
     public async Task HandleAsync(WhatsAppOptOutChanged reply, CancellationToken cancellationToken)
@@ -128,6 +160,23 @@ internal sealed class WhatsAppOptOutRecorder(HospitalDbContext db) : IDomainEven
             db.Add(optOut);
         }
 
-        optOut.Apply(reply.OptedOut, reply.RepliedAt, reply.ProviderMessageId, reply.FacilityId);
+        if (!optOut.Apply(reply.OptedOut, reply.RepliedAt, reply.ProviderMessageId, reply.FacilityId) || reply.OptedOut)
+        {
+            return;
+        }
+
+        var recorded = db.Set<WhatsAppOptIn>().Local.Any(o => o.ProviderMessageId == reply.ProviderMessageId)
+                       || await db.Set<WhatsAppOptIn>().AnyAsync(o => o.ProviderMessageId == reply.ProviderMessageId, cancellationToken);
+        if (!recorded)
+        {
+            db.Add(new WhatsAppOptIn
+            {
+                Phone = reply.Phone,
+                Source = WhatsAppOptInSource.WhatsAppStart,
+                OptedInAt = reply.RepliedAt,
+                FacilityId = reply.FacilityId,
+                ProviderMessageId = reply.ProviderMessageId,
+            });
+        }
     }
 }

@@ -115,6 +115,7 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | POST | `/{id}/finalize` | `billing.bills.finalize` | `BillVersionRequest` → `BillDetail`; allocates `{FAC}OB{YY}{SEQ:7}` / `{FAC}IB{YY}{SEQ:7}`; adjusts the visit's online prepayment |
 | POST | `/{id}/cancel` | `billing.bills.cancel` | `CancelBillRequest(reason, version)` → `BillDetail`; charges released, advances restored, cash refunds requested |
 | DELETE | `/{id}?version` | `op.create` / `ip.manage` | → 204 (discard a draft) |
+| POST | `/{id}/send-whatsapp` | `op.create` / `ip.manage` / `payments.collect` | → 204: queues the bill's PDF to the patient's mobile number on WhatsApp ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); 422 `billing.bill_not_shareable` (draft or cancelled), `billing.no_mobile`, `billing.whatsapp_opted_out` (the number replied STOP); guarded and audited ("Sent a bill to the patient on WhatsApp"). The staff app's bill page offers it as "Send on WhatsApp" in the More menu |
 | POST | `/{id}/credit-notes` | `billing.refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason)` → 201 (`{FAC}CN{YY}{SEQ:6}`) |
 | POST | `/{id}/adjust-advance` | `billing.payments.collect` | `AdjustAdvanceRequest(advanceId, amount?, version)` → 201 `ReceiptDto` (patient advance used on an OP bill) |
 
@@ -662,7 +663,27 @@ the bill's day again, never to delete it.
 * `billing.appointment.prepayment` — see above.
 * `GatewayReconciliationJob` — re-checks open online payments and prepaid bookings, follows gateway refunds, reads
   settlements; see [Gateway reconciliation](#gateway-reconciliation-int-pg).
-* SMS/WhatsApp templates used: `bill.receipt` (every counter/POS/gateway receipt), `payment.link`.
+* SMS/WhatsApp templates used: `bill.receipt` (SMS, every counter/POS/gateway receipt), `bill.shared` (WhatsApp, the
+  bill's PDF; see below), `payment.link`.
+
+### Bills on WhatsApp (INT-WA)
+`BillSharing` sends the A4 bill on WhatsApp as template `bill.shared`, whose document header carries the PDF made by
+`BillDocumentSource` (document kind `billing.bill`): the same [printed bill](#the-printed-bill) the counter prints and
+the portal downloads, made when the message goes out, so it shows the payments received by then. A draft (an
+estimate) or a cancelled bill gives no document and is never sent.
+
+* **When a payment settles the bill** (counter, POS terminal, payment link or portal checkout; not an advance
+  adjustment, which sends no receipt either), alongside the `bill.receipt` SMS, unless `billing.bills.sendOnWhatsApp`
+  is off.
+* **When the billing desk sends it** from the bill (`POST /bills/{id}/send-whatsapp`), for any finalised, part-paid or
+  paid bill.
+* **Consent.** A bill is a service message about the patient's own care, so, like a report, it needs no WhatsApp
+  opt-in (see [integrations.md](integrations.md#opt-in-tracking)): it goes to the patient's registered number unless
+  that number replied STOP, which the delivery handler checks when it goes out. The desk is told about a STOP up
+  front instead of queueing a message that would be suppressed. Deceased patients' numbers are not messaged.
+* **Template.** Seeded (always) as WhatsApp template name `bill_shared` with "Document header" on. Register it with
+  Meta as a utility template with a document header and one body parameter; without a header there is nothing to
+  send, so do not untick it. There is no receipt PDF: the 80 mm receipt prints in the browser.
 * In-app alerts: discount approval needed, refund awaiting approval, discharge initiated (final bill drafted), patient
   discharged with dues, admission cancelled (billing follow-up), cancelled order already billed; to holders of
   `billing.gateway.reconcile`: an online payment not recorded, an online refund failed, settled transactions that do
@@ -689,13 +710,15 @@ the bill's day again, never to delete it.
 | `billing.shift.required` | `true` | Counter collections need an open cashier shift |
 | `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer and doctor ledgers, `pharmacy` and `canteen` ledgers, `salesLedgerPerGstRate`; for the settlement journal `gatewaySettlementBank` "Bank", `gatewayCharges` "Payment Gateway Charges", `gatewayInputGst` "Input GST", and the clearing ledger is `modeLedgers.PaymentGateway`, "Payment Gateway Clearing" by default; for the card and UPI settlement journal `posSettlementBank` "Bank" and `posCharges` "Card & UPI Charges (MDR)", GST on `gatewayInputGst`); set on the Tally screen |
 | `billing.tally.dailyPost.enabled` | `true` | Queue the daily Tally post |
+| `billing.bills.sendOnWhatsApp` | `true` | Send the bill's PDF on WhatsApp when a payment settles it ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); the desk can still send it by hand when off |
 | `billing.gateway.reconciliation` | `{ "enabled": true, "settlementDays": 3, "checkoutExpiryHours": 48 }` | Gateway reconciliation: read settlements and list exceptions (`enabled`); an online receipt not settled after `settlementDays` (1–30) is an exception; a portal checkout nobody paid is marked expired after `checkoutExpiryHours` (1–720) |
 | `billing.pos.settlements` | `{ "settlementDays": 3, "otherTerminals": [], "columns": {} }` | Card and UPI reconciliation: a card or UPI receipt not settled after `settlementDays` (1–30) is listed; `otherTerminals` are the acquirer's TIDs of counters Billing does not record (pharmacy, canteen); `columns` adds the acquirer's headings by field (`rrn`, `approvalCode`, `amount`, `charges`, `tax`, `net`, `terminalId`, `transactionDate`, `transactionTime`, `card`, `type`, `mode`, `settlementDate`, `utr`), tried before the built-in ones |
 | `doctorfees.accrual.trigger` | `finalized` | `finalized` or `paid` |
 | `doctorfees.tds.percent` | `10` | TDS (194J) on doctor payouts |
 
 ## Seed data (order 400)
-Always: tariff plan `GEN` ("General", default). Demo data only: payers `STAR`, `HDFCERGO`, `ICICILOM`, `NIA`, TPAs
+Always: tariff plan `GEN` ("General", default), and the WhatsApp template `bill.shared` (`bill_shared`, document
+header). Demo data only: payers `STAR`, `HDFCERGO`, `ICICILOM`, `NIA`, TPAs
 `MEDIASSIST`, `MDINDIA`, `PARAMOUNT`, schemes `PMJAY`, `CGHS`, `ECHS` (with CGHS/ECHS rate plans), the `PKG-NVD`
 normal-delivery package, and doctor share rules (consultation 80 %, IP visit 80 %, procedure 30 %, surgery 40 %, plus a
 fixed ₹250 government-scheme consultation rule for `DR005`).

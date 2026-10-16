@@ -4,7 +4,7 @@
  * for every rule; these helpers only describe what it does.
  */
 import { formatDate, formatDateTime, humanize } from '@hc360/core';
-import type { ConsentDto, ConsentType } from './api';
+import type { ConsentDto, ConsentType, WhatsAppConsentDto, WhatsAppOptInSource } from './api';
 
 const CONSENT_LABELS: Record<ConsentType, string> = {
   GeneralTreatment: 'General treatment',
@@ -237,4 +237,64 @@ const REFUSED_NEXT: Partial<Record<ConsentType, string>> = {
 export function recordedNotice(type: string, granted: boolean): ConsentNotice {
   const next = isKnownType(type) ? (granted ? GIVEN_NEXT : REFUSED_NEXT)[type] : undefined;
   return { title: granted ? 'Consent recorded' : 'Refusal recorded', body: next ?? consentTypeLabel(type) };
+}
+
+const OPT_IN_SOURCES: Record<WhatsAppOptInSource, string> = {
+  RegistrationDesk: 'at the desk',
+  Portal: 'in the patient portal',
+  WhatsAppStart: 'by replying START on WhatsApp',
+};
+
+export interface WhatsAppSummary {
+  intent: 'success' | 'warning' | 'info';
+  title: string;
+  body: string;
+  /** Recording the opt-in at the desk would change something (and there is a number to record it for). */
+  canRecord: boolean;
+}
+
+/**
+ * The WhatsApp choices of the patient's number in plain words (INT-WA). A STOP outranks every opt-in, and only the
+ * number's holder can lift it (START, or the portal), so the desk does not record over it.
+ */
+export function whatsAppSummary(
+  status: WhatsAppConsentDto,
+  formatWhen: (iso: string) => string = formatDateTime,
+): WhatsAppSummary {
+  if (!status.phone) {
+    return {
+      intent: 'info',
+      title: 'No mobile number',
+      body: 'Add a mobile number to the registration before recording WhatsApp choices.',
+      canRecord: false,
+    };
+  }
+  if (status.optedOut) {
+    const since = status.optedOutAt ? `Since ${formatWhen(status.optedOutAt)} it` : 'It';
+    return {
+      intent: 'warning',
+      title: `${status.phone} replied STOP on WhatsApp`,
+      body:
+        `${since} gets only sign-in codes on WhatsApp: no bills, reports or reminders. ` +
+        'Only the number’s holder can change that, by replying START or switching WhatsApp on in the patient portal.',
+      canRecord: false,
+    };
+  }
+  if (status.optedIn) {
+    const by = status.capturedByName ? ` by ${status.capturedByName}` : '';
+    const where = status.source ? ` ${OPT_IN_SOURCES[status.source]}` : '';
+    const when = status.optedInAt ? ` on ${formatWhen(status.optedInAt)}` : '';
+    return {
+      intent: 'success',
+      title: `${status.phone} gets WhatsApp reminders and updates`,
+      body: `Opted in${where}${when}${by}.`,
+      canRecord: false,
+    };
+  }
+  return {
+    intent: 'info',
+    title: `${status.phone} has not opted in to WhatsApp reminders`,
+    body: 'Bills and reports still go on WhatsApp. Reminders, feedback requests and offers need the patient’s agreement: ask them, and record it here.',
+    canRecord: true,
+  };
 }

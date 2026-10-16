@@ -35632,6 +35632,94 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("user_notifications", "platform");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Notifications.WhatsAppOptIn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("CapturedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("captured_by_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid?>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<DateTimeOffset>("OptedInAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opted_in_at");
+
+                    b.Property<Guid?>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("phone");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("provider_message_id");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_whatsapp_opt_ins");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_whatsapp_opt_ins_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_whatsapp_opt_ins_patient_id");
+
+                    b.HasIndex("Phone", "OptedInAt")
+                        .HasDatabaseName("ix_whatsapp_opt_ins_phone_opted_in_at");
+
+                    b.ToTable("whatsapp_opt_ins", "platform");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Notifications.WhatsAppOptOut", b =>
                 {
                     b.Property<Guid>("Id")

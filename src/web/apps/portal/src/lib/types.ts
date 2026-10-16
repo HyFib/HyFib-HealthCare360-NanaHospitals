@@ -952,12 +952,19 @@ export interface CommunicationPreferences {
   updates: boolean;
   marketingChangedAt: string | null;
   updatesChangedAt: string | null;
+  /** The patient's number gets reminders and updates on WhatsApp: opted in, and no STOP in force (INT-WA). */
+  whatsApp: boolean;
+  whatsAppChangedAt: string | null;
+  /** Signed in with the patient's own number: WhatsApp choices belong to the number, so only its holder changes them. */
+  whatsAppEditable: boolean;
 }
 
 export interface CommunicationPreferencesRequest {
   patientId: string;
   marketing: boolean;
   updates: boolean;
+  /** Left out to keep the WhatsApp choice as it is. */
+  whatsApp?: boolean;
 }
 
 // ------------------------------------------------------------------ privacy (DPDP Act 2023)

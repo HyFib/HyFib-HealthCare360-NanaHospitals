@@ -39,7 +39,10 @@ public enum NotificationStatus
     /// <summary>The provider confirmed delivery to the handset or inbox (delivery receipt).</summary>
     Delivered,
 
-    /// <summary>Deliberately not sent, and never retried: the number opted out of the channel (see the log's error).</summary>
+    /// <summary>
+    /// Deliberately not sent, and never retried: the number opted out of the channel, or a WhatsApp reminder went to a
+    /// number that never opted in (the log's error says which).
+    /// </summary>
     Suppressed,
 }
 
@@ -581,8 +584,9 @@ internal sealed class WhatsAppDeliveryHandler(
     public override string Type => NotificationService.WhatsAppType;
 
     /// <summary>
-    /// A number that replied STOP gets only essential messages on WhatsApp. The check runs at delivery time, so messages
-    /// queued before the STOP, and reminders queued for later, stop too.
+    /// A number that replied STOP gets only essential messages on WhatsApp, and reminders and campaigns go only to numbers
+    /// that opted in (<see cref="WhatsAppOptOutPolicy"/>). The checks run at delivery time, so messages queued before the
+    /// STOP, and reminders queued for later, stop too.
     /// </summary>
     protected override async Task<string?> SuppressionReasonAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
     {
@@ -592,7 +596,14 @@ internal sealed class WhatsAppDeliveryHandler(
         }
 
         var optedOut = await Db.Set<WhatsAppOptOut>().AnyAsync(WhatsAppOptOutPolicy.InForceFor(phone), cancellationToken);
-        return WhatsAppOptOutPolicy.Stops(delivery.Channel, delivery.TemplateKey, optedOut) ? WhatsAppOptOutPolicy.SuppressedReason : null;
+        if (WhatsAppOptOutPolicy.Stops(delivery.Channel, delivery.TemplateKey, optedOut))
+        {
+            return WhatsAppOptOutPolicy.SuppressedReason;
+        }
+
+        return WhatsAppOptOutPolicy.NeedsOptIn(delivery.TemplateKey) && !await Db.Set<WhatsAppOptIn>().AnyAsync(o => o.Phone == phone, cancellationToken)
+            ? WhatsAppOptOutPolicy.NotOptedInReason
+            : null;
     }
 
     protected override bool CarriesDocument(NotificationTemplate? template) => template?.WhatsAppDocumentHeader == true;

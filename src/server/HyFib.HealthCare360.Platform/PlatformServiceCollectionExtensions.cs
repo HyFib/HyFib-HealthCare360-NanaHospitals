@@ -227,6 +227,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IOutbox, Outbox>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<NotificationTemplateRenderer>();
+        services.AddScoped<WhatsAppConsent>();
         services.AddSingleton<IRealtimePublisher, SignalRRealtimePublisher>();
         services.AddScoped<RealtimeTopicAuthorizer>();
 
