@@ -49,7 +49,9 @@ can't be made.
 
 **You need**: `HC360-Server-<version>-win-x64.zip` and `HC360-Desktop-<version>-win-x64.zip` from the release, and
 `HC360-LabAgent-<version>-win-x64.zip` if analysers are cabled to lab PCs by serial (RS-232) cable. Check them
-against `SHA256SUMS.txt` (`Get-FileHash <file> -Algorithm SHA256`).
+against `SHA256SUMS.txt` (`Get-FileHash <file> -Algorithm SHA256`). Keep the HC360 Desktop package's `.manifest.json`
+and `.manifest.sig` beside it, in the folder you extract the server package in: the server offers it from there to the
+workstations, which update themselves (section 5).
 
 ## 2. Install PostgreSQL (once)
 
@@ -305,6 +307,17 @@ the tray, and staff sign in again. Only the hospital's server can answer: every 
 certificate authority first. A workstation whose server IT fixed with `-ServerUrl` (the machine policy) only ever uses
 that address (SRS DED-03).
 
+**Updates come from the server** (SRS DED-18), so workstations need no internet access. Every 4 hours HC360 Desktop
+asks the server for the version it offers (Administration › Devices shows it, and marks each device that is behind),
+downloads a newer one and checks HyFib's signature. Staff then see "HC360 Desktop … is ready" from the tray: "Restart to
+update" (in the tray icon's menu, or by clicking the notification) closes HC360 and opens the new version a minute or so
+later, so save your work first. Otherwise it installs the next time HC360 Desktop is closed, or at the next start-up or
+sign-in; kiosks and TV boards are not asked and update at their next start-up. The installer sets this up: the updater
+in `HC360 Desktop Updater` beside the program, and the "HC360 Desktop update" task in Task Scheduler (HyFib folder),
+which installs as SYSTEM, keeps the version before in `HC360 Desktop.previous`, and puts it back if the installation
+fails. Its log and last result are `update.log` and `status.json` in the updater's folder. To leave a computer's version
+to your own software distribution, install with `-NoAutoUpdate` (`"autoUpdate": false` in `policy.json`).
+
 **Tablets and browsers**:
 1. Download `https://HC360-SRV:7360/api/v1/system/ca-certificate`.
 2. Install it as a trusted root certificate on the device (MDM or device settings).
@@ -552,8 +565,14 @@ automatically on the first start of this version. The log lists what was added. 
 cannot be fixed safely (for example a column of another type), HC360 stops with the list of differences and changes
 nothing. Keep the previous version running and contact HyFib support.
 
-HC360 Desktop is upgraded the same way, with `Install-HC360Desktop.ps1` on each workstation (or through your software
-distribution tool).
+HC360 Desktop updates itself from the server (section 5). Download `HC360-Desktop-<version>-win-x64.zip` with its
+`.manifest.json` and `.manifest.sig` from the release into the same folder as the server package: the server installer
+offers it to the workstations, once the server has checked HyFib's signature. To offer one later, run
+`HyFib.HealthCare360.Server.exe desktop publish --package <zip>` on the Server Node from an elevated prompt (`desktop show`
+says what is offered). A release without a signature (`.manifest.sig`) is not offered; upgrade those workstations, and
+any installed before self-update or with `-NoAutoUpdate`, with `Install-HC360Desktop.ps1` (or through your software
+distribution tool). Self-update replaces the program files only: run the installer again when a release's notes ask for
+it.
 
 ## 8. Backups and disaster recovery
 

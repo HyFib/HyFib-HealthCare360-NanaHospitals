@@ -6,9 +6,11 @@
 .DESCRIPTION
     Produces, in .\artifacts:
       HC360-Server-<version>-win-x64.zip   server (self-contained, web apps included) + deployment scripts
-      HC360-Desktop-<version>-win-x64.zip  HC360 Desktop (self-contained) + workstation installer
+      HC360-Desktop-<version>-win-x64.zip  HC360 Desktop (self-contained) + its updater + workstation installer
       HC360-LabAgent-<version>-win-x64.zip HC360 lab agent (self-contained) + installer, for PCs with serial analysers
       SHA256SUMS.txt                       checksums to verify the downloads on the hospital network
+    The release workflow then signs the HC360 Desktop package (tools/release/Sign-HC360Release.ps1), so that workstations
+    can update themselves from the Server Node (SRS DED-18).
 
 .EXAMPLE
     .\deploy\windows\Publish-HC360.ps1
@@ -69,6 +71,16 @@ try {
             -p:DebugType=None -p:DebugSymbols=false
     }
     Copy-Item (Join-Path $PSScriptRoot 'Install-HC360Desktop.ps1') $desktopOut
+
+    # The updater installs HC360 Desktop's updates as SYSTEM (SRS DED-18): one self-contained file, so it can replace
+    # HC360 Desktop's folder from a folder of its own, and itself.
+    Write-Step 'Publishing the HC360 Desktop updater'
+    $updaterOut = Join-Path $OutputDir 'desktop-updater'
+    Invoke-Checked 'Desktop updater publish' {
+        dotnet publish src\desktop\HyFib.HealthCare360.DesktopUpdater\HyFib.HealthCare360.DesktopUpdater.csproj -c $Configuration -r $Runtime --self-contained true -o $updaterOut `
+            -p:DebugType=None -p:DebugSymbols=false
+    }
+    Copy-Item (Join-Path $updaterOut 'HC360DesktopUpdater.exe') $desktopOut
 
     Write-Step 'Publishing the HC360 lab agent'
     $agentOut = Join-Path $OutputDir 'labagent'

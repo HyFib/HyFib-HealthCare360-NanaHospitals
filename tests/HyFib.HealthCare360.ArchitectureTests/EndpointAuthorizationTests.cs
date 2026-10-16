@@ -47,6 +47,11 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/devices/enroll",
         "POST /api/v1/devices/heartbeat",
 
+        // HC360 Desktop's self-update (SRS DED-18): an enrolled, unrevoked HC360 Desktop's device id and secret (hash
+        // compared in constant time); anyone else gets 401. The package is HyFib's signed release, which holds no secret.
+        "GET /api/v1/devices/desktop-update",
+        "GET /api/v1/devices/desktop-update/package",
+
         // Patient links from SMS/WhatsApp and printed QR codes: an unguessable token or code. Report checks name the patient
         // by initials only; the others return no patient data.
         "GET /api/v1/public/feedback/forms/{token}",

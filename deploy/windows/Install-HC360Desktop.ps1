@@ -12,6 +12,13 @@
       turns on kiosk mode and starts HC360 at sign-in (queue TVs, registration kiosks).
     - Prepares the folder where HC360 keeps this computer's printers (Printers on this computer), so the printers set
       there are the same for every Windows account on the computer.
+    - Sets up self-update from the Server Node (SRS DED-18): installs the updater beside HC360 Desktop
+      ("<install folder> Updater") and registers the "HC360 Desktop update" scheduled task, which runs it as SYSTEM at
+      start-up, at each sign-in and every 4 hours. HC360 Desktop downloads a newer version the server offers into
+      %ProgramData%\HyFib\HC360Desktop\Updates; the updater installs it, after checking HyFib's signature itself, while
+      HC360 Desktop is closed, and puts the previous version back if that fails. Users may start the task (HC360
+      Desktop's "Restart to update") but not change it. -NoAutoUpdate turns self-update off in the machine policy, for
+      computers whose software IT distributes itself.
 
 .EXAMPLE
     # Reception workstation, pre-configured
@@ -30,14 +37,62 @@ param(
     [switch] $Kiosk,
     [string] $StartPath,
     [switch] $StartWithWindows,
-    [switch] $DesktopShortcut
+    [switch] $DesktopShortcut,
+    # HC360 Desktop does not update itself from the server; IT upgrades it with this script or its own tools.
+    [switch] $NoAutoUpdate
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Exe = 'HC360Desktop.exe'
+$UpdaterExe = 'HC360DesktopUpdater.exe'
+$UpdateTaskPath = '\HyFib\'
+$UpdateTaskName = 'HC360 Desktop update'
 
 function Write-Step([string] $Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
+
+# The update task's triggers: at each start-up and each sign-in, before HC360 Desktop is open, and every 4 hours from
+# now for as long as Windows runs (SRS DED-18).
+function New-DesktopUpdateTriggers {
+    return @(
+        (New-ScheduledTaskTrigger -AtStartup),
+        (New-ScheduledTaskTrigger -AtLogOn),
+        (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 4)))
+}
+
+# Registers the "HC360 Desktop update" task: SYSTEM runs the updater, which installs the package HC360 Desktop staged
+# once it has verified it itself, while HC360 Desktop is closed. Authenticated users may read and start the task, for
+# HC360 Desktop's "Restart to update", and not change it: what it runs and trusts is fixed here.
+function Register-DesktopUpdateTask([string] $Updater, [string] $InstallDir, [string] $TaskPath = '\HyFib\', [string] $TaskName = 'HC360 Desktop update') {
+    $action = New-ScheduledTaskAction -Execute $Updater -Argument "apply --install-dir `"$($InstallDir.TrimEnd('\'))`""
+    $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+    Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Action $action -Trigger (New-DesktopUpdateTriggers) -Principal $principal `
+        -Settings $settings -Force -Description 'Installs the update of HC360 Desktop it downloaded from the HC360 server, once HyFib''s signature checks out (SRS DED-18).' | Out-Null
+    $scheduler = New-Object -ComObject Schedule.Service
+    $scheduler.Connect()
+    $task = $scheduler.GetFolder($TaskPath.TrimEnd('\')).GetTask($TaskName)
+    # The DACL (4) in SDDL; read and execute (GRGX) for Authenticated Users goes first, with the other explicit entries.
+    $dacl = $task.GetSecurityDescriptor(4)
+    if ($dacl -notmatch ';;;AU\)') { $task.SetSecurityDescriptor(($dacl -replace '^(D:[A-Z]*)', '$1(A;;GRGX;;;AU)'), 0) }
+}
+
+# The updater's folder: only administrators and SYSTEM may change it, because SYSTEM runs what is in it.
+function Set-UpdaterAcl([string] $Path) {
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    $none = [System.Security.AccessControl.PropagationFlags]::None
+    foreach ($sid in @([System.Security.Principal.WellKnownSidType]::LocalSystemSid, [System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid)) {
+        $identity = New-Object System.Security.Principal.SecurityIdentifier($sid, $null)
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', $inherit, $none, 'Allow')))
+    }
+    $users = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinUsersSid, $null)
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($users, 'ReadAndExecute', $inherit, $none, 'Allow')))
+    $acl.SetOwner((New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)))
+    Set-Acl -LiteralPath $Path -AclObject $acl
+}
 
 if (-not (Test-Path (Join-Path $PackagePath $Exe))) { throw "HC360 Desktop package not found at '$PackagePath'." }
 if ($ServerUrl -and $ServerUrl -notmatch '^https://') { throw 'The server address must start with https://' }
@@ -58,6 +113,10 @@ if (-not $hasWebView2) {
 }
 
 # ---------------------------------------------------------------- files
+# An update being installed would move the folder while it is copied.
+if (Get-ScheduledTask -TaskPath $UpdateTaskPath -TaskName $UpdateTaskName -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskPath $UpdateTaskPath -TaskName $UpdateTaskName -ErrorAction SilentlyContinue
+}
 $running = Get-Process -Name 'HC360Desktop' -ErrorAction SilentlyContinue
 if ($running) {
     Write-Step 'Closing running copies of HC360 Desktop'
@@ -94,7 +153,7 @@ Set-ItemProperty -Path "$protocol\DefaultIcon" -Name '(default)' -Value "`"$exeP
 Set-ItemProperty -Path "$protocol\shell\open\command" -Name '(default)' -Value "`"$exePath`" `"%1`""
 
 # ---------------------------------------------------------------- machine policy
-if ($ServerUrl -or $CaFingerprint -or $Kiosk -or $StartPath) {
+if ($ServerUrl -or $CaFingerprint -or $Kiosk -or $StartPath -or $NoAutoUpdate) {
     Write-Step 'Writing the machine policy'
     $policyDir = Join-Path $env:ProgramData 'HyFib\HC360Desktop'
     New-Item -ItemType Directory -Force -Path $policyDir | Out-Null
@@ -103,6 +162,7 @@ if ($ServerUrl -or $CaFingerprint -or $Kiosk -or $StartPath) {
     if ($CaFingerprint) { $policy.caFingerprint = ($CaFingerprint -replace '[\s:]', '').ToUpperInvariant() }
     if ($Kiosk) { $policy.kiosk = $true; $policy.disableDevTools = $true }
     if ($StartPath) { $policy.startPath = $StartPath }
+    if ($NoAutoUpdate) { $policy.autoUpdate = $false }
     $policyPath = Join-Path $policyDir 'policy.json'
     $policy | ConvertTo-Json | Set-Content -Path $policyPath -Encoding UTF8
     # Everyone may read the policy; only administrators may change it.
@@ -125,6 +185,32 @@ $printersAcl = Get-Acl -Path $printersDir
 $usersSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinUsersSid, $null)
 $printersAcl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($usersSid, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
 Set-Acl -Path $printersDir -AclObject $printersAcl
+
+# ---------------------------------------------------------------- self-update from the Server Node (SRS DED-18)
+# HC360 Desktop downloads a newer version the server offers into the staging folder, which every user may write to; the
+# updater, run by the task as SYSTEM from a folder only administrators may change, verifies HyFib's signature itself and
+# installs it while HC360 Desktop is closed. With -NoAutoUpdate the policy turns this off, and the task does nothing.
+$updaterSource = Join-Path $PackagePath $UpdaterExe
+if (Test-Path -LiteralPath $updaterSource) {
+    Write-Step 'Setting up self-update from the HC360 server'
+    $updaterDir = "$($InstallDir.TrimEnd('\')) Updater"
+    New-Item -ItemType Directory -Force -Path $updaterDir | Out-Null
+    Set-UpdaterAcl $updaterDir
+    Copy-Item -LiteralPath $updaterSource -Destination (Join-Path $updaterDir $UpdaterExe) -Force
+    Remove-Item -LiteralPath (Join-Path $updaterDir "$UpdaterExe.old") -ErrorAction SilentlyContinue
+
+    $stagingDir = Join-Path $env:ProgramData 'HyFib\HC360Desktop\Updates'
+    New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
+    $stagingAcl = Get-Acl -Path $stagingDir
+    $stagingAcl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($usersSid, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+    Set-Acl -Path $stagingDir -AclObject $stagingAcl
+
+    Register-DesktopUpdateTask -Updater (Join-Path $updaterDir $UpdaterExe) -InstallDir $InstallDir
+    if ($NoAutoUpdate) { Write-Host '    Self-update is turned off in the machine policy (-NoAutoUpdate).' }
+}
+else {
+    Write-Warning "The package has no $UpdaterExe, so HC360 Desktop will not update itself from the server: upgrade it with this script."
+}
 
 # ---------------------------------------------------------------- start with Windows (kiosks / TV boards)
 $runKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'

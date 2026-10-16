@@ -20,6 +20,8 @@
         <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
           <Button x:Name="RetryButton" Content="Try again now" Padding="16,6" Click="OnRetryClick" />
           <Button x:Name="ChangeServerButton" Content="Change server…" Padding="16,6" Margin="8,0,0,0" Click="OnChangeServerClick" />
+          <!-- Shown once a new version of HC360 Desktop is ready to install (SRS DED-18). -->
+          <Button x:Name="RestartToUpdateButton" Content="Restart to update" Padding="16,6" Margin="8,0,0,0" Visibility="Collapsed" Click="OnRestartToUpdateClick" />
         </StackPanel>
       </StackPanel>
     </Border>

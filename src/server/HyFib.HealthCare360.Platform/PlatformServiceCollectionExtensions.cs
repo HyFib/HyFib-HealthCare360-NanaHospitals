@@ -19,6 +19,7 @@ using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Realtime;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
+using HyFib.HealthCare360.Platform.Updates;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -205,6 +206,9 @@ public static class PlatformServiceCollectionExtensions
             limiter.AddPolicy(RateLimitPolicies.Device, http => RateLimitPartition.GetTokenBucketLimiter(
                 RateLimitPolicies.DevicePartition(http, ClientKey(http)),
                 _ => new TokenBucketRateLimiterOptions { TokenLimit = 120, TokensPerPeriod = 60, ReplenishmentPeriod = TimeSpan.FromSeconds(30), QueueLimit = 0 }));
+            limiter.AddPolicy(RateLimitPolicies.DesktopUpdate, http => RateLimitPartition.GetFixedWindowLimiter(
+                RateLimitPolicies.DevicePartition(http, ClientKey(http)),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
             limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http => RateLimitPartition.GetTokenBucketLimiter(
                 http.User.FindFirst(HcClaims.UserId)?.Value ?? ClientKey(http),
                 _ => new TokenBucketRateLimiterOptions
@@ -240,6 +244,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<RecoveryKeyService>();
         services.TryAddSingleton<IPostgresTools, PostgresTools>();
         services.AddSingleton<WifiLinkState>();
+
+        // HC360 Desktop's self-update (SRS DED-18): packages are checked against the release keys built in.
+        services.TryAddSingleton(ReleaseTrust.BuiltIn);
+        services.AddSingleton<DesktopPackageStore>();
 
         // Fallbacks replaced by the Billing, Patients and Clinical modules / Integrations project when present.
         services.TryAddScoped<IChargePoster, NullChargePoster>();
@@ -342,6 +350,7 @@ public static class PlatformServiceCollectionExtensions
         FeatureEndpoints.Map(endpoints);
         SystemEndpoints.Map(endpoints);
         BackupEndpoints.Map(endpoints);
+        DesktopUpdateEndpoints.Map(endpoints);
         // A connection lasts only as long as the access token it opened with: the client reconnects with a fresh one,
         // which a signed-out or revoked session cannot get.
         endpoints.MapHub<EventsHub>("/hubs/events", hub => hub.CloseOnAuthenticationExpiration = true);

@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private readonly ServerTrust _trust;
     private readonly ServerClient _client;
     private readonly NetworkStatusService _network;
+    private readonly DesktopUpdateService _updates;
     private readonly SerialScannerService _scanner = new();
     private readonly DispatcherTimer _retry = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly CancellationTokenSource _lifetime = new();
@@ -50,6 +51,9 @@ public partial class MainWindow : Window
     private CoreWebView2Environment? _environment;
     private TrayNotifier? _tray;
     private bool _pageLoaded;
+
+    // The version of HC360 Desktop staged and offered with "Restart to update" (SRS DED-18).
+    private string? _updateOffered;
 
     // While the staff app cannot load: tries in a row that the server did not answer, and when to look for it at its
     // other addresses next (SRS DED-03).
@@ -73,6 +77,7 @@ public partial class MainWindow : Window
         _trust = new ServerTrust(settings.CaCertificatePem!);
         _client = new ServerClient(_server, _trust);
         _network = new NetworkStatusService(_client);
+        _updates = new DesktopUpdateService(_server, _trust, settings);
         _retry.Tick += async (_, _) => await RetryAsync();
         _trust.CertificateRejected += OnCertificateRejected;
 
@@ -124,6 +129,7 @@ public partial class MainWindow : Window
         _network.Start();
         _scanner.Use(ScannerSetupStore.ForThisComputer().Load().Setup);
         _ = HeartbeatLoopAsync(_lifetime.Token);
+        _ = UpdateLoopAsync(_lifetime.Token);
 
         // The pinned check runs before the staff app (and the sign-in cookies it sends) goes to the server.
         if (await _client.PingAsync(_lifetime.Token) is not null)
@@ -585,6 +591,101 @@ public partial class MainWindow : Window
         while (await timer.WaitForNextTickAsync(cancellationToken));
     }
 
+    /// <summary>
+    /// HC360 Desktop's self-update from the Server Node (SRS DED-18): two minutes after start and every four hours, asks
+    /// the server for a newer version and stages it (<see cref="DesktopUpdateService"/>), then offers "Restart to update".
+    /// Kiosks and TV boards are not asked: theirs installs at the next start-up or sign-in, when HC360 is not running.
+    /// </summary>
+    private async Task UpdateLoopAsync(CancellationToken cancellationToken)
+    {
+        if (!_updates.Enabled)
+        {
+            Log.Information(_settings.AutoUpdateAllowed
+                ? "HC360 Desktop does not update itself: its updater is not installed (run Install-HC360Desktop.ps1)"
+                : "HC360 Desktop does not update itself: IT turned it off in the machine policy");
+            return;
+        }
+
+        try
+        {
+            OfferUpdate(await Task.Run(
+                () =>
+                {
+                    _updates.CleanUp();
+                    return _updates.Ready();
+                },
+                cancellationToken));
+            await Task.Delay(TimeSpan.FromMinutes(2), cancellationToken);
+            using var timer = new PeriodicTimer(TimeSpan.FromHours(4));
+            do
+            {
+                OfferUpdate(await Task.Run(() => _updates.CheckAsync(cancellationToken), cancellationToken));
+            }
+            while (await timer.WaitForNextTickAsync(cancellationToken));
+        }
+        catch (OperationCanceledException)
+        {
+            // The window is closing.
+        }
+    }
+
+    private void OfferUpdate(WindowsInterop.Updates.ReleaseManifest? ready)
+    {
+        if (ready is null || _settings.Kiosk || string.Equals(_updateOffered, ready.Version, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _updateOffered = ready.Version;
+        _tray?.OfferRestart(ready.Version, RestartToUpdate);
+        _tray?.Show(
+            $"HC360 Desktop {ready.Version} is ready",
+            "Click here to restart HC360 and install it now, or it installs the next time HC360 is closed.",
+            RestartToUpdate);
+        RestartToUpdateButton.Content = $"Restart to update to {ready.Version}";
+        RestartToUpdateButton.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// After asking (staff may have unsaved work): closes HC360 Desktop, which the updater installs and opens again.
+    /// </summary>
+    private void RestartToUpdate()
+    {
+        if (_updateOffered is not { } version)
+        {
+            return;
+        }
+
+        var answer = MessageBox.Show(
+            this,
+            $"Restart HC360 Desktop now to install version {version}?\n\nSave your work first: HC360 closes, and opens again in a minute or so.",
+            "HC360 Desktop",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Question,
+            MessageBoxResult.Cancel);
+        if (answer != MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        if (!_updates.StartRestart())
+        {
+            MessageBox.Show(
+                this,
+                "The update could not be started now. It installs the next time HC360 Desktop is closed or this computer starts.",
+                "HC360 Desktop",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        Log.Information("Closing to install HC360 Desktop {Version}", version);
+        RestartRequested = true;
+        Application.Current.Shutdown();
+    }
+
+    private void OnRestartToUpdateClick(object sender, RoutedEventArgs e) => RestartToUpdate();
+
     protected override void OnClosing(CancelEventArgs e)
     {
         // Kiosks and TV boards are not closed by passers-by; IT signs the Windows session out instead.
@@ -604,6 +705,7 @@ public partial class MainWindow : Window
         _lifetime.Cancel();
         _retry.Stop();
         _network.Dispose();
+        _updates.Dispose();
         _scanner.Dispose();
         _client.Dispose();
         _trust.Dispose();
