@@ -195,20 +195,37 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 ## Printing and downloads
 
 * **Download PDF.** Reports, prescriptions, discharge summaries and bills come with the hospital's official PDF. It is
-  the same English document the hospital prints and sends, with the letterhead, signatures and QR check. The page
-  fetches it from the document's `…/pdf` endpoint and saves it under the file name the server gives
-  (Content-Disposition). This works on Android Chrome and on iPhone Safari, which asks first. The button says
-  "Preparing your PDF…" while the server makes the PDF, and takes one tap at a time. When the server cannot make PDFs
+  the same document the hospital prints and sends, with the letterhead, signatures and QR check, and its labels in the
+  patient's language (below); the prescription is always in English and Hindi. The page fetches it from the
+  document's `…/pdf` endpoint and saves it under the file name the server gives (Content-Disposition). This works on
+  Android Chrome and on iPhone Safari, which asks first. The button says "Preparing your PDF…" while the server makes
+  the PDF, and takes one tap at a time. When the server cannot make PDFs
   right now (503, code `pdf.unavailable`), the page says so in the patient's language and offers Print instead. Other
   failures show the usual error message. An answer that is not a PDF is never saved.
 * **Print.** Every document can also be printed from the page itself, in the language the patient is reading. Reports
-  and prescriptions carry their verification QR code. Next to the buttons, one line explains the difference; in Hindi
-  it also says that the PDF is in English.
+  and prescriptions carry their verification QR code. Next to the buttons, one line explains the difference.
 * **Documents without a server PDF.** Receipts and the privacy data summary are printed from the page, and "Save as PDF"
   in the print dialog gives a PDF. The data summary can also be downloaded as a self-contained HTML file, marked with
   the language it is in.
 
 Every value in a page template is escaped. The QR code SVG is the only markup accepted, and it is checked first.
+
+## The server's text in the patient's language (PP-06)
+
+The API client sends the portal's language as Accept-Language (`getLanguage` of `createApiClient`). For portal, public
+and OTP requests, and any request with a patient's sign-in, the server writes its own text in the patient's language:
+the preferred language on the signed-in patient's record when it is English or Hindi ("Hindi", "hi", "हिन्दी"),
+else Accept-Language, else English. The record's preference is read once per patient every five minutes.
+
+* **Refusals.** The Problem Details `title`, `detail` and field messages of a refusal (400, 409, 422 and the others)
+  are in that language, and the answer says so (`Content-Language: hi`). The `code` and the field names never change,
+  so the portal's own handling of codes is unaffected. A message without a translation is sent in English, as before.
+  The portal shows business-rule messages as sent, so a Hindi reader now sees the server's reason in Hindi; transport
+  and status problems (no connection, 401, 403, 404, 429, 5xx) are still worded by the portal itself.
+* **PDFs.** `…/pdf` answers in the same language (see print-templates.md, *The patient's language*).
+* **Texts.** One catalogue per language in `src/server/HyFib.HealthCare360.Platform/Localization/Resources`
+  (`patient-texts-en.json`, `patient-texts-hi.json`); a server message is matched on its English text. The Hindi is
+  listed for review by a native speaker in [../requirements/hindi-review.md](../requirements/hindi-review.md).
 
 ## Security and privacy
 
@@ -242,7 +259,7 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 * **Downloads:** the PDF helper (the server's file name from Content-Disposition, safe names, "cannot make PDFs right
   now" without retries, other failures, never saving a web page as a PDF); Download PDF end to end in jsdom on the lab,
   scan and heart test reports, the prescription, the discharge summary and the bill (the busy button, the 503 message,
-  the usual error message, Hindi, printing the page's copy); and the downloaded HTML copy (its font rule and language).
+  the usual error message, Hindi, printing the page's copy, the PDF asked for in Hindi); and the downloaded HTML copy (its font rule and language).
 * **Family on other numbers:** the add form's checks and the request it sends, how long the code works on a phone with
   a wrong clock, the server's refusals in the patient's language, the add sheet in jsdom (the details step, the code
   step, a wrong code, a used-up code back to the details, throttling), and the page end to end in jsdom (the link from
@@ -261,8 +278,9 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 ## Known gaps (server follow-ups)
 
 * **Refund status in the portal.** Patients do not see where a refund stands; the hospital tells them.
-* **English-only server text.** Business-rule messages (409 and 422 details, validation messages) arrive in English
-  only and are shown as sent.
-* **Official PDFs in English.** The hospital's PDF of a report, prescription, discharge summary or bill is the English
-  document it prints and sends. Patients reading in Hindi are told so next to the button, and Print gives them the
-  page's copy in Hindi. Receipts and the privacy data summary have no server PDF; they are printed from the page.
+* **Server text not yet translated.** Server messages of features added later, and the validators' built-in messages
+  ("'Reason' must not be empty"), which FluentValidation words in Hindi with the field's English name, are not in the
+  catalogue; they arrive in English (or in that mixed form) until their entries are added. Receipts and the privacy
+  data summary have no server PDF; they are printed from the page.
+* **Hindi review.** The server's Hindi was written by the development team and awaits a native speaker's review
+  ([../requirements/hindi-review.md](../requirements/hindi-review.md)).

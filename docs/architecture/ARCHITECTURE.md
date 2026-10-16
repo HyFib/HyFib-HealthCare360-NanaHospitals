@@ -260,6 +260,17 @@ Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSend
 
 **Documents and PDFs (ADR-012).** Documents that leave the hospital (reports, the health check-up report, prescriptions, discharge summaries, A4 bills, MIS reports) are laid out on the server: each module builds a `PrintableDocument` from its own data with the encoding `Html` builder in `Platform/Documents`, with the letterhead, logo, signatures and QR codes from `DocumentAssets`. The staff app prints that HTML (`GET …/document`), and `IPdfRenderer` turns the same HTML into the PDF (`GET …/pdf`, portal downloads, MIS export). Its implementation, `EdgePdfRenderer` in Integrations, drives headless Microsoft Edge over a private pipe with scripts and network access off. A message can carry a document: `INotificationService.Queue(…, document: new NotificationDocument(kind, id))`, and the module's `INotificationDocumentSource` for that kind makes the PDF when the message is sent. E-mail attaches it; WhatsApp sends it in the template's document header when the template is marked as having one.
 
+**Text for patients in their language (PP-06).** The text the server writes for patients is in English or Hindi, from
+one catalogue per language (`Platform/Localization/Resources/patient-texts-{en,hi}.json`, `PatientTexts`; another
+language is one more file). `RequestLanguageMiddleware` picks the language of a patient-facing request (portal, public
+and OTP endpoints, the portal app, a patient's sign-in): the preferred language on the signed-in patient's record, else
+Accept-Language (the portal sends its own), else English. `ProblemLocalization` then writes that request's Problem
+Details title, detail and field messages in it, matched on their English text, and keeps the machine `code`. Documents
+take a `DocumentText` (their labels in one language): the portal's PDFs use the request's language, the copies sent
+in messages the patient's preference, the staff app English; the prescription is always English and Hindi (ERX-04).
+A document with Devanagari text in it embeds Noto Sans Devanagari (`DocumentFonts`), and the browser shapes it. Staff
+answers are not touched.
+
 ---
 
 ## 11. Scaling path

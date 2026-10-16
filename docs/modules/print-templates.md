@@ -96,6 +96,44 @@ with the template saved and the facility.
   passes `template: templateFor(letterhead, key)` to `printDocument`, which adds the blank space to A4 and A5 pages and
   ends the page with the closing note. Until the letterhead arrives, prints show the facility's name with the defaults.
 
+## The patient's language (PP-06)
+
+The server's documents are made in one of the languages HC360 writes for patients (`PatientLanguages`: English and
+Hindi). Only the document's own words change (titles, labels, headings, notes, "Page 1 of 2"); names, medicines,
+doses, test names and values, units, codes (UHID, SAC, ICD-10, GSTIN), dates, amounts and whatever staff typed print
+as they are. The amount in words on a bill stays in English.
+
+| Copy | Language |
+|---|---|
+| Printed or downloaded by staff (`GET …/document`, `GET …/pdf`) | English |
+| Downloaded from the portal (`GET /api/v1/portal/…/pdf`) | The patient's: the preferred language on the signed-in patient's record when it is English or Hindi, else the portal's (Accept-Language), else English |
+| Sent with a message (`INotificationDocumentSource`) | The preferred language on the document's patient's record, else English |
+| The prescription, wherever it goes | English with the Hindi after every label (ERX-04), and the Hindi directions under each medicine |
+
+Each document takes a `DocumentText` (`Platform/Documents/DocumentText.cs`) and reads its words from the patient text
+catalogue (`Platform/Localization/Resources/patient-texts-{en,hi}.json`, keys `doc.*`). The page's `lang` is the
+document's language (the bilingual prescription is `en`, its Hindi marked `lang="hi"`). A bill's legal title keeps its
+English in brackets ("कर बीजक (Tax invoice)").
+
+**Hindi font.** A document with any Devanagari in it (a Hindi document, the prescription, a name typed in Devanagari)
+carries Noto Sans Devanagari, regular and bold, as `@font-face` rules with `data:` URIs (about 135 KB; the page's
+content security policy already allows `font-src data:`), limited by `unicode-range` to the Devanagari blocks, so Latin
+text keeps Segoe UI. The family is `HC360 Devanagari`, listed after Segoe UI and before Nirmala UI in the house style.
+An English document carries no font. The browser (Edge for the PDF, the workstation's for a print) lays the text out
+with HarfBuzz, which forms conjuncts and places the vowel signs; the PDF embeds the font's subset.
+
+The font files are in `src/server/HyFib.HealthCare360.Platform/Documents/Fonts`: Noto Sans Devanagari 2.007 by the Noto
+Project Authors under the SIL Open Font License 1.1 (`OFL.txt` beside them; no Reserved Font Name). They were made
+from the variable font in `google/fonts` (`ofl/notosansdevanagari/NotoSansDevanagari[wdth,wght].ttf`) with fontTools:
+instanced at weight 400 and 700 and width 100 (names updated), cut down to U+0900–097F, U+1CD0–1CFF, U+200C–200D, U+20B9, U+25CC,
+U+A830–A839 and U+A8E0–A8FF with every OpenType layout feature kept, and saved as WOFF2. The OFL allows this; the
+font may be redistributed with HC360 and the licence must go with it.
+
+The Hindi text is listed for the hospital's review in [../requirements/hindi-review.md](../requirements/hindi-review.md).
+
 Tests: `PrintTemplateTests` (Platform.Tests and IntegrationTests), the template tests in `BillDocumentTests`,
 `PrescriptionDocumentTests` and `LabReportDocumentTests`; in the web apps, `packages/core/src/print/letterhead.test.ts`,
-`modules/print-templates/*.test.*` and the print tests of billing, pharmacy, canteen and EMR.
+`modules/print-templates/*.test.*` and the print tests of billing, pharmacy, canteen and EMR. The patient's language:
+`PatientLocalizationTests` (Platform.Tests: every text in every language, the font, the page numbers), the Hindi tests
+in `BillDocumentTests`, `PrescriptionDocumentTests` (bilingual labels), `DischargeSummaryDocumentTests`,
+`LabReportDocumentTests` and `RadiologyReportDocumentTests`.
