@@ -47,7 +47,8 @@ Global usings (SharedKernel, Platform.*, EF Core, ASP.NET Core, FluentValidation
   `FacilityId` is filled on insert from the signed-in user).
 * Types: `decimal` money (18,2), `DateTimeOffset` for instants (UTC), `DateOnly`/`TimeOnly` for calendar values,
   enums (stored as strings — add new values at the end), `List<string>`/`List<Guid>` map to PostgreSQL arrays.
-* Mark secrets/identifiers with `[SensitiveData]` (masked in audit diffs); encrypt national identifiers with
+* Mark secrets/identifiers with `[SensitiveData]` (masked in audit diffs; `byte[]` values are always recorded by length
+  and SHA-256); encrypt national identifiers with
   `IFieldProtector` (see `PatientRegistrationService`).
 * Put state transitions in entity methods returning `Result` (see `Visit.Cancel`, `QueueToken.Call`).
 

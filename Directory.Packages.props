@@ -48,6 +48,8 @@
     <PackageVersion Include="fo-dicom" Version="5.2.6" />
     <PackageVersion Include="ClosedXML" Version="0.105.1" />
     <PackageVersion Include="QRCoder" Version="1.8.0" />
+    <!-- Detached CMS/PKCS#7 signatures of prescriptions with the doctor's DSC (ERX-04): signed in HC360 Desktop, verified on the server. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <PackageVersion Include="Anthropic" Version="12.53.0" />
   </ItemGroup>
 

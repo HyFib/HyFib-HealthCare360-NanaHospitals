@@ -231,6 +231,11 @@ internal sealed class BridgeHost(
             case "speech.dictate":
                 return new { text = await DictationService.DictateAsync(String(parameters, "language") ?? "en-IN") };
 
+            case "dsc.signPrescription":
+                // Only the staff app reaches this (IsTrustedSource), and the doctor confirms in the Windows certificate
+                // dialog and with the token's PIN; the server checks the signature again before it keeps it.
+                return DscSigner.Sign(String(parameters, "content"));
+
             default:
                 throw new BridgeException("method_not_found", $"'{method}' is not supported by this version of HC360 Desktop.");
         }

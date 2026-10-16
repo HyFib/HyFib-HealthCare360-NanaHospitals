@@ -138,6 +138,24 @@ export interface ScannerSetupInfo {
   ports: string[];
 }
 
+/** The certificate that signed, as HC360 Desktop read it from the Windows store. */
+export interface SignerCertificate {
+  subject: string;
+  /** The subject's common name: the doctor's name on an Indian DSC. */
+  signerName: string;
+  serialNumber: string;
+  issuer: string;
+  thumbprint: string;
+  notBefore: string;
+  notAfter: string;
+}
+
+/** A detached CMS/PKCS#7 signature (DER, base64) made with the doctor's Digital Signature Certificate. */
+export interface DscSignature {
+  signature: string;
+  certificate: SignerCertificate;
+}
+
 /** A desktop bridge call that failed, with the desktop's reason code (`printer_not_found`, `method_not_found`…). */
 export class BridgeError extends Error {
   readonly code: string;
@@ -231,4 +249,10 @@ export const bridge = {
   openExternal: (url: string) => invoke<void>('shell.openExternal', { url }),
   notify: (title: string, body: string) => invoke<void>('notifications.show', { title, body }),
   dictate: (language = 'en-IN') => invoke<{ text: string }>('speech.dictate', { language }, 120_000),
+  /**
+   * Signs a prescription's canonical bytes (base64, from the server) with a DSC the doctor picks in the Windows
+   * certificate dialog; the token asks for its PIN, so the call waits up to five minutes. Fails with `cancelled`,
+   * `no_certificate`, `signing_failed` or `busy`; an HC360 Desktop older than this answers `method_not_found`.
+   */
+  signPrescription: (content: string) => invoke<DscSignature>('dsc.signPrescription', { content }, 300_000),
 };

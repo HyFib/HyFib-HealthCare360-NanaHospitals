@@ -14,7 +14,7 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 | EHR-04/06/07 documents, consent, break-the-glass | Patients module (consents: see *Consents (EHR-06)*); every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
 | EMR-01 worklist | `GET /emr/worklist` (queue, the doctor's appointments, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) and the ward round `GET /inpatient/rounds` (Inpatient module); see *The doctor's worklist (EMR-01)* |
 | EMR-02..07 | Encounters (SOAP, follow-up, referral, sign, amend), templates, vitals, diagnoses (ICD), orders, prescriptions, favourites; voice dictation into a SOAP draft with ICD suggestions (*Dictate with AI*, AI module) |
-| ERX-01..06 | Prescriptions, favourites/templates, safety checks, signing → `PrescriptionSigned`, the printed A5 prescription and its PDF with QR verification, refills/repeat, Schedule H1/X confirmation + register |
+| ERX-01..06 | Prescriptions, favourites/templates, safety checks, signing → `PrescriptionSigned`, the printed A5 prescription and its PDF with QR verification, refills/repeat, Schedule H1/X confirmation + register. ERX-04: bilingual (English/Hindi) directions, the prescriber's council registration number, the doctor's own DSC signature from HC360 Desktop (see *Signing with the doctor's DSC*) and the QR code that re-verifies it |
 | MRD-01..06 | ICD-10 / ICD-10-PCS catalogues + ranked search + WHO ICD-API lookup, coding at discharge, chart deficiencies, record requests, retention/archival, morbidity index |
 | MHC-01..05 | Packages (billable service items), bookings, itinerary, doctor summary, consolidated report, corporate batches |
 
@@ -118,10 +118,15 @@ for the audit trail but off the timeline. Operations completed in the theatre ar
 | POST | `/clinical/prescriptions/{id}/sign` | prescriptions.sign | `SignPrescriptionRequest{overrideReason?, acknowledgeWarnings, confirmControlledDrugs, version}` → `SignPrescriptionResult{prescription, alerts}`; 422 `prescription.safety_block` / `prescription.warnings_unacknowledged` / `prescription.controlled_confirmation_required` with `data` = alerts; 403 `prescription.not_prescriber` |
 | POST | `/clinical/prescriptions/{id}/cancel` | prescriptions.sign | `CancelPrescriptionRequest{reason}` |
 | POST | `/clinical/prescriptions/{id}/repeat` | prescriptions.write | → 201 new Draft |
-| POST | `/clinical/prescriptions/{id}/refill` | prescriptions.refill | `RefillPrescriptionRequest{overrideReason?, acknowledgeWarnings, confirmControlledDrugs}` → 201 `SignPrescriptionResult` (new signed prescription, `refillOfPrescriptionId`) |
+| POST | `/clinical/prescriptions/{id}/refill` | prescriptions.refill | `RefillPrescriptionRequest{overrideReason?, acknowledgeWarnings, confirmControlledDrugs}` → 201 `SignPrescriptionResult` (new signed prescription, `refillOfPrescriptionId`, in the original prescriber's name). Where the DSC is required its `finalCopyAvailable` is false: only that prescriber can make it printable, by signing it with their DSC (*Signing with the doctor's DSC*) |
 | GET | `/clinical/prescriptions/{id}/print` | emr.read | → `PrescriptionPrintModel` (letterhead, prescriber qualification + council registration, patient, diagnoses, known allergies, lines with English/Hindi directions, advice, follow-up, `verificationToken`, `verificationPath`, `verificationUrl`) — print `verificationUrl` as the QR code (see *QR verification links*) |
-| GET | `/clinical/prescriptions/{id}/document` | emr.read | → `PrintableDocumentDto{title, fileName, pageSize: "A5", landscape, html}`: the printed prescription for the staff app to print (see *Prescription and discharge summary documents*). Same rules as `/print`: signed only (422 `prescription.not_printable`), restricted-record guard, audit "Printed prescription {number}" |
+| GET | `/clinical/prescriptions/{id}/document` | emr.read | → `PrintableDocumentDto{title, fileName, pageSize: "A5", landscape, html}`: the printed prescription for the staff app to print (see *Prescription and discharge summary documents*). Same rules as `/print`: signed only (422 `prescription.not_printable`), where the hospital requires the doctor's DSC a valid DSC signature (422 `prescription.digital_signature_required`, `…_untrusted` or `…_invalid`, see *Facility setting*), restricted-record guard, audit "Printed prescription {number}" |
 | GET | `/clinical/prescriptions/{id}/pdf` | emr.read | → `application/pdf` attachment `prescription-{number}.pdf`, the same document. Same rules; audit "Downloaded prescription {number} as a PDF"; 503 `pdf.unavailable` when the server cannot make PDFs |
+| GET | `/clinical/prescriptions/{id}/signing-content` | prescriptions.sign | → `PrescriptionSigningContent{prescriptionId, prescriptionNumber, format, content (base64 canonical bytes), contentHash, patientName, patientUhid, itemCount}` for HC360 Desktop to sign. The prescribing doctor only (403 `prescription.not_prescriber`, also for another doctor who may sign prescriptions); the bytes name the patient, so the restricted-record guard applies and each fetch is in the PHI access audit ("Fetched prescription {number} to sign with a DSC"); 422 `prescription.signature_off` while the setting is off, `prescription.signature_not_set_up` while the DSC trust folder holds no root (before the doctor enters a PIN), `prescription.not_signed` for a draft or cancelled one; 409 `prescription.already_digitally_signed` |
+| POST | `/clinical/prescriptions/{id}/digital-signature` | prescriptions.sign | `AttachDigitalSignatureRequest{signature}` (DER detached CMS, base64, ≤ 64 KB) → `PrescriptionDigitalSignatureDto`. Same rules as `signing-content`, and 422 `prescription.signature_invalid` (the check failed; the detail says why), `prescription.signature_time` (signed more than 15 minutes before, or more than 5 minutes after, the server's clock) or `prescription.signature_untrusted` (the certificate does not chain to a root in the DSC trust folder: not a DSC, whatever the policy), `prescription.signer_mismatch` (the certificate is issued to someone other than the prescribing doctor: see *DSC trust folder*) or `prescription.certificate_unsupported` (a name longer than 200 characters, a subject or issuer longer than 1,000, or a serial or thumbprint longer than 128: HC360 cannot keep it). Audited as `prescription.digitally_signed`. Queues the "prescription shared" message if the patient was not told at signing (*Facility setting*) |
+| GET | `/clinical/prescriptions/{id}/digital-signature` | emr.read | → `PrescriptionDigitalSignatureDto{state: NotSigned|Valid|Invalid|Untrusted, policy: Off|Optional|Required, signedAt, signerName, signerSubject, certificateSerialNumber, certificateIssuer, certificateThumbprint, contentHash, contentMatchesRecord, chainStatus, chainTrusted, message, finalCopyAvailable}`, re-checked on every read. `chainStatus` is "Trusted" or why the chain does not hold, built against the trust folder as it is now; when the signature itself does not check out the chain is not built and it reads "Not checked: the signature does not check out", never the "Trusted" stored at signing. `finalCopyAvailable`: the DSC rules let the prescription be printed, downloaded and shared (always unless the policy is `Required`, and then only with a Valid signature). `PrescriptionDto` carries the same `finalCopyAvailable` |
+| GET | `/clinical/prescriptions/{id}/signature.p7s` | emr.read | → `application/pkcs7-signature` attachment `prescription-{number}.p7s`; 404 until signed with a DSC |
+| GET | `/clinical/prescriptions/{id}/signed-content` | emr.read | → `application/json` attachment `prescription-{number}.json`: the exact bytes the DSC signed. They name the patient, so each download is in the PHI access audit ("Downloaded the signed content of prescription {number}") |
 | GET / POST / PUT | `/clinical/drug-interactions[/{id}]` | emr.read / templates.manage | `SaveDrugInteractionRequest{drugA, drugB, severity, effect, management, isActive, version?}` |
 | GET / POST / PUT | `/clinical/dose-limits[/{id}]` | emr.read / templates.manage | `SaveDoseLimitRequest{genericName, maxDailyDoseMg, route, notes, isActive, version?}` |
 | GET | `/clinical/controlled-drug-register?from&to&page` | prescriptions.sign or mrd.records | → `PagedResult<ControlledDrugRegisterDto>` |
@@ -133,7 +138,7 @@ for the audit trail but off the timeline. Operations completed in the theatre ar
 | GET | `/clinical/discharge-summaries/{id}/document` | emr.read | → `PrintableDocumentDto` (`pageSize: "A4"`): the printed discharge summary. Same rules as `/print`: drafts print too, marked "DRAFT — not signed"; restricted-record guard; audit "Printed discharge summary" |
 | GET | `/clinical/discharge-summaries/{id}/pdf` | emr.read | → `application/pdf` attachment `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`, the same document. Same rules; audit "Downloaded discharge summary as a PDF"; 503 `pdf.unavailable` |
 
-Public (anonymous, rate limit policy `public`): `GET /public/prescriptions/verify/{token}` → `PrescriptionVerification{found, status: Valid|Cancelled, doctor, qualification, registrationNumber, facility, issuedOn, itemCount}` — no patient data.
+Public (anonymous, rate limit policy `public`): `GET /public/prescriptions/verify/{token}` → `PrescriptionVerification{found, status: Valid|Cancelled, doctor, qualification, registrationNumber, facility, issuedOn, itemCount, prescriptionNumber, digitalSignature?: {state: Valid|Invalid|Untrusted, signerName, certificateSerialNumber, certificateIssuer, signedAt, contentHash, chainTrusted, message}, signaturePath}` — no patient data; the DSC signature, and its chain to the DSC trust folder's roots, are verified again for each answer. `GET /public/prescriptions/verify/{token}/signature.p7s` → the .p7s (404 without a DSC signature).
 
 #### QR verification links
 
@@ -153,7 +158,7 @@ messages are made from the same HTML, so every copy is the same.
 | | Prescription | Discharge summary |
 |---|---|---|
 | Page | A5, or A4 when the **Prescriptions** print template says so | A4 |
-| Content | Letterhead with the facility logo and the prescriber's block on the right (name, qualification, specialty, council registration); patient strip (patient, UHID, age / sex, date signed); known allergies (in red, or "none recorded"); diagnosis; ℞ and one row per medicine: name, strength, Schedule H1/X tag, generic and form, dose with English directions and the route unless oral, the Hindi line under it (`lang="hi"`), instructions, duration ("Once" for STAT, whole weeks from 14 days), quantity; advice; follow-up; refills allowed; the QR code with the prescription number; "Digitally signed on …" and the prescriber's signature image above the name | Letterhead with the facility logo and the consultant's block; "Signed …" (and "amended … (reason)"); patient strip with the admission and discharge dates; diagnosis with ICD-10 codes, presenting complaints, course in hospital, procedures, investigations, condition at discharge, medicines on discharge, advice, follow-up; the emergency line; the consultant's signature image above the name |
+| Content | Letterhead with the facility logo and the prescriber's block on the right (name, qualification, specialty, council registration); patient strip (patient, UHID, age / sex, date signed); known allergies (in red, or "none recorded"); diagnosis; ℞ and one row per medicine: name, strength, Schedule H1/X tag, generic and form, dose with English directions and the route unless oral, the Hindi line under it (`lang="hi"`), instructions, duration ("Once" for STAT, whole weeks from 14 days), quantity; advice; follow-up; refills allowed; the QR code with the prescription number; "Digitally signed by {certificate name} ({registration no.}) — certificate {serial}, {time}" and "SHA-256 {hash of the signed bytes}" while the doctor's DSC signature checks out (re-checked for every copy: Valid), with the registration number and the prescriber's name, qualification and council as the doctor signed them (from the signed bytes, not the practitioner master as it is today); else, and for an Invalid or Untrusted signature, "Signed electronically on …" (signing in HC360 is not a digital signature under the IT Act); the prescriber's signature image above the name | Letterhead with the facility logo and the consultant's block; "Signed …" (and "amended … (reason)"); patient strip with the admission and discharge dates; diagnosis with ICD-10 codes, presenting complaints, course in hospital, procedures, investigations, condition at discharge, medicines on discharge, advice, follow-up; the emergency line; the consultant's signature image above the name |
 | Footer on every page | "Asha Rao · UHID NH-000123 · Prescription NHRX260000123", and "Page X of Y" | "Asha Rao · UHID NH-000123 · Discharge summary · Discharged 25 Sep 2026", and "Page X of Y" |
 | Language (PP-06) | English with the Hindi after every label ("Medicine / दवा"), and each duration in Hindi under it, whoever reads it (ERX-04); medicine names, doses and codes as written | The headings and labels in the patient's language (English for staff; on the portal and in messages the patient's, see print-templates.md); the doctor's text as written |
 | File name | `prescription-{number}.pdf` | `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`: the discharge date in IST, else the signing or admission date |
@@ -168,6 +173,138 @@ messages are made from the same HTML, so every copy is the same.
   stationery; the logo can be left off; a closing note ends the document. The consultation summary and the operation
   note, which the staff app prints, follow **Clinical notes** too. See `docs/modules/print-templates.md`.
 * Every value is HTML-encoded, and the doctor's text keeps its line breaks.
+
+#### Signing with the doctor's DSC (ERX-04)
+
+Under the IT Act 2000 and the CCA's rules a prescription is digitally signed only with the doctor's own Digital
+Signature Certificate (DSC). The doctor first signs the prescription in HC360 as before (safety checks, the pharmacy
+queue); then, in HC360 Desktop, **Sign with DSC** on the prescription:
+
+1. The staff app fetches `signing-content`: the prescription's canonical bytes (below), made by the server.
+2. It calls the bridge method `dsc.signPrescription` (only from the staff app's own pages). HC360 Desktop reads the
+   prescription out of the bytes itself, lists the current user's Windows "My" store and keeps the certificates that
+   can sign now: a private key, valid today, key usage digitalSignature or nonRepudiation, not a CA's. A DSC on a USB token
+   (ePass, Proxkey, SafeNet…) is there through its vendor's CSP/KSP, so no vendor code is involved. The doctor picks
+   one in the Windows certificate dialog, which shows the prescription number, patient, doctor and medicines, and the
+   token asks for its PIN.
+3. HC360 Desktop returns a **detached CMS/PKCS#7 SignedData** (RFC 5652): SHA-256, the signing time as a signed
+   attribute, the signer's certificate and the CA certificates above it that the computer has (the token's software
+   installs them; never the root), PKCS#1 v1.5 for RSA keys
+   (`System.Security.Cryptography.Pkcs`, MIT; `WindowsInterop/DigitalSignatures/DetachedCms.cs`, shared with the
+   server).
+4. The server rebuilds the bytes itself and checks the signature (`DetachedCms.Verify`): exactly one signer, SHA-256 or
+   stronger, a signature that matches the bytes, a signing time within 15 minutes before and 5 minutes after the
+   server's clock, a person's certificate (not a CA's) valid at that time whose key usage allows signing, and one that
+   chains to a root in the DSC trust folder (below). It keeps the signature, the bytes, their SHA-256 and the
+   certificate's name, subject, serial, issuer and thumbprint on the prescription (`clinical.prescriptions`:
+   `digital_signature`, `signed_content`, `signed_content_hash`, `digitally_signed_at`, `signer_*`). A certificate whose
+   details do not fit those columns is refused (`prescription.certificate_unsupported`), never cut short. The data
+   audit records the two byte columns by their length and SHA-256, not their content, which names the patient.
+
+**DSC trust folder.** Under the IT Act a DSC is issued by a Certifying Authority the CCA licensed, under a CCA India
+root. A signature is accepted only from a certificate that chains, at the signing time, to a root certificate in the
+server's DSC trust folder: `HealthCare360:Clinical:DscTrustDirectory` in the server's configuration (a relative path
+from the data folder), by default `certs\dsc-trust` in the data folder (`DscTrustStore`, `DscTrustAnchors`). The chain
+is built with custom root trust: never the operating system's roots, which hold every public web CA and, on a domain,
+the hospital's enterprise CA (whose user certificates may sign), and never a root the signature carries. **IT installs**
+the CCA India root certificates there (`.cer`, `.crt`, `.der` or `.pem`), downloaded from cca.gov.in with their
+thumbprints checked against the ones the CCA publishes; if signatures arrive without their CA's certificate, the
+licensed CAs' certificates can go there too (they are used to build chains, never trusted on their own). HC360 does
+not ship the roots. The folder is read again when its files change. It is in neither the database nor the backups, so
+a reinstall, a restore on new hardware or a failover to the standby needs the roots copied again (DEPLOYMENT.md,
+sections 4, 8 and 9). While DSC signing is on (`clinical.prescriptions.signature` not off, at any facility) System
+health warns when the folder holds no root (`prescriptions.dsc_trust_empty`, critical where the DSC is required) or
+files that are not certificates (`prescriptions.dsc_trust_unreadable`); Clinical adds these through Platform's
+`IHealthWarningSource` (`DscTrustHealthWarnings`). While it holds no root, DSC signing is refused
+before the doctor enters a PIN (`prescription.signature_not_set_up`). The check is offline (no revocation lists, no
+downloads; the hospital LAN has no route to the CAs), so a revoked DSC is not detected; the QR page says so. A
+self-signed certificate (`New-SelfSignedCertificate`), a domain user certificate or any other certificate that may sign
+is refused (`prescription.signature_untrusted`), whatever the setting.
+
+**The doctor's own DSC.** The printed copy pairs the certificate's name with the prescriber's registration number, so
+the certificate must be the prescribing doctor's: its common name, the name an Indian DSC is issued in (as on the
+holder's PAN or Aadhaar), must contain every word of the doctor's name in HC360 (`DscSignerName`). Case, spacing,
+punctuation, titles ("Dr", "Prof", "Shri", "Smt"…) and the order of the words do not count, and the certificate may
+carry more words (a middle name): "MEERA RAJESH SHAH" signs for "Dr. Meera Shah". A colleague's DSC, or an
+organisation's Class 3 certificate on a shared workstation ("NANA HOSPITALS PRIVATE LIMITED"), is refused with
+`prescription.signer_mismatch`, which names both. An initial in HC360 ("Dr. M. Shah") does not match a full name on the
+DSC: the administrator writes the doctor's name in full under Hospital setup › Doctors and clinical staff. Only the
+prescribing doctor's own account may sign (403 `prescription.not_prescriber`); the staff app offers **Sign with DSC**
+to them alone, and tells anyone else who must sign.
+
+**Immutable once signed.** A signed prescription never changes (its medicines, advice and refills are fixed at
+signing), so the signature stays valid; a second signature is refused (409). A changed prescription is a new one —
+*Repeat* makes a draft to sign, and DSC-sign, again. Cancelling is still possible: the verification page then says
+"cancelled". Every check (`GET …/digital-signature`, the public page) verifies the signature again over the stored
+bytes, compares their SHA-256, and rebuilds the bytes from the stored prescription (with the patient and doctor as
+signed), so a change made in the database outside HC360 shows as **Invalid** ("The prescription was changed after it
+was signed. Do not dispense it."). Merging the patient's duplicate record is not such a change: the merge moves the
+prescription to the surviving record, and the check follows the merged record (`patients.merged_into_patient_id`, through
+later merges too) from the record the bytes name to the one the prescription is on now; a prescription moved to any
+other patient is Invalid. A signature whose certificate no longer chains to a root in the trust folder (a root removed
+since) is **Untrusted**: the prescription is as signed, but it is not presented as a DSC signature: the printed copy, the
+PDF and the copy sent to the patient say "Signed electronically", as for an Invalid one.
+
+**Canonical bytes** (`Domain/PrescriptionCanonicalForm.cs`, format `hc360.prescription.v1`): RFC 8785 (JCS) JSON
+restricted to strings, integers, booleans and null — UTF-8 without BOM, no whitespace, members sorted by name, strings
+escaped only where JSON requires (`\" \\ \b \f \n \r \t`, other control characters `\u00xx`) and otherwise as they are,
+no Unicode normalisation; quantities as decimal strings without trailing zeros, times as UTC to the second, ids as
+lower-case GUIDs. Content: `format`; `facility` {id, name}; `patient` {id, uhid, name}; `prescriber` {id, name,
+qualification, registrationNumber, registrationCouncil}; `prescription` {id, number, encounterId, visitId, admissionId,
+isInpatient, signedAt, refillsAllowed, refillOfPrescriptionId, notes, advice, verificationToken, items[{sequence,
+drugName, genericName, strength, dosageForm, route, dose, frequency, customFrequency, durationDays, quantity,
+instructions, isControlledDrug, controlledSchedule}]}. Why this and not the PDF: the PDF is a rendering of these
+values that changes with the print template, logo and renderer, and it carries the signature line and QR code
+itself, so it cannot be signed before it exists. The encounter's diagnoses and follow-up are left out because they
+belong to the encounter and may change later; the patient (record id, UHID, name) and the doctor are kept as signed.
+
+**Facility setting** `clinical.prescriptions.signature` (JSON string; per facility, else hospital-wide):
+
+| Value | Effect |
+|---|---|
+| `"off"` (default; anything unrecognised) | Nothing changes: no DSC signing, no badge or section in the staff app |
+| `"optional"` | Doctors may sign with their DSC; prescriptions without one print and are shared as before |
+| `"required"` | A prescription is issued (printed, downloaded, shared) only with a **valid** DSC signature (`PrescriptionFinalCopies`). `/print`, `/document`, `/pdf` and the portal's PDF are refused with 422 `prescription.digital_signature_required` until the prescribing doctor signs it with their DSC, `prescription.digital_signature_untrusted` while its certificate no longer chains to a root in the trust folder (a DSC HC360 cannot confirm counts as none), and `prescription.digital_signature_invalid` when the signature does not check out (the record was changed after signing). The portal shows the prescription without its print, PDF or QR code and says, in English and Hindi, that the doctor has not digitally signed it yet; its 422 carries a few words for the patient, and the portal words each code in the patient's language. The "prescription shared" message (WhatsApp, and the SMS after a video consultation) is not sent at signing but when the DSC signature is attached. The pharmacy queue is not held back |
+
+The patient is told once per prescription (`patient_notified_at`, raised as `PrescriptionSharedWithPatient`): at
+signing, unless the DSC was required then, else when the DSC signature is attached — whatever the setting is by then. A
+prescription the patient was told about at signing is not announced again when the doctor later adds a DSC. The PDF
+with that message is made when the message goes out, from the signature as it checks out then; if the DSC rules no
+longer let the prescription be issued (the setting or the trust folder changed in between), the message goes without
+its PDF, or, on a WhatsApp template with a document header, is dropped (the patient finds the prescription on the
+portal).
+
+**Refills where the DSC is required.** A refill (ERX-05) is a new prescription in the original prescriber's name, so it
+needs that doctor's DSC before it can be printed or given to the patient; the pharmacy queue is not held back. The staff
+app's refill dialog then reads "Issue refill" (not "… and print") and does not print: the prescriber is taken to the
+refill to sign it with their DSC; a pharmacist or a colleague is told which doctor must sign it. After a doctor signs
+a prescription in HC360, the confirmation offers **Sign with DSC…** instead of Print and PDF, which would be refused.
+
+In the staff app the prescription shows a **DSC** badge ("DSC signed", "DSC signature invalid", "DSC issuer not
+verified", "DSC signature required", "Not DSC signed") and a *Digital signature* section with the state, signer,
+certificate serial, issuer, thumbprint, SHA-256 and chain, the .p7s and signed-data downloads, and **Sign with DSC**
+for the prescribing doctor alone — in HC360 Desktop only (a browser cannot reach the token; it says so; HC360 Desktop
+saves the .p7s like other HC360 documents). Anyone else who may sign prescriptions is told that only the prescriber can
+sign it with their DSC. Where the DSC is required, Print and PDF are offered only once the prescription has a valid DSC
+signature, and a signature that no longer checks out says the prescription is not printed or shared until it is
+resolved. The QR page shows the signature as re-checked, whether the certificate chains to the CCA
+India root (it says "the signature checks out" only then), the hash, that revocation is not checked, and a .p7s
+download, never the patient or the medicines.
+
+**Checking a signature with OpenSSL alone.** Download the .p7s (from the QR page or the chart) and the signed data
+(`signed-content`, from the chart: it names the patient), then:
+
+```
+openssl cms -verify -binary -inform DER -in prescription-NHRX260000123.p7s \
+  -content prescription-NHRX260000123.json -noverify -out /dev/null
+# CMS Verification successful
+sha256sum prescription-NHRX260000123.json   # the hash printed on the prescription and shown on the QR page
+```
+
+`-noverify` skips the certificate chain; to check it too, pass the CCA India root instead: `-CAfile cca-india-root.pem
+-purpose any` (the .p7s carries the licensed CA's certificate when the doctor's computer had it; otherwise add that with
+`-certfile`). `PrescriptionSignatureOpensslTests` runs exactly these commands
+against a signature made by HC360's code wherever `openssl` is installed.
 
 #### No known allergies
 
@@ -328,8 +465,8 @@ bill or issues a credit note, then the booking can be cancelled). The component 
 | Method | Path | Response |
 |---|---|---|
 | GET | `/portal/prescriptions?patientId&page` | `PagedResult<PortalPrescriptionListItem>` (signed/cancelled only) |
-| GET | `/portal/prescriptions/{id}` | `PortalPrescriptionDetail` (bilingual directions, doctor registration, QR `verificationToken` and `verificationUrl`, see *QR verification links*) |
-| GET | `/portal/prescriptions/{id}/pdf` | `application/pdf` attachment `prescription-{number}.pdf`: the printed prescription. Signed only: 404 for a draft, 422 `prescription.not_printable` for a cancelled one; audit "Downloaded prescription {number} as a PDF (patient portal)"; 503 `pdf.unavailable` |
+| GET | `/portal/prescriptions/{id}` | `PortalPrescriptionDetail` (bilingual directions, doctor registration, QR `verificationToken` and `verificationUrl`, see *QR verification links*, `finalCopyAvailable`, `digitalSignatureState`). Where the hospital requires the doctor's DSC and the prescription has no valid one, `finalCopyAvailable` is false and the token and URL are null: the portal offers no print, PDF or QR code and says why (`digitalSignatureState` `NotSigned`: the doctor has not digitally signed it yet) |
+| GET | `/portal/prescriptions/{id}/pdf` | `application/pdf` attachment `prescription-{number}.pdf`: the printed prescription. Signed only: 404 for a draft, 422 `prescription.not_printable` for a cancelled one, and where the hospital requires the doctor's DSC and it has no valid one, 422 `prescription.digital_signature_required` ("Your doctor has not digitally signed this prescription yet."), `…_untrusted` or `…_invalid` ("This prescription cannot be issued right now. Please contact the hospital."); the portal words each by its code in the patient's language; audit "Downloaded prescription {number} as a PDF (patient portal)"; 503 `pdf.unavailable` |
 | GET | `/portal/health-records?patientId` | `PortalHealthRecord{allergies, problems, recentEncounters (no free-text notes), immunizations, dischargeSummaries}` |
 | GET | `/portal/discharge-summaries/{id}` | `DischargeSummaryDto` (signed only) |
 | GET | `/portal/discharge-summaries/{id}/pdf` | `application/pdf` attachment `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`: the printed discharge summary (signed or amended only, 404 for a draft); audit "Downloaded discharge summary as a PDF (patient portal)"; 503 `pdf.unavailable` |
@@ -422,6 +559,7 @@ Raised:
 | `ServiceOrderCancelled` (Platform) | line or order cancelled, checkup cancelled / no-show |
 | `PrescriptionSigned` (Platform) | prescription signed or refill issued (lines with snapshot and quantity) |
 | `PrescriptionCancelled` (Platform) | signed prescription cancelled |
+| `PrescriptionSharedWithPatient` (Platform) | an out-patient was told their prescription is ready (the "prescription shared" message): at signing, or, where the DSC was required then, once it was signed with the DSC; once per prescription (`patient_notified_at`). Virtual Care adds its SMS after a video consultation |
 | `EncounterSigned`, `EncounterAmended` (Clinical.Domain) | encounter signed / amended (follow-up and referral data for CRM, doctor fees). Engagement starts the follow-up and chronic-review calls from a signed note, and keeps the follow-up in step with an amendment |
 | `DischargeSummarySigned` (Clinical.Domain) | discharge summary first signed |
 | `HealthCheckupCompleted` (Clinical.Domain) | checkup completed; Engagement schedules the next check-up's recall |
@@ -431,7 +569,7 @@ Handled (same transaction):
 
 | Event | Action |
 |---|---|
-| `PatientsMerged` (Patients) | re-points every clinical row (all facilities, including soft-deleted) to the surviving patient; keeps at most one "no known allergies" statement, and none when an active allergy exists |
+| `PatientsMerged` (Patients) | re-points every clinical row (all facilities, including soft-deleted) to the surviving patient; keeps at most one "no known allergies" statement, and none when an active allergy exists. A DSC-signed prescription stays Valid: its signed bytes keep the duplicate's record, which the check follows to the survivor (*Signing with the doctor's DSC*) |
 | `PatientAdmitted` | opens the MRD chart of the admission |
 | `PatientDischarged` | sets chart discharge time and due date (+7 days), queues ICD coding (Pending), stamps the discharge summary |
 | `DiagnosticReportReleased` | completes the order line and adds/re-opens a "result to review" for the ordering doctor |
@@ -453,13 +591,14 @@ Real-time (ids only): `clinical.order.placed` / `clinical.order.changed` (facili
 
 ## Notification templates
 
-Uses the platform template `prescription.shared` (WhatsApp) for OP prescriptions after signing. No new templates.
+Uses the platform template `prescription.shared` (WhatsApp) for OP prescriptions after signing (where the hospital
+requires the doctor's DSC, once signed with it; once per prescription). No new templates.
 
 Documents that messages can carry (`INotificationDocumentSource`, made when the message is sent):
 
 | Kind | Document | Used by |
 |---|---|---|
-| `clinical.prescription` | The printed prescription's PDF; none once the prescription is cancelled | `prescription.shared`: WhatsApp sends it in the template's document header when the template is marked `whatsAppDocumentHeader` |
+| `clinical.prescription` | The printed prescription's PDF, with the DSC signature as it checks out when the message goes out; none once the prescription is cancelled, nor while the DSC rules do not let it be issued (the message then goes without it, or is dropped on a template with a document header) | `prescription.shared`: WhatsApp sends it in the template's document header when the template is marked `whatsAppDocumentHeader` |
 | `clinical.discharge-summary` | The signed (or amended) discharge summary's PDF; none for a draft | Nothing in this module queues a message with it yet |
 
 ## Seed data (`ClinicalSeeder`, Order 300, idempotent)

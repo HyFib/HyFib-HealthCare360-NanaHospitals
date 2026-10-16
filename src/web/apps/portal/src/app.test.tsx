@@ -16,6 +16,8 @@ import { createPortalRouter } from './router';
 const TOKEN = 'Abcdefghijklmnop_123';
 const SESSION_ID = '0199b0c4-4b1c-7c3e-9d2f-2a1b3c4d5e6f';
 const RX_TOKEN = 'Rx_token-0123456789ab';
+const DSC_TOKEN = 'Dsc_token-0123456789ab';
+const DSC_HASH = '2eacf6b6cd60daa5cf8e87fa9a5709f8f7d3316e3921e7f6b4783c60d027569d';
 const LAB_CODE = 'ABCDEFGHJKLMNPQRSTUV';
 
 const FORM = {
@@ -44,6 +46,12 @@ let signInRefused = false;
 
 /** Set by a test: a sign-in code is sent, so the page asks for it. */
 let codeSent = false;
+
+/** Set by a test: the server's re-check finds the DSC-signed prescription changed. */
+let dscTampered = false;
+
+/** Set by a test: the certificate does not chain to a CCA India root installed on the server. */
+let dscUntrusted = false;
 
 /** The first page of a run also loads its lazily split route code. */
 const SLOW = { timeout: 8000 };
@@ -79,6 +87,30 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
   }
   if (url.includes(`/api/v1/public/feedback/invitations/${TOKEN}`)) {
     return method === 'GET' ? json(FORM) : json({ thankYou: 'Thank you for your feedback.', complaintNumber: null });
+  }
+  if (url.includes(`/api/v1/public/prescriptions/verify/${DSC_TOKEN}`)) {
+    return json({
+      found: true,
+      status: 'Valid',
+      doctor: 'Dr. Meera Iyer',
+      qualification: 'MBBS, MD',
+      registrationNumber: 'KMC 12345',
+      facility: 'Nana Hospitals',
+      issuedOn: '2026-09-20',
+      itemCount: 3,
+      prescriptionNumber: 'NHRX260000123',
+      digitalSignature: {
+        state: dscTampered ? 'Invalid' : dscUntrusted ? 'Untrusted' : 'Valid',
+        signerName: 'Meera Iyer',
+        certificateSerialNumber: '18B3D635546B372D',
+        certificateIssuer: 'CN=e-Mudhra Sub CA for Class 3 Individual 2022',
+        signedAt: '2026-09-20T05:30:00Z',
+        contentHash: DSC_HASH,
+        chainTrusted: !dscUntrusted,
+        message: dscTampered ? 'The prescription was changed after it was signed.' : 'The signature is valid.',
+      },
+      signaturePath: `/api/v1/public/prescriptions/verify/${DSC_TOKEN}/signature.p7s`,
+    });
   }
   if (url.includes(`/api/v1/public/prescriptions/verify/${RX_TOKEN}`)) {
     return json({
@@ -220,6 +252,45 @@ describe('printed QR codes', () => {
     expect(await screen.findByText('Genuine document', {}, SLOW)).toBeInTheDocument();
     expect(screen.getByText('Dr. Meera Iyer')).toBeInTheDocument();
     expect(screen.getByText('KMC 12345')).toBeInTheDocument();
+  });
+
+  it('shows the doctor DSC signature, its certificate and hash, and offers the .p7s', async () => {
+    dscTampered = false;
+    dscUntrusted = false;
+    openAt(`/portal/verify/prescription/${DSC_TOKEN}`);
+    expect(await screen.findByText('Genuine document', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText('NHRX260000123')).toBeInTheDocument();
+    expect(screen.getByText('Digital signature')).toBeInTheDocument();
+    expect(screen.getByText(/from a licensed Certifying Authority. The signature checks out/)).toBeInTheDocument();
+    expect(screen.getByText('Licensed (chains to the CCA India root)')).toBeInTheDocument();
+    expect(
+      screen.getByText(/does not ask the Certifying Authority whether the certificate was revoked/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('18B3D635546B372D')).toBeInTheDocument();
+    expect(screen.getByText(DSC_HASH)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download the signature (.p7s)' })).toHaveAttribute(
+      'href',
+      `/api/v1/public/prescriptions/verify/${DSC_TOKEN}/signature.p7s`,
+    );
+  });
+
+  it('does not present a certificate the server could not tie to a licensed CA as a DSC', async () => {
+    dscTampered = false;
+    dscUntrusted = true;
+    openAt(`/portal/verify/prescription/${DSC_TOKEN}`);
+    expect(
+      await screen.findByText(/could not confirm that the certificate is a Digital Signature Certificate/, {}, SLOW),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Not confirmed')).toBeInTheDocument();
+    expect(screen.queryByText(/The signature checks out/)).not.toBeInTheDocument();
+  });
+
+  it('warns not to dispense when the DSC signature no longer checks out', async () => {
+    dscTampered = true;
+    dscUntrusted = false;
+    openAt(`/portal/verify/prescription/${DSC_TOKEN}`);
+    expect(await screen.findAllByText(/Do not dispense from this prescription/, {}, SLOW)).not.toHaveLength(0);
+    expect(screen.queryByText('Genuine document')).not.toBeInTheDocument();
   });
 
   it('says "not found" for an unknown report code', async () => {

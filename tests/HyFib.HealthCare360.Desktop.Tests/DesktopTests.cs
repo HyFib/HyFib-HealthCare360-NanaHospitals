@@ -81,6 +81,22 @@ public sealed class BridgeSourceTests
         BridgeHost.IsTrustedSource(source, Server).ShouldBeFalse();
 }
 
+/// <summary>
+/// <c>dsc.signPrescription</c> refuses anything but a prescription's canonical bytes before it opens the certificate
+/// store or shows a dialog. The parsing, the certificate filter and the signature itself are tested on every OS in the
+/// Clinical module's tests (PrescriptionDigitalSignatureTests); the Windows dialog and a real token are checked by hand.
+/// </summary>
+public sealed class DscSignerTests
+{
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not base64!")]
+    [InlineData("e30=")] // {}
+    [InlineData("eyJmb3JtYXQiOiJvdGhlciJ9")] // {"format":"other"}
+    public void Anything_but_a_prescription_is_refused_before_a_dialog_opens(string? content) =>
+        Should.Throw<BridgeException>(() => DscSigner.Sign(content)).Code.ShouldBe("bad_request");
+}
+
 public sealed class DownloadPolicyTests
 {
     private static readonly Uri Server = new("https://hc360-srv:7360/");
@@ -92,6 +108,8 @@ public sealed class DownloadPolicyTests
     [InlineData("data:text/csv;charset=utf-8,a,b", @"C:\Users\nurse\Downloads\morbidity.csv")]
     [InlineData("https://hc360-srv:7360/api/v1/system/ca-certificate", @"C:\Users\it\Downloads\hc360-hospital-ca.crt")]
     [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000002", @"C:\Users\tech\Downloads\ecg-0412.scp")]
+    [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000003", @"C:\Users\doctor\Downloads\prescription-NHRX260000123.p7s")]
+    [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000004", @"C:\Users\doctor\Downloads\prescription-NHRX260000123.json")]
     public void Documents_from_the_hospital_server_are_saved(string source, string path) =>
         DownloadPolicy.IsAllowed(source, path, Server).ShouldBeTrue();
 

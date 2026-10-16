@@ -23,7 +23,8 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
   fallback (TEL-05). `TelehealthMessage` stores the in-call chat.
 * **Visit for EMR (TEL-04)** – `POST …/start` creates a `Telehealth` visit through `VisitService` (no queue token) and
   moves the appointment to `InConsultation`; Clinical writes notes/prescriptions against that visit. When a
-  prescription is signed for a teleconsultation visit, the patient is told it is on the portal. The call screen's
+  prescription is signed for a teleconsultation visit, the patient is told it is on the portal (where the hospital
+  requires the doctor's DSC, once it is signed with it: Clinical ERX-04). The call screen's
   "Open chart" and "Notes and prescription" open in a new browser tab, or in HC360 Desktop in a second window, so the
   call keeps running while the doctor writes.
 * Sessions nobody started become `Missed` one hour after their scheduled end (job).
@@ -152,7 +153,7 @@ number (first name + UHID only), queued in the ingestion transaction; in-app not
 | `AppointmentBooked` (`IsTelehealth`) | creates the session and queues `telehealth.link` in the booking's transaction (idempotent per appointment) |
 | `AppointmentCancelled` | cancels the not-yet-started session, invalidates the link, tells waiting clients |
 | `VisitCreated` (Patients) | links the visit to the appointment's session |
-| `PrescriptionSigned` (Clinical) | for a teleconsultation visit: `prescription.shared` to the patient by SMS (Clinical sends the WhatsApp message for every OP prescription) |
+| `PrescriptionSharedWithPatient` (Clinical) | for a teleconsultation visit: `prescription.shared` to the patient by SMS, at the moment Clinical sends the WhatsApp message it sends for every OP prescription — at signing, or, where the hospital requires the doctor's DSC, once signed with it; once per prescription |
 
 No events are raised. Real time: `telehealth.changed` on `Topics.Facility(facilityId)` (`{ id, status, practitionerId }`).
 

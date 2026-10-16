@@ -95,6 +95,8 @@ function PrescriptionDetail({ rx, back }: { rx: PortalPrescriptionDetail; back: 
   const qrBox = useRef<HTMLDivElement>(null);
   const [refillOpen, setRefillOpen] = useState(false);
   const status = RX_STATUS[rx.status];
+  // Where the hospital requires the doctor's DSC, a prescription without one is not issued yet: no print, PDF or QR code.
+  const awaitingDsc = rx.status === 'Signed' && rx.finalCopyAvailable === false;
   const refillable =
     refills.data?.prescriptions.find((item) => item.prescriptionNumber === rx.prescriptionNumber) ?? null;
   const verifyUrl = verificationPageUrl(
@@ -110,23 +112,33 @@ function PrescriptionDetail({ rx, back }: { rx: PortalPrescriptionDetail; back: 
       subtitle={[rx.doctor, f.date(rx.signedAt)].filter(Boolean).join(' · ')}
       back={back}
       actions={
-        <DocumentActions
-          build={() =>
-            prescriptionDocument(rx, {
-              t,
-              f,
-              language,
-              printedAt: new Date().toISOString(),
-              patient: profile,
-              qrSvg: qrBox.current?.innerHTML ?? null,
-              verifyUrl,
-            })
-          }
-          pdf={prescriptionPdfPath(rx.id)}
-        />
+        awaitingDsc ? undefined : (
+          <DocumentActions
+            build={() =>
+              prescriptionDocument(rx, {
+                t,
+                f,
+                language,
+                printedAt: new Date().toISOString(),
+                patient: profile,
+                qrSvg: qrBox.current?.innerHTML ?? null,
+                verifyUrl,
+              })
+            }
+            pdf={prescriptionPdfPath(rx.id)}
+          />
+        )
       }
     >
       {rx.status === 'Cancelled' && <Notice intent="error">{t('rx.cancelledNote')}</Notice>}
+      {awaitingDsc &&
+        (rx.digitalSignatureState === 'NotSigned' || rx.digitalSignatureState === undefined ? (
+          <Notice intent="info" title={t('rx.dsc.pending.title')}>
+            {t('rx.dsc.pending.body')}
+          </Notice>
+        ) : (
+          <Notice intent="warning">{t('rx.dsc.unavailable.body')}</Notice>
+        ))}
 
       <ReportCard>
         <div>
@@ -180,7 +192,7 @@ function PrescriptionDetail({ rx, back }: { rx: PortalPrescriptionDetail; back: 
         </ReportCard>
       )}
 
-      {rx.status === 'Signed' && verifyUrl && rx.verificationToken && (
+      {rx.status === 'Signed' && !awaitingDsc && verifyUrl && rx.verificationToken && (
         <ReportCard title={t('rx.qr.title')}>
           <div className={styles.qr}>
             <div className={styles.qrBox} ref={qrBox}>

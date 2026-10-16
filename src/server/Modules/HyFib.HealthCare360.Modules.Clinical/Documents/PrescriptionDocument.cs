@@ -7,11 +7,12 @@ namespace HyFib.HealthCare360.Modules.Clinical.Documents;
 /// <summary>
 /// The A5 e-prescription (ERX-04, PP-02): clinical letterhead with the facility logo and the prescriber's block, the
 /// patient strip, known allergies, diagnosis, ℞ with each medicine's directions in English and the Hindi line under
-/// them, Schedule H1/X tags, advice, follow-up, the QR code that verifies the prescription, and the digital signature
-/// with the prescriber's signature image. The same document is printed at the counter, downloaded from the portal and
-/// sent with the "prescription shared" message. It is bilingual whoever reads it (ERX-04): every label is printed in
-/// English with the Hindi after it, and the page carries its Hindi font. Medicine names, doses and codes are not
-/// translated.
+/// them, Schedule H1/X tags, advice, follow-up, the QR code that verifies the prescription, and the signature with the
+/// prescriber's signature image: "Digitally signed by …" with the certificate when the doctor signed it with their DSC,
+/// else "Signed electronically on …" (signed in HC360, which is not a digital signature under the IT Act). The same
+/// document is printed at the counter, downloaded from the portal and sent with the "prescription shared" message. It
+/// is bilingual whoever reads it (ERX-04): every label is printed in English with the Hindi after it, and the page
+/// carries its Hindi font. Medicine names, doses and codes are not translated.
 /// </summary>
 internal static class PrescriptionDocument
 {
@@ -25,6 +26,8 @@ internal static class PrescriptionDocument
         .controlled { display: inline-block; border: 1px solid #B00020; color: #B00020; font-size: 7.5pt; padding: 0 4px; border-radius: 3px; margin-left: 4px; }
         .qr .qr-img { display: block; width: 26mm; height: 26mm; }
         .qr .mono { word-break: break-all; }
+        .dsc { max-width: 62mm; }
+        .dsc.mono { word-break: break-all; font-size: 7pt; }
 
         """;
 
@@ -67,7 +70,7 @@ internal static class PrescriptionDocument
         var refills = model.RefillsAllowed > 0
             ? Html.Of($"<div class=\"small\">{labels.Format("doc.rx.refills_allowed", ("count", model.RefillsAllowed.ToString(Html.Culture)))}</div>")
             : Html.Empty;
-        var signed = model.SignedAt is { } at ? Html.Of($"<div class=\"small\">{labels.Format("doc.rx.signed_on", ("at", DocumentFormat.DateTime(at)))}</div>") : Html.Empty;
+        var signed = SignatureLine(model, labels);
         return Html.Of($"""
             {ClinicalDocumentParts.Letterhead(model.Letterhead, logo, ClinicalDocumentParts.Prescriber(model.Prescriber), template)}
             {warning}
@@ -92,6 +95,26 @@ internal static class PrescriptionDocument
               {ClinicalDocumentParts.Signature(signed, signature, model.Prescriber?.DisplayName ?? "Doctor", labels)}
             </div>
             """);
+    }
+
+    /// <summary>
+    /// "Digitally signed by Dr Meera Shah (MMC-55821) — certificate 1A2B3C, 25 Sep 2026, 3:45 pm" and the SHA-256 of the
+    /// signed bytes (the verification page shows it too) for a DSC signature; "Signed electronically on …" otherwise.
+    /// </summary>
+    public static Html SignatureLine(PrescriptionPrintModel model, ClinicalLabels? labels = null)
+    {
+        labels ??= ClinicalLabels.EnglishAndHindi;
+        if (model.DigitalSignature is { } dsc)
+        {
+            var signer = dsc.RegistrationNumber is { Length: > 0 } registration ? $"{dsc.SignerName} ({registration})" : dsc.SignerName;
+            var line = labels.Format("doc.rx.dsc_signed_by", ("signer", signer), ("serial", dsc.SerialNumber), ("at", DocumentFormat.DateTime(dsc.SignedAt)));
+            return Html.Of($"""
+                <div class="small dsc">{line}</div>
+                <div class="small dsc mono">SHA-256 {dsc.ContentHash}</div>
+                """);
+        }
+
+        return model.SignedAt is { } at ? Html.Of($"<div class=\"small\">{labels.Format("doc.rx.signed_on", ("at", DocumentFormat.DateTime(at)))}</div>") : Html.Empty;
     }
 
     /// <summary>"5 days", "1 day", and whole weeks from two weeks on ("3 weeks"), as the staff app writes durations.</summary>

@@ -92,19 +92,21 @@ internal sealed class LinkVisitToTelehealthSession(HospitalDbContext db) : IDoma
 }
 
 /// <summary>
-/// TEL-04: when the doctor signs the e-prescription of a video consultation, the patient is told it is on the portal
-/// (the pharmacy flow itself belongs to Pharmacy). Clinical already sends <see cref="Template"/> on WhatsApp for every
-/// signed out-patient prescription, this one included, so this handler adds only the SMS.
+/// TEL-04: when the e-prescription of a video consultation is shared with the patient, they are told it is on the portal
+/// (the pharmacy flow itself belongs to Pharmacy). Clinical sends <see cref="Template"/> on WhatsApp for every
+/// out-patient prescription, this one included, so this handler adds only the SMS — at the same moment: when the doctor
+/// signs it, or, where the hospital requires the doctor's DSC (ERX-04), once signed with it, and once only
+/// (<see cref="PrescriptionSharedWithPatient"/>).
 /// </summary>
 internal sealed class SharePrescriptionAfterTeleconsultation(HospitalDbContext db, INotificationService notifications)
-    : IDomainEventHandler<PrescriptionSigned>
+    : IDomainEventHandler<PrescriptionSharedWithPatient>
 {
     public const string Template = "prescription.shared";
 
     /// <summary>No WhatsApp: Clinical's message goes there, and queuing it here as well sent the patient two.</summary>
     internal static readonly IReadOnlyList<NotificationChannel> Channels = [NotificationChannel.Sms];
 
-    public async Task HandleAsync(PrescriptionSigned domainEvent, CancellationToken cancellationToken)
+    public async Task HandleAsync(PrescriptionSharedWithPatient domainEvent, CancellationToken cancellationToken)
     {
         if (domainEvent.VisitId is not { } visitId || domainEvent.IsInpatient)
         {

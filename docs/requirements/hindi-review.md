@@ -156,7 +156,8 @@ Points we would most like checked:
 | 113 | `doc.rx.days` | {count} days | {count} दिन | |
 | 114 | `doc.rx.weeks` | {count} weeks | {count} सप्ताह | |
 | 115 | `doc.rx.refills_allowed` | Refills allowed: {count} | दवा दोबारा लेने की अनुमति: {count} बार | |
-| 116 | `doc.rx.signed_on` | Digitally signed on {at} | {at} को डिजिटल हस्ताक्षर किए गए | |
+| 116 | `doc.rx.signed_on` | Signed electronically on {at} | {at} को इलेक्ट्रॉनिक रूप से हस्ताक्षरित | A prescription signed in HC360 without the doctor's DSC is not "digitally signed" under the IT Act, so the line says "electronically". |
+| 117 | `doc.rx.dsc_signed_by` | Digitally signed by {signer} — certificate {serial}, {at} | {signer} द्वारा डिजिटल हस्ताक्षर — प्रमाणपत्र {serial}, {at} | Printed only when the doctor's DSC signature checks out (ERX-04). |
 | 117 | `doc.rx.scan_to_verify` | Scan to verify this prescription | इस पर्चे की जाँच के लिए स्कैन करें | |
 | 118 | `doc.rx.qr_alt` | QR code to verify this prescription | इस पर्चे की जाँच के लिए QR कोड | |
 | 119 | `doc.rx.cancelled` | CANCELLED — do not dispense | रद्द — दवा न दें | |

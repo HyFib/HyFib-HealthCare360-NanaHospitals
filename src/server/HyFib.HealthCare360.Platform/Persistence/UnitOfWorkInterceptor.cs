@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Messaging;
@@ -216,12 +217,18 @@ public sealed class UnitOfWorkInterceptor(
         }
     }
 
+    // Binary values (a DSC signature, the bytes it signed, which name the patient) are summarised, never copied: the
+    // trail says that they changed and can prove which value they were, without holding the data a second time.
     private static object? Mask(object? value, bool sensitive) =>
         sensitive && value is not null ? "***" : value switch
         {
             string s when s.Length > 500 => s[..500] + "…",
+            byte[] bytes => new BinaryValue(bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes))),
             _ => value,
         };
+
+    /// <summary>How the data audit records a binary value: its length and SHA-256.</summary>
+    internal sealed record BinaryValue(int Bytes, string Sha256);
 
     private static Guid? TryGetPatientId(EntityEntry entry)
     {

@@ -34,6 +34,11 @@ export const prescriptionMessages = defineMessages({
     'rx.safety': 'Take medicines exactly as prescribed. Do not stop or change a medicine without asking your doctor.',
     'rx.print.title': 'Prescription',
     'rx.print.verify': 'Scan to check this prescription is genuine',
+    'rx.dsc.pending.title': 'Not ready to print yet',
+    'rx.dsc.pending.body':
+      'Your doctor has not digitally signed this prescription yet. You can print it, download it and show its QR code at a pharmacy once they have.',
+    'rx.dsc.unavailable.body':
+      'This prescription cannot be printed or downloaded right now. Please contact the hospital.',
 
     'rx.refill.title': 'Refill',
     'rx.refill.available': 'You can ask the pharmacy to refill this prescription ({count} left, valid until {date}).',
@@ -86,6 +91,10 @@ export const prescriptionMessages = defineMessages({
     'rx.safety': 'दवाइयाँ ठीक वैसे ही लें जैसे लिखी गई हैं। डॉक्टर से पूछे बिना कोई दवा बंद न करें और न बदलें।',
     'rx.print.title': 'दवा का पर्चा',
     'rx.print.verify': 'यह पर्चा असली है, जाँचने के लिए स्कैन करें',
+    'rx.dsc.pending.title': 'अभी प्रिंट के लिए तैयार नहीं',
+    'rx.dsc.pending.body':
+      'आपके डॉक्टर ने अभी इस पर्चे पर डिजिटल हस्ताक्षर नहीं किए हैं। हस्ताक्षर होने के बाद आप इसे प्रिंट और डाउनलोड कर सकेंगे और फ़ार्मेसी पर इसका QR कोड दिखा सकेंगे।',
+    'rx.dsc.unavailable.body': 'यह पर्चा अभी प्रिंट या डाउनलोड नहीं किया जा सकता। कृपया अस्पताल से संपर्क करें।',
 
     'rx.refill.title': 'रीफ़िल',
     'rx.refill.available': 'आप फ़ार्मेसी से इस पर्चे का रीफ़िल माँग सकते हैं ({count} बाकी, {date} तक मान्य)।',

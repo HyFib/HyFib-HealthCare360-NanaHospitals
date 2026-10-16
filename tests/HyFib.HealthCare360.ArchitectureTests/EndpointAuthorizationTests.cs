@@ -61,6 +61,7 @@ public sealed class EndpointAuthorizationTests
         "GET /api/v1/public/unsubscribe/{token}",
         "POST /api/v1/public/unsubscribe/{token}",
         "GET /api/v1/public/prescriptions/verify/{token}",
+        "GET /api/v1/public/prescriptions/verify/{token}/signature.p7s",
         "GET /api/v1/lab/reports/verify/{code}",
         "GET /api/v1/radiology/reports/verify/{code}",
         "GET /api/v1/cardiology/reports/verify/{code}",
