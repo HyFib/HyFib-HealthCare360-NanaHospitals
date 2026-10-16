@@ -222,7 +222,8 @@ and grants nothing.
   The Patient role cannot be edited, so no staff permission can reach every portal account.
 - **Restricted records** (VIP, staff, high-profile patients):
   - They need an extra permission or **break-the-glass** access.
-  - Break-the-glass requires a written reason, expires, and is flagged for review.
+  - Break-the-glass requires a written reason, expires, and is flagged for review. The grant is a row in the database
+    (`patients.break_glass_grants`), so it holds, and expires, on every server alike.
   - Lists don't name them unless the user may open restricted records. The bed board, the doctor's worklist and the
     ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
     result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
@@ -335,6 +336,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Database triggers block deletes, rows inserted pre-sealed, and every update except a complete seal: hash, chain
     position and previous hash together, linked to the sealed entry before it (checked at commit).
   - Administration › Audit log › *Verify integrity* re-checks the chain. It also fails on any seal outside the chain.
+  - The log is partitioned by month (SCAL-04). Each month's partition refuses TRUNCATE and DELETE as the table does, and
+    the chain-link trigger refuses a seal that takes a chain position another entry has (a unique index would have to
+    include the month). Old months are never dropped: the setting that would drop other tables' old months cannot name
+    the audit log, and the server will not start if it does.
 - Records carry who and when on every change, and deletes are soft deletes. Every change to an audited record also
   writes a data audit event with each changed value (from/to); compound values such as addresses, cardiology
   findings and TTI results are recorded part by part.
@@ -374,7 +379,22 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - `nosniff`, a strict referrer policy, and a Permissions-Policy that allows only camera/microphone for video consults.
   - `no-store` on API responses.
   - They apply to every response, including the staff and portal pages and their static assets, not just API calls.
-- Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user.
+- Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user. With
+  several servers (below), the sign-in and OTP limits per address are counted for the hospital, in the database.
+- **Several servers behind a reverse proxy** (optional, SCAL-01; DEPLOYMENT.md section 10):
+  - The client's address is taken from `X-Forwarded-For`, and the scheme from `X-Forwarded-Proto`, only on a request
+    from a proxy the site names (`HealthCare360:Network:KnownProxies` or `KnownNetworks`). Anyone else's headers are
+    ignored, so nobody can claim another address to dodge a rate limit, an address allow-list or the audit trail. With
+    no proxy named, the headers are never read.
+  - Nothing that decides access lives in one server's memory alone: sessions, sign-in challenges, lockouts and
+    break-the-glass grants are in the database, and a permission taken away, a session ended or locked, or a setting
+    changed on one server expires the others' caches at once (PostgreSQL notifications). A server that cannot hear the
+    others does not use those caches.
+  - One-time tokens and attempt counters that must hold whichever server answers use the database's cluster store
+    (`IClusterStore`): a token can be spent once, and every attempt is counted once, across all servers.
+  - The keys are in a shared folder, wrapped by a Data Protection key ring that is protected with a certificate every
+    server holds (key table below), never in the database. A server with keys of its own will not start on a shared
+    folder that has none.
 - Input validation on every request, with parameterised SQL through EF Core only. An endpoint that asks for validation
   never runs without it.
 - Uploaded files are accepted by their content (PDF, PNG, JPEG, WebP, DICOM, SCP-ECG), and their stored name takes the
@@ -482,7 +502,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Blind-index keys | Derived from each data key | As above | HMAC-SHA256 lookups of ABHA, policy, PAN and bank account numbers (the current data key's), and of Aadhaar numbers (the original key's) | With the data key, indexes computed again in the background; the Aadhaar index stays on the original key (it cannot be rebuilt) |
 | Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
-| Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
+| Data Protection key ring | `keys\dataprotection` | Machine DPAPI; with several servers, the ring in the shared folder is protected with the cluster key certificate (RSA, in each server's Local Computer store), and each server keeps its own DPAPI ring for its LAN certificates | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
+| Cluster key certificate (several servers only) | The Local Computer's Personal store of each server; the PFX and its password offline, in the hospital's password safe | Windows (the private key readable by `NT SERVICE\HC360Server` and Administrators) | The shared Data Protection key ring, hence every key in the shared folder | Not rotated in place; to replace it, copy the documents and restore the latest backup into a new, empty shared folder named with the new certificate (DEPLOYMENT.md section 10, steps 2 to 4) |
 | Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires |
 | Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby or replacement hardware; kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
 | PostgreSQL TLS certificate (warm standby) | `hc360-server.key` in PostgreSQL's data folder, copied to the standby with the database | File permissions: PostgreSQL's service account and Administrators | The replication stream between the Server Nodes | Made by `Enable-HC360Replication.ps1`, valid 10 years; made again when it is within 30 days of expiry (copy the new `hc360-server.crt` to the standby) |

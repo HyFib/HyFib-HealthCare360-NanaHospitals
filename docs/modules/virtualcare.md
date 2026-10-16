@@ -96,6 +96,11 @@ Permission `portal.access`, scoped by `PortalPatientScope`.
   Temperature | EcgRhythm`, value in canonical units (mmHg, bpm, %, mg/dL, kg, °C; °F, mmol/L, lb, kPa converted),
   text (ECG interpretation), measured/received at, severity, out-of-range flag, source `Device | Fhir | Manual`.
   Implausible values are rejected; retries are de-duplicated (unique enrolment + type + measurement second).
+  `rpm_readings` is partitioned by month of `measured_at` (SCAL-04): its primary key is (id, measured_at) in the
+  database, the de-duplicating unique index already includes the month, and nothing has a foreign key to a reading
+  (an alert keeps the reading's id). The platform keeps the months ahead; old months are dropped only when
+  `HealthCare360:Partitions:RetentionMonths` names `virtualcare.rpm_readings` (never by default; readings are part of
+  the medical record).
 * **RpmThreshold** – per enrolment and type: min/max and critical min/max (validated order).
 * **RpmAlert** – `Threshold | DeviceSilence`, severity `Warning | Critical`, status `Open | Acknowledged | Resolved`,
   occurrences, acknowledged/resolved by/at, notes. One active alert per enrolment and type; repeats are counted,
