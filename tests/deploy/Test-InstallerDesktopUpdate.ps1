@@ -11,6 +11,7 @@
       by administrators and SYSTEM only, and a throwaway task registered as the update task is runs as SYSTEM, at
       start-up, at sign-in and every 4 hours, and may be started by users. Those parts need administrator rights, which
       CI has; without them they are skipped.
+    - Read-MachinePolicy (Install-HC360Desktop.ps1): installing again keeps the machine policy's other entries.
     Exit code 1 when a check fails.
 #>
 $ErrorActionPreference = 'Stop'
@@ -34,6 +35,30 @@ function Get-FunctionText([string] $Script, [string] $Name) {
 . ([scriptblock]::Create((Get-FunctionText 'Install-HC360Desktop.ps1' 'New-DesktopUpdateTriggers')))
 . ([scriptblock]::Create((Get-FunctionText 'Install-HC360Desktop.ps1' 'Register-DesktopUpdateTask')))
 . ([scriptblock]::Create((Get-FunctionText 'Install-HC360Desktop.ps1' 'Set-UpdaterAcl')))
+. ([scriptblock]::Create((Get-FunctionText 'Install-HC360Desktop.ps1' 'Read-MachinePolicy')))
+
+Write-Host 'Installing again with -NoAutoUpdate keeps the rest of the machine policy'
+$policyFile = Join-Path ([System.IO.Path]::GetTempPath()) ('hc360-policy-' + [guid]::NewGuid().ToString('N') + '.json')
+try {
+    Assert ((Read-MachinePolicy $policyFile).Count -eq 0) 'no policy yet reads as an empty one'
+    Set-Content -LiteralPath $policyFile -Encoding UTF8 -Value '{ "serverUrl": "https://hc360-srv:7360/", "caFingerprint": "AB12", "kiosk": true, "printers": { "label": { "name": "Zebra ZD421", "dpi": 203 } } }'
+    $policy = Read-MachinePolicy $policyFile
+    $policy.autoUpdate = $false
+    $policy | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $policyFile -Encoding UTF8
+    $after = Get-Content -LiteralPath $policyFile -Raw | ConvertFrom-Json
+    Assert ($after.autoUpdate -eq $false) 'self-update is turned off'
+    Assert ($after.serverUrl -eq 'https://hc360-srv:7360/' -and $after.caFingerprint -eq 'AB12') 'the pinned server and CA stay'
+    Assert ($after.kiosk -eq $true) 'kiosk mode stays'
+    Assert ($after.printers.label.name -eq 'Zebra ZD421' -and $after.printers.label.dpi -eq 203) 'the printers entry stays whole'
+
+    Set-Content -LiteralPath $policyFile -Encoding UTF8 -Value '{ "serverUrl": '
+    $refused = $false
+    try { $null = Read-MachinePolicy $policyFile } catch { $refused = $_.Exception.Message -match 'not valid JSON' }
+    Assert $refused 'a policy that is not JSON stops the installer before it changes anything'
+}
+finally {
+    Remove-Item -LiteralPath $policyFile -Force -ErrorAction SilentlyContinue
+}
 
 $root = Join-Path ([System.IO.Path]::GetTempPath()) ('hc360-update-install-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 try {

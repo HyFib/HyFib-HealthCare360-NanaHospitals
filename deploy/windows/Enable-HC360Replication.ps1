@@ -459,17 +459,22 @@ if (-not $Remove) {
 # ---------------------------------------------------------------- remove
 if ($Remove) {
     Write-Step 'Removing the warm standby''s access'
+    # The standby's way in goes first: a standby that is still running connects again within seconds of being
+    # disconnected, and its slot cannot be dropped while it streams.
+    $hba = Read-TextLines $postgres.HbaFile
+    $withoutBlock = Remove-ReplicationHbaBlock $hba
+    if (($withoutBlock -join "`n") -cne ($hba -join "`n")) {
+        Write-TextLines $postgres.HbaFile $withoutBlock
+        $null = Invoke-Sql 'SELECT pg_reload_conf()' 'reload its configuration'
+    }
+    Get-NetFirewallRule -Group $FirewallGroup -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+
     $slot = ConvertTo-SqlLiteral $SlotName
     $null = Invoke-Sql "SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots WHERE slot_name = $slot AND active_pid IS NOT NULL" 'disconnect the standby'
     Start-Sleep -Seconds 1
     $null = Invoke-Sql "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = $slot" "drop the replication slot $SlotName"
     $null = Invoke-Sql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = '$ReplicationRole'" 'disconnect the replication account'
     $null = Invoke-Sql "DROP ROLE IF EXISTS $ReplicationRole" "drop the account $ReplicationRole"
-
-    $hba = Read-TextLines $postgres.HbaFile
-    $withoutBlock = Remove-ReplicationHbaBlock $hba
-    if (($withoutBlock -join "`n") -cne ($hba -join "`n")) { Write-TextLines $postgres.HbaFile $withoutBlock }
-    Get-NetFirewallRule -Group $FirewallGroup -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 
     $statements = @('ALTER SYSTEM RESET max_slot_wal_keep_size')
     $listen = Get-Setting 'listen_addresses'

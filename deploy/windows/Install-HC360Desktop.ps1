@@ -19,6 +19,8 @@
       HC360 Desktop is closed, and puts the previous version back if that fails. Users may start the task (HC360
       Desktop's "Restart to update") but not change it. -NoAutoUpdate turns self-update off in the machine policy, for
       computers whose software IT distributes itself.
+    Installing again with some of -ServerUrl, -CaFingerprint, -Kiosk, -StartPath and -NoAutoUpdate changes those
+    entries of the machine policy (policy.json) and keeps the others, a "printers" entry included.
 
 .EXAMPLE
     # Reception workstation, pre-configured
@@ -94,9 +96,27 @@ function Set-UpdaterAcl([string] $Path) {
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
+# The machine policy already on this computer, as an ordered table of its entries, so installing again with some of the
+# options changes those and keeps the rest (the pinned server and CA, kiosk mode, the self-update opt-out, printers).
+function Read-MachinePolicy([string] $Path) {
+    $policy = [ordered]@{}
+    if (-not (Test-Path -LiteralPath $Path)) { return $policy }
+    $text = Get-Content -LiteralPath $Path -Raw
+    if (-not $text -or -not $text.Trim()) { return $policy }
+    try { $existing = $text | ConvertFrom-Json }
+    catch { throw "$Path is not valid JSON: $($_.Exception.Message) Correct it and run the installer again. Nothing has been changed." }
+    if ($existing -isnot [System.Management.Automation.PSCustomObject]) {
+        throw "$Path does not hold a JSON object. Correct it and run the installer again. Nothing has been changed."
+    }
+    foreach ($property in $existing.PSObject.Properties) { $policy[$property.Name] = $property.Value }
+    return $policy
+}
+
 if (-not (Test-Path (Join-Path $PackagePath $Exe))) { throw "HC360 Desktop package not found at '$PackagePath'." }
 if ($ServerUrl -and $ServerUrl -notmatch '^https://') { throw 'The server address must start with https://' }
 if ($StartPath -and ($StartPath -notmatch '^/' -or $StartPath -match '^//|://')) { throw 'StartPath must be an app path such as /display/queue' }
+$policyPath = Join-Path $env:ProgramData 'HyFib\HC360Desktop\policy.json'
+$policy = Read-MachinePolicy $policyPath
 
 # ---------------------------------------------------------------- WebView2 runtime
 $webView2Key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
@@ -155,16 +175,13 @@ Set-ItemProperty -Path "$protocol\shell\open\command" -Name '(default)' -Value "
 # ---------------------------------------------------------------- machine policy
 if ($ServerUrl -or $CaFingerprint -or $Kiosk -or $StartPath -or $NoAutoUpdate) {
     Write-Step 'Writing the machine policy'
-    $policyDir = Join-Path $env:ProgramData 'HyFib\HC360Desktop'
-    New-Item -ItemType Directory -Force -Path $policyDir | Out-Null
-    $policy = [ordered]@{}
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $policyPath) | Out-Null
     if ($ServerUrl) { $policy.serverUrl = $ServerUrl.TrimEnd('/') + '/' }
     if ($CaFingerprint) { $policy.caFingerprint = ($CaFingerprint -replace '[\s:]', '').ToUpperInvariant() }
     if ($Kiosk) { $policy.kiosk = $true; $policy.disableDevTools = $true }
     if ($StartPath) { $policy.startPath = $StartPath }
     if ($NoAutoUpdate) { $policy.autoUpdate = $false }
-    $policyPath = Join-Path $policyDir 'policy.json'
-    $policy | ConvertTo-Json | Set-Content -Path $policyPath -Encoding UTF8
+    $policy | ConvertTo-Json -Depth 10 | Set-Content -Path $policyPath -Encoding UTF8
     # Everyone may read the policy; only administrators may change it.
     $acl = New-Object System.Security.AccessControl.FileSecurity
     $acl.SetAccessRuleProtection($true, $false)
