@@ -136,8 +136,11 @@ public sealed class AuthService(
     public const string IdleLockMinutesSetting = "ui.idleLockMinutes";
 
     /// <summary>
-    /// Whether staff may unlock the lock screen with the device's Windows Hello, fingerprint or face (true by default;
-    /// <see cref="WebAuthnUnlockService"/>). The PIN and the password work either way.
+    /// Whether staff may unlock the lock screen with the device's Windows Hello, fingerprint or face (false unless set to
+    /// true, for the hospital or a facility; <see cref="WebAuthnUnlockService"/>). Windows Hello proves who owns the
+    /// Windows login, not who owns the HC360 account: where staff share one Windows login, whoever knows its Windows
+    /// Hello PIN, or has a finger or face set up on it, could unlock a colleague's screen. So it is for hospitals where
+    /// every staff member signs in to Windows with their own account. The PIN and the password work either way.
     /// </summary>
     public const string BiometricUnlockSetting = "ui.biometricUnlock";
 
@@ -1175,14 +1178,14 @@ public sealed class AuthService(
 
     /// <summary>
     /// Whether the facility lets staff unlock the lock screen with a device's Windows Hello, fingerprint or face (the
-    /// <see cref="BiometricUnlockSetting"/>, on unless it is false).
+    /// <see cref="BiometricUnlockSetting"/>: off unless an administrator set it to true, for the hospital or the facility).
     /// </summary>
     internal async Task<bool> BiometricUnlockAllowedAsync(Guid? facilityId, CancellationToken ct) =>
         await settings.GetAsync<JsonElement?>(BiometricUnlockSetting, facilityId, ct) switch
         {
-            { ValueKind: JsonValueKind.False } => false,
-            { ValueKind: JsonValueKind.String } text => !string.Equals(text.GetString(), "false", StringComparison.OrdinalIgnoreCase),
-            _ => true,
+            { ValueKind: JsonValueKind.True } => true,
+            { ValueKind: JsonValueKind.String } text => string.Equals(text.GetString()?.Trim(), "true", StringComparison.OrdinalIgnoreCase),
+            _ => false,
         };
 
     /// <summary>The facilities' names and legal names, refused in passwords (ASVS V6.2.11).</summary>

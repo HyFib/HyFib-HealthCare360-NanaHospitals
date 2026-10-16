@@ -15,12 +15,13 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// Quick unlock of the lock screen with the device's Windows Hello or fingerprint (WebAuthn, SRS UX-11) over the real
-/// API, with a software authenticator in place of the device: setting a device up needs the password, a device unlocks
-/// only its owner's locked session, the device must verify the person, a copied key and a replayed answer are refused
-/// and stay on the audit trail, a session nobody used for the idle limit stays ended, and an administrator can turn it
-/// off while the PIN keeps working. Each test uses an account of its own.
+/// API, with a software authenticator in place of the device: it is off until an administrator turns it on, setting a
+/// device up needs the password, a device unlocks only its owner's locked session, the device must verify the person, a
+/// copied key and a replayed answer are refused and stay on the audit trail, a session nobody used for the idle limit
+/// stays ended, kiosks and display boards never use it, and an administrator can turn it off while the PIN keeps
+/// working. Each test uses an account of its own, with the hospital's setting turned on for the test's length.
 /// </summary>
-public sealed class WebAuthnUnlockTests(HospitalServer server)
+public sealed class WebAuthnUnlockTests(HospitalServer server) : IAsyncLifetime
 {
     private const HttpStatusCode Locked = (HttpStatusCode)423;
     private const string AnyPage = "/api/v1/settings/public";
@@ -32,6 +33,10 @@ public sealed class WebAuthnUnlockTests(HospitalServer server)
     private static int _addresses;
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    public async ValueTask InitializeAsync() => await SetBiometricUnlockAsync(true);
+
+    public async ValueTask DisposeAsync() => await SetBiometricUnlockAsync(null);
 
     [Fact]
     public async Task A_device_set_up_with_the_password_unlocks_the_locked_screen()
@@ -216,12 +221,51 @@ public sealed class WebAuthnUnlockTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task It_is_off_until_an_administrator_turns_it_on_for_the_hospital_or_a_facility()
+    {
+        var (client, _) = await NewStaffAsync("default");
+        using var device = new SoftwareAuthenticator();
+        var facilityId = (await SessionAsync(client)).FacilityId.ShouldNotBeNull();
+
+        // Nobody turned it on: Windows Hello may answer for a Windows login the ward shares, so it is off.
+        await SetBiometricUnlockAsync(null);
+        (await client.GetAsync<AuthUser>("/api/v1/auth/me")).BiometricUnlock.ShouldBeFalse();
+        using (var off = await client.SendRawAsync(HttpMethod.Post, RegistrationOptions, new WebAuthnRegistrationRequest(server.Password)))
+        {
+            off.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            (await off.Content.ReadAsStringAsync(Ct)).ShouldContain("auth.biometric_unlock_off");
+        }
+
+        // Anything but true leaves it off.
+        await SetBiometricUnlockAsync("yes");
+        (await client.GetAsync<AuthUser>("/api/v1/auth/me")).BiometricUnlock.ShouldBeFalse();
+        await SetBiometricUnlockAsync(null);
+
+        // Turned on for the facility alone, it is on there; true typed as text counts too.
+        await SetBiometricUnlockAsync("true", facilityId);
+        try
+        {
+            (await client.GetAsync<AuthUser>("/api/v1/auth/me")).BiometricUnlock.ShouldBeTrue();
+            await SetUpAsync(client, device);
+            await client.PostAsync("/api/v1/auth/lock");
+            await UnlockWithAsync(client, device);
+        }
+        finally
+        {
+            await SetBiometricUnlockAsync(null, facilityId);
+        }
+    }
+
+    [Fact]
     public async Task An_administrator_can_turn_it_off_and_the_PIN_and_password_still_work()
     {
         var (client, _) = await NewStaffAsync("off");
         using var device = new SoftwareAuthenticator();
         await SetUpAsync(client, device);
-        await SetBiometricUnlockAsync(false);
+        var facilityId = (await SessionAsync(client)).FacilityId.ShouldNotBeNull();
+
+        // On for the hospital, but turned off for this facility.
+        await SetBiometricUnlockAsync(false, facilityId);
         try
         {
             (await client.GetAsync<AuthUser>("/api/v1/auth/me")).BiometricUnlock.ShouldBeFalse();
@@ -236,8 +280,32 @@ public sealed class WebAuthnUnlockTests(HospitalServer server)
         }
         finally
         {
-            await SetBiometricUnlockAsync(null);
+            await SetBiometricUnlockAsync(null, facilityId);
         }
+    }
+
+    [Fact]
+    public async Task A_computer_enrolled_as_a_kiosk_or_a_display_board_does_not_use_it()
+    {
+        var userName = $"it-wa-kiosk-{Guid.NewGuid():N}"[..24];
+        await server.CreateStaffAccountAsync(userName, SystemRoles.Nurse);
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+
+        // Everyone who passes uses a kiosk or a display board: its Windows Hello would answer for all of them.
+        foreach (var kind in new[] { DeviceKind.Kiosk, DeviceKind.DisplayBoard })
+        {
+            var (deviceId, secret) = await EnrolAsync(admin, kind);
+            var shared = FromNewAddress(await server.SignInFromDeviceAsync(userName, deviceId, secret));
+            using var refused = await shared.SendRawAsync(HttpMethod.Post, RegistrationOptions, new WebAuthnRegistrationRequest(server.Password));
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("auth.biometric_unlock_shared_device");
+        }
+
+        // A workstation may.
+        var (workstationId, workstationSecret) = await EnrolAsync(admin, DeviceKind.Workstation);
+        var atDesk = FromNewAddress(await server.SignInFromDeviceAsync(userName, workstationId, workstationSecret));
+        using var device = new SoftwareAuthenticator();
+        (await SetUpAsync(atDesk, device)).Name.ShouldStartWith("Unlock test");
     }
 
     [Fact]
@@ -411,17 +479,27 @@ public sealed class WebAuthnUnlockTests(HospitalServer server)
             .ToListAsync(Ct);
     }
 
-    private async Task SetBiometricUnlockAsync(bool? on)
+    private async Task<(Guid DeviceId, string Secret)> EnrolAsync(ApiClient admin, DeviceKind kind)
+    {
+        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+            new CreateEnrollmentCodeRequest(kind, null, "Unlock test", 30));
+        var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
+            new EnrollDeviceRequest(code.Code, "Unlock test " + Guid.NewGuid().ToString("N")[..6], "OPD-PC-1", "Windows 11", "1.0.0"));
+        return (enrolled.DeviceId, enrolled.DeviceSecret);
+    }
+
+    /// <summary>Sets <see cref="AuthService.BiometricUnlockSetting"/> for the hospital, or for one facility; null removes it.</summary>
+    private async Task SetBiometricUnlockAsync(object? value, Guid? facilityId = null)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-        if (on is { } value)
+        if (value is not null)
         {
-            await settings.SetAsync(AuthService.BiometricUnlockSetting, value, cancellationToken: Ct);
+            await settings.SetAsync(AuthService.BiometricUnlockSetting, value, facilityId, cancellationToken: Ct);
         }
         else
         {
-            await settings.RemoveAsync(AuthService.BiometricUnlockSetting, null, Ct);
+            await settings.RemoveAsync(AuthService.BiometricUnlockSetting, facilityId, Ct);
         }
     }
 }

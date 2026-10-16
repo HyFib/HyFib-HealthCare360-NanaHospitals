@@ -58,8 +58,12 @@ public sealed record WebAuthnCredentialInfo(
 /// so it is unavailable when the app was opened by IP address.</item>
 /// <item>A signature counter that goes back means a copied key: refused, audited as critical, and counted as a failed
 /// try. Failed tries count with wrong PINs: <see cref="SecurityOptions.MaxPinAttempts"/> end the session.</item>
-/// <item>Setting up a device needs the password (ASVS V7.5.1); its owner can remove it; the
-/// <see cref="AuthService.BiometricUnlockSetting"/> setting turns it off. The PIN and the password always work.</item>
+/// <item>It is off until an administrator turns it on (<see cref="AuthService.BiometricUnlockSetting"/>), for the
+/// hospital or a facility. Windows Hello proves who owns the Windows login, not who owns the HC360 account, so it suits
+/// only computers where every staff member signs in to Windows with their own account; nothing here can tell a shared
+/// Windows login from a personal one. A computer enrolled as a kiosk or a display board, which everyone uses, never
+/// uses it. The PIN and the password always work.</item>
+/// <item>Setting up a device needs the password (ASVS V7.5.1); its owner can remove it.</item>
 /// <item>Setting up, removing and unlocking are audited; refused answers are audited at once, so the entry stays even
 /// when the unlock then fails.</item>
 /// </list>
@@ -84,7 +88,11 @@ public sealed class WebAuthnUnlockService(
     private static readonly TimeSpan ChallengeLifetime = CeremonyTimeout + TimeSpan.FromSeconds(30);
 
     private static readonly Error Off = Error.Forbidden(
-        "auth.biometric_unlock_off", "Unlocking with Windows Hello or a fingerprint is turned off. Use your PIN or password.");
+        "auth.biometric_unlock_off", "Unlocking with Windows Hello or a fingerprint is not turned on here. Use your PIN or password.");
+
+    private static readonly Error SharedDevice = Error.Forbidden(
+        "auth.biometric_unlock_shared_device",
+        "This computer is enrolled as a kiosk or a display that everyone uses, so it does not unlock screens with Windows Hello or a fingerprint. Use your PIN or password.");
 
     private static readonly Error StaffOnly = Error.Forbidden(
         "auth.biometric_unlock_staff", "Unlocking with Windows Hello or a fingerprint is for staff workstations.");
@@ -420,6 +428,13 @@ public sealed class WebAuthnUnlockService(
         if (!await auth.BiometricUnlockAllowedAsync(session.FacilityId, ct))
         {
             return (null, Off);
+        }
+
+        // A kiosk or a display board is used by everyone who passes by: its Windows Hello answers for all of them.
+        if (session.DeviceId is { } deviceId
+            && await db.Set<Device>().IgnoreQueryFilters().AnyAsync(d => d.Id == deviceId && (d.Kind == DeviceKind.Kiosk || d.Kind == DeviceKind.DisplayBoard), ct))
+        {
+            return (null, SharedDevice);
         }
 
         return RelyingPartyOf(http) is { } rp ? (rp, null) : (null, Address);
