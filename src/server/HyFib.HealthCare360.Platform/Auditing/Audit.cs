@@ -65,6 +65,14 @@ public sealed class AuditEvent
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes((previousHash ?? "GENESIS") + "\u001e" + canonicalContent)));
 }
 
+/// <remarks>
+/// The table is partitioned by month of <see cref="AuditEvent.OccurredAt"/> (SCAL-04, migration
+/// <c>PartitionHighVolumeTables</c>). PostgreSQL wants the partition key in every unique index, so in the database the
+/// primary key is (id, occurred_at), and the chain position is indexed but not unique: <see cref="AuditChainService"/>
+/// seals under one advisory lock, the chain-link trigger refuses a seal that does not follow the one before, and
+/// verification walks the positions in order, so a repeated position breaks it. The model keeps <see cref="AuditEvent.Id"/>
+/// as the key, which nothing references.
+/// </remarks>
 internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEvent>
 {
     public void Configure(EntityTypeBuilder<AuditEvent> b)
@@ -88,7 +96,8 @@ internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEv
         b.HasIndex(x => new { x.PatientId, x.OccurredAt });
         b.HasIndex(x => new { x.UserId, x.OccurredAt });
         b.HasIndex(x => new { x.Category, x.OccurredAt });
-        b.HasIndex(x => x.ChainIndex).IsUnique();
+        // Not unique: a unique index on a partitioned table must include the partition key (see the remarks above).
+        b.HasIndex(x => x.ChainIndex);
         b.HasIndex(x => x.Id).HasFilter("hash IS NULL").HasDatabaseName("ix_audit_events_unsealed");
     }
 }

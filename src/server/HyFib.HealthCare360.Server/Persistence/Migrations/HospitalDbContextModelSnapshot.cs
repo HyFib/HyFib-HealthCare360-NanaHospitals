@@ -34234,7 +34234,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasName("pk_audit_events");
 
                     b.HasIndex("ChainIndex")
-                        .IsUnique()
                         .HasDatabaseName("ix_audit_events_chain_index");
 
                     b.HasIndex("Id")

@@ -53,8 +53,15 @@ internal sealed class RpmDeviceConfiguration : IEntityTypeConfiguration<RpmDevic
     }
 }
 
+/// <remarks>
+/// The table is partitioned by month of <see cref="RpmReading.MeasuredAt"/> (SCAL-04, migration
+/// <c>PartitionHighVolumeTables</c>). Its primary key in the database is (id, measured_at), as PostgreSQL requires the
+/// partition key in every unique index; the model keeps <see cref="Entity.Id"/> as the key, which nothing references.
+/// </remarks>
 internal sealed class RpmReadingConfiguration : IEntityTypeConfiguration<RpmReading>
 {
+    public static readonly PartitionedTable Partitions = new(VirtualCareSchema.Name, "rpm_readings", "measured_at");
+
     public void Configure(EntityTypeBuilder<RpmReading> b)
     {
         b.ToTable("rpm_readings", VirtualCareSchema.Name);

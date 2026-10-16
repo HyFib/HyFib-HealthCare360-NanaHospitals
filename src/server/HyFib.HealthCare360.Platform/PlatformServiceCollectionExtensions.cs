@@ -237,6 +237,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddTransient<CorrelationIdForwardingHandler>();
         services.AddScoped<SystemHealthService>();
         services.AddSingleton<IClusterStore, ClusterStore>();
+        services.AddScoped<PartitionMaintenance>();
+        services.AddMonthlyPartitions(PartitionedTables.Audit);
+        services.AddMonthlyPartitions(PartitionedTables.NotificationLogs);
+        services.AddMonthlyPartitions(PartitionedTables.IntegrationLogs);
         services.AddScoped<BackupService>();
         services.AddSingleton<RecoveryKeyStore>();
         services.AddScoped<RecoveryKeyService>();
@@ -284,6 +288,7 @@ public static class PlatformServiceCollectionExtensions
             services.AddHostedService(sp => sp.GetRequiredService<OutboxDispatcher>());
             services.AddHostedService<AuditSealer>();
             services.AddHostedService<IdempotencyCleanupService>();
+            services.AddHostedService<PartitionMaintenanceJob>();
             services.AddHostedService<ClusterStoreCleanup>();
             services.AddHostedService<WifiMonitor>();
             services.AddHostedService<FieldKeyMoverService>();

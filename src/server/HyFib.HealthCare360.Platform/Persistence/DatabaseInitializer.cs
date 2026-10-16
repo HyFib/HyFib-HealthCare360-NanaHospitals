@@ -31,6 +31,9 @@ public sealed class DatabaseInitializer(
         "against the primary. To fail over to this Server Node, promote its PostgreSQL first, then put the keys back and start HC360 " +
         "as the failover steps say (docs/deployment/DEPLOYMENT.md, \"Failing over to the standby\").";
 
+    /// <summary>No limit (0) on a migration's statements: see where the migrations are applied.</summary>
+    internal const int MigrationCommandTimeout = 0;
+
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -105,7 +108,19 @@ public sealed class DatabaseInitializer(
         if (pending.Count > 0)
         {
             logger.LogInformation("Applying {Count} database migration(s): {Migrations}", pending.Count, string.Join(", ", pending));
-            await db.Database.MigrateAsync(ct);
+
+            // A migration that rebuilds a large table (the monthly partitions of the audit trail, SCAL-04) may take many
+            // minutes. It runs in a transaction, during the upgrade, so it gets the time it needs, not a request's minute.
+            var timeout = db.Database.GetCommandTimeout();
+            db.Database.SetCommandTimeout(MigrationCommandTimeout);
+            try
+            {
+                await db.Database.MigrateAsync(ct);
+            }
+            finally
+            {
+                db.Database.SetCommandTimeout(timeout);
+            }
         }
 
         if (backup is not null)
@@ -164,14 +179,18 @@ internal static class PlatformSql
             BEFORE INSERT OR UPDATE OR DELETE ON audit.audit_events
             FOR EACH ROW EXECUTE FUNCTION audit.protect_audit_events();
 
-        -- Each seal must link to the sealed event before it. Checked at commit, so a batch sealed in one transaction
-        -- may be written in any statement order.
+        -- Each seal must link to the sealed event before it, and take a position no other event has (the table is
+        -- partitioned by month, SCAL-04, so no unique index can say so). Checked at commit, so a batch sealed in one
+        -- transaction may be written in any statement order.
         CREATE OR REPLACE FUNCTION audit.check_audit_chain_link() RETURNS trigger AS $$
         BEGIN
             IF NEW.chain_index > 1 AND NOT EXISTS (
                 SELECT 1 FROM audit.audit_events p
                 WHERE p.chain_index = NEW.chain_index - 1 AND p.hash = NEW.previous_hash) THEN
                 RAISE EXCEPTION 'audit events must be sealed in chain order';
+            END IF;
+            IF EXISTS (SELECT 1 FROM audit.audit_events d WHERE d.chain_index = NEW.chain_index AND d.id <> NEW.id) THEN
+                RAISE EXCEPTION 'audit chain position % is already taken', NEW.chain_index;
             END IF;
             RETURN NULL;
         END;
@@ -188,5 +207,18 @@ internal static class PlatformSql
         CREATE TRIGGER trg_protect_audit_events_truncate
             BEFORE TRUNCATE ON audit.audit_events
             FOR EACH STATEMENT EXECUTE FUNCTION audit.protect_audit_events();
+
+        -- Monthly partitions (SCAL-04) inherit the row triggers above, but not a statement trigger: each gets its own, so
+        -- TRUNCATE on a partition is refused too.
+        DO $$
+        DECLARE
+            partition regclass;
+        BEGIN
+            FOR partition IN SELECT relid FROM pg_partition_tree('audit.audit_events') WHERE isleaf AND relid <> 'audit.audit_events'::regclass LOOP
+                EXECUTE format('DROP TRIGGER IF EXISTS trg_protect_audit_events_truncate ON %s', partition);
+                EXECUTE format('CREATE TRIGGER trg_protect_audit_events_truncate BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE FUNCTION audit.protect_audit_events()', partition);
+            END LOOP;
+        END;
+        $$;
         """;
 }

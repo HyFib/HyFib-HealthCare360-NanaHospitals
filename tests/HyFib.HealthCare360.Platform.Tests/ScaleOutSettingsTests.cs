@@ -1,6 +1,7 @@
 using System.Net;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,9 +9,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
-/// SRS SCAL-01: the settings for several servers behind a reverse proxy are checked as the server starts; the client's
-/// address is taken from a proxy's forwarded headers only when the site names that proxy; and a node of several keeps
-/// its keys and documents in the shared folder, everything else of its own.
+/// SRS SCAL-01 and SCAL-04: the settings for several servers behind a reverse proxy, and for the monthly partitions, are
+/// checked as the server starts; the client's address is taken from a proxy's forwarded headers only when the site names
+/// that proxy; and a node of several keeps its keys and documents in the shared folder, everything else of its own.
 /// </summary>
 public sealed class ScaleOutSettingsTests
 {
@@ -34,6 +35,38 @@ public sealed class ScaleOutSettingsTests
             .ShouldHaveSingleItem().ShouldContain("only one of");
         PlatformOptionsValidator.ClusterProblems(new ClusterOptions { KeyCertificateThumbprint = "AB12" })
             .ShouldHaveSingleItem().ShouldContain("SharedDirectory is not");
+    }
+
+    [Fact]
+    public void The_shipped_partition_settings_keep_everything_three_months_ahead()
+    {
+        var partitions = new PartitionOptions();
+
+        (partitions.MonthsAhead, partitions.RetentionMonths.Count).ShouldBe((3, 0));
+        PlatformOptionsValidator.PartitionProblems(partitions).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(25)]
+    public void Months_ahead_outside_one_to_twenty_four_are_refused(int months) =>
+        PlatformOptionsValidator.PartitionProblems(new PartitionOptions { MonthsAhead = months }).ShouldHaveSingleItem().ShouldContain("MonthsAhead");
+
+    [Fact]
+    public void The_audit_trail_can_never_be_given_a_retention()
+    {
+        var partitions = new PartitionOptions { RetentionMonths = { ["AUDIT.audit_events"] = 240 } };
+
+        PlatformOptionsValidator.PartitionProblems(partitions).ShouldHaveSingleItem().ShouldContain("ten years");
+    }
+
+    [Fact]
+    public void A_retention_is_at_least_a_month()
+    {
+        PlatformOptionsValidator.PartitionProblems(new PartitionOptions { RetentionMonths = { [PartitionedTables.NotificationLogs.Name] = 0 } })
+            .ShouldHaveSingleItem().ShouldContain("at least 1 month");
+        PlatformOptionsValidator.PartitionProblems(new PartitionOptions { RetentionMonths = { [PartitionedTables.IntegrationLogs.Name] = 24 } })
+            .ShouldBeEmpty();
     }
 
     [Fact]
