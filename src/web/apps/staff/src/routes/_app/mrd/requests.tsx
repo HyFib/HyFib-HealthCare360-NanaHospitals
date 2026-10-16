@@ -395,6 +395,11 @@ function RecordRequestsPage() {
           )}
           emptyTitle="No record requests"
           emptyDescription="Use New request when a department or an outside agency asks for a patient file."
+          emptyAction={
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
+              New request
+            </Button>
+          }
           page={filters.page ?? 1}
           pageSize={25}
           totalCount={requests.data?.totalCount}

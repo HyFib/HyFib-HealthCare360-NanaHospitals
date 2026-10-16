@@ -181,6 +181,11 @@ function NotificationTemplatesPage() {
           ]}
           emptyTitle="No templates match"
           emptyDescription="Clear the search or choose another channel, or add a template."
+          emptyAction={
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+              New template
+            </Button>
+          }
         />
       </Section>
       {editing && (

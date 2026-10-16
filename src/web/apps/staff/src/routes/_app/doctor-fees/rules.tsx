@@ -194,6 +194,13 @@ function RulesPage() {
           }
           emptyTitle="No sharing rules"
           emptyDescription="Add a hospital-wide default first (for example consultations 80 %), then doctor-specific exceptions."
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Add rule
+              </Button>
+            ) : undefined
+          }
           size="small"
         />
       </Section>

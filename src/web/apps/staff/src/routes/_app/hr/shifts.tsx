@@ -110,6 +110,13 @@ function ShiftsPage() {
           ]}
           emptyTitle="No shifts yet"
           emptyDescription="Add the hospital's shifts, for example General 09:00 to 17:30 and Night 21:00 to 07:00."
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Add shift
+              </Button>
+            ) : undefined
+          }
           size="small"
         />
       </Section>

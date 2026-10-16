@@ -228,6 +228,15 @@ function PractitionersPage() {
               ? 'Clear the search or the filters.'
               : 'Add the doctors who consult here, with their fees and council registration.'
           }
+          emptyAction={
+            <Button
+              appearance="primary"
+              icon={<AddRegular />}
+              onClick={() => void navigate({ search: (prev) => ({ ...prev, edit: 'new' }) })}
+            >
+              Add doctor or clinician
+            </Button>
+          }
           page={search.page ?? 1}
           pageSize={MASTERS_PAGE_SIZE}
           totalCount={practitioners.data?.totalCount}

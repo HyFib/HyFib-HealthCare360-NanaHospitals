@@ -5,7 +5,7 @@ import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@h
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { Can } from '@/lib/permissions';
+import { Can, usePermission } from '@/lib/permissions';
 import {
   labQueries,
   ORDER_STATUSES,
@@ -60,6 +60,7 @@ function LabOrdersPage() {
   const styles = useStyles();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  const canOrder = usePermission('lab.orders.create');
   const [term, setTerm] = useState(search.search ?? '');
   const debounced = useDebouncedValue(term.trim(), 300);
 
@@ -253,6 +254,17 @@ function LabOrdersPage() {
             search.search
               ? 'Check the UHID or accession number, or change the dates.'
               : 'Doctors’ orders appear here automatically. Register walk-in patients with New lab order.'
+          }
+          emptyAction={
+            canOrder ? (
+              <Button
+                appearance="primary"
+                icon={<AddRegular />}
+                onClick={() => void navigate({ to: '/lab/orders/new' })}
+              >
+                New lab order
+              </Button>
+            ) : undefined
           }
           page={search.page ?? 1}
           pageSize={25}

@@ -166,6 +166,17 @@ function CampaignsPage() {
               ? 'Create a campaign, check the audience and schedule it.'
               : 'Campaigns drafted by the CRM team appear here.'
           }
+          emptyAction={
+            canManage ? (
+              <Button
+                appearance="primary"
+                icon={<AddRegular />}
+                onClick={() => void navigate({ to: '/crm/campaigns/new' })}
+              >
+                New campaign
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={campaigns.data?.totalCount}

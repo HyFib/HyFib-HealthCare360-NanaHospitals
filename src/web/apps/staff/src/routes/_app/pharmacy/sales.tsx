@@ -221,6 +221,17 @@ function SalesPage() {
           ]}
           emptyTitle="No invoices match"
           emptyDescription="Change the dates or the filters. Invoices appear here as soon as a sale or a prescription is billed."
+          emptyAction={
+            canSell ? (
+              <Button
+                appearance="primary"
+                icon={<CartRegular />}
+                onClick={() => void navigate({ to: '/pharmacy/sale' })}
+              >
+                New counter sale
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={sales.data?.totalCount}

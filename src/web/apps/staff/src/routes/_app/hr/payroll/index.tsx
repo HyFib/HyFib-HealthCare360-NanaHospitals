@@ -137,6 +137,13 @@ function PayrollRunsPage() {
           ]}
           emptyTitle={`No payroll for ${year} yet`}
           emptyDescription={canProcess ? 'Create the month’s payroll to start collecting inputs.' : undefined}
+          emptyAction={
+            canProcess ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
+                New payroll
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={runs.data?.totalCount}

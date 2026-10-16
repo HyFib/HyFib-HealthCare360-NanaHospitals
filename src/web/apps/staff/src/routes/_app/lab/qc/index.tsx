@@ -275,6 +275,13 @@ function QcPage() {
               ? 'Register the control lots you run every day.'
               : 'Ask a QC manager to register the control lots.'
           }
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Register control lot
+              </Button>
+            ) : undefined
+          }
         />
       </Section>
 

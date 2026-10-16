@@ -175,6 +175,11 @@ function DonorsPage() {
           ]}
           emptyTitle={filters.search ? 'No donor matches' : 'No donors registered yet'}
           emptyDescription="Register a donor to screen them and record a donation."
+          emptyAction={
+            <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => setRegistering(true)}>
+              Register donor
+            </Button>
+          }
           page={filters.page ?? 1}
           pageSize={25}
           totalCount={donors.data?.totalCount}

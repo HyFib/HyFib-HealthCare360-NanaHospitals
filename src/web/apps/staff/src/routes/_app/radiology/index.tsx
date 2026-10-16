@@ -333,6 +333,12 @@ function ImagingWorklistPage() {
           }}
           emptyTitle={search.search ? 'No study matches' : 'No studies for these dates'}
           emptyDescription="Imaging orders from doctors appear here as soon as they are placed."
+          emptyAction={
+            // Studies are not created here, so the next step from an empty list is to widen it.
+            search.search || search.modality || search.status || search.from || search.to ? (
+              <Button onClick={() => void navigate({ search: {} })}>Show today's studies</Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={studies.data?.totalCount}

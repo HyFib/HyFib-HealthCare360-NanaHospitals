@@ -118,6 +118,17 @@ function PackagesPage() {
           ]}
           emptyTitle="No packages"
           emptyDescription="Create a package with its tests and consultations, then book patients on it."
+          emptyAction={
+            <Button
+              appearance="primary"
+              icon={<AddRegular />}
+              onClick={() =>
+                void navigate({ to: '/health-checkups/packages/$packageId', params: { packageId: 'new' } })
+              }
+            >
+              New package
+            </Button>
+          }
         />
       </Section>
     </Page>

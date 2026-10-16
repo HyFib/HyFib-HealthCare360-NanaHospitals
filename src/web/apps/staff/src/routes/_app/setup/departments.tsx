@@ -151,6 +151,11 @@ function DepartmentsPage() {
               ? 'Clear the search or choose another kind.'
               : 'Add the departments patients are registered and queued to.'
           }
+          emptyAction={
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => set({ edit: 'new' })}>
+              Add department
+            </Button>
+          }
         />
       </Section>
       {search.edit && (

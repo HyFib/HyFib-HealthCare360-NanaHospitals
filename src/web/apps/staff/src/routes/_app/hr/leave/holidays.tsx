@@ -141,6 +141,13 @@ function HolidaysPage() {
           emptyDescription={
             canManage ? 'Add national and festival holidays so attendance and leave count them correctly.' : undefined
           }
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setAdding(true)}>
+                Add holiday
+              </Button>
+            ) : undefined
+          }
           size="small"
         />
       </Section>

@@ -132,6 +132,13 @@ function TheatresPage() {
               ? 'Add each operating room so surgeries can be booked into it.'
               : 'Ask the OT coordinator to add the theatres.'
           }
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Add theatre
+              </Button>
+            ) : undefined
+          }
         />
       </Section>
       {editing && <TheatreDrawer theatre={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

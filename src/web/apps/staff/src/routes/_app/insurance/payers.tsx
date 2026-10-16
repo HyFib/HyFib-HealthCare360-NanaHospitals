@@ -202,6 +202,13 @@ function PayersPage() {
           ]}
           emptyTitle="No payers match"
           emptyDescription="Add the insurers, TPAs and corporates the hospital has agreements with."
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Add payer
+              </Button>
+            ) : undefined
+          }
           size="small"
         />
       </Section>
