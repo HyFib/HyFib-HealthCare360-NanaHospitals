@@ -31,6 +31,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Quartz;
 
@@ -52,7 +53,14 @@ public static class PlatformServiceCollectionExtensions
         LanCertificateManager? certificates = null)
     {
         var options = configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? new PlatformOptions();
-        services.AddOptions<PlatformOptions>().Bind(configuration.GetSection(PlatformOptions.SectionName));
+        services.AddOptions<PlatformOptions>().Bind(configuration.GetSection(PlatformOptions.SectionName)).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<PlatformOptions>, PlatformOptionsValidator>();
+
+        // Checked now as well as when the host starts: the database is migrated before then (SRS SEC-02).
+        if (!environment.IsDevelopment() && PlatformOptionsValidator.Problems(options) is { Count: > 0 } problems)
+        {
+            throw new InvalidOperationException("HC360 cannot start: " + string.Join(" ", problems));
+        }
 
         var directories = new DataDirectories(options);
         directories.EnsureCreated();

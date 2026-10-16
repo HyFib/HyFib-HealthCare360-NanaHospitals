@@ -126,7 +126,8 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - **How long:** a session ends 12 hours after sign-in (one clinical shift), or after 2 hours nobody has used it. A
     patient portal session ends after 20 minutes unused, because portals run on shared and family phones. Together
     with the lock below, these meet NIST SP 800-63B at AAL2: sign in again within 12 hours, and give a secret again
-    after 30 minutes unused.
+    after 30 minutes unused. The server will not start with `HealthCare360:Security:SessionHours` above 12 or
+    `AccessTokenMinutes` above 15 (SRS SEC-02); it names the setting to change (`PlatformOptionsValidator`).
   - **What counts as use:** a key press, click, touch or scroll in the app, which the app reports with each token
     refresh. The refresh itself does not count, since the app refreshes every few minutes in the background. A video
     consultation in progress counts as use on the portal.
