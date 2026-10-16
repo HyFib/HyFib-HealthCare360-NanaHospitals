@@ -37,6 +37,7 @@ internal static class IntegrationHttp
                 client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HealthCare360/1.0");
             })
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler)
+            .AddHttpMessageHandler<CorrelationIdForwardingHandler>()
             .AddStandardResilienceHandler(options =>
             {
                 options.AttemptTimeout.Timeout = attemptTimeout;

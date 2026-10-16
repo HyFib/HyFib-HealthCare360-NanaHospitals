@@ -215,6 +215,7 @@ sequenceDiagram
 * **At rest:** AES-GCM field encryption, an encrypted document store, and encrypted backups. Data Protection keys are protected with machine DPAPI. BitLocker on the Server Node is the hospital's responsibility (SRS SEC-05); nothing checks it yet, and an installer check is planned (`docs/security/ASVS-L2.md`).
 * **Web hardening:** strict CSP, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` (camera/microphone only for self), `frame-ancestors 'none'`, rate limiting, request size limits, and output encoding (React).
 * **Logging hygiene:** every Serilog sink writes through `RedactingFormatter`, which masks the finished line with `SensitiveText` (phone, Aadhaar and ABHA numbers, e-mail and ABHA addresses, tokens and passwords, exception text included); provider error text is masked the same way before it is stored. Errors returned to clients are generic and carry a correlation ID.
+* **Correlation IDs (OBS-04):** the web apps send `X-Correlation-Id` with every request (the same on each retry) and show the server's echo as the reference on errors. The server takes it, or makes one, before anything else runs, so the request log and the exception handler's entries carry it; it is stored on audit rows and outbox messages, and sent on the server's calls to outside services (`CorrelationIdForwardingHandler`), outbox sends included.
 * See [../security/SECURITY.md](../security/SECURITY.md) for the threat model.
 
 ---

@@ -165,6 +165,9 @@ if (builder.Configuration["OpenTelemetry:OtlpEndpoint"] is { Length: > 0 } otlp)
 
 var app = builder.Build();
 
+// First, so the request log and the exception handler's entries carry the request's correlation id (OBS-04).
+app.UseCorrelationId();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
@@ -220,6 +223,9 @@ app.UseSerilogRequestLogging(logging =>
         exception is not null || http.Response.StatusCode >= 500 ? LogEventLevel.Error
         : http.Request.Path.StartsWithSegments("/health") ? LogEventLevel.Verbose
         : LogEventLevel.Information;
+
+    // The request log is written by Serilog directly, outside the logging scope the correlation middleware opens.
+    logging.EnrichDiagnosticContext = static (diagnostics, http) => diagnostics.Set("CorrelationId", http.TraceIdentifier);
 
     // Patient link tokens travel in the path: those requests are logged with their route template (see LoggedPath).
     logging.GetMessageTemplateProperties = static (http, _, elapsed, status) =>

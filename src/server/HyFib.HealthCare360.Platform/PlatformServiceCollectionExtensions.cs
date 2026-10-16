@@ -246,6 +246,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IFeatureFlags, FeatureFlags>();
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
+        services.AddTransient<CorrelationIdForwardingHandler>();
         services.AddScoped<SystemHealthService>();
         services.AddScoped<BackupService>();
         services.AddSingleton<RecoveryKeyStore>();
@@ -328,8 +329,9 @@ public static class PlatformServiceCollectionExtensions
     /// </summary>
     public static WebApplication UseHospitalPlatform(this WebApplication app)
     {
+        // The correlation id first, so the exception handler's log entries carry it (OBS-04).
+        app.UseCorrelationId();
         app.UseExceptionHandler();
-        app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseRouting();
         app.UseAuthentication();
         // After authentication, so the per-user buckets (the global limit, AI) key on the signed-in user rather than on the
