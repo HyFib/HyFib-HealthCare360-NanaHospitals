@@ -72,6 +72,9 @@ public sealed class EndpointAuthorizationTests
         "GET /api/v1/public/doctors/{id:guid}",
         "GET /api/v1/public/doctors/{id:guid}/slots",
 
+        // A proof-of-work challenge for the portal's sign-in and feedback forms (SRS SEC-06): a signed random value, no data.
+        "POST /api/v1/public/challenge",
+
         // The privacy notice names the grievance officer and the response period for everyone (DPDP Rules 2025, rules 9
         // and 14): published contact details only.
         "GET /api/v1/public/privacy",

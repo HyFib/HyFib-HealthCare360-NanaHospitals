@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { withProof } from '@/lib/proofOfWork';
 import type {
   CommunicationPreferences,
   CommunicationPreferencesRequest,
@@ -72,12 +73,27 @@ export const publicFeedbackQueries = {
     }),
 };
 
+/**
+ * Sending feedback asks for a proof of work (SRS SEC-06, lib/proofOfWork): the poster's form is open to anyone who saw
+ * the poster. `onSlow` says when the check takes longer than usual, for "Checking your browser…".
+ */
 export const publicFeedbackApi = {
-  submitForm: (formToken: string, body: SubmitFeedbackRequest, kiosk: boolean) =>
-    api.post<FeedbackReceipt>(`/api/v1/public/feedback/forms/${token(formToken)}`, body, {
-      query: { kiosk: kiosk ? true : undefined },
-    }),
-  submitInvitation: (invitationToken: string, body: SubmitFeedbackRequest) =>
-    api.post<FeedbackReceipt>(`/api/v1/public/feedback/invitations/${token(invitationToken)}`, body),
+  submitForm: (formToken: string, body: SubmitFeedbackRequest, kiosk: boolean, onSlow?: (slow: boolean) => void) =>
+    withProof(
+      'feedback',
+      (headers) =>
+        api.post<FeedbackReceipt>(`/api/v1/public/feedback/forms/${token(formToken)}`, body, {
+          query: { kiosk: kiosk ? true : undefined },
+          headers,
+        }),
+      { onSlow },
+    ),
+  submitInvitation: (invitationToken: string, body: SubmitFeedbackRequest, onSlow?: (slow: boolean) => void) =>
+    withProof(
+      'feedback',
+      (headers) =>
+        api.post<FeedbackReceipt>(`/api/v1/public/feedback/invitations/${token(invitationToken)}`, body, { headers }),
+      { onSlow },
+    ),
   optOut: (optOutToken: string) => api.post<void>(`/api/v1/public/unsubscribe/${token(optOutToken)}`),
 };

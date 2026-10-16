@@ -52,8 +52,8 @@ describe('session', () => {
       );
     vi.stubGlobal('fetch', fetchMock);
 
-    await auth.requestOtp('+919876543210', 'hi');
-    await auth.verifyOtp('c1', '123456', 'hi');
+    await auth.requestOtp('+919876543210', { language: 'hi' });
+    await auth.verifyOtp('c1', '123456', { language: 'hi' });
     await auth.requestOtp('+919876543210');
 
     const sent = fetchMock.mock.calls.map(([url, init]) => [

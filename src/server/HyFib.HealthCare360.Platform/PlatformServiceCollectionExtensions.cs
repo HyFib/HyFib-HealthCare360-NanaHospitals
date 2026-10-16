@@ -207,6 +207,11 @@ public static class PlatformServiceCollectionExtensions
         services.AddRateLimiter(limiter =>
         {
             limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            limiter.OnRejected = (context, _) =>
+            {
+                AntiAutomationEndpoints.OnRateLimited(context.HttpContext);
+                return ValueTask.CompletedTask;
+            };
             limiter.AddPolicy(AuthEndpoints.AuthRateLimit, http => RateLimitPartition.GetFixedWindowLimiter(
                 ClientKey(http), _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
             limiter.AddPolicy(AuthEndpoints.OtpRateLimit, http => RateLimitPartition.GetFixedWindowLimiter(
@@ -229,6 +234,15 @@ public static class PlatformServiceCollectionExtensions
                     QueueLimit = 0,
                 }));
         });
+
+        // The portal's proof of work (SRS SEC-06): challenges signed with a key of this server's, spent ones remembered.
+        services.AddSingleton<IProofOfWorkReplayCache, MemoryProofOfWorkReplayCache>();
+        services.AddSingleton<AutomationSuspicion>();
+        services.AddSingleton(sp => new ProofOfWork(
+            ProofOfWorkKey.LoadOrCreate(directories, sp.GetRequiredService<IDataProtectionProvider>()),
+            sp.GetRequiredService<IProofOfWorkReplayCache>(),
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped<AntiAutomation>();
 
         // ---------------- cross-cutting services
         services.AddScoped<IAuditLogger, AuditLogger>();
@@ -264,6 +278,7 @@ public static class PlatformServiceCollectionExtensions
         // Fallbacks replaced by the Billing, Patients and Clinical modules / Integrations project when present.
         services.TryAddScoped<IChargePoster, NullChargePoster>();
         services.TryAddScoped<IBillingStatusProvider, NullBillingStatusProvider>();
+        services.TryAddScoped<IPayerDirectory, NullPayerDirectory>();
         services.TryAddScoped<IPortalAccountResolver, NullPortalAccountResolver>();
         services.TryAddScoped<IVerifiedCodingSource, NullVerifiedCodingSource>();
         services.TryAddScoped<IPatientLanguageSource, NullPatientLanguageSource>();
@@ -356,6 +371,7 @@ public static class PlatformServiceCollectionExtensions
     public static IEndpointRouteBuilder MapHospitalPlatform(this IEndpointRouteBuilder endpoints)
     {
         AuthEndpoints.Map(endpoints);
+        AntiAutomationEndpoints.Map(endpoints);
         AccessAdminEndpoints.Map(endpoints);
         DeviceEndpoints.Map(endpoints);
         OrganizationEndpoints.Map(endpoints);

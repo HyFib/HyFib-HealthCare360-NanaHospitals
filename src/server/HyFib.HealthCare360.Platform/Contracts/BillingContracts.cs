@@ -61,6 +61,24 @@ public interface IBillingStatusProvider
     Task<DischargeClearance> GetDischargeClearanceAsync(Guid admissionId, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// A payer's name, and the patient's policy, membership or scheme card with it, for the patient banner (UX-04). Each
+/// part is null when the caller may not see it, or there is none.
+/// </summary>
+/// <param name="PolicyNumber">The policy number, masked as the insurance screens show it.</param>
+/// <param name="ValidUntil">The last day the policy is valid.</param>
+public sealed record PayerCoverageSummary(string? PayerName, string? PolicyNumber, DateOnly? ValidUntil);
+
+/// <summary>Implemented by the Billing module, which keeps the payer master and the patients' policies.</summary>
+public interface IPayerDirectory
+{
+    /// <summary>
+    /// The payer's name, for callers who may look payers up, and the patient's policy with that payer that is active and
+    /// in date today (the one valid longest, as billing picks it), for callers who may read policies.
+    /// </summary>
+    Task<PayerCoverageSummary> GetCoverageAsync(Guid patientId, Guid payerId, CancellationToken cancellationToken);
+}
+
 /// <summary>Fallbacks used until the Billing module registers its implementations.</summary>
 internal sealed class NullChargePoster : IChargePoster
 {
@@ -69,6 +87,12 @@ internal sealed class NullChargePoster : IChargePoster
 
     public Task<Result> CancelAsync(string sourceModule, string sourceReference, string reason, CancellationToken cancellationToken) =>
         Task.FromResult(Result.Success());
+}
+
+internal sealed class NullPayerDirectory : IPayerDirectory
+{
+    public Task<PayerCoverageSummary> GetCoverageAsync(Guid patientId, Guid payerId, CancellationToken cancellationToken) =>
+        Task.FromResult(new PayerCoverageSummary(null, null, null));
 }
 
 internal sealed class NullBillingStatusProvider : IBillingStatusProvider

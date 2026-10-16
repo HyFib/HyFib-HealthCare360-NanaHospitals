@@ -342,6 +342,20 @@ or counter acts on a patient without a banner: sample collection, the pharmacy c
   without repeating a label;
 * refresh on `clinical.flags.changed` (topic `patient:{id}`, which every staff member may follow).
 
+#### The banner's payer (UX-04)
+
+The banner's payer line ("Payer: Insurance · Star Health", "Last payer: Self-pay") comes from the server:
+`GET /api/v1/patients/{id}/payer` (Patients module, `visits.read`) → `{current: {visitId, isCurrentVisit, payerType,
+payerId, payerName, policyNumber, validUntil} | null}`. The rule (`PatientPayerRule`) is the patient's *primary
+payer*: the payer is recorded on each visit and admission, not on the patient, so it is the payer of the newest open
+visit (checked in or in consultation); when none is open, of the newest visit that was not cancelled
+(`isCurrentVisit: false`, shown as "Last payer"); and none when the patient has had no visit in the facility. Billing
+(`IPayerDirectory`) adds, for a payer other than self-pay, the payer's name for staff who may look payers up, and for
+staff who may read policies the masked number and last valid day of the patient's policy with that payer that is
+active and in date today (the longest valid, as billing picks it). Both checks are the insurance endpoints' own, so the
+Super Admin's wildcard (`*`) passes them. Screens that know the payer better (an admission's) show their own. `usePatientPayer` (`src/modules/patients/payer.ts`) only words it; it shares the patient's visits'
+query key, so whatever refreshes the visits refreshes the payer.
+
 #### Drug search
 
 `GET /emr/drugs?search&take` lets prescribers, who hold no inventory permission, search the SupplyChain drug master:

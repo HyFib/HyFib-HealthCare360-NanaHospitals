@@ -1,13 +1,13 @@
 import type { PayerType } from '@hc360/core';
 import { useQuery } from '@tanstack/react-query';
 import { usePermission } from '@/lib/permissions';
-import { insuranceQueries } from '@/modules/insurance/api';
-import { patientQueries, type VisitListItem } from './api';
+import { patientQueries } from './api';
 
 /**
- * Who pays for the patient's care, for the patient banner (UX-04). The payer is recorded on each visit and admission,
- * not on the patient, so the banner shows the payer of the patient's open visit, or of the last one ("Last payer")
- * when none is open. Screens that know the payer better (an admission) pass their own.
+ * Who pays for the patient's care, for the patient banner (UX-04). The server chooses the payer
+ * (`GET /api/v1/patients/{id}/payer`): the payer of the patient's open visit, or of the last one ("Last payer") when
+ * none is open, with the payer's name for staff who may look payers up. Screens that know the payer better (an
+ * admission) pass their own.
  */
 
 const PAYER_TEXT: Record<PayerType, string> = {
@@ -19,27 +19,8 @@ const PAYER_TEXT: Record<PayerType, string> = {
   Charity: 'Charity',
 };
 
-/** Who may read a patient's visits, and who may look up a payer's name (as the server allows). */
+/** Who may read a patient's visits, and so their payer. */
 const VISIT_READERS = 'visits.read';
-const PAYER_READERS = [
-  'insurance.payers.manage',
-  'insurance.policies.manage',
-  'insurance.preauth.manage',
-  'insurance.claims.manage',
-  'billing.op.create',
-  'billing.ip.manage',
-  'billing.charges.read',
-] as const;
-
-/** The visit whose payer the banner shows: the open one, else the latest that was not cancelled. Newest first. */
-export function payerVisit(visits: readonly VisitListItem[]): { visit: VisitListItem; isOpen: boolean } | null {
-  const open = visits.find((v) => v.status === 'Open' || v.status === 'InProgress');
-  if (open) {
-    return { visit: open, isOpen: true };
-  }
-  const last = visits.find((v) => v.status !== 'Cancelled');
-  return last ? { visit: last, isOpen: false } : null;
-}
 
 /** "Payer: Insurance · Star Health", or "Last payer: Self-pay" when it comes from a finished visit. */
 export function payerText(payerType: PayerType, payerName: string | null | undefined, isOpen = true): string {
@@ -53,30 +34,16 @@ export function payerText(payerType: PayerType, payerName: string | null | undef
  */
 export function usePatientPayer(patientId: string | null | undefined, enabled = true): string | null {
   const canReadVisits = usePermission(VISIT_READERS);
-  const canReadPayers = usePermission(PAYER_READERS);
-  const visits = useQuery({
-    ...patientQueries.visits(patientId ?? ''),
+  const payer = useQuery({
+    ...patientQueries.payer(patientId ?? ''),
     enabled: enabled && canReadVisits && Boolean(patientId),
-    // Never the previous patient's visits while this one's load: the banner would name the wrong payer.
+    // Never the previous patient's payer while this one's loads: the banner would name the wrong payer.
     placeholderData: undefined,
     retry: false,
   });
-  const current = payerVisit((visits.data?.items ?? []).filter((v) => v.patientId === patientId));
-  // The visit list carries the payer's type only; the name comes from the visit's payer id and the payer master.
-  const thirdParty = current !== null && current.visit.payerType !== 'Self' && canReadPayers;
-  const visit = useQuery({
-    ...patientQueries.visit(current?.visit.id ?? ''),
-    enabled: enabled && thirdParty,
-    retry: false,
-  });
-  const payerId = thirdParty ? (visit.data?.payerId ?? null) : null;
-  const payer = useQuery({
-    ...insuranceQueries.payer(payerId ?? ''),
-    enabled: enabled && Boolean(payerId),
-    retry: false,
-  });
-  if (!enabled || !current) {
+  const current = payer.data?.current;
+  if (!enabled || !canReadVisits || !patientId || !current) {
     return null;
   }
-  return payerText(current.visit.payerType, payerId ? payer.data?.name : null, current.isOpen);
+  return payerText(current.payerType, current.payerName, current.isCurrentVisit);
 }

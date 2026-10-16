@@ -70,6 +70,7 @@ public sealed class BillingModule : IModule
         // Replace the Platform's "billing not installed" fallbacks; ChargeService is shared so a request has one unit of work.
         services.Replace(ServiceDescriptor.Scoped<IChargePoster>(sp => sp.GetRequiredService<ChargeService>()));
         services.Replace(ServiceDescriptor.Scoped<IBillingStatusProvider, BillingStatusProvider>());
+        services.Replace(ServiceDescriptor.Scoped<IPayerDirectory, PayerDirectory>());
 
         services.AddHostedService<TallyDayBookScheduler>();
         services.AddHostedService<GatewayReconciliationJob>();

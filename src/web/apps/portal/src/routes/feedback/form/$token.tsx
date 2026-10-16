@@ -3,11 +3,13 @@ import { ArrowResetRegular } from '@fluentui/react-icons';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
+import { CheckingBrowser } from '@/components/CheckingBrowser';
 import { PortalPage } from '@/components/PortalPage';
 import { ErrorBlock, Notice, PageSpinner } from '@/components/States';
 import { useT } from '@/i18n';
 import { useNow } from '@/lib/hooks';
 import { isWellFormedLinkToken } from '@/lib/linkToken';
+import { prepareProof } from '@/lib/proofOfWork';
 import type { FeedbackReceipt } from '@/lib/types';
 import { publicFeedbackApi, publicFeedbackQueries } from '@/modules/feedback/api';
 import { FeedbackForm } from '@/modules/feedback/FeedbackForm';
@@ -46,6 +48,14 @@ function FeedbackPosterPage() {
   const [round, setRound] = useState(0);
   const [resetAt, setResetAt] = useState<number | null>(null);
   const now = useNow(1000, resetAt !== null);
+  const [checking, setChecking] = useState(false);
+  const ready = Boolean(form.data) && receipt === null;
+  // Solved while the form is filled in, and again for the kiosk's next person, so sending does not wait (SRS SEC-06).
+  useEffect(() => {
+    if (ready) {
+      prepareProof('feedback');
+    }
+  }, [ready, round]);
 
   const startAgain = () => {
     setReceipt(null);
@@ -111,8 +121,9 @@ function FeedbackPosterPage() {
           questions={questions}
           intro={questions.introText}
           privacyNote={t('feedback.anonymous')}
+          status={<CheckingBrowser active={checking} />}
           onSubmit={async (body) => {
-            const result = await publicFeedbackApi.submitForm(token, body, kiosk === true);
+            const result = await publicFeedbackApi.submitForm(token, body, kiosk === true, setChecking);
             setReceipt(result);
             if (kiosk) {
               setResetAt(Date.now() + KIOSK_RESET_MS);

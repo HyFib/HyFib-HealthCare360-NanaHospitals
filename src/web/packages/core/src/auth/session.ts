@@ -151,8 +151,15 @@ async function authFetch(path: string, body?: unknown, headers?: Record<string, 
   return response.status === 204 ? {} : ((await response.json()) as AuthResult);
 }
 
-function languageHeader(language: string | undefined): Record<string, string> | undefined {
-  return language ? { [LANGUAGE_HEADER]: language } : undefined;
+/** What the portal adds to an OTP request: the language the patient chose and the proof of work. */
+export interface OtpOptions {
+  language?: string;
+  headers?: Record<string, string>;
+}
+
+function otpHeaders({ language, headers }: OtpOptions): Record<string, string> | undefined {
+  const all = { ...(language ? { [LANGUAGE_HEADER]: language } : {}), ...headers };
+  return Object.keys(all).length > 0 ? all : undefined;
 }
 
 function accept(result: AuthResult): AuthResult {
@@ -176,15 +183,18 @@ export const auth = {
     return accept(await authFetch('mfa', { challengeId, code }));
   },
 
-  /** `language`: the one the patient chose in the portal, so that a refusal (too many codes…) comes in it. */
-  async requestOtp(phone: string, language?: string) {
-    return authFetch('otp/request', { phone }, languageHeader(language)) as Promise<
+  /**
+   * `language`: the one the patient chose in the portal, so that a refusal (too many codes…) comes in it.
+   * `headers`: the portal's proof of work (`X-HC360-Proof`), which the server asks for here.
+   */
+  async requestOtp(phone: string, options: OtpOptions = {}) {
+    return authFetch('otp/request', { phone }, otpHeaders(options)) as Promise<
       AuthResult & { challengeId: string; expiresAt: string; maskedPhone: string }
     >;
   },
 
-  async verifyOtp(challengeId: string, code: string, language?: string) {
-    return accept(await authFetch('otp/verify', { challengeId, code }, languageHeader(language)));
+  async verifyOtp(challengeId: string, code: string, options: OtpOptions = {}) {
+    return accept(await authFetch('otp/verify', { challengeId, code }, otpHeaders(options)));
   },
 
   /** Adopts tokens returned by other auth endpoints (change password, MFA enable, facility switch). */

@@ -19,6 +19,10 @@ internal static class VisitEndpoints
         app.MapGet("/api/v1/patients/{patientId:guid}/visits", ForPatient)
             .WithTags("Visits")
             .RequirePermission(PatientsPermissions.VisitsRead);
+
+        app.MapGet("/api/v1/patients/{patientId:guid}/payer", PayerForPatient)
+            .WithTags("Visits")
+            .RequirePermission(PatientsPermissions.VisitsRead);
     }
 
     private static async Task<IResult> List(
@@ -169,6 +173,37 @@ internal static class VisitEndpoints
             v.Id, v.VisitNumber, v.PatientId, v.Uhid, v.FullName, v.Gender, v.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
             v.Type, v.Status, v.DepartmentId, v.DepartmentName, v.PractitionerId, v.PractitionerName, v.VisitedAt, v.CompletedAt,
             v.IsFollowUp, v.IsFreeFollowUp, v.PayerType, v.IsMlc, null, null)));
+    }
+
+    /// <summary>The patient banner's payer (<see cref="PatientPayerRule"/>), with the name and policy from Billing.</summary>
+    private static async Task<IResult> PayerForPatient(Guid patientId, HospitalDbContext db, IPayerDirectory payers, CancellationToken ct)
+    {
+        // The two candidates the rule chooses between: the newest open visit, and the newest that was not cancelled.
+        var visits = db.Set<Visit>().AsNoTracking().Where(v => v.PatientId == patientId).OrderByDescending(v => v.VisitedAt);
+        var candidates = new List<PayerVisit>();
+        foreach (var candidate in new[]
+                 {
+                     visits.Where(v => v.Status == VisitStatus.Open || v.Status == VisitStatus.InProgress),
+                     visits.Where(v => v.Status != VisitStatus.Cancelled),
+                 })
+        {
+            if (await candidate.Select(v => new { v.Id, v.Status, v.VisitedAt, v.PayerType, v.PayerId }).FirstOrDefaultAsync(ct) is { } v)
+            {
+                candidates.Add(new PayerVisit(v.Id, v.Status, v.VisitedAt, v.PayerType, v.PayerId));
+            }
+        }
+
+        if (PatientPayerRule.Choose(candidates) is not { } chosen)
+        {
+            return TypedResults.Ok(new PatientPayerResponse(null));
+        }
+
+        var (visit, isOpen) = chosen;
+        var coverage = visit.PayerType != PayerType.Self && visit.PayerId is { } payerId
+            ? await payers.GetCoverageAsync(patientId, payerId, ct)
+            : new PayerCoverageSummary(null, null, null);
+        return TypedResults.Ok(new PatientPayerResponse(new PatientPayer(
+            visit.VisitId, isOpen, visit.PayerType, visit.PayerId, coverage.PayerName, coverage.PolicyNumber, coverage.ValidUntil)));
     }
 
     private static DateTimeOffset ToUtcStart(DateOnly localDate)

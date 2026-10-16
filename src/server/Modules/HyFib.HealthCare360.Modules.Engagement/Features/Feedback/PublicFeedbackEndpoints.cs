@@ -11,6 +11,10 @@ namespace HyFib.HealthCare360.Modules.Engagement.Features.Feedback;
 /// <item>Personal feedback links (FB-02), which are single use and expire after 14 days.</item>
 /// <item>Campaign opt-out links (CRM-03).</item>
 /// </list>
+/// Sending feedback also asks for a proof of work (SRS SEC-06): the QR poster's form is open to anyone who has seen the
+/// poster, and a script could otherwise fill the complaint queue. It is checked after validation, so a form filled in
+/// wrongly neither spends its proof nor counts as a failure; an unknown or used link does. Opting out does not ask for
+/// one: its link is personal and doing it twice changes nothing.
 /// Responses never include anything about a patient (no name, UHID or number). Unknown tokens get one generic 404, so
 /// the endpoints cannot be used to probe records. GET never changes anything, which matters because SMS apps and
 /// link scanners pre-fetch links; the change happens on POST.
@@ -25,9 +29,15 @@ internal static class PublicFeedbackEndpoints
 
         // The tokens are the patients' links: logs record the route template instead of the path.
         group.MapGet("/feedback/forms/{token}", GetForm).WithSensitivePath();
-        group.MapPost("/feedback/forms/{token}", SubmitToForm).WithValidation<SubmitFeedbackRequest>().WithSensitivePath();
+        group.MapPost("/feedback/forms/{token}", SubmitToForm)
+            .WithValidation<SubmitFeedbackRequest>()
+            .RequireProofOfWork(AntiAutomationActions.Feedback)
+            .WithSensitivePath();
         group.MapGet("/feedback/invitations/{token}", GetInvitation).WithSensitivePath();
-        group.MapPost("/feedback/invitations/{token}", SubmitInvitation).WithValidation<SubmitFeedbackRequest>().WithSensitivePath();
+        group.MapPost("/feedback/invitations/{token}", SubmitInvitation)
+            .WithValidation<SubmitFeedbackRequest>()
+            .RequireProofOfWork(AntiAutomationActions.Feedback)
+            .WithSensitivePath();
         group.MapGet("/unsubscribe/{token}", GetOptOut).WithSensitivePath();
         group.MapPost("/unsubscribe/{token}", OptOut).WithSensitivePath();
     }

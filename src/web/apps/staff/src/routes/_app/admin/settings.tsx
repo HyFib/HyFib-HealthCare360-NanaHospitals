@@ -51,6 +51,12 @@ const KNOWN: Record<string, string> = {
   'security.maxSessionsPerUser':
     'How many sessions one staff account may have at once (3 if not set, 0 for no limit). Signing in once more signs out the one used least recently.',
   'alerts.oncallPhone': 'Mobile number that gets an SMS when the server WiFi drops or backups fail.',
+  'security.antiAutomation.enabled':
+    'Ask the patient portal’s sign-in and feedback forms for a proof of work, against scripts (on unless set to false).',
+  'security.antiAutomation.bits':
+    'Work asked of every browser, in bits (14 if not set: under a second on a mid-range phone). Each bit doubles it; at most 24.',
+  'security.antiAutomation.maxBits':
+    'The most work asked of an address or number that keeps failing, in bits (18 if not set; at most 24).',
 };
 
 const FEATURE_SWITCH_NOTE = 'A feature switch. Turn it on or off under Hospital setup, Features.';

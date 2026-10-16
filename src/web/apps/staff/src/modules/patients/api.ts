@@ -191,6 +191,21 @@ export type TokenPriority = 'Normal' | 'Priority' | 'Emergency';
 export type ReferralSource =
   'Self' | 'Doctor' | 'Hospital' | 'HealthCamp' | 'Online' | 'Corporate' | 'Advertisement' | 'Other';
 
+/**
+ * The patient's payer for the banner (`GET /api/v1/patients/{id}/payer`, UX-04), chosen by the server: the open visit's,
+ * else the last visit's that was not cancelled (`isCurrentVisit: false`). The name, masked policy number and policy end
+ * date come only to staff who may read payers and policies, for a payer other than self-pay.
+ */
+export interface PatientPayer {
+  visitId: string;
+  isCurrentVisit: boolean;
+  payerType: PayerType;
+  payerId: string | null;
+  payerName: string | null;
+  policyNumber: string | null;
+  validUntil: string | null;
+}
+
 export interface VisitListItem {
   id: string;
   visitNumber: string;
@@ -420,6 +435,8 @@ export const patientKeys = {
   detail: (id: string) => ['patients', 'detail', id] as const,
   visits: (id: string, page: number) => ['patients', 'visits', id, page] as const,
   visit: (visitId: string) => ['patients', 'visit', visitId] as const,
+  /** Under the patient's visits, so whatever refreshes the visits refreshes the banner's payer too. */
+  payer: (id: string) => ['patients', 'visits', id, 'payer'] as const,
   consents: (id: string) => ['patients', 'consents', id] as const,
   whatsApp: (id: string) => ['patients', 'whatsapp', id] as const,
   portalFamily: (id: string) => ['patients', 'portal-family', id] as const,
@@ -446,6 +463,11 @@ export const patientQueries = {
       queryFn: ({ signal }) =>
         api.get<PagedResult<VisitListItem>>(`/api/v1/patients/${id}/visits`, { query: { page, pageSize: 10 }, signal }),
       placeholderData: keepPreviousData,
+    }),
+  payer: (id: string) =>
+    queryOptions({
+      queryKey: patientKeys.payer(id),
+      queryFn: ({ signal }) => api.get<{ current: PatientPayer | null }>(`/api/v1/patients/${id}/payer`, { signal }),
     }),
   visit: (visitId: string) =>
     queryOptions({
