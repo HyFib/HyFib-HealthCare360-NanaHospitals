@@ -262,14 +262,21 @@ public sealed class WhatsAppOptInTests(HospitalServer server)
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         var log = new NotificationLog
         {
-            CreatedAt = DateTimeOffset.UtcNow, Channel = NotificationChannel.WhatsApp, TemplateKey = key, PatientId = patientId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Channel = NotificationChannel.WhatsApp,
+            TemplateKey = key,
+            PatientId = patientId,
             Status = NotificationStatus.Queued,
         };
         db.Add(log);
         await db.SaveChangesAsync(Ct);
         var values = new Dictionary<string, string>
         {
-            ["doctor"] = "Dr. Rao", ["date"] = "20-10-2026", ["time"] = "10:30", ["billNumber"] = "NHOB260000001", ["amount"] = "450.00",
+            ["doctor"] = "Dr. Rao",
+            ["date"] = "20-10-2026",
+            ["time"] = "10:30",
+            ["billNumber"] = "NHOB260000001",
+            ["amount"] = "450.00",
         };
         return (new NotificationDelivery(log.Id, key, NotificationChannel.WhatsApp, phone, "Meena", "en", values, null, document), log.Id);
     }
