@@ -315,6 +315,8 @@ public sealed class PrivacyTests(HospitalServer server)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var phone = "9" + Digits(9);
+        // These tests are not about duplicate detection: every patient here is an "Asha Privacy…" born in the same ten
+        // years, so two of them now and then share a birthday and the second would be refused as a possible duplicate.
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
             Title: "Ms.", FirstName: "Asha", MiddleName: null, LastName: "Privacy" + Letters(8), Gender: Gender.Female,
             DateOfBirth: new DateOnly(1980, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
@@ -322,7 +324,7 @@ public sealed class PrivacyTests(HospitalServer server)
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
             EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
             Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
-            ConfirmedNotDuplicate: false));
+            ConfirmedNotDuplicate: true));
         return (patient, phone);
     }
 
