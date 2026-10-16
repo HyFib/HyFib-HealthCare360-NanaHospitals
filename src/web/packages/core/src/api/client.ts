@@ -32,6 +32,12 @@ export interface ApiClientConfig {
    * server locks a session left unused even when the app did not. The request still fails.
    */
   onSessionLocked?: () => void;
+  /**
+   * The language the user reads the app in (for example `hi`), sent as Accept-Language so that the server writes its
+   * messages and documents for patients in it when it knows no preference of theirs. Leave it out to send the
+   * browser's own.
+   */
+  getLanguage?: () => string | undefined;
 }
 
 /** A downloaded file, the name the server gave it (Content-Disposition) and the response headers (notices). */
@@ -78,6 +84,10 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       const headers = new Headers(options.headers);
       headers.set('Accept', 'application/json');
       headers.set('X-HC360-Client', config.clientType);
+      const language = config.getLanguage?.();
+      if (language) {
+        headers.set('Accept-Language', language);
+      }
       if (!headers.has(CORRELATION_HEADER)) {
         headers.set(CORRELATION_HEADER, correlationId);
       }

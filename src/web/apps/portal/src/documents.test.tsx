@@ -344,7 +344,7 @@ function pdf(fileName: string): Response {
   });
 }
 
-const calls: { method: string; path: string }[] = [];
+const calls: { method: string; path: string; language: string | null }[] = [];
 let pdfAnswer: (fileName: string) => Response | Promise<Response>;
 let saved: SavedFile[];
 
@@ -352,7 +352,7 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
   const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const method = (init?.method ?? 'GET').toUpperCase();
   const { pathname } = new URL(raw, 'https://portal.test');
-  calls.push({ method, path: pathname });
+  calls.push({ method, path: pathname, language: new Headers(init?.headers).get('Accept-Language') });
   const pdfName = PDF_NAMES[pathname];
   if (method === 'GET' && pdfName) {
     return pdfAnswer(pdfName);
@@ -556,18 +556,24 @@ describe('Download PDF', () => {
     expect(await screen.findByRole('button', { name: 'Print receipt' }, SLOW)).toBeInTheDocument();
   });
 
-  it('speaks Hindi, says the official PDF is in English, and prints the Hindi copy', async () => {
+  it('speaks Hindi, prints the Hindi copy, and asks the server for the PDF in Hindi', async () => {
     useLanguageStore.getState().setLanguage('hi');
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     const user = userEvent.setup();
     openAt(`/portal/prescriptions/${RX_ID}`);
     expect(await screen.findByRole('button', { name: 'PDF डाउनलोड करें' }, SLOW)).toBeInTheDocument();
-    expect(screen.getByText(/अस्पताल की आधिकारिक प्रति मिलती है, जो अंग्रेज़ी में होती है/)).toBeInTheDocument();
+    expect(screen.getByText(/अस्पताल की आधिकारिक प्रति मिलती है।/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'प्रिंट करें' }));
     expect(print).toHaveBeenCalledTimes(1);
     expect(document.getElementById('hc360-print-root')?.innerHTML).toContain('दवा का पर्चा');
     expect(calls.some((call) => call.path.endsWith('/pdf'))).toBe(false);
+
+    // The server writes the PDF in the patient's language: their record's preference, else the one sent here.
+    await user.click(screen.getByRole('button', { name: 'PDF डाउनलोड करें' }));
+    expect(await findToast('PDF आपके डाउनलोड में सहेज दिया गया है।')).toBeInTheDocument();
+    expect(saved).toHaveLength(1);
+    expect(calls.find((call) => call.path.endsWith('/pdf'))?.language).toBe('hi');
   });
 });
 

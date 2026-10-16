@@ -13,7 +13,9 @@ export interface FriendlyError {
 /**
  * Turns any failure into words a patient understands, in their language. Transport and status problems are
  * translated here; business-rule messages from the server (400/409/422, for example "This slot was just taken")
- * are shown as sent, because they carry the specific reason.
+ * are shown as sent, because they carry the specific reason. The server writes them in the patient's language (their
+ * record's preference, else the portal's, which the API client sends as Accept-Language), and in English when it has
+ * no translation of one.
  */
 export function describeError(error: unknown, t: Translate, title: MessageKey = 'errors.title'): FriendlyError {
   if (!isApiError(error)) {
