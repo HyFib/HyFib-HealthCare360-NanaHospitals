@@ -1,8 +1,8 @@
-/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 
 // The staff UI is served by the HC360 Server (same origin as the API) in production. During development Vite
 // proxies /api, /hubs and /health to the local server (self-signed LAN certificate → secure: false).
@@ -32,6 +32,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // a11y/*.spec.ts are Playwright's: the built app in a browser (pnpm test:a11y).
+    exclude: [...configDefaults.exclude, 'a11y/**'],
     // Form tests drive Fluent components with user-event. When the staff and portal suites run side by side
     // (pnpm -r test, as CI does) one can take longer than the 5 s default; the portal allows 20 s for the same reason.
     testTimeout: 20_000,
