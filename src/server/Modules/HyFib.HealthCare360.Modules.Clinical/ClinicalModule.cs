@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Notes;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Portal;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
+using HyFib.HealthCare360.Modules.Clinical.Features.Procedures;
 using HyFib.HealthCare360.Modules.Clinical.Features.Templates;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
@@ -48,6 +49,7 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<IVerifiedCodingSource, VerifiedCodingSource>();
         services.AddScoped<MedicalRecordService>();
         services.AddScoped<HealthCheckupService>();
+        services.AddScoped<ProcedureService>();
 
         // The ICD-10 and ICD-10-PCS catalogues: imports of the hospital's WHO and CMS files, and the chapters and blocks in use.
         services.AddScoped<IcdClassificationProvider>();
@@ -68,6 +70,7 @@ public sealed class ClinicalModule : IModule
         DiagnosisEndpoints.Map(endpoints);
         NoteEndpoints.Map(endpoints);
         ImmunizationEndpoints.Map(endpoints);
+        ProcedureEndpoints.Map(endpoints);
         TemplateEndpoints.Map(endpoints);
         OrderEndpoints.Map(endpoints);
         PrescriptionEndpoints.Map(endpoints);

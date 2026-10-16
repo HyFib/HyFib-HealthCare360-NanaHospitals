@@ -220,7 +220,10 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    /// <summary>Patient leaves the theatre. WHO: never before the Sign-out is complete.</summary>
+    /// <summary>
+    /// Patient leaves the theatre. WHO: never before the Sign-out is complete. Announces the operation so that it is
+    /// recorded as a procedure on the patient's record (EHR-01).
+    /// </summary>
     public Result Complete(DateTimeOffset now)
     {
         if (Status != SurgeryStatus.InProgress)
@@ -235,6 +238,8 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
 
         Status = SurgeryStatus.Completed;
         CompletedAt = now;
+        Raise(new SurgeryCompleted(Id, BookingNumber, FacilityId, PatientId, AdmissionId, VisitId, ProcedureCode, ProcedureName, Side(Laterality),
+            SurgeonId, StartedAt, now));
         return Result.Success();
     }
 
@@ -281,6 +286,14 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         TheatreId is { } theatre && SurgeonId is { } surgeon && ScheduledStart is { } start && ScheduledEnd is { } end
             ? new SurgerySlot(Id, theatre, surgeon, PatientId, AnaesthetistId, start, end)
             : null;
+
+    private static ProcedureSide Side(Laterality laterality) => laterality switch
+    {
+        Laterality.Left => ProcedureSide.Left,
+        Laterality.Right => ProcedureSide.Right,
+        Laterality.Bilateral => ProcedureSide.Bilateral,
+        _ => ProcedureSide.NotApplicable,
+    };
 
     public static string Describe(SafetyPhase phase) => phase switch
     {

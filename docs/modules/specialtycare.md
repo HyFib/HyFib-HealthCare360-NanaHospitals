@@ -150,7 +150,9 @@ label (`blood-units`); otherwise the label page prints. See [integrations.md](in
 | `bloodbank.requests.create`, `bloodbank.reactions.report` | Doctor, Nurse, BloodBankOfficer |
 
 ## Events
-**Raised:** none. The module is a consumer of clinical orders and ADT.
+**Raised:** `SurgeryCompleted` (Platform) by `SurgeryBooking.Complete`, when the patient leaves the theatre after the WHO
+Sign-out: booking, patient, admission/visit, procedure code and name, side, surgeon, knife-to-skin and completion times.
+Clinical records it as a procedure on the patient's record (EHR-01). Otherwise the module consumes clinical orders and ADT.
 
 **Handled** (in the publisher's transaction):
 | Event | Handler | Effect |

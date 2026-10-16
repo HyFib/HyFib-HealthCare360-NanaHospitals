@@ -60,7 +60,7 @@ public static class PersonalDataCatalogue
                 new("patients.visitor_passes", "Visitor passes issued during your stays"),
             ]),
         new("clinical", "Consultations and health records",
-            "Your consultations, clinical notes, diagnoses, allergies, vaccinations, vital signs, orders and discharge summaries.",
+            "Your consultations, clinical notes, diagnoses, procedures, allergies, vaccinations, vital signs, orders and discharge summaries.",
             "To diagnose and treat you, and to keep your medical record.",
             "Needed for your care; medical records must be kept by law.", PersonalDataRetention.MedicalRecords,
             [
@@ -70,6 +70,7 @@ public static class PersonalDataCatalogue
                 new("clinical.allergies", "Allergies"),
                 new("clinical.no_known_allergies", "No-known-allergy statements", Counted: false),
                 new("clinical.immunizations", "Vaccinations"),
+                new("clinical.procedure_records", "Procedures and operations"),
                 new("clinical.vital_signs", "Vital signs"),
                 new("clinical.patient_alerts", "Care alerts"),
                 new("clinical.clinical_orders", "Orders for tests and treatment"),

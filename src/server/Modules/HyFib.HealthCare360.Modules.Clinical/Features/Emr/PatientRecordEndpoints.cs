@@ -40,11 +40,15 @@ internal static class PatientRecordEndpoints
         return opened.IsFailure ? opened.Error!.ToProblem() : TypedResults.Ok(await queries.FlagsAsync(patientId, ct));
     }
 
-    /// <summary><c>types</c> is a comma-separated list of <see cref="TimelineEntryType"/> names; dates are IST calendar dates.</summary>
+    /// <summary>
+    /// <c>types</c> is a comma-separated list of <see cref="TimelineEntryType"/> names and <c>encounterTypes</c> one of
+    /// <see cref="EncounterType"/> names (OP, IP, ER, telehealth, health checkup, EHR-02); dates are IST calendar dates.
+    /// </summary>
     private static async Task<IResult> Timeline(
         Guid patientId,
         [AsParameters] PageQuery query,
         string? types,
+        string? encounterTypes,
         DateOnly? from,
         DateOnly? to,
         Guid? departmentId,
@@ -63,6 +67,18 @@ internal static class PatientRecordEndpoints
             wanted.Add(type);
         }
 
+        var kinds = new HashSet<EncounterType>();
+        foreach (var name in (encounterTypes ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            // Names only: Enum.TryParse would also take "7", which names no kind of encounter.
+            if (!Enum.TryParse<EncounterType>(name, ignoreCase: true, out var kind) || !Enum.IsDefined(kind) || char.IsDigit(name[0]))
+            {
+                return Error.Field("encounterTypes", $"Unknown encounter type '{name}'.").ToProblem();
+            }
+
+            kinds.Add(kind);
+        }
+
         if (from is not null && to is not null && from > to)
         {
             return Error.Field("from", "The start date must be on or before the end date.").ToProblem();
@@ -74,7 +90,7 @@ internal static class PatientRecordEndpoints
             return opened.Error!.ToProblem();
         }
 
-        return TypedResults.Ok(await timeline.QueryAsync(patientId, new TimelineFilter(wanted, from, to, departmentId), query.ToRequest(), ct));
+        return TypedResults.Ok(await timeline.QueryAsync(patientId, new TimelineFilter(wanted, from, to, departmentId, kinds), query.ToRequest(), ct));
     }
 
     private static async Task<IResult> Medications(Guid patientId, ClinicalAccess access, PatientRecordQueries queries, CancellationToken ct)

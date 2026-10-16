@@ -22,6 +22,7 @@ internal sealed class PatientsMergedHandler(HospitalDbContext db) : IDomainEvent
         await RepointAsync<Diagnosis>(source, target, cancellationToken);
         await RepointAsync<ClinicalNote>(source, target, cancellationToken);
         await RepointAsync<Immunization>(source, target, cancellationToken);
+        await RepointAsync<ProcedureRecord>(source, target, cancellationToken);
         await RepointAsync<ResultReview>(source, target, cancellationToken);
         await RepointAsync<ClinicalOrder>(source, target, cancellationToken);
         await RepointAsync<Prescription>(source, target, cancellationToken);

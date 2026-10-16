@@ -35,13 +35,16 @@ import { useClinicalSummary } from '@/modules/emr/hooks';
 import { NotesTab } from '@/modules/emr/NotesPanel';
 import { OrdersTab } from '@/modules/emr/OrdersPanel';
 import { PrescriptionsList } from '@/modules/emr/PrescriptionsList';
+import { ProceduresTab } from '@/modules/emr/ProceduresPanel';
 import { AdmissionsTab, DocumentsTab, EncountersTab, ImmunizationsTab } from '@/modules/emr/RecordTabs';
 import { StartEncounterDialog } from '@/modules/emr/StartEncounterDialog';
 import {
   CHART_TABS,
   chartTabLabel,
   parseChartTab,
+  parseEncounterTypes,
   parseTypes,
+  serializeEncounterTypes,
   serializeTypes,
   type ChartTab,
   type TimelineTarget,
@@ -55,6 +58,8 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 interface ChartSearch {
   tab?: ChartTab;
   types?: string;
+  /** Kinds of care on the timeline (OutPatient, InPatient…). */
+  care?: string;
   from?: string;
   to?: string;
   dept?: string;
@@ -65,6 +70,7 @@ export const Route = createFileRoute('/_app/emr/patients/$patientId/')({
   validateSearch: (s: Record<string, unknown>): ChartSearch => ({
     tab: parseChartTab(s.tab),
     types: typeof s.types === 'string' ? (serializeTypes(parseTypes(s.types)) ?? undefined) : undefined,
+    care: serializeEncounterTypes(parseEncounterTypes(s.care)),
     from: typeof s.from === 'string' && DATE.test(s.from) ? s.from : undefined,
     to: typeof s.to === 'string' && DATE.test(s.to) ? s.to : undefined,
     dept: typeof s.dept === 'string' && s.dept ? s.dept : undefined,
@@ -114,6 +120,7 @@ function PatientChartPage() {
     void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId } });
   const timelineFilters: TimelineFilters = {
     types: parseTypes(search.types),
+    encounterTypes: parseEncounterTypes(search.care),
     from: search.from,
     to: search.to,
     departmentId: search.dept,
@@ -222,6 +229,7 @@ function PatientChartPage() {
                   search: (prev) => ({
                     ...prev,
                     types: serializeTypes(f.types),
+                    care: serializeEncounterTypes(f.encounterTypes),
                     from: f.from,
                     to: f.to,
                     dept: f.departmentId,
@@ -239,6 +247,7 @@ function PatientChartPage() {
           {tab === 'alerts' && <AlertsTab patientId={patientId} />}
           {tab === 'diagnoses' && <DiagnosesTab patientId={patientId} />}
           {tab === 'notes' && <NotesTab patientId={patientId} />}
+          {tab === 'procedures' && <ProceduresTab patientId={patientId} />}
           {tab === 'immunisations' && <ImmunizationsTab patientId={patientId} />}
           {tab === 'orders' && <OrdersTab patientId={patientId} />}
           {tab === 'prescriptions' && <PrescriptionsList patientId={patientId} />}

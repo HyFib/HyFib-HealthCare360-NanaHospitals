@@ -14,6 +14,7 @@ import {
 import {
   BeakerRegular,
   ClipboardPulseRegular,
+  CutRegular,
   DismissRegular,
   DocumentRegular,
   DocumentTextRegular,
@@ -33,9 +34,12 @@ import { emrQueries, type TimelineFilters } from './api';
 import {
   groupByDay,
   prettyTitle,
+  TIMELINE_ENCOUNTER_TYPES,
   TIMELINE_TYPES,
+  timelineEncounterTypeLabel,
   timelineTarget,
   timelineTypeLabel,
+  toggleEncounterType,
   toggleType,
   type TimelineEntry,
   type TimelineEntryType,
@@ -45,6 +49,7 @@ import {
 const useStyles = makeStyles({
   filters: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' },
   types: { display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '12px' },
+  care: { display: 'flex', gap: '4px', flexWrap: 'wrap' },
   day: { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' },
   dayLabel: {
     padding: '4px 0',
@@ -83,13 +88,17 @@ const TYPE_ICON: Record<TimelineEntryType, ReactElement> = {
   Prescription: <PillRegular />,
   Order: <ClipboardPulseRegular />,
   Result: <BeakerRegular />,
+  Procedure: <CutRegular />,
   Note: <NoteRegular />,
   Immunization: <SyringeRegular />,
   Document: <DocumentRegular />,
   DischargeSummary: <DocumentTextRegular />,
 };
 
-/** The longitudinal record across OP, IP, emergency and health check-ups, filterable by type, date and department. */
+/**
+ * The longitudinal record across OP, IP, emergency, telehealth and health check-ups, filterable by type of entry, kind
+ * of care, date and department (EHR-02).
+ */
 export function TimelinePanel({
   patientId,
   filters,
@@ -106,7 +115,9 @@ export function TimelinePanel({
   const timeline = useQuery(emrQueries.timeline(patientId, filters));
   const today = todayIso();
   const set = (patch: Partial<TimelineFilters>) => onFiltersChange({ ...filters, ...patch, page: undefined });
-  const filtered = Boolean(filters.types || filters.from || filters.to || filters.departmentId);
+  const filtered = Boolean(
+    filters.types || filters.encounterTypes || filters.from || filters.to || filters.departmentId,
+  );
   const days = groupByDay(timeline.data?.items ?? []);
 
   return (
@@ -126,6 +137,19 @@ export function TimelinePanel({
         ))}
       </div>
       <div className={styles.filters}>
+        <Field label="Kind of care">
+          <div className={styles.care} role="group" aria-label="Kind of care">
+            {TIMELINE_ENCOUNTER_TYPES.map((type) => (
+              <ToggleButton
+                key={type}
+                checked={filters.encounterTypes?.includes(type) ?? false}
+                onClick={() => set({ encounterTypes: toggleEncounterType(filters.encounterTypes, type) })}
+              >
+                {timelineEncounterTypeLabel[type]}
+              </ToggleButton>
+            ))}
+          </div>
+        </Field>
         <Field label="From">
           <Input
             type="date"

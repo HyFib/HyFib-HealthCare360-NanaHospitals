@@ -310,6 +310,8 @@ export interface PatientClinicalSummary {
 
 export interface TimelineFilters {
   types?: TimelineEntryType[];
+  /** Kinds of care (OP, IP, ER, telehealth, check-up): their encounters and what was recorded in them. */
+  encounterTypes?: EncounterType[];
   from?: string;
   to?: string;
   departmentId?: string;
@@ -794,6 +796,10 @@ export const emrQueries = {
         api.get<PagedResult<TimelineEntry>>(`/api/v1/emr/patients/${patientId}/timeline`, {
           query: {
             types: filters.types && filters.types.length > 0 ? filters.types.join(',') : undefined,
+            encounterTypes:
+              filters.encounterTypes && filters.encounterTypes.length > 0
+                ? filters.encounterTypes.join(',')
+                : undefined,
             from: filters.from,
             to: filters.to,
             departmentId: filters.departmentId,
