@@ -81,6 +81,22 @@ public sealed class BridgeSourceTests
         BridgeHost.IsTrustedSource(source, Server).ShouldBeFalse();
 }
 
+/// <summary>
+/// <c>dsc.signPrescription</c> refuses anything but a prescription's canonical bytes before it opens the certificate
+/// store or shows a dialog. The parsing, the certificate filter and the signature itself are tested on every OS in the
+/// Clinical module's tests (PrescriptionDigitalSignatureTests); the Windows dialog and a real token are checked by hand.
+/// </summary>
+public sealed class DscSignerTests
+{
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not base64!")]
+    [InlineData("e30=")] // {}
+    [InlineData("eyJmb3JtYXQiOiJvdGhlciJ9")] // {"format":"other"}
+    public void Anything_but_a_prescription_is_refused_before_a_dialog_opens(string? content) =>
+        Should.Throw<BridgeException>(() => DscSigner.Sign(content)).Code.ShouldBe("bad_request");
+}
+
 public sealed class DownloadPolicyTests
 {
     private static readonly Uri Server = new("https://hc360-srv:7360/");
