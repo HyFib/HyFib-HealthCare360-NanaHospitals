@@ -6,9 +6,10 @@ body,
 }
 
 html {
-  /* Keep the focused element clear of the sticky header and the phone's bottom navigation (WCAG 2.4.11). */
+  /* Keep the focused element clear of the sticky header and the phone's bottom navigation (WCAG 2.4.11), and of a bar
+     stuck above that navigation, such as a doctor's page's chosen time (keepFocusClearOf in lib/hooks.ts). */
   scroll-padding-top: 80px;
-  scroll-padding-bottom: 96px;
+  scroll-padding-bottom: calc(96px + var(--hc360-sticky-bottom, 0px));
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }

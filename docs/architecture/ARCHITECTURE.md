@@ -246,7 +246,7 @@ The UI detects the host (`window.chrome?.webview`) and degrades gracefully in a 
 * **Forms:** React Hook Form + Zod schemas that mirror the server validators, with draft auto-save for long free-text forms.
 * **Design system (`@hc360/ui`):** PageHeader, DataTable (server-side paging, sorting, row actions, keyboard navigation, skeleton/empty/error states), FormSection/FormGrid, typed field components, StatusBadge, KpiCard, PatientBanner, EntityDrawer, ConfirmDialog, Barcode/QR.
 * **Printing (`@hc360/core`):** `printDocument` lays out a page (A4, A5, 80 mm, labels, wristbands), `letterheadHtml` puts the facility letterhead at its top, and both follow the print templates set in Hospital setup (pre-printed stationery, logo, closing note; HMS-04, UX-09). `printHtml` sends the page to this computer's printer for that kind of page inside HC360 Desktop, or to the print dialog in a browser. Documents patients receive are made on the server instead (ADR-012).
-* **Accessibility (UX-10):** Fluent components (ARIA-complete), visible focus, a skip link, reduced-motion support, WCAG 2.2 AA contrast in all themes. axe-core checks the shared components, the staff shell, the main staff screens and the portal's main pages for WCAG 2.2 A/AA problems in the Vitest suites; contrast and target size, which jsdom cannot measure, are checked in a browser (FRONTEND-GUIDE.md §6).
+* **Accessibility (UX-10):** Fluent components (ARIA-complete), visible focus, a skip link, reduced-motion support, WCAG 2.2 AA contrast in all themes. axe-core checks the shared components, the staff shell, the main staff screens and the portal's main pages for WCAG 2.2 A/AA problems in the Vitest suites. Playwright checks the built apps' key screens in Chromium, in every theme, for what jsdom cannot measure: colour contrast, 24 px targets, and a visible, unobscured focus at every Tab stop (`pnpm test:a11y`, FRONTEND-GUIDE.md §6).
 
 ---
 
@@ -286,9 +286,10 @@ answers are not touched.
 
 ## 12. Quality gates
 
-* CI (`.github/workflows/ci.yml`) runs on every pull request and on main, and a pull request cannot merge until both of its jobs pass:
+* CI (`.github/workflows/ci.yml`) runs on every pull request and on main, and a pull request cannot merge until its jobs pass:
   * **.NET:** the C# formatting check (`dotnet format whitespace`, from `.editorconfig`); restore, whose NuGet audit fails on any known-vulnerable package, direct or transitive; `dotnet build` with warnings as errors and every security analyzer rule on; `dotnet test` (unit, integration and architecture).
   * **Web:** a gitleaks secret scan of every commit, `pnpm audit`, the Prettier check (`pnpm format:check`), `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
+  * **Accessibility in a browser (SRS UX-10):** `pnpm test:a11y` on Ubuntu with Playwright's Chromium: the staff app's and the portal's key screens, built and with canned data, in the light, dark and high-contrast themes, checked with axe-core (every WCAG 2.2 A/AA rule, contrast and target size included) and a walk with Tab. A failure keeps the HTML report, with screenshots and traces, as a build artifact.
 * **CodeQL** code scanning analyses the C# apps, the web apps and the workflows on every pull request, on main and weekly.
 * The weekly **Security audit** workflow runs both package audits on main, and Dependabot proposes updates every week. `docs/security/SECURITY.md` ("Dependencies, secrets and code scanning") explains how an advisory is accepted and how a finding is handled.
 * Every module ships domain unit tests for its rules (for example billing totals, bed state machine, Westgard rules, FEFO batch selection) and integration tests for its main workflow.

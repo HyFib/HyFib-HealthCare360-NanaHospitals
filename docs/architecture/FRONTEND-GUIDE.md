@@ -240,30 +240,53 @@ describe('ward transfers', SCREEN_TESTS, () => {
 
 * `fakeServer` answers by method and path, and lists what it could not answer in `unanswered`. Answer everything the
   screen asks for, or the check sees an error state instead of the screen. Type the canned data with the module's DTOs,
-  and put data a browser check could use too in `fixtures/` (no test framework in there).
+  and put the data in `fixtures/` (no test framework in there): the browser checks use it too.
 * `SLOW` and `SCREEN_TESTS` allow for the first screen of a file, which also loads its route's code.
 * Then open its dialogs, menus and other states as a user does (user-event), and check again.
 * Fix a problem in the component. If a rule truly cannot apply, pass `{ skip: { '<rule id>': '<why>' } }`.
 
-**What needs a browser.** jsdom does no layout and paints nothing. The checks above therefore leave out colour contrast
-(axe could only say "cannot tell") and target size (every box is 0 × 0 at the same spot, so axe would call each control
-covered by the next, and pass it). They cannot see focus rings, clipping, overlap or zoom either. After changing
-colours, a theme, focus styles or the size of controls, check in a browser:
+**What needs a browser: `pnpm test:a11y`.** jsdom does no layout and paints nothing. The checks above therefore leave
+out colour contrast (axe could only say "cannot tell") and target size (every box is 0 × 0 at the same spot, so axe
+would call each control covered by the next, and pass it), and they cannot see focus rings, clipping or overlap.
+Playwright checks those in Chromium (`src/web/playwright.config.ts`, CI job "Accessibility in a browser"):
 
-1. Serve the screens with canned data: a throwaway `apps/staff/preview.html` and `src/__preview__/main.tsx`. It answers
-   `/api/*` with `createFakeFetch(answers)` from `src/test/fakeApi.ts` (the fixtures the tests use), signs in
-   `STAFF_USER`, and renders `createAppRouter(queryClient, createMemoryHistory({ initialEntries: [path] }))`. Start
-   Vite on a port of its own (`pnpm exec vite --port 5373 --strictPort --host 127.0.0.1` from `apps/staff`, never
-   5360). Delete both files afterwards.
-2. Put `axe-core/axe.min.js` into the page with a `<script>`, and run every WCAG A/AA rule:
-   `axe.run({ include: document, exclude: '[data-tabster-dummy]' }, { runOnly: { type: 'tag', values: WCAG_TAGS } })`.
-   Do it in the light, dark and high-contrast themes (`localStorage['hc360:theme']`), at 1280 px and at 768 px, and
-   with the palette, menus, drawers and dialogs open.
-3. Turn transitions off in the page first (`* { transition: none !important }`). A page in a hidden tab or pane never
-   finishes a transition, so after a change of theme the colours axe measures would be the old theme's.
-4. Look at what axe could not decide. It cannot measure text on a gradient or an image (the sign-in pages' brand
-   panel) or text that overlaps something: work out those contrasts by hand.
-5. Press Tab through the screen: every stop must show a focus ring that is not hidden behind something else.
+* It builds the staff app and the portal into their own `dist` folders (never the server's `wwwroot`) and serves them
+  with `vite preview` on 127.0.0.1:5380 and :5381. No HC360 Server is needed: `serveFakeApi` (from
+  `@hc360/ui/testing/browser`) answers `/api`, `/health` and the SignalR hub in the browser (`page.route`,
+  `page.routeWebSocket`) with the fixtures the jsdom tests use, through `createFakeFetch`
+  (`@hc360/ui/testing/fake-api`). The session comes back from a canned `POST /api/v1/auth/refresh`, as after a reload.
+  A request without a canned answer fails the test.
+* Each screen is checked once its data is on screen, in the light, dark and high-contrast themes, with transitions and
+  animations off. `expectAccessibleScreen` runs axe-core with every WCAG 2.0, 2.1 and 2.2 A/AA rule (`WCAG_TAGS`,
+  `color-contrast` and `target-size` included), then walks the screen with Tab: every stop must show a focus indicator
+  (an outline, box shadow or border on the element, its nearest ancestors or their `::before`/`::after`, where Fluent
+  draws its ring, that it does not have unfocused) and must not be outside the window or covered by something such as
+  a sticky bar (WCAG 2.4.7, 2.4.11). The walk starts at "Skip to main content" and goes on from the main content; the
+  frame's own walk starts at the top; in an open dialog it starts where focus is. One report lists everything found,
+  attached to the test with a screenshot and a trace.
+* What axe only asks a person to review fails too, unless a second look in the browser can tell (`secondLook` in
+  `packages/ui/src/testing/browser.ts`): text on a gradient (the sign-in pages' brand panel) is measured against each of
+  the gradient's colour stops; text on an opaque drawer or dialog, whose lines lie over different parts of the page
+  beneath (all axe compares), is measured against what is painted under each line; text partly scrolled out of view
+  is scrolled into view and checked again. What is still undecided fails.
+* The portal follows the device's theme: dark is the device's dark mode, and high contrast is forced colours, where the
+  browser paints the patient's own system colours over the portal's. axe reads the page's colours rather than those, so
+  `color-contrast` is left out there (target size and focus are still checked); the high-contrast theme's own colours
+  are checked in the staff app, which offers it in the account menu.
+
+| Checked in Chromium | Where |
+|---|---|
+| The checks themselves: contrast (and on a gradient), target size, the focus walk (no indicator, covered, the skip link) | `packages/ui/a11y/checks.spec.ts` |
+| Staff app, light, dark and high contrast at 1280 px: sign-in, a front desk's home page, patient search, registration, the patient chart, queue, appointments, the appointment calendar, the doctor's worklist, a consultation with the patient banner, OP billing (a draft bill), bills, system health; the frame (top bar and navigation), the command palette, notifications, the account menu. At 768 px: registration, queue, worklist, OP billing, the navigation opened over the screen | `apps/staff/a11y/screens.spec.ts` |
+| Portal on a phone, light, dark and forced colours: sign-in and the code step, home and its More menu, appointments, find a doctor, a doctor's page with a time chosen, booking, bills, reports, profile, messages from the hospital (preferences). On a computer: sign-in, home, appointments, a doctor's page, bills, reports | `apps/portal/a11y/pages.spec.ts` |
+
+Run it with `cd src/web && pnpm test:a11y` (a minute to build, three or four to check). The report opens by itself
+when something fails; `pnpm exec playwright show-report` opens it again. Locally Playwright uses the Chromium that
+matches its pinned version: `pnpm exec playwright install chromium` once, unless `PLAYWRIGHT_BROWSERS_PATH` already
+has it. To add a screen, add an entry to the spec's list: its path, the canned answers (from the `fixtures/` of the
+jsdom checks, typed with the module's DTOs) and what shows once its data is there. Fix what it finds in the component
+or, better, in the theme or the shared component it comes from; `{ skip: { '<rule id>': '<why>' } }` is only for a rule
+that cannot apply.
 
 Tabster's focus sentinels (`[data-tabster-dummy]`) are left out of every check: they are hidden from screen readers and
 pass focus on the moment they get it, but axe reports each one.
@@ -279,7 +302,10 @@ button that went back to `disabled` into a timeout rather than a failure on lost
 **Colours of your own.** Use theme tokens, and pair them: a background token with the foreground token of the same
 state (`colorNeutralBackground1Selected` with `colorNeutralForeground1Selected`, `…Hover` with `…Hover`). In the
 high-contrast theme the selected and hover backgrounds are the highlight colour (cyan), on which the usual white text
-has 1.5:1.
+has 1.5:1. Brand text: `colorBrandForeground1` on the neutral backgrounds and on `colorBrandBackground2`,
+`colorBrandForeground2` on `colorBrandBackground2Hover` (the HC360 light theme draws both one step darker than Fluent
+does, for 4.5:1 on those). Text boxes fill their column and no more (`useFieldSizing` in the theme); a row of a field
+and its unit inside a `FormGrid` cell needs `minWidth: 0` on the part that should give way.
 
 ## 7. Verify before you report
 
@@ -288,6 +314,7 @@ cd src/web
 pnpm --filter @hc360/staff typecheck      # regenerates the route tree, then tsc (must be clean)
 pnpm --filter @hc360/staff test           # vitest (add *.test.ts for pure logic; don't import Fluent in tests)
 npx eslint apps/staff/src/modules/<yours> apps/staff/src/routes/_app/<yours>   # 0 errors (CI runs lint)
+pnpm test:a11y                            # after changing colours, focus styles, layout or the size of controls (§6)
 ```
 
 The React Compiler lint rules (eslint-plugin-react-hooks 7) reject two common patterns:
@@ -299,4 +326,5 @@ The React Compiler lint rules (eslint-plugin-react-hooks 7) reject two common pa
   effects and event handlers.
 
 Do **not** run `vite build` or the dev server (several people work in the app at once and the build output is
-shared). Keep tests for pure functions (calculators, mappers, validators) next to the code as `*.test.ts`.
+shared). `pnpm test:a11y` is fine: it builds into each app's own `dist` folder and serves on ports of its own (5380,
+5381). Keep tests for pure functions (calculators, mappers, validators) next to the code as `*.test.ts`.

@@ -6,7 +6,9 @@
   "description": "HC360 design system on Fluent UI 2 (Windows 11 look): theme, page anatomy, data table, form fields, clinical widgets, print layouts.",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing/axe.ts"
+    "./testing": "./src/testing/axe.ts",
+    "./testing/browser": "./src/testing/browser.ts",
+    "./testing/fake-api": "./src/testing/fakeApi.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
