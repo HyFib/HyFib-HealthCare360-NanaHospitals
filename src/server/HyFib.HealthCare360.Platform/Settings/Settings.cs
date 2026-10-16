@@ -49,6 +49,15 @@ public interface ISettingsService
 
     Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Saves the value as <see cref="SetAsync{T}(string, T, Guid?, bool, CancellationToken)"/> does, unless someone else
+    /// changed it since the caller read it at <paramref name="expectedVersion"/> (its <see cref="SystemSetting.Version"/>):
+    /// then nothing is saved and a <see cref="DbUpdateConcurrencyException"/> (409) is thrown, so the last writer does not
+    /// silently win (REL-04). Without an expected version it saves whatever is there, as before.
+    /// </summary>
+    /// <exception cref="DbUpdateConcurrencyException">The value changed, or was removed, since it was read.</exception>
+    Task SetAsync<T>(string key, T value, Guid? facilityId, bool secret, uint? expectedVersion, CancellationToken cancellationToken = default);
+
     /// <summary>Removes the value of <paramref name="key"/> for the facility (or the global one). False when there was none.</summary>
     Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default);
 }
@@ -85,12 +94,25 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
         return json is null ? default : JsonSerializer.Deserialize<T>(json, JsonOptions);
     }
 
-    public async Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default)
+    public Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default) =>
+        SetAsync(key, value, facilityId, secret, expectedVersion: null, cancellationToken);
+
+    public async Task SetAsync<T>(string key, T value, Guid? facilityId, bool secret, uint? expectedVersion, CancellationToken cancellationToken = default)
     {
         var json = JsonSerializer.Serialize(value, JsonOptions);
         var stored = secret ? JsonSerializer.Serialize(protector.Protect(json)) : json;
 
         var row = await db.Set<SystemSetting>().FirstOrDefaultAsync(s => s.Key == key && s.FacilityId == facilityId, cancellationToken);
+        if (expectedVersion is { } expected)
+        {
+            if (row is null)
+            {
+                throw new DbUpdateConcurrencyException($"Setting {key} was removed after it was read.");
+            }
+
+            db.SetExpectedVersion(row, expected);
+        }
+
         if (row is null)
         {
             db.Add(new SystemSetting { Key = key, FacilityId = facilityId, Value = stored, IsSecret = secret });
@@ -132,9 +154,15 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
     }
 }
 
-public sealed record SettingDto(Guid Id, string Key, Guid? FacilityId, JsonNode? Value, bool IsSecret, bool HasValue, string? Description, DateTimeOffset? UpdatedAt);
+/// <param name="Version">The row's version, to send back with a change (<see cref="SaveSettingRequest.Version"/>).</param>
+public sealed record SettingDto(
+    Guid Id, string Key, Guid? FacilityId, JsonNode? Value, bool IsSecret, bool HasValue, string? Description, DateTimeOffset? UpdatedAt, uint Version);
 
-public sealed record SaveSettingRequest(JsonNode? Value, Guid? FacilityId, bool Secret, string? Description);
+/// <param name="Version">
+/// The version of the value the change was made to (<see cref="SettingDto.Version"/>): 409 when it has changed since.
+/// Omit it for a value that was not set when it was read.
+/// </param>
+public sealed record SaveSettingRequest(JsonNode? Value, Guid? FacilityId, bool Secret, string? Description, uint? Version = null);
 
 internal static class SettingsEndpoints
 {
@@ -174,7 +202,8 @@ internal static class SettingsEndpoints
 
             var rows = await query.OrderBy(s => s.Key).ToListAsync(ct);
             return TypedResults.Ok(rows.Select(s => new SettingDto(
-                s.Id, s.Key, s.FacilityId, s.IsSecret ? null : JsonNode.Parse(s.Value), s.IsSecret, s.Value != "null", s.Description, s.UpdatedAt ?? s.CreatedAt)));
+                s.Id, s.Key, s.FacilityId, s.IsSecret ? null : JsonNode.Parse(s.Value), s.IsSecret, s.Value != "null", s.Description, s.UpdatedAt ?? s.CreatedAt,
+                s.Version)));
         });
 
         admin.MapPut("/{key}", async (string key, SaveSettingRequest request, ISettingsService settings, IAuditLogger audit, HospitalDbContext db, CancellationToken ct) =>
@@ -184,7 +213,7 @@ internal static class SettingsEndpoints
                 return Error.Field("key", "Use letters, digits, dots, dashes or underscores.").ToProblem();
             }
 
-            await settings.SetAsync(key, request.Value, request.FacilityId, request.Secret, ct);
+            await settings.SetAsync(key, request.Value, request.FacilityId, request.Secret, request.Version, ct);
             if (request.Description is not null)
             {
                 await db.Set<SystemSetting>().Where(s => s.Key == key && s.FacilityId == request.FacilityId)

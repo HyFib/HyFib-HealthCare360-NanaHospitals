@@ -18,6 +18,8 @@ const bills: PrintTemplateItem = {
   allowsPreprinted: true,
   hospitalWide: DEFAULT_PRINT_TEMPLATE,
   facility: null,
+  hospitalWideVersion: null,
+  facilityVersion: null,
 };
 
 const twoFacilities: PrintTemplateList = {

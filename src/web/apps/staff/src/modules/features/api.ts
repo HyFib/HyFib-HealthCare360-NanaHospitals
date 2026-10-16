@@ -19,6 +19,8 @@ export interface FeatureDto {
   whenOff: string;
   defaultEnabled: boolean;
   enabled: boolean;
+  /** The saved value's version, sent back with a change (REL-04); null while the feature is at its default. */
+  version: number | null;
 }
 
 const BASE = '/api/v1/admin/features';
@@ -34,8 +36,12 @@ export const featureQueries = {
 };
 
 export const featuresApi = {
-  /** Turns the feature on or off for the whole hospital; the server records who did it. */
-  set: (key: string, enabled: boolean) => api.put<FeatureDto>(`${BASE}/${encodeURIComponent(key)}`, { enabled }),
+  /**
+   * Turns the feature on or off for the whole hospital; the server records who did it. `version` is the one the switch
+   * was shown at: the server refuses the change (409) when another administrator changed it since.
+   */
+  set: (key: string, enabled: boolean, version: number | null) =>
+    api.put<FeatureDto>(`${BASE}/${encodeURIComponent(key)}`, { enabled, version: version ?? undefined }),
 };
 
 /** The question asked before a feature is turned off: what it is and what stops. */

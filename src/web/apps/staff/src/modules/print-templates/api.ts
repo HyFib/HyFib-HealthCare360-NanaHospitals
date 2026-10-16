@@ -30,6 +30,10 @@ export interface PrintTemplateItem {
   hospitalWide: PrintTemplate;
   /** The facility's own template; null when it prints with the hospital-wide one. */
   facility: PrintTemplate | null;
+  /** The saved hospital-wide template's version; null while it is the defaults. */
+  hospitalWideVersion: number | null;
+  /** The facility's own template's version; null when it has none. */
+  facilityVersion: number | null;
 }
 
 export interface PrintTemplateList {
@@ -44,6 +48,8 @@ export interface SavePrintTemplateRequest {
   template: PrintTemplate;
   /** True: the signed-in user's facility's own template. False: the hospital-wide one. */
   forThisFacility: boolean;
+  /** The version of the template being replaced, when one was saved: 409 if someone saved it since (REL-04). */
+  version?: number;
 }
 
 const BASE = '/api/v1/admin/print-templates';

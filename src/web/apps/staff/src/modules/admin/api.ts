@@ -322,6 +322,8 @@ export interface SettingDto {
   hasValue: boolean;
   description: string | null;
   updatedAt: string | null;
+  /** Sent back with a change, so a save over someone else's newer one is refused (409) rather than lost (REL-04). */
+  version: number;
 }
 
 export interface BackupRunDto {

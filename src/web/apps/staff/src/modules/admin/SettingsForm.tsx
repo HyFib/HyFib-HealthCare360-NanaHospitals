@@ -224,14 +224,15 @@ function SettingsFormBody({
     mutationFn: async (submitted: FormValues) => {
       const changes = buildSettingChanges(spec, submitted, scoped.stored);
       const secrets = buildSecretChanges(spec, submitted);
-      const existing = (key: string) => rows.some((row) => row.key === key && (row.facilityId ?? null) === target);
-      const description = (key: string) => (existing(key) ? null : `${spec.title} (set in Administration)`);
+      const stored = (key: string) => rows.find((row) => row.key === key && (row.facilityId ?? null) === target);
+      const description = (key: string) => (stored(key) ? null : `${spec.title} (set in Administration)`);
       for (const change of changes) {
         await api.put(`/api/v1/admin/settings/${encodeURIComponent(change.key)}`, {
           value: change.value,
           facilityId: target,
           secret: false,
           description: description(change.key),
+          version: stored(change.key)?.version,
         });
       }
       for (const secret of secrets) {
@@ -240,6 +241,7 @@ function SettingsFormBody({
           facilityId: target,
           secret: true,
           description: description(secret.key),
+          version: stored(secret.key)?.version,
         });
       }
       return changes.length + secrets.length;

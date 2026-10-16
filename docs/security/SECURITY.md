@@ -344,7 +344,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - The AI endpoints' answers (dictation transcripts, SOAP drafts, interpreted commands) are never stored
     (`.WithoutStoredResponse()`). The key still stops a retry from running again, so there is no second AI call or
     quota charge. The retry gets 409 `idempotency.answer_not_kept`, and the user asks again.
-- Optimistic concurrency: a record changed by someone else is never silently overwritten.
+- Optimistic concurrency: a record changed by someone else is never silently overwritten. Edits send the version
+  (`xmin`) they loaded and get 409 when it has moved on; settings, print templates and feature switches do too
+  (REL-04). A change sent without a version, as older clients send it, still saves.
 
 ### Application hardening
 - **Separate addresses** (ASVS V3.5.4). The staff app, the patient portal and the API reference each have an origin of

@@ -14,6 +14,7 @@ const portal: FeatureDto = {
   whenOff: 'Patients cannot sign in, register or book appointments online.',
   defaultEnabled: true,
   enabled: true,
+  version: null,
 };
 
 const video: FeatureDto = {
@@ -24,6 +25,7 @@ const video: FeatureDto = {
   whenOff: 'Video consultations disappear from the menus and nobody can join one.',
   defaultEnabled: true,
   enabled: false,
+  version: null,
 };
 
 function renderList(onChange = vi.fn(), saving = false) {
