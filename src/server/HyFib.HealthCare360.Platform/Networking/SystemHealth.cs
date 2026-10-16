@@ -181,6 +181,10 @@ public sealed class SystemHealthService(
             {
                 warnings.Add(new("wifi.insecure", "critical", "The Server Node is on an insecure WiFi network."));
             }
+            else if (link.UsesSharedPassword)
+            {
+                warnings.Add(new("wifi.shared_password", "warning", "The Server Node is on a WiFi network with a shared password (WPA-Personal). Use WPA2/WPA3-Enterprise."));
+            }
         }
         else if (network.WifiSupported && network.Wifi is { IsConnected: false })
         {

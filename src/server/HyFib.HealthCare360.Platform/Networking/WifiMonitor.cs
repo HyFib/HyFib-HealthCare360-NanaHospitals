@@ -53,6 +53,7 @@ public enum WifiEventKind
     InsecureNetwork,
     UnapprovedNetwork,
     AccessPointChanged,
+    SharedPasswordNetwork,
 }
 
 public sealed record WifiEvent(DateTimeOffset At, WifiEventKind Kind, string Message);
@@ -114,8 +115,8 @@ public sealed class WifiLinkState
 }
 
 /// <summary>
-/// Monitors the dedicated machine's own WiFi connection (DED-06/12): drops, weak signal, access-point changes
-/// and insecure or unapproved networks. Events are audited, pushed to administrators in-app and, when an
+/// Monitors the dedicated machine's own WiFi connection (DED-06/12): drops, weak signal, access-point changes,
+/// and insecure (open, WEP), shared-password (WPA-Personal) or unapproved networks. Events are audited, pushed to administrators in-app and, when an
 /// on-call number is configured (<c>alerts.oncallPhone</c>), sent by SMS through the outbox (delivered as soon
 /// as connectivity returns).
 /// </summary>
@@ -130,6 +131,7 @@ internal sealed class WifiMonitor(
     private int _weakStreak;
     private bool _weakAlerted;
     private string? _lastInsecureAlertSsid;
+    private string? _lastSharedPasswordAlertSsid;
     private DateTimeOffset _lastCleanup = DateTimeOffset.MinValue;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -219,6 +221,12 @@ internal sealed class WifiMonitor(
                 events.Add(new WifiEvent(now, WifiEventKind.InsecureNetwork,
                     $"Server Node is connected to an insecure WiFi network ({current.Security}). Use WPA2/WPA3-Enterprise for clinical data."));
             }
+            else if (current.UsesSharedPassword && _lastSharedPasswordAlertSsid != current.Ssid)
+            {
+                _lastSharedPasswordAlertSsid = current.Ssid;
+                events.Add(new WifiEvent(now, WifiEventKind.SharedPasswordNetwork,
+                    $"Server Node is on a WiFi network with a shared password ({current.Security}): anyone who has the password can join it or imitate it. Use WPA2/WPA3-Enterprise for clinical data."));
+            }
 
             if (network.ApprovedSsids.Length > 0 && current.Ssid is not null
                 && !network.ApprovedSsids.Contains(current.Ssid, StringComparer.Ordinal))
@@ -265,10 +273,12 @@ internal sealed class WifiMonitor(
                 var severity = wifiEvent.Kind switch
                 {
                     WifiEventKind.Disconnected or WifiEventKind.InsecureNetwork or WifiEventKind.UnapprovedNetwork => AuditSeverity.Critical,
-                    WifiEventKind.WeakSignal => AuditSeverity.Warning,
+                    WifiEventKind.WeakSignal or WifiEventKind.SharedPasswordNetwork => AuditSeverity.Warning,
                     _ => AuditSeverity.Info,
                 };
-                var category = wifiEvent.Kind is WifiEventKind.InsecureNetwork or WifiEventKind.UnapprovedNetwork ? AuditCategories.Security : AuditCategories.Admin;
+                var category = wifiEvent.Kind is WifiEventKind.InsecureNetwork or WifiEventKind.SharedPasswordNetwork or WifiEventKind.UnapprovedNetwork
+                    ? AuditCategories.Security
+                    : AuditCategories.Admin;
                 audit.Add(new AuditEntry(category, $"network.wifi_{wifiEvent.Kind.ToString().ToLowerInvariant()}", wifiEvent.Message) { Severity = severity });
 
                 if (wifiEvent.Kind is not WifiEventKind.AccessPointChanged)

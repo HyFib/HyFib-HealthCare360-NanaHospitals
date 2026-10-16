@@ -40,6 +40,12 @@ public sealed record WifiConnectionInfo(
     /// <summary>True for networks HC360 should not trust for clinical traffic (open, WEP).</summary>
     public bool IsInsecure => DetailsAvailable && Security is WifiSecurityLevel.Open or WifiSecurityLevel.Wep;
 
+    /// <summary>
+    /// True for WPA/WPA2/WPA3-Personal (SRS DED-12): encrypted, but with one password everyone who has it can use to join
+    /// and to stand up a look-alike access point, and which stays valid after staff leave. Enterprise sign-in is per user.
+    /// </summary>
+    public bool UsesSharedPassword => DetailsAvailable && Security is WifiSecurityLevel.Personal or WifiSecurityLevel.Wpa3Personal;
+
     public const string LocationPermissionNote =
         "Windows hides WiFi details from apps until Location access is allowed (Settings → Privacy & security → Location → Let desktop apps access your location).";
 }
