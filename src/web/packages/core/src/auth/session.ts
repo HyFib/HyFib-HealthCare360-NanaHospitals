@@ -31,6 +31,11 @@ export interface AuthUser {
   restriction: 'password' | 'mfa-setup' | 'locked' | null;
   /** The password must be changed because a sign-in found it published from data breaches (SRS SEC-01). */
   passwordBreached?: boolean;
+  /**
+   * The hospital lets staff unlock the lock screen with the device's Windows Hello, fingerprint or face (the
+   * `ui.biometricUnlock` setting). The PIN and the password work either way.
+   */
+  biometricUnlock?: boolean;
 }
 
 export interface AuthResult {
