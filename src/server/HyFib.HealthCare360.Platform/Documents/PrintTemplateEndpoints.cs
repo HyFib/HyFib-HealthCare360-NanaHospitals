@@ -17,6 +17,8 @@ namespace HyFib.HealthCare360.Platform.Documents;
 /// <param name="Papers">The papers to choose from, the usual one first; empty when the paper is fixed.</param>
 /// <param name="HospitalWide">The template every facility prints with unless it has its own: the defaults until one is saved.</param>
 /// <param name="Facility">The signed-in user's facility's own template; null when it prints with the hospital-wide one.</param>
+/// <param name="HospitalWideVersion">The saved hospital-wide template's version; null while it is the defaults.</param>
+/// <param name="FacilityVersion">The facility's own template's version; null when it has none.</param>
 public sealed record PrintTemplateItem(
     string Key,
     string Name,
@@ -25,14 +27,20 @@ public sealed record PrintTemplateItem(
     IReadOnlyList<DocumentPageSize> Papers,
     bool AllowsPreprinted,
     PrintTemplate HospitalWide,
-    PrintTemplate? Facility);
+    PrintTemplate? Facility,
+    uint? HospitalWideVersion = null,
+    uint? FacilityVersion = null);
 
 /// <param name="FacilityName">The signed-in user's facility, whose own templates <see cref="PrintTemplateItem.Facility"/> shows.</param>
 /// <param name="FacilityCount">How many facilities the hospital has: with one, there is no choice between hospital-wide and its own.</param>
 public sealed record PrintTemplateList(Guid? FacilityId, string? FacilityName, int FacilityCount, IReadOnlyList<PrintTemplateItem> Templates);
 
 /// <param name="ForThisFacility">True: the signed-in user's facility's own template. False: the hospital-wide one.</param>
-public sealed record SavePrintTemplateRequest(PrintTemplate? Template, bool ForThisFacility);
+/// <param name="Version">
+/// The version of the template the change was made to (<see cref="PrintTemplateItem.HospitalWideVersion"/> or
+/// <see cref="PrintTemplateItem.FacilityVersion"/>): 409 when someone saved it since (REL-04). Omit it when none was saved.
+/// </param>
+public sealed record SavePrintTemplateRequest(PrintTemplate? Template, bool ForThisFacility, uint? Version = null);
 
 /// <summary>
 /// What the staff app prints its own documents with (80 mm bills and receipts, pharmacy, canteen and store slips): the
@@ -125,11 +133,13 @@ internal static class PrintTemplateEndpoints
         var templates = PrintTemplateCatalog.All.Select(definition =>
         {
             var key = PrintTemplateCatalog.SettingKey(definition.Key);
-            var hospitalWide = Read(definition, rows.FirstOrDefault(r => r.Key == key && r.FacilityId == null))
-                               ?? PrintTemplateRules.Normalize(definition, PrintTemplate.Default);
-            var own = user.FacilityId is null ? null : Read(definition, rows.FirstOrDefault(r => r.Key == key && r.FacilityId == user.FacilityId));
+            var hospitalWideRow = rows.FirstOrDefault(r => r.Key == key && r.FacilityId == null);
+            var ownRow = user.FacilityId is null ? null : rows.FirstOrDefault(r => r.Key == key && r.FacilityId == user.FacilityId);
+            var hospitalWide = Read(definition, hospitalWideRow) ?? PrintTemplateRules.Normalize(definition, PrintTemplate.Default);
+            var own = Read(definition, ownRow);
             return new PrintTemplateItem(
-                definition.Key, definition.Name, definition.Area, definition.Covers, definition.Papers, definition.AllowsPreprinted, hospitalWide, own);
+                definition.Key, definition.Name, definition.Area, definition.Covers, definition.Papers, definition.AllowsPreprinted, hospitalWide, own,
+                hospitalWideRow?.Version, ownRow?.Version);
         }).ToList();
         return TypedResults.Ok(new PrintTemplateList(user.FacilityId, facilityName, facilityCount, templates));
     }
@@ -166,7 +176,7 @@ internal static class PrintTemplateEndpoints
         }
 
         var saved = PrintTemplateRules.Normalize(definition, template);
-        await settings.SetAsync(PrintTemplateCatalog.SettingKey(key), saved, facilityId, cancellationToken: ct);
+        await settings.SetAsync(PrintTemplateCatalog.SettingKey(key), saved, facilityId, secret: false, request.Version, ct);
         await audit.WriteAsync(new AuditEntry(AuditCategories.Admin, AuditAction,
             $"Changed how {definition.Name.ToLowerInvariant()} print{(facilityId is null ? " hospital-wide" : " at this facility")}")
         {

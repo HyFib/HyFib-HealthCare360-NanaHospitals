@@ -234,4 +234,59 @@ describe('api client', () => {
     expect((error as ApiError).isValidation).toBe(true);
     expect((error as ApiError).userMessage).toBe('First name is required.');
   });
+
+  it('sends one correlation id per request, the same on each retry', async () => {
+    const ids: string[] = [];
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      ids.push(new Headers(init.headers).get('X-Correlation-Id') ?? '');
+      return ids.length === 1 ? new Response(null, { status: 503 }) : jsonResponse(200, { ok: true });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+
+    const client = createApiClient(baseConfig);
+    await client.get('/api/v1/patients');
+    await client.get('/api/v1/patients');
+
+    expect(ids).toHaveLength(3);
+    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(ids[1]).toBe(ids[0]);
+    expect(ids[2]).not.toBe(ids[0]);
+    vi.restoreAllMocks();
+  });
+
+  it("shows the server's correlation id as the reference of an error", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ title: 'Not found', status: 404 }), {
+          status: 404,
+          headers: { 'content-type': 'application/problem+json', 'X-Correlation-Id': 'abc123' },
+        }),
+      ),
+    );
+    const client = createApiClient(baseConfig);
+
+    const error = (await client.get('/api/v1/patients/x').catch((e: unknown) => e)) as ApiError;
+    expect(error.referenceId).toBe('abc123');
+  });
+
+  it('prefers the reference the problem body gives', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ title: 'Something went wrong', status: 500, referenceId: 'from-body', code: 'x' }),
+          {
+            status: 500,
+            headers: { 'content-type': 'application/problem+json', 'X-Correlation-Id': 'from-header' },
+          },
+        ),
+      ),
+    );
+    const client = createApiClient(baseConfig);
+
+    const error = (await client.get('/api/v1/patients').catch((e: unknown) => e)) as ApiError;
+    expect(error.referenceId).toBe('from-body');
+  });
 });
