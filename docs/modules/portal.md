@@ -74,7 +74,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/video`, `/video/{sessionId}` | yes | Video consultations: device check, waiting room, call, chat, audio-only |
 | `/telehealth/{sessionId}?t={joinToken}` | no | The SMS or WhatsApp join link (guest join) |
 | `/reports`, `/reports/{lab\|radiology\|cardiology}/{id}` | yes | Lab values with ranges and flags in plain words, and radiology and cardiology text. Download PDF (the hospital's official copy) or print |
-| `/prescriptions`, `/prescriptions/{id}` | yes | Prescriptions with verification QR code; Download PDF or print; refill requests |
+| `/prescriptions`, `/prescriptions/{id}` | yes | Prescriptions with verification QR code; Download PDF or print; refill requests. Where the hospital requires the doctor's DSC (ERX-04) and the prescription has no valid one yet, it shows no print, PDF or QR code and says, in English and Hindi, that the doctor has not digitally signed it yet; a PDF the server refuses for that reason is worded by its code in the patient's language |
 | `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment; Download PDF or print a bill; receipts (print) |
 | `/records`, `/records/discharge/{id}`, `/records/request` | yes | Health summary, discharge summaries (Download PDF or print), request a copy of records |
 | `/my-feedback`, `/my-feedback/{formId}` | yes | Feedback forms and the patient's feedback with complaint status |
