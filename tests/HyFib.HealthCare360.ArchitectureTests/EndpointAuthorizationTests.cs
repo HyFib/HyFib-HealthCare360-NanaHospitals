@@ -131,6 +131,15 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/auth/pin",
         "POST /api/v1/auth/lock",
         "POST /api/v1/auth/unlock",
+
+        // Quick unlock with the device's Windows Hello (WebAuthn): only the caller's own devices, and only the caller's
+        // own session is unlocked; setting a device up asks for the password.
+        "POST /api/v1/auth/unlock/webauthn/options",
+        "POST /api/v1/auth/unlock/webauthn",
+        "GET /api/v1/auth/webauthn/credentials",
+        "POST /api/v1/auth/webauthn/credentials/options",
+        "POST /api/v1/auth/webauthn/credentials",
+        "DELETE /api/v1/auth/webauthn/credentials/{id:guid}",
         "POST /api/v1/auth/switch-facility",
 
         // The caller's own notifications.

@@ -22,6 +22,12 @@
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="Otp.NET" Version="1.4.1" />
+    <!--
+      WebAuthn (fido2-net-lib, MIT) for unlocking the lock screen with Windows Hello and other built-in authenticators.
+      4.2.0 is the newest release more than two weeks old, and the first that bounds how deeply nested the CBOR and ASN.1
+      it decodes may be (a deep request could otherwise exhaust the stack).
+    -->
+    <PackageVersion Include="Fido2" Version="4.2.0" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
   </ItemGroup>

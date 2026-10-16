@@ -27,6 +27,7 @@ import { BrandMark } from './BrandMark';
 import { CommandPalette } from './CommandPalette';
 import { ConnectionIndicator, DegradedBanner, OfflineBanner } from './ConnectionIndicator';
 import { NotificationsButton } from './NotificationsButton';
+import { idleLockMinutes } from './lockSync';
 import { UserMenu } from './UserMenu';
 
 const useStyles = makeStyles({
@@ -123,8 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }
 
-  const lockMinutes =
-    typeof settings.data?.['ui.idleLockMinutes'] === 'number' ? (settings.data['ui.idleLockMinutes'] as number) : 10;
+  const lockMinutes = idleLockMinutes(settings.data?.['ui.idleLockMinutes']);
   useIdle(lockMinutes * 60_000, () => setLocked(true), lockMinutes > 0);
   useHotkey('mod+k', () => setPaletteOpen(true), { allowInInputs: true });
   useHotkey('mod+shift+l', () => setLocked(true), { allowInInputs: true, overDialogs: true });

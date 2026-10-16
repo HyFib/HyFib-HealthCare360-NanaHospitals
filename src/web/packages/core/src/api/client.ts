@@ -46,6 +46,11 @@ export interface ApiClientConfig {
    * out (the staff app) to send none.
    */
   getLanguage?: () => string | undefined;
+  /**
+   * For a read the server refused because the screen is locked: resolves true once it is unlocked, when the read is
+   * sent again, or false when the session is over (`whenUnlocked`). Without it, the read fails at once.
+   */
+  waitForUnlock?: (signal?: AbortSignal) => Promise<boolean>;
 }
 
 /** A downloaded file, the name the server gave it (Content-Disposition) and the response headers (notices). */
@@ -74,7 +79,9 @@ const MAX_ATTEMPTS = 3;
  * - every unsafe request carries an Idempotency-Key, so automatic retries after a dropped response never
  *   duplicate a bill, payment or order;
  * - transient failures (network, 502/503/504) are retried with exponential backoff + jitter;
- * - a 401 triggers one token refresh and replay; a 423 (the screen is locked) does not, it waits for the PIN;
+ * - a 401 triggers one token refresh and replay; a 423 (the screen is locked) does not: a read waits until the screen
+ *   is unlocked and is then sent again, so the screens behind the lock keep what they show (SRS UX-11), and a write
+ *   fails, to be made again once unlocked;
  * - every request carries an `X-Correlation-Id`, the same on each retry, which the server logs and echoes, so the
  *   reference a user quotes finds the request in the server's logs (SRS OBS-04);
  * - Problem Details become typed {@link ApiError}s with field errors for forms.
@@ -87,6 +94,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     const url = buildUrl(config.baseUrl ?? '', path, options.query);
     const correlationId = crypto.randomUUID();
     let refreshed = false;
+    let waitedForUnlock = false;
 
     for (let attempt = 1; ; attempt++) {
       const headers = new Headers(options.headers);
@@ -166,6 +174,10 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         }
         if (isSessionLocked(error)) {
           config.onSessionLocked?.();
+          if (!unsafe && !waitedForUnlock && config.waitForUnlock && (await config.waitForUnlock(options.signal))) {
+            waitedForUnlock = true;
+            continue;
+          }
         }
         throw error;
       }

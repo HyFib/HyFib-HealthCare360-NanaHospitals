@@ -15,6 +15,7 @@ import {
   replaceFlagId,
   scopedSettings,
   secretFieldId,
+  settingWarning,
   toFormValues,
   urlProblem,
   validateSettings,
@@ -297,6 +298,13 @@ describe('setting names', () => {
   it('knows a feature switch by its prefix', () => {
     expect(isFeatureSettingKey('features.telehealth')).toBe(true);
     expect(isFeatureSettingKey('telehealth.earlyJoinMinutes')).toBe(false);
+  });
+
+  it('warns that Windows Hello unlock is only for computers where each person has their own Windows login', () => {
+    const warning = settingWarning('ui.biometricUnlock');
+    expect(warning).toMatch(/their own account/);
+    expect(warning).toMatch(/share one Windows\s+login/);
+    expect(settingWarning('ui.idleLockMinutes')).toBeNull();
   });
 });
 

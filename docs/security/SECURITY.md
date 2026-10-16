@@ -137,7 +137,43 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     the app did not lock, at the next refresh that reports 10 minutes unused. Five wrong PINs or passwords end the
     session. A PIN is 4 to 6 digits, not all the same or in sequence, and setting one needs the password; an
     administrator's password reset clears it, since whoever knew the old password may know it. Locking and unlocking
-    are audited.
+    are audited. Each facility can have its own lock time (`ui.idleLockMinutes` set for the facility). The screens
+    stay as they were behind the lock, with whatever was typed and not yet saved: what they ask the server for while
+    locked waits, and is answered once unlocked. The app's windows on one computer (browser tabs, HC360 Desktop's
+    second windows) share the session: use in any of them keeps all unlocked, and locking or unlocking one does the
+    same to the others.
+  - **Quick unlock with Windows Hello or a fingerprint** (SRS UX-11): where the hospital has turned it on, staff can
+    set up a device under My account › Lock screen and then unlock with its Windows Hello (face, fingerprint or the
+    Windows Hello PIN), or Touch ID and the like elsewhere. It is WebAuthn with the device's built-in authenticator, checked by fido2-net-lib (MIT); no
+    vendor or service is involved, and nothing about the face or finger leaves the device. The decisions:
+    - It only resumes a session that is locked: it needs that session's token, and it never signs anyone in. A
+      session that ended, or that nobody used for 2 hours, is not resumed by it, nor by the PIN or password.
+    - The device must verify the person (user verification required), not only notice a touch.
+    - Setting a device up needs the password, and is audited; so are removing one and each unlock. Staff can remove
+      their devices; an administrator's password reset removes them all, with the PIN. An account may have 10.
+    - A key works only for its owner, and only where the app is opened by the server name it was set up under (the
+      WebAuthn relying party id: the host name in the address, one of the names on the server's certificate, the
+      computer's name or `localhost`). WebAuthn cannot use an IP address, so opened by one the lock screen offers the
+      PIN and password only. Pages must be on HTTPS (or `localhost`).
+    - Each key's signature counter is kept: an answer whose counter goes back means a copied key, and is refused and
+      audited as critical. Failed answers count with wrong PINs: five end the session.
+    - It is off until an administrator sets `ui.biometricUnlock` to `true`, for the hospital or for one facility
+      (`false` for a facility keeps it off there). The PIN and the password always work. Turn it on only where every
+      staff member signs in to Windows with their own account: Windows Hello proves who owns the Windows login, not
+      who owns the HC360 account. On a computer where staff share one Windows login, as at many nursing stations and
+      counters, anyone who knows that login's Windows Hello PIN, or whose finger or face is set up on it, could unlock
+      a colleague's locked screen. Administration › Settings says so beside the setting, and so does setting up a
+      device.
+    - Computers enrolled as kiosks or display boards, which everyone uses, never use it: setting up and unlocking
+      there are refused (`auth.biometric_unlock_shared_device`). Where HC360 Desktop runs as a kiosk (its policy),
+      setting up a device warns against it as well.
+    - A known limitation: HC360 cannot tell a shared Windows login from a personal one. Tying each key to the Windows
+      user name, which HC360 Desktop could report, would not help: colleagues on a shared login have the same user
+      name, Windows Hello already keeps each Windows account's keys apart (a key set up under one account cannot
+      answer under another), and the name would come from the page, not from the device's signature, so it would
+      prove nothing. Where logins are shared, leave it off and use the PIN.
+    - Refused answers are audited at once, in a transaction of their own, so the entry stays (a copied key's as
+      critical) even when the unlock then finds the session ended.
   - **How many at once:** a staff account may have 3 sessions at once (the `security.maxSessionsPerUser` setting; 0
     for no limit). Signing in once more signs out the session used least recently, audited as `auth.session_limit`.
     Patient portal accounts have no limit.
@@ -180,7 +216,7 @@ What they all share:
 |---|---|---|
 | **Staff sign-in** (staff app, HC360 Desktop) | Username and password: at least 12 characters, none from breach lists. The SuperAdmin, HospitalAdmin, Accountant and HrManager roles, and anyone holding an administrative permission, also give a 6-digit authenticator code (TOTP): two factors (NIST AAL2) for them, one (AAL1) for other staff. A role can be limited to enrolled HC360 Desktops; none is by default | The account locks after 5 wrong passwords or codes in a row, for 15 minutes, doubling up to 24 hours |
 | **Renewing a session** | The refresh cookie: 256 random bits, replaced on every use, sent with the `X-HC360-Client` header. A spent one presented again, past a minute's grace for a lost response, ends the session. Sessions end 12 hours after sign-in, or after 2 hours unused (portal: 20 minutes) | Too large to guess |
-| **Lock screen** | The PIN (4 to 6 digits, not all the same or in sequence) or the password. It opens only the session it locked | 5 wrong ones end the session |
+| **Lock screen** | The PIN (4 to 6 digits, not all the same or in sequence), the password, or, where the hospital turned it on, a device set up for it: a WebAuthn signature of a one-time challenge by the device's Windows Hello or fingerprint reader, which verifies the person first. It opens only the session it locked | 5 wrong ones (PINs, passwords and refused device answers together) end the session |
 | **Password prompts** before sensitive actions | The password again, from a signed-in staff member | Wrong ones count toward the account lock |
 | **Patient portal sign-in** | A 6-digit code sent by SMS to the registered number, valid 5 minutes: one factor (AAL1), as strong as the phone number | 5 tries per code; 3 codes per number in 15 minutes; a proof of work for asking for a code and for giving it (Anti-automation, below) |
 | **Video consultation guests** | The 256-bit token in the link sent to the patient, valid until 2 hours after the consultation's scheduled end. A guest waits until the doctor admits them, and the link reveals only the patient's first name | Too large to guess; 5 failed joins per connection |

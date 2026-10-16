@@ -346,6 +346,32 @@ to your own software distribution, install with `-NoAutoUpdate` (`"autoUpdate": 
 2. Install it as a trusted root certificate on the device (MDM or device settings).
 3. Bookmark `https://HC360-SRV:7360/`.
 
+**Unlocking with Windows Hello** (SRS UX-11). Once it is turned on (below), staff can set up a workstation's Windows
+Hello (face camera, fingerprint reader or the Windows Hello PIN) under My account › Lock screen, and then unlock their
+locked screen with it. Nothing needs installing on the server, and no outside service is used. For it to work:
+- every staff member who uses it signs in to Windows with their **own account** on that computer (see below);
+- open HealthCare360 by the server's **name**, as in the addresses above, not by its IP address: WebAuthn ties each
+  key to the name, and refuses IP addresses. Use one name everywhere; a key set up under `HC360-SRV` does not work
+  for `HC360-SRV.local`. The name must be one of the server certificate's (the computer's name, `name.local`, or one
+  added with `HealthCare360:Network:AdditionalHostNames`);
+- set up Windows Hello in Windows (Settings › Accounts › Sign-in options) first;
+- the browser must trust the hospital CA (step 2 above): Edge and Chrome turn WebAuthn off on a page whose certificate
+  they do not trust. HC360 Desktop checks the server's certificate against the hospital CA itself rather than through
+  Windows, and the WebView2 runtime it uses may treat the page the same way. If "Set up this device" in HC360 Desktop
+  says Windows Hello did not answer, or the address cannot use it, install the hospital CA as a trusted root on that
+  workstation too (as in step 2; for many PCs, with Group Policy). This depends on the WebView2 runtime's version, so
+  try it on one workstation before go-live.
+
+It is **off** until you turn it on: set `ui.biometricUnlock` to `true` in Administration › Settings, for the hospital
+or for one facility (`false` for a facility keeps it off there). The PIN and the password always unlock the screen.
+
+Turn it on only where every staff member signs in to Windows with their own account. Windows Hello answers for
+whoever owns the Windows login, not for the HC360 user: on a computer where staff share one Windows login, as at many
+nursing stations and counters, anyone who knows that login's Windows Hello PIN, or whose finger or face is set up on
+it, could unlock a colleague's locked HC360 screen. HC360 cannot tell a shared Windows login from a personal one, so
+where any computer in a facility has a shared login, leave it off for that facility and use the PIN. Computers
+enrolled as kiosks or display boards never use it, and HC360 Desktop in kiosk mode warns against setting it up.
+
 ## 6. Printers and devices
 
 - Receipt and token printers (80 mm), label printers, wristband printers and A4/A5 printers are ordinary Windows

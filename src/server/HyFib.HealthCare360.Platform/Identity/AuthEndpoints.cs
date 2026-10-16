@@ -83,6 +83,37 @@ internal static class AuthEndpoints
             .RequireAuthorization()
             .RequireRateLimiting(AuthRateLimit);
 
+        // Quick unlock with the device's Windows Hello, fingerprint or face (WebAuthn), allowed while locked too. It only
+        // resumes the caller's own session (WebAuthnUnlockService).
+        group.MapPost("/unlock/webauthn/options", async (WebAuthnUnlockService webAuthn, HttpContext http, CancellationToken ct) =>
+                (await webAuthn.BeginUnlockAsync(http, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        group.MapPost("/unlock/webauthn", async (WebAuthnUnlockRequest request, WebAuthnUnlockService webAuthn, HttpContext http, CancellationToken ct) =>
+                (await webAuthn.UnlockAsync(request, http, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        // The devices set up for it: listed, added after the password is given again, and removed by their owner.
+        group.MapGet("/webauthn/credentials", async (WebAuthnUnlockService webAuthn, ICurrentUser user, HttpContext http, CancellationToken ct) =>
+                TypedResults.Ok(await webAuthn.ListAsync(user.UserId, http, ct)))
+            .RequireAuthorization();
+
+        group.MapPost("/webauthn/credentials/options", async (WebAuthnRegistrationRequest request, WebAuthnUnlockService webAuthn, HttpContext http, CancellationToken ct) =>
+                (await webAuthn.BeginRegistrationAsync(request, http, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        group.MapPost("/webauthn/credentials", async (WebAuthnRegisterRequest request, WebAuthnUnlockService webAuthn, HttpContext http, CancellationToken ct) =>
+                (await webAuthn.RegisterAsync(request, http, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        group.MapDelete("/webauthn/credentials/{id:guid}", async (Guid id, WebAuthnUnlockService webAuthn, CancellationToken ct) =>
+                (await webAuthn.RemoveAsync(id, ct)).ToNoContent())
+            .RequireAuthorization();
+
         group.MapPost("/mfa/setup", async (MfaSetupRequest request, AuthService auth, CancellationToken ct) =>
                 (await auth.BeginMfaSetupAsync(request, ct)).ToOk())
             .RequireAuthorization()

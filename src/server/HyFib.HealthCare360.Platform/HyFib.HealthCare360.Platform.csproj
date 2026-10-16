@@ -26,6 +26,7 @@
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Otp.NET" />
+    <PackageReference Include="Fido2" />
     <PackageReference Include="Quartz.Extensions.Hosting" />
     <PackageReference Include="Makaretu.Dns.Multicast.New" />
     <PackageReference Include="System.Management" />
