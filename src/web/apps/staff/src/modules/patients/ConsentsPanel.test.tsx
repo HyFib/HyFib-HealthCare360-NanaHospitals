@@ -7,19 +7,21 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as PatientsApi from './api';
-import { consentApi, type ConsentDto } from './api';
+import { consentApi, type ConsentDto, type WhatsAppConsentDto } from './api';
 import { ConsentsPanel, RecordConsentForm } from './ConsentsPanel';
 
 // The server, the toasts and the signed-in user are outside the test; the panel's own behaviour is what is tested.
 const listConsents = vi.hoisted(() => vi.fn());
+const whatsAppStatus = vi.hoisted(() => vi.fn());
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof PatientsApi>();
   return {
     ...actual,
-    consentApi: { capture: vi.fn(), revoke: vi.fn() },
+    consentApi: { capture: vi.fn(), revoke: vi.fn(), whatsAppOptIn: vi.fn() },
     patientQueries: {
       ...actual.patientQueries,
       consents: (id: string) => ({ queryKey: actual.patientKeys.consents(id), queryFn: () => listConsents(id) }),
+      whatsApp: (id: string) => ({ queryKey: actual.patientKeys.whatsApp(id), queryFn: () => whatsAppStatus(id) }),
     },
   };
 });
@@ -162,9 +164,59 @@ describe('RecordConsentForm', () => {
   });
 });
 
+const notOptedIn: WhatsAppConsentDto = {
+  phone: '+91******3210',
+  optedIn: false,
+  optedInAt: null,
+  source: null,
+  capturedByName: null,
+  optedOut: false,
+  optedOutAt: null,
+  reachable: false,
+};
+
 describe('ConsentsPanel', () => {
   beforeEach(() => {
     listConsents.mockReset();
+    whatsAppStatus.mockReset().mockResolvedValue(notOptedIn);
+  });
+
+  it('records the patient’s WhatsApp opt-in for their number and shows who recorded it', async () => {
+    const user = userEvent.setup();
+    listConsents.mockResolvedValue([]);
+    vi.mocked(consentApi.whatsAppOptIn)
+      .mockReset()
+      .mockResolvedValue({
+        ...notOptedIn,
+        optedIn: true,
+        optedInAt: '2026-10-16T05:00:00Z',
+        source: 'RegistrationDesk',
+        capturedByName: 'Asha Nair',
+        reachable: true,
+      });
+    renderWithProviders(<ConsentsPanel patientId="p1" />);
+
+    expect(await screen.findByText('+91******3210 has not opted in to WhatsApp reminders')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Record WhatsApp opt-in' }));
+
+    expect(consentApi.whatsAppOptIn).toHaveBeenCalledWith('p1');
+    expect(await screen.findByText('+91******3210 gets WhatsApp reminders and updates')).toBeInTheDocument();
+    expect(screen.getByText(/Opted in at the desk on .* by Asha Nair\./)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record WhatsApp opt-in' })).not.toBeInTheDocument();
+  });
+
+  it('does not offer to record an opt-in over a STOP the number sent', async () => {
+    listConsents.mockResolvedValue([]);
+    whatsAppStatus.mockResolvedValue({
+      ...notOptedIn,
+      optedIn: true,
+      optedOut: true,
+      optedOutAt: '2026-10-01T05:00:00Z',
+    });
+    renderWithProviders(<ConsentsPanel patientId="p1" />);
+
+    expect(await screen.findByText('+91******3210 replied STOP on WhatsApp')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record WhatsApp opt-in' })).not.toBeInTheDocument();
   });
 
   it('lists each consent with its decision, and offers withdrawal only for one that stands', async () => {

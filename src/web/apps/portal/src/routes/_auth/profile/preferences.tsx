@@ -17,7 +17,7 @@ export const Route = createFileRoute('/_auth/profile/preferences')({
   component: PreferencesPage,
 });
 
-type Choice = 'updates' | 'marketing';
+type Choice = 'updates' | 'marketing' | 'whatsApp';
 
 const CHOICES: { key: Choice; title: MessageKey; hint: MessageKey; changedAt: keyof CommunicationPreferences }[] = [
   { key: 'updates', title: 'preferences.updates', hint: 'preferences.updates.hint', changedAt: 'updatesChangedAt' },
@@ -27,6 +27,8 @@ const CHOICES: { key: Choice; title: MessageKey; hint: MessageKey; changedAt: ke
     hint: 'preferences.marketing.hint',
     changedAt: 'marketingChangedAt',
   },
+  // The channel rather than the kind of message (INT-WA); it belongs to the mobile number, so only its holder changes it.
+  { key: 'whatsApp', title: 'preferences.whatsApp', hint: 'preferences.whatsApp.hint', changedAt: 'whatsAppChangedAt' },
 ];
 
 const useStyles = makeStyles({
@@ -69,7 +71,8 @@ function PreferencesPage() {
   const [saving, setSaving] = useState<Choice | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Each switch saves at once (no separate Save button to forget); the other choice is sent unchanged.
+  // Each switch saves at once (no separate Save button to forget); the other choices are sent unchanged, and WhatsApp
+  // only when it is the switch that changed.
   const change = async (choice: Choice, value: boolean) => {
     const current = preferences.data;
     if (!current || saving) {
@@ -79,7 +82,12 @@ function PreferencesPage() {
     setError(null);
     const next = { ...current, [choice]: value };
     try {
-      await feedbackApi.savePreferences({ patientId: profile.id, marketing: next.marketing, updates: next.updates });
+      await feedbackApi.savePreferences({
+        patientId: profile.id,
+        marketing: next.marketing,
+        updates: next.updates,
+        ...(choice === 'whatsApp' ? { whatsApp: value } : {}),
+      });
       await queryClient.invalidateQueries({ queryKey: query.queryKey });
       toast.success(t('preferences.saved'));
     } catch (err) {
@@ -105,6 +113,7 @@ function PreferencesPage() {
           {CHOICES.map((choice) => {
             const changedAt = preferences.data[choice.changedAt] as string | null;
             const titleId = `pref-${choice.key}`;
+            const locked = choice.key === 'whatsApp' && !preferences.data.whatsAppEditable;
             return (
               <div key={choice.key} className={styles.row}>
                 <span className={styles.text}>
@@ -112,6 +121,7 @@ function PreferencesPage() {
                     {t(choice.title)}
                   </span>
                   <span className={styles.hint}>{t(choice.hint)}</span>
+                  {locked && <span className={styles.hint}>{t('preferences.whatsApp.holderOnly')}</span>}
                   {changedAt && (
                     <span className={styles.changed}>{t('preferences.changed', { date: f.date(changedAt) })}</span>
                   )}
@@ -121,7 +131,7 @@ function PreferencesPage() {
                   <Switch
                     aria-labelledby={titleId}
                     checked={preferences.data[choice.key]}
-                    disabled={saving !== null}
+                    disabled={saving !== null || locked}
                     onChange={(_, data) => void change(choice.key, data.checked)}
                   />
                 </span>

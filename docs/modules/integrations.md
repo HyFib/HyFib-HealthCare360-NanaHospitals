@@ -160,6 +160,8 @@ them. SMS is a separate channel and is not affected.
   repliedAt, providerMessageId, facilityId)`:
   * the platform records the number's opt-out in `platform.whatsapp_opt_outs`, which the `notify.whatsapp` outbox
     handler checks before every send (see [ARCHITECTURE.md §10](../architecture/ARCHITECTURE.md#10-integration-architecture));
+    a START is also recorded as the number's opt-in (`platform.whatsapp_opt_ins`, source `WhatsAppStart`, once per
+    reply id; see [Opt-in tracking](#opt-in-tracking));
   * Engagement withdraws, or gives back, the marketing consent of the patients registered with the number (see
     [engagement.md](engagement.md#automation-domain-event-handlers-run-inside-the-raisers-transaction)).
 * **Recorded on the message.** `keyword_action` is `OptedOut`, `OptedIn`, `Superseded` or `None` (no keyword, or a
@@ -177,6 +179,43 @@ them. SMS is a separate channel and is not affected.
 * **Group-wide.** The opt-out applies to the number across the hospital group, whichever facility's WhatsApp number
   received the reply.
 * The administrator's "send a test" is not an opt-out-aware message: it goes to the number the administrator types.
+
+#### Opt-in tracking
+
+A number's agreement to get WhatsApp messages is recorded in `platform.whatsapp_opt_ins` (`WhatsAppOptIn`), one row
+each time it is given and never changed afterwards: the number (E.164), the patient it was recorded for (when known),
+the source, the time, who captured it and the facility. The sources are:
+
+| Source | Where | Captured by |
+|---|---|---|
+| `RegistrationDesk` | The "Patient agrees to WhatsApp reminders and updates" switch when registering, or "Record WhatsApp opt-in" on the patient's consents (`POST /api/v1/patients/{id}/whatsapp/opt-in`) | The member of staff |
+| `Portal` | "Messages on WhatsApp" under Profile → Messages from the hospital | The portal account (signed in with the number) |
+| `WhatsAppStart` | A START reply to the hospital's number | Nobody (the reply's wamid is kept) |
+
+`WhatsAppConsent` (Platform) records and reads them; the delivery handler applies three tiers
+(`WhatsAppOptOutPolicy`):
+
+1. **Essential** (`auth.otp`): always sent, even after STOP.
+2. **Service messages about the patient's own care** (appointment booked or cancelled, token, report ready, bill,
+   receipt, payment link, prescription, video-consultation link, admission and discharge, and any template not
+   listed in tier 3): sent unless a STOP is in force. They need no WhatsApp opt-in, as in the consent model: the
+   patient gave the number for them at registration (the `SmsWhatsAppUpdates` consent recorded then), and the
+   portal's "Care updates" consent governs only reminders and feedback requests.
+3. **Messages the hospital starts** (`WhatsAppOptOutPolicy.OptInTemplates`: `appointment.reminder`,
+   `followup.reminder`, `feedback.request`, `campaign.message`, `pharmacy.refill_reminder`, `rpm.device_silent`):
+   sent only to a number with a recorded opt-in and no STOP in force; otherwise the log is marked Suppressed with
+   "has not opted in". The module that queues them still checks the patient's own consent too (updates or
+   marketing). A WhatsApp campaign's audience, whatever its template key, includes only reachable numbers.
+
+A STOP outranks every opt-in. Only the number's holder lifts it: a START reply, or switching WhatsApp on in the portal
+while signed in with that number (which also records the opt-in). A desk opt-in is recorded but leaves the STOP in
+force, because families share numbers and the person at the desk may not be the one who replied STOP. Switching
+WhatsApp off in the portal is recorded as an opt-out exactly as a STOP is. A family member signed in with another
+number sees the patient's WhatsApp choice but can't change it (422 `portal.whatsapp_not_holder`).
+
+The opt-in is new with this table, so existing numbers have none: after upgrading, WhatsApp reminders, feedback
+requests and campaigns stop until each number opts in (SMS is unaffected); bills, reports and the other service
+messages carry on.
 
 ### E-mail
 

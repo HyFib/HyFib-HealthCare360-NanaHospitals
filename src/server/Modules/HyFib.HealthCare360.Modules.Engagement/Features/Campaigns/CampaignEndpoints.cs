@@ -18,8 +18,8 @@ internal static class CampaignEndpoints
         group.MapGet("/", List).RequireAnyPermission(viewers);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(viewers);
         group.MapGet("/{id:guid}/delivery", Delivery).RequireAnyPermission(viewers);
-        group.MapPost("/audience-preview", async (SegmentInput segment, CampaignService campaigns, CancellationToken ct) =>
-                (await campaigns.PreviewAsync(segment.ToSegment(), ct)).ToOk())
+        group.MapPost("/audience-preview", async (SegmentInput segment, CampaignChannel? channel, CampaignService campaigns, CancellationToken ct) =>
+                (await campaigns.PreviewAsync(segment.ToSegment(), ct, channel)).ToOk())
             .RequirePermission(EngagementPermissions.CampaignsManage).WithValidation<SegmentInput>();
         group.MapPost("/", async (SaveCampaignRequest r, CampaignService campaigns, CancellationToken ct) =>
                 (await campaigns.CreateAsync(r, ct)).ToCreated(id => $"/api/v1/crm/campaigns/{id}"))

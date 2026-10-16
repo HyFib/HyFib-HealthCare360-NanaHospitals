@@ -10,7 +10,7 @@ namespace HyFib.HealthCare360.Modules.Billing.Features.Bills;
 
 /// <summary>
 /// /api/v1/billing/bills — OP/IP bills: draft, services, an OP bill's package, discounts, finalize, cancel, credit notes,
-/// and the printed A4 bill and its PDF (OPB, IPB, MB-02, MB-05/06).
+/// the printed A4 bill and its PDF, and sending it to the patient on WhatsApp (OPB, IPB, MB-02, MB-05/06, INT-WA).
 /// </summary>
 internal static class BillEndpoints
 {
@@ -44,6 +44,8 @@ internal static class BillEndpoints
         group.MapPost("/{id:guid}/finalize", FinalizeBill).RequirePermission(BillingPermissions.BillsFinalize);
         group.MapPost("/{id:guid}/cancel", Cancel).RequirePermission(BillingPermissions.BillsCancel).WithValidation<CancelBillRequest>();
         group.MapDelete("/{id:guid}", Discard).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
+        group.MapPost("/{id:guid}/send-whatsapp", SendOnWhatsApp)
+            .RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage, BillingPermissions.PaymentsCollect);
         group.MapPost("/{id:guid}/credit-notes", IssueCreditNote).RequirePermission(BillingPermissions.RefundsApprove).WithValidation<IssueCreditNoteRequest>();
     }
 
@@ -194,6 +196,30 @@ internal static class BillEndpoints
 
     private static async Task<IResult> Discard(Guid id, uint version, BillService bills, CancellationToken ct) =>
         (await bills.DiscardDraftAsync(id, version, ct)).ToNoContent();
+
+    /// <summary>Queues the bill's PDF to the patient's mobile number on WhatsApp; 204 once queued (the log shows delivery).</summary>
+    private static async Task<IResult> SendOnWhatsApp(Guid id, BillSharing sharing, PatientAccessGuard guard, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
+    {
+        var patientId = await db.Set<Bill>().Where(b => b.Id == id).Select(b => (Guid?)b.PatientId).FirstOrDefaultAsync(ct);
+        if (patientId is not { } patient)
+        {
+            return Error.NotFound(nameof(Bill), id).ToProblem();
+        }
+
+        var access = await guard.EnsureCanOpenAsync(patient, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        var sent = await sharing.SendAsync(id, ct);
+        if (sent.IsSuccess)
+        {
+            await audit.PatientRecordAccessedAsync(patient, "Sent a bill to the patient on WhatsApp", ct);
+        }
+
+        return sent.ToNoContent();
+    }
 
     private static async Task<IResult> IssueCreditNote(Guid id, IssueCreditNoteRequest request, RefundService refunds, HospitalDbContext db, TimeProvider time, CancellationToken ct)
     {

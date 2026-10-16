@@ -1,12 +1,14 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Notifications;
 using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Modules.Billing.Seed;
 
 /// <summary>
-/// Billing reference data: the default "General" tariff plan (always). With <c>HealthCare360:SeedDemoData</c>: demo
+/// Billing reference data: the default "General" tariff plan and the "bill shared" WhatsApp template (always). With
+/// <c>HealthCare360:SeedDemoData</c>: demo
 /// insurers, TPAs and government schemes (CGHS/ECHS with scheme tariffs), a delivery package and doctor share rules.
 /// Idempotent: every row is looked up by its code first.
 /// </summary>
@@ -51,6 +53,7 @@ internal sealed class BillingSeeder(IOptions<PlatformOptions> options, TimeProvi
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        await SeedTemplatesAsync(db, cancellationToken);
         if (!options.Value.SeedDemoData)
         {
             return;
@@ -59,6 +62,30 @@ internal sealed class BillingSeeder(IOptions<PlatformOptions> options, TimeProvi
         await SeedPayersAsync(db, cancellationToken);
         await SeedPackageAsync(db, cancellationToken);
         await SeedShareRulesAsync(db, cancellationToken);
+    }
+
+    /// <summary>
+    /// The bill on WhatsApp. Its template must be approved by Meta as "bill_shared" (utility) with a document header, which
+    /// carries the bill's PDF; an administrator changes the name or the wording under notification templates.
+    /// </summary>
+    private static async Task SeedTemplatesAsync(HospitalDbContext db, CancellationToken ct)
+    {
+        if (await db.Set<NotificationTemplate>().AnyAsync(
+                t => t.Key == BillSharing.Template && t.Channel == NotificationChannel.WhatsApp && t.FacilityId == null && t.Language == "en", ct))
+        {
+            return;
+        }
+
+        db.Add(new NotificationTemplate
+        {
+            Key = BillSharing.Template,
+            Channel = NotificationChannel.WhatsApp,
+            Body = "Dear {{name}}, your bill {{billNumber}} for Rs.{{amount}} is attached. It is also on the patient portal.",
+            WhatsAppTemplateName = "bill_shared",
+            WhatsAppDocumentHeader = true,
+            Description = "The bill's PDF on WhatsApp, when it is paid or the billing desk sends it",
+        });
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task SeedPayersAsync(HospitalDbContext db, CancellationToken ct)

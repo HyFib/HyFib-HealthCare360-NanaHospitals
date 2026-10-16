@@ -67,8 +67,8 @@ function Body({ onClose, campaign }: { onClose: () => void; campaign: CampaignDe
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const audience = useQuery({
-    queryKey: ['crm', 'campaigns', 'preview', campaign.segment],
-    queryFn: () => crmApi.previewAudience(campaign.segment),
+    queryKey: ['crm', 'campaigns', 'preview', campaign.segment, campaign.channel],
+    queryFn: () => crmApi.previewAudience(campaign.segment, campaign.channel),
     enabled: canPreview,
     staleTime: 30_000,
     retry: false,

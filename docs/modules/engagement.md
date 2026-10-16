@@ -85,8 +85,8 @@ Visits record the referrer as free text, so referral counts come from matching t
 | Method | Path | Permission | Body → Response |
 |---|---|---|---|
 | GET | `/` · `/{id}` | manage or send | filters `status, channel`, `search` by name → `CampaignListItem` / `CampaignDetail` |
-| GET | `/{id}/delivery` | manage or send | → `CampaignDelivery {recipients, queued, sent, failed, skipped, optedOut}` from the notification logs. `skipped` includes messages the platform suppressed because the number replied STOP on WhatsApp |
-| POST | `/audience-preview` | campaigns.manage | `SegmentInput {minAge, maxAge, gender, city, lastVisitFrom, lastVisitTo, departmentIds[≤50]}` → `AudiencePreview {count, sample[5] (UHID, masked name, age, city)}` |
+| GET | `/{id}/delivery` | manage or send | → `CampaignDelivery {recipients, queued, sent, failed, skipped, optedOut}` from the notification logs. `skipped` includes messages the platform suppressed because the number replied STOP on WhatsApp, or never opted in to WhatsApp |
+| POST | `/audience-preview?channel=` | campaigns.manage | `SegmentInput {minAge, maxAge, gender, city, lastVisitFrom, lastVisitTo, departmentIds[≤50]}` → `AudiencePreview {count, sample[5] (UHID, masked name, age, city)}`. With `channel=WhatsApp` only patients whose number opted in to WhatsApp, with no STOP in force, count |
 | POST/PUT | `/[{id}]` | campaigns.manage | `SaveCampaignRequest {name, channel: Sms\|WhatsApp, templateKey, message (SMS ≤ 480 chars), segment, version}`. Only drafts can be edited |
 | POST | `/{id}/schedule` | campaigns.send | `{scheduledAt}` → 204 |
 | POST | `/{id}/unschedule` | campaigns.send | back to draft before sending starts |
@@ -205,8 +205,8 @@ What the public endpoints never do:
 | GET | `/feedback/forms` | active Portal forms of every active facility (form, hospital name) |
 | POST | `/feedback` | `PortalFeedbackRequest {patientId, formId (Portal or General), visitId, ratings, nps, comment, wantsCallback, contactPhone}` → `{responseId, thankYou, complaintNumber}`. The visit must be the patient's own visit at that hospital |
 | GET | `/feedback?patientId=` | the patient's feedback with complaint number and status (latest 100) |
-| GET | `/communication-preferences?patientId=` | → `CommunicationPreferences {marketing, updates, marketingChangedAt, updatesChangedAt}` |
-| PUT | `/communication-preferences` | `{patientId, marketing, updates}` → 204. Only actual changes are recorded (given or withdrawn "via patient portal") |
+| GET | `/communication-preferences?patientId=` | → `CommunicationPreferences {marketing, updates, marketingChangedAt, updatesChangedAt, whatsApp, whatsAppChangedAt, whatsAppEditable}`. `whatsApp` is the number's WhatsApp choice (opted in, no STOP in force); `whatsAppEditable` is true only when signed in with the patient's own number |
+| PUT | `/communication-preferences` | `{patientId, marketing, updates, whatsApp?}` → 204. Only actual changes are recorded (given or withdrawn "via patient portal"). `whatsApp` true records a portal opt-in for the number and lifts a STOP it sent; false records an opt-out, as a STOP does; left out, nothing changes. Changing it from another number is 422 `portal.whatsapp_not_holder` |
 
 Every patient id is checked with `PortalPatientScope`: the verified mobile number's family records only. Any other id
 gets 403 `portal.patient_denied`.
@@ -371,6 +371,12 @@ changes come with an EF migration in `src/server/HyFib.HealthCare360.Server/Pers
   SMS opt-out link, the portal, or a STOP reply on WhatsApp. Staff can also record an opt-out. Every change is a
   consent record with its source. A campaign message already queued when the number replies STOP is not sent on
   WhatsApp either (the platform suppresses it at delivery).
+* **WhatsApp needs an opt-in on top of consent** (INT-WA). A WhatsApp campaign's audience (`CampaignAudienceQuery.
+  ReachableOnWhatsApp`) includes only patients whose number has a recorded WhatsApp opt-in (desk, portal or START) and
+  no STOP in force; follow-up reminders and feedback requests check the patient's `SmsWhatsAppUpdates` consent here,
+  and the platform sends them on WhatsApp only to opted-in numbers (the SMS still goes). Bills, reports and other
+  messages about the patient's own care need no opt-in. The rule and its sources are in
+  [integrations.md](integrations.md#opt-in-tracking).
 * Personal feedback and opt-out tokens are 128-bit random values and are stored only as SHA-256 hashes. QR tokens
   identify a form, never a person, and can be rotated.
 * Lists show masked mobile numbers. Opening a follow-up, a linked feedback response, a linked complaint or the 360°

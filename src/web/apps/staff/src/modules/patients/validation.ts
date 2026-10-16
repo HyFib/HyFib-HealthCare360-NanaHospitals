@@ -160,6 +160,8 @@ export const patientFormSchema = z
     photoFileId: z.string().nullable(),
     isVip: z.boolean(),
     notes: z.string().max(2000, 'Use at most 2000 characters.'),
+    /** Registration only: the patient agreed to WhatsApp messages on the mobile number (INT-WA). */
+    whatsAppOptIn: z.boolean(),
   })
   .superRefine((v, ctx) => {
     if (v.ageMode === 'dob') {
@@ -211,6 +213,7 @@ export const emptyPatientForm: PatientFormValues = {
   photoFileId: null,
   isVip: false,
   notes: '',
+  whatsAppOptIn: false,
 };
 
 const orNull = (value: string): string | null => (value.trim() ? value.trim() : null);
@@ -262,6 +265,11 @@ export function toPatientPayload(values: PatientFormValues): PatientFormPayload 
     isVip: values.isVip,
     notes: orNull(values.notes),
   };
+}
+
+/** The WhatsApp opt-in to send at registration: it is for the mobile number, so only with one. */
+export function whatsAppOptInOf(values: PatientFormValues): boolean {
+  return values.whatsAppOptIn && values.phone.trim() !== '';
 }
 
 /** Existing record → form values. Identifiers are write-only (masked on read), so they start empty. */

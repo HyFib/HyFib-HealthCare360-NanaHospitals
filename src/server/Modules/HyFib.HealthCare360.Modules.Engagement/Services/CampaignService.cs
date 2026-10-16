@@ -15,24 +15,31 @@ public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUs
     /// <summary>Every campaign template must offer an opt-out link (TRAI/DPDP), provided as {{optout}}.</summary>
     public const string OptOutPlaceholder = "{{optout}}";
 
-    public IQueryable<Patient> Audience(Guid facilityId, CampaignSegment segment) =>
-        CampaignAudienceQuery.Build(
+    /// <param name="channel">A WhatsApp campaign reaches only numbers that opted in to WhatsApp; null counts every channel's audience.</param>
+    public IQueryable<Patient> Audience(Guid facilityId, CampaignSegment segment, CampaignChannel? channel = null)
+    {
+        var audience = CampaignAudienceQuery.Build(
             db.Set<Patient>(),
             db.Set<PatientConsent>(),
             db.Set<Visit>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]),
             segment,
             facilityId,
             time.Today());
+        return channel == CampaignChannel.WhatsApp
+            ? CampaignAudienceQuery.ReachableOnWhatsApp(audience, db.Set<WhatsAppOptIn>(), db.Set<WhatsAppOptOut>())
+            : audience;
+    }
 
     /// <summary>Audience size and a small masked sample, so planners can sanity-check a segment without seeing a list of patients.</summary>
-    public async Task<Result<AudiencePreview>> PreviewAsync(CampaignSegment segment, CancellationToken ct)
+    /// <param name="channel">For a WhatsApp campaign, only numbers that opted in to WhatsApp count.</param>
+    public async Task<Result<AudiencePreview>> PreviewAsync(CampaignSegment segment, CancellationToken ct, CampaignChannel? channel = null)
     {
         if (currentUser.FacilityId is not { } facilityId)
         {
             return Error.Rule("facility.required", "Select a facility first.");
         }
 
-        var audience = Audience(facilityId, segment);
+        var audience = Audience(facilityId, segment, channel);
         var count = await audience.CountAsync(ct);
         var today = time.Today();
         var sample = await audience.OrderBy(p => p.Id).Take(5)
@@ -114,7 +121,7 @@ public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUs
                 $"Set the '{PublicLinks.BaseUrlSetting}' setting to the hospital's public https address first; every message must carry an opt-out link.");
         }
 
-        var audience = await Audience(campaign.FacilityId, campaign.Segment).CountAsync(ct);
+        var audience = await Audience(campaign.FacilityId, campaign.Segment, campaign.Channel).CountAsync(ct);
         var result = campaign.Schedule(request.ScheduledAt, audience, currentUser.UserId, time.GetUtcNow());
         if (result.IsSuccess)
         {
@@ -155,7 +162,7 @@ public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUs
     public async Task<int> SendBatchAsync(Campaign campaign, INotificationService notifications, string baseUrl, int batchSize, CancellationToken ct)
     {
         var processed = db.Set<CampaignRecipient>().Where(r => r.CampaignId == campaign.Id).Select(r => r.PatientId);
-        var batch = await Audience(campaign.FacilityId, campaign.Segment)
+        var batch = await Audience(campaign.FacilityId, campaign.Segment, campaign.Channel)
             .Where(p => !processed.Contains(p.Id))
             .OrderBy(p => p.Id)
             .Take(batchSize)

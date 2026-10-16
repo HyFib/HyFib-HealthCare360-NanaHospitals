@@ -30,7 +30,8 @@ public sealed record PortalFeedbackItem(
     ComplaintStatus? ComplaintStatus);
 
 /// <summary>Communication choices (PP-06): campaigns and offers, and service messages such as reminders and feedback links.</summary>
-public sealed record CommunicationPreferencesRequest(Guid PatientId, bool Marketing, bool Updates);
+/// <param name="WhatsApp">Get messages on WhatsApp on the patient's number; null leaves it as it is.</param>
+public sealed record CommunicationPreferencesRequest(Guid PatientId, bool Marketing, bool Updates, bool? WhatsApp = null);
 
 public sealed class PortalFeedbackRequestValidator : AbstractValidator<PortalFeedbackRequest>
 {

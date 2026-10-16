@@ -800,6 +800,11 @@ export const billingApi = {
     api.post<BillDetail>(`/api/v1/billing/bills/${billId}/cancel`, { reason, version }),
   discard: (billId: string, version: number) =>
     api.delete<void>(`/api/v1/billing/bills/${billId}`, { query: { version } }),
+  /**
+   * Queues the A4 bill's PDF to the patient's mobile number on WhatsApp (INT-WA). 422 `billing.no_mobile`,
+   * `billing.whatsapp_opted_out` (the number replied STOP) or `billing.bill_not_shareable` (a draft or cancelled bill).
+   */
+  sendOnWhatsApp: (billId: string) => api.post<void>(`/api/v1/billing/bills/${billId}/send-whatsapp`),
   issueCreditNote: (billId: string, kind: CreditNoteKind, amount: number, reason: string) =>
     api.post<BillDetail>(`/api/v1/billing/bills/${billId}/credit-notes`, { kind, amount, reason }),
   adjustAdvance: (

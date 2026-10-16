@@ -25,14 +25,16 @@ internal static class PortalEndpoints
         group.MapGet("/communication-preferences", async (Guid patientId, PortalPatientScope scope, CommunicationConsentService consents, CancellationToken ct) =>
         {
             var access = await scope.EnsureAccessAsync(patientId, ct);
-            return access.IsFailure ? access.Error!.ToProblem() : TypedResults.Ok(await consents.PreferencesAsync(patientId, ct));
+            return access.IsFailure
+                ? access.Error!.ToProblem()
+                : TypedResults.Ok(await consents.PreferencesAsync(patientId, await scope.AccountPhoneAsync(ct), ct));
         });
         group.MapPut("/communication-preferences", async (CommunicationPreferencesRequest r, PortalPatientScope scope, CommunicationConsentService consents, CancellationToken ct) =>
         {
             var access = await scope.EnsureAccessAsync(r.PatientId, ct);
             return access.IsFailure
                 ? access.Error!.ToProblem()
-                : (await consents.SetPreferencesAsync(r.PatientId, r.Marketing, r.Updates, Via, ct)).ToNoContent();
+                : (await consents.SetPreferencesAsync(r.PatientId, r.Marketing, r.Updates, Via, ct, r.WhatsApp, await scope.AccountPhoneAsync(ct))).ToNoContent();
         }).WithValidation<CommunicationPreferencesRequest>();
     }
 

@@ -551,8 +551,9 @@ export const crmApi = {
       ? api.put<void>(`/api/v1/crm/referring-doctors/${id}`, request)
       : api.post<string>('/api/v1/crm/referring-doctors', request),
 
-  previewAudience: (segment: SegmentInput) =>
-    api.post<AudiencePreview>('/api/v1/crm/campaigns/audience-preview', segment),
+  /** For a WhatsApp campaign, only numbers that opted in to WhatsApp count. */
+  previewAudience: (segment: SegmentInput, channel?: CampaignChannel) =>
+    api.post<AudiencePreview>('/api/v1/crm/campaigns/audience-preview', segment, { query: { channel } }),
   createCampaign: (request: SaveCampaignRequest) => api.post<string>('/api/v1/crm/campaigns', request),
   updateCampaign: (id: string, request: SaveCampaignRequest) => api.put<void>(`/api/v1/crm/campaigns/${id}`, request),
   scheduleCampaign: (id: string, scheduledAt: string) =>

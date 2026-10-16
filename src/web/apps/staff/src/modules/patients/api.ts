@@ -148,6 +148,8 @@ export interface PatientFormPayload {
 
 export interface RegisterPatientRequest extends PatientFormPayload {
   confirmedNotDuplicate: boolean;
+  /** The patient agreed at the desk to get reminders and updates on WhatsApp on `phone` (INT-WA). */
+  whatsAppOptIn?: boolean;
 }
 
 export interface UpdatePatientRequest extends PatientFormPayload {
@@ -327,6 +329,28 @@ export interface CaptureConsentRequest {
   notes: string | null;
 }
 
+/** Where a WhatsApp opt-in was given. */
+export type WhatsAppOptInSource = 'RegistrationDesk' | 'Portal' | 'WhatsAppStart';
+
+/**
+ * The WhatsApp choices of the patient's mobile number (INT-WA). They belong to the number, so family members registered
+ * with it share them. Reminders and campaigns go on WhatsApp only when `reachable`; bills, reports and other messages
+ * about the patient's care go unless `optedOut`.
+ */
+export interface WhatsAppConsentDto {
+  /** Masked; null when the patient has no mobile number. */
+  phone: string | null;
+  optedIn: boolean;
+  optedInAt: string | null;
+  source: WhatsAppOptInSource | null;
+  /** Who recorded the latest opt-in; null for a START reply. */
+  capturedByName: string | null;
+  /** A STOP reply (or the portal's "off") is in force. */
+  optedOut: boolean;
+  optedOutAt: string | null;
+  reachable: boolean;
+}
+
 /** What the patient is to the family member who sees their records in the portal (PP-01). */
 export const FAMILY_RELATIONS = ['Parent', 'Child', 'Spouse', 'Sibling', 'Grandparent', 'Grandchild', 'Other'] as const;
 export type FamilyRelation = (typeof FAMILY_RELATIONS)[number];
@@ -396,6 +420,7 @@ export const patientKeys = {
   detail: (id: string) => ['patients', 'detail', id] as const,
   visits: (id: string, page: number) => ['patients', 'visits', id, page] as const,
   consents: (id: string) => ['patients', 'consents', id] as const,
+  whatsApp: (id: string) => ['patients', 'whatsapp', id] as const,
   portalFamily: (id: string) => ['patients', 'portal-family', id] as const,
   documents: (id: string) => ['patients', 'documents', id] as const,
   photo: (fileId: string) => ['patients', 'photo', fileId] as const,
@@ -425,6 +450,11 @@ export const patientQueries = {
     queryOptions({
       queryKey: patientKeys.consents(id),
       queryFn: ({ signal }) => api.get<ConsentDto[]>(`/api/v1/patients/${id}/consents`, { signal }),
+    }),
+  whatsApp: (id: string) =>
+    queryOptions({
+      queryKey: patientKeys.whatsApp(id),
+      queryFn: ({ signal }) => api.get<WhatsAppConsentDto>(`/api/v1/patients/${id}/whatsapp`, { signal }),
     }),
   portalFamily: (id: string) =>
     queryOptions({
@@ -464,6 +494,8 @@ export const consentApi = {
   /** 422 `consent.revoked` when it is already withdrawn, `consent.not_granted` for a refusal. */
   revoke: (consentId: string, reason: string) =>
     api.post<void>(`/api/v1/patients/consents/${consentId}/revoke`, { reason }),
+  /** Records that the patient told the desk they want WhatsApp messages; 422 `patient.no_mobile` without a number. */
+  whatsAppOptIn: (patientId: string) => api.post<WhatsAppConsentDto>(`/api/v1/patients/${patientId}/whatsapp/opt-in`),
 };
 
 /**
