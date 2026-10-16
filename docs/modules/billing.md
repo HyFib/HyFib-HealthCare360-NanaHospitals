@@ -10,8 +10,10 @@ Project: `src/server/Modules/HyFib.HealthCare360.Modules.Billing` (layer 7; refe
 Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests` (372 unit tests: pure domain, the settlement reports and the
 printed bill's HTML, plus change-tracking checks on the real EF model without a database), and the end-to-end
 `GatewayReconciliationTests` in `tests/HyFib.HealthCare360.IntegrationTests` (payment link to settlement journal, a
-webhook delivered twice, who may reconcile) and `PosSettlementTests` (a terminal sale and a typed card payment matched
-from the acquirer's report, the review, the settlement journal, a card receipt never settled).
+webhook delivered twice, who may reconcile), `PosSettlementTests` (a terminal sale and a typed card payment matched
+from the acquirer's report, the review, the settlement journal, a card receipt never settled) and `PosRecheckTests`
+(the training terminal: a sale paid after the counter stopped polling is recorded once; one nobody paid is cancelled
+and timed out).
 
 The module implements the Platform contracts `IChargePoster` and `IBillingStatusProvider` (replacing the Null
 fallbacks) — see [Contracts for other modules](#contracts-for-other-modules). For insurance claims it reads the coding
@@ -152,7 +154,7 @@ the counter.
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | POST | `/pos/sales` | `payments.collect` / `deposits` | `StartPosSaleRequest(billId? \| ipAccountId?, amount?, terminalId, channel)` → `PosSaleDto` |
-| GET | `/pos/sales/{id}` | same | → `PosSaleDto` (polls the terminal; an approved sale records the receipt once, keyed on the terminal transaction id) |
+| GET | `/pos/sales/{id}` | same | → `PosSaleDto` (polls the terminal; an approved sale records the receipt once, keyed on the terminal transaction id). A sale the counter stops polling is followed by `PosRecheckJob` (below) |
 | POST | `/pos/sales/{id}/cancel` | same | → `PosSaleDto` |
 | POST | `/payment-links` | `payments.collect` / `deposits` | `CreatePaymentLinkRequest` → 201 `GatewayOrderDto` (SMS/WhatsApp template `payment.link`) |
 | GET | `/payment-links?billId&ipAccountId&status` (paged) | `payments.collect` / `charges.read` | → `PagedResult<GatewayOrderDto>` (`paidAt` = when the gateway took the payment; `lastError` = why it failed, expired or was cancelled, or why its paid receipt could not be recorded yet; `paymentId`) |
@@ -663,8 +665,24 @@ the bill's day again, never to delete it.
 * `billing.appointment.prepayment` — see above.
 * `GatewayReconciliationJob` — re-checks open online payments and prepaid bookings, follows gateway refunds, reads
   settlements; see [Gateway reconciliation](#gateway-reconciliation-int-pg).
+* `PosRecheckJob` — every minute where `PlatformOptions.RunsJobs` is set, follows the terminal sales the counter
+  stopped polling (the screen closed, the browser crashed, the cashier moved on while the customer paid). Sales started
+  more than a minute and less than two days ago that are still `Initiated` or `AwaitingCustomer`, or `Approved` without
+  their receipt, are asked about with their own facility's terminal settings: an approval records the receipt (once,
+  keyed on the transaction id, as when the counter polls), and a sale still waiting after the facility's
+  `billing.pos.recheck` timeout is cancelled on the terminal and marked `TimedOut` ("Nobody completed the payment
+  within 15 minutes; HC360 cancelled the sale on the terminal."), so a later approval cannot leave money unrecorded.
+  If the terminal does not confirm the cancel, the sale stays open and is tried again on the next run. An answer from
+  another provider than the one that started the sale (POS switched off or changed since) is not applied. The counter
+  hears of the outcome through `billing.pos.changed`. Each run is idempotent, so a second worker or the counter polling
+  at the same moment does no harm.
 * SMS/WhatsApp templates used: `bill.receipt` (SMS, every counter/POS/gateway receipt), `bill.shared` (WhatsApp, the
   bill's PDF; see below), `payment.link`.
+* In-app alerts: discount approval needed, refund awaiting approval, discharge initiated (final bill drafted), patient
+  discharged with dues, admission cancelled (billing follow-up), cancelled order already billed; to holders of
+  `billing.gateway.reconcile`: an online payment not recorded, an online refund failed, settled transactions that do
+  not match.
+* Realtime: `billing.bill.changed`, `billing.pos.changed` (facility group).
 
 ### Bills on WhatsApp (INT-WA)
 `BillSharing` sends the A4 bill on WhatsApp as template `bill.shared`, whose document header carries the PDF made by
@@ -684,11 +702,6 @@ estimate) or a cancelled bill gives no document and is never sent.
 * **Template.** Seeded (always) as WhatsApp template name `bill_shared` with "Document header" on. Register it with
   Meta as a utility template with a document header and one body parameter; without a header there is nothing to
   send, so do not untick it. There is no receipt PDF: the 80 mm receipt prints in the browser.
-* In-app alerts: discount approval needed, refund awaiting approval, discharge initiated (final bill drafted), patient
-  discharged with dues, admission cancelled (billing follow-up), cancelled order already billed; to holders of
-  `billing.gateway.reconcile`: an online payment not recorded, an online refund failed, settled transactions that do
-  not match.
-* Realtime: `billing.bill.changed`, `billing.pos.changed` (facility group).
 
 ## Number series
 | Key | Format | Reset |
@@ -712,6 +725,7 @@ estimate) or a cancelled bill gives no document and is never sent.
 | `billing.tally.dailyPost.enabled` | `true` | Queue the daily Tally post |
 | `billing.bills.sendOnWhatsApp` | `true` | Send the bill's PDF on WhatsApp when a payment settles it ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); the desk can still send it by hand when off |
 | `billing.gateway.reconciliation` | `{ "enabled": true, "settlementDays": 3, "checkoutExpiryHours": 48 }` | Gateway reconciliation: read settlements and list exceptions (`enabled`); an online receipt not settled after `settlementDays` (1–30) is an exception; a portal checkout nobody paid is marked expired after `checkoutExpiryHours` (1–720) |
+| `billing.pos.recheck` | `{ "timeoutMinutes": 15 }` | Terminal sales: a sale still waiting for the customer after `timeoutMinutes` (2–240) is cancelled on the terminal and marked timed out by `PosRecheckJob` |
 | `billing.pos.settlements` | `{ "settlementDays": 3, "otherTerminals": [], "columns": {} }` | Card and UPI reconciliation: a card or UPI receipt not settled after `settlementDays` (1–30) is listed; `otherTerminals` are the acquirer's TIDs of counters Billing does not record (pharmacy, canteen); `columns` adds the acquirer's headings by field (`rrn`, `approvalCode`, `amount`, `charges`, `tax`, `net`, `terminalId`, `transactionDate`, `transactionTime`, `card`, `type`, `mode`, `settlementDate`, `utr`), tried before the built-in ones |
 | `doctorfees.accrual.trigger` | `finalized` | `finalized` or `paid` |
 | `doctorfees.tds.percent` | `10` | TDS (194J) on doctor payouts |

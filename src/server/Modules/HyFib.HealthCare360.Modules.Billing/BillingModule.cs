@@ -61,6 +61,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<GatewayRefundTracker>();
         services.AddScoped<PrepaymentChecker>();
         services.AddScoped<GatewayReconciliationRunner>();
+        services.AddScoped<PosRecheckRunner>();
         services.AddScoped<GatewayWebhookLog>();
         services.AddScoped<PosSettlementService>();
         services.AddScoped<BillSharing>();
@@ -72,6 +73,7 @@ public sealed class BillingModule : IModule
 
         services.AddHostedService<TallyDayBookScheduler>();
         services.AddHostedService<GatewayReconciliationJob>();
+        services.AddHostedService<PosRecheckJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

@@ -40,8 +40,8 @@ public sealed class PosTerminalRouterTests
         Configure(null);
         var router = Router();
 
-        var first = await router.StartSaleAsync(Sale, Ct);
-        var second = await router.StartSaleAsync(Sale, Ct);
+        var first = await router.StartSaleAsync(Sale, null, Ct);
+        var second = await router.StartSaleAsync(Sale, null, Ct);
 
         first.Status.ShouldBe(PosTransactionStatus.Declined);
         first.Message.ShouldBe("Card/UPI POS is not configured. Set it up in Administration → Integrations.");
@@ -57,7 +57,7 @@ public sealed class PosTerminalRouterTests
             .ReturnsForAnyArgs(new PosTransactionResult("OPD-1:987654:50000", PosTransactionStatus.AwaitingCustomer, null, null, null, "Uploaded"));
         var router = Router();
 
-        var result = await router.StartSaleAsync(Sale, Ct);
+        var result = await router.StartSaleAsync(Sale, null, Ct);
 
         result.TransactionId.ShouldBe("OPD-1:987654:50000");
         router.Provider.ShouldBe("pinelabs");
@@ -68,7 +68,7 @@ public sealed class PosTerminalRouterTests
     {
         _pineLabs.StartSaleAsync(default!, default!, default!, Ct).ReturnsForAnyArgs(PosTerminalRouter.Declined(string.Empty, "Terminal 'OPD-9' is not configured."));
 
-        var result = await Router().StartSaleAsync(Sale, Ct);
+        var result = await Router().StartSaleAsync(Sale, null, Ct);
 
         result.Status.ShouldBe(PosTransactionStatus.Declined);
         result.TransactionId.ShouldStartWith("declined-");
@@ -80,7 +80,7 @@ public sealed class PosTerminalRouterTests
     {
         Configure(new PosSettings { Enabled = false, Provider = "pinelabs" });
 
-        var result = await Router().GetStatusAsync("OPD-1:987654:50000", Ct);
+        var result = await Router().GetStatusAsync("OPD-1:987654:50000", null, Ct);
 
         result.TransactionId.ShouldBe("OPD-1:987654:50000");
         result.Status.ShouldBe(PosTransactionStatus.Declined);

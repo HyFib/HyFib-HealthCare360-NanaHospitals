@@ -13,6 +13,8 @@ internal sealed class WhatsAppRouter(IEnumerable<IWhatsAppProvider> providers, I
 
     public async Task<SendResult> SendTemplateAsync(WhatsAppTemplateMessage message, CancellationToken cancellationToken)
     {
+        // Outbox sends have no signed-in user: the log rows count against the message's facility.
+        using var facility = IntegrationTrace.ForFacility(message.FacilityId);
         var started = trace.Start();
         var (provider, config, error) = await ResolveAsync(message.To, message.FacilityId, cancellationToken);
         if (provider is null)
@@ -30,6 +32,7 @@ internal sealed class WhatsAppRouter(IEnumerable<IWhatsAppProvider> providers, I
 
     public async Task<SendResult> SendDocumentAsync(WhatsAppDocumentMessage message, CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(message.FacilityId);
         var started = trace.Start();
         var (provider, config, error) = await ResolveAsync(message.To, message.FacilityId, cancellationToken);
         if (provider is null)
@@ -47,6 +50,7 @@ internal sealed class WhatsAppRouter(IEnumerable<IWhatsAppProvider> providers, I
 
     public async Task<SendResult> SendTextAsync(WhatsAppTextMessage message, CancellationToken cancellationToken)
     {
+        using var facility = IntegrationTrace.ForFacility(message.FacilityId);
         var started = trace.Start();
         var (provider, config, error) = await ResolveAsync(message.To, message.FacilityId, cancellationToken);
         if (provider is null)

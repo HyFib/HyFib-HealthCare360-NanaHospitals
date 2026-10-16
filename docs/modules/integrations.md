@@ -37,10 +37,24 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
 * **Integration log.** Every external call, inbound webhook and analyser message writes one row through the platform
   `IIntegrationLogger`, via the internal `IntegrationTrace` helper. Rows record integration, provider, operation,
   direction, success, duration, reference and summaries. Adapters build their own summaries: masked recipient,
-  template name, counts and status codes. They never log message bodies, patient names or credentials. The platform
-  logger then masks phone numbers, e-mails and secrets as a second line of defence. Raw analyser messages are logged
+  template name, counts and status codes. They never log message bodies, patient names or credentials, nor the
+  provider's answer: SMS gateways echo the recipient and the text, so their row's response is the HTTP status and the
+  provider's message id only (`HTTP 200 id=…`), and a generic gateway's unexpected answer is described, not quoted. The
+  platform logger then masks phone numbers, e-mails and secrets (`"apiKey"`, `"authkey"`, `"token"`, `"access_token"`,
+  `"password"`, `"authorization"`, `"…secret"` and the like in JSON) as a second line of defence. Raw analyser messages are logged
   only after `LabPhiMasking` has removed names, dates of birth, addresses and phones, and has cut identifiers to their
   last four characters.
+* **Facility of a log row.** The dashboard's health and the log list count a row for the signed-in facility when it
+  carries that facility or none, so a row without one counts for every facility. Each row therefore takes the facility
+  the call was made for, in this order: `IntegrationLogEntry.FacilityId` (or `IntegrationTrace.LogAsync(…, facilityId)`),
+  then the facility of the innermost `IntegrationLogScope.ForFacility` around the call, then the signed-in user's.
+  Background work has no signed-in user, so the routers open a scope for the facility whose settings they use: SMS,
+  WhatsApp and e-mail for the message's facility (outbox sends), payments for the facility named (webhooks, gateway
+  reconciliation, re-checks), POS for the sale's facility (the background re-check), Tally for the facility posted for, PACS for the facility named (`PacsLinkJob`), and
+  attendance terminals for the terminal's facility. The modality worklist uses the modality's facility, analyser
+  messages the analyser's facility in Lab setup, and HR's push and pull rows the terminal's facility. Rows still
+  without a facility count for every facility: refused worklist associations, inbound webhooks, the lab agent relay
+  and analysers whose facility the LIS cannot give.
 * **Transport.** Each HTTP provider is a typed `HttpClient` behind the standard resilience handler. Cloud APIs use a
   15 s attempt timeout and a 20 s total; Tally uses 20 s for both, because the day book posts from an outbox message
   that has 30 s in all (see [Tally Prime](#tally-prime-int-tally)). Unsafe methods (POST) are **never retried** at the HTTP
@@ -75,6 +89,11 @@ Configuration uses the generic settings API (`/api/v1/admin/settings/...`), faci
 
 * `integrations.<name>` holds the non-secret JSON.
 * `integrations.<name>.secret` holds the credentials, stored encrypted by the settings service.
+
+Every key ending in `.secret` (`integrations.*.secret`, `ai.*.secret`) is encrypted whatever the caller asks for:
+`ISettingsService.SetAsync` and `PUT /api/v1/admin/settings/{key}` ignore a request to store one in clear text
+(`"secret": false`). The settings list never shows the value of such a key, even a row saved in clear text before
+this rule; saving it again encrypts it.
 
 Secrets are read only from the `.secret` keys. They are never returned by any Integrations endpoint and never logged.
 Settings that are malformed or cannot be decrypted produce a staff-facing problem message ("… settings are not valid",
@@ -320,6 +339,11 @@ Transaction ids encode what status and cancel need (`OPD-1:987654:125075`, meani
 paise), so no extra table is required. A sale that never reached a terminal gets a unique `declined-…` id. A lost
 status or cancel response reports "still waiting" rather than a decline. Only the last four card digits are kept. The admin "test" checks configuration only, because pushing a sale
 would prompt a customer at a counter.
+
+**Background re-check.** Every `IPosTerminal` call names the facility whose settings apply (null: the signed-in
+facility). Billing's `PosRecheckJob` uses it to ask about sales the counter stopped polling with the sale's facility's
+terminal, and to cancel those nobody paid within `billing.pos.recheck` (see
+[billing.md](billing.md#outbox-jobs-and-notifications)); its log rows count against that facility.
 
 **Reconcile.** The terminal's RRN and approval code are kept with the receipt, and Billing matches them with the
 acquirer's settlement report, which an accountant imports; see *Card and UPI reconciliation* in

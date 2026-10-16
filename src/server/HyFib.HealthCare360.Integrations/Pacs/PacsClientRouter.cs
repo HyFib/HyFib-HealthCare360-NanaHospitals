@@ -58,6 +58,7 @@ internal sealed class PacsClientRouter(IEnumerable<IPacsProvider> providers, Int
             throw new HttpRequestException("HC360 refused to send objects without the patient's ID.");
         }
 
+        using var facility = IntegrationTrace.ForFacility(request.FacilityId);
         var (provider, config, problem) = await ResolveAsync(request.FacilityId, cancellationToken);
         if (provider is null)
         {
@@ -111,6 +112,8 @@ internal sealed class PacsClientRouter(IEnumerable<IPacsProvider> providers, Int
 
     private async Task<T> CallAsync<T>(Guid? facilityId, Func<IPacsProvider, IntegrationConfig<PacsSettings, PacsSecrets>, Task<T>> call, CancellationToken cancellationToken)
     {
+        // Background linking (PacsLinkJob) has no signed-in user: the log rows count against the facility named.
+        using var facility = IntegrationTrace.ForFacility(facilityId);
         var (provider, config, problem) = await ResolveAsync(facilityId, cancellationToken);
         if (provider is null)
         {

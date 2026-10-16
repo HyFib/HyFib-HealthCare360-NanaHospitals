@@ -52,6 +52,11 @@ internal sealed class IntegrationLogConfiguration : IEntityTypeConfiguration<Int
     }
 }
 
+/// <param name="FacilityId">
+/// The facility the call was made for. Background work (the outbox, Tally posting, analyser listeners, attendance
+/// pulls, gateway reconciliation, PACS linking) has no signed-in user, so it names the facility here or through
+/// <see cref="IntegrationLogScope"/>; otherwise the row would count against no facility and show under every one.
+/// </param>
 public sealed record IntegrationLogEntry(
     string Integration,
     string Provider,
@@ -62,7 +67,41 @@ public sealed record IntegrationLogEntry(
     string? Reference = null,
     string? Request = null,
     string? Response = null,
-    string? Error = null);
+    string? Error = null,
+    Guid? FacilityId = null);
+
+/// <summary>
+/// The facility integration calls are being made for, for the log rows written beneath it. A router knows the facility
+/// whose settings it uses, but the provider that writes the row does not; the router opens a scope around the call
+/// instead of every provider passing the facility along. The facility flows with the async call and ends with the scope.
+/// </summary>
+public static class IntegrationLogScope
+{
+    private static readonly AsyncLocal<Guid?> Facility = new();
+
+    /// <summary>The facility of the innermost open scope, or null.</summary>
+    public static Guid? FacilityId => Facility.Value;
+
+    /// <summary>
+    /// Tags the log rows written until the scope is disposed with <paramref name="facilityId"/>. A null facility leaves an
+    /// enclosing scope's facility (or the signed-in user's) in force.
+    /// </summary>
+    public static IDisposable ForFacility(Guid? facilityId)
+    {
+        var previous = Facility.Value;
+        if (facilityId is not null)
+        {
+            Facility.Value = facilityId;
+        }
+
+        return new Restore(previous);
+    }
+
+    private sealed class Restore(Guid? previous) : IDisposable
+    {
+        public void Dispose() => Facility.Value = previous;
+    }
+}
 
 public interface IIntegrationLogger
 {
@@ -95,7 +134,8 @@ internal sealed partial class IntegrationLogger(
                 Request = Sanitize(entry.Request),
                 Response = Sanitize(entry.Response),
                 Error = Truncate(SensitiveText.RedactOrNull(entry.Error), 2000),
-                FacilityId = currentUser.FacilityId,
+                // Named facility first: background work has no signed-in user, and a user may act for another facility.
+                FacilityId = entry.FacilityId ?? IntegrationLogScope.FacilityId ?? currentUser.FacilityId,
                 CorrelationId = currentUser.CorrelationId,
             });
             await db.SaveChangesAsync(cancellationToken);
@@ -123,7 +163,7 @@ internal sealed partial class IntegrationLogger(
 
     private static string? Truncate(string? value, int max) => value is null || value.Length <= max ? value : value[..max];
 
-    [GeneratedRegex("(?<name>\"(?:api_?key|apikey|token|secret|password|authorization|auth_token|key_secret)\")(?<sep>\\s*:\\s*)\"[^\"]*\"", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("(?<name>\"(?:api_?key|authkey|(?:access_|auth_|refresh_)?token|(?:client_?|key_?|webhook_?|app_?)?secret|password|authorization)\")(?<sep>\\s*:\\s*)\"[^\"]*\"", RegexOptions.IgnoreCase)]
     private static partial Regex SecretRegex();
 
     [GeneratedRegex(@"\+?\d{10,13}")]

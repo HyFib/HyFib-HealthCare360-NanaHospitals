@@ -12,6 +12,8 @@ internal sealed class SmsRouter(IEnumerable<ISmsProvider> providers, Integration
 
     public async Task<SendResult> SendAsync(SmsMessage message, CancellationToken cancellationToken)
     {
+        // Outbox sends have no signed-in user: the log rows count against the message's facility.
+        using var facility = IntegrationTrace.ForFacility(message.FacilityId);
         var started = trace.Start();
         var config = await settings.ReadAsync<SmsSettings, SmsSecrets>(IntegrationNames.Sms, message.FacilityId, requireEnabled: true, cancellationToken);
         if (config.ActiveProvider is not { } key)

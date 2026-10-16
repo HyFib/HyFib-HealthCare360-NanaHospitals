@@ -244,6 +244,8 @@ internal sealed class ModalityWorklistGateway(
         await using var scope = scopes.CreateAsyncScope();
         var trace = scope.ServiceProvider.GetRequiredService<IntegrationTrace>();
         var started = trace.Start();
+        // Modalities query outside any request: the log rows count against the modality's facility.
+        using var facility = IntegrationTrace.ForFacility(peer.FacilityId);
         try
         {
             var source = scope.ServiceProvider.GetService<IModalityWorklistSource>();

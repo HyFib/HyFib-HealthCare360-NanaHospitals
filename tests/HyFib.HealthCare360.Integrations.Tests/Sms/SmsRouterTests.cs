@@ -60,6 +60,28 @@ public sealed class SmsRouterTests
     }
 
     [Fact]
+    public async Task Queued_messages_are_logged_against_their_facility()
+    {
+        // Without this, an outbox send (no signed-in user) is logged against no facility and shows under every one.
+        var branch = Guid.Parse("0f3e2d1c-0000-4000-8000-00000000000b");
+        Configure(new SmsSettings { Enabled = true, Provider = "msg91" });
+        Guid? seenByProvider = null;
+        _msg91.SendAsync(Arg.Any<SmsMessage>(), Arg.Any<SmsSettings>(), Arg.Any<SmsSecrets>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                seenByProvider = IntegrationLogScope.FacilityId;
+                return SendResult.Ok("id-2");
+            });
+
+        await Router.SendAsync(new SmsMessage("+919876543210", "Hello", FacilityId: branch), Ct);
+        await Router.SendAsync(new SmsMessage("not a phone", "Hello", FacilityId: branch), Ct);
+
+        seenByProvider.ShouldBe(branch, "the provider's own log row is written inside the router's scope");
+        _tracing.Facilities.ShouldBe([branch], "the router's refusal is logged against the message's facility");
+        IntegrationLogScope.FacilityId.ShouldBeNull("the scope ends with the call");
+    }
+
+    [Fact]
     public async Task Fails_clearly_when_sms_is_not_configured()
     {
         Configure(null);

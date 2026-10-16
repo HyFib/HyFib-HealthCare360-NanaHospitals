@@ -63,6 +63,7 @@ public sealed class Msg91SmsProviderTests
         entry.Success.ShouldBeTrue();
         entry.Reference.ShouldBe("log-1");
         entry.Request!.ShouldContain("+91******3210");
+        entry.Response.ShouldBe("HTTP 200 id=req-1", "the status and MSG91's request id, never its answer");
         _tracing.AllText.ShouldNotContain("Ravi");
         _tracing.AllText.ShouldNotContain("test-auth-key");
     }
@@ -76,6 +77,7 @@ public sealed class Msg91SmsProviderTests
 
         result.Success.ShouldBeFalse();
         result.Error.ShouldBe("MSG91: Invalid authkey");
+        _tracing.Entries.ShouldHaveSingleItem().Response.ShouldBe("HTTP 200");
     }
 
     [Fact]

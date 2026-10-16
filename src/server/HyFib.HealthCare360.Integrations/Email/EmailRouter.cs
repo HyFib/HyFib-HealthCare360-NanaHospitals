@@ -5,6 +5,8 @@ internal sealed class EmailRouter(IEnumerable<IEmailProvider> providers, Integra
 {
     public async Task<SendResult> SendAsync(EmailMessage message, CancellationToken cancellationToken)
     {
+        // Outbox sends have no signed-in user: the log rows count against the message's facility.
+        using var facility = IntegrationTrace.ForFacility(message.FacilityId);
         var started = trace.Start();
         var config = await settings.ReadAsync<EmailSettings, EmailSecrets>(IntegrationNames.Email, message.FacilityId, requireEnabled: true, cancellationToken);
         string? error = null;

@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 using HyFib.HealthCare360.Platform.Integrations;
@@ -97,7 +98,8 @@ public sealed class PosService(
         PosTransactionResult result;
         try
         {
-            result = await terminal.StartSaleAsync(new PosSaleRequest(request.TerminalId.Trim(), Money.Round(request.Amount), reference, request.Mode.ToString()), ct);
+            result = await terminal.StartSaleAsync(
+                new PosSaleRequest(request.TerminalId.Trim(), Money.Round(request.Amount), reference, request.Mode.ToString()), target.Value.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -157,7 +159,7 @@ public sealed class PosService(
                 return Error.Rule("billing.pos_not_configured", "No card/UPI terminal integration is configured.");
             }
 
-            sale.Apply(await terminal.GetStatusAsync(sale.TransactionId, ct), time.GetUtcNow());
+            sale.Apply(await terminal.GetStatusAsync(sale.TransactionId, sale.FacilityId, ct), time.GetUtcNow());
             await db.SaveChangesAsync(ct);
         }
 
@@ -189,7 +191,7 @@ public sealed class PosService(
             return Error.Rule("billing.pos_not_configured", "No card/UPI terminal integration is configured.");
         }
 
-        sale.Apply(await terminal.CancelAsync(sale.TransactionId, ct), time.GetUtcNow());
+        sale.Apply(await terminal.CancelAsync(sale.TransactionId, sale.FacilityId, ct), time.GetUtcNow());
         await db.SaveChangesAsync(ct);
         if (sale.Status == PosTransactionStatus.Approved && sale.ReceiptId is null)
         {
@@ -198,6 +200,56 @@ public sealed class PosService(
         }
 
         return ToDto(sale);
+    }
+
+    /// <summary>
+    /// The background re-check of a sale the counter left open (<see cref="PosRecheckRunner"/>): the terminal is asked
+    /// with the sale's facility's settings, an approval is recorded once, and a sale still waiting for the customer after
+    /// <paramref name="timeout"/> is cancelled on the terminal and marked timed out. An answer from a provider other than
+    /// the one that started the sale (POS switched off, or another provider chosen since) is not applied: it would decline
+    /// a sale the customer may yet pay. A cancel the terminal does not confirm leaves the sale open, to be tried again.
+    /// </summary>
+    internal async Task RecheckAsync(PosTransaction sale, TimeSpan timeout, CancellationToken ct)
+    {
+        if (!sale.IsComplete && services.GetService<IPosTerminal>() is { } terminal)
+        {
+            var status = await terminal.GetStatusAsync(sale.TransactionId, sale.FacilityId, ct);
+            if (terminal.Provider != sale.Provider)
+            {
+                logger.LogWarning("Terminal sale {TransactionId} was not re-checked: it was started with {Started}, and POS now answers with {Now}",
+                    sale.TransactionId, sale.Provider, terminal.Provider);
+                return;
+            }
+
+            var now = time.GetUtcNow();
+            sale.Apply(status, now);
+            if (!sale.IsComplete && now - sale.CreatedAt >= timeout)
+            {
+                var cancelled = await terminal.CancelAsync(sale.TransactionId, sale.FacilityId, ct);
+                if (terminal.Provider == sale.Provider)
+                {
+                    sale.Apply(cancelled, now);
+                    if (sale.Status == PosTransactionStatus.Cancelled)
+                    {
+                        // Told apart from a cashier's cancel: nobody at the counter decided this.
+                        sale.Status = PosTransactionStatus.TimedOut;
+                        sale.Message = string.Create(CultureInfo.InvariantCulture,
+                            $"Nobody completed the payment within {timeout.TotalMinutes:0} minutes; HC360 cancelled the sale on the terminal.");
+                    }
+                }
+            }
+
+            await db.SaveChangesAsync(ct);
+            if (sale.IsComplete && sale.Status != PosTransactionStatus.Approved)
+            {
+                await realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct);
+            }
+        }
+
+        if (sale.Status == PosTransactionStatus.Approved && sale.ReceiptId is null)
+        {
+            await TryRecordAsync(sale, ct);
+        }
     }
 
     internal static PosSaleDto ToDto(PosTransaction s) => new(
