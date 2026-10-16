@@ -53,6 +53,26 @@ public sealed class PrescriptionDocumentTests
     }
 
     [Fact]
+    public void Every_label_is_printed_in_english_and_hindi_and_the_page_carries_its_hindi_font()
+    {
+        var document = PrescriptionDocument.Build(Model(), null, null);
+        var html = document.ToHtml();
+
+        document.Language.ShouldBe("en");
+        html.ShouldContain("<th>Medicine <span class=\"hi\" lang=\"hi\">/ दवा</span></th>");
+        html.ShouldContain("<th>Dose and directions <span class=\"hi\" lang=\"hi\">/ खुराक और निर्देश</span></th>");
+        html.ShouldContain("<th>Duration <span class=\"hi\" lang=\"hi\">/ अवधि</span></th>");
+        html.ShouldContain("@font-face { font-family: \"HC360 Devanagari\"; font-style: normal; font-weight: 400;");
+        html.ShouldContain("@font-face { font-family: \"HC360 Devanagari\"; font-style: normal; font-weight: 700;");
+        html.ShouldContain("src: url(data:font/woff2;base64,");
+        html.ShouldContain("font-family: \"Segoe UI\", \"HC360 Devanagari\", \"Nirmala UI\"");
+
+        // Medicine names, doses and codes stay as the doctor wrote them.
+        html.ShouldContain("<div class=\"drug\">Metformin 500 mg</div>");
+        html.ShouldContain("Type 2 diabetes mellitus (E11.9)");
+    }
+
+    [Fact]
     public void Controlled_drugs_are_tagged_and_a_route_other_than_oral_is_named()
     {
         var body = PrescriptionDocument.Body(Model(), null, null).ToString();
@@ -70,8 +90,8 @@ public sealed class PrescriptionDocumentTests
         var body = PrescriptionDocument.Body(model with { Lines = [.. model.Lines, model.Lines[0] with { Sequence = 4, Quantity = 1.50m }] }, null, null)
             .ToString();
 
-        body.ShouldContain("<td>30 days</td>");
-        body.ShouldContain("<td>Once</td>");
+        body.ShouldContain("<td>30 days<div class=\"hindi\" lang=\"hi\">30 दिन</div></td>");
+        body.ShouldContain("<td>Once<div class=\"hindi\" lang=\"hi\">एक बार</div></td>");
         body.ShouldContain("<td class=\"right\">60</td>");
         body.ShouldContain("<td class=\"right\">1.5</td>");
         body.ShouldContain("<td>4.</td>");
@@ -109,16 +129,16 @@ public sealed class PrescriptionDocumentTests
     {
         var body = PrescriptionDocument.Body(Model(), null, null).ToString();
 
-        body.ShouldContain("<div class=\"label\">Patient</div><div>Asha Rao</div>");
-        body.ShouldContain("<div class=\"label\">Age / sex</div><div>34 y / F</div>");
-        body.ShouldContain("<div class=\"label\">Date</div><div>25 Sep 2026, 3:45 pm</div>");
-        body.ShouldContain("<div class=\"allergy\">Known allergies: Penicillin, Sulfa drugs</div>");
-        body.ShouldContain("<span class=\"label\">Diagnosis</span> Type 2 diabetes mellitus (E11.9); Hypertension (I10)</div>");
+        body.ShouldContain("<div class=\"label\">Patient <span class=\"hi\" lang=\"hi\">/ रोगी</span></div><div>Asha Rao</div>");
+        body.ShouldContain("<div class=\"label\">Age / sex <span class=\"hi\" lang=\"hi\">/ आयु / लिंग</span></div><div>34 y / F</div>");
+        body.ShouldContain("<div class=\"label\">Date <span class=\"hi\" lang=\"hi\">/ दिनांक</span></div><div>25 Sep 2026, 3:45 pm</div>");
+        body.ShouldContain("<div class=\"allergy\">Known allergies <span class=\"hi\" lang=\"hi\">/ ज्ञात एलर्जी</span>: Penicillin, Sulfa drugs</div>");
+        body.ShouldContain("<span class=\"label\">Diagnosis <span class=\"hi\" lang=\"hi\">/ निदान</span></span> Type 2 diabetes mellitus (E11.9); Hypertension (I10)</div>");
         body.ShouldContain("<div class=\"rx keep-next\">℞</div>");
-        body.ShouldContain("<h3>Advice</h3><div class=\"pre\">Walk 30 minutes a day.<br>Avoid sweets.</div>");
-        body.ShouldContain("<h3>Follow-up</h3><div>Review on 03 Oct 2026. Bring your sugar chart.</div>");
-        body.ShouldContain("Refills allowed: 2");
-        body.ShouldContain("Digitally signed on 25 Sep 2026, 3:45 pm");
+        body.ShouldContain("<h3>Advice <span class=\"hi\" lang=\"hi\">/ सलाह</span></h3><div class=\"pre\">Walk 30 minutes a day.<br>Avoid sweets.</div>");
+        body.ShouldContain("<h3>Follow-up <span class=\"hi\" lang=\"hi\">/ दोबारा दिखाना (फ़ॉलो-अप)</span></h3><div>Review on 03 Oct 2026. <span class=\"hi\" lang=\"hi\">/ 03 Oct 2026 को दोबारा दिखाएँ।</span> Bring your sugar chart.</div>");
+        body.ShouldContain("Refills allowed: 2 <span class=\"hi\" lang=\"hi\">/ दवा दोबारा लेने की अनुमति: 2 बार</span>");
+        body.ShouldContain("Digitally signed on 25 Sep 2026, 3:45 pm <span class=\"hi\" lang=\"hi\">/ 25 Sep 2026, 3:45 pm को डिजिटल हस्ताक्षर किए गए</span>");
     }
 
     [Fact]
@@ -128,9 +148,9 @@ public sealed class PrescriptionDocumentTests
             Model() with { KnownAllergies = [], Diagnoses = [], Advice = null, FollowUpDate = null, FollowUpAdvice = null, RefillsAllowed = 0 }, null, null)
             .ToString();
 
-        body.ShouldContain("<div class=\"small\">Known allergies: none recorded</div>");
+        body.ShouldContain("<div class=\"small\">Known allergies <span class=\"hi\" lang=\"hi\">/ ज्ञात एलर्जी</span>: none recorded <span class=\"hi\" lang=\"hi\">/ कोई दर्ज नहीं</span></div>");
         body.ShouldNotContain("Diagnosis");
-        body.ShouldNotContain("<h3>Advice</h3>");
+        body.ShouldNotContain("Advice");
         body.ShouldNotContain("Follow-up");
         body.ShouldNotContain("Refills allowed");
     }
@@ -142,7 +162,7 @@ public sealed class PrescriptionDocumentTests
 
         html.ShouldContain("<img class=\"qr-img\" src=\"data:image/svg+xml;base64,");
         html.ShouldContain("<div class=\"small\">NHRX260000123</div>");
-        html.ShouldContain("<div class=\"small\">Scan to verify this prescription</div>");
+        html.ShouldContain("<div class=\"small\">Scan to verify this prescription <span class=\"hi\" lang=\"hi\">/ इस पर्चे की जाँच के लिए स्कैन करें</span></div>");
         html.ShouldNotContain("Verification code");
     }
 
@@ -151,7 +171,7 @@ public sealed class PrescriptionDocumentTests
     {
         var html = PrescriptionDocument.Build(Model() with { VerificationUrl = null }, null, null).ToHtml();
 
-        html.ShouldContain($"Verification code <span class=\"mono\">{Token}</span>");
+        html.ShouldContain($"Verification code <span class=\"hi\" lang=\"hi\">/ सत्यापन कोड</span> <span class=\"mono\">{Token}</span>");
         html.ShouldNotContain("data:image/svg+xml");
         html.ShouldNotContain("Scan to verify");
     }
@@ -212,7 +232,7 @@ public sealed class PrescriptionDocumentTests
 
         html.ShouldNotContain("class=\"sign-img\"");
         html.ShouldNotContain("Digitally signed");
-        html.ShouldContain("<div class=\"label\">Date</div><div>—</div>");
+        html.ShouldContain("<div class=\"label\">Date <span class=\"hi\" lang=\"hi\">/ दिनांक</span></div><div>—</div>");
     }
 
     [Fact]
@@ -221,9 +241,9 @@ public sealed class PrescriptionDocumentTests
         var draft = PrescriptionDocument.Build(Model() with { Status = PrescriptionStatus.Draft, SignedAt = null }, null, null);
         var cancelled = PrescriptionDocument.Build(Model() with { Status = PrescriptionStatus.Cancelled }, null, null);
 
-        draft.ToHtml().ShouldContain("<div class=\"draft\">DRAFT — not valid for dispensing</div>");
+        draft.ToHtml().ShouldContain("<div class=\"draft\">DRAFT — not valid for dispensing <span class=\"hi\" lang=\"hi\">/ मसौदा — दवा देने के लिए मान्य नहीं</span></div>");
         draft.Footer.ShouldBe("Asha Rao · UHID NH-000123 · Prescription NHRX260000123 · DRAFT — not valid for dispensing");
-        cancelled.ToHtml().ShouldContain("<div class=\"draft\">CANCELLED — do not dispense</div>");
+        cancelled.ToHtml().ShouldContain("<div class=\"draft\">CANCELLED — do not dispense <span class=\"hi\" lang=\"hi\">/ रद्द — दवा न दें</span></div>");
         cancelled.Footer!.ShouldEndWith(" · CANCELLED — do not dispense");
         PrescriptionDocument.Build(Model(), null, null).ToHtml().ShouldNotContain("class=\"draft\"");
     }

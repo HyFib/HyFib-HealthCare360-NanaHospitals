@@ -66,14 +66,14 @@ internal static class DischargeSummaryEndpoints
     private static async Task<IResult> Document(Guid id, DischargeSummaryService summaries, ClinicalAccess access, DocumentAssets assets, CancellationToken ct)
     {
         var (print, problem) = await OpenAsync(id, "Printed discharge summary", summaries, access, ct);
-        return problem ?? TypedResults.Ok((await DischargeSummaryDocument.BuildAsync(print!, assets, ct)).ToDto());
+        return problem ?? TypedResults.Ok((await DischargeSummaryDocument.BuildAsync(print!, assets, DocumentText.English, ct)).ToDto());
     }
 
     private static async Task<IResult> Pdf(Guid id, DischargeSummaryService summaries, ClinicalAccess access, DocumentAssets assets, IPdfRenderer renderer,
         CancellationToken ct)
     {
         var (print, problem) = await OpenAsync(id, "Downloaded discharge summary as a PDF", summaries, access, ct);
-        return problem ?? await (await DischargeSummaryDocument.BuildAsync(print!, assets, ct)).ToPdfAsync(renderer, ct);
+        return problem ?? await (await DischargeSummaryDocument.BuildAsync(print!, assets, DocumentText.English, ct)).ToPdfAsync(renderer, ct);
     }
 
     // Every way of printing a summary applies the same rules: the restricted-record guard and an entry in the PHI access

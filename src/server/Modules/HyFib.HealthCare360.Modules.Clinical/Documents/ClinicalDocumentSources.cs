@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Documents;
@@ -33,10 +34,11 @@ internal sealed class PrescriptionDocumentSource(HospitalDbContext db, Prescript
 
 /// <summary>
 /// The signed (or amended) discharge summary as a PDF, for a message about the patient's discharge. A draft is never
-/// sent. Nothing in this module queues such a message yet; the kind is here for the modules that tell patients about
-/// their discharge.
+/// sent. Its headings are in the language the patient prefers (PP-06). Nothing in this module queues such a message
+/// yet; the kind is here for the modules that tell patients about their discharge.
 /// </summary>
-internal sealed class DischargeSummaryDocumentSource(DischargeSummaryService summaries, DocumentAssets assets, IPdfRenderer renderer)
+internal sealed class DischargeSummaryDocumentSource(
+    DischargeSummaryService summaries, DocumentAssets assets, IPdfRenderer renderer, IPatientLanguageSource languages)
     : INotificationDocumentSource
 {
     public const string DocumentKind = "clinical.discharge-summary";
@@ -51,7 +53,8 @@ internal sealed class DischargeSummaryDocumentSource(DischargeSummaryService sum
             return null;
         }
 
-        return await DocumentPdf.CreateAsync(await DischargeSummaryDocument.BuildAsync(print.Value, assets, cancellationToken), renderer, cancellationToken);
+        var text = DocumentText.For(await languages.LanguageOfAsync(print.Value.Patient.Id, cancellationToken));
+        return await DocumentPdf.CreateAsync(await DischargeSummaryDocument.BuildAsync(print.Value, assets, text, cancellationToken), renderer, cancellationToken);
     }
 }
 

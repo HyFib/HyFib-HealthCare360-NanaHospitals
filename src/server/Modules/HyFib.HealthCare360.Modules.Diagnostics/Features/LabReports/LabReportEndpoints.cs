@@ -74,7 +74,7 @@ internal static class LabReportEndpoints
         IPermissionService permissions, CancellationToken ct)
     {
         var (view, releasedOnly, problem) = await OpenAsync(id, n => $"Printed lab report {n}", builder, guard, audit, user, permissions, ct);
-        return problem ?? TypedResults.Ok((await LabReportDocument.BuildAsync(view!, releasedOnly, frame, ct)).ToDto());
+        return problem ?? TypedResults.Ok((await LabReportDocument.BuildAsync(view!, releasedOnly, frame, DocumentText.English, ct)).ToDto());
     }
 
     private static async Task<IResult> Pdf(
@@ -82,7 +82,7 @@ internal static class LabReportEndpoints
         ICurrentUser user, IPermissionService permissions, CancellationToken ct)
     {
         var (view, releasedOnly, problem) = await OpenAsync(id, n => $"Downloaded lab report {n} as a PDF", builder, guard, audit, user, permissions, ct);
-        return problem ?? await (await LabReportDocument.BuildAsync(view!, releasedOnly, frame, ct)).ToPdfAsync(renderer, ct);
+        return problem ?? await (await LabReportDocument.BuildAsync(view!, releasedOnly, frame, DocumentText.English, ct)).ToPdfAsync(renderer, ct);
     }
 
     // Every way of opening a report applies the same rules: released content only for read-only users, the restricted

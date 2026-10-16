@@ -156,7 +156,7 @@ public sealed class CardiologyReportDocumentTests
     [Fact]
     public async Task The_document_carries_the_letterhead_the_qr_code_the_device_recordings_and_a_footer_on_every_page()
     {
-        var document = await CardiologyReportDocument.BuildAsync(Report(), Frame(), Ct);
+        var document = await CardiologyReportDocument.BuildAsync(Report(), Frame(), DocumentText.English, Ct);
         var html = document.ToHtml();
 
         document.FileName.ShouldBe("cardiology-report-NHCD260000007");
@@ -187,7 +187,7 @@ public sealed class CardiologyReportDocumentTests
     [InlineData(DiagnosticReportStatus.Draft, "Draft: not signed by the cardiologist")]
     public async Task A_copy_that_is_not_released_says_so_across_the_page(DiagnosticReportStatus status, string banner)
     {
-        var html = (await CardiologyReportDocument.BuildAsync(Report() with { Status = status, ReleasedAt = null }, Frame(), Ct)).ToHtml();
+        var html = (await CardiologyReportDocument.BuildAsync(Report() with { Status = status, ReleasedAt = null }, Frame(), DocumentText.English, Ct)).ToHtml();
 
         html.ShouldContain($"<div class=\"banner\">{banner}</div>");
     }

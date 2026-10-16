@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Portal;
@@ -181,7 +182,7 @@ internal static class PortalEndpoints
 
     /// <summary>The signed summary as a PDF: the same A4 document the hospital prints.</summary>
     private static async Task<IResult> DischargeSummaryPdf(Guid id, PortalPatientScope scope, DischargeSummaryService summaries, IAuditLogger audit,
-        DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
+        DocumentAssets assets, IPdfRenderer renderer, HttpContext http, CancellationToken ct)
     {
         var (summary, problem) = await OpenDischargeSummaryAsync(id, "Downloaded discharge summary as a PDF (patient portal)", scope, summaries, audit, ct);
         if (problem is not null)
@@ -190,7 +191,10 @@ internal static class PortalEndpoints
         }
 
         var print = await summaries.PrintAsync(summary!.Id, ct);
-        return print.IsFailure ? print.Error!.ToProblem() : await (await DischargeSummaryDocument.BuildAsync(print.Value, assets, ct)).ToPdfAsync(renderer, ct);
+        // In the patient's language (PP-06): their record's preference, else the portal's.
+        return print.IsFailure
+            ? print.Error!.ToProblem()
+            : await (await DischargeSummaryDocument.BuildAsync(print.Value, assets, DocumentText.For(http.PatientLanguage()), ct)).ToPdfAsync(renderer, ct);
     }
 
     // Both ways of opening a discharge summary on the portal apply the same rules: signed (or amended) summaries only,

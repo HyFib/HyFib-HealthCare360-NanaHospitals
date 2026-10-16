@@ -207,7 +207,7 @@ internal static class CardiologyEndpoints
         IPermissionService permissions, CancellationToken ct)
     {
         var (view, problem) = await OpenReportAsync(id, n => $"Printed cardiology report {n}", service, guard, audit, user, permissions, ct);
-        return problem ?? TypedResults.Ok((await CardiologyReportDocument.BuildAsync(view!, frame, ct)).ToDto());
+        return problem ?? TypedResults.Ok((await CardiologyReportDocument.BuildAsync(view!, frame, DocumentText.English, ct)).ToDto());
     }
 
     private static async Task<IResult> Pdf(
@@ -215,7 +215,7 @@ internal static class CardiologyEndpoints
         ICurrentUser user, IPermissionService permissions, CancellationToken ct)
     {
         var (view, problem) = await OpenReportAsync(id, n => $"Downloaded cardiology report {n} as a PDF", service, guard, audit, user, permissions, ct);
-        return problem ?? await (await CardiologyReportDocument.BuildAsync(view!, frame, ct)).ToPdfAsync(renderer, ct);
+        return problem ?? await (await CardiologyReportDocument.BuildAsync(view!, frame, DocumentText.English, ct)).ToPdfAsync(renderer, ct);
     }
 
     // Every way of opening the printable report applies the same rules: the released report only for read-only users,
