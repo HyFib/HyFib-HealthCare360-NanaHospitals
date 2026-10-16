@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Features.Patient360;
 
@@ -56,3 +57,46 @@ public sealed record Patient360View(
     IReadOnlyList<FollowUpBrief> OpenFollowUps,
     CommunicationSummary Communication,
     LeadBrief? SourceLead);
+
+/// <summary>What a line of the communications history is.</summary>
+public enum CommunicationKind
+{
+    /// <summary>A service message about the patient's care: appointment reminder, report ready, bill, follow-up due…</summary>
+    Message = 0,
+
+    /// <summary>A marketing campaign message, or a campaign that passed the patient over.</summary>
+    Campaign,
+
+    /// <summary>A follow-up call task the CRM team has called on (attempts and the last outcome).</summary>
+    FollowUpCall,
+}
+
+/// <summary>
+/// One line of the patient's communications history (CRM-04). A message carries what was sent, on which channel, to a
+/// masked address and how far it got, but never its text, which the server does not keep. A follow-up call is one line
+/// per task with its attempts and last outcome, because attempts are not kept one by one.
+/// </summary>
+/// <param name="OccurredAt">When the message was queued, or when the call task last changed.</param>
+/// <param name="TemplateKey">The notification template sent (messages and campaigns).</param>
+/// <param name="Purpose">The template's description, when it has one, to say what the message was for.</param>
+/// <param name="Recipient">The number or address, masked as the notification log keeps it.</param>
+/// <param name="SkipReason">Why a campaign passed the patient over (no consent, no number…).</param>
+public sealed record CommunicationEntry(
+    Guid Id,
+    CommunicationKind Kind,
+    DateTimeOffset OccurredAt,
+    NotificationChannel? Channel,
+    string? TemplateKey,
+    string? Purpose,
+    string? Recipient,
+    NotificationStatus? Status,
+    DateTimeOffset? SentAt,
+    DateTimeOffset? DeliveredAt,
+    Guid? CampaignId,
+    string? CampaignName,
+    string? SkipReason,
+    Guid? FollowUpId,
+    FollowUpType? FollowUpType,
+    FollowUpStatus? FollowUpStatus,
+    FollowUpOutcome? CallOutcome,
+    int? CallAttempts);

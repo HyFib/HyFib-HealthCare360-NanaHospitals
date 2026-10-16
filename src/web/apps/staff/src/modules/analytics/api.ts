@@ -213,6 +213,39 @@ export interface KpiSet {
   dataSource: string;
 }
 
+/** What one KPI means (GET /kpi-definitions): the same definitions the dashboard's tooltips read. */
+export interface KpiDefinition {
+  key: string;
+  label: string;
+  unit: KpiUnit;
+  higherIsBetter: boolean;
+  formula: string;
+  source: string;
+  target: string | null;
+  audience: 'Operations' | 'Finance';
+  reportId: string;
+  /** Null when the user may not open the report. */
+  reportTitle: string | null;
+}
+
+export interface ReportDefinition {
+  id: string;
+  title: string;
+  category: ReportCategory;
+  categoryLabel: string;
+  description: string;
+  definition: string;
+  containsPatientIdentifiers: boolean;
+  canSchedule: boolean;
+  /** KPIs on the executive dashboard that drill into this report. */
+  kpiKeys: string[];
+}
+
+export interface KpiDefinitions {
+  kpis: KpiDefinition[];
+  reports: ReportDefinition[];
+}
+
 // ------------------------------------------------------------------------------------------------ dashboards
 
 export type WidgetWidth = 1 | 2 | 4;
@@ -388,6 +421,7 @@ export const analyticsKeys = {
   catalogue: ['analytics', 'catalogue'] as const,
   runs: ['analytics', 'run'] as const,
   kpis: ['analytics', 'kpis'] as const,
+  definitions: ['analytics', 'kpi-definitions'] as const,
   dashboards: ['analytics', 'dashboards'] as const,
   schedules: ['analytics', 'schedules'] as const,
 };
@@ -423,6 +457,13 @@ export const analyticsQueries = {
       // Keep the previous page on screen while new inputs load, but never another report's columns.
       placeholderData: (previous) => (previous?.reportId === reportId ? previous : undefined),
       staleTime: 60_000,
+    }),
+  definitions: () =>
+    queryOptions({
+      queryKey: analyticsKeys.definitions,
+      queryFn: ({ signal }) => api.get<KpiDefinitions>(`${BASE}/kpi-definitions`, { signal }),
+      // Definitions change only with a new HC360 release.
+      staleTime: 30 * 60_000,
     }),
   kpis: (from: string | undefined, to: string | undefined, facilityId: string | undefined) =>
     queryOptions({

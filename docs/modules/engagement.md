@@ -127,6 +127,7 @@ Consent is re-checked **at send time**, not only when the campaign is scheduled.
 | Method | Path | Permission | Response |
 |---|---|---|---|
 | GET | `/360` | crm.patient360.read | `Patient360View` (see below). Applies the restricted-record (VIP) guard, and each view writes a patient-record-access audit |
+| GET | `/communications` | crm.patient360.read | `page, pageSize, kind (Message\|Campaign\|FollowUpCall)` → `PagedResult<CommunicationEntry>`, newest first (see below). Same VIP guard, and each page read is audited as patient-record access ("Viewed the CRM communications history") |
 | POST | `/marketing-opt-out` | any of crm.campaigns.manage, crm.followups.manage, crm.leads.manage, crm.patient360.read, patients.consents | `{reason}` → 204. It revokes every active marketing grant and records the refusal, even for a patient who never opted in |
 
 `Patient360View` contains:
@@ -138,6 +139,22 @@ Consent is re-checked **at send time**, not only when the campaign is scheduled.
 * communication: marketing and updates consent, when marketing consent last changed, campaigns received, opted out
   by link;
 * the lead the patient converted from.
+
+The communications history (CRM-04) merges three sources into one paged timeline:
+* **Messages** from the platform notification log (`platform.notification_logs`, read through its
+  `(PatientId, CreatedAt)` index): appointment reminders, report-ready and other service messages, with the channel,
+  template key, the template's description as its purpose, status, sent and delivered times, and the recipient masked
+  as the log stores it. Message text is never returned; the log does not keep it. Logs are limited to the viewer's
+  facility (and group-wide ones).
+* **Campaigns**: a log row a campaign recipient points to is shown as a campaign message with the campaign's name; a
+  recipient the campaign skipped (no log) is shown with status `Skipped` and its skip reason.
+* **Follow-up calls**: one line per follow-up task with at least one call attempt, with the attempts, last outcome and
+  task status, dated by completion or last change. Attempts are not stored one by one, so this is the latest state.
+
+Each source is read newest first only as far as the end of the requested page, and the rows are merged in
+`Patient360Service.Page`; the total is the sum of the sources' counts.
+
+The staff app shows it as the *Communications* section of `/crm/patients/$patientId`, with a kind filter and paging.
 
 ### Feedback forms (`/api/v1/feedback/forms`)
 | Method | Path | Permission | Body → Response |
