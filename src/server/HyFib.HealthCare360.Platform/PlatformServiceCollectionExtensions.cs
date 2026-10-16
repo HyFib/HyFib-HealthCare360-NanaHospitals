@@ -273,6 +273,7 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddScoped<IWhatsAppSender>(sp => sp.GetRequiredService<UnconfiguredChannelSender>());
         services.TryAddScoped<IEmailSender>(sp => sp.GetRequiredService<UnconfiguredChannelSender>());
         services.TryAddSingleton<IPdfRenderer, UnavailablePdfRenderer>();
+        services.TryAddScoped<IIntegrationHealthSource, NoIntegrationHealthSource>();
 
         // ---------------- background work
         if (options.RunsJobs)

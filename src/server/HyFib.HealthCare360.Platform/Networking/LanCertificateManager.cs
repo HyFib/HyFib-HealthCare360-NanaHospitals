@@ -93,6 +93,21 @@ public sealed class LanCertificateManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// When the hospital CA expires; null with an administrator-supplied certificate, whose issuer HC360 does not hold.
+    /// Unlike the server certificate it is never renewed by itself: every device trusts this one CA.
+    /// </summary>
+    public DateTimeOffset? CaExpiresAt
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _ca is null ? null : new DateTimeOffset(_ca.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+            }
+        }
+    }
+
     public void EnsureCertificates()
     {
         Directory.CreateDirectory(_directories.Certificates);
