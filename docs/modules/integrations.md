@@ -75,6 +75,11 @@ Configuration uses the generic settings API (`/api/v1/admin/settings/...`), faci
 * `integrations.<name>` holds the non-secret JSON.
 * `integrations.<name>.secret` holds the credentials, stored encrypted by the settings service.
 
+Every key ending in `.secret` (`integrations.*.secret`, `ai.*.secret`) is encrypted whatever the caller asks for:
+`ISettingsService.SetAsync` and `PUT /api/v1/admin/settings/{key}` ignore a request to store one in clear text
+(`"secret": false`). The settings list never shows the value of such a key, even a row saved in clear text before
+this rule; saving it again encrypts it.
+
 Secrets are read only from the `.secret` keys. They are never returned by any Integrations endpoint and never logged.
 Settings that are malformed or cannot be decrypted produce a staff-facing problem message ("… settings are not valid",
 "… credentials could not be read"). The failure affects only that call, never the host.

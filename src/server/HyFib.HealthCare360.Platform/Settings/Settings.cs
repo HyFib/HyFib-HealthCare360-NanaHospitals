@@ -42,11 +42,25 @@ internal sealed class SystemSettingConfiguration : IEntityTypeConfiguration<Syst
     }
 }
 
+/// <summary>Naming rules for settings that hold credentials.</summary>
+public static class SecretSettingKeys
+{
+    /// <summary>
+    /// Keys ending in <c>.secret</c> (<c>integrations.sms.secret</c>, <c>ai.anthropic.secret</c>) hold credentials and are
+    /// always stored encrypted, whatever the caller asks for (SRS §5).
+    /// </summary>
+    public static bool IsSecret(string key) => key.EndsWith(".secret", StringComparison.OrdinalIgnoreCase);
+}
+
 public interface ISettingsService
 {
     /// <summary>Facility value if present, else the global value, else <c>default</c>.</summary>
     Task<T?> GetAsync<T>(string key, Guid? facilityId = null, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Saves the value, encrypted when <paramref name="secret"/> is set or the key is a <see cref="SecretSettingKeys">secret key</see>;
+    /// a secret key is never stored in clear text, even when the flag is not passed.
+    /// </summary>
     Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default);
 
     /// <summary>Removes the value of <paramref name="key"/> for the facility (or the global one). False when there was none.</summary>
@@ -87,6 +101,9 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
 
     public async Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default)
     {
+        // The flag alone is not trusted: a script, an older admin screen or a module that forgets it would otherwise leave
+        // credentials in clear text in the database and in every backup.
+        secret |= SecretSettingKeys.IsSecret(key);
         var json = JsonSerializer.Serialize(value, JsonOptions);
         var stored = secret ? JsonSerializer.Serialize(protector.Protect(json)) : json;
 
@@ -173,8 +190,10 @@ internal static class SettingsEndpoints
             }
 
             var rows = await query.OrderBy(s => s.Key).ToListAsync(ct);
-            return TypedResults.Ok(rows.Select(s => new SettingDto(
-                s.Id, s.Key, s.FacilityId, s.IsSecret ? null : JsonNode.Parse(s.Value), s.IsSecret, s.Value != "null", s.Description, s.UpdatedAt ?? s.CreatedAt)));
+            // A secret key saved in clear text before encryption was enforced is still never shown.
+            return TypedResults.Ok(rows.Select(s => (Row: s, Secret: s.IsSecret || SecretSettingKeys.IsSecret(s.Key))).Select(x => new SettingDto(
+                x.Row.Id, x.Row.Key, x.Row.FacilityId, x.Secret ? null : JsonNode.Parse(x.Row.Value), x.Secret, x.Row.Value != "null", x.Row.Description,
+                x.Row.UpdatedAt ?? x.Row.CreatedAt)));
         });
 
         admin.MapPut("/{key}", async (string key, SaveSettingRequest request, ISettingsService settings, IAuditLogger audit, HospitalDbContext db, CancellationToken ct) =>
@@ -184,7 +203,9 @@ internal static class SettingsEndpoints
                 return Error.Field("key", "Use letters, digits, dots, dashes or underscores.").ToProblem();
             }
 
-            await settings.SetAsync(key, request.Value, request.FacilityId, request.Secret, ct);
+            // SetAsync encrypts *.secret keys even when the request leaves "secret" unset.
+            var secret = request.Secret || SecretSettingKeys.IsSecret(key);
+            await settings.SetAsync(key, request.Value, request.FacilityId, secret, ct);
             if (request.Description is not null)
             {
                 await db.Set<SystemSetting>().Where(s => s.Key == key && s.FacilityId == request.FacilityId)
@@ -195,8 +216,8 @@ internal static class SettingsEndpoints
             {
                 EntityType = nameof(SystemSetting),
                 EntityId = key,
-                Details = request.Secret || key.EndsWith(".secret", StringComparison.Ordinal) ? new { secret = true } : request.Value,
-                Severity = key.StartsWith("integrations.", StringComparison.Ordinal) || request.Secret ? AuditSeverity.Warning : AuditSeverity.Info,
+                Details = secret ? new { secret = true } : request.Value,
+                Severity = key.StartsWith("integrations.", StringComparison.Ordinal) || secret ? AuditSeverity.Warning : AuditSeverity.Info,
             }, ct);
             return TypedResults.NoContent();
         });
