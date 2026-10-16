@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Analytics.Domain;
 using HyFib.HealthCare360.Modules.Analytics.Reports;
+using HyFib.HealthCare360.Modules.Analytics.Services;
 
 namespace HyFib.HealthCare360.Modules.Analytics.Features.Reports;
 
@@ -100,6 +101,38 @@ public sealed record AnalyticsStatusDto(
     int LateExtracts,
     int FailingExtracts,
     DateTimeOffset? LastExtractRefreshAt);
+
+/// <summary>A KPI as the catalogue lists it, with the report it drills into when the caller may open that report.</summary>
+/// <param name="ReportTitle">Null when the caller may not open the report.</param>
+public sealed record KpiCatalogueItem(
+    string Key,
+    string Label,
+    string Unit,
+    bool HigherIsBetter,
+    string Formula,
+    string Source,
+    string? Target,
+    KpiAudience Audience,
+    string ReportId,
+    string? ReportTitle);
+
+/// <summary>A report as the definitions catalogue lists it, with the KPIs that drill into it.</summary>
+public sealed record ReportDefinitionItem(
+    string Id,
+    string Title,
+    ReportCategory Category,
+    string CategoryLabel,
+    string Description,
+    string Definition,
+    bool ContainsPatientIdentifiers,
+    bool CanSchedule,
+    IReadOnlyList<string> KpiKeys);
+
+/// <summary>
+/// GET /api/v1/analytics/kpi-definitions — what every KPI and report the caller can see means (BI-01..05), read from the
+/// same definitions the dashboard and the reports use.
+/// </summary>
+public sealed record KpiDefinitionsDto(IReadOnlyList<KpiCatalogueItem> Kpis, IReadOnlyList<ReportDefinitionItem> Reports);
 
 public sealed class RunReportRequestValidator : AbstractValidator<RunReportRequest>
 {

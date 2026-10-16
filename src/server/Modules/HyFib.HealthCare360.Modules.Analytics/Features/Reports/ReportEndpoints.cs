@@ -43,6 +43,7 @@ internal static class ReportEndpoints
         group.MapGet("/reports/{id}/export", ExportGet).RequireAnyPermission(AnalyticsPermissions.AnyRead);
 
         group.MapGet("/kpis", Kpis).RequireAnyPermission(AnalyticsPermissions.AnyRead);
+        group.MapGet("/kpi-definitions", KpiDefinitionsCatalogue).RequireAnyPermission(AnalyticsPermissions.AnyRead);
         group.MapGet("/lookups/{kind}", Lookups).RequireAnyPermission(AnalyticsPermissions.AnyRead);
         group.MapGet("/status", Status).RequireAnyPermission(AnalyticsPermissions.AnyRead);
     }
@@ -205,6 +206,29 @@ internal static class ReportEndpoints
         }
 
         return (await kpis.GetAsync(actor, from, to, facilityId, ct)).ToOk();
+    }
+
+    private static async Task<IResult> KpiDefinitionsCatalogue(ReportActors actors, ReportCatalog catalog, CancellationToken ct) =>
+        await actors.CurrentAsync(ct) is { } actor ? TypedResults.Ok(DescribeDefinitions(catalog, actor)) : SignInRequired();
+
+    /// <summary>
+    /// The KPIs and reports the actor can see, as the dashboard and the catalogue show them: a KPI the dashboard would
+    /// leave out is left out here too, and a report the actor may not open is neither listed nor named.
+    /// </summary>
+    internal static KpiDefinitionsDto DescribeDefinitions(ReportCatalog catalog, ReportActor actor)
+    {
+        var reports = catalog.VisibleTo(actor).Select(r => r.Descriptor).ToList();
+        var titles = reports.ToDictionary(r => r.Id, r => r.Title, StringComparer.OrdinalIgnoreCase);
+        var kpis = KpiDefinitions.All.Where(k => KpiService.CanSee(k, actor)).ToList();
+        return new KpiDefinitionsDto(
+            kpis.Select(k => new KpiCatalogueItem(
+                    k.Key, k.Label, k.Unit, k.HigherIsBetter, k.Formula, k.Source, k.Target, k.Audience, k.ReportId, titles.GetValueOrDefault(k.ReportId)))
+                .ToList(),
+            reports
+                .Select(r => new ReportDefinitionItem(
+                    r.Id, r.Title, r.Category, ReportCatalog.CategoryLabel(r.Category), r.Description, r.Definition, r.ContainsPatientIdentifiers, r.CanSchedule,
+                    kpis.Where(k => string.Equals(k.ReportId, r.Id, StringComparison.OrdinalIgnoreCase)).Select(k => k.Key).ToList()))
+                .ToList());
     }
 
     /// <summary>Choices for report inputs, readable by every analytics user (other modules' master screens need their own permissions).</summary>

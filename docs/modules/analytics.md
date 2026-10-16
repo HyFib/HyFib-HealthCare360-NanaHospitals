@@ -75,6 +75,7 @@ All under `/api/v1/analytics`, tag *Analytics*.
 | POST | `/reports/{id}/export?format=xlsx\|csv\|pdf` | `ExportReportRequest {parameters, sort, desc}` → file (`Cache-Control: no-store`); another format → 400 "Choose Excel (xlsx), CSV or PDF."; `pdf` → `application/pdf`, or 503 `pdf.unavailable` when the server cannot make PDFs; a PDF that leaves rows out carries the header `X-Report-Notice` (see *Exports*) |
 | GET | `/reports/{id}/export?format=xlsx\|csv\|pdf&…inputs` | the same as a GET (browser downloads) |
 | GET | `/kpis?from&to&facilityId` | → `KpiSet {from, to, previousFrom, previousTo, facilityName, kpis[], generatedAt, dataSource}`; default period = this month to date; max 366 days |
+| GET | `/kpi-definitions` | → `KpiDefinitionsDto {kpis[{key, label, unit, higherIsBetter, formula, source, target, audience, reportId, reportTitle}], reports[{id, title, category, categoryLabel, description, definition, containsPatientIdentifiers, canSchedule, kpiKeys[]}]}`: the KPIs the caller's dashboard shows and the reports they may open (BI-01..05). `reportTitle` is null when the caller may not open the KPI's report |
 | GET | `/lookups/{kind}?search&facilityId` | `kind` = `facilities` (the caller's allowed facilities), `departments`, `practitioners`, `payers`, `wards`, `stores`, `theatres` → `LookupItem[] {id, code, name}` (≤ 200, active only) |
 | GET | `/status` | → `AnalyticsStatusDto {dataSource, usesReplica, replicaLagSeconds, activeSchedules, lastDeliveryAt, failedDeliveriesLast7Days, checkedAt, activeExtracts, lateExtracts, failingExtracts, lastExtractRefreshAt}`; the three e-mail figures leave out extracts, which the last four cover (late and failing as in *BI extracts*) |
 
@@ -231,6 +232,10 @@ Each KPI returns this period, the previous period of the same length (ending the
 | `revenue` | Revenue | inr (finance only) | Net billed on finalized bills + pharmacy sales less returns | `daily-revenue` |
 | `collections` | Collections | inr (finance only) | Money received at billing and pharmacy counters less refunds paid | `collections-by-mode` |
 
+The definitions (label, unit, direction, formula, data source, drill-down report, audience and target) live once in
+`Services/KpiDefinitions.cs`; `KpiService` builds the tiles from them and `GET /kpi-definitions` lists them, so the
+dashboard's tooltips and the catalogue cannot differ. No KPI has a target set yet (`target` is null).
+
 KPI maths lives in `Domain/KpiMath.cs`, `Domain/CensusMath.cs` and `Domain/Percentiles.cs` (unit-tested): occupancy,
 ALOS (minimum one day), bed turnover rate and interval (never negative), gross/net death rate, NPS, change %, no-show
 rate, per-thousand rates, margin %, nearest-rank percentiles and within-target %.
@@ -384,6 +389,7 @@ ageing).
 | Route | Screen |
 |---|---|
 | `/analytics` | Executive dashboard: period (presets or custom dates) and facility, KPI tiles with change vs previous period (arrow + words + colour), sparklines, definitions, daily trend chart, dashboards and featured report shortcuts; each tile opens its report for the same period |
+| `/analytics/kpis` | KPI definitions: every dashboard KPI (formula, unit, which way is better, target, data source, the report with the detail) and every report's description and formula, with one search over both (kept in the URL); linked from the executive dashboard and the Analytics menu |
 | `/analytics/reports` | Report catalogue by area with search (title, description, formula), counts per area, patient-list badges |
 | `/analytics/reports/$reportId` | Report inputs (applied as you change them; kept in the URL so views can be bookmarked and shared), headline figures, chart with a view switch, sortable/paged table with totals, row drill-down, notes, “How it is calculated”, Excel/CSV export (patient lists confirm first), add to dashboard, e-mail regularly |
 | `/analytics/dashboards` | Templates, mine and shared; new, copy, delete |

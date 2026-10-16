@@ -35,6 +35,12 @@ const manifest: ModuleManifest = {
       ],
     },
     {
+      label: 'KPI definitions',
+      to: '/analytics/kpis',
+      permission: ANY_ANALYTICS,
+      keywords: ['kpi', 'definition', 'formula', 'glossary', 'how calculated', 'metric', 'indicator'],
+    },
+    {
       label: 'Dashboards',
       to: '/analytics/dashboards',
       permission: ANY_ANALYTICS,
