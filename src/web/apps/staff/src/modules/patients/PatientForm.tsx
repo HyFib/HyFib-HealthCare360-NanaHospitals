@@ -110,8 +110,8 @@ export interface PatientFormProps {
 
 /**
  * Registration/edit form (SRS FO-01, EHR-01). Keyboard first: Tab moves field to field, Ctrl+S saves. Either the
- * date of birth or the age is captured; identifiers are validated like on the server (ABHA and Aadhaar check digits,
- * ABHA address at @abdm).
+ * date of birth or the age is captured; identifiers are validated like on the server (ABHA number 14 digits, Aadhaar
+ * check digit, ABHA address at @abdm).
  */
 export function PatientForm(props: PatientFormProps) {
   const styles = useStyles();

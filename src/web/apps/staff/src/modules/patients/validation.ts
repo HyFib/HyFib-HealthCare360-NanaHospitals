@@ -82,7 +82,7 @@ const P = [
   [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
 ];
 
-/** True when the digits end in their Verhoeff check digit (Aadhaar and ABHA numbers do). */
+/** True when the digits end in their Verhoeff check digit (Aadhaar numbers do; ABHA numbers have none). */
 function hasVerhoeffCheckDigit(digits: string): boolean {
   let check = 0;
   [...digits].reverse().forEach((ch, i) => {
@@ -98,16 +98,12 @@ export function isValidAadhaar(value: string): boolean {
 }
 
 /**
- * ABHA number (SRS EHR-08): 14 digits, run together or grouped as 91-1234-5678-9012 with spaces or hyphens, the last a
- * Verhoeff check digit (same rule as the server), so a mistyped or swapped digit is caught at the desk.
+ * ABHA number (SRS EHR-08): 14 digits, run together or grouped as 91-1234-5678-9012 with spaces or hyphens (same rule
+ * as the server). ABDM publishes no check digit for it, so any 14 digits pass.
  */
 export function isValidAbhaNumber(value: string): boolean {
   const trimmed = value.trim();
-  if (!/^[\d -]+$/.test(trimmed)) {
-    return false;
-  }
-  const digits = trimmed.replace(/\D/g, '');
-  return digits.length === 14 && hasVerhoeffCheckDigit(digits);
+  return /^[\d -]+$/.test(trimmed) && trimmed.replace(/\D/g, '').length === 14;
 }
 
 /**
@@ -173,10 +169,7 @@ export const patientFormSchema = z
     abhaNumber: z
       .string()
       .trim()
-      .refine(
-        (v) => !v || isValidAbhaNumber(v),
-        'Enter a valid 14-digit ABHA number. Check the digits: the last one is a check digit.',
-      ),
+      .refine((v) => !v || isValidAbhaNumber(v), 'Enter a valid 14-digit ABHA number.'),
     abhaAddress: z
       .string()
       .trim()

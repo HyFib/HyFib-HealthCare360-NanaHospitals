@@ -68,7 +68,7 @@ public sealed class Patient : AuditableEntity
     public string? PreferredLanguage { get; set; }
     public PatientCategory Category { get; set; }
 
-    /// <summary>The 14-digit ABHA number (digits only), encrypted; its last digit is a Verhoeff check digit.</summary>
+    /// <summary>The 14-digit ABHA number (digits only), encrypted.</summary>
     [SensitiveData]
     public string? AbhaNumberCipher { get; set; }
 

@@ -5,9 +5,10 @@ using HyFib.HealthCare360.SharedKernel;
 namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
-/// ABHA identifiers (SRS EHR-08): the 14-digit ABHA number ends in a Verhoeff check digit, so a mistyped or swapped
-/// digit is caught at the desk; it is shown as xx-xxxx-xxxx-xxxx, and masked as XX-XXXX-XXXX-1234 where the full number
-/// is not needed. The ABHA address is a handle at @abdm (@sbx on the ABDM sandbox).
+/// Health identifiers (SRS EHR-08). The Verhoeff check digit, which Aadhaar numbers end in. The 14-digit ABHA number,
+/// which has no published check digit, so any 14 digits are taken (the ABDM implementation guide's own example numbers
+/// fail a Verhoeff check); it is shown as xx-xxxx-xxxx-xxxx, and masked as XX-XXXX-XXXX-1234 where the full number is
+/// not needed. The ABHA address is a handle at @abdm (@sbx on the ABDM sandbox).
 /// </summary>
 public sealed class HealthIdTests
 {
@@ -58,10 +59,34 @@ public sealed class HealthIdTests
     [InlineData("91-1234-5678-9010")]
     [InlineData("91 1234 5678 9010")]
     [InlineData(" 91-1234-5678-9010 ")]
-    public void An_abha_number_is_14_digits_with_a_valid_check_digit(string value) => Abha.IsValidNumber(value).ShouldBeTrue();
+    [InlineData("91123456789012")] // fails a Verhoeff check, which ABHA numbers do not have
+    public void An_abha_number_is_14_digits_grouped_or_run_together(string value) => Abha.IsValidNumber(value).ShouldBeTrue();
+
+    /// <summary>
+    /// The example patients of the NRCeS "FHIR Implementation Guide for ABDM" (ndhm.in 6.5.0, the package the ABDM
+    /// documents are validated against) carry these ABHA numbers. None ends in a Verhoeff check digit, nor does about 9
+    /// in 10 of any 14 digits, so a check-digit rule would turn away real ABHA cards at the desk.
+    /// </summary>
+    [Theory]
+    [InlineData("21-1521-3828-3227")]
+    [InlineData("22-7225-4829-5255")]
+    [InlineData("25-1531-3528-3228")]
+    public void The_abha_numbers_of_the_abdm_guides_examples_are_accepted(string value)
+    {
+        Verhoeff.IsValid(Abha.Digits(value)).ShouldBeFalse();
+        Abha.IsValidNumber(value).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Any_last_digit_is_accepted()
+    {
+        for (var last = '0'; last <= '9'; last++)
+        {
+            Abha.IsValidNumber("91-1234-5678-901" + last).ShouldBeTrue();
+        }
+    }
 
     [Theory]
-    [InlineData("91123456789012")] // fails the check digit
     [InlineData("9112345678901")] // 13 digits
     [InlineData("911234567890100")] // 15 digits
     [InlineData("91/1234/5678/9010")] // other separators
@@ -109,7 +134,8 @@ public sealed class HealthIdTests
     [Theory]
     [InlineData(null, null, true)]
     [InlineData("91-1234-5678-9010", "meera.k@abdm", true)]
-    [InlineData("91-1234-5678-9012", null, false)]
+    [InlineData("21-1521-3828-3227", null, true)]
+    [InlineData("91-1234-5678-901", null, false)]
     [InlineData(null, "meera.k@gmail.com", false)]
     public void The_shared_validation_rules_check_both_identifiers(string? number, string? address, bool valid)
     {

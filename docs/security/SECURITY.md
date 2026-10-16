@@ -258,7 +258,8 @@ and grants nothing.
 - Only what is needed is stored:
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
   - **ABHA numbers**: encrypted with AES-256-GCM. Their blind index, like the number, is left out of the audit trail's
-    record of changes. A number must pass its Verhoeff check digit before it is stored.
+    record of changes. A number must be 14 digits before it is stored; it has no published check digit, so a mistyped
+    number cannot be caught until it is checked with ABDM, which needs the gateway (not live).
   - Uploaded documents: encrypted at rest.
   - **Online payments**: the gateway's settlement data is kept as ids, amounts, the UTR and the payment method only;
     the card network, issuer and type, descriptions and notes are dropped. Webhook events are kept by event id with

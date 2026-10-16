@@ -26,11 +26,11 @@ public sealed class AbdmExportTests(HospitalServer server)
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task A_mistyped_abha_number_is_refused_at_registration_and_a_valid_one_is_kept_masked_and_audited()
+    public async Task An_abha_number_that_is_not_14_digits_is_refused_at_registration_and_a_valid_one_is_kept_masked_and_audited()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var abha = NewAbha();
-        var wrong = abha[..13] + (char)('0' + ((abha[13] - '0' + 1) % 10));
+        var wrong = abha[..13]; // a digit left out
 
         using (var refused = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/patients", Registration(wrong, "meera.k@abdm")))
         {
@@ -180,11 +180,14 @@ public sealed class AbdmExportTests(HospitalServer server)
         Category: null, AbhaNumber: abha, AbhaAddress: address, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
         ConfirmedNotDuplicate: true);
 
-    /// <summary>A valid ABHA number of this test alone: 14 digits, the last a Verhoeff check digit.</summary>
+    /// <summary>
+    /// An ABHA number of this test alone, made so that it fails a Verhoeff check, as most real ABHA numbers do: they have
+    /// no check digit, and registration must take any 14 digits.
+    /// </summary>
     private static string NewAbha()
     {
         var digits = "91" + Digits(11);
-        return digits + Verhoeff.CheckDigit(digits);
+        return digits + (char)('0' + ((Verhoeff.CheckDigit(digits) - '0' + 1) % 10));
     }
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));

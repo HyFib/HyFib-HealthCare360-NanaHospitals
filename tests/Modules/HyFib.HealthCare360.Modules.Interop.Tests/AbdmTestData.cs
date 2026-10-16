@@ -16,7 +16,7 @@ namespace HyFib.HealthCare360.Modules.Interop.Tests;
 /// </summary>
 internal static class AbdmTestData
 {
-    /// <summary>A valid ABHA number (the last digit is its Verhoeff check digit).</summary>
+    /// <summary>An ABHA number: 14 digits.</summary>
     public const string AbhaNumber = "91123456789010";
 
     public static readonly Guid OpVisitId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab001");

@@ -36,7 +36,7 @@ public sealed class KeyRotationTests(HospitalServer server)
     public async Task Data_encrypted_before_a_rotation_moves_to_the_new_key_and_stays_readable()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        var abha = Abha();
+        var abha = "91" + Digits(12);
         var patient = await RegisterPatientAsync(abha);
         var settingKey = "it.rotation." + Digits(6) + ".secret";
         await admin.PutAsync($"/api/v1/admin/settings/{settingKey}", new SaveSettingRequest(JsonNode.Parse("""{"apiKey":"k-123"}"""), null, true, null));
@@ -78,7 +78,7 @@ public sealed class KeyRotationTests(HospitalServer server)
     public async Task Search_indexes_move_to_the_new_key_and_the_Aadhaar_index_stays_on_the_original()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        var abha = Abha();
+        var abha = "91" + Digits(12);
         var aadhaar = Aadhaar();
         var patient = await RegisterPatientAsync(abha, aadhaar: aadhaar);
         var before = await SearchIndexesAsync(patient.Id);
@@ -156,7 +156,7 @@ public sealed class KeyRotationTests(HospitalServer server)
         // From the test's own address: retiring a key asks for the password, so it is rate-limited like signing in.
         var (admin, _) = await server.SignInNewSessionAsync(HospitalServer.Users.Admin);
         var earlier = (await admin.PostAsync<EncryptionKeysStatus>("/api/v1/admin/system/keys/data/rotate")).DataKey.KeyId;
-        var abha = Abha();
+        var abha = "91" + Digits(12);
 
         // Registered while that key is current, and the answer is kept a day for a retry of the same request. The answer
         // is not moved by a rotation: it expires.
@@ -402,13 +402,6 @@ public sealed class KeyRotationTests(HospitalServer server)
         }
 
         return digits + (char)('0' + inverse[check]);
-    }
-
-    // A valid ABHA number: 14 digits, the last a Verhoeff check digit.
-    private static string Abha()
-    {
-        var digits = "91" + Digits(11);
-        return digits + SharedKernel.Verhoeff.CheckDigit(digits);
     }
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));

@@ -4,7 +4,7 @@ namespace HyFib.HealthCare360.SharedKernel;
 
 /// <summary>
 /// The Verhoeff check digit (dihedral group D5), which catches every single-digit error and every swap of two adjacent
-/// digits. Aadhaar numbers and ABHA numbers end in one.
+/// digits. Aadhaar numbers end in one (UIDAI). ABHA numbers do not: see <see cref="Abha"/>.
 /// </summary>
 public static class Verhoeff
 {
@@ -62,8 +62,10 @@ public static class Verhoeff
 
 /// <summary>
 /// The identifiers of an Ayushman Bharat Health Account (ABDM): the ABHA number, 14 digits written
-/// <c>xx-xxxx-xxxx-xxxx</c> whose last digit is a Verhoeff check digit, and the ABHA address, a handle such as
-/// <c>meera.k@abdm</c> (<c>@sbx</c> on the ABDM sandbox).
+/// <c>xx-xxxx-xxxx-xxxx</c>, and the ABHA address, a handle such as <c>meera.k@abdm</c> (<c>@sbx</c> on the ABDM
+/// sandbox). No NHA or ABDM specification gives the ABHA number a check digit (the NRCeS implementation guide's own
+/// example patients carry numbers that fail a Verhoeff check), so only its length and characters are checked here;
+/// whether a number belongs to a real account is for ABDM to say when it is verified through the gateway.
 /// </summary>
 public static partial class Abha
 {
@@ -73,8 +75,8 @@ public static partial class Abha
     public static string Digits(string? value) => value is null ? string.Empty : new string(value.Where(char.IsAsciiDigit).ToArray());
 
     /// <summary>
-    /// 14 digits, grouped with spaces or hyphens or run together, ending in a valid Verhoeff check digit. Anything else
-    /// (letters, other separators, 13 or 15 digits, a mistyped digit) is not an ABHA number.
+    /// 14 digits, grouped with spaces or hyphens or run together. Anything else (letters, other separators, 13 or 15
+    /// digits) is not an ABHA number. Any 14 digits are accepted: there is no published check digit to test.
     /// </summary>
     public static bool IsValidNumber(string? value)
     {
@@ -84,7 +86,7 @@ public static partial class Abha
         }
 
         var digits = Digits(value);
-        return digits.Length == NumberLength && Verhoeff.IsValid(digits);
+        return digits.Length == NumberLength;
     }
 
     /// <summary>The display form <c>xx-xxxx-xxxx-xxxx</c>; a value that is not 14 digits is returned trimmed.</summary>

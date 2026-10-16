@@ -102,15 +102,24 @@ describe('the photo in the patient form', () => {
 describe('ABHA details in the patient form (SRS EHR-08)', () => {
   const valid = { ...emptyPatientForm, firstName: 'Meera', gender: 'Female' as const, dateOfBirth: '1984-04-12' };
 
-  it('accepts a 14-digit ABHA number with its check digit, grouped or run together', () => {
+  it('accepts any 14-digit ABHA number, grouped or run together', () => {
     expect(isValidAbhaNumber('91123456789010')).toBe(true);
     expect(isValidAbhaNumber('91-1234-5678-9010')).toBe(true);
     expect(isValidAbhaNumber(' 91 1234 5678 9010 ')).toBe(true);
   });
 
-  it('catches a mistyped or swapped digit, a wrong length and stray characters', () => {
-    expect(isValidAbhaNumber('91-1234-5678-9012')).toBe(false); // wrong check digit
-    expect(isValidAbhaNumber('91-1234-5678-9001')).toBe(false); // last two digits swapped
+  it('does not ask for a check digit, which ABDM does not publish', () => {
+    // The ABHA numbers of the example patients in the NRCeS implementation guide for ABDM (ndhm.in 6.5.0): none ends
+    // in a Verhoeff check digit, and the form must take them.
+    expect(isValidAbhaNumber('21-1521-3828-3227')).toBe(true);
+    expect(isValidAbhaNumber('22-7225-4829-5255')).toBe(true);
+    expect(isValidAbhaNumber('25-1531-3528-3228')).toBe(true);
+    for (const last of '0123456789') {
+      expect(isValidAbhaNumber(`91-1234-5678-901${last}`)).toBe(true);
+    }
+  });
+
+  it('refuses a wrong length and stray characters', () => {
     expect(isValidAbhaNumber('9112345678901')).toBe(false); // 13 digits
     expect(isValidAbhaNumber('911234567890100')).toBe(false); // 15 digits
     expect(isValidAbhaNumber('91/1234/5678/9010')).toBe(false);
@@ -139,10 +148,12 @@ describe('ABHA details in the patient form (SRS EHR-08)', () => {
       patientFormSchema.safeParse({ ...valid, abhaNumber: '91-1234-5678-9010', abhaAddress: 'meera.k@abdm' }).success,
     ).toBe(true);
 
-    const number = patientFormSchema.safeParse({ ...valid, abhaNumber: '91-1234-5678-9012' });
+    expect(patientFormSchema.safeParse({ ...valid, abhaNumber: '21-1521-3828-3227' }).success).toBe(true);
+
+    const number = patientFormSchema.safeParse({ ...valid, abhaNumber: '91-1234-5678-901' });
     expect(number.success).toBe(false);
     expect(number.error?.issues.map((i) => i.path.join('.'))).toEqual(['abhaNumber']);
-    expect(number.error?.issues[0]?.message).toContain('check digit');
+    expect(number.error?.issues[0]?.message).toBe('Enter a valid 14-digit ABHA number.');
 
     const address = patientFormSchema.safeParse({ ...valid, abhaAddress: 'meera.k@gmail.com' });
     expect(address.error?.issues.map((i) => i.path.join('.'))).toEqual(['abhaAddress']);

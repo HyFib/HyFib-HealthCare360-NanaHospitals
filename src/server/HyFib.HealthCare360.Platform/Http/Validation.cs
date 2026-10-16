@@ -79,12 +79,12 @@ public static class CommonRules
         rule.Matches("^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$").WithMessage("Enter a valid 15-character GSTIN.");
 
     /// <summary>
-    /// ABHA number: 14 digits, run together or grouped as 91-1234-5678-9012 (spaces or hyphens), the last a Verhoeff
-    /// check digit, so a mistyped or swapped digit is caught at the desk.
+    /// ABHA number: 14 digits, run together or grouped as 91-1234-5678-9012 (spaces or hyphens). There is no published
+    /// check digit, so any 14 digits pass (<see cref="SharedKernel.Abha.IsValidNumber"/>).
     /// </summary>
     public static IRuleBuilderOptions<T, string?> AbhaNumber<T>(this IRuleBuilder<T, string?> rule) =>
         rule.Must(value => string.IsNullOrWhiteSpace(value) || SharedKernel.Abha.IsValidNumber(value))
-            .WithMessage("Enter a valid 14-digit ABHA number. Check the digits: the last one is a check digit.");
+            .WithMessage("Enter a valid 14-digit ABHA number.");
 
     /// <summary>ABHA address: a handle such as name@abdm (name@sbx on the ABDM sandbox).</summary>
     public static IRuleBuilderOptions<T, string?> AbhaAddress<T>(this IRuleBuilder<T, string?> rule) =>
