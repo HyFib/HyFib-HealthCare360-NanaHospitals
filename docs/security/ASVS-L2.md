@@ -66,8 +66,10 @@ The review found these problems, now fixed:
   - A confirmation given for one server no longer carries over to another.
   - The bridge answers only the staff app's pages, not the patient portal or API docs, which run third-party script.
     That includes DSC signing of prescriptions (`dsc.signPrescription`), which the doctor also confirms in the Windows
-    certificate dialog and with the token's PIN, and the server verifies again.
-  - Downloads are limited to document types HC360 produces, from the server.
+    certificate dialog and with the token's PIN, and the server verifies again, accepting only a certificate that
+    chains to a CCA India root installed for HC360 (not the operating system's roots).
+  - Downloads are limited to document types HC360 produces, from the server (a prescription's DSC signature, .p7s,
+    among them).
 - **Uploaded files** (V5.2.2, V5.4.1). A file's stored name now takes the extension of what the file really is. A PDF
   uploaded as `results.hta` is kept as `results.pdf`.
 - **Browser protections** (V3.4.1, V3.4.3, V3.5.2):
@@ -399,7 +401,7 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 | V11.4.3 | L2 | Collision-resistant hashes for integrity | Met | SHA-256 for ES256 tokens, certificate signatures, the audit hash chain, backup/file digests and doctors' DSC signatures over prescriptions (detached CMS; SHA-1 digests are refused). Nothing shorter is used for integrity. | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [Audit.cs](../../src/server/HyFib.HealthCare360.Platform/Auditing/Audit.cs), [DetachedCms.cs](../../src/shared/HyFib.HealthCare360.WindowsInterop/DigitalSignatures/DetachedCms.cs) |
 | V11.4.4 | L2 | Keys from passwords derived with key stretching | N/A | No key is derived from a password. The recovery key is a random 256-bit key (the original one comes from the random data key by HKDF), and key files are DPAPI-wrapped. | [BackupRecoveryKey.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/BackupRecoveryKey.cs) |
 | V11.5.1 | L2 | Unguessable values from a secure random generator | Partial | CSPRNG everywhere (no System.Random) and most tokens are 128-256 bits. Report verification codes carry 100 bits and device enrolment codes about 40 (short-lived, single-use). | [VerificationCode.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Diagnostics/Domain/VerificationCode.cs), [DeviceEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/DeviceEndpoints.cs) |
-| V11.6.1 | L2 | Approved algorithms for key generation and signatures | Met | CNG generates the RSA and P-256 keys and ES256 signs tokens. Certificates use RSA-SHA256 PKCS#1 v1.5 (approved; ECDSA or PSS would be better). Prescriptions are signed with the doctor's own DSC in the token (RSA or ECDSA as the CA issued it) as CMS SignedData with SHA-256 (System.Security.Cryptography.Pkcs), and verified with the same library. | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs) |
+| V11.6.1 | L2 | Approved algorithms for key generation and signatures | Met | CNG generates the RSA and P-256 keys and ES256 signs tokens. Certificates use RSA-SHA256 PKCS#1 v1.5 (approved; ECDSA or PSS would be better). Prescriptions are signed with the doctor's own DSC in the token (RSA or ECDSA as the CA issued it) as CMS SignedData with SHA-256 (System.Security.Cryptography.Pkcs), and verified with the same library; the certificate must chain to a CCA India root in the server's DSC trust folder (custom root trust, offline). | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs), [DscTrustAnchors.cs](../../src/shared/HyFib.HealthCare360.WindowsInterop/DigitalSignatures/DscTrustAnchors.cs) |
 
 ## V12 Secure Communication
 

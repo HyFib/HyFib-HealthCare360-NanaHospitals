@@ -407,11 +407,14 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Signs prescriptions with the doctor's DSC (`dsc.signPrescription`): the doctor picks the certificate in the
     Windows dialog, which shows what the bytes contain as the desktop reads them (never text the page sends), and the
     token asks for its PIN. The private key never leaves the token; one dialog at a time; nothing is stored. The
-    server checks the signature again before it keeps it (docs/modules/clinical.md, *Signing with the doctor's DSC*).
+    server checks the signature again before it keeps it, and accepts only a certificate that chains to a CCA India
+    root IT installed in its DSC trust folder — never one the operating system trusts, such as a domain's user
+    certificate or a self-signed one (docs/modules/clinical.md, *Signing with the doctor's DSC*).
   - Answers bridge calls (printing, device identity, notifications, DSC signing) only from the staff app's pages. The patient
     portal and the API reference, which run third-party script, are on addresses of their own, so it opens them in the
     default browser.
-  - Saves only document types HC360 produces, and only from the server.
+  - Saves only document types HC360 produces (PDF, CSV, XLSX, XML, JSON, text, images, ECG/DICOM files, recordings,
+    the hospital CA's .crt and a prescription's DSC signature as .p7s), and only from the server.
   - Denies permissions other than camera, microphone, clipboard and notifications.
   - Disables password autosave and autofill.
   - Disables DevTools unless IT enables them.
@@ -496,6 +499,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Desktop and lab agent device secrets | Each workstation | DPAPI (user or machine) | A device's sign-in | Revoke and enrol the device again |
 | Release signing key (HyFib's, ECDSA P-256) | The `HC360_RELEASE_SIGNING_KEY` secret of the release workflow, and one copy offline at HyFib; the public keys are built into HC360 (`ReleaseKeys.cs`) | GitHub's encrypted secrets: only the release job reads it, from its environment, never on a command line or in a log | The manifest of each HC360 Desktop package, which the Server Node, HC360 Desktop and its updater check before they take, offer or install it (SRS DED-18; Release signing key, below) | A new pair every few years, at once on exposure or when someone who held it leaves: release with both public keys, then sign with the new one |
 | Doctors' Digital Signature Certificates (DSC) | The doctor's own USB token, issued by a licensed Indian CA; never on the server or in HC360 | The token and its PIN (the vendor's CSP/KSP); HC360 Desktop only asks Windows to sign | Their detached CMS signatures over prescriptions (SHA-256; ERX-04), checked by the server and anyone with OpenSSL | By the CA (one to three years); a new certificate signs new prescriptions, earlier signatures stay checkable with the certificate inside them |
+| DSC trust anchors (the CCA India root certificates) | The server's DSC trust folder (`HealthCare360:Clinical:DscTrustDirectory`, by default `certs\dsc-trust` in the data folder): public certificates only, which IT downloads from cca.gov.in and checks against the thumbprints the CCA publishes | File permissions of the data folder: whoever can write there decides which certificates count as DSCs | Accepting a DSC signature: the certificate must chain to one of them, offline, at the signing time (no revocation check) | When the CCA issues a new root, add it; a removed root turns the signatures under it to "not confirmed as a DSC" (`Untrusted`) |
 | Passwords, refresh tokens, one-time codes | The database | PBKDF2-SHA512 (passwords), SHA-256 (tokens and codes) | Sign-in | Refresh tokens on every use; passwords rehashed when the work factor rises |
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.
