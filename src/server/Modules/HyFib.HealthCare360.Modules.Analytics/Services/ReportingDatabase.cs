@@ -1,10 +1,14 @@
+using Microsoft.Extensions.Logging;
+using Npgsql;
+
 namespace HyFib.HealthCare360.Modules.Analytics.Services;
 
 /// <summary>
 /// Optional read-only reporting database (SCAL-03, BI-03). When <c>ConnectionStrings:Analytics</c> (or the older name
-/// <c>ConnectionStrings:Reporting</c>) points at a PostgreSQL streaming replica, every report and KPI query runs there so
-/// heavy MIS work never competes with the wards and counters for the primary database. Without it, reports run on the
-/// primary database through a separate, read-only context.
+/// <c>ConnectionStrings:Reporting</c>) points at a PostgreSQL streaming replica, every report, KPI and report look-up query
+/// runs there so heavy MIS work never competes with the wards and counters for the primary database. Without it, reports
+/// run on the primary database through a separate, read-only context. When the replica cannot be reached, the primary
+/// database answers instead, and the result says so (<see cref="ReportingDbContextFactory.RunAsync{T}"/>).
 /// </summary>
 internal sealed class ReportingDatabase
 {
@@ -36,15 +40,25 @@ internal sealed class ReportingDatabase
 
     public bool UsesReplica => Options is not null;
 
-    public string SourceLabel => UsesReplica ? "Reporting replica" : "Live database";
+    public const string ReplicaLabel = "Reporting replica";
+    public const string LiveLabel = "Live database";
+
+    /// <summary>Where the figures came from when the replica could not be reached and the primary database answered.</summary>
+    public const string FallbackLabel = "Live database (reporting replica unavailable)";
+
+    public string SourceLabel => UsesReplica ? ReplicaLabel : LiveLabel;
 }
+
+/// <summary>What reporting work returned, and which database answered it (<see cref="ReportingDatabase.SourceLabel"/>).</summary>
+public sealed record ReportingResult<T>(T Value, string DataSource);
 
 /// <summary>
 /// Creates the <see cref="HospitalDbContext"/> a report runs on. The context carries a <see cref="ReportingUser"/> whose
 /// facility is the one the report is for, so the platform's facility query filter scopes every facility-owned table
 /// (and a null facility — a consolidated report — disables it, exactly as for system jobs).
 /// </summary>
-internal sealed class ReportingDbContextFactory(IServiceProvider services, ModuleCatalog modules, ReportingDatabase reporting)
+internal sealed class ReportingDbContextFactory(
+    IServiceProvider services, ModuleCatalog modules, ReportingDatabase reporting, ILogger<ReportingDbContextFactory> logger)
 {
     public HospitalDbContext Create(Guid? facilityId)
     {
@@ -55,6 +69,37 @@ internal sealed class ReportingDbContextFactory(IServiceProvider services, Modul
     /// <summary>A reporting context on the primary database (fallback when the replica is unreachable).</summary>
     public HospitalDbContext CreatePrimary(Guid? facilityId) =>
         new(services.GetRequiredService<DbContextOptions<HospitalDbContext>>(), modules, new ReportingUser(facilityId));
+
+    /// <summary>
+    /// Runs read-only reporting work on the reporting database. When that is a replica and it cannot be reached
+    /// (maintenance, the network, a query the replica's own recovery cancelled), the same work runs again on the primary
+    /// database, so a report, the KPIs or a look-up never fail because the replica is down (SCAL-03). The work must only
+    /// read: it may run twice.
+    /// </summary>
+    /// <param name="what">What is read, for the warning logged when the primary database has to answer.</param>
+    public async Task<ReportingResult<T>> RunAsync<T>(Guid? facilityId, string what, Func<HospitalDbContext, Task<T>> work, CancellationToken ct)
+    {
+        try
+        {
+            await using var db = Create(facilityId);
+            return new ReportingResult<T>(await work(db), reporting.SourceLabel);
+        }
+        catch (Exception ex) when (reporting.UsesReplica && !ct.IsCancellationRequested && IsUnreachable(ex))
+        {
+            logger.LogWarning(ex, "Reporting replica unavailable; {What} falls back to the primary database", what);
+            await using var primary = CreatePrimary(facilityId);
+            return new ReportingResult<T>(await work(primary), ReportingDatabase.FallbackLabel);
+        }
+    }
+
+    /// <summary>A failure of the replica rather than of the query, so the primary database is worth asking instead.</summary>
+    internal static bool IsUnreachable(Exception ex) => ex switch
+    {
+        NpgsqlException npgsql => npgsql.IsTransient,
+        TimeoutException => true,
+        InvalidOperationException { InnerException: { } inner } => IsUnreachable(inner),
+        _ => false,
+    };
 }
 
 /// <summary>The identity a reporting context runs as: only the facility matters (it drives the facility filter).</summary>

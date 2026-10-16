@@ -45,9 +45,10 @@ public sealed record KpiSet(
 /// Executive KPIs (OP visits, admissions, bed occupancy, ALOS, revenue, collections, lab TAT and NPS) for a period and
 /// the period before it, computed with the same queries as the catalogue reports they drill into. Finance KPIs are
 /// included only for users with <see cref="AnalyticsPermissions.FinanceRead"/>. Results are cached for two minutes per
-/// facility, period and audience, so a busy morning of dashboard refreshes costs a handful of queries.
+/// facility, period and audience, so a busy morning of dashboard refreshes costs a handful of queries. They are read on the
+/// reporting replica when there is one, and on the primary database when it cannot be reached (SCAL-03).
 /// </summary>
-internal sealed class KpiService(ReportingDbContextFactory contexts, ReportingDatabase reporting, FacilityAccess facilities, IMemoryCache cache, TimeProvider time)
+internal sealed class KpiService(ReportingDbContextFactory contexts, FacilityAccess facilities, IMemoryCache cache, TimeProvider time)
 {
     public const int MaxDays = 366;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(2);
@@ -93,9 +94,10 @@ internal sealed class KpiService(ReportingDbContextFactory contexts, ReportingDa
         }
 
         var (previousFrom, previousTo) = ReportPeriods.Previous(start, end);
-        await using var db = contexts.Create(scope.Value.FacilityId);
-        var current = await ComputeAsync(db, start, end, now, operations, finance, ct);
-        var previous = await ComputeAsync(db, previousFrom, previousTo, now, operations, finance, ct);
+
+        // On the replica when there is one; the primary database answers when the replica cannot be reached.
+        var ((current, previous), source) = await contexts.RunAsync(scope.Value.FacilityId, "the KPIs", async db =>
+            (await ComputeAsync(db, start, end, now, operations, finance, ct), await ComputeAsync(db, previousFrom, previousTo, now, operations, finance, ct)), ct);
 
         var kpis = new List<KpiValue>();
         if (operations)
@@ -114,8 +116,14 @@ internal sealed class KpiService(ReportingDbContextFactory contexts, ReportingDa
             kpis.Add(Kpi(KpiDefinitions.Collections, current.Collections, previous.Collections, Trend(current.CollectionDaily, start, end)));
         }
 
-        var set = new KpiSet(start, end, previousFrom, previousTo, scope.Value.Name, kpis, now, reporting.SourceLabel);
-        cache.Set(key, set, CacheDuration);
+        var set = new KpiSet(start, end, previousFrom, previousTo, scope.Value.Name, kpis, now, source);
+
+        // Figures the primary database gave for an unreachable replica are not kept: the next request tries the replica.
+        if (source != ReportingDatabase.FallbackLabel)
+        {
+            cache.Set(key, set, CacheDuration);
+        }
+
         return set;
     }
 

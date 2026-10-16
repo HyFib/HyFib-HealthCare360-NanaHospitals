@@ -3,7 +3,6 @@ using HyFib.HealthCare360.Modules.Analytics.Domain;
 using HyFib.HealthCare360.Modules.Analytics.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
-using Npgsql;
 
 namespace HyFib.HealthCare360.Modules.Analytics.Reports;
 
@@ -19,13 +18,13 @@ public sealed record ReportExecution(
 
 /// <summary>
 /// Runs catalogue reports for an actor: permission check, parameter validation, facility resolution, execution on the
-/// reporting context (replica when configured) and a one-minute cache of aggregate results so dashboards, paging and
-/// exports of the same report do not re-query. Reports that list patients are never cached.
+/// reporting context (replica when configured, the primary database when the replica cannot be reached) and a one-minute
+/// cache of aggregate results so dashboards, paging and exports of the same report do not re-query. Reports that list
+/// patients are never cached.
 /// </summary>
 internal sealed class ReportRunner(
     ReportCatalog catalog,
     ReportingDbContextFactory contexts,
-    ReportingDatabase reporting,
     FacilityAccess facilities,
     IMemoryCache cache,
     TimeProvider time,
@@ -87,9 +86,11 @@ internal sealed class ReportRunner(
             return cached;
         }
 
-        var data = await ExecuteAsync(definition, arguments, scope.Value.FacilityId, now, rowCap, ct);
-        var execution = new ReportExecution(report, arguments, scope.Value, data, data.Columns ?? report.Columns, now, reporting.SourceLabel);
-        if (useCache)
+        var (data, source) = await ExecuteAsync(definition, arguments, scope.Value.FacilityId, now, rowCap, ct);
+        var execution = new ReportExecution(report, arguments, scope.Value, data, data.Columns ?? report.Columns, now, source);
+
+        // A run the primary database answered for an unreachable replica is not kept: the next one tries the replica again.
+        if (useCache && source != ReportingDatabase.FallbackLabel)
         {
             cache.Set(key, execution, CacheDuration);
         }
@@ -97,35 +98,24 @@ internal sealed class ReportRunner(
         return execution;
     }
 
-    private async Task<ReportData> ExecuteAsync(
+    private async Task<ReportingResult<ReportData>> ExecuteAsync(
         ReportDefinition definition, ReportArguments arguments, Guid? facilityId, DateTimeOffset now, int? rowCap, CancellationToken ct)
     {
         var cap = definition.Descriptor.ContainsPatientIdentifiers ? PatientRowCap : rowCap ?? RowCap;
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            return await ExecuteOnAsync(contexts.Create(facilityId), definition, arguments, now, cap, ct);
-        }
-        catch (NpgsqlException ex) when (reporting.UsesReplica && ex.IsTransient && !ct.IsCancellationRequested)
-        {
-            // The replica is unreachable (maintenance, network): answer from the primary rather than failing the user.
-            logger.LogWarning(ex, "Reporting replica unavailable; report {ReportId} falls back to the primary database", definition.Descriptor.Id);
-            return await ExecuteOnAsync(contexts.CreatePrimary(facilityId), definition, arguments, now, cap, ct);
+            return await contexts.RunAsync(facilityId, $"report {definition.Descriptor.Id}", async db =>
+            {
+                var context = new ReportContext(db, arguments, now, EfReportQueryExecutor.Instance, cap);
+                var data = await definition.RunAsync(context, ct);
+                data.Truncated |= context.Truncated;
+                return data;
+            }, ct);
         }
         finally
         {
             logger.LogInformation("Report {ReportId} ran in {ElapsedMs} ms", definition.Descriptor.Id, stopwatch.ElapsedMilliseconds);
-        }
-    }
-
-    private static async Task<ReportData> ExecuteOnAsync(HospitalDbContext db, ReportDefinition definition, ReportArguments arguments, DateTimeOffset now, int cap, CancellationToken ct)
-    {
-        await using (db)
-        {
-            var context = new ReportContext(db, arguments, now, EfReportQueryExecutor.Instance, cap);
-            var data = await definition.RunAsync(context, ct);
-            data.Truncated |= context.Truncated;
-            return data;
         }
     }
 }
