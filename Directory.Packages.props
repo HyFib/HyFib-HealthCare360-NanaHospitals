@@ -29,6 +29,12 @@
     -->
     <PackageVersion Include="Fido2" Version="4.2.0" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.12" />
+    <!--
+      Not referenced directly: the Redis backplane above brings MessagePack 2.5.302, which GHSA-qhrr-8q5h-9q3h affects
+      (fixed in 2.5.303). Transitive pinning raises it to the newest 2.x release; remove this once the backplane needs a
+      fixed version itself.
+    -->
+    <PackageVersion Include="MessagePack" Version="2.5.307" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
   </ItemGroup>
 
