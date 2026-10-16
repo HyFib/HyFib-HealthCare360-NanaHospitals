@@ -60,7 +60,7 @@ flowchart LR
 |---|---|---|
 | Find the server without typing IPs | mDNS advertisement `_hc360._tcp.local` (TXT: `ver`, `fac`, `fp`=SHA-256 cert fingerprint) + Desktop discovery | `Platform/Networking/MdnsAdvertiser.cs`, `Desktop/Services/ServerDiscovery.cs` |
 | Eavesdropping on shared WiFi | TLS 1.2/1.3 always. A private hospital CA is generated on first start. Desktop pins the fingerprint after enrolment | `Platform/Networking/LanCertificateManager.cs`, `Desktop/MainWindow.xaml.cs` |
-| Duplicate side effects from retries | `Idempotency-Key` on every POST/PUT/PATCH/DELETE. The server stores the response for 24 h and replays it | `Platform/Http/IdempotencyFilter.cs`, `web/packages/core/src/api/client.ts` |
+| Duplicate side effects from retries | `Idempotency-Key` on every POST/PUT/PATCH/DELETE. The server stores the response for 24 h and replays it | `Platform/Http/Idempotency.cs`, `web/packages/core/src/api/client.ts` |
 | Lost typing on disconnect | Draft auto-save (`useDraft`) every 5 s to local storage, cleared on sign-out | `web/packages/core/src/hooks/useDraft.ts` |
 | Silent disconnects | Connection store (browser online/offline + heartbeat + SignalR state), banner and status pill. Desktop reports WiFi SSID/signal through the bridge | `web/apps/staff/src/app/connection/*` |
 | Server link quality | `WifiMonitor` samples the WLAN API every 30 s, persists samples, raises alerts | `Platform/Networking/WifiMonitor.cs` |
@@ -179,7 +179,7 @@ HyFib.HealthCare360.Modules.<Name>/
 * **Errors:** RFC 9457 Problem Details. Validation errors are `400` with an `errors` dictionary, then `401`/`403`/`404`, `409` (conflict/concurrency), `422` (business rule), `429` (rate limit).
 * **Paging:** `?page=1&pageSize=25&search=&sort=field&desc=true` → `{ items, page, pageSize, totalCount }` (max page size 200).
 * **Concurrency:** editable resources expose `version`. Updates send it back, and a mismatch returns `409` with the current state.
-* **Idempotency:** the client sends an `Idempotency-Key` UUID for unsafe methods. The server replays stored responses for 24 h and returns `409` if the same key comes with a different payload.
+* **Idempotency:** the client sends an `Idempotency-Key` UUID for unsafe methods. The server replays stored responses for 24 h and returns `422` if the same key comes with a different payload. `IdempotencyTests` retries a registration with the same key and checks that the first answer comes back and no second patient is made (DED-08). A request without a key is not held to this.
 * **Authorisation:** every endpoint declares `.RequirePermission(Permissions.X)`. Anonymous endpoints are explicit (`AllowAnonymous`) and rate-limited.
 * **OpenAPI:** `/openapi/v1.json`. There is an interactive reference at `/docs` (Scalar) when enabled.
 * **FHIR:** `/fhir/r4/{resource}` read facade for interoperability (EHR-05).
