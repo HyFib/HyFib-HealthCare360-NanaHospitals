@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.SharedKernel;
 using HyFib.HealthCare360.WindowsInterop.DigitalSignatures;
 using Microsoft.Extensions.Configuration;
@@ -566,6 +567,13 @@ public sealed class PrescriptionDigitalSignatureTests
         problem.Message.ShouldBe("Your doctor has not digitally signed this prescription yet.");
         problem.Message.ShouldNotContain("HC360 Desktop");
         PrescriptionFinalCopies.PatientProblem(pending with { Policy = PrescriptionSignaturePolicy.Optional, FinalCopyAvailable = true }).ShouldBeNull();
+
+        // In the patient's language too, as the portal's other refusals are (patient texts, PP-06).
+        foreach (var state in new[] { DigitalSignatureState.NotSigned, DigitalSignatureState.Untrusted, DigitalSignatureState.Invalid })
+        {
+            var refused = PrescriptionFinalCopies.PatientProblem(pending with { State = state }).ShouldNotBeNull();
+            PatientTexts.Catalog.TranslateMessage(PatientLanguages.Hindi, refused.Message).ShouldNotBeNull(refused.Message);
+        }
     }
 
     [Fact]
