@@ -85,7 +85,9 @@ public sealed class ReleasePackageTests
         using var rotated = new TestSigningKey();
         IReadOnlyList<ReleaseKey> trusted = [old.Public, rotated.Public];
 
-        ReleasePackages.ReadManifest(TestPackage.Create(old, "1.2.0").Manifest, TestPackage.Create(old, "1.2.0").Signature, trusted, ReleasePackages.DesktopProduct)
+        // One package: two would each stamp their zip entries with the time they were made, so their manifests can differ.
+        var signedWithOldBefore = TestPackage.Create(old, "1.2.0");
+        ReleasePackages.ReadManifest(signedWithOldBefore.Manifest, signedWithOldBefore.Signature, trusted, ReleasePackages.DesktopProduct)
             .Version.ShouldBe("1.2.0");
         var signedWithNew = TestPackage.Create(rotated, "1.3.0");
         ReleasePackages.ReadManifest(signedWithNew.Manifest, signedWithNew.Signature, trusted, ReleasePackages.DesktopProduct).Version.ShouldBe("1.3.0");
