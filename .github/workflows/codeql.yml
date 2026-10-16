@@ -7,8 +7,10 @@ name: CodeQL
 # With GitHub Code Security on for the repository, the results go to Security › Code scanning, and its check on a pull
 # request fails for a new alert of high or critical severity. While Code Security is off, GitHub refuses the results,
 # so they are not uploaded: each job lists its findings in its summary and on the lines they are about, and fails for
-# one of high or critical severity (.github/codeql/check-results.ps1). Each run finds out which applies by itself. On
-# a pull request, CodeQL reports only findings in the lines it changes; the runs on main and every Monday report all.
+# one of high or critical severity (.github/codeql/check-results.ps1). Each run finds out which applies by itself. When
+# CodeQL default setup has been turned on as well, GitHub refuses the results of this advanced setup too: the job then
+# says so and checks them itself, as while Code Security is off, rather than failing on the refused upload. On a pull
+# request, CodeQL reports only findings in the lines it changes; the runs on main and every Monday report all.
 on:
   push:
     branches: [main]
@@ -89,17 +91,34 @@ jobs:
           dotnet build src/desktop/HyFib.HealthCare360.DesktopUpdater/HyFib.HealthCare360.DesktopUpdater.csproj -c Release
           dotnet build src/agent/HyFib.HealthCare360.LabAgent/HyFib.HealthCare360.LabAgent.csproj -c Release
 
+      # The upload is a step of its own, so a refused one (default setup on) does not fail the job: the job then checks
+      # the results itself below.
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: /language:${{ matrix.language }}
           output: ${{ runner.temp }}/codeql-results
-          upload: ${{ steps.scanning.outputs.on == 'true' && 'always' || 'never' }}
-          upload-database: ${{ steps.scanning.outputs.on }}
+          upload: never
+
+      - if: steps.scanning.outputs.on == 'true'
+        name: Upload the results to code scanning
+        id: upload
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: ${{ runner.temp }}/codeql-results
+          category: /language:${{ matrix.language }}
+
+      - if: steps.upload.outcome == 'failure'
+        name: Say why the results are checked here
+        run: >-
+          echo "::warning title=Results checked in this job::GitHub refused this workflow's results, most often because
+          CodeQL default setup is on as well (Settings › Code security › Code scanning: switch to advanced). They are
+          checked here instead."
 
       - name: Check the results
         shell: pwsh
         env:
           RESULTS: ${{ runner.temp }}/codeql-results
           LANGUAGE: ${{ matrix.language }}
-          SCANNING_ON: ${{ steps.scanning.outputs.on }}
-        run: ./.github/codeql/check-results.ps1 -SarifDirectory $env:RESULTS -Language $env:LANGUAGE -ReportOnly:($env:SCANNING_ON -eq 'true')
+          UPLOADED: ${{ steps.upload.outcome == 'success' }}
+        run: ./.github/codeql/check-results.ps1 -SarifDirectory $env:RESULTS -Language $env:LANGUAGE -ReportOnly:($env:UPLOADED -eq 'true')

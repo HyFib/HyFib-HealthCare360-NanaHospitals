@@ -9,6 +9,8 @@
     error level for a query without a security severity. These are the levels at which code scanning fails a pull
     request by default.
 
+    It is also the check when GitHub refuses an upload because CodeQL default setup is on as well.
+
     With -ReportOnly (Code Security on, results uploaded), findings are only listed: code scanning then decides, and an
     alert dismissed there must not fail the job here.
 

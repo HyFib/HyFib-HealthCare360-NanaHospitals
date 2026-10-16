@@ -599,7 +599,10 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     - **Off:** GitHub refuses the results, so they are not uploaded. Instead, each `CodeQL` job checks them itself
       (`.github/codeql/check-results.ps1`). It lists every finding in the job summary and on the line it is about, and
       fails for one of high or critical severity.
-  - CodeQL's default setup must stay off, because this workflow is the advanced setup.
+  - CodeQL's default setup should stay off, because this workflow is the advanced setup. While both are on, GitHub
+    refuses this workflow's results; each `CodeQL` job then warns about it and checks the results itself, as while
+    Code Security is off. Switch back with Settings › Code security › Code scanning › CodeQL analysis › Switch to
+    advanced.
   - Test code and generated route files are left out. For TypeScript and the workflows the filter is
     `.github/codeql/codeql-config.yml`; for C#, which CodeQL analyses as it is compiled, the workflow builds only the
     shipped projects, so the tests are left out but the database migrations, part of the server, are analysed.
