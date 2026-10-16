@@ -118,6 +118,7 @@ public sealed class PrescriptionDigitalSignatureService(
     PrescriptionSignatureSettings settings,
     PrescriptionFinalCopies finalCopies,
     DscTrustStore trust,
+    ClinicalAccess access,
     ICurrentUser currentUser,
     IAuditLogger audit,
     TimeProvider time)
@@ -139,7 +140,15 @@ public sealed class PrescriptionDigitalSignatureService(
             return ready.Error!;
         }
 
+        // The bytes name the patient and the medicines: fetching them is reading the record (the guard and the PHI access
+        // audit, as for the signed content).
         var (p, content, parties, _) = ready.Value;
+        var opened = await access.OpenAsync(p.PatientId, $"Fetched prescription {p.PrescriptionNumber} to sign with a DSC", ct);
+        if (opened.IsFailure)
+        {
+            return opened.Error!;
+        }
+
         return new PrescriptionSigningContent(p.Id, p.PrescriptionNumber, PrescriptionCanonicalForm.Format, Convert.ToBase64String(content),
             PrescriptionCanonicalForm.Sha256(content), parties.PatientName, parties.PatientUhid, p.Items.Count);
     }
@@ -152,7 +161,7 @@ public sealed class PrescriptionDigitalSignatureService(
             return ready.Error!;
         }
 
-        var (p, content, _, policy) = ready.Value;
+        var (p, content, parties, policy) = ready.Value;
         byte[] signature;
         try
         {
@@ -186,10 +195,26 @@ public sealed class PrescriptionDigitalSignatureService(
                 + $"on the server ({check.Chain?.Summary}). Sign with the DSC on your token.");
         }
 
+        // The printed copy pairs the certificate's name with the doctor's registration number: a colleague's DSC, or an
+        // organisation's on a shared workstation, would lend the prescription a signature that is not the doctor's.
         var signer = check.Signer!;
+        if (!DscSignerName.Matches(signer.SignerName, parties.PrescriberName))
+        {
+            return Error.Rule("prescription.signer_mismatch",
+                $"This DSC is issued to {signer.SignerName}, not to {parties.PrescriberName}. Sign with your own DSC. If it is yours, ask the "
+                + "administrator to write your name in HC360 as it is on your DSC (Hospital setup › Doctors and clinical staff).");
+        }
+
+        if (Unstorable(signer) is { } unstorable)
+        {
+            return Error.Rule("prescription.certificate_unsupported",
+                $"HC360 cannot keep this certificate's details: its {unstorable} is longer than HC360 stores. Sign with the DSC on your token, or "
+                + "ask IT to contact HyFib support.");
+        }
+
         var attached = p.AttachDigitalSignature(new PrescriptionDigitalSignature(signature, content, PrescriptionCanonicalForm.Sha256(content), signedAt,
             currentUser.UserId, signer.SignerName, signer.Subject, signer.SerialNumber, signer.Issuer, signer.Thumbprint,
-            check.Chain?.Summary ?? "Not checked"));
+            Truncate(check.Chain.Summary, Prescription.SignerChainStatusMaxLength)));
         if (attached.IsFailure)
         {
             return attached.Error!;
@@ -310,6 +335,17 @@ public sealed class PrescriptionDigitalSignatureService(
         return new PrescriptionSigningParties(facility ?? string.Empty, p.PatientId, patient.Uhid, patient.FullName, prescriber?.DisplayName ?? string.Empty,
             prescriber?.Qualification, prescriber?.RegistrationNumber, prescriber?.RegistrationCouncil);
     }
+
+    /// <summary>Which of the certificate's details does not fit its column, or null when all do.</summary>
+    internal static string? Unstorable(SignerCertificate signer) =>
+        signer.SignerName.Length > Prescription.SignerNameMaxLength ? "name"
+        : signer.Subject.Length > Prescription.SignerDistinguishedNameMaxLength ? "subject"
+        : signer.Issuer.Length > Prescription.SignerDistinguishedNameMaxLength ? "issuer"
+        : signer.SerialNumber.Length > Prescription.SignerSerialNumberMaxLength ? "serial number"
+        : signer.Thumbprint.Length > Prescription.SignerThumbprintMaxLength ? "thumbprint"
+        : null;
+
+    private static string Truncate(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     // The prescribing doctor signs, once, a prescription signed in HC360, where the facility offers DSC signing.
     private async Task<Result<(Prescription Prescription, byte[] Content, PrescriptionSigningParties Parties, PrescriptionSignaturePolicy Policy)>>

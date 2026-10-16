@@ -67,6 +67,14 @@ public sealed record PrescriptionDigitalSignature(
 /// </summary>
 public sealed class Prescription : AuditableEntity, IFacilityScoped
 {
+    /// <summary>What the columns that describe the DSC's certificate hold at most (<see cref="AttachDigitalSignature"/>).</summary>
+    public const int SignerNameMaxLength = 200;
+
+    public const int SignerDistinguishedNameMaxLength = 1000;
+    public const int SignerSerialNumberMaxLength = 128;
+    public const int SignerThumbprintMaxLength = 128;
+    public const int SignerChainStatusMaxLength = 1000;
+
     public Guid FacilityId { get; set; }
     public string PrescriptionNumber { get; set; } = string.Empty;
     public Guid PatientId { get; set; }

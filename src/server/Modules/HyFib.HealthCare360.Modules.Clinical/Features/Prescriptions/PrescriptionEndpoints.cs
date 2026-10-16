@@ -137,7 +137,10 @@ internal static class PrescriptionEndpoints
         return problem ?? await (await PrescriptionDocument.BuildAsync(model!, assets, ct)).ToPdfAsync(renderer, ct);
     }
 
-    /// <summary>The canonical bytes for HC360 Desktop to sign with the doctor's DSC (the prescribing doctor only).</summary>
+    /// <summary>
+    /// The canonical bytes for HC360 Desktop to sign with the doctor's DSC (the prescribing doctor only). They name the
+    /// patient and the medicines, so fetching them is recorded in the PHI access audit.
+    /// </summary>
     private static async Task<IResult> SigningContent(Guid id, PrescriptionDigitalSignatureService signatures, CancellationToken ct) =>
         (await signatures.ContentAsync(id, ct)).ToOk();
 
