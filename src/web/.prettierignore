@@ -1,2 +1,8 @@
 # Written by the TanStack Router generator in its own format; `pnpm typecheck` and the Vite plugin regenerate it.
 **/routeTree.gen.ts
+
+# Build output, which `pnpm test:a11y` also leaves in each app's dist folder, and what a Playwright run leaves behind.
+**/dist/**
+**/playwright-report/**
+**/test-results/**
+**/blob-report/**
