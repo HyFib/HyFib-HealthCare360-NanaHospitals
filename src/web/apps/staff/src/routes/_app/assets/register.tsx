@@ -240,6 +240,13 @@ function AssetRegisterPage() {
           ]}
           emptyTitle={search.search ? 'No asset matches' : 'No assets registered'}
           emptyDescription={canManage ? 'Add equipment with its make, model, serial number and warranty.' : undefined}
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setAdding(true)}>
+                Add asset
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={assets.data?.totalCount}

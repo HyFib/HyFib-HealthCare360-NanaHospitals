@@ -1,13 +1,41 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { DEFAULT_PRINT_TEMPLATE } from '@hc360/core';
-import { render, screen, waitFor } from '@testing-library/react';
+import type * as Ui from '@hc360/ui';
+import type * as Letterhead from '@/lib/letterhead';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from 'react-hook-form';
-import { describe, expect, it, vi } from 'vitest';
-import type { PrintTemplateItem, PrintTemplateList } from './api';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type * as PrintTemplatesApi from './api';
+import { printTemplatesApi, type PrintTemplateItem, type PrintTemplateList } from './api';
 import { printTemplateFormSchema, toForm, type PrintTemplateForm, type TemplateScope } from './form';
-import { PrintTemplateFields } from './PrintTemplateEditor';
+import { PrintTemplateDrawer, PrintTemplateFields } from './PrintTemplateEditor';
+
+// The server and the toasts are outside the test.
+vi.mock('./api', async (importOriginal) => ({
+  ...(await importOriginal<typeof PrintTemplatesApi>()),
+  printTemplatesApi: { save: vi.fn(), removeFacilityTemplate: vi.fn(() => Promise.resolve()) },
+}));
+vi.mock('@/lib/letterhead', async (importOriginal) => ({
+  ...(await importOriginal<typeof Letterhead>()),
+  useLetterhead: () => ({ name: 'Nana Hospitals' }),
+}));
+const notify = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() }));
+vi.mock('@hc360/ui', async (importOriginal) => ({ ...(await importOriginal<typeof Ui>()), useNotify: () => notify }));
+
+// Fluent's dialogs and drawers measure themselves; jsdom has no ResizeObserver.
+beforeAll(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
 
 const bills: PrintTemplateItem = {
   key: 'bill',
@@ -111,5 +139,37 @@ describe('PrintTemplateFields', () => {
 
     render(<Harness item={bills} list={{ ...twoFacilities, facilityCount: 1 }} />);
     expect(screen.queryByRole('radio', { name: /Every facility/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('PrintTemplateDrawer', () => {
+  it("asks before removing this facility's own template", async () => {
+    const onClose = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FluentProvider theme={webLightTheme}>
+          <PrintTemplateDrawer
+            item={{ ...bills, facility: DEFAULT_PRINT_TEMPLATE }}
+            list={twoFacilities}
+            onClose={onClose}
+          />
+        </FluentProvider>
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Use the hospital-wide template here' }));
+    const confirm = await screen.findByRole('alertdialog', { name: "Remove Nana Hospitals, Baner's own template?" });
+    expect(printTemplatesApi.removeFacilityTemplate).not.toHaveBeenCalled();
+
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(printTemplatesApi.removeFacilityTemplate).not.toHaveBeenCalled();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Use the hospital-wide template here' }));
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Use the hospital-wide template' }),
+    );
+    await waitFor(() => expect(printTemplatesApi.removeFacilityTemplate).toHaveBeenCalledWith('bill'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });

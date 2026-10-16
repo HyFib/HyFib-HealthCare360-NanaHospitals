@@ -229,6 +229,17 @@ function EmployeesPage() {
                 ? 'Add the first employee to start rostering and payroll.'
                 : undefined
           }
+          emptyAction={
+            canManage ? (
+              <Button
+                appearance="primary"
+                icon={<PersonAddRegular />}
+                onClick={() => void navigate({ to: '/hr/employees/new' })}
+              >
+                Add employee
+              </Button>
+            ) : undefined
+          }
           page={filters.page ?? 1}
           pageSize={25}
           totalCount={employees.data?.totalCount}

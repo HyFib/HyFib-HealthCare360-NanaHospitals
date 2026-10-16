@@ -47,6 +47,10 @@ describe('the staff app frame', SCREEN_TESTS, () => {
     await openPatients();
     await userEvent.click(screen.getByRole('button', { name: /Search patients or screens/ }));
     const palette = await screen.findByRole('dialog', { name: 'Search' }, SLOW);
+    expect(within(palette).getByRole('combobox')).toHaveAttribute(
+      'placeholder',
+      'Search patients by UHID, mobile, ABHA or name, or jump to a screen',
+    );
     await userEvent.type(within(palette).getByRole('combobox'), 'asha');
     expect(await within(palette).findByText('Asha Devi', {}, SLOW)).toBeInTheDocument();
     await expectNoAxeViolations();

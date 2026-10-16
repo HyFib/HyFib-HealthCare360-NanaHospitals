@@ -26,6 +26,7 @@ import {
   applyServerErrors,
   ChoiceField,
   CloseRequestScope,
+  ConfirmDialog,
   NumberField,
   SelectField,
   SwitchField,
@@ -102,6 +103,7 @@ function PrintTemplateEditor({
   const queryClient = useQueryClient();
   const letterhead = useLetterhead();
   const [preview, setPreview] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const form = useForm<PrintTemplateForm>({
     resolver: zodResolver(printTemplateFormSchema),
     defaultValues: toForm(item, initialScope(item, list)),
@@ -136,7 +138,10 @@ function PrintTemplateEditor({
     mutationFn: () => printTemplatesApi.removeFacilityTemplate(item.key),
     onSuccess: () =>
       changed('Print template removed', `${item.name} printed at ${facility} follow the hospital-wide template again.`),
-    onError: (error) => notify.error(error, 'Could not remove the print template'),
+    onError: (error) => {
+      setConfirmRemove(false);
+      notify.error(error, 'Could not remove the print template');
+    },
   });
 
   const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
@@ -162,7 +167,11 @@ function PrintTemplateEditor({
           />
           {item.facility !== null && list.facilityId !== null && (
             <div className={styles.restore}>
-              <Button icon={<ArrowResetRegular />} disabled={removeOwn.isPending} onClick={() => removeOwn.mutate()}>
+              <Button
+                icon={<ArrowResetRegular />}
+                disabled={removeOwn.isPending}
+                onClick={() => setConfirmRemove(true)}
+              >
                 Use the hospital-wide template here
               </Button>
               <Caption1 className={styles.muted}>Removes {facility}'s own template.</Caption1>
@@ -183,6 +192,18 @@ function PrintTemplateEditor({
         <Button onClick={guard.requestClose}>Cancel</Button>
       </DrawerFooter>
       {preview !== null && <PreviewDialog title={item.name} html={preview} onClose={() => setPreview(null)} />}
+      <ConfirmDialog
+        open={confirmRemove}
+        title={`Remove ${facility}'s own template?`}
+        confirmLabel="Use the hospital-wide template"
+        destructive
+        busy={removeOwn.isPending}
+        onConfirm={() => removeOwn.mutate()}
+        onCancel={() => setConfirmRemove(false)}
+      >
+        {item.name} printed at {facility} follow the hospital-wide template from now on. The facility's own settings are
+        deleted and cannot be brought back.
+      </ConfirmDialog>
       {guard.dialogs}
     </form>
   );

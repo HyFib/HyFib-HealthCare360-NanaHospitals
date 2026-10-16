@@ -98,6 +98,13 @@ function InstrumentSetsPage() {
           }
           emptyTitle="No instrument sets"
           emptyDescription={canManage ? 'Add each tray with its count sheet so returns can be checked.' : undefined}
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Add set
+              </Button>
+            ) : undefined
+          }
         />
       </Section>
       {editing && <SetDrawer set={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

@@ -174,6 +174,13 @@ function LoadsPage() {
           ]}
           emptyTitle="No loads match"
           emptyDescription={canProcess ? 'Create a load when the sterilizer is packed.' : undefined}
+          emptyAction={
+            canProcess ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
+                New load
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={loads.data?.totalCount}

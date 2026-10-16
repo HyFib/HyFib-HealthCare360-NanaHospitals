@@ -152,6 +152,15 @@ function BreachesPage() {
               ? 'Nothing matches the search. Try the breach number or another word from the title.'
               : 'Record a breach as soon as you learn of it: the 72-hour clock for the Board’s report starts then.'
           }
+          emptyAction={
+            <Button
+              appearance="primary"
+              icon={<AddRegular />}
+              onClick={() => void navigate({ to: '/privacy/breaches/new' })}
+            >
+              Record a breach
+            </Button>
+          }
           page={search.page ?? 1}
           pageSize={BREACH_PAGE_SIZE}
           totalCount={breaches.data?.totalCount}

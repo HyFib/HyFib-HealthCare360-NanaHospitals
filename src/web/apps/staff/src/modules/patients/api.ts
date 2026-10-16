@@ -395,6 +395,7 @@ export const patientKeys = {
   search: (params: PatientSearchParams) => ['patients', 'search', params] as const,
   detail: (id: string) => ['patients', 'detail', id] as const,
   visits: (id: string, page: number) => ['patients', 'visits', id, page] as const,
+  visit: (visitId: string) => ['patients', 'visit', visitId] as const,
   consents: (id: string) => ['patients', 'consents', id] as const,
   portalFamily: (id: string) => ['patients', 'portal-family', id] as const,
   documents: (id: string) => ['patients', 'documents', id] as const,
@@ -420,6 +421,11 @@ export const patientQueries = {
       queryFn: ({ signal }) =>
         api.get<PagedResult<VisitListItem>>(`/api/v1/patients/${id}/visits`, { query: { page, pageSize: 10 }, signal }),
       placeholderData: keepPreviousData,
+    }),
+  visit: (visitId: string) =>
+    queryOptions({
+      queryKey: patientKeys.visit(visitId),
+      queryFn: ({ signal }) => api.get<VisitDetail>(`/api/v1/visits/${visitId}`, { signal }),
     }),
   consents: (id: string) =>
     queryOptions({

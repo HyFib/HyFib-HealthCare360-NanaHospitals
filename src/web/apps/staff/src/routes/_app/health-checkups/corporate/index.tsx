@@ -367,6 +367,11 @@ function CorporateBatchesPage() {
           ]}
           emptyTitle="No corporate batches"
           emptyDescription="Use New batch to book a company's employees together."
+          emptyAction={
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
+              New batch
+            </Button>
+          }
           page={page}
           pageSize={25}
           totalCount={batches.data?.totalCount}

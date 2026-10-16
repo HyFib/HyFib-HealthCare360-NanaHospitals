@@ -146,6 +146,17 @@ function OrdersPage() {
           ]}
           emptyTitle="No purchase orders match"
           emptyDescription={canManage ? 'Create an order for a vendor, or from an approved requisition.' : undefined}
+          emptyAction={
+            canManage ? (
+              <Button
+                appearance="primary"
+                icon={<AddRegular />}
+                onClick={() => void navigate({ to: '/purchase/orders/new' })}
+              >
+                New purchase order
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={orders.data?.totalCount}

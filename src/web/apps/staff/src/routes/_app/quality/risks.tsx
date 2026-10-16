@@ -336,6 +336,11 @@ function RisksPage() {
           }
           emptyTitle={cell ? 'No risks in this cell' : 'No risks match'}
           emptyDescription="Add the hospital's risks with their likelihood and impact to see them on the heat map."
+          emptyAction={
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+              Add a risk
+            </Button>
+          }
           page={cell ? undefined : (search.page ?? 1)}
           pageSize={25}
           totalCount={cell ? undefined : risks.data?.totalCount}

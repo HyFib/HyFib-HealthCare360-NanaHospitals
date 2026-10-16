@@ -273,6 +273,11 @@ function DevicesPage() {
           )}
           emptyTitle="No terminals registered"
           emptyDescription="Register each terminal with the serial number printed on it before connecting it."
+          emptyAction={
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+              Register terminal
+            </Button>
+          }
           size="small"
         />
       </Section>

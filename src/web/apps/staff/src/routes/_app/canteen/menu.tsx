@@ -203,6 +203,13 @@ function CanteenMenuPage() {
           }
           emptyTitle={menu.data?.length ? 'No item matches' : 'The menu is empty'}
           emptyDescription={canManage && !menu.data?.length ? 'Add the canteen items with their prices.' : undefined}
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Add item
+              </Button>
+            ) : undefined
+          }
         />
       </Section>
       {editing && <MenuItemDrawer item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

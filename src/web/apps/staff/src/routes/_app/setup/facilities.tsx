@@ -78,6 +78,11 @@ function FacilitiesPage() {
           ]}
           emptyTitle="No facilities yet"
           emptyDescription="Add the hospital's details; documents print them on the letterhead."
+          emptyAction={
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => edit('new')}>
+              Add facility
+            </Button>
+          }
         />
       </Section>
       {search.edit && (

@@ -248,7 +248,11 @@ function LeadsPage() {
             />
           </FilterBar>
         </FilterPad>
-        {board ? <Board search={search} busy={busy} onMove={request} /> : <List search={search} />}
+        {board ? (
+          <Board search={search} busy={busy} onMove={request} />
+        ) : (
+          <List search={search} onAdd={() => setAdding(true)} />
+        )}
       </Section>
 
       {adding && <LeadDrawer lead={null} onClose={() => setAdding(false)} />}
@@ -434,7 +438,7 @@ function Board({
   );
 }
 
-function List({ search }: { search: LeadsSearch }) {
+function List({ search, onAdd }: { search: LeadsSearch; onAdd: () => void }) {
   const navigate = useNavigate({ from: Route.fullPath });
   const departments = useDepartments('Clinical');
   const leads = useQuery(
@@ -511,6 +515,11 @@ function List({ search }: { search: LeadsSearch }) {
       ]}
       emptyTitle="No leads match"
       emptyDescription="Clear a filter, or add the enquiry as a new lead."
+      emptyAction={
+        <Button appearance="primary" icon={<PersonAddRegular />} onClick={onAdd}>
+          New lead
+        </Button>
+      }
       page={search.page ?? 1}
       pageSize={25}
       totalCount={leads.data?.totalCount}

@@ -269,6 +269,13 @@ function WaitlistPage() {
               : 'No one is waiting'
           }
           emptyDescription="When a doctor's days are full, add the patient here and book them when a slot opens."
+          emptyAction={
+            canBook ? (
+              <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => setAdding(true)}>
+                Add to waitlist
+              </Button>
+            ) : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={entries.data?.totalCount}

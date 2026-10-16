@@ -120,6 +120,13 @@ function StoresPage() {
           }
           emptyTitle="No stores yet"
           emptyDescription="Add the central store and the pharmacies first; ward sub-stores can follow."
+          emptyAction={
+            canManage ? (
+              <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
+                Add store
+              </Button>
+            ) : undefined
+          }
         />
       </Section>
       {editing && <StoreDrawer store={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

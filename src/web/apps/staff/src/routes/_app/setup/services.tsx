@@ -152,6 +152,15 @@ function ServicesPage() {
           emptyDescription={
             filtered ? 'Clear the search or choose another category.' : 'Add the services the hospital charges for.'
           }
+          emptyAction={
+            <Button
+              appearance="primary"
+              icon={<AddRegular />}
+              onClick={() => void navigate({ search: (prev) => ({ ...prev, edit: 'new' }) })}
+            >
+              Add service
+            </Button>
+          }
           page={search.page ?? 1}
           pageSize={MASTERS_PAGE_SIZE}
           totalCount={services.data?.totalCount}

@@ -104,6 +104,11 @@ function SpecialtiesPage() {
           ]}
           emptyTitle={term ? 'No speciality matches' : 'No specialities yet'}
           emptyDescription={term ? 'Clear the search to see them all.' : 'Add the specialities your doctors practise.'}
+          emptyAction={
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => set({ edit: 'new' })}>
+              Add speciality
+            </Button>
+          }
         />
       </Section>
       {search.edit && (
