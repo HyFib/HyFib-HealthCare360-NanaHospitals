@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
@@ -81,5 +82,50 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
             Facilities = facilities.ToDictionary(f => f.Id, f => new FacilityInfo(f.Name, f.HfrId)),
             AdmissionVisits = admissions.ToDictionary(a => a.Id, a => a.VisitId),
         };
+    }
+
+    /// <summary>The practitioners' master details, for the Practitioner resources of ABDM documents.</summary>
+    public async Task<List<PractitionerRow>> PractitionersAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        Guid[] keys = [.. ids];
+        return keys.Length == 0
+            ? []
+            : await db.Set<Practitioner>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                .Where(p => keys.Contains(p.Id))
+                .Select(p => new PractitionerRow
+                {
+                    Id = p.Id,
+                    Code = p.Code,
+                    Title = p.Title,
+                    FirstName = p.FirstName,
+                    LastName = p.LastName,
+                    DisplayName = p.DisplayName,
+                    Gender = p.Gender,
+                    Qualification = p.Qualification,
+                    RegistrationCouncil = p.RegistrationCouncil,
+                    RegistrationNumber = p.RegistrationNumber,
+                })
+                .ToListAsync(ct);
+    }
+
+    /// <summary>The facilities' master details, for the Organization resources of ABDM documents.</summary>
+    public async Task<List<FacilityRow>> FacilitiesAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        Guid[] keys = [.. ids];
+        return keys.Length == 0
+            ? []
+            : await db.Set<Facility>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                .Where(f => keys.Contains(f.Id))
+                .Select(f => new FacilityRow
+                {
+                    Id = f.Id,
+                    Code = f.Code,
+                    Name = f.Name,
+                    HfrId = f.HfrId,
+                    Phone = f.Phone,
+                    Email = f.Email,
+                    Address = f.Address,
+                })
+                .ToListAsync(ct);
     }
 }

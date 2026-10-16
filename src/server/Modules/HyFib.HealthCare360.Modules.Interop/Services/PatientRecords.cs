@@ -26,6 +26,13 @@ internal sealed class PatientRecords(
         return patient is null ? null : (await MapAsync([patient], ct))[0];
     }
 
+    /// <summary>The patient's row as the mappers take it (ABHA number decrypted), for ABDM documents.</summary>
+    public async Task<PatientRow?> FindRowAsync(Guid id, CancellationToken ct)
+    {
+        var patient = await db.Set<Patient>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
+        return patient is null ? null : ToRow(patient);
+    }
+
     /// <summary>
     /// A page of consenting patients matching the criteria. Restricted (VIP) patients are included only for callers with
     /// <c>patients.restricted.read</c>; a break-the-glass grant opens one record by id, not a search.

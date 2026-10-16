@@ -1,0 +1,1097 @@
+{
+  "resourceType": "Bundle",
+  "id": "5eac6d17-2d24-8516-b804-775bd9ef437b",
+  "meta": {
+    "versionId": "1789016400000",
+    "lastUpdated": "2026-09-10T10:30:00+05:30",
+    "profile": [
+      "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
+    ],
+    "security": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality",
+        "code": "V",
+        "display": "very restricted"
+      }
+    ]
+  },
+  "identifier": {
+    "system": "urn:ietf:rfc:3986",
+    "value": "urn:uuid:5eac6d17-2d24-8516-b804-775bd9ef437b"
+  },
+  "type": "document",
+  "timestamp": "2026-09-25T10:30:00+05:30",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:1d78966a-4639-8c28-aa2c-61c6019f0e70",
+      "resource": {
+        "resourceType": "Composition",
+        "id": "1d78966a-4639-8c28-aa2c-61c6019f0e70",
+        "meta": {
+          "versionId": "1789016400000",
+          "lastUpdated": "2026-09-10T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DischargeSummaryRecord"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Discharge summary</p><p>Date: 2026-09-10T08:30:00+05:30</p><p>Chief complaints and diagnoses</p><p>Allergies</p><p>Investigations</p><p>Medications</p><p>Procedures</p><p>Care plan</p><p>Discharge summary</p><p>Hospital course</p></div>"
+        },
+        "identifier": {
+          "system": "urn:ietf:rfc:3986",
+          "value": "urn:uuid:1d78966a-4639-8c28-aa2c-61c6019f0e70"
+        },
+        "status": "final",
+        "type": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "373942005",
+              "display": "Discharge summary"
+            }
+          ],
+          "text": "Discharge summary"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+          "type": "Patient",
+          "display": "Meera Anil Kulkarni"
+        },
+        "encounter": {
+          "reference": "urn:uuid:3ef3437d-ea0d-8b2a-a7be-79d97989e4a1",
+          "type": "Encounter",
+          "display": "In-patient admission 2026-09-05T10:30:00+05:30"
+        },
+        "date": "2026-09-10T08:30:00+05:30",
+        "author": [
+          {
+            "reference": "urn:uuid:a67f7352-7304-8581-aef6-41a64671558c",
+            "type": "Practitioner",
+            "display": "Dr. Vikram Shah"
+          }
+        ],
+        "title": "Discharge summary",
+        "attester": [
+          {
+            "mode": "legal",
+            "time": "2026-09-10T08:30:00+05:30",
+            "party": {
+              "reference": "urn:uuid:a67f7352-7304-8581-aef6-41a64671558c",
+              "type": "Practitioner",
+              "display": "Dr. Vikram Shah"
+            }
+          }
+        ],
+        "custodian": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "display": "Nana Hospitals, Pune"
+        },
+        "section": [
+          {
+            "title": "Chief complaints and diagnoses",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "422843007",
+                  "display": "Chief complaint section"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Presenting complaints: Central chest pain for two hours, sweating.</p><p>Diagnoses: Non-ST elevation myocardial infarction</p><p>ICD-10 codes: I21.4</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:96fda161-c1ab-8260-8fe6-b0a7ccfe943d",
+                "type": "Condition",
+                "display": "Non-ST elevation (NSTEMI) myocardial infarction"
+              }
+            ]
+          },
+          {
+            "title": "Allergies",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "722446000",
+                  "display": "Allergy record"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:405fb968-3865-88e8-a741-6860778ff04f",
+                "type": "AllergyIntolerance",
+                "display": "Allergy Penicillin"
+              }
+            ]
+          },
+          {
+            "title": "Investigations",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "721981007",
+                  "display": "Diagnostic studies report"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Investigations: Troponin I raised; ECG with ST depression in V4 to V6.</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:6af24a7d-68ce-82d5-9732-bbd6bf708661",
+                "type": "DiagnosticReport",
+                "display": "Troponin I (Flagged by the laboratory: Troponin I (Critical high).)"
+              }
+            ]
+          },
+          {
+            "title": "Medications",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "1003606003",
+                  "display": "Medication history section"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Medications on discharge: Aspirin 75 mg once daily; Atorvastatin 40 mg at night.</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:08095f48-073c-81ee-8b4b-6c929888f2c4",
+                "type": "MedicationRequest",
+                "display": "Atorvastatin 40 mg Tablet: 1 tab, at bedtime, for 30 days"
+              }
+            ]
+          },
+          {
+            "title": "Procedures",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "1003640003",
+                  "display": "History of past procedure section"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Procedures: None</p></div>"
+            }
+          },
+          {
+            "title": "Care plan",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "734163000",
+                  "display": "Care plan"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Advice: Low-salt, low-fat diet. No heavy exertion for four weeks.</p><p>Follow-up on 2026-10-02</p><p>Follow-up instructions: Cardiology OPD with the angiography report.</p></div>"
+            }
+          },
+          {
+            "title": "Discharge summary",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "373942005",
+                  "display": "Discharge summary"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Discharge summary</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:370ccd6e-2798-807f-ade5-6a7c7a4c798c",
+                "type": "DocumentReference",
+                "display": "Discharge summary"
+              }
+            ]
+          },
+          {
+            "title": "Hospital course",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8648-8",
+                  "display": "Hospital course Narrative"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Course in hospital: Managed medically in the CCU. Pain settled; no arrhythmia. Coronary angiography advised as an out-patient.</p><p>Condition at discharge: Stable, pain free.</p></div>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "4e080a21-3966-8efc-9236-64b034d9a58a",
+        "meta": {
+          "lastUpdated": "2026-09-22T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Meera Anil Kulkarni UHID NH-UH-2600123</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR",
+                  "display": "Medical record number"
+                }
+              ]
+            },
+            "system": "urn:hc360:uhid",
+            "value": "NH-UH-2600123"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-identifier-type-code",
+                  "code": "ABHA",
+                  "display": "Ayushman Bharat Health Account (ABHA) ID"
+                }
+              ],
+              "text": "ABHA number"
+            },
+            "system": "https://healthid.ndhm.gov.in",
+            "value": "91-1234-5678-9010"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "text": "Meera Anil Kulkarni",
+            "family": "Kulkarni",
+            "given": [
+              "Meera",
+              "Anil"
+            ],
+            "prefix": [
+              "Mrs"
+            ]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+919876543210",
+            "use": "mobile",
+            "rank": 1
+          },
+          {
+            "system": "email",
+            "value": "meera@example.org",
+            "use": "home",
+            "rank": 2
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1984-04-12",
+        "address": [
+          {
+            "use": "home",
+            "type": "physical",
+            "text": "12 MG Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "12 MG Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ],
+        "maritalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+              "code": "M",
+              "display": "Married"
+            }
+          ]
+        },
+        "managingOrganization": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3ef3437d-ea0d-8b2a-a7be-79d97989e4a1",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "3ef3437d-ea0d-8b2a-a7be-79d97989e4a1",
+        "meta": {
+          "lastUpdated": "2026-09-10T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>In-patient admission 2026-09-05T10:30:00+05:30</p></div>"
+        },
+        "identifier": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN",
+                  "display": "Visit number"
+                }
+              ]
+            },
+            "system": "urn:hc360:visit-number",
+            "value": "NHIP2600112"
+          },
+          {
+            "system": "urn:hc360:admission-number",
+            "value": "NHAD2600112"
+          }
+        ],
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "type": [
+          {
+            "text": "In-patient admission"
+          },
+          {
+            "text": "Emergency admission"
+          }
+        ],
+        "serviceType": {
+          "text": "General Medicine"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "ATND",
+                    "display": "attender"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "urn:uuid:a67f7352-7304-8581-aef6-41a64671558c",
+              "type": "Practitioner",
+              "display": "Dr. Vikram Shah"
+            }
+          },
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "ADM",
+                    "display": "admitter"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "urn:uuid:a67f7352-7304-8581-aef6-41a64671558c",
+              "type": "Practitioner",
+              "display": "Dr. Vikram Shah"
+            }
+          }
+        ],
+        "period": {
+          "start": "2026-09-05T10:30:00+05:30",
+          "end": "2026-09-10T10:30:00+05:30"
+        },
+        "reasonCode": [
+          {
+            "text": "Chest pain"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/admit-source",
+                "code": "emd",
+                "display": "From accident/emergency department"
+              }
+            ]
+          },
+          "dischargeDisposition": {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/discharge-disposition",
+                "code": "home",
+                "display": "Home"
+              }
+            ]
+          }
+        },
+        "serviceProvider": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:a67f7352-7304-8581-aef6-41a64671558c",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "a67f7352-7304-8581-aef6-41a64671558c",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dr. Vikram Shah</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "urn:hc360:practitioner",
+            "value": "D0012"
+          }
+        ],
+        "name": [
+          {
+            "text": "Dr. Vikram Shah",
+            "family": "Shah",
+            "given": [
+              "Vikram"
+            ],
+            "prefix": [
+              "Dr."
+            ]
+          }
+        ],
+        "gender": "male",
+        "qualification": [
+          {
+            "code": {
+              "text": "MBBS, MD, DM (Cardiology)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "8878f630-7199-8fcb-8182-a92e8749eb27",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Nana Hospitals, Pune</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "XX",
+                  "display": "Organization identifier"
+                }
+              ]
+            },
+            "system": "urn:hc360:facility",
+            "value": "NHP"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "prov",
+                "display": "Healthcare Provider"
+              }
+            ]
+          }
+        ],
+        "name": "Nana Hospitals, Pune",
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+912026001234",
+            "use": "work"
+          },
+          {
+            "system": "email",
+            "value": "records@nanahospitals.example",
+            "use": "work"
+          }
+        ],
+        "address": [
+          {
+            "use": "work",
+            "type": "physical",
+            "text": "1 Hospital Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "1 Hospital Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:96fda161-c1ab-8260-8fe6-b0a7ccfe943d",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "96fda161-c1ab-8260-8fe6-b0a7ccfe943d",
+        "meta": {
+          "lastUpdated": "2026-09-05T13:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Condition"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Non-ST elevation (NSTEMI) myocardial infarction</p></div>"
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed",
+              "display": "Confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "problem-list-item",
+                "display": "Problem List Item"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://hl7.org/fhir/sid/icd-10",
+              "code": "I21.4",
+              "display": "Non-ST elevation (NSTEMI) myocardial infarction"
+            }
+          ],
+          "text": "Non-ST elevation (NSTEMI) myocardial infarction"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:3ef3437d-ea0d-8b2a-a7be-79d97989e4a1"
+        },
+        "recordedDate": "2026-09-05T13:30:00+05:30"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:405fb968-3865-88e8-a741-6860778ff04f",
+      "resource": {
+        "resourceType": "AllergyIntolerance",
+        "id": "405fb968-3865-88e8-a741-6860778ff04f",
+        "meta": {
+          "lastUpdated": "2025-09-25T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/AllergyIntolerance"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>"
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "category": [
+          "medication"
+        ],
+        "criticality": "high",
+        "code": {
+          "text": "Penicillin"
+        },
+        "patient": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "recordedDate": "2025-09-25T10:30:00+05:30",
+        "reaction": [
+          {
+            "manifestation": [
+              {
+                "text": "Hives"
+              }
+            ],
+            "severity": "severe"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:6af24a7d-68ce-82d5-9732-bbd6bf708661",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "id": "6af24a7d-68ce-82d5-9732-bbd6bf708661",
+        "meta": {
+          "lastUpdated": "2026-09-05T12:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportLab"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Troponin I (Flagged by the laboratory: Troponin I (Critical high).)</p></div>"
+        },
+        "identifier": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "ACSN",
+                  "display": "Accession ID"
+                }
+              ]
+            },
+            "system": "urn:hc360:accession-number",
+            "value": "NHLB2600101"
+          }
+        ],
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "394595002",
+                "display": "Pathology"
+              }
+            ],
+            "text": "Laboratory"
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "11502-2",
+              "display": "Laboratory report"
+            }
+          ],
+          "text": "Troponin I"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:3ef3437d-ea0d-8b2a-a7be-79d97989e4a1"
+        },
+        "effectiveDateTime": "2026-09-05T10:50:00+05:30",
+        "issued": "2026-09-05T12:30:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "resultsInterpreter": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "result": [
+          {
+            "reference": "urn:uuid:758c694f-fdb9-8c88-a4b8-527b39c29816"
+          }
+        ],
+        "conclusion": "Flagged by the laboratory: Troponin I (Critical high)."
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:08095f48-073c-81ee-8b4b-6c929888f2c4",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "08095f48-073c-81ee-8b4b-6c929888f2c4",
+        "meta": {
+          "lastUpdated": "2026-09-10T07:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/MedicationRequest"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Atorvastatin 40 mg Tablet: 1 tab, at bedtime, for 30 days</p></div>"
+        },
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/medicationrequest-category",
+                "code": "inpatient",
+                "display": "Inpatient"
+              }
+            ]
+          }
+        ],
+        "medicationCodeableConcept": {
+          "text": "Atorvastatin 40 mg Tablet"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:3ef3437d-ea0d-8b2a-a7be-79d97989e4a1"
+        },
+        "authoredOn": "2026-09-10T07:30:00+05:30",
+        "requester": {
+          "reference": "urn:uuid:a67f7352-7304-8581-aef6-41a64671558c",
+          "type": "Practitioner",
+          "display": "Dr. Vikram Shah"
+        },
+        "groupIdentifier": {
+          "system": "urn:hc360:prescription-number",
+          "value": "NHRX2600120"
+        },
+        "dosageInstruction": [
+          {
+            "text": "1 tab, at bedtime, for 30 days",
+            "timing": {
+              "repeat": {
+                "boundsDuration": {
+                  "value": 30,
+                  "unit": "days",
+                  "system": "http://unitsofmeasure.org",
+                  "code": "d"
+                },
+                "frequency": 1,
+                "period": 1,
+                "periodUnit": "d",
+                "when": [
+                  "HS"
+                ]
+              },
+              "code": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation",
+                    "code": "BED",
+                    "display": "at bedtime"
+                  }
+                ]
+              }
+            },
+            "route": {
+              "text": "Oral"
+            }
+          }
+        ],
+        "dispenseRequest": {
+          "numberOfRepeatsAllowed": 0,
+          "quantity": {
+            "value": 30
+          },
+          "expectedSupplyDuration": {
+            "value": 30,
+            "unit": "days",
+            "system": "http://unitsofmeasure.org",
+            "code": "d"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:370ccd6e-2798-807f-ade5-6a7c7a4c798c",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "370ccd6e-2798-807f-ade5-6a7c7a4c798c",
+        "meta": {
+          "lastUpdated": "2026-09-10T08:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentReference"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Discharge summary</p></div>"
+        },
+        "status": "current",
+        "docStatus": "final",
+        "type": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "18842-5",
+              "display": "Discharge summary"
+            }
+          ],
+          "text": "Discharge summary"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "date": "2026-09-10T08:30:00+05:30",
+        "author": [
+          {
+            "type": "Practitioner",
+            "display": "Dr. Vikram Shah"
+          }
+        ],
+        "authenticator": {
+          "type": "Practitioner",
+          "display": "Dr. Vikram Shah"
+        },
+        "description": "Discharge summary",
+        "content": [
+          {
+            "attachment": {
+              "contentType": "text/plain; charset=utf-8",
+              "language": "en",
+              "data": "RGlzY2hhcmdlIHN1bW1hcnkKQWRtaXR0ZWQ6IDIwMjYtMDktMDVUMTA6MzA6MDArMDU6MzAKRGlzY2hhcmdlZDogMjAyNi0wOS0xMFQxMDozMDowMCswNTozMApEaWFnbm9zZXM6IE5vbi1TVCBlbGV2YXRpb24gbXlvY2FyZGlhbCBpbmZhcmN0aW9uCklDRC0xMCBjb2RlczogSTIxLjQKUHJlc2VudGluZyBjb21wbGFpbnRzOiBDZW50cmFsIGNoZXN0IHBhaW4gZm9yIHR3byBob3Vycywgc3dlYXRpbmcuCkNvdXJzZSBpbiBob3NwaXRhbDogTWFuYWdlZCBtZWRpY2FsbHkgaW4gdGhlIENDVS4gUGFpbiBzZXR0bGVkOyBubyBhcnJoeXRobWlhLiBDb3JvbmFyeSBhbmdpb2dyYXBoeSBhZHZpc2VkIGFzIGFuIG91dC1wYXRpZW50LgpQcm9jZWR1cmVzOiBOb25lCkludmVzdGlnYXRpb25zOiBUcm9wb25pbiBJIHJhaXNlZDsgRUNHIHdpdGggU1QgZGVwcmVzc2lvbiBpbiBWNCB0byBWNi4KQ29uZGl0aW9uIGF0IGRpc2NoYXJnZTogU3RhYmxlLCBwYWluIGZyZWUuCk1lZGljYXRpb25zIG9uIGRpc2NoYXJnZTogQXNwaXJpbiA3NSBtZyBvbmNlIGRhaWx5OyBBdG9ydmFzdGF0aW4gNDAgbWcgYXQgbmlnaHQuCkFkdmljZTogTG93LXNhbHQsIGxvdy1mYXQgZGlldC4gTm8gaGVhdnkgZXhlcnRpb24gZm9yIGZvdXIgd2Vla3MuCkZvbGxvdy11cCBkYXRlOiAyMDI2LTEwLTAyCkZvbGxvdy11cCBpbnN0cnVjdGlvbnM6IENhcmRpb2xvZ3kgT1BEIHdpdGggdGhlIGFuZ2lvZ3JhcGh5IHJlcG9ydC4=",
+              "size": 728,
+              "title": "Discharge summary",
+              "creation": "2026-09-10T08:30:00+05:30"
+            }
+          }
+        ],
+        "context": {
+          "encounter": [
+            {
+              "reference": "urn:uuid:3ef3437d-ea0d-8b2a-a7be-79d97989e4a1"
+            }
+          ],
+          "period": {
+            "start": "2026-09-05T10:30:00+05:30",
+            "end": "2026-09-10T10:30:00+05:30"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:758c694f-fdb9-8c88-a4b8-527b39c29816",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "758c694f-fdb9-8c88-a4b8-527b39c29816",
+        "meta": {
+          "lastUpdated": "2026-09-05T11:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Troponin I: 2.4 ng/mL</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory",
+                "display": "Laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "10839-9",
+              "display": "Troponin I"
+            }
+          ],
+          "text": "Troponin I"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:3ef3437d-ea0d-8b2a-a7be-79d97989e4a1"
+        },
+        "effectiveDateTime": "2026-09-05T10:50:00+05:30",
+        "issued": "2026-09-05T12:30:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 2.4,
+          "unit": "ng/mL",
+          "system": "http://unitsofmeasure.org",
+          "code": "ng/mL"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "HH",
+                "display": "Critical high"
+              }
+            ]
+          }
+        ],
+        "referenceRange": [
+          {
+            "high": {
+              "value": 0.04,
+              "unit": "ng/mL",
+              "system": "http://unitsofmeasure.org",
+              "code": "ng/mL"
+            },
+            "text": "< 0.04"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Platform.Security;
@@ -22,15 +23,31 @@ public sealed class InteropModuleTests
     public void Module_uses_its_schema_name_as_key() => new InteropModule().Name.ShouldBe("interop");
 
     [Fact]
+    public void Declares_fhir_read_and_abdm_export()
+    {
+        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport]);
+    }
+
+    [Fact]
     public void Declares_fhir_read_for_hospital_administrators_only()
     {
-        var permission = new InteropModule().Permissions.ShouldHaveSingleItem();
+        var permission = new InteropModule().Permissions.Single(p => p.Name == InteropPermissions.FhirRead);
 
         permission.Name.ShouldBe(InteropPermissions.FhirRead);
         permission.Name.ShouldBe("fhir.read");
         permission.DefaultRoles.ShouldBe([SystemRoles.HospitalAdmin]);
         permission.Group.ShouldNotBeNullOrWhiteSpace();
         permission.Description.ShouldContain("consent");
+    }
+
+    [Fact]
+    public void Abdm_export_is_for_administrators_and_the_medical_records_department()
+    {
+        var permission = new InteropModule().Permissions.Single(p => p.Name == InteropPermissions.AbdmExport);
+
+        permission.Name.ShouldBe("abdm.export");
+        permission.DefaultRoles.ShouldBe([SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]);
+        permission.Description.ShouldContain("audited");
     }
 
     [Fact]
@@ -53,6 +70,11 @@ public sealed class InteropModuleTests
     [InlineData(typeof(PatientSharingService))]
     [InlineData(typeof(FhirAuditTrail))]
     [InlineData(typeof(ReferenceDirectoryLoader))]
+    [InlineData(typeof(AbdmRecordLoader))]
+    [InlineData(typeof(AbdmBundleService))]
+    [InlineData(typeof(AbdmGatewayConfiguration))]
+    [InlineData(typeof(IAbdmGatewayClient))]
+    [InlineData(typeof(IFideliusCipher))]
     public void Registers_its_services_once(Type service) => Services().Count(d => d.ServiceType == service).ShouldBe(1);
 
     [Fact]
@@ -72,5 +94,14 @@ public sealed class InteropModuleTests
         var handler = provider.GetRequiredService<IAuthorizationMiddlewareResultHandler>().ShouldBeOfType<FhirAuthorizationResultHandler>();
 
         handler.Inner.ShouldBeOfType<AuthorizationMiddlewareResultHandler>();
+    }
+
+    [Fact]
+    public void The_abdm_gateway_client_sends_nothing()
+    {
+        var services = Services();
+
+        services.Single(d => d.ServiceType == typeof(IAbdmGatewayClient)).ImplementationType.ShouldBe(typeof(DisabledAbdmGatewayClient));
+        services.Single(d => d.ServiceType == typeof(IFideliusCipher)).ImplementationType.ShouldBe(typeof(UnavailableFideliusCipher));
     }
 }

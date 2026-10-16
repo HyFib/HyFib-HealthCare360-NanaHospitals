@@ -176,10 +176,18 @@ internal static class MedicationRequestMapper
 
         return new R4.Timing
         {
-            Code = code is null ? null : FhirElements.Concept(FhirSystems.TimingAbbreviation, code, code),
+            Code = code is null ? null : FhirElements.Concept(FhirSystems.TimingAbbreviation, code, TimingDisplay(code)),
             Repeat = hasRepeat ? repeat : null,
         };
     }
+
+    /// <summary>The display HL7 terminology (THO) gives each v3-GTSAbbreviation code used here.</summary>
+    public static string TimingDisplay(string code) => code switch
+    {
+        "BED" => "at bedtime",
+        "WK" => "weekly",
+        _ => code,
+    };
 
     private static R4.Duration Days(int days) =>
         new() { Value = days, Unit = days == 1 ? "day" : "days", System = FhirSystems.Ucum, Code = "d" };

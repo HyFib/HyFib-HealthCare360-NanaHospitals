@@ -25,9 +25,26 @@ internal sealed class ReferenceDirectory
     /// <summary>Admission id → the in-patient visit id (the Encounter that represents the stay).</summary>
     public IReadOnlyDictionary<Guid, Guid> AdmissionVisits { get; init; } = new Dictionary<Guid, Guid>();
 
+    /// <summary>
+    /// Practitioner and Organization references also carry a literal reference (<c>Practitioner/{id}</c>,
+    /// <c>Organization/{id}</c>): set for ABDM documents, which include those resources and resolve every reference.
+    /// The FHIR read API, which does not serve them, leaves it off.
+    /// </summary>
+    public bool Linked { get; init; }
+
+    /// <summary>The same names, with literal Practitioner and Organization references (<see cref="Linked"/>).</summary>
+    public ReferenceDirectory WithLinks() => new()
+    {
+        Practitioners = Practitioners,
+        Departments = Departments,
+        Facilities = Facilities,
+        AdmissionVisits = AdmissionVisits,
+        Linked = true,
+    };
+
     public R4.ResourceReference? Practitioner(Guid? id) =>
         id is { } key && Practitioners.TryGetValue(key, out var name)
-            ? new R4.ResourceReference { Type = "Practitioner", Display = name }
+            ? new R4.ResourceReference { Reference = Linked ? $"Practitioner/{FhirIds.Of(key)}" : null, Type = "Practitioner", Display = name }
             : null;
 
     public string? Department(Guid? id) => id is { } key && Departments.TryGetValue(key, out var name) ? name : null;
@@ -41,6 +58,7 @@ internal sealed class ReferenceDirectory
 
         return new R4.ResourceReference
         {
+            Reference = Linked ? $"Organization/{FhirIds.Of(key)}" : null,
             Type = "Organization",
             Display = facility.Name,
             Identifier = string.IsNullOrWhiteSpace(facility.HfrId) ? null : new R4.Identifier(FhirSystems.Hfr, facility.HfrId.Trim()),

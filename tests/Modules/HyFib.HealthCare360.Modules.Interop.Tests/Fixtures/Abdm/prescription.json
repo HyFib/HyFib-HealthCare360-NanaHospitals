@@ -1,0 +1,669 @@
+{
+  "resourceType": "Bundle",
+  "id": "6e7ed960-0b6c-88d5-a964-86ca66c24199",
+  "meta": {
+    "versionId": "1790306700000",
+    "lastUpdated": "2026-09-25T08:55:00+05:30",
+    "profile": [
+      "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
+    ],
+    "security": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality",
+        "code": "V",
+        "display": "very restricted"
+      }
+    ]
+  },
+  "identifier": {
+    "system": "urn:ietf:rfc:3986",
+    "value": "urn:uuid:6e7ed960-0b6c-88d5-a964-86ca66c24199"
+  },
+  "type": "document",
+  "timestamp": "2026-09-25T10:30:00+05:30",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:3344c50c-fbfe-86c4-986b-3fd4346bc7e4",
+      "resource": {
+        "resourceType": "Composition",
+        "id": "3344c50c-fbfe-86c4-986b-3fd4346bc7e4",
+        "meta": {
+          "versionId": "1790306700000",
+          "lastUpdated": "2026-09-25T08:55:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/PrescriptionRecord"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Prescription record</p><p>Date: 2026-09-25T08:52:00+05:30</p><p>Prescription record</p></div>"
+        },
+        "identifier": {
+          "system": "urn:ietf:rfc:3986",
+          "value": "urn:uuid:3344c50c-fbfe-86c4-986b-3fd4346bc7e4"
+        },
+        "status": "final",
+        "type": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "440545006",
+              "display": "Prescription record"
+            }
+          ],
+          "text": "Prescription record"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+          "type": "Patient",
+          "display": "Meera Anil Kulkarni"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4",
+          "type": "Encounter",
+          "display": "Out-patient consultation 2026-09-25T08:30:00+05:30"
+        },
+        "date": "2026-09-25T08:52:00+05:30",
+        "author": [
+          {
+            "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+            "type": "Practitioner",
+            "display": "Dr. Asha Rao"
+          }
+        ],
+        "title": "Prescription record",
+        "attester": [
+          {
+            "mode": "legal",
+            "time": "2026-09-25T08:52:00+05:30",
+            "party": {
+              "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+              "type": "Practitioner",
+              "display": "Dr. Asha Rao"
+            }
+          }
+        ],
+        "custodian": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "display": "Nana Hospitals, Pune"
+        },
+        "section": [
+          {
+            "title": "Prescription record",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "440545006",
+                  "display": "Prescription record"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dolo 650 Tablet (Paracetamol): 1 tab, three times a day, for 3 days. After food</p><p>Cetirizine 10 mg Tablet: 1 tab, at bedtime, for 5 days</p><p>Advice: Drink plenty of fluids and rest.</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:a9cc17e4-0398-87fa-8267-ada43823ae8c",
+                "type": "MedicationRequest",
+                "display": "Dolo 650 Tablet (Paracetamol): 1 tab, three times a day, for 3 days. After food"
+              },
+              {
+                "reference": "urn:uuid:9bfb54f9-cc5a-8ea6-a641-31d8c9487b6f",
+                "type": "MedicationRequest",
+                "display": "Cetirizine 10 mg Tablet: 1 tab, at bedtime, for 5 days"
+              },
+              {
+                "reference": "urn:uuid:98f10de6-8b8a-8944-8710-5cd75bbc775f",
+                "type": "Binary"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "4e080a21-3966-8efc-9236-64b034d9a58a",
+        "meta": {
+          "lastUpdated": "2026-09-22T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Meera Anil Kulkarni UHID NH-UH-2600123</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR",
+                  "display": "Medical record number"
+                }
+              ]
+            },
+            "system": "urn:hc360:uhid",
+            "value": "NH-UH-2600123"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-identifier-type-code",
+                  "code": "ABHA",
+                  "display": "Ayushman Bharat Health Account (ABHA) ID"
+                }
+              ],
+              "text": "ABHA number"
+            },
+            "system": "https://healthid.ndhm.gov.in",
+            "value": "91-1234-5678-9010"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "text": "Meera Anil Kulkarni",
+            "family": "Kulkarni",
+            "given": [
+              "Meera",
+              "Anil"
+            ],
+            "prefix": [
+              "Mrs"
+            ]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+919876543210",
+            "use": "mobile",
+            "rank": 1
+          },
+          {
+            "system": "email",
+            "value": "meera@example.org",
+            "use": "home",
+            "rank": 2
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1984-04-12",
+        "address": [
+          {
+            "use": "home",
+            "type": "physical",
+            "text": "12 MG Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "12 MG Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ],
+        "maritalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+              "code": "M",
+              "display": "Married"
+            }
+          ]
+        },
+        "managingOrganization": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "dbf41942-bf97-82f5-9e81-d98a1c6bfbc4",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:55:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Out-patient consultation 2026-09-25T08:30:00+05:30</p></div>"
+        },
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "type": [
+          {
+            "text": "Out-patient consultation"
+          }
+        ],
+        "serviceType": {
+          "text": "General Medicine"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+              "type": "Practitioner",
+              "display": "Dr. Asha Rao"
+            }
+          }
+        ],
+        "period": {
+          "start": "2026-09-25T08:30:00+05:30",
+          "end": "2026-09-25T08:55:00+05:30"
+        },
+        "reasonCode": [
+          {
+            "text": "Fever for three days"
+          }
+        ],
+        "serviceProvider": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        },
+        "partOf": {
+          "display": "Encounter"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "c5eb9e84-7367-8996-a1d6-35025a050d1b",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dr. Asha Rao</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MD",
+                  "display": "Medical License number"
+                }
+              ]
+            },
+            "system": "urn:hc360:medical-council-registration",
+            "value": "MMC-2009-041234",
+            "assigner": {
+              "display": "Maharashtra Medical Council"
+            }
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "urn:hc360:practitioner",
+            "value": "D0007"
+          }
+        ],
+        "name": [
+          {
+            "text": "Dr. Asha Rao",
+            "family": "Rao",
+            "given": [
+              "Asha"
+            ],
+            "prefix": [
+              "Dr."
+            ]
+          }
+        ],
+        "gender": "female",
+        "qualification": [
+          {
+            "code": {
+              "text": "MBBS, MD (General Medicine)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "8878f630-7199-8fcb-8182-a92e8749eb27",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Nana Hospitals, Pune</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "XX",
+                  "display": "Organization identifier"
+                }
+              ]
+            },
+            "system": "urn:hc360:facility",
+            "value": "NHP"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "prov",
+                "display": "Healthcare Provider"
+              }
+            ]
+          }
+        ],
+        "name": "Nana Hospitals, Pune",
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+912026001234",
+            "use": "work"
+          },
+          {
+            "system": "email",
+            "value": "records@nanahospitals.example",
+            "use": "work"
+          }
+        ],
+        "address": [
+          {
+            "use": "work",
+            "type": "physical",
+            "text": "1 Hospital Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "1 Hospital Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:a9cc17e4-0398-87fa-8267-ada43823ae8c",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "a9cc17e4-0398-87fa-8267-ada43823ae8c",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:50:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/MedicationRequest"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dolo 650 Tablet (Paracetamol): 1 tab, three times a day, for 3 days. After food</p></div>"
+        },
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/medicationrequest-category",
+                "code": "outpatient",
+                "display": "Outpatient"
+              }
+            ]
+          }
+        ],
+        "medicationCodeableConcept": {
+          "text": "Dolo 650 Tablet (Paracetamol)"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "authoredOn": "2026-09-25T08:52:00+05:30",
+        "requester": {
+          "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+          "type": "Practitioner",
+          "display": "Dr. Asha Rao"
+        },
+        "groupIdentifier": {
+          "system": "urn:hc360:prescription-number",
+          "value": "NHRX2600873"
+        },
+        "dosageInstruction": [
+          {
+            "text": "1 tab, three times a day, for 3 days. After food",
+            "patientInstruction": "After food",
+            "timing": {
+              "repeat": {
+                "boundsDuration": {
+                  "value": 3,
+                  "unit": "days",
+                  "system": "http://unitsofmeasure.org",
+                  "code": "d"
+                },
+                "frequency": 3,
+                "period": 1,
+                "periodUnit": "d"
+              },
+              "code": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation",
+                    "code": "TID",
+                    "display": "TID"
+                  }
+                ]
+              }
+            },
+            "route": {
+              "text": "Oral"
+            }
+          }
+        ],
+        "dispenseRequest": {
+          "numberOfRepeatsAllowed": 0,
+          "quantity": {
+            "value": 9
+          },
+          "expectedSupplyDuration": {
+            "value": 3,
+            "unit": "days",
+            "system": "http://unitsofmeasure.org",
+            "code": "d"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:9bfb54f9-cc5a-8ea6-a641-31d8c9487b6f",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "9bfb54f9-cc5a-8ea6-a641-31d8c9487b6f",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:50:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/MedicationRequest"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Cetirizine 10 mg Tablet: 1 tab, at bedtime, for 5 days</p></div>"
+        },
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/medicationrequest-category",
+                "code": "outpatient",
+                "display": "Outpatient"
+              }
+            ]
+          }
+        ],
+        "medicationCodeableConcept": {
+          "text": "Cetirizine 10 mg Tablet"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "authoredOn": "2026-09-25T08:52:00+05:30",
+        "requester": {
+          "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+          "type": "Practitioner",
+          "display": "Dr. Asha Rao"
+        },
+        "groupIdentifier": {
+          "system": "urn:hc360:prescription-number",
+          "value": "NHRX2600873"
+        },
+        "dosageInstruction": [
+          {
+            "text": "1 tab, at bedtime, for 5 days",
+            "timing": {
+              "repeat": {
+                "boundsDuration": {
+                  "value": 5,
+                  "unit": "days",
+                  "system": "http://unitsofmeasure.org",
+                  "code": "d"
+                },
+                "frequency": 1,
+                "period": 1,
+                "periodUnit": "d",
+                "when": [
+                  "HS"
+                ]
+              },
+              "code": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation",
+                    "code": "BED",
+                    "display": "at bedtime"
+                  }
+                ]
+              }
+            },
+            "route": {
+              "text": "Oral"
+            }
+          }
+        ],
+        "dispenseRequest": {
+          "numberOfRepeatsAllowed": 0,
+          "quantity": {
+            "value": 5
+          },
+          "expectedSupplyDuration": {
+            "value": 5,
+            "unit": "days",
+            "system": "http://unitsofmeasure.org",
+            "code": "d"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:98f10de6-8b8a-8944-8710-5cd75bbc775f",
+      "resource": {
+        "resourceType": "Binary",
+        "id": "98f10de6-8b8a-8944-8710-5cd75bbc775f",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Binary"
+          ]
+        },
+        "contentType": "application/pdf",
+        "data": "JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNTk1IDg0Ml0+PmVuZG9iagp0cmFpbGVyPDwvUm9vdCAxIDAgUj4+CiUlRU9GCg=="
+      }
+    }
+  ]
+}

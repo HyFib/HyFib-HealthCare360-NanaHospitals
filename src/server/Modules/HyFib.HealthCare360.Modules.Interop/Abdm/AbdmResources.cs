@@ -1,0 +1,261 @@
+using HyFib.HealthCare360.Modules.Interop.Domain;
+using HyFib.HealthCare360.Modules.Interop.Mapping;
+using R4 = Hl7.Fhir.Model;
+
+namespace HyFib.HealthCare360.Modules.Interop.Abdm;
+
+/// <summary>A doctor named in a document, from the practitioner master.</summary>
+internal sealed record PractitionerRow
+{
+    public required Guid Id { get; init; }
+    public string Code { get; init; } = string.Empty;
+    public string? Title { get; init; }
+    public string FirstName { get; init; } = string.Empty;
+    public string? LastName { get; init; }
+    public string DisplayName { get; init; } = string.Empty;
+    public Gender Gender { get; init; }
+    public string? Qualification { get; init; }
+    public string? RegistrationCouncil { get; init; }
+    public string? RegistrationNumber { get; init; }
+}
+
+/// <summary>The facility (hospital or branch) that holds the record, from the facility master.</summary>
+internal sealed record FacilityRow
+{
+    public required Guid Id { get; init; }
+    public string Code { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string? HfrId { get; init; }
+    public string? Phone { get; init; }
+    public string? Email { get; init; }
+    public Address Address { get; init; } = new();
+}
+
+/// <summary>
+/// The Practitioner and Organization resources of a document. The IG requires a typed identifier on both: the doctor's
+/// medical-council registration (v2-0203 MD) and staff code, and the facility's Health Facility Registry id (HFR,
+/// v2-0203 PRN) and facility code. A doctor's own phone number and e-mail are not put in patients' documents.
+/// </summary>
+internal static class AbdmParticipants
+{
+    public static R4.Practitioner Practitioner(PractitionerRow p)
+    {
+        var practitioner = new R4.Practitioner
+        {
+            Id = FhirIds.Of(p.Id),
+            Meta = new R4.Meta { Profile = [AbdmProfiles.Practitioner] },
+            Gender = PatientMapper.Gender(p.Gender),
+        };
+
+        if (FhirElements.Clean(p.RegistrationNumber) is { } registration)
+        {
+            practitioner.Identifier.Add(new R4.Identifier(AbdmSystems.MedicalRegistration, registration)
+            {
+                Use = R4.Identifier.IdentifierUse.Official,
+                Type = FhirElements.Concept(FhirSystems.IdentifierType, "MD", "Medical License number"),
+                Assigner = FhirElements.Clean(p.RegistrationCouncil) is { } council ? new R4.ResourceReference { Display = council } : null,
+            });
+        }
+
+        practitioner.Identifier.Add(new R4.Identifier(AbdmSystems.Practitioner, FhirElements.Clean(p.Code) ?? FhirIds.Of(p.Id))
+        {
+            Use = R4.Identifier.IdentifierUse.Usual,
+            Type = FhirElements.Concept(FhirSystems.IdentifierType, "PRN", "Provider number"),
+        });
+
+        var name = new R4.HumanName
+        {
+            Text = FhirElements.Clean(p.DisplayName) ?? string.Join(' ', new[] { p.Title, p.FirstName, p.LastName }.Select(FhirElements.Clean).OfType<string>()),
+            Family = FhirElements.Clean(p.LastName),
+            Given = new[] { p.FirstName }.Select(FhirElements.Clean).OfType<string>().ToList(),
+        };
+        if (FhirElements.Clean(p.Title) is { } title)
+        {
+            name.Prefix = [title];
+        }
+
+        practitioner.Name.Add(name);
+        if (FhirElements.Clean(p.Qualification) is { } qualification)
+        {
+            practitioner.Qualification.Add(new R4.Practitioner.QualificationComponent { Code = FhirElements.Text(qualification) });
+        }
+
+        return practitioner;
+    }
+
+    public static R4.Organization Organization(FacilityRow f)
+    {
+        var organization = new R4.Organization
+        {
+            Id = FhirIds.Of(f.Id),
+            Meta = new R4.Meta { Profile = [AbdmProfiles.Organization] },
+            Name = f.Name,
+            Type = [FhirElements.Concept(AbdmSystems.OrganizationType, "prov", "Healthcare Provider")],
+        };
+
+        if (FhirElements.Clean(f.HfrId) is { } hfr)
+        {
+            organization.Identifier.Add(new R4.Identifier(FhirSystems.Hfr, hfr)
+            {
+                Use = R4.Identifier.IdentifierUse.Official,
+                Type = FhirElements.Concept(FhirSystems.IdentifierType, "PRN", "Provider number"),
+            });
+        }
+
+        organization.Identifier.Add(new R4.Identifier(AbdmSystems.Facility, FhirElements.Clean(f.Code) ?? FhirIds.Of(f.Id))
+        {
+            Use = R4.Identifier.IdentifierUse.Usual,
+            Type = FhirElements.Concept(FhirSystems.IdentifierType, "XX", "Organization identifier"),
+        });
+
+        if (FhirElements.Clean(f.Phone) is { } phone)
+        {
+            organization.Telecom.Add(new R4.ContactPoint(R4.ContactPoint.ContactPointSystem.Phone, R4.ContactPoint.ContactPointUse.Work, phone));
+        }
+
+        if (FhirElements.Clean(f.Email) is { } email)
+        {
+            organization.Telecom.Add(new R4.ContactPoint(R4.ContactPoint.ContactPointSystem.Email, R4.ContactPoint.ContactPointUse.Work, email));
+        }
+
+        if (PatientMapper.Address(f.Address) is { } address)
+        {
+            address.Use = R4.Address.AddressUse.Work;
+            organization.Address.Add(address);
+        }
+
+        return organization;
+    }
+}
+
+/// <summary>
+/// Brings the FHIR read API's resources in line with the IG's profiles: the profile in <c>meta.profile</c>, the ABHA
+/// number typed with the IG's ABHA identifier type, observation and report codings limited to the code systems the IG
+/// allows (LOINC and SNOMED CT, each with a display), a SNOMED CT service section and an interpreter on laboratory
+/// reports. Nothing clinical is added or changed.
+/// </summary>
+internal static class AbdmProfiler
+{
+    /// <summary>Vital signs the IG's ObservationVitalSigns profile names.</summary>
+    private static readonly HashSet<string> VitalSignCodes = ["85354-9", "8867-4", "59408-5", "2708-6", "8310-5", "9279-1"];
+
+    /// <summary>Body measurements of the IG's ObservationBodyMeasurement profile.</summary>
+    private static readonly HashSet<string> BodyMeasurementCodes = ["29463-7", "8302-2", "39156-5"];
+
+    public static R4.Patient Patient(R4.Patient patient)
+    {
+        patient.Meta = Profile(patient.Meta, AbdmProfiles.Patient);
+        foreach (var identifier in patient.Identifier.Where(i => i.System == FhirSystems.Abha))
+        {
+            identifier.Type = new R4.CodeableConcept
+            {
+                Coding = [FhirElements.Coding(AbdmSystems.IdentifierType, "ABHA", "Ayushman Bharat Health Account (ABHA) ID")],
+                Text = "ABHA number",
+            };
+        }
+
+        return patient;
+    }
+
+    public static R4.Encounter Encounter(R4.Encounter encounter)
+    {
+        encounter.Meta = Profile(encounter.Meta, AbdmProfiles.Encounter);
+        return encounter;
+    }
+
+    public static R4.Condition Condition(R4.Condition condition)
+    {
+        condition.Meta = Profile(condition.Meta, AbdmProfiles.Condition);
+        Codings(condition.Code, [FhirSystems.Icd10, FhirSystems.Snomed]);
+        return condition;
+    }
+
+    public static R4.AllergyIntolerance Allergy(R4.AllergyIntolerance allergy)
+    {
+        allergy.Meta = Profile(allergy.Meta, AbdmProfiles.AllergyIntolerance);
+        Codings(allergy.Code, [FhirSystems.Snomed]);
+        return allergy;
+    }
+
+    public static R4.MedicationRequest MedicationRequest(R4.MedicationRequest request)
+    {
+        request.Meta = Profile(request.Meta, AbdmProfiles.MedicationRequest);
+        return request;
+    }
+
+    /// <summary>
+    /// Vital signs and body measurements get the IG's profiles for them, every other observation (laboratory results,
+    /// pain score, GCS) the IG's general Observation profile. Only LOINC and SNOMED CT codings stay (the IG closes the
+    /// code's slicing on them), each with a display.
+    /// </summary>
+    public static R4.Observation Observation(R4.Observation observation)
+    {
+        Codings(observation.Code, [FhirSystems.Loinc, FhirSystems.Snomed]);
+        var codes = observation.Code?.Coding.Where(c => c.System == FhirSystems.Loinc).Select(c => c.Code).ToList() ?? [];
+        var profile = codes.Any(c => c is not null && VitalSignCodes.Contains(c)) ? AbdmProfiles.ObservationVitalSigns
+            : codes.Any(c => c is not null && BodyMeasurementCodes.Contains(c)) ? AbdmProfiles.ObservationBodyMeasurement
+            : AbdmProfiles.Observation;
+        observation.Meta = Profile(observation.Meta, profile);
+        return observation;
+    }
+
+    /// <summary>
+    /// A laboratory report: the IG's DiagnosticReportLab profile wants a SNOMED CT service section, someone who
+    /// interpreted the results (the laboratory, <paramref name="laboratory"/>), and a conclusion. Reports carry no
+    /// written conclusion, so it states which results the laboratory flagged, from the observations' interpretation.
+    /// </summary>
+    public static R4.DiagnosticReport LabReport(R4.DiagnosticReport report, R4.ResourceReference laboratory, IReadOnlyList<R4.Observation> results)
+    {
+        report.Meta = Profile(report.Meta, AbdmProfiles.DiagnosticReportLab);
+        report.Category = [AbdmCodes.PathologyService.Concept("Laboratory")];
+        Codings(report.Code, [FhirSystems.Loinc]);
+        report.Performer = [Copy(laboratory)];
+        report.ResultsInterpreter = [Copy(laboratory)];
+        report.Conclusion ??= LabConclusion(results);
+        return report;
+    }
+
+    public static R4.DocumentReference DocumentReference(R4.DocumentReference document)
+    {
+        document.Meta = Profile(document.Meta, AbdmProfiles.DocumentReference);
+        return document;
+    }
+
+    /// <summary>"Flagged by the laboratory: Haemoglobin (Low), CRP (High)." or that nothing was flagged.</summary>
+    public static string LabConclusion(IReadOnlyList<R4.Observation> results)
+    {
+        var flagged = results
+            .Select(o => (Test: o.Code?.Text, Flag: o.Interpretation.SelectMany(i => i.Coding).FirstOrDefault(c => c.Code != "N")?.Display))
+            .Where(r => r.Flag is not null && !string.IsNullOrWhiteSpace(r.Test))
+            .Select(r => $"{r.Test} ({r.Flag})")
+            .ToList();
+        return flagged.Count == 0
+            ? "No result was flagged outside its reference range by the laboratory."
+            : $"Flagged by the laboratory: {string.Join(", ", flagged)}.";
+    }
+
+    /// <summary>Keeps the codings of the allowed systems and gives each a display (the concept's text when it has none).</summary>
+    private static void Codings(R4.CodeableConcept? concept, string[] systems)
+    {
+        if (concept is null)
+        {
+            return;
+        }
+
+        concept.Coding = concept.Coding.Where(c => systems.Contains(c.System, StringComparer.Ordinal)).ToList();
+        foreach (var coding in concept.Coding.Where(c => string.IsNullOrWhiteSpace(c.Display)))
+        {
+            coding.Display = FhirElements.Clean(concept.Text) ?? coding.Code;
+        }
+    }
+
+    /// <summary>The IG profile in place of any other (the FHIR vital-signs profiles of the read API).</summary>
+    private static R4.Meta Profile(R4.Meta? meta, string profile)
+    {
+        meta ??= new R4.Meta();
+        meta.Profile = [profile];
+        return meta;
+    }
+
+    private static R4.ResourceReference Copy(R4.ResourceReference reference) => R4.BaseExtensions.DeepCopy(reference);
+}

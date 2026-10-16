@@ -1,0 +1,1548 @@
+{
+  "resourceType": "Bundle",
+  "id": "949c6f44-882e-8798-a347-9febdc17c387",
+  "meta": {
+    "versionId": "1790306700000",
+    "lastUpdated": "2026-09-25T08:55:00+05:30",
+    "profile": [
+      "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
+    ],
+    "security": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality",
+        "code": "V",
+        "display": "very restricted"
+      }
+    ]
+  },
+  "identifier": {
+    "system": "urn:ietf:rfc:3986",
+    "value": "urn:uuid:949c6f44-882e-8798-a347-9febdc17c387"
+  },
+  "type": "document",
+  "timestamp": "2026-09-25T10:30:00+05:30",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:c5c1e0cf-6fb9-8ad7-ae3b-f75aed00dc26",
+      "resource": {
+        "resourceType": "Composition",
+        "id": "c5c1e0cf-6fb9-8ad7-ae3b-f75aed00dc26",
+        "meta": {
+          "versionId": "1790306700000",
+          "lastUpdated": "2026-09-25T08:55:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/OPConsultRecord"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Consultation report</p><p>Date: 2026-09-25T08:55:00+05:30</p><p>Chief complaints</p><p>Medical history</p><p>Physical examination</p><p>Allergies</p><p>Medications</p><p>Follow up</p><p>Referral</p><p>Assessment and plan</p></div>"
+        },
+        "identifier": {
+          "system": "urn:ietf:rfc:3986",
+          "value": "urn:uuid:c5c1e0cf-6fb9-8ad7-ae3b-f75aed00dc26"
+        },
+        "status": "final",
+        "type": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "371530004",
+              "display": "Clinical consultation report"
+            }
+          ],
+          "text": "Consultation report"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+          "type": "Patient",
+          "display": "Meera Anil Kulkarni"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4",
+          "type": "Encounter",
+          "display": "Out-patient consultation 2026-09-25T08:30:00+05:30"
+        },
+        "date": "2026-09-25T08:55:00+05:30",
+        "author": [
+          {
+            "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+            "type": "Practitioner",
+            "display": "Dr. Asha Rao"
+          }
+        ],
+        "title": "Consultation report",
+        "attester": [
+          {
+            "mode": "legal",
+            "time": "2026-09-25T08:55:00+05:30",
+            "party": {
+              "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+              "type": "Practitioner",
+              "display": "Dr. Asha Rao"
+            }
+          }
+        ],
+        "custodian": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "display": "Nana Hospitals, Pune"
+        },
+        "section": [
+          {
+            "title": "Chief complaints",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "422843007",
+                  "display": "Chief complaint section"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Chief complaint: Fever for three days</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:0bd12240-8b5d-8972-8d79-e8aa46dcb0d6",
+                "type": "Condition",
+                "display": "Fever, unspecified"
+              },
+              {
+                "reference": "urn:uuid:3ff85df5-841b-8812-8167-d94a351dfb1a",
+                "type": "Condition",
+                "display": "Viral fever"
+              }
+            ]
+          },
+          {
+            "title": "Medical history",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "371529009",
+                  "display": "History and physical report"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>History of present illness: Intermittent fever up to 101 F for three days with body ache. No cough, rash or bleeding.</p></div>"
+            }
+          },
+          {
+            "title": "Physical examination",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "425044008",
+                  "display": "Physical exam section"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Examination: Throat mildly congested, chest clear.</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:4b961c97-9368-8c1e-b749-7fcb1765bc77",
+                "type": "Observation",
+                "display": "Blood pressure: 122 / 78 mmHg"
+              },
+              {
+                "reference": "urn:uuid:663efef2-5646-8438-97a2-aaca1e34e5da",
+                "type": "Observation",
+                "display": "Heart rate: 96 beats/minute"
+              },
+              {
+                "reference": "urn:uuid:77c11845-29b1-8663-a1c2-65649e70d68d",
+                "type": "Observation",
+                "display": "Oxygen saturation (SpO2): 98 %"
+              },
+              {
+                "reference": "urn:uuid:cad4402d-a8d9-8c84-9427-711b85b441ba",
+                "type": "Observation",
+                "display": "Body temperature: 100.4 °F"
+              },
+              {
+                "reference": "urn:uuid:7d749bf7-77dd-8bac-8e45-f3f1bc249d17",
+                "type": "Observation",
+                "display": "Respiratory rate: 18 breaths/minute"
+              },
+              {
+                "reference": "urn:uuid:7a9234bf-09e1-8186-9293-efdca84442d2",
+                "type": "Observation",
+                "display": "Body weight: 64.5 kg"
+              },
+              {
+                "reference": "urn:uuid:038b1dbb-2da4-8f6d-afe7-95077c8a11cf",
+                "type": "Observation",
+                "display": "Body height: 162 cm"
+              },
+              {
+                "reference": "urn:uuid:fd718a39-917c-8111-9d44-f493b202d16c",
+                "type": "Observation",
+                "display": "Body mass index: 24.6 kg/m2"
+              }
+            ]
+          },
+          {
+            "title": "Allergies",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "722446000",
+                  "display": "Allergy record"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:405fb968-3865-88e8-a741-6860778ff04f",
+                "type": "AllergyIntolerance",
+                "display": "Allergy Penicillin"
+              }
+            ]
+          },
+          {
+            "title": "Medications",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "721912009",
+                  "display": "Medication summary document"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dolo 650 Tablet (Paracetamol): 1 tab, three times a day, for 3 days. After food</p><p>Cetirizine 10 mg Tablet: 1 tab, at bedtime, for 5 days</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:a9cc17e4-0398-87fa-8267-ada43823ae8c",
+                "type": "MedicationRequest",
+                "display": "Dolo 650 Tablet (Paracetamol): 1 tab, three times a day, for 3 days. After food"
+              },
+              {
+                "reference": "urn:uuid:9bfb54f9-cc5a-8ea6-a641-31d8c9487b6f",
+                "type": "MedicationRequest",
+                "display": "Cetirizine 10 mg Tablet: 1 tab, at bedtime, for 5 days"
+              }
+            ]
+          },
+          {
+            "title": "Follow up",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "390906007",
+                  "display": "Follow-up encounter"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Follow-up on 2026-09-28</p><p>Come back if the fever lasts beyond two more days.</p></div>"
+            }
+          },
+          {
+            "title": "Referral",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "306206005",
+                  "display": "Referral to service"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Referred to Dr. Vikram Shah: Palpitations on exertion</p></div>"
+            }
+          },
+          {
+            "title": "Assessment and plan",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "51847-2",
+                  "display": "Evaluation + Plan note"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Assessment: Acute febrile illness, probably viral.</p><p>Plan: CBC and CRP today. Paracetamol for the fever, oral fluids.</p></div>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "4e080a21-3966-8efc-9236-64b034d9a58a",
+        "meta": {
+          "lastUpdated": "2026-09-22T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Meera Anil Kulkarni UHID NH-UH-2600123</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR",
+                  "display": "Medical record number"
+                }
+              ]
+            },
+            "system": "urn:hc360:uhid",
+            "value": "NH-UH-2600123"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-identifier-type-code",
+                  "code": "ABHA",
+                  "display": "Ayushman Bharat Health Account (ABHA) ID"
+                }
+              ],
+              "text": "ABHA number"
+            },
+            "system": "https://healthid.ndhm.gov.in",
+            "value": "91-1234-5678-9010"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "text": "Meera Anil Kulkarni",
+            "family": "Kulkarni",
+            "given": [
+              "Meera",
+              "Anil"
+            ],
+            "prefix": [
+              "Mrs"
+            ]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+919876543210",
+            "use": "mobile",
+            "rank": 1
+          },
+          {
+            "system": "email",
+            "value": "meera@example.org",
+            "use": "home",
+            "rank": 2
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1984-04-12",
+        "address": [
+          {
+            "use": "home",
+            "type": "physical",
+            "text": "12 MG Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "12 MG Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ],
+        "maritalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+              "code": "M",
+              "display": "Married"
+            }
+          ]
+        },
+        "managingOrganization": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "dbf41942-bf97-82f5-9e81-d98a1c6bfbc4",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:55:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Out-patient consultation 2026-09-25T08:30:00+05:30</p></div>"
+        },
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "type": [
+          {
+            "text": "Out-patient consultation"
+          }
+        ],
+        "serviceType": {
+          "text": "General Medicine"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+              "type": "Practitioner",
+              "display": "Dr. Asha Rao"
+            }
+          }
+        ],
+        "period": {
+          "start": "2026-09-25T08:30:00+05:30",
+          "end": "2026-09-25T08:55:00+05:30"
+        },
+        "reasonCode": [
+          {
+            "text": "Fever for three days"
+          }
+        ],
+        "serviceProvider": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        },
+        "partOf": {
+          "display": "Encounter"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "c5eb9e84-7367-8996-a1d6-35025a050d1b",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dr. Asha Rao</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MD",
+                  "display": "Medical License number"
+                }
+              ]
+            },
+            "system": "urn:hc360:medical-council-registration",
+            "value": "MMC-2009-041234",
+            "assigner": {
+              "display": "Maharashtra Medical Council"
+            }
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "urn:hc360:practitioner",
+            "value": "D0007"
+          }
+        ],
+        "name": [
+          {
+            "text": "Dr. Asha Rao",
+            "family": "Rao",
+            "given": [
+              "Asha"
+            ],
+            "prefix": [
+              "Dr."
+            ]
+          }
+        ],
+        "gender": "female",
+        "qualification": [
+          {
+            "code": {
+              "text": "MBBS, MD (General Medicine)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "8878f630-7199-8fcb-8182-a92e8749eb27",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Nana Hospitals, Pune</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "XX",
+                  "display": "Organization identifier"
+                }
+              ]
+            },
+            "system": "urn:hc360:facility",
+            "value": "NHP"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "prov",
+                "display": "Healthcare Provider"
+              }
+            ]
+          }
+        ],
+        "name": "Nana Hospitals, Pune",
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+912026001234",
+            "use": "work"
+          },
+          {
+            "system": "email",
+            "value": "records@nanahospitals.example",
+            "use": "work"
+          }
+        ],
+        "address": [
+          {
+            "use": "work",
+            "type": "physical",
+            "text": "1 Hospital Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "1 Hospital Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:0bd12240-8b5d-8972-8d79-e8aa46dcb0d6",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "0bd12240-8b5d-8972-8d79-e8aa46dcb0d6",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:40:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Condition"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Fever, unspecified</p></div>"
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "provisional",
+              "display": "Provisional"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "problem-list-item",
+                "display": "Problem List Item"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://hl7.org/fhir/sid/icd-10",
+              "code": "R50.9",
+              "display": "Fever, unspecified"
+            }
+          ],
+          "text": "Fever, unspecified"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "recordedDate": "2026-09-25T08:40:00+05:30"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3ff85df5-841b-8812-8167-d94a351dfb1a",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "3ff85df5-841b-8812-8167-d94a351dfb1a",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:42:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Condition"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Viral fever</p></div>"
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "differential",
+              "display": "Differential"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "text": "Viral fever"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "recordedDate": "2026-09-25T08:42:00+05:30"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4b961c97-9368-8c1e-b749-7fcb1765bc77",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "4b961c97-9368-8c1e-b749-7fcb1765bc77",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:35:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Blood pressure: 122 / 78 mmHg</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "85354-9",
+              "display": "Blood pressure panel with all children optional"
+            }
+          ],
+          "text": "Blood pressure"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "effectiveDateTime": "2026-09-25T08:35:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "component": [
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8480-6",
+                  "display": "Systolic blood pressure"
+                }
+              ],
+              "text": "Systolic blood pressure"
+            },
+            "valueQuantity": {
+              "value": 122,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            }
+          },
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8462-4",
+                  "display": "Diastolic blood pressure"
+                }
+              ],
+              "text": "Diastolic blood pressure"
+            },
+            "valueQuantity": {
+              "value": 78,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:663efef2-5646-8438-97a2-aaca1e34e5da",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "663efef2-5646-8438-97a2-aaca1e34e5da",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:35:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Heart rate: 96 beats/minute</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
+            }
+          ],
+          "text": "Heart rate"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "effectiveDateTime": "2026-09-25T08:35:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 96,
+          "unit": "beats/minute",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:77c11845-29b1-8663-a1c2-65649e70d68d",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "77c11845-29b1-8663-a1c2-65649e70d68d",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:35:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Oxygen saturation (SpO2): 98 %</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "59408-5",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            },
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood"
+            }
+          ],
+          "text": "Oxygen saturation (SpO2)"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "effectiveDateTime": "2026-09-25T08:35:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 98,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:cad4402d-a8d9-8c84-9427-711b85b441ba",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "cad4402d-a8d9-8c84-9427-711b85b441ba",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:35:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Body temperature: 100.4 °F</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8310-5",
+              "display": "Body temperature"
+            }
+          ],
+          "text": "Body temperature"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "effectiveDateTime": "2026-09-25T08:35:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 100.4,
+          "unit": "°F",
+          "system": "http://unitsofmeasure.org",
+          "code": "[degF]"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:7d749bf7-77dd-8bac-8e45-f3f1bc249d17",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "7d749bf7-77dd-8bac-8e45-f3f1bc249d17",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:35:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Respiratory rate: 18 breaths/minute</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "9279-1",
+              "display": "Respiratory rate"
+            }
+          ],
+          "text": "Respiratory rate"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "effectiveDateTime": "2026-09-25T08:35:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 18,
+          "unit": "breaths/minute",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:7a9234bf-09e1-8186-9293-efdca84442d2",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "7a9234bf-09e1-8186-9293-efdca84442d2",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:35:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationBodyMeasurement"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Body weight: 64.5 kg</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "29463-7",
+              "display": "Body weight"
+            }
+          ],
+          "text": "Body weight"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "effectiveDateTime": "2026-09-25T08:35:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 64.5,
+          "unit": "kg",
+          "system": "http://unitsofmeasure.org",
+          "code": "kg"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:038b1dbb-2da4-8f6d-afe7-95077c8a11cf",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "038b1dbb-2da4-8f6d-afe7-95077c8a11cf",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:35:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationBodyMeasurement"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Body height: 162 cm</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8302-2",
+              "display": "Body height"
+            }
+          ],
+          "text": "Body height"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "effectiveDateTime": "2026-09-25T08:35:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 162,
+          "unit": "cm",
+          "system": "http://unitsofmeasure.org",
+          "code": "cm"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:fd718a39-917c-8111-9d44-f493b202d16c",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "fd718a39-917c-8111-9d44-f493b202d16c",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:35:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationBodyMeasurement"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Body mass index: 24.6 kg/m2</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "39156-5",
+              "display": "Body mass index (BMI) [Ratio]"
+            }
+          ],
+          "text": "Body mass index"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "effectiveDateTime": "2026-09-25T08:35:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 24.6,
+          "unit": "kg/m2",
+          "system": "http://unitsofmeasure.org",
+          "code": "kg/m2"
+        },
+        "derivedFrom": [
+          {
+            "reference": "urn:uuid:7a9234bf-09e1-8186-9293-efdca84442d2"
+          },
+          {
+            "reference": "urn:uuid:038b1dbb-2da4-8f6d-afe7-95077c8a11cf"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:405fb968-3865-88e8-a741-6860778ff04f",
+      "resource": {
+        "resourceType": "AllergyIntolerance",
+        "id": "405fb968-3865-88e8-a741-6860778ff04f",
+        "meta": {
+          "lastUpdated": "2025-09-25T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/AllergyIntolerance"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>"
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "category": [
+          "medication"
+        ],
+        "criticality": "high",
+        "code": {
+          "text": "Penicillin"
+        },
+        "patient": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "recordedDate": "2025-09-25T10:30:00+05:30",
+        "reaction": [
+          {
+            "manifestation": [
+              {
+                "text": "Hives"
+              }
+            ],
+            "severity": "severe"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:a9cc17e4-0398-87fa-8267-ada43823ae8c",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "a9cc17e4-0398-87fa-8267-ada43823ae8c",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:50:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/MedicationRequest"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dolo 650 Tablet (Paracetamol): 1 tab, three times a day, for 3 days. After food</p></div>"
+        },
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/medicationrequest-category",
+                "code": "outpatient",
+                "display": "Outpatient"
+              }
+            ]
+          }
+        ],
+        "medicationCodeableConcept": {
+          "text": "Dolo 650 Tablet (Paracetamol)"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "authoredOn": "2026-09-25T08:52:00+05:30",
+        "requester": {
+          "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+          "type": "Practitioner",
+          "display": "Dr. Asha Rao"
+        },
+        "groupIdentifier": {
+          "system": "urn:hc360:prescription-number",
+          "value": "NHRX2600873"
+        },
+        "dosageInstruction": [
+          {
+            "text": "1 tab, three times a day, for 3 days. After food",
+            "patientInstruction": "After food",
+            "timing": {
+              "repeat": {
+                "boundsDuration": {
+                  "value": 3,
+                  "unit": "days",
+                  "system": "http://unitsofmeasure.org",
+                  "code": "d"
+                },
+                "frequency": 3,
+                "period": 1,
+                "periodUnit": "d"
+              },
+              "code": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation",
+                    "code": "TID",
+                    "display": "TID"
+                  }
+                ]
+              }
+            },
+            "route": {
+              "text": "Oral"
+            }
+          }
+        ],
+        "dispenseRequest": {
+          "numberOfRepeatsAllowed": 0,
+          "quantity": {
+            "value": 9
+          },
+          "expectedSupplyDuration": {
+            "value": 3,
+            "unit": "days",
+            "system": "http://unitsofmeasure.org",
+            "code": "d"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:9bfb54f9-cc5a-8ea6-a641-31d8c9487b6f",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "9bfb54f9-cc5a-8ea6-a641-31d8c9487b6f",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:50:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/MedicationRequest"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Cetirizine 10 mg Tablet: 1 tab, at bedtime, for 5 days</p></div>"
+        },
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/medicationrequest-category",
+                "code": "outpatient",
+                "display": "Outpatient"
+              }
+            ]
+          }
+        ],
+        "medicationCodeableConcept": {
+          "text": "Cetirizine 10 mg Tablet"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "authoredOn": "2026-09-25T08:52:00+05:30",
+        "requester": {
+          "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+          "type": "Practitioner",
+          "display": "Dr. Asha Rao"
+        },
+        "groupIdentifier": {
+          "system": "urn:hc360:prescription-number",
+          "value": "NHRX2600873"
+        },
+        "dosageInstruction": [
+          {
+            "text": "1 tab, at bedtime, for 5 days",
+            "timing": {
+              "repeat": {
+                "boundsDuration": {
+                  "value": 5,
+                  "unit": "days",
+                  "system": "http://unitsofmeasure.org",
+                  "code": "d"
+                },
+                "frequency": 1,
+                "period": 1,
+                "periodUnit": "d",
+                "when": [
+                  "HS"
+                ]
+              },
+              "code": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation",
+                    "code": "BED",
+                    "display": "at bedtime"
+                  }
+                ]
+              }
+            },
+            "route": {
+              "text": "Oral"
+            }
+          }
+        ],
+        "dispenseRequest": {
+          "numberOfRepeatsAllowed": 0,
+          "quantity": {
+            "value": 5
+          },
+          "expectedSupplyDuration": {
+            "value": 5,
+            "unit": "days",
+            "system": "http://unitsofmeasure.org",
+            "code": "d"
+          }
+        }
+      }
+    }
+  ]
+}

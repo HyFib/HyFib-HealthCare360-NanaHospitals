@@ -1,0 +1,39 @@
+using HyFib.HealthCare360.Modules.Interop.Abdm;
+using HyFib.HealthCare360.Modules.Interop.Services;
+
+namespace HyFib.HealthCare360.Modules.Interop.Features;
+
+/// <summary>
+/// <c>/api/v1/abdm</c> (SRS EHR-08), only while ABDM health records are switched on (<see cref="FeatureKeys.Abdm"/>):
+/// one record as an ABDM FHIR document (<c>application/fhir+json</c>, never cached), and the gateway's set-up for
+/// administrators. Errors are the API's usual problem details: 404 for a record that does not exist in the caller's
+/// facility, 422 <c>abdm.not_exportable</c> for one not signed or released yet, 403 for a restricted record.
+/// </summary>
+internal static class AbdmEndpoints
+{
+    public const string BasePath = "/api/v1/abdm";
+
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        var abdm = app.MapGroup(BasePath).WithTags("ABDM").RequireFeature(FeatureKeys.Abdm);
+
+        var bundles = abdm.MapGroup("/bundles").RequirePermission(InteropPermissions.AbdmExport);
+        bundles.MapGet("/discharge-summaries/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.DischargeSummary, id, pretty, service, ct));
+        bundles.MapGet("/lab-reports/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.LabReport, id, pretty, service, ct));
+        bundles.MapGet("/op-consultations/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.OpConsultation, id, pretty, service, ct));
+        bundles.MapGet("/prescriptions/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.Prescription, id, pretty, service, ct));
+
+        abdm.MapGet("/gateway", async (AbdmGatewayConfiguration gateway, CancellationToken ct) => TypedResults.Ok(await gateway.StatusAsync(ct)))
+            .RequirePermission(PlatformPermissions.IntegrationsManage);
+    }
+
+    private static async Task<IResult> ExportAsync(AbdmRecordType type, Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct)
+    {
+        var bundle = await service.ExportAsync(type, id, ct);
+        return bundle.IsSuccess ? new FhirResult(bundle.Value, StatusCodes.Status200OK, pretty == true) : bundle.Error!.ToProblem();
+    }
+}
