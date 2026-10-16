@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Modules.Scheduling.Features.Appointments;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Availability;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
@@ -22,7 +23,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// A video consultation over the real API (TEL-01, TEL-04): the front office books it and the booking sends the join
 /// link; the doctor starts the call, which opens the telehealth visit, and signs the e-prescription during the call. The
 /// patient then hears of the prescription once on each channel: on WhatsApp from Clinical, which tells every out-patient,
-/// and by SMS from VirtualCare, which adds it after a video consultation.
+/// and by SMS from VirtualCare, which adds it after a video consultation — where the hospital requires the doctor's DSC
+/// (ERX-04), both only once the doctor has signed it with their DSC.
 /// </summary>
 public sealed class TeleconsultationJourneyTests(HospitalServer server)
 {
@@ -35,6 +37,47 @@ public sealed class TeleconsultationJourneyTests(HospitalServer server)
 
     [Fact]
     public async Task A_video_consultation_prescription_reaches_the_patient_once_on_whatsapp_and_once_by_sms()
+    {
+        var (patientId, _) = await PrescribeDuringVideoCallAsync();
+
+        // The patient hears of the prescription once on WhatsApp and once by SMS.
+        var notices = await PrescriptionNoticesAsync(patientId);
+        notices.Count(c => c == NotificationChannel.WhatsApp).ShouldBe(1, "Clinical's WhatsApp message, which VirtualCare must not send again.");
+        notices.Count(c => c == NotificationChannel.Sms).ShouldBe(1, "VirtualCare's SMS after a video consultation.");
+        notices.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Where_the_dsc_is_required_the_patient_hears_of_it_on_both_channels_only_once_signed_with_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var me = await doctor.GetAsync<AuthUser>("/api/v1/auth/me");
+        using var pki = new DscTestPki();
+        var root = await pki.InstallAsync(server, ct);
+        await DscTestPki.SetPolicyAsync(server, me.FacilityId!.Value, "required", ct);
+        try
+        {
+            var (patientId, prescriptionId) = await PrescribeDuringVideoCallAsync();
+            (await PrescriptionNoticesAsync(patientId)).ShouldBeEmpty("Neither WhatsApp nor the SMS goes before the DSC signature.");
+
+            using var certificate = pki.Doctor(await DscTestPki.CertificateNameAsync(server, me.PractitionerId!.Value, ct));
+            (await pki.SignAsync(doctor, prescriptionId, certificate)).State.ShouldBe(DigitalSignatureState.Valid);
+
+            (await PrescriptionNoticesAsync(patientId)).ShouldBe([NotificationChannel.WhatsApp, NotificationChannel.Sms], ignoreOrder: true);
+        }
+        finally
+        {
+            await DscTestPki.SetPolicyAsync(server, me.FacilityId!.Value, null, ct);
+            File.Delete(root);
+        }
+    }
+
+    /// <summary>
+    /// Books a video consultation, starts the call, prescribes paracetamol in the encounter and signs it; the patient and
+    /// the signed prescription.
+    /// </summary>
+    private async Task<(Guid PatientId, Guid PrescriptionId)> PrescribeDuringVideoCallAsync()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
@@ -84,12 +127,7 @@ public sealed class TeleconsultationJourneyTests(HospitalServer server)
         // Ends the call.
         (await doctor.PostAsync<TelehealthSessionDetail>($"/api/v1/telehealth/sessions/{session.Id}/end", new EndTelehealthSessionRequest(QualityNotes: null)))
             .Status.ShouldBe(TelehealthStatus.Completed);
-
-        // The patient hears of the prescription once on WhatsApp and once by SMS.
-        var notices = await PrescriptionNoticesAsync(patient.Id);
-        notices.Count(c => c == NotificationChannel.WhatsApp).ShouldBe(1, "Clinical's WhatsApp message, which VirtualCare must not send again.");
-        notices.Count(c => c == NotificationChannel.Sms).ShouldBe(1, "VirtualCare's SMS after a video consultation.");
-        notices.Count.ShouldBe(2);
+        return (patient.Id, prescription.Id);
     }
 
     private static Task<PatientCreated> RegisterPatientAsync(ApiClient frontOffice) =>

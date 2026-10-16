@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.Clinical.Documents;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Services;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.SharedKernel;
 using HyFib.HealthCare360.WindowsInterop.DigitalSignatures;
 
@@ -370,6 +371,150 @@ public sealed class PrescriptionDigitalSignatureTests
         body.ShouldContain("Digitally signed by Dr Meera Shah (MMC-55821) — certificate 0A1B2C, 25 Sep 2026, 3:45 pm");
         body.ShouldContain($"SHA-256 {new string('a', 64)}");
         PrescriptionDocument.Body(model with { DigitalSignature = null }, null, null).ToString().ShouldContain("Signed electronically on");
+    }
+
+    [Fact]
+    public void Only_a_signature_that_checks_out_is_printed_with_the_registration_number_the_doctor_signed()
+    {
+        using var pki = new TestPki();
+        using var doctor = pki.Doctor();
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+        var content = PrescriptionCanonicalForm.Build(prescription, PrescriptionCanonicalFormTests.Parties);
+        prescription.AttachDigitalSignature(Evidence(content, DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca]))).IsSuccess.ShouldBeTrue();
+
+        var valid = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional, pki.Anchors, signedForCurrentPatient: true);
+        var printed = PrescriptionFinalCopies.PrintSignature(prescription, valid).ShouldNotBeNull();
+        printed.RegistrationNumber.ShouldBe("MMC-55821", "the number in the signed bytes, whatever the practitioner master says today");
+        printed.SerialNumber.ShouldBe("0A1B");
+
+        // The CCA roots are gone from the trust folder (a restore, a new server): not printed as a DSC signature.
+        var untrusted = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional, DscTrustAnchors.None, true);
+        untrusted.State.ShouldBe(DigitalSignatureState.Untrusted);
+        PrescriptionFinalCopies.PrintSignature(prescription, untrusted).ShouldBeNull();
+
+        // Changed behind HC360's back: not printed as signed either.
+        prescription.Items.First().Quantity = 600m;
+        var invalid = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional, pki.Anchors, true);
+        invalid.State.ShouldBe(DigitalSignatureState.Invalid);
+        PrescriptionFinalCopies.PrintSignature(prescription, invalid).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Where_the_dsc_is_required_only_a_valid_signature_lets_the_prescription_be_issued()
+    {
+        using var pki = new TestPki();
+        using var doctor = pki.Doctor();
+        var unsigned = PrescriptionCanonicalFormTests.Signed();
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+        var content = PrescriptionCanonicalForm.Build(prescription, PrescriptionCanonicalFormTests.Parties);
+        prescription.AttachDigitalSignature(Evidence(content, DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca]))).IsSuccess.ShouldBeTrue();
+        PrescriptionDigitalSignatureDto Check(Prescription p, PrescriptionSignaturePolicy policy, DscTrustAnchors anchors) =>
+            PrescriptionDigitalSignatureService.Check(p, policy, anchors, signedForCurrentPatient: true);
+
+        PrescriptionFinalCopies.Problem(Check(prescription, PrescriptionSignaturePolicy.Required, pki.Anchors)).ShouldBeNull();
+        Check(prescription, PrescriptionSignaturePolicy.Required, pki.Anchors).FinalCopyAvailable.ShouldBeTrue();
+        PrescriptionFinalCopies.Problem(Check(unsigned, PrescriptionSignaturePolicy.Required, pki.Anchors))!.Code.ShouldBe(PrescriptionFinalCopies.RequiredCode);
+        PrescriptionFinalCopies.Problem(Check(prescription, PrescriptionSignaturePolicy.Required, DscTrustAnchors.None))!.Code
+            .ShouldBe(PrescriptionFinalCopies.UntrustedCode, "a DSC HC360 cannot confirm counts as none");
+
+        // Where it is optional the prescription prints as signed in HC360, whatever became of the DSC.
+        PrescriptionFinalCopies.Problem(Check(unsigned, PrescriptionSignaturePolicy.Optional, pki.Anchors)).ShouldBeNull();
+        PrescriptionFinalCopies.Problem(Check(prescription, PrescriptionSignaturePolicy.Optional, DscTrustAnchors.None)).ShouldBeNull();
+
+        prescription.Items.First().Quantity = 600m;
+        PrescriptionFinalCopies.Problem(Check(prescription, PrescriptionSignaturePolicy.Required, pki.Anchors))!.Code.ShouldBe(PrescriptionFinalCopies.InvalidCode);
+        PrescriptionFinalCopies.Problem(Check(prescription, PrescriptionSignaturePolicy.Optional, pki.Anchors)).ShouldBeNull();
+    }
+
+    [Fact]
+    public void The_patient_is_told_in_a_few_words_under_the_same_code()
+    {
+        var pending = PrescriptionDigitalSignatureService.Check(PrescriptionCanonicalFormTests.Signed(), PrescriptionSignaturePolicy.Required, DscTrustAnchors.None, true);
+
+        var problem = PrescriptionFinalCopies.PatientProblem(pending).ShouldNotBeNull();
+
+        problem.Code.ShouldBe(PrescriptionFinalCopies.RequiredCode);
+        problem.Message.ShouldBe("Your doctor has not digitally signed this prescription yet.");
+        problem.Message.ShouldNotContain("HC360 Desktop");
+        PrescriptionFinalCopies.PatientProblem(pending with { Policy = PrescriptionSignaturePolicy.Optional, FinalCopyAvailable = true }).ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_signature_that_does_not_check_out_reports_no_chain()
+    {
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+        prescription.AttachDigitalSignature(Evidence() with { ChainStatus = CertificateChainStatus.TrustedSummary }).IsSuccess.ShouldBeTrue();
+
+        var check = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional, DscTrustAnchors.None, true);
+
+        check.State.ShouldBe(DigitalSignatureState.Invalid);
+        check.ChainTrusted.ShouldBeFalse();
+        check.ChainStatus.ShouldBe(PrescriptionDigitalSignatureService.NotChecked, "not the \"Trusted\" stored when it was attached");
+    }
+
+    [Theory]
+    [InlineData("MEERA SHAH", "Dr. Meera Shah", true)]
+    [InlineData("Meera  Shah", "Dr Meera Shah", true)]
+    [InlineData("SHAH MEERA", "Dr. Meera Shah", true)]
+    [InlineData("MEERA RAJESH SHAH", "Dr. Meera Shah", true)]
+    [InlineData("Dr. Meera Shah", "MEERA SHAH", true)]
+    [InlineData("मीरा शाह", "Dr मीरा शाह", true)]
+    [InlineData("ANIL KUMAR", "Dr. Meera Shah", false)]
+    [InlineData("MEERA PATEL", "Dr. Meera Shah", false)]
+    [InlineData("NANA HOSPITALS PRIVATE LIMITED", "Dr. Meera Shah", false)]
+    [InlineData("MEERA SHAH", "Dr. M. Shah", false)]
+    [InlineData("MEERA SHAH", "Dr.", false)]
+    [InlineData(null, "Dr. Meera Shah", false)]
+    public void A_dsc_is_the_doctors_own_when_it_bears_every_word_of_their_name(string? certificate, string doctor, bool matches) =>
+        DscSignerName.Matches(certificate, doctor).ShouldBe(matches);
+
+    [Fact]
+    public void A_certificate_whose_details_do_not_fit_their_columns_is_refused_before_saving()
+    {
+        var fits = new SignerCertificate("CN=Dr Meera Shah, C=IN", "Dr Meera Shah", "0A1B", "CN=Test CA", "ABCDEF", Now, Now.AddYears(1));
+
+        PrescriptionDigitalSignatureService.Unstorable(fits).ShouldBeNull();
+        PrescriptionDigitalSignatureService.Unstorable(fits with { SignerName = new string('A', Prescription.SignerNameMaxLength + 1) }).ShouldBe("name");
+        PrescriptionDigitalSignatureService.Unstorable(fits with { Subject = "CN=" + new string('A', Prescription.SignerDistinguishedNameMaxLength) })
+            .ShouldBe("subject");
+        PrescriptionDigitalSignatureService.Unstorable(fits with { Issuer = "CN=" + new string('A', Prescription.SignerDistinguishedNameMaxLength) })
+            .ShouldBe("issuer");
+        PrescriptionDigitalSignatureService.Unstorable(fits with { SerialNumber = new string('0', Prescription.SignerSerialNumberMaxLength + 1) })
+            .ShouldBe("serial number");
+    }
+
+    [Fact]
+    public void The_patient_is_told_once_that_the_prescription_is_ready()
+    {
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+
+        prescription.MarkPatientNotified(Now).ShouldBeTrue();
+        prescription.MarkPatientNotified(Now.AddMinutes(5)).ShouldBeFalse();
+
+        prescription.PatientNotifiedAt.ShouldBe(Now);
+        var shared = prescription.DomainEvents.OfType<PrescriptionSharedWithPatient>().ShouldHaveSingleItem();
+        shared.PrescriptionId.ShouldBe(prescription.Id);
+        shared.SignedAt.ShouldBe(prescription.SignedAt!.Value);
+        new Prescription { PrescriptionNumber = "NHRX1" }.MarkPatientNotified(Now).ShouldBeFalse("a draft is not ready");
+    }
+
+    [Fact]
+    public void System_health_warns_when_dsc_signing_is_on_and_the_trust_folder_is_empty()
+    {
+        using var pki = new TestPki();
+        const string folder = @"C:\ProgramData\HyFib\HealthCare360\certs\dsc-trust";
+
+        DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Off, DscTrustAnchors.None, folder).ShouldBeEmpty();
+        DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Required, pki.Anchors, folder).ShouldBeEmpty();
+        var optional = DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Optional, DscTrustAnchors.None, folder).ShouldHaveSingleItem();
+        optional.Code.ShouldBe(DscTrustHealthWarnings.EmptyCode);
+        optional.Severity.ShouldBe("warning");
+        optional.Message.ShouldContain(folder);
+        var required = DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Required, DscTrustAnchors.None, folder).ShouldHaveSingleItem();
+        required.Severity.ShouldBe("critical");
+        required.Message.ShouldContain("cannot be printed or shared");
+        DscTrustHealthWarnings.Warnings(PrescriptionSignaturePolicy.Optional, DscTrustAnchors.Of([pki.Root], ["broken.crt: not a certificate"]), folder)
+            .ShouldHaveSingleItem().Code.ShouldBe(DscTrustHealthWarnings.UnreadableCode);
     }
 
     private static PrescriptionDigitalSignature Evidence(byte[]? content = null, byte[]? signature = null) => new(

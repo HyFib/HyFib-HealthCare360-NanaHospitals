@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
@@ -54,6 +55,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.MrdVerifier] = SystemRoles.MrdOfficer,
         [Users.CssdTechnician] = SystemRoles.CssdTechnician,
         [Users.CardiologyTechnician] = SystemRoles.CardiologyTechnician,
+        [Users.SecondDoctor] = SystemRoles.Doctor,
     };
 
     // A test-only password for the staff accounts, new for every run.
@@ -386,8 +388,9 @@ public sealed class HospitalServer : IAsyncLifetime
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
         var temporary = "It-first-" + Guid.NewGuid().ToString("N");
+        var practitionerId = userName == Users.SecondDoctor ? await SecondConsultantAsync() : null;
         await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
-            userName, $"Demo {role}", Email: null, Phone: null, [roleId], [facilityId], facilityId, PractitionerId: null, temporary));
+            userName, $"Demo {role}", Email: null, Phone: null, [roleId], [facilityId], facilityId, practitionerId, temporary));
 
         var first = await LogInAsync(http, userName, temporary);
         if (first.Restriction != AuthService.RestrictionPasswordChange || first.AccessToken is not { Length: > 0 } restricted)
@@ -397,6 +400,15 @@ public sealed class HospitalServer : IAsyncLifetime
 
         using var response = await PostChangePasswordAsync(http, restricted, temporary);
         return FullAccess(userName, await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/change-password"));
+    }
+
+    // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.
+    private async Task<Guid?> SecondConsultantAsync()
+    {
+        await using var scope = Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Practitioner>()
+            .Where(p => p.Kind == PractitionerKind.Consultant).OrderBy(p => p.Code).Skip(1).Select(p => (Guid?)p.Id)
+            .FirstAsync(TestContext.Current.CancellationToken);
     }
 
     // Changing the password shares sign-in's budget of 10 a minute per address: past that, wait for the next minute, as a
@@ -547,6 +559,12 @@ public sealed class HospitalServer : IAsyncLifetime
 
         /// <summary>Records ECGs and echos and attaches the machines' files. Created on first use.</summary>
         public const string CardiologyTechnician = "cardiotech";
+
+        /// <summary>
+        /// A second doctor, linked to the next consultant after <see cref="Doctor"/>'s: may sign prescriptions, but not
+        /// <see cref="Doctor"/>'s. Created on first use.
+        /// </summary>
+        public const string SecondDoctor = "doctor2";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);
