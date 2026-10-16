@@ -133,7 +133,7 @@ internal sealed class IntegrationTestService(
 
         if (config.ActiveProvider == ProviderKeys.Simulator)
         {
-            var sale = await pos.StartSaleAsync(new PosSaleRequest("TEST", 1m, "integration-test"), cancellationToken);
+            var sale = await pos.StartSaleAsync(new PosSaleRequest("TEST", 1m, "integration-test"), null, cancellationToken);
             return new IntegrationTestResult(sale.Status == PosTransactionStatus.AwaitingCustomer, $"Simulator sale {sale.TransactionId}: {sale.Status}.");
         }
 

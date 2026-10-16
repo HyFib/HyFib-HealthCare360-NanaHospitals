@@ -16,9 +16,10 @@ internal sealed class PosTerminalRouter(IEnumerable<IPosProvider> providers, Int
 
     public string Provider => _provider ?? "configured";
 
-    public async Task<PosTransactionResult> StartSaleAsync(PosSaleRequest request, CancellationToken cancellationToken)
+    public async Task<PosTransactionResult> StartSaleAsync(PosSaleRequest request, Guid? facilityId, CancellationToken cancellationToken)
     {
-        var (provider, config, error) = await ResolveAsync(cancellationToken);
+        using var facility = IntegrationTrace.ForFacility(facilityId);
+        var (provider, config, error) = await ResolveAsync(facilityId, cancellationToken);
         var result = provider is null
             ? Declined(string.Empty, error)
             : await provider.StartSaleAsync(request, config!.Settings!, config.Secrets, cancellationToken);
@@ -27,17 +28,20 @@ internal sealed class PosTerminalRouter(IEnumerable<IPosProvider> providers, Int
             : result;
     }
 
-    public async Task<PosTransactionResult> GetStatusAsync(string transactionId, CancellationToken cancellationToken)
+    public async Task<PosTransactionResult> GetStatusAsync(string transactionId, Guid? facilityId, CancellationToken cancellationToken)
     {
-        var (provider, config, error) = await ResolveAsync(cancellationToken);
+        // The background re-check has no signed-in user: the log rows count against the sale's facility.
+        using var facility = IntegrationTrace.ForFacility(facilityId);
+        var (provider, config, error) = await ResolveAsync(facilityId, cancellationToken);
         return provider is null
             ? Declined(transactionId, error)
             : await provider.GetStatusAsync(transactionId, config!.Settings!, config.Secrets, cancellationToken);
     }
 
-    public async Task<PosTransactionResult> CancelAsync(string transactionId, CancellationToken cancellationToken)
+    public async Task<PosTransactionResult> CancelAsync(string transactionId, Guid? facilityId, CancellationToken cancellationToken)
     {
-        var (provider, config, error) = await ResolveAsync(cancellationToken);
+        using var facility = IntegrationTrace.ForFacility(facilityId);
+        var (provider, config, error) = await ResolveAsync(facilityId, cancellationToken);
         return provider is null
             ? Declined(transactionId, error)
             : await provider.CancelAsync(transactionId, config!.Settings!, config.Secrets, cancellationToken);
@@ -46,9 +50,10 @@ internal sealed class PosTerminalRouter(IEnumerable<IPosProvider> providers, Int
     internal static PosTransactionResult Declined(string transactionId, string? message) =>
         new(transactionId, PosTransactionStatus.Declined, null, null, null, message);
 
-    private async Task<(IPosProvider? Provider, IntegrationConfig<PosSettings, PosSecrets>? Config, string? Error)> ResolveAsync(CancellationToken cancellationToken)
+    private async Task<(IPosProvider? Provider, IntegrationConfig<PosSettings, PosSecrets>? Config, string? Error)> ResolveAsync(
+        Guid? facilityId, CancellationToken cancellationToken)
     {
-        var config = await settings.ReadAsync<PosSettings, PosSecrets>(IntegrationNames.Pos, cancellationToken);
+        var config = await settings.ReadAsync<PosSettings, PosSecrets>(IntegrationNames.Pos, facilityId, requireEnabled: true, cancellationToken);
         if (config.ActiveProvider is not { } key)
         {
             _provider = "none";

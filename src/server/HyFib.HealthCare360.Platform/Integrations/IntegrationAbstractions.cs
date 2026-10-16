@@ -142,15 +142,19 @@ public enum PosTransactionStatus
 
 public sealed record PosTransactionResult(string TransactionId, PosTransactionStatus Status, string? ApprovalCode, string? CardLast4, string? Rrn, string? Message);
 
+/// <summary>
+/// Every call names the facility whose terminal settings apply (null: the signed-in facility), because the background
+/// re-check of sales the counter left open has no signed-in facility.
+/// </summary>
 public interface IPosTerminal
 {
     string Provider { get; }
 
-    Task<PosTransactionResult> StartSaleAsync(PosSaleRequest request, CancellationToken cancellationToken);
+    Task<PosTransactionResult> StartSaleAsync(PosSaleRequest request, Guid? facilityId, CancellationToken cancellationToken);
 
-    Task<PosTransactionResult> GetStatusAsync(string transactionId, CancellationToken cancellationToken);
+    Task<PosTransactionResult> GetStatusAsync(string transactionId, Guid? facilityId, CancellationToken cancellationToken);
 
-    Task<PosTransactionResult> CancelAsync(string transactionId, CancellationToken cancellationToken);
+    Task<PosTransactionResult> CancelAsync(string transactionId, Guid? facilityId, CancellationToken cancellationToken);
 }
 
 // ---------- Biometric attendance terminals (read by HC360) ----------
