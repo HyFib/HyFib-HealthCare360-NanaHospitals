@@ -1,22 +1,29 @@
-# Interop module (`interop`) — HL7 FHIR R4 read API
+# Interop module (`interop`) — HL7 FHIR R4 read API and ABDM health records
 
 Read-only HL7 FHIR R4 API that lets other providers read a patient's record, **subject to the patient's consent**
 (SRS **EHR-05**): Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport
 and DocumentReference under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.5.0), returns JSON only
 and writes nothing.
 
+It also exports discharge summaries, lab reports, consultation notes and prescriptions as **ABDM health records**
+(SRS **EHR-08**): FHIR documents of the NRCeS implementation guide for the Ayushman Bharat Digital Mission, carrying the
+patient's ABHA number, behind the `features.abdm` switch, which is **off** until an administrator turns it on
+([ABDM health records](#abdm-health-records-ehr-08)). The ABDM gateway that would send them is set up in settings but not
+live.
+
 | | |
 |---|---|
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.Interop` (layer 8; references Patients, Clinical, Diagnostics and Inpatient) |
 | Schema | none. The module owns no tables and reads the other modules' entities through `HospitalDbContext` (no migration) |
-| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); ABDM-friendly identifiers (ABHA number, HFR id) |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database) |
+| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08 (ABHA capture, ABDM document export; the gateway is not live) |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, the validated samples in `Fixtures/Abdm`) and `AbdmGatewayTests`. Elsewhere: `HealthIdTests` (Verhoeff, ABHA number and address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, read-only), `AbdmExportTests` (IntegrationTests: registration, export, who may export), staff `modules/patients/validation.test.ts` |
 
 ## Permission and set-up
 
 | Permission | Purpose | Default roles |
 |---|---|---|
 | `fhir.read` | Read and search patient records through the FHIR API (patients with record-sharing consent only; every access is audited) | HospitalAdmin |
+| `abdm.export` | Export discharge summaries, lab reports, consultation notes and prescriptions as ABDM health records (every export is audited) | HospitalAdmin, MrdOfficer |
 
 Integration partners (a referral hospital, a health information exchange) get their own service user:
 
@@ -242,10 +249,155 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
   doctor; context = the admission's encounter and stay period; the whole summary embedded as UTF-8 text (diagnoses and
   ICD-10 codes, complaints, course, procedures, investigations, condition at discharge, medications, advice, follow-up).
 
+## ABDM health records (EHR-08)
+
+The Ayushman Bharat Digital Mission (ABDM) links a patient's records to their **ABHA** (Ayushman Bharat Health Account)
+and moves them as FHIR documents of the NRCeS "FHIR Implementation Guide for ABDM" (package `ndhm.in`, validated against
+**6.5.0**). HC360 captures the ABHA, builds the documents and exports them one at a time; sending them to ABDM through
+its gateway needs the hospital's NHA credentials and is not live ([ABDM gateway](#abdm-gateway-not-live)).
+
+### The switch
+
+`features.abdm` ("ABDM health records", [features.md](features.md)) is **off by default**, unlike the switches that
+existed before their feature: it is new and, once the gateway is live, sends records outside the hospital. While it is
+off every `/api/v1/abdm/*` endpoint answers 503 `feature.disabled`. ABHA numbers and addresses are recorded and shown
+whatever the switch says.
+
+### ABHA on the patient
+
+| | |
+|---|---|
+| Fields | `Patient.AbhaNumberCipher` (14 digits, AES-256-GCM), `AbhaNumberIndex` (blind index for search and duplicate checks), `AbhaNumberMasked` (`XX-XXXX-XXXX-1234`), `AbhaAddress` (lower case). No new columns |
+| Number | 14 digits, typed run together or grouped with spaces or hyphens; the **last digit is a Verhoeff check digit**, so a mistyped digit or two swapped neighbours are refused at the desk ("Enter a valid 14-digit ABHA number. Check the digits: the last one is a check digit."). Shown as `xx-xxxx-xxxx-xxxx` (`Abha.Format`) where the full number is needed (ABDM documents, the FHIR API) and masked everywhere else |
+| Address | 3 to 32 letters or digits, which single dots or underscores may join, then `@abdm`, or `@sbx` on the ABDM sandbox (`meera.k@abdm`). Case does not matter; it is stored in lower case |
+| Where | Registration and the patient record's edit screen (staff app, Health IDs); the same rules on the server (`CommonRules.AbhaNumber`, `AbhaAddress`) and in the form (`isValidAbhaNumber`, `isValidAbhaAddress`). Leaving the number blank on edit keeps it; "Remove ABHA" clears it |
+| Audit | `patient.abha_changed` (category data), one entry when the number is linked, replaced or removed or the address added, changed or removed, at registration or later: "ABHA number XX-XXXX-XXXX-9010 linked; ABHA address added". The number appears masked only; the blind index is kept out of the data-change audit like the cipher (`[SensitiveData]`) |
+| Privacy | Listed in the personal-data catalogue under registration details, shown masked in the patient's data summary ([privacy.md](privacy.md)); log lines and AI prompts mask ABHA numbers and addresses (`SensitiveText`, `PhiRedactor`) |
+
+The code lives in SharedKernel (`Verhoeff`, `Abha` in `HealthIds.cs`); the Aadhaar check uses the same `Verhoeff`.
+
+### Endpoints (`/api/v1/abdm`)
+
+| Method | Path | Permission | Response |
+|---|---|---|---|
+| GET | `/bundles/discharge-summaries/{id}` | `abdm.export` | DischargeSummaryRecord document of a signed or amended discharge summary |
+| GET | `/bundles/lab-reports/{id}` | `abdm.export` | DiagnosticReportRecord document of a released (or amended) lab report |
+| GET | `/bundles/op-consultations/{id}` | `abdm.export` | OPConsultRecord document of a signed out-patient, emergency, telehealth or health check-up consultation (clinical encounter id) |
+| GET | `/bundles/prescriptions/{id}` | `abdm.export` | PrescriptionRecord document of a signed prescription |
+| GET | `/gateway` | `admin.integrations.manage` (no role has it by default: the super administrator) | `AbdmGatewayStatus`: how the gateway is set up, what is missing, `live: false` and what remains |
+
+* Bundles are `application/fhir+json; charset=utf-8`, never cached; `?pretty=true` indents.
+* The record must be in the caller's facility (404 otherwise, as for a record that does not exist), complete (422
+  `abdm.not_exportable`: a draft, a cancelled prescription, an unreleased report, an unsigned note, an in-patient
+  note, which travels with the discharge summary) and of a patient who is not deleted (404) or merged (422
+  `abdm.patient_merged`). A restricted (VIP) record needs `patients.restricted.read` or break-the-glass (403), as on
+  screen.
+* An export is a staff download, like the printed copy, so it does not need the record-sharing consent of the FHIR
+  API. Sending a record to ABDM is authorised by the patient's ABDM consent artefact, through the gateway.
+* Every export is audited: `phi` / `patient.accessed`, "ABDM health record exported: discharge summary", entity
+  `abdm.{Type}` and the record id, details `{ api: "abdm", record, document, version, entries }`.
+* The staff app has no export button yet: the API is what the gateway client will use, and what integration partners
+  and NHA's sandbox testing can call.
+
+### The documents
+
+Each document is a `document` Bundle (profile `DocumentBundle`) whose first entry is the Composition, followed by every
+resource it uses, each once, with a `urn:uuid:` full URL; every reference resolves inside the document. The resources
+come from the FHIR read API's mappers above (same rules: only signed, released, verified data), fitted to the IG's
+profiles.
+
+| Record | Composition (`meta.profile`, `type`) | Sections (code: entries) |
+|---|---|---|
+| Prescription | `PrescriptionRecord`, SNOMED CT 440545006 "Prescription record" | 440545006: one MedicationRequest per medicine, and the printed PDF as Binary; advice as text |
+| Lab report | `DiagnosticReportRecord`, SNOMED CT 721981007 "Diagnostic studies report" | 4241000179101 "Laboratory report": the DiagnosticReport (results as Observations) and the printed PDF as DocumentReference. The laboratory (facility) is the author |
+| Consultation | `OPConsultRecord`, SNOMED CT 371530004 "Clinical consultation report" | 422843007 chief complaint: Conditions; 371529009 medical history (HPI); 425044008 physical examination: vital-sign Observations; 722446000 allergies; 721912009 medications: MedicationRequests; 390906007 follow-up; 306206005 referral; then LOINC 51847-2 assessment and plan (the IG has no such section; its slicing is open) |
+| Discharge summary | `DischargeSummaryRecord`, SNOMED CT 373942005 "Discharge summary" | 422843007 complaints and diagnoses: the stay's Conditions; 722446000 allergies; 721981007 investigations: the stay's lab DiagnosticReports; 1003606003 medications: the stay's MedicationRequests; 1003640003 procedures; 734163000 care plan (advice, follow-up); 373942005 the summary as DocumentReference (the printed PDF, else the summary's text); then LOINC 8648-8 hospital course |
+
+Section and document codes, systems and displays are the ones the IG's profiles fix. Empty sections are left out;
+every section has a narrative (its text, or one line per entry). Every resource has a generated narrative.
+
+| Resource | Profile | What the IG adds to the read API's resource |
+|---|---|---|
+| Patient | `Patient` | ABHA number (`https://healthid.ndhm.gov.in`, `xx-xxxx-xxxx-xxxx`) typed `ABHA` from the IG's identifier types; UHID typed MR. A patient without an ABHA is still exported, with the UHID |
+| Practitioner | `Practitioner` | From the practitioner master: medical-council registration (v2-0203 MD, the council as assigner) and staff code (PRN), name, gender, qualification. No personal phone or e-mail |
+| Organization | `Organization` | From the facility master: HFR id (`https://facility.ndhm.gov.in`, PRN), facility code (XX), type `prov`, work phone, e-mail, address |
+| Encounter | `Encounter` | The visit (with its admission for a stay) or the clinical encounter |
+| Condition | `Condition` | ICD-10 coding only (free-text diagnoses as text) |
+| AllergyIntolerance | `AllergyIntolerance` | Allergen as text; allergies recorded in error left out |
+| MedicationRequest | `MedicationRequest` | As the read API (medicine as text, dosage with v3-GTSAbbreviation timing codes and their displays) |
+| Observation | `ObservationVitalSigns`, `ObservationBodyMeasurement` (weight, height, BMI) or `Observation` (lab results, pain, GCS) | LOINC (and SNOMED CT) codings only, each with a display; performer = the laboratory (results) or the hospital (vital signs) |
+| DiagnosticReport | `DiagnosticReportLab` | Category SNOMED CT 394595002 "Pathology"; LOINC 11502-2; performer and results interpreter = the laboratory; conclusion = the results the laboratory flagged ("Flagged by the laboratory: Haemoglobin (Low).") |
+| DocumentReference, Binary | `DocumentReference`, `Binary` | The printed PDF (made by the same document sources as the download and the messages); when this server cannot make PDFs, the lab report and prescription go without it and the discharge summary carries its text |
+
+* **Ids** are UUIDs derived from HC360's ids (SHA-256, RFC 9562 version 8), so exporting a record again gives the
+  same ids and a patient or doctor has one id in every document.
+* **Versions.** `meta.versionId` of the Bundle and Composition is the latest change to anything in the document (Unix
+  milliseconds); the Bundle's id and `identifier` (`urn:ietf:rfc:3986`, `urn:uuid:…`) change with it, the
+  Composition's id does not. An amended record is an `amended` Composition. `meta.security` is v3-Confidentiality V.
+* **Not coded:** medicines (no SNOMED CT drug codes), allergens, free-text diagnoses, lab tests without a LOINC code in
+  the test master. They travel as text, which the IG allows.
+
+### Validation
+
+The four sample documents built by `AbdmDocumentTests` are kept in
+`tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests/Fixtures/Abdm` (a test fails when the code builds anything
+else; `HC360_WRITE_ABDM_FIXTURES=1` writes them again, after which they are validated again). They were checked on
+2026-10-16 with the official **HL7 FHIR validator** (`validator_cli.jar` 7.0.2) against `ndhm.in#6.5.0`:
+
+```
+java -jar validator_cli.jar Fixtures/Abdm/*.json -version 4.0.1 -ig ndhm.in#6.5.0 -tx n/a
+```
+
+The development machine reaches neither tx.fhir.org nor packages.fhir.org, so the packages came from the npm mirror of
+the FHIR package registry (checksums checked) and the run had **no terminology server** (`-tx n/a`). The IG's own
+example documents were validated the same way, as a control.
+
+| Sample | Errors | Warnings | The IG's example of the same type, same set-up |
+|---|---|---|---|
+| `prescription.json` | 3 | 4 | `Bundle-Prescription-example-06`: 5 errors, 4 warnings |
+| `lab-report.json` | 3 | 6 | `Bundle-DiagnosticReport-Lab-example-03`: 8 errors, 12 warnings |
+| `op-consultation.json` | **0** | 23 | `Bundle-OPConsultNote-example-05`: 5 errors, 4 warnings |
+| `discharge-summary.json` | 3 | 7 | `Bundle-DischargeSummary-example-04`: 8 errors, 14 warnings |
+
+* **Every error is the MIME type of an attachment** (`application/pdf`, `text/plain; charset=utf-8`): its required
+  binding to the MimeType value set can only be checked by a terminology server, and the section entry holding that
+  Binary or DocumentReference then "matches no profile". The IG's own examples fail in exactly the same way
+  offline. Nothing else is an error.
+* The warnings are codes that cannot be checked without a terminology server (UCUM units, BCP-47 languages), and the
+  visit number's identifier type (v2-0203 `VN`), which is not in the R4 IdentifierType value set (an extensible
+  binding, so a warning).
+* To be done where tx.fhir.org is reachable: run the validator without `-tx n/a`, expecting 0 errors.
+
+### ABDM gateway (not live)
+
+Sending records to ABDM makes the hospital a Health Information Provider (HIP) on NHA's gateway (the HIE-CM). What is
+built:
+
+| | |
+|---|---|
+| Settings | `abdm.gateway` (hospital-wide JSON): `enabled` (false), `baseUrl` (https, no user name, e.g. the sandbox `https://dev.abdm.gov.in/api/hiecm`), `hipId` (the HFR id registered as HIP), `cmId` (`sbx` or `abdm`), `timeoutSeconds` (30). `abdm.gateway.secret` (encrypted secret setting): `clientId`, `clientSecret` issued by NHA. Both are added under Administration › Settings (Add setting); the secret is never shown again |
+| Status | `GET /api/v1/abdm/gateway`: enabled, configured, `live` (always false), the URL and ids, whether the client id and secret are set (never their values), the problems in the set-up and what remains |
+| Client | `IAbdmGatewayClient` (gateway v3): `CreateSessionAsync` (`/gateway/v3/sessions`), `LinkCareContextsAsync` (HIP-initiated linking of exported records to the patient's ABHA address), `AcknowledgeConsentAsync` (`consent/v3/request/hip/on-notify`), `TransferHealthInformationAsync` (`data-flow/v3/health-information/hip/on-request`, the encrypted push to the HIU, `notify`). The registered `DisabledAbdmGatewayClient` sends nothing and answers every call with 422 `abdm.gateway_disabled`, naming what is missing |
+| Encryption | `IFideliusCipher` (X25519 key agreement, AES-256-GCM, as ABDM's Fidelius). The registered `UnavailableFideliusCipher` refuses every call |
+
+What remains, in order (also in the status's `remaining`):
+
+1. Register the hospital as a HIP with its HFR id and get NHA **sandbox** client credentials (an outside approval).
+2. Build the live client and the callback endpoints the gateway calls (patient discovery, link initiation and
+   confirmation, consent notification, health-information request), confirm the paths against the sandbox, and link
+   care contexts to the patient's ABHA when a record is completed.
+3. Implement Fidelius and test it against NHA's reference implementation.
+4. Pass NHA's sandbox functional tests and certification, then switch to the production gateway.
+5. Sign documents (`Bundle.signature`, optional in the IG) with the doctor's DSC when the DSC signing of prescriptions
+   (ERX-04) covers them.
+
 ## Limitations and follow-ups
 
-* **EHR-08** (ABHA linking, ABDM HIP/HIU and ABDM/NRCeS document bundles) is not implemented. Resources use
-  ABDM-friendly identifiers (ABHA number, HFR id) but claim no NRCeS profiles.
+* **EHR-08**: ABHA capture and the ABDM document export are built (behind `features.abdm`, off by default); the ABDM
+  gateway (HIP linking, consent, encrypted data push) is not live ([ABDM gateway](#abdm-gateway-not-live)). The FHIR
+  read API's resources keep the ABDM-friendly identifiers (ABHA number, HFR id) but claim no NRCeS profiles; the ABDM
+  documents do. Radiology and cardiology reports, immunisations, wellness and invoice records are not exported as
+  ABDM documents yet.
 * No `vread`/history, `_include`/`_revinclude`, `_sort`, `_summary`, `_elements`, XML, or bulk export (`$export`);
   clinical searches are per patient.
 * Practitioner, Organization and Location are not served: references carry a display name (and the HFR id for

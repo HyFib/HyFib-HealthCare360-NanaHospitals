@@ -127,7 +127,7 @@ docs/                                     SRS, architecture, security, deploymen
 | 7 | **Billing** | OP Billing, IP Billing, Medical Billing, Insurance, Doctor Fee Accounting | any module of layers 2–6 |
 | 8 | **Analytics** | MIS Reports, Managed BI Services | any module |
 | 8 | **AI** | AI Voice Assistant (commands + clinical dictation) | Patients, Scheduling, Clinical (+ lower) |
-| 8 | **Interop** | HL7 FHIR R4 read API for other providers, with the patient's data-sharing consent (EHR-05) | Patients, Clinical, Diagnostics, Inpatient |
+| 8 | **Interop** | HL7 FHIR R4 read API for other providers, with the patient's data-sharing consent (EHR-05); ABDM health records: NRCeS FHIR documents of discharge summaries, lab reports, consultations and prescriptions, and the (not yet live) ABDM gateway client (EHR-08, behind `features.abdm`) | Patients, Clinical, Diagnostics, Inpatient |
 | 8 | **Privacy** | DPDP Act 2023: data-principal requests, nominees, the breach register, the retention schedule and clean-up (PRV-01..04) | Patients, Clinical, Engagement, Billing |
 
 **Rule:** a module may reference only modules in *lower* layers (enforced by `ArchitectureTests`). When a lower module needs something from a higher one (for example, Inpatient needs Billing's discharge clearance, or Pharmacy posts charges), it depends on a **contract interface in Platform** (`Platform/Contracts/*`) that the higher module implements:
@@ -182,7 +182,8 @@ HyFib.HealthCare360.Modules.<Name>/
 * **Idempotency:** the client sends an `Idempotency-Key` UUID for unsafe methods. The server replays stored responses for 24 h and returns `422` if the same key comes with a different payload. `IdempotencyTests` retries a registration with the same key and checks that the first answer comes back and no second patient is made (DED-08). A request without a key is not held to this.
 * **Authorisation:** every endpoint declares `.RequirePermission(Permissions.X)`. Anonymous endpoints are explicit (`AllowAnonymous`) and rate-limited.
 * **OpenAPI:** `/openapi/v1.json`. There is an interactive reference at `/docs` (Scalar) when enabled.
-* **FHIR:** `/fhir/r4/{resource}` read facade for interoperability (EHR-05).
+* **FHIR:** `/fhir/r4/{resource}` read facade for interoperability (EHR-05); `/api/v1/abdm/bundles/*` exports one record
+  as an ABDM FHIR document (EHR-08).
 * **Realtime:** SignalR hub `/hubs/events` and `/hubs/telehealth` (WebRTC signalling).
   * Connections join `user:{id}` and `facility:{id}`.
   * Screens subscribe to module topics: `queue:{deptId}`, `patient:{id}`, `beds:{facilityId}`, `ward:{id}`,
