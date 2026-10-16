@@ -1,13 +1,13 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import type * as Core from '@hc360/core';
-import { ApiError, bridge, BridgeError } from '@hc360/core';
+import { ApiError, bridge, BridgeError, useSession, type AuthUser } from '@hc360/core';
 import type * as Ui from '@hc360/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DigitalSignatureBadge, DigitalSignatureSection } from './DigitalSignature';
-import { desktopSigningProblem, digitalSignatureBadge, signWithDsc } from './dscSigning';
+import { DigitalSignatureBadge, DigitalSignatureSection, SignedPrescriptionNotice } from './DigitalSignature';
+import { afterRefill, desktopSigningProblem, digitalSignatureBadge, signWithDsc } from './dscSigning';
 import type * as PrescriptionsApi from './prescriptionsApi';
 import { prescriptionsApi, type PrescriptionDigitalSignatureDto, type PrescriptionDto } from './prescriptionsApi';
 
@@ -83,7 +83,30 @@ const VALID = signature({
   message: 'The signature is valid.',
 });
 
-const RX = { id: RX_ID, status: 'Signed', prescriptionNumber: 'NHRX260000123' } as PrescriptionDto;
+const PRESCRIBER_ID = '0192a000-0000-7000-8000-0000000doc01';
+
+const RX = {
+  id: RX_ID,
+  status: 'Signed',
+  prescriptionNumber: 'NHRX260000123',
+  practitionerId: PRESCRIBER_ID,
+  practitionerName: 'Dr Meera Shah',
+  isInpatient: false,
+} as PrescriptionDto;
+
+/** Signs in as a doctor: the prescription's prescriber unless told otherwise. */
+function signInAs(practitionerId: string | null = PRESCRIBER_ID) {
+  useSession.getState().setAuth({
+    accessToken: 'test-token',
+    expiresAt: '2099-01-01T00:00:00Z',
+    user: {
+      id: 'user-1',
+      displayName: 'Doctor',
+      practitionerId,
+      permissions: ['clinical.prescriptions.sign'],
+    } as AuthUser,
+  });
+}
 
 function renderWith(node: React.ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -97,6 +120,7 @@ function renderWith(node: React.ReactNode) {
 describe('signing a prescription with a DSC', () => {
   beforeEach(() => {
     desktop.on = true;
+    signInAs();
     readSignature.mockReset();
     vi.mocked(bridge.signPrescription).mockReset();
     vi.mocked(prescriptionsApi.signingContent).mockReset();
@@ -173,6 +197,33 @@ describe('signing a prescription with a DSC', () => {
     expect(screen.queryByRole('button', { name: 'Sign with DSC' })).not.toBeInTheDocument();
   });
 
+  it('offers "Sign with DSC" only to the doctor who prescribed it, and tells anyone else who must sign', async () => {
+    signInAs('0192a000-0000-7000-8000-0000000doc02');
+    readSignature.mockResolvedValue(signature({ policy: 'Required' }));
+    renderWith(<DigitalSignatureSection prescription={RX} canSign />);
+
+    expect(
+      await screen.findByText(
+        'Only Dr Meera Shah, who prescribed it, can sign it with their DSC, and it can be printed or given to the patient only then.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign with DSC' })).not.toBeInTheDocument();
+  });
+
+  it('says a DSC that no longer checks out keeps the prescription from being issued where one is required', async () => {
+    readSignature.mockResolvedValue({
+      ...VALID,
+      policy: 'Required',
+      state: 'Untrusted',
+      chainTrusted: false,
+      finalCopyAvailable: false,
+      message: 'The prescription is as the doctor signed it, but HC360 could not confirm the certificate as a DSC.',
+    });
+    renderWith(<DigitalSignatureSection prescription={RX} canSign={false} />);
+
+    expect(await screen.findByText(/not printed or shared until this is resolved/)).toBeInTheDocument();
+  });
+
   it('says where to sign when the page is open in a browser', async () => {
     desktop.on = false;
     readSignature.mockResolvedValue(signature({ policy: 'Optional' }));
@@ -237,5 +288,69 @@ describe('signing a prescription with a DSC', () => {
     expect(await screen.findByText('The certificate is not confirmed as a DSC')).toBeInTheDocument();
     expect(screen.queryByText('Signed with a DSC')).not.toBeInTheDocument();
     expect(screen.getByText(/No CCA India root certificates are installed/)).toBeInTheDocument();
+  });
+});
+
+describe('after signing in HC360', () => {
+  it('offers print and PDF where the prescription can be issued as it is', () => {
+    const dismiss = vi.fn();
+    renderWith(
+      <SignedPrescriptionNotice
+        prescription={{ ...RX, finalCopyAvailable: true }}
+        onSignWithDsc={vi.fn()}
+        onDismiss={dismiss}
+      />,
+    );
+
+    expect(screen.getByText('Prescription NHRX260000123 signed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Print (A5)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign with DSC…' })).not.toBeInTheDocument();
+  });
+
+  it('asks for the DSC instead of offering a print the server would refuse, where the DSC is required', async () => {
+    const user = userEvent.setup();
+    const sign = vi.fn();
+    renderWith(
+      <SignedPrescriptionNotice
+        prescription={{ ...RX, finalCopyAvailable: false }}
+        onSignWithDsc={sign}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/now sign it with your DSC/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Print (A5)' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Download PDF' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Sign with DSC…' }));
+    expect(sign).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('after issuing a refill', () => {
+  const REFILL = { ...RX, prescriptionNumber: 'NHRX260000124' } as PrescriptionDto;
+
+  it('prints it at once where it can be issued as it is', () => {
+    expect(afterRefill({ ...REFILL, finalCopyAvailable: true }, null)).toEqual({
+      print: true,
+      openToSign: false,
+      title: 'Refill NHRX260000124 issued',
+      body: 'It is now in the pharmacy queue.',
+    });
+    expect(afterRefill(REFILL, null).print).toBe(true); // an older server does not say
+  });
+
+  it('takes the prescriber to sign it with their DSC, where the DSC is required, instead of printing', () => {
+    const next = afterRefill({ ...REFILL, finalCopyAvailable: false }, PRESCRIBER_ID);
+    expect(next.print).toBe(false);
+    expect(next.openToSign).toBe(true);
+    expect(next.title).toBe('Refill NHRX260000124 issued: sign it with your DSC');
+  });
+
+  it('tells a pharmacist or a colleague which doctor must sign it', () => {
+    const next = afterRefill({ ...REFILL, finalCopyAvailable: false }, null);
+    expect(next.print).toBe(false);
+    expect(next.openToSign).toBe(false);
+    expect(next.body).toContain('Dr Meera Shah must sign it before it can be printed or given to the patient.');
   });
 });

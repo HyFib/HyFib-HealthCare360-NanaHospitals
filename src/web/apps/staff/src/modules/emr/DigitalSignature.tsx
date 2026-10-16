@@ -5,6 +5,7 @@ import {
   makeStyles,
   mergeClasses,
   MessageBar,
+  MessageBarActions,
   MessageBarBody,
   MessageBarTitle,
   Text,
@@ -15,8 +16,11 @@ import { bridge, formatDateTime, saveFile } from '@hc360/core';
 import { Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { desktopSigningProblem, digitalSignatureBadge, signWithDsc } from './dscSigning';
+import { DocumentButtons } from '@/lib/DocumentButtons';
+import { desktopSigningProblem, digitalSignatureBadge, signWithDsc, useIsPrescriber } from './dscSigning';
 import {
+  canIssueFinalCopy,
+  prescriptionDocument,
   prescriptionQueries,
   prescriptionSignatureFiles,
   type DigitalSignatureState,
@@ -55,7 +59,8 @@ const useStyles = makeStyles({
 /**
  * The prescription's DSC signature: its state as the server re-checked it, who signed with which certificate, the
  * SHA-256 of the signed bytes, and the .p7s with those bytes for an independent check. The prescribing doctor signs
- * here, in HC360 Desktop only (a browser cannot reach the DSC token).
+ * here, in HC360 Desktop only (a browser cannot reach the DSC token); anyone else with `clinical.prescriptions.sign`
+ * is told who must sign it (the server refuses them: `prescription.not_prescriber`).
  */
 export function DigitalSignatureSection({
   prescription,
@@ -67,6 +72,7 @@ export function DigitalSignatureSection({
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
+  const isPrescriber = useIsPrescriber(prescription);
   const signature = useQuery({
     ...prescriptionQueries.signature(prescription.id),
     enabled: prescription.status !== 'Draft',
@@ -104,7 +110,8 @@ export function DigitalSignatureSection({
   }
 
   const files = prescriptionSignatureFiles(prescription.id);
-  const canSignHere = canSign && prescription.status === 'Signed' && data.state === 'NotSigned';
+  const unsigned = prescription.status === 'Signed' && data.state === 'NotSigned';
+  const canSignHere = canSign && isPrescriber && unsigned;
   return (
     <Section
       title="Digital signature"
@@ -120,6 +127,12 @@ export function DigitalSignatureSection({
                 : 'The prescription is valid as signed in HC360; the doctor may also sign it with their DSC.'}
             </MessageBarBody>
           </MessageBar>
+          {unsigned && !isPrescriber && (
+            <Caption1 block className={styles.term} style={{ marginTop: 8 }}>
+              Only {prescription.practitionerName ?? 'the prescribing doctor'}, who prescribed it, can sign it with
+              their DSC{data.policy === 'Required' ? ', and it can be printed or given to the patient only then' : ''}.
+            </Caption1>
+          )}
           {canSignHere &&
             (bridge.isDesktop ? (
               <div className={styles.actions}>
@@ -144,6 +157,8 @@ export function DigitalSignatureSection({
             <MessageBarBody>
               <MessageBarTitle>{VERDICT[data.state].title}</MessageBarTitle>
               {data.message}
+              {data.finalCopyAvailable === false &&
+                ' This hospital requires a valid DSC signature, so the prescription is not printed or shared until this is resolved.'}
             </MessageBarBody>
           </MessageBar>
           <dl className={styles.details}>
@@ -174,6 +189,59 @@ export function DigitalSignatureSection({
         </>
       )}
     </Section>
+  );
+}
+
+/**
+ * What the doctor sees once the prescription is signed in HC360: print it or download the PDF — or, where the hospital
+ * requires the doctor's DSC, sign it with the DSC first (the print and PDF would be refused until then).
+ */
+export function SignedPrescriptionNotice({
+  prescription,
+  onSignWithDsc,
+  onDismiss,
+}: {
+  prescription: PrescriptionDto;
+  /** Opens the prescription, where the DSC section signs it. */
+  onSignWithDsc: () => void;
+  onDismiss: () => void;
+}) {
+  const where = prescription.isInpatient ? '' : ' and on the patient portal';
+  const another = (
+    <Button appearance="subtle" onClick={onDismiss}>
+      Write another prescription
+    </Button>
+  );
+  if (canIssueFinalCopy(prescription)) {
+    return (
+      <MessageBar intent="success" layout="multiline">
+        <MessageBarBody>
+          <MessageBarTitle>Prescription {prescription.prescriptionNumber} signed</MessageBarTitle>
+          It is in the pharmacy queue{where}. Print it or download the PDF for the patient if needed.
+        </MessageBarBody>
+        <MessageBarActions>
+          <DocumentButtons path={prescriptionDocument(prescription.id)} printLabel="Print (A5)" />
+          {another}
+        </MessageBarActions>
+      </MessageBar>
+    );
+  }
+  return (
+    <MessageBar intent="warning" layout="multiline">
+      <MessageBarBody>
+        <MessageBarTitle>
+          Prescription {prescription.prescriptionNumber} signed: now sign it with your DSC
+        </MessageBarTitle>
+        It is in the pharmacy queue. This hospital prints, downloads and shares prescriptions only once the doctor has
+        signed them with their DSC{prescription.isInpatient ? '' : ', and the patient is told then'}.
+      </MessageBarBody>
+      <MessageBarActions>
+        <Button appearance="primary" icon={<CertificateRegular />} onClick={onSignWithDsc}>
+          Sign with DSC…
+        </Button>
+        {another}
+      </MessageBarActions>
+    </MessageBar>
   );
 }
 

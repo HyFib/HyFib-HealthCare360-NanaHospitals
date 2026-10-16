@@ -36,9 +36,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { formatRelative, isApiError, useSession } from '@hc360/core';
 import { LEAVE_KEEPING_DRAFT, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { useState, type ReactElement } from 'react';
 import { Controller, useFieldArray, useForm, useWatch, type Control, type UseFormReturn } from 'react-hook-form';
-import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { emrApi, emrKeys, emrQueries, type CurrentMedication } from './api';
@@ -53,6 +53,7 @@ import {
   ROUTES,
   type DoseFrequency,
 } from './dosing';
+import { SignedPrescriptionNotice } from './DigitalSignature';
 import { DrugPicker } from './DrugPicker';
 import {
   appendLines,
@@ -73,7 +74,7 @@ import {
   type RxFormValues,
   type RxLineValues,
 } from './prescriptionForm';
-import { prescriptionDocument, prescriptionQueries, prescriptionsApi, type PrescriptionDto } from './prescriptionsApi';
+import { prescriptionQueries, prescriptionsApi, type PrescriptionDto } from './prescriptionsApi';
 import { SafetyReview } from './SafetyReview';
 import {
   alertsFromProblem,
@@ -516,6 +517,7 @@ export function PrescriptionEditor({
 }) {
   const styles = useStyles();
   const notify = useNotify();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const practitionerId = useSession((s) => s.user?.practitionerId ?? null);
   const canWrite = usePermission('clinical.prescriptions.write');
@@ -720,19 +722,13 @@ export function PrescriptionEditor({
   return (
     <div className={styles.root}>
       {signed && (
-        <MessageBar intent="success" layout="multiline">
-          <MessageBarBody>
-            <MessageBarTitle>Prescription {signed.prescriptionNumber} signed</MessageBarTitle>
-            It is in the pharmacy queue{signed.isInpatient ? '' : ' and on the patient portal'}. Print it or download
-            the PDF for the patient if needed.
-          </MessageBarBody>
-          <MessageBarActions>
-            <DocumentButtons path={prescriptionDocument(signed.id)} printLabel="Print (A5)" />
-            <Button appearance="subtle" onClick={() => setSigned(null)}>
-              Write another prescription
-            </Button>
-          </MessageBarActions>
-        </MessageBar>
+        <SignedPrescriptionNotice
+          prescription={signed}
+          onSignWithDsc={() =>
+            void navigate({ to: '/emr/prescriptions/$prescriptionId', params: { prescriptionId: signed.id } })
+          }
+          onDismiss={() => setSigned(null)}
+        />
       )}
 
       {!signed && (

@@ -59,6 +59,11 @@ export interface PrescriptionDto {
   isDigitallySigned?: boolean;
   digitallySignedAt?: string | null;
   digitalSignerName?: string | null;
+  /**
+   * False while the hospital requires the doctor's DSC and the prescription has no valid one: it is then not printed,
+   * downloaded or shared (the pharmacy queue is not held back). Older servers leave it out: read that as true.
+   */
+  finalCopyAvailable?: boolean;
 }
 
 /** Whether the hospital's doctors sign prescriptions with their DSC (setting `clinical.prescriptions.signature`). */
@@ -89,7 +94,13 @@ export interface PrescriptionDigitalSignatureDto {
   /** Older servers leave it out. */
   chainTrusted?: boolean;
   message: string | null;
+  /** The DSC rules let it be printed, downloaded and shared (see `PrescriptionDto.finalCopyAvailable`). */
+  finalCopyAvailable?: boolean;
 }
+
+/** The DSC rules let a signed prescription be printed, downloaded and shared (ERX-04); older servers do not say. */
+export const canIssueFinalCopy = (rx: Pick<PrescriptionDto, 'status' | 'finalCopyAvailable'>): boolean =>
+  rx.status === 'Signed' && rx.finalCopyAvailable !== false;
 
 /** The canonical bytes (base64) HC360 Desktop signs, with what the server says they contain. */
 export interface PrescriptionSigningContent {

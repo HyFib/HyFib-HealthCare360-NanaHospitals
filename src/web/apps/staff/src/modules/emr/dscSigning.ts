@@ -1,5 +1,10 @@
-import { bridge, BridgeError } from '@hc360/core';
-import { prescriptionsApi, type PrescriptionDigitalSignatureDto } from './prescriptionsApi';
+import { bridge, BridgeError, useSession } from '@hc360/core';
+import {
+  canIssueFinalCopy,
+  prescriptionsApi,
+  type PrescriptionDigitalSignatureDto,
+  type PrescriptionDto,
+} from './prescriptionsApi';
 
 /**
  * Signing a prescription with the doctor's Digital Signature Certificate (ERX-04). The server hands out the
@@ -10,6 +15,12 @@ export async function signWithDsc(prescriptionId: string): Promise<PrescriptionD
   const toSign = await prescriptionsApi.signingContent(prescriptionId);
   const signed = await bridge.signPrescription(toSign.content);
   return prescriptionsApi.attachSignature(prescriptionId, signed.signature);
+}
+
+/** Whether the signed-in user is the prescription's prescriber: the only one who may sign it with a DSC. */
+export function useIsPrescriber(prescription: Pick<PrescriptionDto, 'practitionerId'>): boolean {
+  const practitionerId = useSession((state) => state.user?.practitionerId ?? null);
+  return practitionerId !== null && practitionerId === prescription.practitionerId;
 }
 
 /** What to tell the doctor when signing stopped on the desktop's side; null for a server refusal (shown as such). */
@@ -55,4 +66,39 @@ export function digitalSignatureBadge(
         ? { label: 'DSC signature required', color: 'warning' }
         : { label: 'Not DSC signed', color: 'informative' };
   }
+}
+
+/**
+ * What to do once a refill is issued (ERX-05): print it at once — unless the hospital requires the doctor's DSC (ERX-04).
+ * A refill is a new prescription in the original prescriber's name, so then only that doctor can make it printable, by
+ * signing it with their DSC: they are taken to it; anyone else (a pharmacist, a colleague) is told who must.
+ */
+export function afterRefill(
+  refill: PrescriptionDto,
+  myPractitionerId: string | null,
+): { print: boolean; openToSign: boolean; title: string; body: string } {
+  if (canIssueFinalCopy(refill)) {
+    return {
+      print: true,
+      openToSign: false,
+      title: `Refill ${refill.prescriptionNumber} issued`,
+      body: 'It is now in the pharmacy queue.',
+    };
+  }
+  if (myPractitionerId !== null && myPractitionerId === refill.practitionerId) {
+    return {
+      print: false,
+      openToSign: true,
+      title: `Refill ${refill.prescriptionNumber} issued: sign it with your DSC`,
+      body: 'It is in the pharmacy queue. This hospital prints and shares prescriptions only once the doctor has signed them with their DSC.',
+    };
+  }
+  return {
+    print: false,
+    openToSign: false,
+    title: `Refill ${refill.prescriptionNumber} issued`,
+    body:
+      'It is in the pharmacy queue. This hospital prints and shares prescriptions only once the doctor has signed them with ' +
+      `their DSC: ${refill.practitionerName ?? 'the prescribing doctor'} must sign it before it can be printed or given to the patient.`,
+  };
 }
