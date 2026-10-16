@@ -650,6 +650,14 @@ export interface PortalPrescriptionDetail {
   verificationToken: string | null;
   /** The public check page for the printed QR code, when the server knows the hospital's public address. */
   verificationUrl?: string | null;
+  /**
+   * False while the hospital requires the doctor's DSC and the prescription has none that checks out: it is then not
+   * printed, downloaded or shown as a QR code (the server leaves the token out). Older servers leave it out: read
+   * that as true.
+   */
+  finalCopyAvailable?: boolean;
+  /** Why not: `NotSigned` while the doctor has not signed it with their DSC yet. */
+  digitalSignatureState?: DigitalSignatureState;
 }
 
 /** Public QR verification of a printed prescription (no patient data). */
@@ -675,8 +683,10 @@ export interface PrescriptionVerification {
  * `Untrusted`: the prescription is as signed, but the certificate does not chain to a CCA India root installed on the
  * server, so it is not presented as a DSC. `chainTrusted` is whether it does; revocation is not checked.
  */
+export type DigitalSignatureState = 'NotSigned' | 'Valid' | 'Invalid' | 'Untrusted';
+
 export interface PublicDigitalSignature {
-  state: 'NotSigned' | 'Valid' | 'Invalid' | 'Untrusted';
+  state: DigitalSignatureState;
   signerName: string;
   certificateSerialNumber: string;
   certificateIssuer: string;
