@@ -67,7 +67,7 @@ public sealed class LabReportDocumentTests
     [Fact]
     public async Task The_document_carries_the_letterhead_the_qr_code_and_a_footer_on_every_page()
     {
-        var document = await LabReportDocument.BuildAsync(Report(), releasedOnly: true, Frame(), Ct);
+        var document = await LabReportDocument.BuildAsync(Report(), releasedOnly: true, Frame(), DocumentText.English, Ct);
         var html = document.ToHtml();
 
         document.FileName.ShouldBe("lab-report-NHLAB2600012");
@@ -87,7 +87,7 @@ public sealed class LabReportDocumentTests
     [Fact]
     public async Task Without_a_portal_address_the_code_is_printed_without_a_qr_code()
     {
-        var html = (await LabReportDocument.BuildAsync(Report() with { VerificationUrl = null }, releasedOnly: true, Frame(), Ct)).ToHtml();
+        var html = (await LabReportDocument.BuildAsync(Report() with { VerificationUrl = null }, releasedOnly: true, Frame(), DocumentText.English, Ct)).ToHtml();
 
         html.ShouldContain("Verification code K7Q2M9X4");
         html.ShouldNotContain("data:image/svg+xml");
@@ -96,7 +96,7 @@ public sealed class LabReportDocumentTests
     [Fact]
     public async Task An_unreleased_copy_says_so_across_the_page()
     {
-        var html = (await LabReportDocument.BuildAsync(Report() with { Status = LabReportStatus.Verified }, releasedOnly: false, Frame(), Ct)).ToHtml();
+        var html = (await LabReportDocument.BuildAsync(Report() with { Status = LabReportStatus.Verified }, releasedOnly: false, Frame(), DocumentText.English, Ct)).ToHtml();
 
         html.ShouldContain("Preliminary copy for the laboratory: not released");
     }
@@ -114,11 +114,40 @@ public sealed class LabReportDocumentTests
             .Returns(PrintTemplate.Default with { ShowLogo = false, ClosingNote = "Read the results with the clinical findings." });
         var report = Report() with { Letterhead = Report().Letterhead with { LogoFileId = logo, FacilityId = facility } };
 
-        var html = (await LabReportDocument.BuildAsync(report, releasedOnly: true, new ReportDocumentFrame(Assets(files, templates)), Ct)).ToHtml();
+        var html = (await LabReportDocument.BuildAsync(report, releasedOnly: true, new ReportDocumentFrame(Assets(files, templates)), DocumentText.English, Ct)).ToHtml();
 
         html.ShouldContain("<div class=\"facility\">Nana Hospitals</div>");
         html.ShouldNotContain("<img class=\"logo\"");
         html.ShouldContain("<div class=\"closing-note\">Read the results with the clinical findings.</div>");
+    }
+
+    [Fact]
+    public async Task A_report_for_a_patient_who_reads_hindi_has_hindi_headings_and_keeps_results_and_names_as_they_are()
+    {
+        var document = await LabReportDocument.BuildAsync(Report(), releasedOnly: true, Frame(), DocumentText.Hindi, Ct);
+        var html = document.ToHtml();
+
+        document.Language.ShouldBe("hi");
+        document.Title.ShouldBe("लैब रिपोर्ट NHLAB2600012");
+        document.FileName.ShouldBe("lab-report-NHLAB2600012");
+        html.ShouldContain("<html lang=\"hi\">");
+        html.ShouldContain("<h1 class=\"doc-title\">प्रयोगशाला रिपोर्ट</h1>");
+        html.ShouldContain("<span class=\"label\">रोगी</span>");
+        html.ShouldContain("<span class=\"label\">रिपोर्ट सं.</span>");
+        html.ShouldContain("<th style=\"width:34%\">जाँच</th><th style=\"width:22%\">परिणाम</th><th style=\"width:7%\">संकेत</th>");
+        html.ShouldContain("<th>संदर्भ सीमा</th>");
+        html.ShouldContain("title=\"गंभीर रूप से कम\">LL</span>");
+        html.ShouldContain("पृथक किया गया सूक्ष्मजीव: <strong>E. coli</strong>");
+        html.ShouldContain("इस रिपोर्ट की जाँच के लिए स्कैन करें");
+        html.ShouldContain("सत्यापन कोड K7Q2M9X4");
+        html.ShouldContain("पंजीकरण सं. MMC-55821");
+        html.ShouldContain("— रिपोर्ट समाप्त —");
+        html.ShouldContain("@font-face { font-family: \"HC360 Devanagari\"");
+
+        // Test names, values, units and reference intervals are printed as they are.
+        html.ShouldContain("<td>Haemoglobin</td><td><span class=\"crit\">5.1</span>");
+        html.ShouldContain("<td>g/dL</td><td>12.0 – 15.0</td>");
+        html.ShouldNotContain("Investigation");
     }
 
     // The frame reads images only for the file ids it is given; this report has none.

@@ -80,6 +80,11 @@ const useStyles = makeStyles({
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', marginTop: '8px' },
   callNext: { width: '100%', minHeight: '56px', fontSize: tokens.fontSizeBase500 },
   muted: { color: tokens.colorNeutralForeground3 },
+  // The name on one line, age, sex and flags under it: run together on one line they wrapped over each other in a
+  // narrow column.
+  patient: { display: 'flex', flexDirection: 'column', gap: '2px', padding: '4px 0' },
+  patientName: { overflow: 'hidden', textOverflow: 'ellipsis' },
+  patientMeta: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 6px' },
   waitLong: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
 });
 
@@ -317,25 +322,23 @@ function QueuePage() {
                   key: 'patient',
                   header: 'Patient',
                   render: (e) => (
-                    <span>
-                      {e.patientName}{' '}
-                      <Text size={200}>
-                        ({e.age ?? '—'} / {e.gender.charAt(0)})
-                      </Text>
-                      {e.priority !== 'Normal' && (
-                        <Badge
-                          size="small"
-                          color={e.priority === 'Emergency' ? 'danger' : 'warning'}
-                          style={{ marginLeft: 6 }}
-                        >
-                          {e.priority}
-                        </Badge>
-                      )}
-                      {e.isFollowUp && (
-                        <Badge size="small" appearance="outline" style={{ marginLeft: 6 }}>
-                          Follow-up
-                        </Badge>
-                      )}
+                    <span className={styles.patient}>
+                      <span className={styles.patientName}>{e.patientName}</span>
+                      <span className={styles.patientMeta}>
+                        <Caption1>
+                          ({e.age ?? '—'} / {e.gender.charAt(0)})
+                        </Caption1>
+                        {e.priority !== 'Normal' && (
+                          <Badge size="small" color={e.priority === 'Emergency' ? 'danger' : 'warning'}>
+                            {e.priority}
+                          </Badge>
+                        )}
+                        {e.isFollowUp && (
+                          <Badge size="small" appearance="outline">
+                            Follow-up
+                          </Badge>
+                        )}
+                      </span>
                     </span>
                   ),
                 },

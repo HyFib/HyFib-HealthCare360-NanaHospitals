@@ -17,6 +17,8 @@ internal static class DownloadPolicy
         ".png", ".jpg", ".jpeg", ".webp", ".dcm", ".scp", ".webm", ".ogg", ".mp3", ".wav", ".m4a",
         // The hospital CA certificate, for installing on tablets.
         ".crt",
+        // A prescription's DSC signature (detached CMS), to check with OpenSSL against its signed data (.json).
+        ".p7s",
     };
 
     public static bool IsAllowed(string sourceUri, string resultFilePath, Uri server) =>

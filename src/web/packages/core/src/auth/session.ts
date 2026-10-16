@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ApiError, CORRELATION_HEADER, toApiError } from '../api/errors';
+import { ApiError, CORRELATION_HEADER, LANGUAGE_HEADER, toApiError } from '../api/errors';
 import type { ClientType } from '../api/client';
 
 export interface FacilityOption {
@@ -31,6 +31,11 @@ export interface AuthUser {
   restriction: 'password' | 'mfa-setup' | 'locked' | null;
   /** The password must be changed because a sign-in found it published from data breaches (SRS SEC-01). */
   passwordBreached?: boolean;
+  /**
+   * The hospital lets staff unlock the lock screen with the device's Windows Hello, fingerprint or face (the
+   * `ui.biometricUnlock` setting). The PIN and the password work either way.
+   */
+  biometricUnlock?: boolean;
 }
 
 export interface AuthResult {
@@ -112,24 +117,88 @@ export function configureAuth(options: { clientType: ClientType }): void {
   clientType = options.clientType;
 }
 
+// The app's windows on this computer (browser tabs, HC360 Desktop's second windows) share one session, so use of any of
+// them is use of all: each tells the others, at most every few seconds, so none locks the screen under someone working
+// in another.
+const ACTIVITY_SHARE_MS = 5_000;
+const activityChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('hc360:activity');
+// Outside a browser (tests run in Node), the channel must not keep the process alive.
+(activityChannel as { unref?: () => void } | null)?.unref?.();
+let lastShared = 0;
+activityChannel?.addEventListener('message', () => {
+  lastActivity = Date.now();
+});
+
 /**
  * Notes that someone is using the app now. Key presses, clicks, touches and scrolling count by themselves; an app calls
- * this for use the browser does not see, such as a video consultation in progress.
+ * this for use the browser does not see, such as a video consultation in progress. It counts for the app's other
+ * windows too.
  */
 export function markActivity(): void {
-  lastActivity = Date.now();
+  const now = Date.now();
+  lastActivity = now;
+  if (activityChannel && now - lastShared >= ACTIVITY_SHARE_MS) {
+    lastShared = now;
+    activityChannel.postMessage(null);
+  }
 }
 
-// The same signs of use as the idle lock (useIdle), so the server and the screen agree on when it was last used.
+// The signs of use the idle lock (useIdle) and the server both count from, so they agree on when it was last used.
 if (typeof window !== 'undefined') {
   for (const name of ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'] as const) {
     window.addEventListener(name, markActivity, { passive: true, capture: true });
   }
 }
 
+/** When someone last used the app, in this window or another of its windows (milliseconds since the epoch). */
+export function lastActivityAt(): number {
+  return lastActivity;
+}
+
 /** Whole seconds since someone last used the app. */
 export function idleSeconds(): number {
   return Math.max(0, Math.floor((Date.now() - lastActivity) / 1000));
+}
+
+/**
+ * Resolves once the screen is unlocked (true), or the session is over (false): for a request the server refused because
+ * the screen is locked, to be sent again when it can be answered. Rejects when `signal` aborts first.
+ */
+export function whenUnlocked(signal?: AbortSignal): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const settle = (state: { status: SessionStatus; locked: boolean }): boolean => {
+      if (state.status === 'anonymous') {
+        resolve(false);
+        return true;
+      }
+      if (!state.locked && state.status === 'authenticated') {
+        resolve(true);
+        return true;
+      }
+      return false;
+    };
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    if (settle(useSession.getState())) {
+      return;
+    }
+    const stop = () => {
+      unsubscribe();
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      stop();
+      reject(signal?.reason);
+    };
+    const unsubscribe = useSession.subscribe((state) => {
+      if (settle(state)) {
+        stop();
+      }
+    });
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 async function authFetch(path: string, body?: unknown, headers?: Record<string, string>): Promise<AuthResult> {
@@ -149,6 +218,17 @@ async function authFetch(path: string, body?: unknown, headers?: Record<string, 
     throw await toApiError(response);
   }
   return response.status === 204 ? {} : ((await response.json()) as AuthResult);
+}
+
+/** What the portal adds to an OTP request: the language the patient chose and the proof of work. */
+export interface OtpOptions {
+  language?: string;
+  headers?: Record<string, string>;
+}
+
+function otpHeaders({ language, headers }: OtpOptions): Record<string, string> | undefined {
+  const all = { ...(language ? { [LANGUAGE_HEADER]: language } : {}), ...headers };
+  return Object.keys(all).length > 0 ? all : undefined;
 }
 
 function accept(result: AuthResult): AuthResult {
@@ -172,14 +252,18 @@ export const auth = {
     return accept(await authFetch('mfa', { challengeId, code }));
   },
 
-  async requestOtp(phone: string) {
-    return authFetch('otp/request', { phone }) as Promise<
+  /**
+   * `language`: the one the patient chose in the portal, so that a refusal (too many codes…) comes in it.
+   * `headers`: the portal's proof of work (`X-HC360-Proof`), which the server asks for here.
+   */
+  async requestOtp(phone: string, options: OtpOptions = {}) {
+    return authFetch('otp/request', { phone }, otpHeaders(options)) as Promise<
       AuthResult & { challengeId: string; expiresAt: string; maskedPhone: string }
     >;
   },
 
-  async verifyOtp(challengeId: string, code: string) {
-    return accept(await authFetch('otp/verify', { challengeId, code }));
+  async verifyOtp(challengeId: string, code: string, options: OtpOptions = {}) {
+    return accept(await authFetch('otp/verify', { challengeId, code }, otpHeaders(options)));
   },
 
   /** Adopts tokens returned by other auth endpoints (change password, MFA enable, facility switch). */

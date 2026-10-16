@@ -74,8 +74,10 @@ export const Route = createFileRoute('/_app/scheduling/calendar')({
   component: CalendarPage,
 });
 
-/** Pixels per minute: a 15-minute slot is 30 px tall, enough for a name and a time. */
+/** Pixels per minute: a 15-minute slot is 30 px tall, and a booking in it shows its name and time on one line. */
 const PX = 2;
+/** A booking's height (px) that fits its two lines: the patient, then the time and status. */
+const TWO_LINES = 36;
 
 const STATUS_COLOUR: Partial<Record<AppointmentStatus, string>> = {
   Booked: tokens.colorPaletteMarigoldBorderActive,
@@ -120,6 +122,8 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground3,
     fontSize: tokens.fontSizeBase100,
   },
+  // The first hour sits under its line, not across it, where half of it was hidden behind the doctors' row.
+  hourLabelFirst: { transform: 'none' },
   column: { position: 'relative', borderLeft: `1px solid ${tokens.colorNeutralStroke2}` },
   hourLine: { position: 'absolute', left: '0', right: '0', borderTop: `1px solid ${tokens.colorNeutralStroke3}` },
   slot: {
@@ -169,6 +173,9 @@ const useStyles = makeStyles({
     ':hover': { boxShadow: tokens.shadow8, zIndex: 2 },
     ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}`, zIndex: 2 },
   },
+  // A booking too short for two lines (15 minutes) shows the patient and the time on one, rather than cutting both.
+  blockOneLine: { flexDirection: 'row', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' },
+  blockDetail: { minWidth: 0, flexShrink: 2, overflow: 'hidden', textOverflow: 'ellipsis' },
   blockDone: { opacity: 0.7 },
   blockName: {
     fontWeight: tokens.fontWeightSemibold,
@@ -546,7 +553,11 @@ function CalendarGrid({
 
         <div className={styles.gutter} style={{ height }}>
           {marks.map((minute) => (
-            <span key={minute} className={styles.hourLabel} style={{ top: top(minute) }}>
+            <span
+              key={minute}
+              className={mergeClasses(styles.hourLabel, minute === range.start && styles.hourLabelFirst)}
+              style={{ top: top(minute) }}
+            >
               {formatHour(minute)}
             </span>
           ))}
@@ -619,9 +630,10 @@ function CalendarGrid({
                 const start = istDateTime(a.startsAt).minutes;
                 const placement = lanes.get(a.id) ?? { lane: 0, lanes: 1 };
                 const status = appointmentStatusText[a.status];
+                const height = Math.max(18, minutesBetween(a.startsAt, a.endsAt) * PX - 2);
                 const style: CSSProperties = {
                   top: top(start) + 1,
-                  height: Math.max(18, minutesBetween(a.startsAt, a.endsAt) * PX - 2),
+                  height,
                   left: `calc(${(placement.lane / placement.lanes) * 100}% + 2px)`,
                   width: `calc(${100 / placement.lanes}% - 4px)`,
                   borderLeftColor: STATUS_COLOUR[a.status] ?? tokens.colorNeutralStroke1,
@@ -636,6 +648,7 @@ function CalendarGrid({
                       type="button"
                       className={mergeClasses(
                         styles.block,
+                        height < TWO_LINES && styles.blockOneLine,
                         (a.status === 'Completed' || a.status === 'NoShow') && styles.blockDone,
                       )}
                       style={style}
@@ -648,7 +661,7 @@ function CalendarGrid({
                         )}
                         {a.patientName}
                       </span>
-                      <span>
+                      <span className={styles.blockDetail}>
                         {formatTime(a.startsAt)} · {status.label}
                       </span>
                     </button>
@@ -677,7 +690,7 @@ function Legend() {
     { label: 'No-show', colour: STATUS_COLOUR.NoShow! },
   ];
   return (
-    <div className={styles.legend} aria-label="Legend">
+    <div className={styles.legend} role="group" aria-label="Legend">
       {items.map((item) => (
         <Caption1 key={item.label}>
           <span className={styles.swatch} style={{ backgroundColor: item.colour }} />

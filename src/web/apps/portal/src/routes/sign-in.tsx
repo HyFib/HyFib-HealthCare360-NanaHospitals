@@ -22,11 +22,12 @@ import {
 import { auth, featureOf, isApiError, isFeatureDisabled } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { CheckingBrowser } from '@/components/CheckingBrowser';
 import { PortalUnavailable } from '@/components/FeatureOff';
 import { TextLink } from '@/components/links';
 import { formatCountdown } from '@/i18n/format';
-import { useT } from '@/i18n';
+import { useLanguage, useT } from '@/i18n';
 import { describeError, errorCode, fieldError } from '@/lib/errors';
 import { usePortalFeatures } from '@/lib/features';
 import { useFeatureRefusals } from '@/lib/featureSwitches';
@@ -43,6 +44,7 @@ import {
   toE164,
 } from '@/lib/otp';
 import { useProfileStore } from '@/lib/profileStore';
+import { prepareProof, withProof } from '@/lib/proofOfWork';
 import { safeRedirect } from '@/lib/redirect';
 import { ensurePortalSession } from '@/lib/session';
 import { IDLE_SIGN_OUT_MINUTES, isSessionEndReason, type SessionEndReason } from '@/lib/sessionEnd';
@@ -196,6 +198,7 @@ interface Challenge {
 function SignInPage() {
   const styles = useStyles();
   const t = useT();
+  const { language } = useLanguage();
   const { redirect: target, ended } = Route.useSearch();
   const hospital = useHospitalName();
   const queryClient = useQueryClient();
@@ -212,9 +215,18 @@ function SignInPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<'send' | 'verify' | null>(null);
+  // The anti-automation check (SRS SEC-06) is solved in the background while the number is typed; the page says it is
+  // checking only when that takes longer than usual.
+  const [checking, setChecking] = useState(false);
   const codeInput = useRef<HTMLInputElement>(null);
   const phoneInput = useRef<HTMLInputElement>(null);
   const now = useNow(1000, step === 'code');
+
+  useEffect(() => {
+    if (features.portal) {
+      prepareProof('otp');
+    }
+  }, [features.portal]);
 
   const digits = sanitizePhoneInput(phone);
   const resendIn = secondsUntil(resendAt, now);
@@ -230,7 +242,12 @@ function SignInPage() {
     setError(null);
     setNotice(null);
     try {
-      const result = await auth.requestOtp(toE164(digits));
+      const result = await withProof('otp', (headers) => auth.requestOtp(toE164(digits), { language, headers }), {
+        subject: toE164(digits),
+        onSlow: setChecking,
+      });
+      // Ready for the code, solved while the SMS arrives.
+      prepareProof('otp');
       const receivedAt = Date.now();
       const count = sent + 1;
       setSent(count);
@@ -280,7 +297,11 @@ function SignInPage() {
     setError(null);
     setNotice(null);
     try {
-      await auth.verifyOtp(challenge.id, value);
+      // No number with the code's proof: the server asks the address's work only, and finds the number from the
+      // challenge when the code is wrong.
+      await withProof('otp', (headers) => auth.verifyOtp(challenge.id, value, { language, headers }), {
+        onSlow: setChecking,
+      });
       // A new person may be signing in on this tab: nothing cached from an earlier session may be shown.
       queryClient.removeQueries({ queryKey: ['portal'] });
       let profiles: { id: string }[] = [];
@@ -313,6 +334,7 @@ function SignInPage() {
       if (expired) {
         setResendAt(Math.min(resendAt, Date.now()));
       }
+      prepareProof('otp');
       codeInput.current?.focus();
     } finally {
       setBusy(null);
@@ -455,6 +477,7 @@ function SignInPage() {
                         ? t('auth.resendIn', { time: formatCountdown(resendIn * 1000) })
                         : t('auth.sendCode')}
                   </Button>
+                  <CheckingBrowser active={checking} />
                   <Caption1 className={styles.muted}>
                     {t('auth.privacyNote')} <TextLink to="/privacy">{t('auth.privacyLink')}</TextLink>
                   </Caption1>
@@ -511,6 +534,7 @@ function SignInPage() {
                   >
                     {busy === 'verify' ? t('auth.verifying') : t('auth.verify')}
                   </Button>
+                  <CheckingBrowser active={checking} />
                   <div className={styles.row}>
                     <Button appearance="subtle" onClick={changeNumber} disabled={busy !== null}>
                       {t('auth.changeNumber')}

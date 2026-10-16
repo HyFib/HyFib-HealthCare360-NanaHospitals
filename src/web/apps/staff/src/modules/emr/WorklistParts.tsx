@@ -1,10 +1,15 @@
 import { Badge, Caption1, makeStyles, Text, Tooltip } from '@fluentui/react-components';
 import { AlertUrgentRegular, LockClosedRegular, WarningRegular } from '@fluentui/react-icons';
 import type { Gender } from '@hc360/core';
-import type { ReactNode } from 'react';
+import { Children, type ReactNode } from 'react';
 
 const useStyles = makeStyles({
-  badges: { display: 'inline-flex', gap: '4px', marginLeft: '6px', verticalAlign: 'middle', flexWrap: 'wrap' },
+  // The name, then age, sex and UHID, then the badges: on one line where the cell is wide enough, each going onto a
+  // line of its own as it narrows. The name and the UHID never wrap within themselves; narrower than the cell, they end
+  // in an ellipsis (the whole of them in the title) rather than spill out of it.
+  root: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '6px', rowGap: '2px' },
+  line: { minWidth: 0 },
+  badges: { display: 'flex', flexWrap: 'wrap', gap: '4px', minWidth: 0 },
 });
 
 /**
@@ -32,40 +37,46 @@ export function WorklistPatient({
   children?: ReactNode;
 }) {
   const styles = useStyles();
+  const details = `(${age ?? '—'} / ${gender.charAt(0)}) · ${uhid}`;
+  const hasBadges = hasActiveAllergies || hasCriticalAlerts || isRestricted || Children.toArray(children).length > 0;
   return (
-    <span>
-      <Text weight="semibold">{name}</Text>{' '}
-      <Caption1>
-        ({age ?? '—'} / {gender.charAt(0)}) · {uhid}
+    <span className={styles.root}>
+      <Text weight="semibold" wrap={false} truncate title={name} className={styles.line}>
+        {name}
+      </Text>
+      <Caption1 wrap={false} truncate title={details} className={styles.line}>
+        {details}
       </Caption1>
       {/* The tooltips describe the badges: a badge says "Allergy" itself, and a plain element cannot be given a name. */}
-      <span className={styles.badges}>
-        {hasActiveAllergies && (
-          <Tooltip content="Has active allergies" relationship="description">
-            <Badge size="small" color="danger" icon={<WarningRegular />}>
-              Allergy
-            </Badge>
-          </Tooltip>
-        )}
-        {hasCriticalAlerts && (
-          <Tooltip content="Critical alert on the banner (DNR, isolation…)" relationship="description">
-            <Badge size="small" color="important" icon={<AlertUrgentRegular />}>
-              Alert
-            </Badge>
-          </Tooltip>
-        )}
-        {isRestricted && (
-          <Tooltip
-            content="Restricted record: the name and details are hidden. Opening the chart asks for emergency access."
-            relationship="description"
-          >
-            <Badge size="small" appearance="tint" color="subtle" icon={<LockClosedRegular />}>
-              Restricted
-            </Badge>
-          </Tooltip>
-        )}
-        {children}
-      </span>
+      {hasBadges && (
+        <span className={styles.badges}>
+          {hasActiveAllergies && (
+            <Tooltip content="Has active allergies" relationship="description">
+              <Badge size="small" color="danger" icon={<WarningRegular />}>
+                Allergy
+              </Badge>
+            </Tooltip>
+          )}
+          {hasCriticalAlerts && (
+            <Tooltip content="Critical alert on the banner (DNR, isolation…)" relationship="description">
+              <Badge size="small" color="important" icon={<AlertUrgentRegular />}>
+                Alert
+              </Badge>
+            </Tooltip>
+          )}
+          {isRestricted && (
+            <Tooltip
+              content="Restricted record: the name and details are hidden. Opening the chart asks for emergency access."
+              relationship="description"
+            >
+              <Badge size="small" appearance="tint" color="subtle" icon={<LockClosedRegular />}>
+                Restricted
+              </Badge>
+            </Tooltip>
+          )}
+          {children}
+        </span>
+      )}
     </span>
   );
 }

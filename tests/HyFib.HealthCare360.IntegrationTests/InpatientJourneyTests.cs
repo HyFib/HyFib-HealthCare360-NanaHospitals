@@ -17,6 +17,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
@@ -97,6 +98,26 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         account.PolicyId.ShouldBe(policy.Id, "the account picks up the policy valid on the admission date");
         account.BedServiceCode.ShouldBe("BED-GEN");
 
+        // Patient banner (UX-04): the admission's visit is open, so its insurer is the payer. The billing counter, which
+        // reads payers and policies, sees the insurer's name and the in-date policy; the doctor sees the payer type only.
+        var bannerPayer = (await billing.GetAsync<PatientPayerResponse>($"/api/v1/patients/{patient.Id}/payer")).Current.ShouldNotBeNull();
+        bannerPayer.IsCurrentVisit.ShouldBeTrue();
+        bannerPayer.PayerType.ShouldBe(PayerType.Insurance);
+        bannerPayer.PayerId.ShouldBe(insurer.Id);
+        bannerPayer.PayerName.ShouldBe(insurer.Name);
+        bannerPayer.PolicyNumber.ShouldBe(policy.PolicyNumberMasked);
+        bannerPayer.ValidUntil.ShouldBe(policy.ValidTo);
+        var doctorsBanner = (await doctor.GetAsync<PatientPayerResponse>($"/api/v1/patients/{patient.Id}/payer")).Current.ShouldNotBeNull();
+        (doctorsBanner.PayerType, doctorsBanner.PayerName, doctorsBanner.PolicyNumber, doctorsBanner.ValidUntil).ShouldBe((PayerType.Insurance, null, null, null));
+
+        // The Super Admin's role holds only the wildcard, which the insurance screens honour, so the banner shows them all.
+        var superAdmin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var superAdminsBanner = (await superAdmin.GetAsync<PatientPayerResponse>($"/api/v1/patients/{patient.Id}/payer")).Current.ShouldNotBeNull();
+        superAdminsBanner.ShouldSatisfyAllConditions(
+            b => b.PayerName.ShouldBe(insurer.Name),
+            b => b.PolicyNumber.ShouldBe(policy.PolicyNumberMasked),
+            b => b.ValidUntil.ShouldBe(policy.ValidTo));
+
         // TPA desk: requests cashless pre-authorisation; the insurer approves part of the estimate.
         var preAuth = await ObtainPreAuthorisationAsync(tpaDesk, policy.Id, admission.Id);
         preAuth.Status.ShouldBe(PreAuthStatus.PartiallyApproved);
@@ -173,6 +194,11 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         var summary = await WriteDischargeSummaryAsync(doctor, patient.Id, admission.Id, admittedAt);
         summary.Status.ShouldBe(DischargeSummaryStatus.Signed);
         summary.SignedByPractitionerId.ShouldBe(consultantId);
+
+        // Patient: downloads it from the portal in the language chosen there (PP-06); the record names none.
+        var portal = await server.SignInToPortalAsync((await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).Phone!);
+        (await PortalPdf.LanguageAsync(server, portal, $"/api/v1/portal/discharge-summaries/{summary.Id}/pdf", chosen: "hi")).ShouldBe("hi");
+        (await PortalPdf.LanguageAsync(server, portal, $"/api/v1/portal/discharge-summaries/{summary.Id}/pdf", chosen: "en")).ShouldBe("en");
 
         // Nurse: initiates the discharge. Every bed day due so far is charged first.
         var initiated = await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/initiate",

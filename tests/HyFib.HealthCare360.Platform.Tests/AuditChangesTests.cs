@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text.Json;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -8,9 +10,10 @@ using Microsoft.EntityFrameworkCore;
 namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
-/// The data audit trail records complex properties part by part. An edited address (of a facility, patient, employee or
-/// donor), a cardiology finding or a TTI result used to leave no trace of what changed: EF lists complex properties apart
-/// from the entity's own, and only the latter were read.
+/// The data audit trail records complex properties part by part, and binary values by their length and SHA-256. An
+/// edited address (of a facility, patient, employee or donor), a cardiology finding or a TTI result used to leave no trace
+/// of what changed: EF lists complex properties apart from the entity's own, and only the latter were read. A binary value
+/// (a prescription's DSC signature and the bytes it signed, which name the patient) used to be copied in full, as base64.
 /// </summary>
 public sealed class AuditChangesTests
 {
@@ -57,6 +60,22 @@ public sealed class AuditChangesTests
         changes["address.city"].ShouldBe("Chennai");
         changes["address.country"].ShouldBe("India");
         changes.ShouldNotContainKey("version");
+    }
+
+    [Fact]
+    public void A_binary_value_is_recorded_as_its_length_and_hash_never_its_bytes()
+    {
+        using var db = ModelOnlyContext();
+        var body = "{\"patient\":\"Asha Rao\"}"u8.ToArray();
+        var record = new IdempotencyRecord { Scope = "test", Key = "k", ResponseBody = body };
+        db.Add(record);
+
+        // As the interceptor writes the event's details.
+        var json = JsonSerializer.Serialize(UnitOfWorkInterceptor.AuditChanges(db.Entry(record), "create"), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        json.ShouldContain($"\"responseBody\":{{\"bytes\":{body.Length},\"sha256\":\"{Convert.ToHexStringLower(SHA256.HashData(body))}\"}}");
+        json.ShouldNotContain(Convert.ToBase64String(body));
+        json.ShouldNotContain("Asha Rao");
     }
 
     /// <summary>The platform's EF model with the Npgsql provider; entities are tracked, never saved.</summary>

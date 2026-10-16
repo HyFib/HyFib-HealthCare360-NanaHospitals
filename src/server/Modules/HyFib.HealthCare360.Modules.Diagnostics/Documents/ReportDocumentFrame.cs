@@ -9,6 +9,7 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Documents;
 /// <param name="Footer">Printed at the foot of every page with the page numbers: patient, UHID and report number.</param>
 /// <param name="VerificationUrl">The portal's public verification page. Without it (no <c>portal.baseUrl</c>) the code is printed without a QR code.</param>
 /// <param name="StatusBanner">A warning for a copy that must not be taken for the final report.</param>
+/// <param name="Text">The language of the frame's own words (PP-06); English when not given.</param>
 internal sealed record ReportFrame(
     string Title,
     string DocumentTitle,
@@ -22,13 +23,15 @@ internal sealed record ReportFrame(
     string? VerificationUrl,
     string? StatusBanner,
     IReadOnlyList<string> Notes,
-    string? Styles);
+    string? Styles,
+    DocumentText? Text = null);
 
 /// <summary>
 /// The A4 frame shared by lab, radiology and cardiology reports (UX-09, LIS-07): letterhead with the facility logo,
 /// patient block, the report body, notes, signatories with their signatures, the QR code that proves the report is
 /// genuine, and the end-of-report line, as the facility's reports template says (HMS-04). The same document is printed at
-/// the counter, downloaded and sent to the patient.
+/// the counter, downloaded and sent to the patient: in English at the counter, in the patient's language (its headings
+/// and labels; results, names, units and codes as they are) on the portal and in messages.
 /// </summary>
 internal sealed class ReportDocumentFrame(DocumentAssets assets)
 {
@@ -48,6 +51,7 @@ internal sealed class ReportDocumentFrame(DocumentAssets assets)
 
     public async Task<PrintableDocument> BuildAsync(ReportFrame frame, CancellationToken cancellationToken)
     {
+        var text = frame.Text ?? DocumentText.English;
         var letterhead = await LetterheadAsync(frame.Letterhead, cancellationToken);
         var signatories = new List<DocumentSignatory>(frame.Signatories.Count);
         foreach (var signatory in frame.Signatories)
@@ -59,8 +63,8 @@ internal sealed class ReportDocumentFrame(DocumentAssets assets)
         var verification = frame.VerificationCode is not { } code
             ? Html.Empty
             : frame.VerificationUrl is { } url
-                ? DocumentParts.Verification(url, code)
-                : Html.Of($"<div class=\"small\">Verification code {code}</div>");
+                ? DocumentParts.Verification(url, code, text: text)
+                : Html.Of($"<div class=\"small\">{text.Format("doc.verify.code", ("code", code))}</div>");
         var notes = frame.Notes.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => Html.Of($"<div>{n}</div>")).ToList();
 
         return new PrintableDocument
@@ -68,20 +72,21 @@ internal sealed class ReportDocumentFrame(DocumentAssets assets)
             Title = frame.DocumentTitle,
             FileName = frame.FileName,
             Footer = frame.Footer,
+            Language = text.Language,
             Styles = DocumentParts.Styles + Styles + frame.Styles,
             Template = letterhead.Template,
             Body = Html.Of($"""
                 <div class="report">
-                  {DocumentParts.Letterhead(letterhead)}
+                  {DocumentParts.Letterhead(letterhead, text: text)}
                   {DocumentParts.Title(frame.Title)}
                   {DocumentParts.Banner(frame.StatusBanner)}
                   {DocumentParts.Fields(frame.PatientRows)}
                   <main class="body">{frame.Body}</main>
                   {(notes.Count == 0 ? Html.Empty : Html.Of($"<section class=\"notes\">{notes}</section>"))}
                   <footer class="foot">
-                    {DocumentParts.Signatories(signatories)}
+                    {DocumentParts.Signatories(signatories, text)}
                     {verification}
-                    {DocumentParts.End()}
+                    {DocumentParts.End(text: text)}
                   </footer>
                 </div>
                 """),
@@ -90,6 +95,14 @@ internal sealed class ReportDocumentFrame(DocumentAssets assets)
 
     /// <summary>"Asha Rao · UHID NH-000123 · Lab report NHLAB2600012".</summary>
     public static string Footer(ReportPatient patient, string document) => $"{patient.Name} · UHID {patient.Uhid} · {document}";
+
+    /// <summary>The patient's identity rows every report starts with: name, age and sex, UHID.</summary>
+    public static IEnumerable<(string Label, string? Value)> IdentityRows(ReportPatient patient, DocumentText text) =>
+    [
+        (text["doc.patient"], patient.Name),
+        (text["doc.age_sex"], $"{patient.Age ?? DocumentFormat.Missing} / {LabReportDocument.GenderShort(patient.Gender)}"),
+        ("UHID", patient.Uhid),
+    ];
 
     private async Task<DocumentLetterhead> LetterheadAsync(ReportLetterhead letterhead, CancellationToken cancellationToken)
     {

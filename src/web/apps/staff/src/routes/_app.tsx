@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { AppShell } from '@/shell/AppShell';
 import { LockScreen } from '@/shell/LockScreen';
 import { RestrictedSession } from '@/shell/RestrictedSession';
+import { useLockSync } from '@/shell/lockSync';
 
 /** Every staff screen lives under this layout: it requires a session and renders the application frame. */
 export const Route = createFileRoute('/_app')({
@@ -24,6 +25,7 @@ function AppLayout() {
   const locked = useSession((s) => s.locked);
   const navigate = useNavigate();
   const location = useLocation();
+  useLockSync();
 
   // Session ended elsewhere (signed out, revoked by an administrator, idle timeout on the server).
   useEffect(() => {

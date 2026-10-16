@@ -137,7 +137,43 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     the app did not lock, at the next refresh that reports 10 minutes unused. Five wrong PINs or passwords end the
     session. A PIN is 4 to 6 digits, not all the same or in sequence, and setting one needs the password; an
     administrator's password reset clears it, since whoever knew the old password may know it. Locking and unlocking
-    are audited.
+    are audited. Each facility can have its own lock time (`ui.idleLockMinutes` set for the facility). The screens
+    stay as they were behind the lock, with whatever was typed and not yet saved: what they ask the server for while
+    locked waits, and is answered once unlocked. The app's windows on one computer (browser tabs, HC360 Desktop's
+    second windows) share the session: use in any of them keeps all unlocked, and locking or unlocking one does the
+    same to the others.
+  - **Quick unlock with Windows Hello or a fingerprint** (SRS UX-11): where the hospital has turned it on, staff can
+    set up a device under My account › Lock screen and then unlock with its Windows Hello (face, fingerprint or the
+    Windows Hello PIN), or Touch ID and the like elsewhere. It is WebAuthn with the device's built-in authenticator, checked by fido2-net-lib (MIT); no
+    vendor or service is involved, and nothing about the face or finger leaves the device. The decisions:
+    - It only resumes a session that is locked: it needs that session's token, and it never signs anyone in. A
+      session that ended, or that nobody used for 2 hours, is not resumed by it, nor by the PIN or password.
+    - The device must verify the person (user verification required), not only notice a touch.
+    - Setting a device up needs the password, and is audited; so are removing one and each unlock. Staff can remove
+      their devices; an administrator's password reset removes them all, with the PIN. An account may have 10.
+    - A key works only for its owner, and only where the app is opened by the server name it was set up under (the
+      WebAuthn relying party id: the host name in the address, one of the names on the server's certificate, the
+      computer's name or `localhost`). WebAuthn cannot use an IP address, so opened by one the lock screen offers the
+      PIN and password only. Pages must be on HTTPS (or `localhost`).
+    - Each key's signature counter is kept: an answer whose counter goes back means a copied key, and is refused and
+      audited as critical. Failed answers count with wrong PINs: five end the session.
+    - It is off until an administrator sets `ui.biometricUnlock` to `true`, for the hospital or for one facility
+      (`false` for a facility keeps it off there). The PIN and the password always work. Turn it on only where every
+      staff member signs in to Windows with their own account: Windows Hello proves who owns the Windows login, not
+      who owns the HC360 account. On a computer where staff share one Windows login, as at many nursing stations and
+      counters, anyone who knows that login's Windows Hello PIN, or whose finger or face is set up on it, could unlock
+      a colleague's locked screen. Administration › Settings says so beside the setting, and so does setting up a
+      device.
+    - Computers enrolled as kiosks or display boards, which everyone uses, never use it: setting up and unlocking
+      there are refused (`auth.biometric_unlock_shared_device`). Where HC360 Desktop runs as a kiosk (its policy),
+      setting up a device warns against it as well.
+    - A known limitation: HC360 cannot tell a shared Windows login from a personal one. Tying each key to the Windows
+      user name, which HC360 Desktop could report, would not help: colleagues on a shared login have the same user
+      name, Windows Hello already keeps each Windows account's keys apart (a key set up under one account cannot
+      answer under another), and the name would come from the page, not from the device's signature, so it would
+      prove nothing. Where logins are shared, leave it off and use the PIN.
+    - Refused answers are audited at once, in a transaction of their own, so the entry stays (a copied key's as
+      critical) even when the unlock then finds the session ended.
   - **How many at once:** a staff account may have 3 sessions at once (the `security.maxSessionsPerUser` setting; 0
     for no limit). Signing in once more signs out the session used least recently, audited as `auth.session_limit`.
     Patient portal accounts have no limit.
@@ -180,9 +216,9 @@ What they all share:
 |---|---|---|
 | **Staff sign-in** (staff app, HC360 Desktop) | Username and password: at least 12 characters, none from breach lists. The SuperAdmin, HospitalAdmin, Accountant and HrManager roles, and anyone holding an administrative permission, also give a 6-digit authenticator code (TOTP): two factors (NIST AAL2) for them, one (AAL1) for other staff. A role can be limited to enrolled HC360 Desktops; none is by default | The account locks after 5 wrong passwords or codes in a row, for 15 minutes, doubling up to 24 hours |
 | **Renewing a session** | The refresh cookie: 256 random bits, replaced on every use, sent with the `X-HC360-Client` header. A spent one presented again, past a minute's grace for a lost response, ends the session. Sessions end 12 hours after sign-in, or after 2 hours unused (portal: 20 minutes) | Too large to guess |
-| **Lock screen** | The PIN (4 to 6 digits, not all the same or in sequence) or the password. It opens only the session it locked | 5 wrong ones end the session |
+| **Lock screen** | The PIN (4 to 6 digits, not all the same or in sequence), the password, or, where the hospital turned it on, a device set up for it: a WebAuthn signature of a one-time challenge by the device's Windows Hello or fingerprint reader, which verifies the person first. It opens only the session it locked | 5 wrong ones (PINs, passwords and refused device answers together) end the session |
 | **Password prompts** before sensitive actions | The password again, from a signed-in staff member | Wrong ones count toward the account lock |
-| **Patient portal sign-in** | A 6-digit code sent by SMS to the registered number, valid 5 minutes: one factor (AAL1), as strong as the phone number | 5 tries per code; 3 codes per number in 15 minutes |
+| **Patient portal sign-in** | A 6-digit code sent by SMS to the registered number, valid 5 minutes: one factor (AAL1), as strong as the phone number | 5 tries per code; 3 codes per number in 15 minutes; a proof of work for asking for a code and for giving it (Anti-automation, below) |
 | **Video consultation guests** | The 256-bit token in the link sent to the patient, valid until 2 hours after the consultation's scheduled end. A guest waits until the doctor admits them, and the link reveals only the patient's first name | Too large to guess; 5 failed joins per connection |
 | **Enrolling a workstation or lab PC** | A code an administrator makes: 8 characters from 31 (about 40 bits), good for one device, for 30 minutes by default (5 minutes to 24 hours) | Too many to try in its lifetime at 60 a minute per address |
 | **HC360 Desktop and lab agents** | The device's id and its 256-bit secret, kept with DPAPI. Lab agents never sign anyone in, and relay only their own analysers. HC360 Desktop asks for and downloads its update with the same credential; what it gets is HyFib's signed package, which it checks itself (Release signing key, below). Revoking the device stops it | Too large to guess; the update allows 30 requests in 15 minutes per device |
@@ -195,7 +231,7 @@ What they all share:
 | **SMS delivery receipts** | MSG91 and generic gateways: a shared token in the address (`?token=`), and the gateway's addresses if an allow-list is set. Twilio: its `X-Twilio-Signature` (HMAC-SHA1, Twilio's scheme) | As strong as the token; refusals are logged |
 | **WhatsApp callbacks** (Meta) | An `X-Hub-Signature-256` (HMAC-SHA256 of the body with the app secret); the verify token for Meta's subscription check | Too large to guess; refusals are logged |
 | **FHIR API** | A staff sign-in whose roles hold `fhir.read` (HospitalAdmin by default): no separate client credentials or SMART on FHIR. `fhir.read` alone does not require two-step verification | As staff sign-in |
-| **Patient links** | Feedback forms: a 128-bit token on the hospital's QR poster, which any patient may answer. Feedback invitations: 128 bits, 14 days, one answer. Unsubscribe links: 128 bits; they only stop campaign messages. Prescription checks: 144 bits; the doctor, facility and date, no patient details. Report checks: 100 bits; the patient's initials and the test names, never results | Too large to guess; 60 a minute per address |
+| **Patient links** | Feedback forms: a 128-bit token on the hospital's QR poster, which any patient may answer. Feedback invitations: 128 bits, 14 days, one answer. Unsubscribe links: 128 bits; they only stop campaign messages. Prescription checks: 144 bits; the doctor, facility, date and prescription number, and the doctor's DSC signature (signer, certificate, SHA-256 of the signed bytes, re-checked for each answer, and its .p7s), no patient details. Report checks: 100 bits; the patient's initials and the test names, never results | Too large to guess; 60 a minute per address; sending feedback also takes a proof of work (Anti-automation, below) |
 | **Server command line and database** | A Windows administrator's sign-in on the Server Node: the data folder is readable only by them, the service and SYSTEM. PostgreSQL accepts only the service's Windows account, from that machine, unless it runs elsewhere (Keys and certificates, below) | Windows |
 
 The webhook secrets and tokens are made at each provider and saved in Administration › Integrations. HC360 does not check
@@ -337,7 +373,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Administration › Audit log › *Verify integrity* re-checks the chain. It also fails on any seal outside the chain.
 - Records carry who and when on every change, and deletes are soft deletes. Every change to an audited record also
   writes a data audit event with each changed value (from/to); compound values such as addresses, cardiology
-  findings and TTI results are recorded part by part.
+  findings and TTI results are recorded part by part. Binary values (a prescription's DSC signature and the bytes it
+  signed, which name the patient) are recorded by their length and SHA-256, never copied into the trail.
 - **Idempotency keys** on every write:
   - A WiFi retry replays the original result instead of creating a duplicate bill, payment or order.
   - Stored responses are encrypted, because they can contain one-time secrets.
@@ -375,6 +412,58 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - `no-store` on API responses.
   - They apply to every response, including the staff and portal pages and their static assets, not just API calls.
 - Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user.
+- **Anti-automation on the portal** (SRS SEC-06, ASVS V2.4.1; V11.1.4 in ASVS 4.0). The portal's anonymous requests
+  that a script could abuse ask the browser for a proof of work first: asking for a sign-in code (which also signs a
+  new number up, and sends an SMS), giving the code, and sending feedback from a QR poster, a kiosk or a personal link.
+  It is self-hosted Hashcash, in the manner of ALTCHA: no third-party CAPTCHA, so hospitals on a LAN keep working and no
+  patient's traffic goes to Google or Cloudflare. There is no puzzle to see or solve, so it works with a screen reader.
+  - **Challenge.** `POST /api/v1/public/challenge {action, subject?}` returns `1.{action}.{bits}.{expires}.{salt}.{signature}`:
+    16 random bytes of salt, an expiry 5 minutes ahead, and an HMAC-SHA256 of the rest under the anti-automation key
+    (`keys\anti-automation.key`, Keys and certificates, below). It names the kind of request it is good for (`otp`,
+    `feedback`).
+  - **Work.** The browser finds a decimal nonce for which SHA-256 of `{challenge}{nonce}` starts with `bits` zero bits,
+    in a Web Worker with WebCrypto, and sends `{challenge}:{nonce}` in `X-HC360-Proof`. The portal solves one in the
+    background when a form appears, so the patient seldom waits; it says "Checking your browser…" only after 1.5
+    seconds.
+  - **Difficulty.** 14 bits by default: 2^14 (16,384) hashes on average. WebCrypto in a worker does some 20,000 to
+    50,000 a second on a mid-range phone, so 0.3 to 0.8 seconds, a cost a person does not notice.
+  - **What it is worth.** It is no wall: a native SHA-256 solver does 2^14 to 2^18 hashes in milliseconds. The proof
+    raises the cost of cheap, high-volume scripting (every request needs a fresh challenge from this server and its own
+    work, and a script has to run a solver at all). The rate limits stay the primary control: per address (above), and
+    per number for sign-in codes (3 in 15 minutes, 5 tries each).
+  - **Raised for failures.** Every 3 failures from an address, or for a mobile number from any address, ask 2 bits
+    more (four times the work), up to 18 bits (5 to 13 seconds on a phone). A failure is a refused proof, a rate-limit
+    refusal, or a refused request (a wrong or expired code, too many codes, a dead link). A form that fails validation
+    is answered before the proof is checked, so it neither spends its proof nor counts. The count for an address or a
+    number lasts until 15 minutes pass without a failure for it (each failure starts the quarter of an hour again), so a
+    quiet quarter of an hour brings it back down and a steady trickle keeps it up. Numbers are kept only as hashes.
+    Giving a code names only its challenge: the work asked for it depends on the address, and when the attempt fails
+    the server looks the challenge's number up (one lookup by key, on that path only), so wrong and expired codes count
+    against the number as well.
+  - **Checking.** Stateless: one HMAC, then the kind of request, the expiry, one hash, and the bits against what the
+    address and number need now, with no database. A good proof is spent: the challenge is remembered until it expires and
+    refused again. On several API servers (SCAL-01) the spent challenges and the failure counts are each server's own,
+    so a proof could be used once on each within its 5 minutes; the rate limits still bound that.
+  - **Refusals** get one answer, whatever the reason: 403 `request.check_failed`, "We could not complete this request.
+    Please try again." The portal then solves a fresh challenge, for the number when there is one, and tries once more.
+    Each refusal is counted in the `hc360.anti_automation.rejected` metric (by kind and reason: missing, malformed,
+    tampered, wrong action, expired, too easy, unsolved, replayed), and audited as `security.anti_automation_rejected`
+    at most once per address and reason in 5 minutes, so a flood cannot flood the audit trail.
+  - **A too-easy proof is not a failure.** It was solved, for a challenge issued before the work asked of the address or
+    number went up. The portal solves its sign-in challenge as the form appears, before the number is typed, so a
+    patient whose number failed lately (they mistyped the code, or someone tried their number) meets this on every
+    attempt. Such a refusal is counted in the metric but neither raises the work nor is audited, and the retry, solved
+    for the number, gets in. A proof that does not solve its own challenge is unsolved, which is a failure.
+  - **Accepted: the challenge shows recent failures for a number.** The challenge endpoint is anonymous and answers with
+    the bits a given number needs, so asking for one shows whether the number has failed in the last quarter of an hour.
+    It says nothing about whether the number has an account or who failed, anyone who typed the number can cause such
+    failures, and the sign-in itself never says whether a number is registered.
+  - **Settings** (Administration › Settings): `security.antiAutomation.enabled` (on unless set to `false`),
+    `security.antiAutomation.bits` (14) and `security.antiAutomation.maxBits` (18); neither above 24. Turning it off
+    lets every request through without a proof.
+  - Unsubscribing does not ask for one: its link is personal, and doing it twice changes nothing. Neither do the
+    read-only public pages (the doctor directory, document checks, the privacy notice) or signed-in requests, which the
+    per-user limits cover.
 - Input validation on every request, with parameterised SQL through EF Core only. An endpoint that asks for validation
   never runs without it.
 - Uploaded files are accepted by their content (PDF, PNG, JPEG, WebP, DICOM, SCP-ECG), and their stored name takes the
@@ -404,10 +493,17 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   (port 7362), which takes and sets no cookies.
 - The embedded browser in HC360 Desktop:
   - Opens only the hospital server; other sites open in the default browser.
-  - Answers bridge calls (printing, device identity, notifications) only from the staff app's pages. The patient
+  - Signs prescriptions with the doctor's DSC (`dsc.signPrescription`): the doctor picks the certificate in the
+    Windows dialog, which shows what the bytes contain as the desktop reads them (never text the page sends), and the
+    token asks for its PIN. The private key never leaves the token; one dialog at a time; nothing is stored. The
+    server checks the signature again before it keeps it, and accepts only a certificate that chains to a CCA India
+    root IT installed in its DSC trust folder — never one the operating system trusts, such as a domain's user
+    certificate or a self-signed one (docs/modules/clinical.md, *Signing with the doctor's DSC*).
+  - Answers bridge calls (printing, device identity, notifications, DSC signing) only from the staff app's pages. The patient
     portal and the API reference, which run third-party script, are on addresses of their own, so it opens them in the
     default browser.
-  - Saves only document types HC360 produces, and only from the server.
+  - Saves only document types HC360 produces (PDF, CSV, XLSX, XML, JSON, text, images, ECG/DICOM files, recordings,
+    the hospital CA's .crt and a prescription's DSC signature as .p7s), and only from the server.
   - Denies permissions other than camera, microphone, clipboard and notifications.
   - Disables password autosave and autofill.
   - Disables DevTools unless IT enables them.
@@ -466,6 +562,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     original key too; the recovery key is replaced on its own (above). The original key is therefore never retired.
   - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
     access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
+  - *Anti-automation key* (an accepted exception to rotating from System health). It signs only the portal's
+    proof-of-work challenges, which live 5 minutes, and protects no data, so it is rotated by deleting
+    `keys\anti-automation.key` and restarting the server: challenges issued before stop working and browsers ask for
+    new ones. Rotate it with the sign-in token key when the Server Node may have been exposed (Key policy, below).
 - **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
   says when either is due. Rotate both at once, and change the database password if the server signs in with one, when
   the Server Node, its disks or a backup may have been exposed, and when someone with administrator access to the
@@ -482,6 +582,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Blind-index keys | Derived from each data key | As above | HMAC-SHA256 lookups of ABHA, policy, PAN and bank account numbers (the current data key's), and of Aadhaar numbers (the original key's) | With the data key, indexes computed again in the background; the Aadhaar index stays on the original key (it cannot be rebuilt) |
 | Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
+| Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above) | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers need the same file |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
 | Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires |
 | Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby or replacement hardware; kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
@@ -491,6 +592,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Integration credentials (SMS, WhatsApp, e-mail, payment, AI) | Secret settings in the database | The data encryption key | Each provider's API | At the provider, then saved in Administration › Settings |
 | Desktop and lab agent device secrets | Each workstation | DPAPI (user or machine) | A device's sign-in | Revoke and enrol the device again |
 | Release signing key (HyFib's, ECDSA P-256) | The `HC360_RELEASE_SIGNING_KEY` secret of the release workflow, and one copy offline at HyFib; the public keys are built into HC360 (`ReleaseKeys.cs`) | GitHub's encrypted secrets: only the release job reads it, from its environment, never on a command line or in a log | The manifest of each HC360 Desktop package, which the Server Node, HC360 Desktop and its updater check before they take, offer or install it (SRS DED-18; Release signing key, below) | A new pair every few years, at once on exposure or when someone who held it leaves: release with both public keys, then sign with the new one |
+| Doctors' Digital Signature Certificates (DSC) | The doctor's own USB token, issued by a licensed Indian CA; never on the server or in HC360 | The token and its PIN (the vendor's CSP/KSP); HC360 Desktop only asks Windows to sign | Their detached CMS signatures over prescriptions (SHA-256; ERX-04), checked by the server and anyone with OpenSSL | By the CA (one to three years); a new certificate signs new prescriptions, earlier signatures stay checkable with the certificate inside them |
+| DSC trust anchors (the CCA India root certificates) | The server's DSC trust folder (`HealthCare360:Clinical:DscTrustDirectory`, by default `certs\dsc-trust` in the data folder): public certificates only, which IT downloads from cca.gov.in and checks against the thumbprints the CCA publishes | File permissions of the data folder: whoever can write there decides which certificates count as DSCs | Accepting a DSC signature: the certificate must chain to one of them, offline, at the signing time (no revocation check), and be issued in the prescribing doctor's name; every printed copy re-checks it and states the DSC only while it is Valid | When the CCA issues a new root, add it; a removed root turns the signatures under it to "not confirmed as a DSC" (`Untrusted`: printed as "Signed electronically", and not issued at all where the DSC is required). The folder is not in the backups or streamed to the standby: IT copies the roots onto new hardware and the standby (DEPLOYMENT.md, sections 4, 8 and 9), and System health warns while it is empty and DSC signing is on |
 | Passwords, refresh tokens, one-time codes | The database | PBKDF2-SHA512 (passwords), SHA-256 (tokens and codes) | Sign-in | Refresh tokens on every use; passwords rehashed when the work factor rises |
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.

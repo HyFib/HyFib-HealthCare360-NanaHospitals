@@ -130,7 +130,7 @@ internal static class BillEndpoints
         Guid id, HospitalDbContext db, DocumentAssets assets, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var (detail, problem) = await OpenAsync(id, number => $"Printed bill {number}", db, guard, audit, time, ct);
-        return problem ?? TypedResults.Ok((await BillDocument.BuildAsync(detail!, assets, ct)).ToDto());
+        return problem ?? TypedResults.Ok((await BillDocument.BuildAsync(detail!, assets, DocumentText.English, ct)).ToDto());
     }
 
     private static async Task<IResult> Pdf(
@@ -138,7 +138,7 @@ internal static class BillEndpoints
         CancellationToken ct)
     {
         var (detail, problem) = await OpenAsync(id, number => $"Downloaded bill {number} as a PDF", db, guard, audit, time, ct);
-        return problem ?? await (await BillDocument.BuildAsync(detail!, assets, ct)).ToPdfAsync(renderer, ct);
+        return problem ?? await (await BillDocument.BuildAsync(detail!, assets, DocumentText.English, ct)).ToPdfAsync(renderer, ct);
     }
 
     // Viewing, printing and downloading a bill apply the same rules: the restricted record guard, and an entry in the PHI

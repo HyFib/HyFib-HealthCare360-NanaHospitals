@@ -36,7 +36,7 @@ import { useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { PUBLIC_SETTINGS_KEY } from '@/lib/lookups';
 import { adminQueries, type SettingDto } from '@/modules/admin/api';
-import { isFeatureSettingKey, isValidSettingKey } from '@/modules/admin/settingsForms';
+import { isFeatureSettingKey, isValidSettingKey, settingWarning } from '@/modules/admin/settingsForms';
 
 export const Route = createFileRoute('/_app/admin/settings')({
   component: SettingsPage,
@@ -47,10 +47,19 @@ export const Route = createFileRoute('/_app/admin/settings')({
  * (`features.*`) have their own screen, Hospital setup > Features.
  */
 const KNOWN: Record<string, string> = {
-  'ui.idleLockMinutes': 'Minutes of inactivity before a workstation locks (0 turns it off). The server keeps the lock.',
+  'ui.idleLockMinutes':
+    'Minutes of inactivity before a workstation locks (10 if not set, 0 turns it off). The server keeps the lock.',
+  'ui.biometricUnlock':
+    "Whether staff may unlock their locked screen with the device's Windows Hello, fingerprint or face (off if not set, true turns it on, for the hospital or one facility). Only where each staff member has their own Windows login: on a shared Windows login, whoever can unlock it with Windows Hello could unlock a colleague's screen. The PIN and the password always work.",
   'security.maxSessionsPerUser':
     'How many sessions one staff account may have at once (3 if not set, 0 for no limit). Signing in once more signs out the one used least recently.',
   'alerts.oncallPhone': 'Mobile number that gets an SMS when the server WiFi drops or backups fail.',
+  'security.antiAutomation.enabled':
+    'Ask the patient portal’s sign-in and feedback forms for a proof of work, against scripts (on unless set to false).',
+  'security.antiAutomation.bits':
+    'Work asked of every browser, in bits (14 if not set: under a second on a mid-range phone). Each bit doubles it; at most 24.',
+  'security.antiAutomation.maxBits':
+    'The most work asked of an address or number that keeps failing, in bits (18 if not set; at most 24).',
 };
 
 const FEATURE_SWITCH_NOTE = 'A feature switch. Turn it on or off under Hospital setup, Features.';
@@ -234,6 +243,11 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
               </Field>
             )}
             {KNOWN[key] && <Caption1>{KNOWN[key]}</Caption1>}
+            {settingWarning(key) && (
+              <MessageBar intent="warning" layout="multiline">
+                <MessageBarBody>{settingWarning(key)}</MessageBarBody>
+              </MessageBar>
+            )}
             {isFeatureSettingKey(key) && (
               <MessageBar intent="info" layout="multiline">
                 <MessageBarBody>

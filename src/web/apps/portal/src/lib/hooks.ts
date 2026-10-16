@@ -19,6 +19,26 @@ export function useMediaQuery(query: string): boolean {
 
 export const WIDE_LAYOUT_QUERY = '(min-width: 900px)';
 
+/**
+ * The ref of a bar stuck to the bottom of the page (above the phone's bottom navigation): while it is shown, the page
+ * scrolls a focused element clear of the bar as well as of the navigation (WCAG 2.4.11, focus not obscured). It sets
+ * --hc360-sticky-bottom, which the page's scroll-padding-bottom adds (styles.css), to the bar's height and a margin.
+ */
+export function keepFocusClearOf(bar: HTMLElement | null): (() => void) | undefined {
+  if (!bar) {
+    return undefined;
+  }
+  const root = document.documentElement;
+  const update = () => root.style.setProperty('--hc360-sticky-bottom', `${Math.ceil(bar.offsetHeight) + 16}px`);
+  update();
+  const resized = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+  resized?.observe(bar);
+  return () => {
+    resized?.disconnect();
+    root.style.removeProperty('--hc360-sticky-bottom');
+  };
+}
+
 /** The current time, refreshed every `intervalMs` while enabled (countdowns, "join opens in 4 min"). */
 export function useNow(intervalMs = 1000, enabled = true): number {
   const [now, setNow] = useState(() => Date.now());

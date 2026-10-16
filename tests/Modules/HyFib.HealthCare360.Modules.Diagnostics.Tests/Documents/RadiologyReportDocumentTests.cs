@@ -82,6 +82,22 @@ public sealed class RadiologyReportDocumentTests
     }
 
     [Fact]
+    public void In_hindi_the_headings_and_labels_are_hindi_and_the_radiologists_text_is_as_written()
+    {
+        var rows = RadiologyReportDocument.PatientRows(Report() with { ReferredBy = null }, DocumentText.Hindi).ToDictionary(r => r.Label, r => r.Value);
+        var body = RadiologyReportDocument.Body(Report(), DocumentText.Hindi).ToString();
+
+        rows["रोगी"].ShouldBe("Ravi <Kumar>");
+        rows["एक्सेशन सं."].ShouldBe("NHRD260000045");
+        rows["रेफ़र करने वाले"].ShouldBe("स्वयं");
+        rows["स्कैन किया गया"].ShouldBe("26 Sep 2026, 9:30 am");
+        body.ShouldContain("<h3>राय (इम्प्रेशन)</h3><div class=\"impression\"><p>Acute left MCA infarct.</p></div>");
+        body.ShouldContain("<p class=\"crit\">गंभीर निष्कर्ष: इलाज करने वाले डॉक्टर को सूचित किया गया।</p>");
+        body.ShouldContain("<h2>परिशिष्ट</h2>");
+        body.ShouldContain("<div class=\"small\">CT scan · Head</div>");
+    }
+
+    [Fact]
     public void An_unsigned_report_has_no_report_time_and_a_self_referral_says_so()
     {
         var rows = RadiologyReportDocument.PatientRows(
@@ -96,7 +112,7 @@ public sealed class RadiologyReportDocumentTests
     [Fact]
     public async Task The_document_carries_the_letterhead_the_qr_code_the_signatories_and_a_footer_on_every_page()
     {
-        var document = await RadiologyReportDocument.BuildAsync(Report(), Frame(), Ct);
+        var document = await RadiologyReportDocument.BuildAsync(Report(), Frame(), DocumentText.English, Ct);
         var html = document.ToHtml();
 
         document.FileName.ShouldBe("radiology-report-NHRD260000045");
@@ -121,7 +137,7 @@ public sealed class RadiologyReportDocumentTests
     [InlineData(DiagnosticReportStatus.Draft, "Draft: not signed by the radiologist")]
     public async Task A_copy_that_is_not_released_says_so_across_the_page(DiagnosticReportStatus status, string banner)
     {
-        var html = (await RadiologyReportDocument.BuildAsync(Report() with { Status = status, ReleasedAt = null }, Frame(), Ct)).ToHtml();
+        var html = (await RadiologyReportDocument.BuildAsync(Report() with { Status = status, ReleasedAt = null }, Frame(), DocumentText.English, Ct)).ToHtml();
 
         html.ShouldContain($"<div class=\"banner\">{banner}</div>");
     }

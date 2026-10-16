@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using HyFib.HealthCare360.Platform.Localization;
 
 namespace HyFib.HealthCare360.Platform.Documents;
 
@@ -44,7 +45,10 @@ public sealed partial record PrintableDocument
     /// </summary>
     public string? Footer { get; init; }
 
-    /// <summary>The document's language (the html lang attribute).</summary>
+    /// <summary>
+    /// The document's language (the html lang attribute): "hi" for a document in Hindi, so the browser picks Hindi
+    /// hyphenation and line breaking and screen readers a Hindi voice.
+    /// </summary>
     public string Language { get; init; } = "en";
 
     /// <summary>
@@ -78,16 +82,21 @@ public sealed partial record PrintableDocument
             ? $"@bottom-left {{ content: {CssString(text)}; {footerBox}{FooterFont} }}"
             : "";
 
-        var html = new StringBuilder(Body.ToString().Length + 4096);
+        // Hindi text (a translated document, the Hindi directions on a prescription, a name typed in Devanagari) brings its
+        // own font, so it prints the same on every computer.
+        var body = Body.ToString();
+        var fonts = DocumentFonts.For(string.Concat(Title, Footer, body, closing.ToString()));
+        var html = new StringBuilder(body.Length + fonts.Length + 4096);
         html.Append("<!doctype html>\n<html lang=\"").Append(Html.Encode(Language)).Append("\">\n<head>\n<meta charset=\"utf-8\">\n")
             .Append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:\">\n")
             .Append("<title>").Append(Html.Encode(Title)).Append("</title>\n<style>\n")
+            .Append(fonts)
             .Append(CultureInfo.InvariantCulture, $"@page {{ size: {size}{landscape}; margin: {margin}; {footer} ")
-            .Append(CultureInfo.InvariantCulture, $"@bottom-right {{ content: \"Page \" counter(page) \" of \" counter(pages); {footerBox}{FooterFont} }} }}\n")
+            .Append(CultureInfo.InvariantCulture, $"@bottom-right {{ content: {PageNumbers(Language)}; {footerBox}{FooterFont} }} }}\n")
             .Append(HouseStyle)
             .Append(Styles)
             .Append("\n</style>\n</head>\n<body>\n")
-            .Append(Body.ToString())
+            .Append(body)
             .Append(closing.ToString())
             .Append("\n</body>\n</html>\n");
         return html.ToString();
@@ -117,19 +126,30 @@ public sealed partial record PrintableDocument
         return css.Append('"').ToString();
     }
 
+    /// <summary>
+    /// "Page 2 of 3" in the document's language, as CSS content: <c>"Page " counter(page) " of " counter(pages)</c>.
+    /// </summary>
+    internal static string PageNumbers(string language)
+    {
+        var text = PatientTexts.Catalog.Text(language, "doc.page_of");
+        var parts = PagePlaceholder().Split(text)
+            .Select((part, index) => index % 2 == 1 ? $"counter({part})" : part.Length == 0 ? null : CssString(part));
+        return string.Join(' ', parts.Where(part => part is not null));
+    }
+
     internal static string SafeFileName(string? name)
     {
         var safe = UnsafeFileNameCharacters().Replace((name ?? "").Trim(), "-").Trim('-', '.');
         return safe.Length == 0 ? "document" : safe.Length > 120 ? safe[..120] : safe;
     }
 
-    private const string FooterFont = "font: 7.5pt \"Segoe UI\", \"Nirmala UI\", sans-serif; color: #555;";
+    private const string FooterFont = "font: 7.5pt \"Segoe UI\", \"" + DocumentFonts.Devanagari + "\", \"Nirmala UI\", sans-serif; color: #555;";
 
     // Matches the staff app's print base (packages/core printDocument) so documents look the same wherever they print.
     private const string HouseStyle = """
         * { box-sizing: border-box; }
         html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        body { margin: 0; font-family: "Segoe UI", "Nirmala UI", system-ui, sans-serif; font-size: 10pt; line-height: 1.35; color: #111; }
+        body { margin: 0; font-family: "Segoe UI", "HC360 Devanagari", "Nirmala UI", system-ui, sans-serif; font-size: 10pt; line-height: 1.35; color: #111; }
         h1, h2, h3 { margin: 0; break-after: avoid; }
         p { margin: 0 0 4px; }
         table { width: 100%; border-collapse: collapse; }
@@ -150,4 +170,8 @@ public sealed partial record PrintableDocument
 
     [GeneratedRegex(@"[^A-Za-z0-9._-]+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex UnsafeFileNameCharacters();
+
+    // Split keeps the captured name: "Page {page} of {pages}" → "Page ", "page", " of ", "pages", "".
+    [GeneratedRegex(@"\{(page|pages)\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex PagePlaceholder();
 }

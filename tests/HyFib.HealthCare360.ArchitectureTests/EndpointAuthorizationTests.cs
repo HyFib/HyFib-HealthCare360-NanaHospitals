@@ -61,6 +61,7 @@ public sealed class EndpointAuthorizationTests
         "GET /api/v1/public/unsubscribe/{token}",
         "POST /api/v1/public/unsubscribe/{token}",
         "GET /api/v1/public/prescriptions/verify/{token}",
+        "GET /api/v1/public/prescriptions/verify/{token}/signature.p7s",
         "GET /api/v1/lab/reports/verify/{code}",
         "GET /api/v1/radiology/reports/verify/{code}",
         "GET /api/v1/cardiology/reports/verify/{code}",
@@ -70,6 +71,9 @@ public sealed class EndpointAuthorizationTests
         "GET /api/v1/public/doctors/filters",
         "GET /api/v1/public/doctors/{id:guid}",
         "GET /api/v1/public/doctors/{id:guid}/slots",
+
+        // A proof-of-work challenge for the portal's sign-in and feedback forms (SRS SEC-06): a signed random value, no data.
+        "POST /api/v1/public/challenge",
 
         // The privacy notice names the grievance officer and the response period for everyone (DPDP Rules 2025, rules 9
         // and 14): published contact details only.
@@ -127,6 +131,15 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/auth/pin",
         "POST /api/v1/auth/lock",
         "POST /api/v1/auth/unlock",
+
+        // Quick unlock with the device's Windows Hello (WebAuthn): only the caller's own devices, and only the caller's
+        // own session is unlocked; setting a device up asks for the password.
+        "POST /api/v1/auth/unlock/webauthn/options",
+        "POST /api/v1/auth/unlock/webauthn",
+        "GET /api/v1/auth/webauthn/credentials",
+        "POST /api/v1/auth/webauthn/credentials/options",
+        "POST /api/v1/auth/webauthn/credentials",
+        "DELETE /api/v1/auth/webauthn/credentials/{id:guid}",
         "POST /api/v1/auth/switch-facility",
 
         // The caller's own notifications.

@@ -9,16 +9,10 @@ namespace HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 /// </summary>
 internal static class PayerEndpoints
 {
-    private static readonly string[] PayerReaders =
-    [
-        BillingPermissions.PayersManage, BillingPermissions.PoliciesManage, BillingPermissions.PreAuthManage, BillingPermissions.ClaimsManage,
-        BillingPermissions.OpCreate, BillingPermissions.IpManage, BillingPermissions.ChargesRead,
-    ];
+    // The patient banner's payer (PayerDirectory) shows the same to the same staff.
+    private static readonly string[] PayerReaders = PayerDirectory.PayerReaders;
 
-    private static readonly string[] PolicyReaders =
-    [
-        BillingPermissions.PoliciesManage, BillingPermissions.PreAuthManage, BillingPermissions.ClaimsManage, BillingPermissions.IpManage, BillingPermissions.OpCreate,
-    ];
+    private static readonly string[] PolicyReaders = PayerDirectory.PolicyReaders;
 
     public static void Map(IEndpointRouteBuilder app)
     {
