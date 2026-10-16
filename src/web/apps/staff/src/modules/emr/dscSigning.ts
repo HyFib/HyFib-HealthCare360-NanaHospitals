@@ -45,6 +45,8 @@ export function digitalSignatureBadge(
       return { label: 'DSC signed', color: 'success' };
     case 'Invalid':
       return { label: 'DSC signature invalid', color: 'danger' };
+    case 'Untrusted':
+      return { label: 'DSC issuer not verified', color: 'warning' };
     default:
       if (signature.policy === 'Off') {
         return null;

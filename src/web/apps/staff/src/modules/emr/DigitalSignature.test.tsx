@@ -62,6 +62,7 @@ function signature(patch: Partial<PrescriptionDigitalSignatureDto>): Prescriptio
     contentHash: null,
     contentMatchesRecord: false,
     chainStatus: null,
+    chainTrusted: false,
     message: null,
     ...patch,
   };
@@ -78,6 +79,7 @@ const VALID = signature({
   contentHash: HASH,
   contentMatchesRecord: true,
   chainStatus: 'Trusted',
+  chainTrusted: true,
   message: 'The signature is valid.',
 });
 
@@ -141,6 +143,10 @@ describe('signing a prescription with a DSC', () => {
     expect(digitalSignatureBadge(signature({ policy: 'Required' }))?.color).toBe('warning');
     expect(digitalSignatureBadge(signature({ state: 'Valid', policy: 'Off' }))?.label).toBe('DSC signed');
     expect(digitalSignatureBadge(signature({ state: 'Invalid' }))?.color).toBe('danger');
+    expect(digitalSignatureBadge(signature({ state: 'Untrusted' }))).toEqual({
+      label: 'DSC issuer not verified',
+      color: 'warning',
+    });
   });
 
   it('offers "Sign with DSC" in HC360 Desktop and shows the signature once signed', async () => {
@@ -216,5 +222,20 @@ describe('signing a prescription with a DSC', () => {
 
     expect(await screen.findByText('The DSC signature does not check out')).toBeInTheDocument();
     expect(screen.getByText(/Do not dispense it/)).toBeInTheDocument();
+  });
+
+  it('does not call it a DSC signature once the certificate no longer chains to an installed root', async () => {
+    readSignature.mockResolvedValue({
+      ...VALID,
+      state: 'Untrusted',
+      chainTrusted: false,
+      chainStatus: 'No CCA India root certificates are installed for HC360 to check DSCs against',
+      message: 'The prescription is as the doctor signed it, but HC360 could not confirm the certificate as a DSC.',
+    });
+    renderWith(<DigitalSignatureSection prescription={RX} canSign={false} />);
+
+    expect(await screen.findByText('The certificate is not confirmed as a DSC')).toBeInTheDocument();
+    expect(screen.queryByText('Signed with a DSC')).not.toBeInTheDocument();
+    expect(screen.getByText(/No CCA India root certificates are installed/)).toBeInTheDocument();
   });
 });

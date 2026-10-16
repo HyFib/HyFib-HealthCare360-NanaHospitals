@@ -670,9 +670,13 @@ export interface PrescriptionVerification {
   signaturePath?: string | null;
 }
 
-/** What anyone may see of a prescription's DSC signature: the signer, the certificate and the hash, no patient data. */
+/**
+ * What anyone may see of a prescription's DSC signature: the signer, the certificate and the hash, no patient data.
+ * `Untrusted`: the prescription is as signed, but the certificate does not chain to a CCA India root installed on the
+ * server, so it is not presented as a DSC. `chainTrusted` is whether it does; revocation is not checked.
+ */
 export interface PublicDigitalSignature {
-  state: 'NotSigned' | 'Valid' | 'Invalid';
+  state: 'NotSigned' | 'Valid' | 'Invalid' | 'Untrusted';
   signerName: string;
   certificateSerialNumber: string;
   certificateIssuer: string;

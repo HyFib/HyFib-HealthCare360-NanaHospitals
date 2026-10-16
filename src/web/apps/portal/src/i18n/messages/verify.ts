@@ -43,9 +43,17 @@ export const verifyMessages = defineMessages({
     'verify.another': 'Check another document',
     'verify.prescriptionNumber': 'Prescription number',
     'verify.dsc.title': 'Digital signature',
-    'verify.dsc.valid': 'Signed by the doctor with their Digital Signature Certificate. The signature checks out.',
+    'verify.dsc.valid':
+      'Signed by the doctor with their Digital Signature Certificate from a licensed Certifying Authority. The signature checks out.',
     'verify.dsc.invalid':
       'The digital signature does not check out. Do not dispense from this prescription; contact the hospital.',
+    'verify.dsc.unconfirmed':
+      'The prescription is as it was signed, but the hospital could not confirm that the certificate is a Digital Signature Certificate from a licensed Certifying Authority. Do not rely on it as a digital signature; check with the hospital.',
+    'verify.dsc.chain': 'Certifying Authority',
+    'verify.dsc.chain.trusted': 'Licensed (chains to the CCA India root)',
+    'verify.dsc.chain.untrusted': 'Not confirmed',
+    'verify.dsc.revocation':
+      'This check does not ask the Certifying Authority whether the certificate was revoked after the prescription was signed.',
     'verify.dsc.signer': 'Signed by',
     'verify.dsc.signedAt': 'Signed on',
     'verify.dsc.serial': 'Certificate serial number',
@@ -93,8 +101,16 @@ export const verifyMessages = defineMessages({
     'verify.another': 'दूसरा दस्तावेज़ जाँचें',
     'verify.prescriptionNumber': 'पर्चा नंबर',
     'verify.dsc.title': 'डिजिटल हस्ताक्षर',
-    'verify.dsc.valid': 'डॉक्टर ने अपने डिजिटल सिग्नेचर सर्टिफ़िकेट से हस्ताक्षर किए हैं। हस्ताक्षर सही है।',
+    'verify.dsc.valid':
+      'डॉक्टर ने लाइसेंसशुदा प्रमाणन प्राधिकारी से मिले अपने डिजिटल सिग्नेचर सर्टिफ़िकेट से हस्ताक्षर किए हैं। हस्ताक्षर सही है।',
     'verify.dsc.invalid': 'डिजिटल हस्ताक्षर सही नहीं है। इस पर्चे से दवाएँ न दें; अस्पताल से संपर्क करें।',
+    'verify.dsc.unconfirmed':
+      'पर्चा वैसा ही है जैसा उस पर हस्ताक्षर हुआ था, लेकिन अस्पताल पुष्टि नहीं कर सका कि सर्टिफ़िकेट किसी लाइसेंसशुदा प्रमाणन प्राधिकारी का डिजिटल सिग्नेचर सर्टिफ़िकेट है। इसे डिजिटल हस्ताक्षर न मानें; अस्पताल से पुष्टि करें।',
+    'verify.dsc.chain': 'प्रमाणन प्राधिकारी',
+    'verify.dsc.chain.trusted': 'लाइसेंसशुदा (CCA India रूट से जुड़ा)',
+    'verify.dsc.chain.untrusted': 'पुष्टि नहीं हुई',
+    'verify.dsc.revocation':
+      'यह जाँच प्रमाणन प्राधिकारी से नहीं पूछती कि पर्चे पर हस्ताक्षर के बाद सर्टिफ़िकेट रद्द तो नहीं किया गया।',
     'verify.dsc.signer': 'हस्ताक्षरकर्ता',
     'verify.dsc.signedAt': 'हस्ताक्षर की तारीख',
     'verify.dsc.serial': 'सर्टिफ़िकेट का सीरियल नंबर',

@@ -16,7 +16,12 @@ import { Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { desktopSigningProblem, digitalSignatureBadge, signWithDsc } from './dscSigning';
-import { prescriptionQueries, prescriptionSignatureFiles, type PrescriptionDto } from './prescriptionsApi';
+import {
+  prescriptionQueries,
+  prescriptionSignatureFiles,
+  type DigitalSignatureState,
+  type PrescriptionDto,
+} from './prescriptionsApi';
 
 export function DigitalSignatureBadge({ prescription }: { prescription: PrescriptionDto }) {
   const signature = useQuery({
@@ -135,11 +140,9 @@ export function DigitalSignatureSection({
         </>
       ) : (
         <>
-          <MessageBar intent={data.state === 'Valid' ? 'success' : 'error'} layout="multiline">
+          <MessageBar intent={VERDICT[data.state].intent} layout="multiline">
             <MessageBarBody>
-              <MessageBarTitle>
-                {data.state === 'Valid' ? 'Signed with a DSC' : 'The DSC signature does not check out'}
-              </MessageBarTitle>
+              <MessageBarTitle>{VERDICT[data.state].title}</MessageBarTitle>
               {data.message}
             </MessageBarBody>
           </MessageBar>
@@ -173,6 +176,16 @@ export function DigitalSignatureSection({
     </Section>
   );
 }
+
+/** How a signed prescription's signature reads, by its state as the server re-checked it. */
+const VERDICT: Record<
+  Exclude<DigitalSignatureState, 'NotSigned'>,
+  { intent: 'success' | 'warning' | 'error'; title: string }
+> = {
+  Valid: { intent: 'success', title: 'Signed with a DSC' },
+  Untrusted: { intent: 'warning', title: 'The certificate is not confirmed as a DSC' },
+  Invalid: { intent: 'error', title: 'The DSC signature does not check out' },
+};
 
 function Detail({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
   const styles = useStyles();

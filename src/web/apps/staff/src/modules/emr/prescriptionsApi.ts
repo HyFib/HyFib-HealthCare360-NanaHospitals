@@ -63,12 +63,16 @@ export interface PrescriptionDto {
 
 /** Whether the hospital's doctors sign prescriptions with their DSC (setting `clinical.prescriptions.signature`). */
 export type PrescriptionSignaturePolicy = 'Off' | 'Optional' | 'Required';
-export type DigitalSignatureState = 'NotSigned' | 'Valid' | 'Invalid';
+/**
+ * `Untrusted`: the prescription is as signed, but the certificate no longer chains to a CCA India root installed on the
+ * server (the roots were changed since), so it is not shown as a DSC signature.
+ */
+export type DigitalSignatureState = 'NotSigned' | 'Valid' | 'Invalid' | 'Untrusted';
 
 /**
  * The DSC signature as the server re-checked it now. `contentMatchesRecord` is false when the stored prescription no
- * longer gives the signed bytes; `chainStatus` is "Trusted" or why the certificate does not chain to a root the server
- * trusts (reported, not required).
+ * longer gives the signed bytes; `chainStatus` is "Trusted" or why the certificate does not chain to a CCA India root
+ * installed on the server, and `chainTrusted` says which (the server accepts a signature only from a trusted one).
  */
 export interface PrescriptionDigitalSignatureDto {
   state: DigitalSignatureState;
@@ -82,6 +86,8 @@ export interface PrescriptionDigitalSignatureDto {
   contentHash: string | null;
   contentMatchesRecord: boolean;
   chainStatus: string | null;
+  /** Older servers leave it out. */
+  chainTrusted?: boolean;
   message: string | null;
 }
 

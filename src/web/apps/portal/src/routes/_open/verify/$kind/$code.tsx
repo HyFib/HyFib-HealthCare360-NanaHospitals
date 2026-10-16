@@ -64,6 +64,7 @@ const useStyles = makeStyles({
   revised: { margin: '12px 0 0', color: tokens.colorStatusWarningForeground3, fontWeight: tokens.fontWeightSemibold },
   dscTitle: { margin: '0 0 8px', fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightSemibold },
   dscText: { margin: '0 0 12px' },
+  dscWarning: { color: tokens.colorStatusWarningForeground3, fontWeight: tokens.fontWeightSemibold },
   hash: { fontFamily: tokens.fontFamilyMonospace, overflowWrap: 'anywhere' },
   download: { display: 'inline-block', marginTop: '12px' },
 });
@@ -137,6 +138,8 @@ function PrescriptionAnswer({ result }: { result: PrescriptionVerification }) {
   const cancelled = result.status !== 'Valid';
   const dsc = result.digitalSignature;
   const badSignature = dsc?.state === 'Invalid';
+  // A DSC only when the server confirmed the certificate chains to a licensed CA's root; otherwise say so.
+  const confirmedDsc = dsc?.state === 'Valid' && dsc.chainTrusted;
   return (
     <>
       {cancelled ? (
@@ -166,10 +169,16 @@ function PrescriptionAnswer({ result }: { result: PrescriptionVerification }) {
       {dsc && (
         <div className={styles.details}>
           <h2 className={styles.dscTitle}>{t('verify.dsc.title')}</h2>
-          <p className={styles.dscText}>{t(badSignature ? 'verify.dsc.invalid' : 'verify.dsc.valid')}</p>
+          <p className={mergeClasses(styles.dscText, !badSignature && !confirmedDsc && styles.dscWarning)}>
+            {t(badSignature ? 'verify.dsc.invalid' : confirmedDsc ? 'verify.dsc.valid' : 'verify.dsc.unconfirmed')}
+          </p>
           <InfoList
             items={[
               { label: t('verify.dsc.signer'), value: dsc.signerName },
+              {
+                label: t('verify.dsc.chain'),
+                value: t(dsc.chainTrusted ? 'verify.dsc.chain.trusted' : 'verify.dsc.chain.untrusted'),
+              },
               { label: t('verify.dsc.signedAt'), value: f.dateTime(dsc.signedAt) },
               {
                 label: t('verify.dsc.serial'),
@@ -179,6 +188,7 @@ function PrescriptionAnswer({ result }: { result: PrescriptionVerification }) {
               { label: t('verify.dsc.hash'), value: <span className={styles.hash}>{dsc.contentHash}</span> },
             ]}
           />
+          <p className={styles.note}>{t('verify.dsc.revocation')}</p>
           {result.signaturePath && (
             <a className={styles.download} href={result.signaturePath} download>
               {t('verify.dsc.download')}
