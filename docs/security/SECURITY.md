@@ -195,7 +195,7 @@ What they all share:
 | **SMS delivery receipts** | MSG91 and generic gateways: a shared token in the address (`?token=`), and the gateway's addresses if an allow-list is set. Twilio: its `X-Twilio-Signature` (HMAC-SHA1, Twilio's scheme) | As strong as the token; refusals are logged |
 | **WhatsApp callbacks** (Meta) | An `X-Hub-Signature-256` (HMAC-SHA256 of the body with the app secret); the verify token for Meta's subscription check | Too large to guess; refusals are logged |
 | **FHIR API** | A staff sign-in whose roles hold `fhir.read` (HospitalAdmin by default): no separate client credentials or SMART on FHIR. `fhir.read` alone does not require two-step verification | As staff sign-in |
-| **Patient links** | Feedback forms: a 128-bit token on the hospital's QR poster, which any patient may answer. Feedback invitations: 128 bits, 14 days, one answer. Unsubscribe links: 128 bits; they only stop campaign messages. Prescription checks: 144 bits; the doctor, facility and date, no patient details. Report checks: 100 bits; the patient's initials and the test names, never results | Too large to guess; 60 a minute per address |
+| **Patient links** | Feedback forms: a 128-bit token on the hospital's QR poster, which any patient may answer. Feedback invitations: 128 bits, 14 days, one answer. Unsubscribe links: 128 bits; they only stop campaign messages. Prescription checks: 144 bits; the doctor, facility, date and prescription number, and the doctor's DSC signature (signer, certificate, SHA-256 of the signed bytes, re-checked for each answer, and its .p7s), no patient details. Report checks: 100 bits; the patient's initials and the test names, never results | Too large to guess; 60 a minute per address |
 | **Server command line and database** | A Windows administrator's sign-in on the Server Node: the data folder is readable only by them, the service and SYSTEM. PostgreSQL accepts only the service's Windows account, from that machine, unless it runs elsewhere (Keys and certificates, below) | Windows |
 
 The webhook secrets and tokens are made at each provider and saved in Administration › Integrations. HC360 does not check
@@ -404,7 +404,11 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   (port 7362), which takes and sets no cookies.
 - The embedded browser in HC360 Desktop:
   - Opens only the hospital server; other sites open in the default browser.
-  - Answers bridge calls (printing, device identity, notifications) only from the staff app's pages. The patient
+  - Signs prescriptions with the doctor's DSC (`dsc.signPrescription`): the doctor picks the certificate in the
+    Windows dialog, which shows what the bytes contain as the desktop reads them (never text the page sends), and the
+    token asks for its PIN. The private key never leaves the token; one dialog at a time; nothing is stored. The
+    server checks the signature again before it keeps it (docs/modules/clinical.md, *Signing with the doctor's DSC*).
+  - Answers bridge calls (printing, device identity, notifications, DSC signing) only from the staff app's pages. The patient
     portal and the API reference, which run third-party script, are on addresses of their own, so it opens them in the
     default browser.
   - Saves only document types HC360 produces, and only from the server.
@@ -491,6 +495,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Integration credentials (SMS, WhatsApp, e-mail, payment, AI) | Secret settings in the database | The data encryption key | Each provider's API | At the provider, then saved in Administration › Settings |
 | Desktop and lab agent device secrets | Each workstation | DPAPI (user or machine) | A device's sign-in | Revoke and enrol the device again |
 | Release signing key (HyFib's, ECDSA P-256) | The `HC360_RELEASE_SIGNING_KEY` secret of the release workflow, and one copy offline at HyFib; the public keys are built into HC360 (`ReleaseKeys.cs`) | GitHub's encrypted secrets: only the release job reads it, from its environment, never on a command line or in a log | The manifest of each HC360 Desktop package, which the Server Node, HC360 Desktop and its updater check before they take, offer or install it (SRS DED-18; Release signing key, below) | A new pair every few years, at once on exposure or when someone who held it leaves: release with both public keys, then sign with the new one |
+| Doctors' Digital Signature Certificates (DSC) | The doctor's own USB token, issued by a licensed Indian CA; never on the server or in HC360 | The token and its PIN (the vendor's CSP/KSP); HC360 Desktop only asks Windows to sign | Their detached CMS signatures over prescriptions (SHA-256; ERX-04), checked by the server and anyone with OpenSSL | By the CA (one to three years); a new certificate signs new prescriptions, earlier signatures stay checkable with the certificate inside them |
 | Passwords, refresh tokens, one-time codes | The database | PBKDF2-SHA512 (passwords), SHA-256 (tokens and codes) | Sign-in | Refresh tokens on every use; passwords rehashed when the work factor rises |
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.

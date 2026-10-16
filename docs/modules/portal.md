@@ -83,7 +83,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/feedback/{token}` | no | Personal feedback link (SMS after a visit or stay) |
 | `/feedback/form/{token}` | no | QR poster form. Add `?kiosk=true` on a kiosk tablet, which then resets itself after each response |
 | `/unsubscribe/{token}` | no | Opt-out link in campaign messages. Opening it changes nothing; the patient confirms with one tap |
-| `/verify`, `/verify/prescription/{token}`, `/verify/{lab\|radiology\|cardiology}/{code}` | no | Check that a printed prescription or report is genuine. Shows authenticity details only, never results |
+| `/verify`, `/verify/prescription/{token}`, `/verify/{lab\|radiology\|cardiology}/{code}` | no | Check that a printed prescription or report is genuine. Shows authenticity details only, never results. A prescription signed with the doctor's DSC also shows the signer, the certificate serial and issuer, the SHA-256 of the signed prescription (as the server re-checked them) and a .p7s download |
 | `/privacy` | no | Privacy notice (DPDP Act 2023) in plain language, with the grievance officer and the reply period from the server |
 | `/my-privacy` | yes | "Your privacy": breach notices first, then see your data, correct, erase, raise a concern, your requests, your nominee, messages you get, and whom to contact |
 | `/my-privacy/data` | yes | The summary of the data held about the person (DPDP Act s11): details, each kind of record with counts and dates, purpose, basis and how long it is kept, consents, who received it, service providers. Print or save as PDF |
@@ -122,7 +122,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Preferences | `GET` and `PUT /api/v1/portal/communication-preferences` |
 | Privacy | `GET /api/v1/portal/privacy/status?patientId=`, `GET …/summary?patientId=`, `GET …/requests?patientId=`, `GET …/requests/{id}`, `POST …/requests`, `POST …/requests/{id}/withdraw`, `GET`, `PUT` and `DELETE …/nominee`, `GET …/notices?patientId=`, `GET …/notices/{id}`; public `GET /api/v1/public/privacy` (see [privacy.md](privacy.md)) |
 | Public links | `GET` and `POST /api/v1/public/feedback/invitations/{token}`, `GET` and `POST /api/v1/public/feedback/forms/{token}[?kiosk=true]`, `GET` and `POST /api/v1/public/unsubscribe/{token}` |
-| Document checks | `GET /api/v1/public/prescriptions/verify/{token}`, `GET /api/v1/{lab\|radiology\|cardiology}/reports/verify/{code}` |
+| Document checks | `GET /api/v1/public/prescriptions/verify/{token}` (and `…/signature.p7s`), `GET /api/v1/{lab\|radiology\|cardiology}/reports/verify/{code}` |
 
 ## When the hospital turns the portal or video off
 
