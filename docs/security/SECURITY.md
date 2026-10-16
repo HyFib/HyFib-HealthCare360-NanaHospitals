@@ -121,7 +121,10 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     only portal sessions, and nothing there can renew a staff session.
   - A refresh token presented after it was spent ends the whole session, and is audited as critical. A retry within
     60 seconds (a response lost on the WiFi link) is re-issued a token once. The token it replaces is retired, so if a
-    copy was being replayed, the real client's next refresh ends the session for both.
+    copy was being replayed, the real client's next refresh ends the session for both. The app's windows on one
+    computer share the cookie, so they take turns to refresh (a Web Lock only that address's windows share): two
+    refreshing at once, as all do when the screen is unlocked in one, would present the same token, and the browser
+    could keep the retired one and sign everyone out.
 - **Sessions** (ASVS V7):
   - **How long:** a session ends 12 hours after sign-in (one clinical shift), or after 2 hours nobody has used it. A
     patient portal session ends after 20 minutes unused, because portals run on shared and family phones. Together
