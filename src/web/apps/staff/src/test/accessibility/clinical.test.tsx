@@ -1154,6 +1154,17 @@ beforeEach(() => {
     [`GET ${patientPath}/diagnoses`]: DIAGNOSES,
     [`GET ${patientPath}/notes`]: paged(NOTES),
     [`GET /api/v1/patients/${ASHA.patientId}/visits`]: paged([VISIT]),
+    [`GET /api/v1/patients/${ASHA.patientId}/payer`]: {
+      current: {
+        visitId: VISIT.id,
+        isCurrentVisit: true,
+        payerType: 'Self',
+        payerId: null,
+        payerName: null,
+        policyNumber: null,
+        validUntil: null,
+      },
+    },
     'GET /api/v1/emr/templates': TEMPLATES,
     [`GET /api/v1/emr/templates/${TEMPLATE_ID}`]: TEMPLATE,
     'GET /api/v1/emr/favourites': (request: FakeRequest) =>

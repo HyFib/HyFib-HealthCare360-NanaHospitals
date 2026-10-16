@@ -2,63 +2,37 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type * as InsuranceApi from '@/modules/insurance/api';
 import type * as PatientsApi from './api';
-import type { VisitListItem } from './api';
-import { payerText, payerVisit, usePatientPayer } from './payer';
+import type { PatientPayer } from './api';
+import { payerText, usePatientPayer } from './payer';
 
-// The server and the signed-in user are outside the test.
-const server = vi.hoisted(() => ({ visits: vi.fn(), visit: vi.fn(), payer: vi.fn() }));
+// The server (which chooses the payer, PatientPayerRule) and the signed-in user are outside the test.
+const server = vi.hoisted(() => ({ payer: vi.fn() }));
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof PatientsApi>();
   return {
     ...actual,
     patientQueries: {
       ...actual.patientQueries,
-      visits: (id: string) => ({ queryKey: ['visits', id], queryFn: () => server.visits(id) }),
-      visit: (id: string) => ({ queryKey: ['visit', id], queryFn: () => server.visit(id) }),
-    },
-  };
-});
-vi.mock('@/modules/insurance/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof InsuranceApi>();
-  return {
-    ...actual,
-    insuranceQueries: {
-      ...actual.insuranceQueries,
       payer: (id: string) => ({ queryKey: ['payer', id], queryFn: () => server.payer(id) }),
     },
   };
 });
-const permissions = vi.hoisted(() => ({ granted: new Set<string>(['visits.read', 'billing.op.create']) }));
+const permissions = vi.hoisted(() => ({ granted: new Set<string>(['visits.read']) }));
 vi.mock('@/lib/permissions', () => ({
   usePermission: (p: string | readonly string[]) =>
     (typeof p === 'string' ? [p] : p).some((x) => permissions.granted.has(x)),
 }));
 
-function visit(patch: Partial<VisitListItem>): VisitListItem {
+function payer(patch: Partial<PatientPayer>): PatientPayer {
   return {
-    id: 'v1',
-    visitNumber: 'OP-1',
-    patientId: 'p1',
-    uhid: 'NHP-1',
-    patientName: 'Ravi Kumar',
-    gender: 'Male',
-    age: '40 y',
-    type: 'OutPatient',
-    status: 'Completed',
-    departmentId: null,
-    departmentName: null,
-    practitionerId: null,
-    practitionerName: null,
-    visitedAt: '2026-10-01T05:00:00Z',
-    completedAt: null,
-    isFollowUp: false,
-    isFreeFollowUp: false,
+    visitId: 'v1',
+    isCurrentVisit: true,
     payerType: 'Self',
-    isMlc: false,
-    tokenLabel: null,
-    tokenStatus: null,
+    payerId: null,
+    payerName: null,
+    policyNumber: null,
+    validUntil: null,
     ...patch,
   };
 }
@@ -67,17 +41,6 @@ function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
-
-describe('payerVisit', () => {
-  it('prefers the open visit, then the latest one that was not cancelled', () => {
-    const done = visit({ id: 'done' });
-    const open = visit({ id: 'open', status: 'InProgress' });
-    const cancelled = visit({ id: 'x', status: 'Cancelled' });
-    expect(payerVisit([cancelled, done, open])).toEqual({ visit: open, isOpen: true });
-    expect(payerVisit([cancelled, done])).toEqual({ visit: done, isOpen: false });
-    expect(payerVisit([cancelled])).toBeNull();
-  });
-});
 
 describe('payerText', () => {
   it('names the payer type and, when known, the payer', () => {
@@ -89,24 +52,36 @@ describe('payerText', () => {
 
 describe('usePatientPayer', () => {
   beforeEach(() => {
-    Object.values(server).forEach((spy) => spy.mockReset());
-    permissions.granted = new Set(['visits.read', 'billing.op.create']);
+    server.payer.mockReset();
+    permissions.granted = new Set(['visits.read']);
   });
 
   it("shows the open visit's insurer by name", async () => {
-    server.visits.mockResolvedValue({ items: [visit({ status: 'Open', payerType: 'Insurance' })] });
-    server.visit.mockResolvedValue({ id: 'v1', payerId: 'payer-1' });
-    server.payer.mockResolvedValue({ id: 'payer-1', name: 'Star Health' });
+    server.payer.mockResolvedValue({
+      current: payer({ payerType: 'Insurance', payerId: 'payer-1', payerName: 'Star Health' }),
+    });
     const { result } = renderHook(() => usePatientPayer('p1'), { wrapper });
     await waitFor(() => expect(result.current).toBe('Payer: Insurance · Star Health'));
+    expect(server.payer).toHaveBeenCalledWith('p1');
   });
 
-  it('shows the payer type alone to staff who may not look up payers', async () => {
-    permissions.granted = new Set(['visits.read']);
-    server.visits.mockResolvedValue({ items: [visit({ status: 'Open', payerType: 'Corporate' })] });
+  it('shows the payer type alone when the server sends no name (staff who may not look payers up)', async () => {
+    server.payer.mockResolvedValue({ current: payer({ payerType: 'Corporate', payerId: 'payer-2' }) });
     const { result } = renderHook(() => usePatientPayer('p1'), { wrapper });
     await waitFor(() => expect(result.current).toBe('Payer: Corporate'));
-    expect(server.visit).not.toHaveBeenCalled();
+  });
+
+  it("shows the last visit's payer as the last payer", async () => {
+    server.payer.mockResolvedValue({ current: payer({ isCurrentVisit: false }) });
+    const { result } = renderHook(() => usePatientPayer('p1'), { wrapper });
+    await waitFor(() => expect(result.current).toBe('Last payer: Self-pay'));
+  });
+
+  it('shows nothing for a patient who has had no visit', async () => {
+    server.payer.mockResolvedValue({ current: null });
+    const { result } = renderHook(() => usePatientPayer('p1'), { wrapper });
+    await waitFor(() => expect(server.payer).toHaveBeenCalled());
+    expect(result.current).toBeNull();
   });
 
   it('asks nothing when the screen supplies the payer, or the user may not read visits', () => {
@@ -114,6 +89,6 @@ describe('usePatientPayer', () => {
     expect(result.current).toBeNull();
     permissions.granted = new Set();
     renderHook(() => usePatientPayer('p1'), { wrapper });
-    expect(server.visits).not.toHaveBeenCalled();
+    expect(server.payer).not.toHaveBeenCalled();
   });
 });
