@@ -628,6 +628,38 @@ public sealed class PrescriptionDigitalSignatureTests
     }
 
     [Fact]
+    public void A_message_held_for_the_dsc_is_let_go_once_whether_it_was_sent_or_not()
+    {
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+        prescription.HoldPatientNotice(Now);
+        prescription.HoldPatientNotice(Now.AddMinutes(1));
+        prescription.PatientNoticeHeldAt.ShouldBe(Now, "held from the first time");
+
+        prescription.MarkPatientNotified(Now.AddMinutes(5)).ShouldBeTrue();
+        prescription.PatientNoticeHeldAt.ShouldBeNull("sent: no longer held");
+        prescription.HoldPatientNotice(Now.AddMinutes(6));
+        prescription.PatientNoticeHeldAt.ShouldBeNull("the patient was told already");
+
+        var noPhone = PrescriptionCanonicalFormTests.Signed();
+        noPhone.HoldPatientNotice(Now);
+        noPhone.ReleasePatientNotice();
+        noPhone.PatientNoticeHeldAt.ShouldBeNull();
+        noPhone.PatientNotifiedAt.ShouldBeNull("let go without a message");
+
+        var cancelled = PrescriptionCanonicalFormTests.Signed();
+        cancelled.HoldPatientNotice(Now);
+        cancelled.Cancel("Wrong patient", Now);
+        cancelled.PatientNoticeHeldAt.ShouldBeNull("a cancelled prescription is never announced");
+
+        var draft = new Prescription { PrescriptionNumber = "NHRX1" };
+        draft.HoldPatientNotice(Now);
+        draft.PatientNoticeHeldAt.ShouldBeNull();
+        var inpatient = new Prescription { PrescriptionNumber = "NHRX2", IsInpatient = true };
+        inpatient.HoldPatientNotice(Now);
+        inpatient.PatientNoticeHeldAt.ShouldBeNull("in-patients are not sent the message");
+    }
+
+    [Fact]
     public void System_health_warns_when_dsc_signing_is_on_and_the_trust_folder_is_empty()
     {
         using var pki = new TestPki();

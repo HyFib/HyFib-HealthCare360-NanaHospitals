@@ -315,6 +315,41 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
         (await NoticesAsync(patient.Id)).Count.ShouldBe(2);
     }
 
+    [Fact]
+    public async Task A_message_held_for_the_dsc_is_sent_once_when_the_hospital_stops_requiring_it()
+    {
+        // Signed where the DSC is required: the patient is not told, and nothing tells them while it still is.
+        await SetPolicyAsync("required");
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var patient = await RegisterPatientAsync(NewMobile());
+        var rx = await SignedPrescriptionAsync(doctor, patient.Id);
+        var stale = await RegisterPatientAsync(NewMobile());
+        var old = await SignedPrescriptionAsync(doctor, stale.Id);
+        await HeldSinceAsync(old.Id, DateTimeOffset.UtcNow - PrescriptionNoticeRelease.Window - TimeSpan.FromHours(1));
+        await ReleaseHeldNoticesAsync();
+        (await NoticesAsync(patient.Id)).ShouldBeEmpty();
+
+        // The hospital stops requiring it before the doctor signed with it: the prescription can be issued now, and the
+        // patient is told, once, however often the held messages are looked through.
+        await SetPolicyAsync("optional");
+        (await doctor.GetAsync<PrescriptionDto>($"/api/v1/clinical/prescriptions/{rx.Id}")).FinalCopyAvailable.ShouldBeTrue();
+        await ReleaseHeldNoticesAsync();
+        (await NoticesAsync(patient.Id)).ShouldBe([NotificationChannel.WhatsApp]);
+        await ReleaseHeldNoticesAsync();
+        (await NoticesAsync(patient.Id)).ShouldBe([NotificationChannel.WhatsApp], "once only");
+        (await NoticesAsync(stale.Id)).ShouldBeEmpty("held for longer than a week: no longer news");
+
+        // Switched again, and signed with the DSC after all: still once.
+        await SetPolicyAsync("off");
+        await ReleaseHeldNoticesAsync();
+        await SetPolicyAsync("required");
+        await SetPolicyAsync("optional");
+        await ReleaseHeldNoticesAsync();
+        using var certificate = _pki.Doctor(_doctorName);
+        (await _pki.SignAsync(doctor, rx.Id, certificate)).State.ShouldBe(DigitalSignatureState.Valid);
+        (await NoticesAsync(patient.Id)).ShouldBe([NotificationChannel.WhatsApp], "once only");
+    }
+
     [Theory]
     [InlineData("optional")]
     [InlineData("required")]
@@ -551,6 +586,21 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
         await using var scope = server.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Prescription>().IgnoreQueryFilters()
             .Where(p => p.Id == prescriptionId).Select(p => p.VerificationToken!).SingleAsync(Ct);
+    }
+
+    /// <summary>Looks through the held "prescription shared" messages, as the job does every few minutes.</summary>
+    private async Task ReleaseHeldNoticesAsync()
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<PrescriptionNoticeRelease>().ReleaseAsync(Ct);
+    }
+
+    private async Task HeldSinceAsync(Guid prescriptionId, DateTimeOffset since)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Prescription>().IgnoreQueryFilters()
+            .Where(p => p.Id == prescriptionId && p.PatientNoticeHeldAt != null)
+            .ExecuteUpdateAsync(p => p.SetProperty(x => x.PatientNoticeHeldAt, since), Ct)).ShouldBe(1);
     }
 
     /// <summary>The channel of each "prescription shared" message queued for the patient.</summary>

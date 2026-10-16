@@ -355,11 +355,16 @@ public sealed class PrescriptionService(
     private Task PublishSignedAsync(Prescription prescription, CancellationToken ct) =>
         realtime.PublishAsync(Topics.Pharmacy(prescription.FacilityId), "pharmacy.prescription.signed", new { prescription.Id, prescription.IsInpatient }, ct);
 
-    // Where the facility requires the doctor's DSC (ERX-04), the patient is told once it is signed with it
-    // (PrescriptionDigitalSignatureService.AttachAsync).
+    // Where the facility requires the doctor's DSC (ERX-04), the message is held: the patient is told once it is signed
+    // with it (PrescriptionDigitalSignatureService.AttachAsync), or once the facility no longer requires it
+    // (PrescriptionNoticeRelease).
     private async Task QueueSignedNoticeAsync(Prescription prescription, CancellationToken ct)
     {
-        if (await signatureSettings.PolicyAsync(prescription.FacilityId, ct) != PrescriptionSignaturePolicy.Required)
+        if (await signatureSettings.PolicyAsync(prescription.FacilityId, ct) == PrescriptionSignaturePolicy.Required)
+        {
+            prescription.HoldPatientNotice(time.GetUtcNow());
+        }
+        else
         {
             await QueuePatientNoticeAsync(prescription, ct);
         }
@@ -369,7 +374,8 @@ public sealed class PrescriptionService(
     /// Tells OP patients the prescription is on the portal (outbox message, committed with the signature). The message
     /// names the prescription's PDF: WhatsApp sends it in the template's document header when the template has one.
     /// Once per prescription (<see cref="Prescription.PatientNotifiedAt"/>): a prescription the patient was told about
-    /// at signing is not announced again when the doctor signs it with their DSC.
+    /// at signing is not announced again when the doctor signs it with their DSC. A held message
+    /// (<see cref="Prescription.PatientNoticeHeldAt"/>) is let go here, sent or not.
     /// </summary>
     internal async Task QueuePatientNoticeAsync(Prescription prescription, CancellationToken ct)
     {
@@ -382,6 +388,7 @@ public sealed class PrescriptionService(
             .Select(p => new { p.Phone, p.Email, p.FullName, p.PreferredLanguage }).FirstOrDefaultAsync(ct);
         if (patient?.Phone is null)
         {
+            prescription.ReleasePatientNotice();
             return;
         }
 

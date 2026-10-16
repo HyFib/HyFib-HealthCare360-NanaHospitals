@@ -268,11 +268,20 @@ belong to the encounter and may change later; the patient (record id, UHID, name
 |---|---|
 | `"off"` (default; anything unrecognised) | Nothing changes: no DSC signing, no badge or section in the staff app |
 | `"optional"` | Doctors may sign with their DSC; prescriptions without one print and are shared as before |
-| `"required"` | A prescription is issued (printed, downloaded, shared) only with a **valid** DSC signature (`PrescriptionFinalCopies`). `/print`, `/document`, `/pdf` and the portal's PDF are refused with 422 `prescription.digital_signature_required` until the prescribing doctor signs it with their DSC, `prescription.digital_signature_untrusted` while its certificate no longer chains to a root in the trust folder (a DSC HC360 cannot confirm counts as none), and `prescription.digital_signature_invalid` when the signature does not check out (the record was changed after signing). The portal shows the prescription without its print, PDF or QR code and says, in English and Hindi, that the doctor has not digitally signed it yet; its 422 carries a few words for the patient, and the portal words each code in the patient's language. The "prescription shared" message (WhatsApp, and the SMS after a video consultation) is not sent at signing but when the DSC signature is attached. The pharmacy queue is not held back |
+| `"required"` | A prescription is issued (printed, downloaded, shared) only with a **valid** DSC signature (`PrescriptionFinalCopies`). `/print`, `/document`, `/pdf` and the portal's PDF are refused with 422 `prescription.digital_signature_required` until the prescribing doctor signs it with their DSC, `prescription.digital_signature_untrusted` while its certificate no longer chains to a root in the trust folder (a DSC HC360 cannot confirm counts as none), and `prescription.digital_signature_invalid` when the signature does not check out (the record was changed after signing). The portal shows the prescription without its print, PDF or QR code and says, in English and Hindi, that the doctor has not digitally signed it yet; its 422 carries a few words for the patient, and the portal words each code in the patient's language. The "prescription shared" message (WhatsApp, and the SMS after a video consultation) is not sent at signing but when the DSC signature is attached, or, if the hospital stops requiring the DSC first, then (below). The pharmacy queue is not held back |
 
 The patient is told once per prescription (`patient_notified_at`, raised as `PrescriptionSharedWithPatient`): at
 signing, unless the DSC was required then, else when the DSC signature is attached — whatever the setting is by then. A
-prescription the patient was told about at signing is not announced again when the doctor later adds a DSC. The PDF
+prescription the patient was told about at signing is not announced again when the doctor later adds a DSC. Where the DSC
+was required at signing the message is held (`patient_notice_held_at`); if the hospital stops requiring the DSC (the
+facility's setting or the hospital-wide one made `"optional"` or `"off"`, or the facility's own value removed) before
+the doctor signs with it, the prescription can be issued without it, and the held message goes within about five
+minutes: `PrescriptionNoticeReleaseJob` (where `PlatformOptions.RunsJobs` is set) has `PrescriptionNoticeRelease` look
+through the held messages every five minutes and send those of facilities that no longer require the DSC, at most 200
+a time. It sends each once (sending it, or finding the patient has no
+mobile number, lets it go; a cancelled prescription's is dropped) and only for prescriptions held in the last 7 days: a
+week on, the pharmacy has dispensed the prescription or the course is over, and the message would be no news (the
+prescription is on the portal either way). A DSC added later still sends a message never sent. The PDF
 with that message is made when the message goes out, from the signature as it checks out then; if the DSC rules no
 longer let the prescription be issued (the setting or the trust folder changed in between), the message goes without
 its PDF, or, on a WhatsApp template with a document header, is dropped (the patient finds the prescription on the
