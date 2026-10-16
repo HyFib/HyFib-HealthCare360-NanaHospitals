@@ -28,6 +28,7 @@
   </Folder>
   <Folder Name="/src/desktop/">
     <Project Path="src/desktop/HyFib.HealthCare360.Desktop/HyFib.HealthCare360.Desktop.csproj" />
+    <Project Path="src/desktop/HyFib.HealthCare360.DesktopUpdater/HyFib.HealthCare360.DesktopUpdater.csproj" />
   </Folder>
   <Folder Name="/src/agent/">
     <Project Path="src/agent/HyFib.HealthCare360.LabAgent/HyFib.HealthCare360.LabAgent.csproj" />

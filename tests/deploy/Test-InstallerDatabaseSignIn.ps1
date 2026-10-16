@@ -71,6 +71,11 @@ Assert (($moved -join "`n") -ceq ($once -join "`n")) 'a block found after the ru
 $renamed = Set-HbaBlock $once 'hc360_main' 'hc360'
 Assert ((@($renamed | Where-Object { $_ -like '*hc360_app*' })).Count -eq 0 -and (@($renamed | Where-Object { $_ -like '*hc360_main*' })).Count -eq 5) 'the block follows the account the server signs in as'
 Assert ((Set-HbaBlock @() 'hc360_app' 'hc360').Count -eq 7) 'an empty file gets the block alone'
+$oneComment = Set-HbaBlock @('# one comment', 'local all all scram-sha-256') 'hc360_app' 'hc360'
+Assert ($oneComment.Count -eq 9 -and $oneComment[0] -ceq '# one comment' -and $oneComment[8] -ceq 'local all all scram-sha-256') 'a file with one line before its rules gets the block between them'
+$marked = @('# top', '# BEGIN HC360 replication. Enable-HC360Replication.ps1 writes this block', 'hostssl replication hc360_replicator 10.0.5.12/32 scram-sha-256', '# END HC360 replication') + $hba[5..7]
+$besideMarked = Set-HbaBlock $marked 'hc360_app' 'hc360'
+Assert ((($besideMarked[8..10]) -join "`n") -ceq (($marked[1..3]) -join "`n") -and $besideMarked[1] -like '# BEGIN HyFib HealthCare360*') 'it goes before another script''s marked block that comes first, not inside it'
 Assert (((Remove-InstallerBlock $once 'pg_hba.conf') -join "`n") -ceq ($hba -join "`n")) 'removing the block gives back the file as it was'
 Assert (((Remove-InstallerBlock $hba 'pg_hba.conf') -join "`n") -ceq ($hba -join "`n")) 'a file without the block is left as it is'
 Assert (Test-Throws { Remove-InstallerBlock (@($once[0..($start + 3)]) + $hba[5..7]) 'pg_hba.conf' } "pg_hba.conf has a '# BEGIN HyFib HealthCare360' line without its '# END HyFib HealthCare360' line") 'a block without its END line stops the installer instead of losing the rules after it'

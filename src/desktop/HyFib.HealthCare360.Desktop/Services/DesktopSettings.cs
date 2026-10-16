@@ -52,6 +52,13 @@ internal sealed class DesktopSettings
     [JsonIgnore]
     public bool ServerFixedByPolicy { get; private set; }
 
+    /// <summary>
+    /// Whether HC360 Desktop updates itself from the Server Node (SRS DED-18): yes, unless the IT policy says
+    /// <c>"autoUpdate": false</c>, for computers whose software IT distributes itself. The updater reads the same entry.
+    /// </summary>
+    [JsonIgnore]
+    public bool AutoUpdateAllowed { get; private set; } = true;
+
     [JsonIgnore]
     public Uri? ServerUri => Uri.TryCreate(ServerUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps ? uri : null;
 
@@ -185,6 +192,11 @@ internal sealed class DesktopSettings
             {
                 AllowDevTools = false;
             }
+
+            if (policy.AutoUpdate == false)
+            {
+                AutoUpdateAllowed = false;
+            }
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -192,5 +204,5 @@ internal sealed class DesktopSettings
         }
     }
 
-    private sealed record DesktopPolicy(string? ServerUrl, string? CaFingerprint, bool? Kiosk, string? StartPath, bool? DisableDevTools);
+    private sealed record DesktopPolicy(string? ServerUrl, string? CaFingerprint, bool? Kiosk, string? StartPath, bool? DisableDevTools, bool? AutoUpdate);
 }

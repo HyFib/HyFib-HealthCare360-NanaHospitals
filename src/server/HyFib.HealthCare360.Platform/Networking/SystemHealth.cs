@@ -131,6 +131,11 @@ public sealed class SystemHealthService(
         {
             warnings.Add(new("db.unreachable", "critical", "The database is not reachable."));
         }
+        else if (await ReadReplicationAsync(ct) is { } replication)
+        {
+            // A warm standby and WAL archiving are optional (SRS DED-20, REL-02): nothing shows until they are set up.
+            warnings.AddRange(StandbyReplication.Warnings(replication));
+        }
 
         if (storage.FreeBytes is { } free && storage.TotalBytes is { } total && total > 0 && free < total / 10)
         {
@@ -175,6 +180,10 @@ public sealed class SystemHealthService(
             if (link.IsInsecure)
             {
                 warnings.Add(new("wifi.insecure", "critical", "The Server Node is on an insecure WiFi network."));
+            }
+            else if (link.UsesSharedPassword)
+            {
+                warnings.Add(new("wifi.shared_password", "warning", "The Server Node is on a WiFi network with a shared password (WPA-Personal). Use WPA2/WPA3-Enterprise."));
             }
         }
         else if (network.WifiSupported && network.Wifi is { IsConnected: false })
@@ -243,6 +252,27 @@ public sealed class SystemHealthService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return new DatabaseInfo(false, null, null, null, null, ex.Message);
+        }
+    }
+
+    /// <summary>The warm standby's replication slot and the WAL archiver; null when PostgreSQL could not be asked.</summary>
+    private async Task<ReplicationState?> ReadReplicationAsync(CancellationToken ct)
+    {
+        try
+        {
+            await db.Database.OpenConnectionAsync(ct);
+            try
+            {
+                return await StandbyReplication.ReadAsync(db.Database.GetDbConnection(), ct);
+            }
+            finally
+            {
+                await db.Database.CloseConnectionAsync();
+            }
+        }
+        catch (Exception ex) when (ex is System.Data.Common.DbException or InvalidOperationException)
+        {
+            return null;
         }
     }
 

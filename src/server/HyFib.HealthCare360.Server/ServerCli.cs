@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.ServiceProcess;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -16,6 +17,8 @@ namespace HyFib.HealthCare360.Server;
 internal static class ServerCli
 {
     private const string DatabasePasswordVariable = "HC360_DATABASE_PASSWORD";
+
+    private const string CaPasswordVariable = "HC360_CA_PASSWORD";
 
     /// <summary>The Event Log source the installer registers, and the server writes its errors to.</summary>
     private const string EventSource = "HyFib HealthCare360";
@@ -76,6 +79,20 @@ internal static class ServerCli
               health says when it had to start PostgreSQL. Exit code 0 when PostgreSQL runs or was left stopped on purpose, 2
               when there is no such service or it cannot be read, 3 when it could not be started.
 
+          certificates export-ca --out <file.pfx> [--data-dir <folder>]
+              Writes the hospital CA, with its private key, to a new file encrypted with a password of at least 16
+              characters (AES-256), for a warm standby Server Node or replacement hardware to import. HC360 Desktop and the
+              lab agents trust only this CA, so a server that has it serves them without their being set up again. Whoever
+              has the file and its password can make certificates they trust: keep it as safely as the backup recovery key,
+              apart from its password. The password is read from the HC360_CA_PASSWORD environment variable, from standard
+              input when it is redirected, or asked for twice; never give it on the command line.
+
+          certificates import-ca --in <file.pfx> [--data-dir <folder>]
+              Installs an exported hospital CA on this Server Node, protected with DPAPI for this machine, with the HC360
+              service stopped (or restart it after). A different CA already here is kept under a new name, and the server
+              issues itself a new certificate from the imported CA when it starts. Prints the CA's fingerprint: it is the
+              one HC360 Desktop pinned. The password is read as for export-ca.
+
           disk-encryption check [--data-dir <folder>]
               Records whether BitLocker protects each fixed disk of this machine, for System health. It needs administrator
               rights; the "HC360 disk encryption check" scheduled task runs it as SYSTEM every day and at start-up. Exit code
@@ -99,7 +116,8 @@ internal static class ServerCli
         """;
 
     public static bool IsCommand(string argument) =>
-        argument is "backup" or "catalogue" or "settings" or "database" or "disk-encryption" or "loadtest" or "help" or "--help" or "-h";
+        argument is "backup" or "catalogue" or "settings" or "database" or "certificates" or "disk-encryption" or "loadtest" or "desktop" or "help"
+            or "--help" or "-h";
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -122,6 +140,11 @@ internal static class ServerCli
                 ["database", "sign-in", "password", ..] => ChangeDatabaseSignIn(options, windows: false),
                 ["database", "watchdog", ..] when options.ContainsKey("service") && options.ContainsKey("pgdata") => WatchDatabase(options),
                 ["disk-encryption", "check", ..] => CheckDiskEncryption(options),
+                ["certificates", "export-ca", ..] when options.ContainsKey("out") => ExportCa(options),
+                ["certificates", "import-ca", ..] when options.ContainsKey("in") => ImportCa(options),
+                ["desktop", "publish", ..] when options.ContainsKey("package") => DesktopCli.Publish(options["package"], options.GetValueOrDefault("data-dir")),
+                ["desktop", "verify", ..] when options.ContainsKey("package") => DesktopCli.Verify(options["package"]),
+                ["desktop", "show", ..] => await DesktopCli.ShowAsync(options.GetValueOrDefault("data-dir")),
                 _ => PrintUsage(args),
             };
         }
@@ -156,6 +179,8 @@ internal static class ServerCli
     private static int PrintUsage(string[] args)
     {
         Console.WriteLine(Usage);
+        Console.WriteLine();
+        Console.WriteLine(DesktopCli.Usage);
         return args.Length == 0 || args[0] is "help" or "--help" or "-h" ? 0 : 2;
     }
 
@@ -481,6 +506,132 @@ internal static class ServerCli
             Console.Error.WriteLine($"The Application event log could not be written to: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Writes the hospital CA with its private key to a new password-protected file, for a warm standby or replacement
+    /// hardware (SRS DED-20). Needs administrator rights, to open the CA with this machine's DPAPI.
+    /// </summary>
+    private static int ExportCa(Dictionary<string, string> options)
+    {
+        var output = Path.GetFullPath(options["out"]);
+        if (File.Exists(output))
+        {
+            Console.Error.WriteLine($"{output} already exists: name a new file.");
+            return 1;
+        }
+
+        if (ReadCaPassword(confirm: true) is not { } password)
+        {
+            return 1;
+        }
+
+        var directories = new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") });
+        ExportedHospitalCa exported;
+        try
+        {
+            exported = LanCertificateManager.ExportCa(directories, HospitalDataProtection.CreateProvider(directories), password);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or CryptographicException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"The hospital CA could not be read: {ex.Message} Run it on the Server Node from an elevated prompt.");
+            return 2;
+        }
+
+        using (var file = new FileStream(output, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        {
+            file.Write(exported.Pkcs12);
+        }
+
+        Console.WriteLine($"Wrote the hospital CA, with its private key, to {output}, encrypted with the password.");
+        Console.WriteLine($"Fingerprint: {GroupFingerprint(exported.Fingerprint)} (valid until {exported.ExpiresAt:dd MMM yyyy}).");
+        Console.WriteLine("Import it on the standby with 'certificates import-ca'. Keep the file as safely as the backup recovery key, apart from");
+        Console.WriteLine("its password, and delete copies you no longer need: with both, anyone can make certificates the workstations trust.");
+        return 0;
+    }
+
+    /// <summary>Installs an exported hospital CA on this Server Node, protected for this machine (SRS DED-20).</summary>
+    private static int ImportCa(Dictionary<string, string> options)
+    {
+        var input = options["in"];
+        if (!File.Exists(input))
+        {
+            Console.Error.WriteLine($"There is no file at {input}.");
+            return 1;
+        }
+
+        if (ReadCaPassword(confirm: false) is not { } password)
+        {
+            return 1;
+        }
+
+        var directories = new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") });
+        ImportedHospitalCa imported;
+        try
+        {
+            imported = LanCertificateManager.ImportCa(directories, HospitalDataProtection.CreateProvider(directories), File.ReadAllBytes(input), password, DateTimeOffset.UtcNow);
+        }
+        catch (CryptographicException)
+        {
+            Console.Error.WriteLine("The password does not open this file, or the file is damaged.");
+            return 1;
+        }
+        catch (InvalidDataException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Console.Error.WriteLine($"{ex.Message} Run it from an elevated prompt.");
+            return 2;
+        }
+
+        Console.WriteLine(imported.Changed
+            ? $"Installed the hospital CA in {directories.Certificates}, protected for this machine."
+            : "This server already has this hospital CA: nothing changed.");
+        Console.WriteLine($"Fingerprint: {GroupFingerprint(imported.Fingerprint)} (valid until {imported.ExpiresAt:dd MMM yyyy}). HC360 Desktop shows the one it pinned.");
+        if (imported.PreviousKeptAs is { } keptAs)
+        {
+            Console.WriteLine($"The different CA that was here is kept as {keptAs}.");
+        }
+
+        if (imported.Changed)
+        {
+            Console.WriteLine("HC360 issues itself a new server certificate from this CA when it starts: restart the HC360Server service if it runs.");
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// The password of an exported CA: from <see cref="CaPasswordVariable"/>, from standard input when it is redirected, or
+    /// from a hidden prompt, asked twice to <paramref name="confirm"/> it. Null, after saying why, when it is not usable.
+    /// </summary>
+    private static string? ReadCaPassword(bool confirm)
+    {
+        var password = Environment.GetEnvironmentVariable(CaPasswordVariable);
+        if (string.IsNullOrEmpty(password))
+        {
+            password = ReadSecret("Password for the CA file: ");
+            if (confirm && !Console.IsInputRedirected && password != ReadSecret("The same password again: "))
+            {
+                Console.Error.WriteLine("The two passwords differ.");
+                return null;
+            }
+        }
+
+        if (string.IsNullOrEmpty(password) || password.Length < LanCertificateManager.MinimumExportPasswordLength)
+        {
+            Console.Error.WriteLine($"Use a password of at least {LanCertificateManager.MinimumExportPasswordLength} characters.");
+            return null;
+        }
+
+        return password;
+    }
+
+    /// <summary>"AB12CD34…" as "AB12 CD34 …", as the installer prints it and HC360 Desktop shows it.</summary>
+    private static string GroupFingerprint(string fingerprint) =>
+        string.Join(' ', Enumerable.Range(0, fingerprint.Length / 4).Select(i => fingerprint.Substring(i * 4, 4)));
 
     /// <summary>Records BitLocker's state of every fixed disk for System health (SRS SEC-05). Needs administrator rights.</summary>
     private static int CheckDiskEncryption(Dictionary<string, string> options)

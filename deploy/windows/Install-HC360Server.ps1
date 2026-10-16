@@ -28,8 +28,24 @@
       (UDP 5353) in Windows Firewall for Private/Domain networks only. Serial analysers reach the server through their
       lab agent on 7360. With -LabPorts it also opens the ports network analysers connect
       to (Lab setup > Analysers > Connection), limited to -LabAnalyserAddresses when given.
-    - Tunes the machine for an always-on WiFi server: no sleep/hibernate, WiFi adapter never powered down.
+    - Tunes the machine for an always-on WiFi server: no sleep/hibernate, WiFi adapter never powered down, and Windows
+      Update's active hours set to -UpdateActiveHoursStart..-UpdateActiveHoursEnd (default 06:00-23:00), so updates do
+      not restart the server during clinical hours (SRS DED-15).
+    - With -HospitalCaFile, installs the hospital CA exported on another Server Node ("certificates export-ca"), so
+      workstations that pinned it trust this server too (a warm standby, or replacement hardware).
+    - Offers the release's HC360 Desktop package to the enrolled workstations, which then update themselves from the
+      server (SRS DED-18): HC360-Desktop-<version>-win-x64.zip, with its .manifest.json and .manifest.sig, from beside
+      the server package (the folder it was extracted to, or the one above), or from -DesktopPackage. The server takes
+      it in only when HyFib signed it (desktop publish); otherwise workstations are upgraded with Install-HC360Desktop.ps1.
     - Starts the service, waits until it is healthy and prints the CA fingerprint staff will verify on workstations.
+
+    With -Standby it installs HC360 on a warm standby Server Node (SRS DED-20), whose PostgreSQL New-HC360Standby.ps1 made
+    a read-only copy of the primary's: everything above, but the service is registered disabled and never started, so
+    HC360 never runs against the standby, and the database is left as it is (no -CreateDatabase, no change of its
+    sign-in). Upgrade the standby the same way, with -Standby, whenever the primary is upgraded. Without -Standby, the
+    installer stops when this machine's PostgreSQL is a standby, and, on a standby that was promoted, until the data
+    encryption keys are put back from the latest backup ("backup restore"): HC360 would otherwise make a new key that
+    cannot read the hospital's data. docs/deployment/DEPLOYMENT.md, "Failing over to the standby".
 
 .EXAMPLE
     .\Install-HC360Server.ps1 -CreateDatabase -PostgresSuperuserPassword (Read-Host -AsSecureString "postgres password")
@@ -37,6 +53,10 @@
 .EXAMPLE
     # Upgrade in place (keeps configuration, database and data)
     .\Install-HC360Server.ps1 -PackagePath ..\server
+
+.EXAMPLE
+    # On a warm standby, after New-HC360Standby.ps1
+    .\Install-HC360Server.ps1 -Standby -HospitalCaFile E:\hc360-hospital-ca.pfx -SecondaryBackupDir '\\NAS\HC360-Backups'
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -55,13 +75,24 @@ param(
     [string] $DatabaseName = 'hc360',
     [string] $SecondaryBackupDir,
     [switch] $SkipPowerTuning,
+    # The hours (0-23) Windows Update must not restart the server in, at most 18 apart as Windows allows. Restarts for
+    # updates then happen overnight, from -UpdateActiveHoursEnd to -UpdateActiveHoursStart.
+    [ValidateRange(0, 23)] [int] $UpdateActiveHoursStart = 6,
+    [ValidateRange(0, 23)] [int] $UpdateActiveHoursEnd = 23,
     [switch] $SkipFirewall,
     # Ports network (TCP) analysers connect to, as set in Lab setup > Analysers > Connection, e.g. 5100,5200.
     [int[]] $LabPorts,
     # The analysers' fixed IP addresses, so only they can reach those ports.
     [string[]] $LabAnalyserAddresses,
     # How the service signs in to PostgreSQL: with its Windows account (no password anywhere), or with a password.
-    [ValidateSet('Windows', 'Password')] [string] $DatabaseSignIn = 'Windows'
+    [ValidateSet('Windows', 'Password')] [string] $DatabaseSignIn = 'Windows',
+    # A warm standby Server Node: HC360 is installed with its service disabled, and never started.
+    [switch] $Standby,
+    # The hospital CA exported on the primary (or the old server) with "certificates export-ca", and its password.
+    [string] $HospitalCaFile,
+    [securestring] $HospitalCaPassword,
+    # The HC360 Desktop package to offer to workstations, when it is not beside the server package.
+    [string] $DesktopPackage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -145,6 +176,45 @@ function Set-RestartOnFailure([string] $Name) {
 # The triggers of the database watchdog task: every minute from now for as long as Windows runs, and at each start-up.
 function New-EveryMinuteTriggers {
     return @((New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)), (New-ScheduledTaskTrigger -AtStartup))
+}
+
+# The newest HC360 Desktop package of a release beside the server package (SRS DED-18): in the folder the server package
+# was extracted to, or the one above it, where the release's files were downloaded. Null when there is none. Whether it
+# is signed is for the server to check (desktop publish).
+# Why Windows would not take these active hours, or $null. Windows allows at most 18 of them, and they may run past
+# midnight (22 to 6).
+function Get-ActiveHoursProblem([int] $Start, [int] $End) {
+    $span = ($End - $Start + 24) % 24
+    if ($span -eq 0) { return "-UpdateActiveHoursStart and -UpdateActiveHoursEnd are both $Start`: give the hours Windows Update must not restart the server in." }
+    if ($span -gt 18) { return "Windows allows at most 18 active hours, and $Start to $End is $span. Leave the server a quieter time for updates." }
+    return $null
+}
+
+# Windows Update's active hours, set by policy (which the Settings app cannot undo) and as the machine's own setting
+# (for editions that ignore the policy). The keys are parameters for the tests.
+function Set-UpdateActiveHours([int] $Start, [int] $End,
+    [string] $PolicyKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate',
+    [string] $SettingsKey = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings') {
+    foreach ($key in $PolicyKey, $SettingsKey) {
+        if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key -Force | Out-Null }
+    }
+    Set-ItemProperty -LiteralPath $PolicyKey -Name SetActiveHours -Value 1 -Type DWord
+    Set-ItemProperty -LiteralPath $PolicyKey -Name ActiveHoursStart -Value $Start -Type DWord
+    Set-ItemProperty -LiteralPath $PolicyKey -Name ActiveHoursEnd -Value $End -Type DWord
+    Set-ItemProperty -LiteralPath $SettingsKey -Name ActiveHoursStart -Value $Start -Type DWord
+    Set-ItemProperty -LiteralPath $SettingsKey -Name ActiveHoursEnd -Value $End -Type DWord
+}
+
+function Find-DesktopPackage([string] $PackagePath) {
+    $pattern = '^HC360-Desktop-(?<numbers>\d+\.\d+\.\d+(?:\.\d+)?)(?:-[0-9A-Za-z.-]+)?-win-[a-z0-9]+\.zip$'
+    $extracted = Split-Path -Parent ([System.IO.Path]::GetFullPath($PackagePath))
+    $folders = @($extracted, (Split-Path -Parent $extracted)) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -Unique
+    $found = @(foreach ($folder in $folders) {
+            Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $pattern }
+        })
+    if ($found.Count -eq 0) { return $null }
+    $newest = $found | Sort-Object -Property @{ Expression = { $null = $_.Name -match $pattern; [version] $Matches['numbers'] } }, Name -Descending | Select-Object -First 1
+    return $newest.FullName
 }
 
 function Set-RestrictedAcl([string] $Path, [switch] $ServiceWrite) {
@@ -280,7 +350,8 @@ function Remove-InstallerBlock([string[]] $Lines, [string] $Name) {
 }
 
 # pg_hba.conf with the block that lets $Role sign in only with the Windows account pg_ident.conf maps to it under $Map,
-# and only from this machine. It goes before the first rule: PostgreSQL follows the first rule a connection matches.
+# and only from this machine. It goes before the first rule: PostgreSQL follows the first rule a connection matches. When
+# another script's marked block comes first (Enable-HC360Replication.ps1's), it goes before that block, not inside it.
 function Set-HbaBlock([string[]] $Lines, [string] $Role, [string] $Map) {
     if ($Role -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
         throw "The database account '$Role' cannot be named in pg_hba.conf as it is: use an account named with letters, digits and underscores."
@@ -297,8 +368,10 @@ function Set-HbaBlock([string[]] $Lines, [string] $Role, [string] $Map) {
     $rest = Remove-InstallerBlock $Lines 'pg_hba.conf'
     $first = 0
     while ($first -lt $rest.Count -and $rest[$first] -match '^\s*(#|$)') { $first++ }
-    $head = if ($first -gt 0) { @($rest[0..($first - 1)]) } else { @() }
-    $tail = if ($first -lt $rest.Count) { @($rest[$first..($rest.Count - 1)]) } else { @() }
+    for ($i = 0; $i -lt $first; $i++) { if ($rest[$i].StartsWith('# BEGIN ')) { $first = $i; break } }
+    # In @(), so that one line is an array of one, not a string the block would be added to.
+    $head = @(if ($first -gt 0) { $rest[0..($first - 1)] })
+    $tail = @(if ($first -lt $rest.Count) { $rest[$first..($rest.Count - 1)] })
     return , ($head + $block + $tail)
 }
 
@@ -415,6 +488,33 @@ function Restart-Postgres($Postgres, [int] $Port) {
     }
 }
 
+# ---------------------------------------------------------------- warm standby (SRS DED-20)
+# A standby Server Node has a read-only copy of the primary's database (New-HC360Standby.ps1), and HC360 installed with its
+# service disabled (-Standby). HC360 must never run against the copy, and, once the copy is promoted, must not start
+# before the data encryption keys are back: it would make a new key that cannot read what the database holds.
+
+# Whether PostgreSQL's data folder $DataDirectory is a standby's, or a recovery's in progress.
+function Test-StandbyDatabase([string] $DataDirectory) {
+    return (Test-Path -LiteralPath (Join-Path $DataDirectory 'standby.signal')) -or (Test-Path -LiteralPath (Join-Path $DataDirectory 'recovery.signal'))
+}
+
+# Why the installer stops before changing anything, or $null when it goes on. $DatabaseIsStandby: this machine's PostgreSQL
+# is a standby. $ServiceStartType: the installed HC360 service's start type (Disabled after -Standby), or $null.
+# $HasDataKey: keys\field-master.key is in the data folder.
+function Get-StandbyProblem([bool] $Standby, [bool] $CreateDatabase, [bool] $DatabaseIsStandby, [string] $ServiceStartType, [bool] $HasDataKey) {
+    if ($Standby -and $CreateDatabase) {
+        return "-CreateDatabase cannot be given with -Standby: a standby's database is the copy of the primary's that New-HC360Standby.ps1 made."
+    }
+    if ($Standby) { return $null }
+    if ($DatabaseIsStandby) {
+        return "This machine's PostgreSQL is a warm standby (standby.signal in its data folder), which HC360 must not run against. To install or upgrade HC360 on the standby, run the installer with -Standby. To fail over to it, promote its PostgreSQL first (docs/deployment/DEPLOYMENT.md, 'Failing over to the standby')."
+    }
+    if ($ServiceStartType -eq 'Disabled' -and -not $HasDataKey) {
+        return "HC360 was installed here as a warm standby (its service is disabled) and has no data encryption key yet. Put the keys and documents back from the latest backup first: & '<install folder>\HyFib.HealthCare360.Server.exe' backup restore --in <backup.hc360bak>. Started without them, HC360 would make a new key that cannot read the hospital's encrypted data (docs/deployment/DEPLOYMENT.md, 'Failing over to the standby')."
+    }
+    return $null
+}
+
 # Runs one statement as the PostgreSQL superuser.
 function Invoke-SuperuserSql([string] $Server, [int] $Port, [string] $Sql) {
     if (-not $PostgresSuperuserPassword) { $script:PostgresSuperuserPassword = Read-Host -AsSecureString "Password for PostgreSQL user '$PostgresSuperuser'" }
@@ -441,6 +541,14 @@ if (-not $pgBin) {
     Write-Warning 'PostgreSQL was not found under Program Files. Install it first (Install-PostgreSQL.ps1) or backups will need -PgDumpPath configured manually.'
 }
 
+# A warm standby (SRS DED-20): HC360 never runs against the standby's database, nor without its keys once it is promoted.
+$localPostgres = Find-PostgresService $PostgresPort
+$installedService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+$standbyProblem = Get-StandbyProblem $Standby.IsPresent $CreateDatabase.IsPresent ($localPostgres -and (Test-StandbyDatabase $localPostgres.DataDirectory)) `
+    $(if ($installedService) { "$($installedService.StartType)" } else { $null }) (Test-Path -LiteralPath (Join-Path $DataDir 'keys\field-master.key'))
+if ($standbyProblem) { throw $standbyProblem }
+if ($HospitalCaFile -and -not (Test-Path -LiteralPath $HospitalCaFile)) { throw "There is no file at $($HospitalCaFile): give the CA exported with 'certificates export-ca'." }
+
 # Checked before anything changes: settings that cannot be read, or written back as they are, stop the installer while
 # the installed version runs. They are read again once the service has stopped.
 $settingsPath = Join-Path $DataDir 'config\hc360.settings.json'
@@ -454,6 +562,16 @@ if ($installedPort -and -not $PSBoundParameters.ContainsKey('HttpsPort')) { $Htt
 $installedPortalPort = $settingsBefore['HealthCare360:PortalHttpsPort'] -as [int]
 if ($installedPortalPort -and -not $PSBoundParameters.ContainsKey('PortalHttpsPort')) { $PortalHttpsPort = $installedPortalPort }
 if ($PortalHttpsPort -eq $HttpsPort) { throw "The patient portal needs a port of its own: -PortalHttpsPort and -HttpsPort are both $HttpsPort." }
+if (-not $SkipPowerTuning) {
+    # Without the parameters an upgrade keeps the active hours set before (by this installer, or by IT through the policy).
+    $activeHoursBefore = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate' -ErrorAction SilentlyContinue
+    if ($activeHoursBefore -and $activeHoursBefore.PSObject.Properties['ActiveHoursStart'] -and $activeHoursBefore.PSObject.Properties['ActiveHoursEnd']) {
+        if (-not $PSBoundParameters.ContainsKey('UpdateActiveHoursStart')) { $UpdateActiveHoursStart = [int] $activeHoursBefore.ActiveHoursStart }
+        if (-not $PSBoundParameters.ContainsKey('UpdateActiveHoursEnd')) { $UpdateActiveHoursEnd = [int] $activeHoursBefore.ActiveHoursEnd }
+    }
+    $activeHoursProblem = Get-ActiveHoursProblem $UpdateActiveHoursStart $UpdateActiveHoursEnd
+    if ($activeHoursProblem) { throw "$activeHoursProblem Nothing has been changed." }
+}
 
 # ---------------------------------------------------------------- stop an existing service (upgrade)
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -482,7 +600,9 @@ if (-not $existing) {
         -Description 'HyFib HealthCare360 hospital information system (API, staff app, patient portal, background jobs).' `
         -StartupType Automatic | Out-Null
 }
-sc.exe config $ServiceName obj= $ServiceAccount start= delayed-auto | Out-Null
+# On a warm standby the service is disabled: HC360 must never run against the standby's read-only database.
+$startMode = if ($Standby) { 'disabled' } else { 'delayed-auto' }
+sc.exe config $ServiceName obj= $ServiceAccount start= $startMode | Out-Null
 Set-RestartOnFailure $ServiceName
 
 Set-RestrictedAcl -Path $DataDir -ServiceWrite
@@ -497,6 +617,7 @@ if (-not [System.Diagnostics.EventLog]::SourceExists($EventSource)) {
 $settings = Read-SettingsFile $settingsPath
 $settingsBefore = ConvertTo-SettingTable $settings
 
+$connectionString = $null
 if ($CreateDatabase) {
     if (-not $pgBin) { throw 'PostgreSQL client tools (psql.exe) were not found.' }
     if (-not $PostgresSuperuserPassword) { $PostgresSuperuserPassword = Read-Host -AsSecureString "Password for PostgreSQL user '$PostgresSuperuser'" }
@@ -522,6 +643,11 @@ if ($CreateDatabase) {
     }
     $connectionString = "Host=$PostgresHost;Port=$PostgresPort;Database=$DatabaseName;Username=hc360_app;Password=$appPassword;Maximum Pool Size=200;Timeout=15;Command Timeout=60"
 }
+elseif ($Standby -and -not $settingsBefore['ConnectionStrings:Hospital']) {
+    # The standby's database is a copy of the primary's, with its accounts and its pg_hba.conf and pg_ident.conf: once
+    # promoted, it takes the service's Windows account as the primary does, so the connection has no password.
+    $connectionString = "Host=$PostgresHost;Port=$PostgresPort;Database=$DatabaseName;Username=hc360_app;Maximum Pool Size=200;Timeout=15;Command Timeout=60"
+}
 elseif (-not $settingsBefore['ConnectionStrings:Hospital']) {
     throw 'No database is configured yet. Re-run with -CreateDatabase (recommended) or create hc360.settings.json with ConnectionStrings.Hospital.'
 }
@@ -532,6 +658,7 @@ elseif (-not $settingsBefore['ConnectionStrings:Hospital']) {
 Write-Step "Configuring $settingsPath"
 $changed = @(
     if ($CreateDatabase) { Set-Setting $settings 'ConnectionStrings:Hospital' $connectionString -Replace }
+    elseif ($connectionString) { Set-Setting $settings 'ConnectionStrings:Hospital' $connectionString }
     Set-Setting $settings 'HealthCare360:HttpsPort' $HttpsPort -Replace:$PSBoundParameters.ContainsKey('HttpsPort')
     Set-Setting $settings 'HealthCare360:PortalHttpsPort' $PortalHttpsPort -Replace:$PSBoundParameters.ContainsKey('PortalHttpsPort')
     Set-Setting $settings 'HealthCare360:DefaultFacilityCode' $FacilityCode -Replace:$PSBoundParameters.ContainsKey('FacilityCode')
@@ -556,6 +683,23 @@ $exe = Join-Path $InstallDir $ExeName
 & $exe settings protect --data-dir $DataDir | ForEach-Object { Write-Host "    $_" }
 if ($LASTEXITCODE -ne 0) { throw "Protecting the secrets in $settingsPath failed (exit code $LASTEXITCODE)." }
 
+# ---------------------------------------------------------------- the hospital CA of another Server Node
+# Workstations and lab agents trust only the hospital CA they pinned. A warm standby or replacement hardware that has it
+# serves them as the first server did, with a certificate of its own issued by that CA (SRS DED-20). The service is
+# stopped here, so it issues that certificate when it starts.
+if ($HospitalCaFile) {
+    Write-Step "Installing the hospital CA from $HospitalCaFile"
+    if (-not $HospitalCaPassword) { $HospitalCaPassword = Read-Host -AsSecureString 'Password of the CA file' }
+    $env:HC360_CA_PASSWORD = [System.Net.NetworkCredential]::new('', $HospitalCaPassword).Password
+    try {
+        & $exe certificates import-ca --in $HospitalCaFile --data-dir $DataDir | ForEach-Object { Write-Host "    $_" }
+        if ($LASTEXITCODE -ne 0) { throw "The hospital CA could not be installed from $HospitalCaFile (exit code $LASTEXITCODE)." }
+    }
+    finally {
+        Remove-Item Env:\HC360_CA_PASSWORD -ErrorAction SilentlyContinue
+    }
+}
+
 # ---------------------------------------------------------------- disk encryption
 # The keys that open HC360's stored data are on this machine, so its disks must be encrypted (SRS SEC-05). Reading
 # BitLocker's state needs administrator rights, which the service does not have: the check runs here, and then as
@@ -574,6 +718,24 @@ $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOn
 Register-ScheduledTask -TaskName 'HC360 disk encryption check' -TaskPath '\HyFib\' -Action $taskAction -Trigger $taskTriggers `
     -Principal $taskPrincipal -Settings $taskSettings -Force `
     -Description 'Records whether BitLocker protects the disks of the HC360 Server Node, for System health (SRS SEC-05).' | Out-Null
+
+# ---------------------------------------------------------------- HC360 Desktop for the workstations (SRS DED-18)
+# Workstations update themselves from the server, which needs HC360 Desktop's package for that: the one the release has
+# beside the server package. The server checks HyFib's signature before it takes the package in, and nothing changes
+# when it refuses one: the workstations then keep their version until Install-HC360Desktop.ps1 upgrades them.
+if (-not $DesktopPackage) { $DesktopPackage = Find-DesktopPackage $PackagePath }
+if ($DesktopPackage) {
+    Write-Step "Offering $(Split-Path -Leaf $DesktopPackage) to the workstations"
+    & $exe desktop publish --package $DesktopPackage --data-dir $DataDir | ForEach-Object { Write-Host "    $_" }
+    switch ($LASTEXITCODE) {
+        0 { }
+        2 { Write-Warning 'The server does not offer this HC360 Desktop package to workstations (the reason is above). Upgrade them with Install-HC360Desktop.ps1, or offer a signed package later with: HyFib.HealthCare360.Server.exe desktop publish --package <zip>' }
+        default { Write-Warning "The HC360 Desktop package could not be offered to workstations (exit code $LASTEXITCODE)." }
+    }
+}
+else {
+    Write-Host '==> No HC360 Desktop package beside the server package: workstations are not offered an update. Offer one with: HyFib.HealthCare360.Server.exe desktop publish --package <zip>' -ForegroundColor Cyan
+}
 
 # ---------------------------------------------------------------- firewall
 if (-not $SkipFirewall) {
@@ -624,14 +786,22 @@ if (-not $SkipPowerTuning) {
         }
         catch { Write-Warning "Could not change power management for '$($_.Name)': $($_.Exception.Message)" }
     }
+    Set-UpdateActiveHours $UpdateActiveHoursStart $UpdateActiveHoursEnd
+    Write-Host ("    Windows Update will not restart the server between {0:00}:00 and {1:00}:00." -f $UpdateActiveHoursStart, $UpdateActiveHoursEnd)
 }
 
 # ---------------------------------------------------------------- start and verify
-Write-Step 'Starting HyFib HealthCare360'
-Start-Service -Name $ServiceName
-$ready = Wait-ServerReady -Port $HttpsPort
-if (-not $ready) {
-    Write-Warning "The service was not ready, up and reaching the database, within 3 minutes. Check $DataDir\logs and the Windows Application event log."
+if ($Standby) {
+    Write-Step 'Leaving HyFib HealthCare360 stopped and disabled: this is a warm standby'
+    $ready = $false
+}
+else {
+    Write-Step 'Starting HyFib HealthCare360'
+    Start-Service -Name $ServiceName
+    $ready = Wait-ServerReady -Port $HttpsPort
+    if (-not $ready) {
+        Write-Warning "The service was not ready, up and reaching the database, within 3 minutes. Check $DataDir\logs and the Windows Application event log."
+    }
 }
 
 # ---------------------------------------------------------------- database sign-in
@@ -641,10 +811,15 @@ if (-not $ready) {
 # pg_ident.conf go back as they were, and the service signs in with its password as before.
 Write-Step 'Checking how the service signs in to the database'
 $signIn = $null
-$shown = @(& $exe database sign-in show --data-dir $DataDir)
-if ($LASTEXITCODE -eq 0) { $signIn = ($shown -join "`n") | ConvertFrom-StringData }
-else { Write-Warning 'The database sign-in could not be read from the settings file, so it is left as it is.' }
 $postgres = $null
+if ($Standby) {
+    Write-Host '    A standby: its database, pg_hba.conf and pg_ident.conf are copies of the primary''s, and are left as they are.'
+}
+else {
+    $shown = @(& $exe database sign-in show --data-dir $DataDir)
+    if ($LASTEXITCODE -eq 0) { $signIn = ($shown -join "`n") | ConvertFrom-StringData }
+    else { Write-Warning 'The database sign-in could not be read from the settings file, so it is left as it is.' }
+}
 if ($signIn -and $signIn['on-this-machine'] -ne 'yes') {
     Write-Host "    PostgreSQL is reached at $($signIn['host']), not on this machine: the service signs in with its password."
 }
@@ -771,6 +946,8 @@ if ($postgres) {
 }
 
 # ---------------------------------------------------------------- database restarts
+# A standby's PostgreSQL needs starting again after a crash as much as the primary's.
+if ($Standby) { $postgres = $localPostgres }
 # Windows restarts a service whose process ends unexpectedly. PostgreSQL's service process (pg_ctl) reports a clean stop
 # even when the database itself crashes or is killed, so Windows would then leave it stopped: the watchdog task checks
 # every minute, as SYSTEM, and starts it again when its data folder says it was not shut down cleanly (SRS DED-01,
@@ -830,5 +1007,14 @@ if (Test-Path $initialPassword) {
 }
 
 Write-Host ''
-Write-Host "HyFib HealthCare360 is available at https://$($env:COMPUTERNAME):$HttpsPort/" -ForegroundColor Green
-Write-Host "The patient portal is at https://$($env:COMPUTERNAME):$PortalHttpsPort/portal/" -ForegroundColor Green
+if ($Standby) {
+    Write-Host "HyFib HealthCare360 is installed as a warm standby: its service is disabled, and starts only after a failover." -ForegroundColor Green
+    Write-Host '    docs/deployment/DEPLOYMENT.md, "Failing over to the standby", has the steps. Upgrade this machine with -Standby whenever the primary is upgraded.'
+    if (-not (Test-Path -LiteralPath $caPath)) {
+        Write-Warning "This standby has no hospital CA yet: after a failover every workstation would have to be set up again. Export it on the primary ('certificates export-ca') and run the installer again with -Standby -HospitalCaFile."
+    }
+}
+else {
+    Write-Host "HyFib HealthCare360 is available at https://$($env:COMPUTERNAME):$HttpsPort/" -ForegroundColor Green
+    Write-Host "The patient portal is at https://$($env:COMPUTERNAME):$PortalHttpsPort/portal/" -ForegroundColor Green
+}

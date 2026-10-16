@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    HC360 Desktop updater (SRS DED-18): installs a package HC360 Desktop downloaded from the Server Node and staged. The
+    "HC360 Desktop update" scheduled task runs it as SYSTEM, from a folder of its own, so it can replace the HC360
+    Desktop folder in Program Files; it verifies the package again itself, because users may write where it is staged.
+    A console program without a window, WebView2 or network access: as little as possible runs as SYSTEM. Published as
+    one self-contained file (Publish-HC360.ps1), so it can replace itself and needs no .NET on the workstation.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>HyFib.HealthCare360.DesktopUpdater</RootNamespace>
+    <AssemblyName>HC360DesktopUpdater</AssemblyName>
+    <ApplicationIcon>..\HyFib.HealthCare360.Desktop\Assets\hc360.ico</ApplicationIcon>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\shared\HyFib.HealthCare360.WindowsInterop\HyFib.HealthCare360.WindowsInterop.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HyFib.HealthCare360.Desktop.Tests" />
+  </ItemGroup>
+</Project>

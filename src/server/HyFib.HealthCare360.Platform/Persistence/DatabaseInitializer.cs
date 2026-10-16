@@ -25,10 +25,22 @@ public sealed class DatabaseInitializer(
     IOptions<PlatformOptions> options,
     ILogger<DatabaseInitializer> logger)
 {
+    /// <summary>Why HC360 does not start on a database that is a warm standby (SRS DED-20).</summary>
+    public const string StandbyMessage =
+        "The database is a read-only warm standby: PostgreSQL is in recovery, following the primary Server Node. HC360 runs only " +
+        "against the primary. To fail over to this Server Node, promote its PostgreSQL first, then put the keys back and start HC360 " +
+        "as the failover steps say (docs/deployment/DEPLOYMENT.md, \"Failing over to the standby\").";
+
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+
+        // Before anything is written: on a standby every write fails, and the service would restart into the same failure.
+        if (await db.Database.SqlQuery<bool>($"SELECT pg_is_in_recovery() AS \"Value\"").SingleAsync(cancellationToken))
+        {
+            throw new DatabaseUpgradeException(StandbyMessage);
+        }
 
         if (options.Value.AutoMigrate)
         {

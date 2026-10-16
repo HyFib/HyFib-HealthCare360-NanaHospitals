@@ -42,6 +42,8 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { adminQueries, type DeviceDto, type DeviceKind } from '@/modules/admin/api';
+import { desktopUpdateSummary } from '@/modules/admin/desktopVersions';
+import { DeviceVersion } from '@/modules/admin/DeviceVersion';
 
 export const Route = createFileRoute('/_app/admin/devices')({
   component: DevicesPage,
@@ -81,12 +83,18 @@ function kindIcon(kind: DeviceKind) {
   );
 }
 
-/** Enrolled HC360 Desktop installations (SRS DED-05): enrolment codes, WiFi quality per workstation, revocation. */
+/**
+ * Enrolled HC360 Desktop installations (SRS DED-05): enrolment codes, WiFi quality per workstation, revocation, and
+ * each one's version against the one the server offers them (SRS DED-18).
+ */
 function DevicesPage() {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const devices = useQuery(adminQueries.devices());
+  const desktopUpdate = useQuery(adminQueries.desktopUpdate());
+  const offeredVersion = desktopUpdate.data?.offeredVersion;
+  const updateSummary = desktopUpdateSummary(devices.data, desktopUpdate.data);
   const [enrolling, setEnrolling] = useState(false);
   const [editing, setEditing] = useState<DeviceDto | null>(null);
   const [revoking, setRevoking] = useState<DeviceDto | null>(null);
@@ -112,6 +120,11 @@ function DevicesPage() {
           </Button>
         }
       />
+      {updateSummary && (
+        <MessageBar intent={updateSummary.intent}>
+          <MessageBarBody>{updateSummary.text}</MessageBarBody>
+        </MessageBar>
+      )}
       <Section flush>
         <DataTable
           ariaLabel="Devices"
@@ -158,7 +171,11 @@ function DevicesPage() {
               render: (d) => (d.lastSeenAt ? formatRelative(d.lastSeenAt) : 'Never'),
             },
             { key: 'ip', header: 'Address', priority: 'low', render: (d) => d.lastIpAddress ?? '—' },
-            { key: 'version', header: 'App version', priority: 'low', render: (d) => d.appVersion ?? '—' },
+            {
+              key: 'version',
+              header: 'App version',
+              render: (d) => <DeviceVersion device={d} offeredVersion={offeredVersion} />,
+            },
             { key: 'enrolled', header: 'Enrolled', priority: 'low', render: (d) => formatDateTime(d.enrolledAt) },
             {
               key: 'status',

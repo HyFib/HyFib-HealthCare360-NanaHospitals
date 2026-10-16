@@ -3,6 +3,8 @@
     Thin Windows interop shared by the Server Node (WiFi link monitor) and HC360 Desktop (connection
     indicator): Native WiFi (wlanapi.dll) queries. Targets net10.0 so the server stays testable on any OS;
     every entry point checks OperatingSystem.IsWindows().
+    Also the checks of signed release packages (Updates/), which the Server Node, HC360 Desktop and its updater each make
+    before they trust a package HC360 Desktop installs by itself (SRS DED-18): one copy of the code, so all three agree.
   -->
   <PropertyGroup>
     <RootNamespace>HyFib.HealthCare360.WindowsInterop</RootNamespace>
