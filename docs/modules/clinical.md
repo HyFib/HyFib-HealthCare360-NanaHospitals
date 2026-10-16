@@ -8,8 +8,8 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 
 | Requirement | Where |
 |---|---|
-| EHR-01 longitudinal record | Encounters, vitals, allergies, diagnoses/problems, notes, immunisations, orders, prescriptions, discharge summaries; `GET /emr/patients/{id}/timeline` |
-| EHR-02 timeline by type/department/date | `GET /emr/patients/{id}/timeline?types=&from=&to=&departmentId=` |
+| EHR-01 longitudinal record | Encounters, vitals, allergies, diagnoses/problems, notes, procedures (see *Procedures*), immunisations, orders, prescriptions, discharge summaries; `GET /emr/patients/{id}/timeline` |
+| EHR-02 timeline by type/kind of care/department/date | `GET /emr/patients/{id}/timeline?types=&encounterTypes=&from=&to=&departmentId=` |
 | EHR-03 banner flags | `GET /emr/patients/{id}/summary` (allergies with `allergyStatus`, alerts, problems, current medicines, last vitals + flags) for the chart; `GET /emr/patients/{id}/flags` (allergies and alerts alone, `clinical.flags.read`) for every other clinical screen's banner (see *Banner flags on every clinical screen*); `GET /emr/patients/{id}/allergies/status`, "no known allergies"; real-time `clinical.flags.changed` on `patient:{id}` |
 | EHR-04/06/07 documents, consent, break-the-glass | Patients module (consents: see *Consents (EHR-06)*); every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
 | EMR-01 worklist | `GET /emr/worklist` (queue, the doctor's appointments, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) and the ward round `GET /inpatient/rounds` (Inpatient module); see *The doctor's worklist (EMR-01)* |
@@ -27,7 +27,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 |---|---|---|
 | `clinical.emr.read` | Read the clinical record | Doctor, Nurse, MrdOfficer |
 | `clinical.flags.read` | See allergies and alerts on the patient banner, without the chart | Doctor, Nurse, MrdOfficer, Pharmacist, LabTechnician, Pathologist, Radiographer, Radiologist, CardiologyTechnician, Cardiologist, OtCoordinator, DialysisTechnician, Physiotherapist, BloodBankOfficer, Dietitian |
-| `clinical.emr.write` | Encounters, diagnoses, notes, referrals, checkup summaries, result acknowledgement | Doctor |
+| `clinical.emr.write` | Encounters, diagnoses, notes, procedures, referrals, checkup summaries, result acknowledgement | Doctor |
 | `clinical.encounters.sign` | Sign/amend encounters, sign notes | Doctor |
 | `clinical.vitals.record` | Record vitals | Doctor, Nurse |
 | `clinical.allergies.manage` | Record/update allergies | Doctor, Nurse |
@@ -54,7 +54,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | POST | `/emr/results/{id}/acknowledge` | emr.write | `AcknowledgeResultRequest{note}` → 204 |
 | GET | `/emr/patients/{patientId}/summary` | emr.read | → `PatientClinicalSummary` (patient, `allergiesEverRecorded`, `allergyStatus` (`Recorded`\|`NoKnownAllergies`\|`NotRecorded`), allergies, alerts, activeProblems, currentMedications, lastVitals+flags, recentEncounters(5), resultsAwaitingReview) |
 | GET | `/emr/patients/{patientId}/flags` | flags.read or emr.read | → `PatientFlags{allergyStatus, allergies[AllergySummary], alerts[AlertSummary]}`: the summary's flags alone (same rule, same order: most severe first, alerts in force today). Restricted-record guard (403 `patient.restricted`) and a PHI-access audit entry ("Viewed allergies and alerts") like the chart; 404 for an unknown patient |
-| GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result) |
+| GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&encounterTypes=OutPatient,InPatient,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result, Procedure). `encounterTypes` (OutPatient, InPatient, Emergency, Telehealth, HealthCheckup) and `departmentId` keep the matching encounters and the entries recorded in one of them; documents and entries recorded outside an encounter then drop out. An unknown name is a 400 on `types` or `encounterTypes` |
 | GET | `/emr/patients/{patientId}/medications` | emr.read | → `CurrentMedication[]` |
 | GET | `/emr/patients/{patientId}/encounters?type&page` | emr.read | → `PagedResult<EncounterListItem>` |
 | POST | `/emr/encounters` | emr.write | `StartEncounterRequest{patientId, visitId?, admissionId?, type?, departmentId?, practitionerId?, templateId?, chiefComplaint?}` → 201 `EncounterDetail` (409 `encounter.already_open` with `encounterId`) |
@@ -80,11 +80,26 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | POST | `/emr/notes/{id}/addendum` | emr.write | `AddendumRequest{body}` → new note with `amendsNoteId` |
 | GET / POST | `/emr/patients/{patientId}/immunizations` | emr.read / immunizations.record | `RecordImmunizationRequest{vaccineName, vaccineCode, doseNumber, administeredOn, route, site, batchNumber, manufacturer, expiryDate, administeredBy, isExternal, nextDueOn, notes}` |
 | POST | `/emr/immunizations/{id}/entered-in-error` | immunizations.record | `EnteredInErrorRequest{reason}` |
+| GET / POST | `/emr/patients/{patientId}/procedures?includeEnteredInError` | emr.read / emr.write | `RecordProcedureRequest{encounterId?, performedAt, code?, display?, performerPractitionerId?, performerName?, side, bodySite?, outcome?, notes?}` → 201 `ProcedureDto` (see *Procedures*); the list is newest first, from every facility, with a PHI-access audit entry ("Viewed procedures") |
+| PUT | `/emr/procedures/{id}` | emr.write | `CorrectProcedureRequest{…same fields, reason}` → `ProcedureDto` (`Amended`); 422 `procedure.entered_in_error` once voided |
+| POST | `/emr/procedures/{id}/entered-in-error` | emr.write | `EnteredInErrorRequest{reason}` → `ProcedureDto` (`EnteredInError`); 422 `procedure.already_voided` |
 | GET | `/emr/templates?specialtyCode&search&includeInactive` | emr.read | → `TemplateListItem[]` (shared + own personal) |
 | GET | `/emr/templates/{id}` | emr.read | → `TemplateDto` (SOAP defaults, complaints, default orders, medicines) |
 | POST / PUT | `/emr/templates`, `/emr/templates/{id}` | templates.manage | `SaveTemplateRequest` |
 | GET / POST / DELETE | `/emr/favourites`, `/emr/favourites/{id}` | emr.read / emr.write or prescriptions.write | `SaveFavouriteRequest{kind: Order|Drug, label, serviceItemId?, drugItemId?, dose defaults…}` |
 | GET | `/emr/drugs?search&take` | prescriptions.write | → `PrescribableDrug[]` (see *Drug search*); `take` defaults to 20, capped at 50 |
+
+#### Procedures
+
+`ProcedureRecord` (`clinical.procedure_records`) holds the procedures done for the patient as structured data (EHR-01), apart
+from the free-text "Procedure" note and MRD coding. A record has the time it was done, a code from the procedure
+catalogue (`mrd/procedure-codes`, ICD-10-PCS; a code not in the catalogue is a 400 on `code`) or a description alone
+(`display`, which otherwise defaults to the code's title), the performer (a practitioner, or a name for someone from
+elsewhere; neither means the recording doctor), side, site, outcome and notes, and optionally the encounter it was done
+in (its admission and visit are copied). A correction changes the fields and leaves the record `Amended` with the reason
+(the previous values are in the data-change audit); a record made in error is `EnteredInError` with the reason, kept
+for the audit trail but off the timeline. Operations completed in the theatre arrive on their own (`Source`
+`OperationTheatre`, see *Events*). The chart's *Procedures* tab lists, records, corrects and voids them.
 
 ### Clinical orders and e-prescribing (`/clinical`)
 
@@ -419,6 +434,7 @@ Handled (same transaction):
 | `PatientAdmitted` | opens the MRD chart of the admission |
 | `PatientDischarged` | sets chart discharge time and due date (+7 days), queues ICD coding (Pending), stamps the discharge summary |
 | `DiagnosticReportReleased` | completes the order line and adds/re-opens a "result to review" for the ordering doctor |
+| `SurgeryCompleted` (SpecialtyCare) | `SurgeryCompletedHandler` records the operation as a `ProcedureRecord` (source `OperationTheatre`, performed at knife to skin, the surgeon as performer, the booking's side), once per booking (unique `surgery_booking_id`), in the latest encounter of the admission (or visit) that began before it ended. The booking's code is kept only when the procedure catalogue has it, since theatres often book with the hospital's tariff code |
 
 Real-time (ids only): `clinical.order.placed` / `clinical.order.changed` (facility), `pharmacy.prescription.signed` /
 `pharmacy.prescription.cancelled` (`pharmacy:{facilityId}`), `clinical.flags.changed` / `clinical.vitals.recorded`

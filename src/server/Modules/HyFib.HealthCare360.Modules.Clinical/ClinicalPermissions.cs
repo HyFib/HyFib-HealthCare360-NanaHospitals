@@ -61,7 +61,7 @@ public static class ClinicalPermissions
         new(EmrRead, Emr, "View the clinical record: encounters, vitals, allergies, problems, orders, prescriptions and timeline",
             [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.MrdOfficer]),
         new(FlagsRead, Emr, "See the patient's allergies and alerts (DNR, isolation, infection control…) on the patient banner", ClinicalStaff),
-        new(EmrWrite, Emr, "Write encounters (SOAP), diagnoses, clinical notes, referrals and health-checkup summaries", [SystemRoles.Doctor]),
+        new(EmrWrite, Emr, "Write encounters (SOAP), diagnoses, clinical notes, procedures, referrals and health-checkup summaries", [SystemRoles.Doctor]),
         new(EncountersSign, Emr, "Sign and amend encounters and clinical notes", [SystemRoles.Doctor]),
         new(VitalsRecord, Emr, "Record vital signs", [SystemRoles.Doctor, SystemRoles.Nurse]),
         new(AllergiesManage, Emr, "Record and update allergies", [SystemRoles.Doctor, SystemRoles.Nurse]),

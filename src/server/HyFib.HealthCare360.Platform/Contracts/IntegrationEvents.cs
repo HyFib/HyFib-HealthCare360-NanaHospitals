@@ -128,6 +128,34 @@ public sealed record DiagnosticReportReleased(
     bool HasCriticalFindings,
     DateTimeOffset ReleasedAt) : DomainEvent;
 
+/// <summary>The side of the body a procedure was done on, checked at site marking and WHO Time-out for surgery.</summary>
+public enum ProcedureSide
+{
+    NotApplicable = 0,
+    Left,
+    Right,
+    Bilateral,
+}
+
+/// <summary>
+/// An operation finished: the patient left the theatre after the WHO Sign-out (OT-03). Raised by SpecialtyCare; Clinical
+/// records the procedure on the patient's longitudinal record (EHR-01). <paramref name="ProcedureCode"/> is whatever code
+/// the booking carries (an ICD-10-PCS code or the hospital's own service code).
+/// </summary>
+public sealed record SurgeryCompleted(
+    Guid SurgeryBookingId,
+    string BookingNumber,
+    Guid FacilityId,
+    Guid PatientId,
+    Guid? AdmissionId,
+    Guid? VisitId,
+    string? ProcedureCode,
+    string ProcedureName,
+    ProcedureSide Side,
+    Guid? SurgeonId,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset CompletedAt) : DomainEvent;
+
 public sealed record AppointmentBooked(
     Guid AppointmentId,
     Guid PatientId,
