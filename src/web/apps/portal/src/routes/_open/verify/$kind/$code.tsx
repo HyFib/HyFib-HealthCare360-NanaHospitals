@@ -17,7 +17,8 @@ import { isVerifyKind, isWellFormedCode, normalizeReportCode, type VerifyKind } 
 
 /**
  * The answer for one printed document: /verify/prescription/{token} or /verify/{lab|radiology|cardiology}/{code}.
- * Printed QR codes open this page. It shows only whether the document is genuine, never results or identifiers.
+ * Printed QR codes open this page. It shows only whether the document is genuine, never results or identifiers; for a
+ * prescription the doctor signed with their DSC, the signer, the certificate and the hash, as the server re-checked them.
  */
 export const Route = createFileRoute('/_open/verify/$kind/$code')({
   component: VerificationPage,
@@ -61,6 +62,10 @@ const useStyles = makeStyles({
   tests: { margin: 0, paddingLeft: '20px' },
   note: { margin: 0, color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   revised: { margin: '12px 0 0', color: tokens.colorStatusWarningForeground3, fontWeight: tokens.fontWeightSemibold },
+  dscTitle: { margin: '0 0 8px', fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightSemibold },
+  dscText: { margin: '0 0 12px' },
+  hash: { fontFamily: tokens.fontFamilyMonospace, overflowWrap: 'anywhere' },
+  download: { display: 'inline-block', marginTop: '12px' },
 });
 
 function VerificationPage() {
@@ -130,16 +135,21 @@ function PrescriptionAnswer({ result }: { result: PrescriptionVerification }) {
     return <Verdict tone="unknown" title={t('verify.notFound.title')} body={t('verify.notFound.body')} />;
   }
   const cancelled = result.status !== 'Valid';
+  const dsc = result.digitalSignature;
+  const badSignature = dsc?.state === 'Invalid';
   return (
     <>
       {cancelled ? (
         <Verdict tone="bad" title={t('verify.cancelled.title')} body={t('verify.cancelled.body')} />
+      ) : badSignature ? (
+        <Verdict tone="bad" title={t('verify.dsc.title')} body={t('verify.dsc.invalid')} />
       ) : (
         <Verdict tone="genuine" title={t('verify.genuine.title')} body={t('verify.genuine.prescription')} />
       )}
       <div className={styles.details}>
         <InfoList
           items={[
+            { label: t('verify.prescriptionNumber'), value: result.prescriptionNumber, hideEmpty: true },
             { label: t('verify.doctor'), value: result.doctor, hideEmpty: true },
             { label: t('verify.qualification'), value: result.qualification, hideEmpty: true },
             { label: t('verify.registration'), value: result.registrationNumber, hideEmpty: true },
@@ -153,6 +163,29 @@ function PrescriptionAnswer({ result }: { result: PrescriptionVerification }) {
           ]}
         />
       </div>
+      {dsc && (
+        <div className={styles.details}>
+          <h2 className={styles.dscTitle}>{t('verify.dsc.title')}</h2>
+          <p className={styles.dscText}>{t(badSignature ? 'verify.dsc.invalid' : 'verify.dsc.valid')}</p>
+          <InfoList
+            items={[
+              { label: t('verify.dsc.signer'), value: dsc.signerName },
+              { label: t('verify.dsc.signedAt'), value: f.dateTime(dsc.signedAt) },
+              {
+                label: t('verify.dsc.serial'),
+                value: <span className={styles.hash}>{dsc.certificateSerialNumber}</span>,
+              },
+              { label: t('verify.dsc.issuer'), value: dsc.certificateIssuer },
+              { label: t('verify.dsc.hash'), value: <span className={styles.hash}>{dsc.contentHash}</span> },
+            ]}
+          />
+          {result.signaturePath && (
+            <a className={styles.download} href={result.signaturePath} download>
+              {t('verify.dsc.download')}
+            </a>
+          )}
+        </div>
+      )}
     </>
   );
 }

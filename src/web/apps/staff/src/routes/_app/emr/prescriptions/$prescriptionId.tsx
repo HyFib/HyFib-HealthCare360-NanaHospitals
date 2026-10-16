@@ -20,6 +20,7 @@ import { usePermission } from '@/lib/permissions';
 import { emrKeys } from '@/modules/emr/api';
 import { ChartLoadError, ClinicalBanner } from '@/modules/emr/ClinicalBanner';
 import { directionsText } from '@/modules/emr/dosing';
+import { DigitalSignatureBadge, DigitalSignatureSection } from '@/modules/emr/DigitalSignature';
 import { useClinicalSummary } from '@/modules/emr/hooks';
 import { PrescriptionEditor } from '@/modules/emr/PrescriptionEditor';
 import {
@@ -67,7 +68,7 @@ function PrescriptionPage() {
 
 /**
  * One prescription: drafts open in the editor (check and sign); signed ones can be printed, downloaded as a PDF,
- * repeated, refilled or cancelled.
+ * repeated, refilled or cancelled, and signed with the doctor's DSC in HC360 Desktop where the hospital uses it.
  */
 function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto }) {
   const styles = useStyles();
@@ -130,6 +131,7 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
         actions={
           <div className={styles.actions}>
             <StatusBadge status={rx.status} />
+            <DigitalSignatureBadge prescription={rx} />
             {rx.status === 'Signed' && <DocumentButtons path={prescriptionDocument(rx.id)} printLabel="Print (A5)" />}
             {canWrite && rx.status !== 'Draft' && (
               <Button icon={<ArrowRepeatAllRegular />} disabled={repeat.isPending} onClick={() => repeat.mutate()}>
@@ -229,6 +231,8 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
           )}
         </Section>
       )}
+
+      {rx.status !== 'Draft' && <DigitalSignatureSection prescription={rx} canSign={canSign} />}
 
       <ReasonDialog
         open={cancelling}

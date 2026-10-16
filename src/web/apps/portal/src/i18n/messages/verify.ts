@@ -41,6 +41,17 @@ export const verifyMessages = defineMessages({
     'verify.privacy':
       'This check shows only whether the document is genuine. It never shows results or personal details.',
     'verify.another': 'Check another document',
+    'verify.prescriptionNumber': 'Prescription number',
+    'verify.dsc.title': 'Digital signature',
+    'verify.dsc.valid': 'Signed by the doctor with their Digital Signature Certificate. The signature checks out.',
+    'verify.dsc.invalid':
+      'The digital signature does not check out. Do not dispense from this prescription; contact the hospital.',
+    'verify.dsc.signer': 'Signed by',
+    'verify.dsc.signedAt': 'Signed on',
+    'verify.dsc.serial': 'Certificate serial number',
+    'verify.dsc.issuer': 'Certificate issued by',
+    'verify.dsc.hash': 'SHA-256 of the signed prescription',
+    'verify.dsc.download': 'Download the signature (.p7s)',
   },
   hi: {
     'verify.title': 'दस्तावेज़ जाँचें',
@@ -80,5 +91,15 @@ export const verifyMessages = defineMessages({
     'verify.revised': 'यह रिपोर्ट पहली बार जारी होने के बाद अपडेट की गई थी। पक्का करें कि आपके पास नई कॉपी है।',
     'verify.privacy': 'यह जाँच केवल बताती है कि दस्तावेज़ असली है या नहीं। इसमें कभी नतीजे या निजी जानकारी नहीं दिखती।',
     'verify.another': 'दूसरा दस्तावेज़ जाँचें',
+    'verify.prescriptionNumber': 'पर्चा नंबर',
+    'verify.dsc.title': 'डिजिटल हस्ताक्षर',
+    'verify.dsc.valid': 'डॉक्टर ने अपने डिजिटल सिग्नेचर सर्टिफ़िकेट से हस्ताक्षर किए हैं। हस्ताक्षर सही है।',
+    'verify.dsc.invalid': 'डिजिटल हस्ताक्षर सही नहीं है। इस पर्चे से दवाएँ न दें; अस्पताल से संपर्क करें।',
+    'verify.dsc.signer': 'हस्ताक्षरकर्ता',
+    'verify.dsc.signedAt': 'हस्ताक्षर की तारीख',
+    'verify.dsc.serial': 'सर्टिफ़िकेट का सीरियल नंबर',
+    'verify.dsc.issuer': 'सर्टिफ़िकेट जारी करने वाला',
+    'verify.dsc.hash': 'हस्ताक्षरित पर्चे का SHA-256',
+    'verify.dsc.download': 'हस्ताक्षर डाउनलोड करें (.p7s)',
   },
 });

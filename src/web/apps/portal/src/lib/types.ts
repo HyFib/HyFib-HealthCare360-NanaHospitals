@@ -662,6 +662,24 @@ export interface PrescriptionVerification {
   facility: string | null;
   issuedOn: string | null;
   itemCount: number;
+  /** Older servers leave out the number and the DSC signature. */
+  prescriptionNumber?: string | null;
+  /** The doctor's DSC signature, re-checked by the server for this answer; null when there is none. */
+  digitalSignature?: PublicDigitalSignature | null;
+  /** The .p7s download (server-relative). */
+  signaturePath?: string | null;
+}
+
+/** What anyone may see of a prescription's DSC signature: the signer, the certificate and the hash, no patient data. */
+export interface PublicDigitalSignature {
+  state: 'NotSigned' | 'Valid' | 'Invalid';
+  signerName: string;
+  certificateSerialNumber: string;
+  certificateIssuer: string;
+  signedAt: string;
+  contentHash: string;
+  chainTrusted: boolean;
+  message: string;
 }
 
 export interface AllergySummary {
