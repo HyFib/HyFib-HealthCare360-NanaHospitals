@@ -229,11 +229,9 @@ public sealed class PrescriptionDigitalSignatureService(
             Details = new { signer.Subject, signer.Issuer, signer.SerialNumber, signer.Thumbprint, ContentHash = p.SignedContentHash, Chain = p.SignerChainStatus },
         });
 
-        // Where the DSC is required the patient is told only now, with the signed copy.
-        if (policy == PrescriptionSignaturePolicy.Required)
-        {
-            await prescriptions.QueuePatientNoticeAsync(p, ct);
-        }
+        // Where the DSC was required when the doctor signed, the patient was not told then: they are now, with the signed
+        // copy. Once only, whatever the setting is now or was then.
+        await prescriptions.QueuePatientNoticeAsync(p, ct);
 
         await db.SaveChangesAsync(ct);
         return Check(p, policy, anchors, signedForCurrentPatient: true);

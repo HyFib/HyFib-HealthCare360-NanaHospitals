@@ -9173,6 +9173,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
 
+                    b.Property<DateTimeOffset?>("PatientNotifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("patient_notified_at");
+
                     b.Property<Guid>("PractitionerId")
                         .HasColumnType("uuid")
                         .HasColumnName("practitioner_id");

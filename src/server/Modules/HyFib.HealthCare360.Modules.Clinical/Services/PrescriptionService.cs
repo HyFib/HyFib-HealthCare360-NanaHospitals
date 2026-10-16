@@ -355,7 +355,8 @@ public sealed class PrescriptionService(
     private Task PublishSignedAsync(Prescription prescription, CancellationToken ct) =>
         realtime.PublishAsync(Topics.Pharmacy(prescription.FacilityId), "pharmacy.prescription.signed", new { prescription.Id, prescription.IsInpatient }, ct);
 
-    // Where the facility requires the doctor's DSC (ERX-04), the patient is told once it is signed with it.
+    // Where the facility requires the doctor's DSC (ERX-04), the patient is told once it is signed with it
+    // (PrescriptionDigitalSignatureService.AttachAsync).
     private async Task QueueSignedNoticeAsync(Prescription prescription, CancellationToken ct)
     {
         if (await signatureSettings.PolicyAsync(prescription.FacilityId, ct) != PrescriptionSignaturePolicy.Required)
@@ -367,10 +368,12 @@ public sealed class PrescriptionService(
     /// <summary>
     /// Tells OP patients the prescription is on the portal (outbox message, committed with the signature). The message
     /// names the prescription's PDF: WhatsApp sends it in the template's document header when the template has one.
+    /// Once per prescription (<see cref="Prescription.PatientNotifiedAt"/>): a prescription the patient was told about
+    /// at signing is not announced again when the doctor signs it with their DSC.
     /// </summary>
     internal async Task QueuePatientNoticeAsync(Prescription prescription, CancellationToken ct)
     {
-        if (prescription.IsInpatient)
+        if (prescription.IsInpatient || prescription.PatientNotifiedAt is not null)
         {
             return;
         }
@@ -394,6 +397,7 @@ public sealed class PrescriptionService(
             [NotificationChannel.WhatsApp],
             TimeSpan.FromDays(2),
             document: new NotificationDocument(PrescriptionDocumentSource.DocumentKind, prescription.Id));
+        prescription.MarkPatientNotified(time.GetUtcNow());
     }
 
     internal static PrescriptionItem ToItem(PrescriptionItemRequest r)

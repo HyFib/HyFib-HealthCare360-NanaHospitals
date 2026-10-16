@@ -75,6 +75,19 @@ public sealed record PrescriptionSigned(
 
 public sealed record PrescriptionCancelled(Guid PrescriptionId, Guid PatientId, string Reason) : DomainEvent;
 
+/// <summary>
+/// Clinical told the patient their prescription is ready (the "prescription shared" message, ERX-04): when the doctor
+/// signed it, or, where the hospital requires the doctor's DSC, once signed with it. Raised once per prescription.
+/// </summary>
+public sealed record PrescriptionSharedWithPatient(
+    Guid PrescriptionId,
+    Guid PatientId,
+    Guid? VisitId,
+    Guid FacilityId,
+    Guid PractitionerId,
+    bool IsInpatient,
+    DateTimeOffset SignedAt) : DomainEvent;
+
 /// <summary>Raised by Inpatient on admission; Billing opens the IP account, Dietary/Pharmacy start ward workflows.</summary>
 public sealed record PatientAdmitted(
     Guid AdmissionId,

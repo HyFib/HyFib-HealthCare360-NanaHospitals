@@ -138,10 +138,21 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
     /// <summary>SHA-1 thumbprint, as the Windows certificate store shows it.</summary>
     public string? SignerThumbprint { get; private set; }
 
-    /// <summary>Whether the certificate chained to a root the server trusts when it was attached (reported, not required).</summary>
+    /// <summary>
+    /// The certificate's chain when the signature was attached: always "Trusted", because a signature is accepted only from
+    /// a certificate that chains to a CCA India root in the server's DSC trust folder (custom root trust). Every later
+    /// check builds the chain again against the folder as it is then.
+    /// </summary>
     public string? SignerChainStatus { get; private set; }
 
     public bool IsDigitallySigned => DigitalSignature is not null;
+
+    /// <summary>
+    /// When the patient was told the prescription is ready (the "prescription shared" message): at signing, or, where the
+    /// hospital requires the doctor's DSC, once signed with it. Null until then, so the message goes once whatever the
+    /// setting was at each step.
+    /// </summary>
+    public DateTimeOffset? PatientNotifiedAt { get; private set; }
 
     public DateTimeOffset? CancelledAt { get; private set; }
     public string? CancelReason { get; private set; }
@@ -238,6 +249,22 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         SignerThumbprint = signature.SignerThumbprint;
         SignerChainStatus = signature.ChainStatus;
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Records that the patient was told the prescription is ready, and raises <see cref="PrescriptionSharedWithPatient"/>
+    /// (Virtual Care adds an SMS after a video consultation). False when they were told already.
+    /// </summary>
+    public bool MarkPatientNotified(DateTimeOffset now)
+    {
+        if (PatientNotifiedAt is not null || Status != PrescriptionStatus.Signed)
+        {
+            return false;
+        }
+
+        PatientNotifiedAt = now;
+        Raise(new PrescriptionSharedWithPatient(Id, PatientId, VisitId, FacilityId, PractitionerId, IsInpatient, SignedAt!.Value));
+        return true;
     }
 
     /// <summary>Cancelling a signed prescription withdraws it from the pharmacy queue.</summary>
