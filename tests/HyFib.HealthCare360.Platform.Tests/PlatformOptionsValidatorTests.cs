@@ -38,6 +38,19 @@ public sealed class PlatformOptionsValidatorTests
         PlatformOptionsValidator.Problems(Options(sessionHours: hours)).ShouldHaveSingleItem()
             .ShouldContain("HealthCare360:Security:SessionHours");
 
+    [Theory]
+    [InlineData("all")]
+    [InlineData("API")]
+    [InlineData("worker")]
+    public void A_known_role_is_accepted(string role) =>
+        PlatformOptionsValidator.Problems(new PlatformOptions { Role = role }).ShouldBeEmpty();
+
+    [Theory]
+    [InlineData("gateway")]
+    [InlineData("")]
+    public void An_unknown_role_is_refused(string role) =>
+        PlatformOptionsValidator.Problems(new PlatformOptions { Role = role }).ShouldHaveSingleItem().ShouldContain("HealthCare360:Role");
+
     [Fact]
     public void The_options_fail_validation_when_the_server_reads_them()
     {
