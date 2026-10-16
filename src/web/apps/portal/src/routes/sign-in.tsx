@@ -296,6 +296,8 @@ function SignInPage() {
     setError(null);
     setNotice(null);
     try {
+      // No number with the code's proof: the server asks the address's work only, and finds the number from the
+      // challenge when the code is wrong.
       await withProof('otp', (headers) => auth.verifyOtp(challenge.id, value, headers), { onSlow: setChecking });
       // A new person may be signing in on this tab: nothing cached from an earlier session may be shown.
       queryClient.removeQueries({ queryKey: ['portal'] });

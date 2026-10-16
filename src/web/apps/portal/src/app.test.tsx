@@ -5,6 +5,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useFeatureRefusals } from './lib/featureSwitches';
+import { clearPreparedProofs } from './lib/proofOfWork';
 import { createPortalRouter } from './router';
 
 /**
@@ -30,7 +31,14 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-const requests: { method: string; url: string }[] = [];
+/** Every request the page made; `proof` is the anti-automation header it carried (lib/proofOfWork), if any. */
+const requests: { method: string; url: string; proof: string | null }[] = [];
+
+/** The challenge the fake server hands out: almost no work, and it does not check the answer. */
+const PROOF_CHALLENGE = '1.otp.1.1.00.sig';
+
+/** A proof for {@link PROOF_CHALLENGE}: the challenge, a colon and the nonce found. */
+const SOLVED_PROOF = /^1\.otp\.1\.1\.00\.sig:\d+$/;
 
 /** Set by a test to make the anonymous privacy contact endpoint fail (it is rate-limited in production). */
 let privacyContactFails = false;
@@ -47,10 +55,13 @@ const SLOW = { timeout: 8000 };
 const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-  requests.push({ method, url });
+  const proof = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get(
+    'X-HC360-Proof',
+  );
+  requests.push({ method, url, proof });
   // The anti-automation check (lib/proofOfWork): a challenge with almost no work, which this server does not check.
   if (url.includes('/api/v1/public/challenge')) {
-    return json({ required: true, challenge: '1.otp.1.1.00.sig', bits: 1, expiresAt: null });
+    return json({ required: true, challenge: PROOF_CHALLENGE, bits: 1, expiresAt: null });
   }
   if (url.includes('/api/v1/auth/otp/request') && signInRefused) {
     return new Response(
@@ -63,6 +74,13 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
       }),
       { status: 503, headers: { 'content-type': 'application/problem+json' } },
     );
+  }
+  if (url.includes('/api/v1/auth/otp/request')) {
+    return json({
+      challengeId: SESSION_ID,
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      maskedPhone: '******3210',
+    });
   }
   if (url.includes('/api/v1/auth/')) {
     return json({ title: 'Sign in' }, 401);
@@ -127,6 +145,8 @@ beforeEach(() => {
   switches = { patientPortal: true, telehealth: true };
   signInRefused = false;
   useFeatureRefusals.getState().clear();
+  // A proof solved in advance by an earlier test's page would stand in for this test's.
+  clearPreparedProofs();
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -160,9 +180,12 @@ describe('links the hospital sends', () => {
     await userEvent.click(screen.getByRole('radio', { name: '10 = extremely likely' }));
     await userEvent.click(screen.getByRole('button', { name: 'Send feedback' }));
     expect(await screen.findByText('Thank you for your feedback.', {}, SLOW)).toBeInTheDocument();
-    expect(
-      requests.some((request) => request.method === 'POST' && request.url.includes('/feedback/invitations/')),
-    ).toBe(true);
+    const sent = requests.find(
+      (request) => request.method === 'POST' && request.url.includes('/feedback/invitations/'),
+    );
+    // With the solved anti-automation challenge (SRS SEC-06).
+    expect(sent?.proof).toMatch(SOLVED_PROOF);
+    expect(requests.some((request) => request.url.endsWith('/api/v1/public/challenge'))).toBe(true);
   });
 
   it('says so when a feedback link is not a link at all', async () => {
@@ -183,6 +206,26 @@ describe('links the hospital sends', () => {
         (request) => request.method === 'POST' && request.url.endsWith(`/api/v1/public/unsubscribe/${TOKEN}`),
       ),
     ).toBe(true);
+  });
+});
+
+describe('signing in', () => {
+  it('sends a solved anti-automation challenge with the code request and with the code', async () => {
+    openAt('/portal/sign-in');
+
+    await userEvent.type(await screen.findByRole('textbox', { name: /Mobile number/ }, SLOW), '9876543210');
+    await userEvent.click(screen.getByRole('button', { name: 'Send code' }));
+    await userEvent.type(await screen.findByRole('textbox', { name: '6-digit code' }, SLOW), '123456');
+
+    await waitFor(() => expect(requests.some((request) => request.url.includes('/api/v1/auth/otp/verify'))).toBe(true));
+    const requested = requests.findIndex((request) => request.url.includes('/api/v1/auth/otp/request'));
+    const verified = requests.findIndex((request) => request.url.includes('/api/v1/auth/otp/verify'));
+    expect(requests[requested]?.proof).toMatch(SOLVED_PROOF);
+    expect(requests[verified]?.proof).toMatch(SOLVED_PROOF);
+    // Each request spends a challenge of its own: the code's was asked for while the SMS arrived.
+    const isChallenge = (request: { url: string }) => request.url.endsWith('/api/v1/public/challenge');
+    expect(requests.slice(0, requested).some(isChallenge)).toBe(true);
+    expect(requests.slice(requested + 1, verified).some(isChallenge)).toBe(true);
   });
 });
 

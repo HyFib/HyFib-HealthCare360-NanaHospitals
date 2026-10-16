@@ -38,8 +38,12 @@ and `npx eslint apps/portal`.
   bits by default, well under a second on a mid-range phone), and sends the answer in `X-HC360-Proof` with the request.
   Nothing shows unless it takes longer than 1.5 seconds; then a polite status says "Checking your browser…". When the
   server refuses a proof (403 `request.check_failed`, for instance because it asks more work of the number after
-  failures), the page solves a fresh challenge and tries once more. There is no puzzle and no third party. The server
-  side, its settings and the reasoning behind the difficulty are in SECURITY.md, "Anti-automation on the portal".
+  failures), the page solves a fresh challenge, for the mobile number when it asks for a code, and tries once more. The
+  challenge solved when the sign-in form appeared cannot name the number, so for a number that failed lately it is too
+  easy: the server refuses it without counting that against the patient's address or number, and the retry gets in.
+  Giving the code sends no number: its work depends on the address only, and the server finds the number from the
+  challenge when a code is wrong. There is no puzzle and no third party. The server side, its settings and the
+  reasoning behind the difficulty are in SECURITY.md, "Anti-automation on the portal".
 
 * **OTP sign-in.** `auth.requestOtp` → `POST /api/v1/auth/otp/request`, then `auth.verifyOtp` →
   `POST /api/v1/auth/otp/verify`. The page never says whether a number is registered. The resend button backs off

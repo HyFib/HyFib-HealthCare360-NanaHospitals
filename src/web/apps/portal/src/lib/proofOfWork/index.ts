@@ -122,8 +122,10 @@ async function timed<T>(work: Promise<T>, onSlow?: (slow: boolean) => void): Pro
 /**
  * Sends a request with a proof of work. It uses a proof solved in advance ({@link prepareProof}) when there is one; when
  * the server refuses the proof (it asks more work of this number or this connection since), it solves a fresh one,
- * for `subject` (the mobile number a code is asked for), and tries once more. `onSlow(true)` is called when getting a
- * proof takes longer than {@link SLOW_AFTER_MS}, and `onSlow(false)` when it is done.
+ * for `subject` (the mobile number a code is asked for), and tries once more. A proof solved in advance cannot name the
+ * number, so for a number that failed lately it is too easy; the server does not hold that refusal against the patient.
+ * `onSlow(true)` is called when getting a proof takes longer than {@link SLOW_AFTER_MS}, and `onSlow(false)` when it is
+ * done.
  */
 export async function withProof<T>(
   action: ProofAction,
