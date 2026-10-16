@@ -30,13 +30,32 @@ public static class ServerComposition
             json.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
         });
 
-        var signalR = builder.Services.AddSignalR()
+        AddRealtime(builder.Services, builder.Configuration);
+    }
+
+    /// <summary>
+    /// SignalR, and with <c>ConnectionStrings:Redis</c> the Redis backplane (SCAL-02): several API nodes, and the node that
+    /// runs the jobs, share real-time groups through Redis, so an event raised on one node reaches clients connected to any
+    /// other. A Redis that is down when a node starts, or goes away later, is connected to again in the background: the API
+    /// keeps working, and real-time updates reach only the clients of the node that raised them meanwhile.
+    /// </summary>
+    internal static Microsoft.AspNetCore.SignalR.ISignalRServerBuilder AddRealtime(IServiceCollection services, IConfiguration configuration)
+    {
+        var signalR = services.AddSignalR()
             .AddJsonProtocol(json => json.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-        if (builder.Configuration.GetConnectionString("Redis") is { Length: > 0 } redis)
+        if (configuration.GetConnectionString(RedisBackplane.ConnectionName) is { Length: > 0 } redis)
         {
-            // Scale-out (SCAL-02): several API nodes share real-time groups through Redis.
-            signalR.AddStackExchangeRedis(redis, redisOptions => redisOptions.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal("hc360"));
+            signalR.AddStackExchangeRedis(redis, redisOptions =>
+            {
+                redisOptions.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal(RedisBackplane.ChannelPrefix);
+                redisOptions.Configuration.AbortOnConnectFail = false;
+            });
+            services.AddSingleton<RedisBackplane>();
+            services.AddHealthChecks().AddCheck<RedisBackplane>(
+                "redis-backplane", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded, tags: ["ready"]);
         }
+
+        return signalR;
     }
 
     /// <summary>
@@ -46,9 +65,21 @@ public static class ServerComposition
     public static void UseServerApplication(this WebApplication app)
     {
         app.UseHospitalPlatform();
-        if (app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value.ServesApi)
+        var platform = app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value;
+        if (platform.ServesApi)
         {
             app.MapHospitalPlatform();
+        }
+
+        // A node that does only part of the work (SCAL-05) sends real-time updates to clients connected to another node, or
+        // receives them from it, only through the Redis backplane (SCAL-02): the lab results the worker receives, the bed
+        // board changes an API node makes for the clients of another.
+        if (!string.Equals(platform.Role, "all", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrEmpty(app.Configuration.GetConnectionString(RedisBackplane.ConnectionName)))
+        {
+            app.Logger.LogWarning(
+                "This server runs as '{Role}' without ConnectionStrings:Redis: real-time updates raised on another HC360 server will not reach its clients, nor this server's reach theirs",
+                platform.Role);
         }
 
         app.MapHealthChecks("/health/live", new() { Predicate = _ => false }).AllowAnonymous();

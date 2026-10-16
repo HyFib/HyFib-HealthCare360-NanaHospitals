@@ -74,7 +74,7 @@ internal sealed class LongPollingHub : IAsyncDisposable
     }
 
     /// <summary>Polls until a message <paramref name="wanted"/> accepts arrives; pings and other messages are passed over.</summary>
-    private async Task<JsonElement> ReceiveAsync(Func<JsonElement, bool> wanted)
+    public async Task<JsonElement> ReceiveAsync(Func<JsonElement, bool> wanted)
     {
         for (var poll = 0; poll < MaxPolls; poll++)
         {

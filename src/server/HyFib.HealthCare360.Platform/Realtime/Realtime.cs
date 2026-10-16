@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Platform.Realtime;
 
@@ -29,10 +30,25 @@ public interface IRealtimePublisher
     Task ToFacilityAsync(Guid facilityId, string eventName, object? payload = null, CancellationToken cancellationToken = default);
 }
 
-internal sealed class SignalRRealtimePublisher(IHubContext<EventsHub> hub, TimeProvider time) : IRealtimePublisher
+/// <remarks>
+/// A real-time event tells screens to refetch; the change it reports is saved already. One that cannot be sent (with
+/// several servers, the Redis backplane is unreachable for a moment, SCAL-02) is logged and dropped, never failing the
+/// request that made the change (REL-03): screens refetch when they reconnect.
+/// </remarks>
+internal sealed class SignalRRealtimePublisher(IHubContext<EventsHub> hub, TimeProvider time, ILogger<SignalRRealtimePublisher> logger) : IRealtimePublisher
 {
-    public Task PublishAsync(string topic, string eventName, object? payload = null, CancellationToken cancellationToken = default) =>
-        hub.Clients.Group(topic).SendAsync("event", new RealtimeEnvelope(topic, eventName, payload, time.GetUtcNow()), cancellationToken);
+    public async Task PublishAsync(string topic, string eventName, object? payload = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await hub.Clients.Group(topic).SendAsync("event", new RealtimeEnvelope(topic, eventName, payload, time.GetUtcNow()), cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The kind of topic only: its id may be a patient's.
+            logger.LogWarning(ex, "Real-time event {Event} for a {TopicKind} topic could not be sent", eventName, topic.Split(':')[0]);
+        }
+    }
 
     public Task ToUserAsync(Guid userId, string eventName, object? payload = null, CancellationToken cancellationToken = default) =>
         PublishAsync(Topics.User(userId), eventName, payload, cancellationToken);

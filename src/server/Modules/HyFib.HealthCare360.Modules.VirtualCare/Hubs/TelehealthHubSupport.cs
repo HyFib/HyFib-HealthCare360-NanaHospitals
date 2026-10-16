@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 using HyFib.HealthCare360.Platform.Realtime;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.VirtualCare.Hubs;
 
@@ -62,16 +63,18 @@ internal sealed class HubCallerUser(ClaimsPrincipal? principal) : ICurrentUser
 /// Pushes session changes to everyone watching: call screens (the room group, whose members include every clinician
 /// in the session, plus waiting connections) and staff worklists (the facility topic on /hubs/events). Payloads carry
 /// ids and status only. Messages go to one group at a time because SignalR does not de-duplicate a connection that
-/// belongs to several groups.
+/// belongs to several groups. A change is saved before it is pushed: a push that cannot be sent (with several servers,
+/// the Redis backplane is unreachable for a moment, SCAL-02) is logged, and the request that made the change still
+/// succeeds (REL-03); call screens refetch the session when they reconnect.
 /// </summary>
-public sealed class TelehealthBroadcaster(IHubContext<TelehealthHub> hub, IRealtimePublisher realtime)
+public sealed class TelehealthBroadcaster(IHubContext<TelehealthHub> hub, IRealtimePublisher realtime, ILogger<TelehealthBroadcaster> logger)
 {
     public const string ChangedEvent = "telehealth.changed";
 
     public async Task SessionChangedAsync(TelehealthSession session, CancellationToken ct)
     {
         var payload = new { session.Id, session.Status, session.PractitionerId, session.PatientWaitingSince };
-        await hub.Clients.Group(TelehealthGroups.Room(session.Id)).SendAsync("sessionUpdated", payload, ct);
+        await PushAsync("sessionUpdated", () => hub.Clients.Group(TelehealthGroups.Room(session.Id)).SendAsync("sessionUpdated", payload, ct));
         await realtime.ToFacilityAsync(session.FacilityId, ChangedEvent, payload, ct);
     }
 
@@ -79,13 +82,25 @@ public sealed class TelehealthBroadcaster(IHubContext<TelehealthHub> hub, IRealt
     public async Task SessionClosedAsync(TelehealthSession session, IReadOnlyList<string> waitingConnections, CancellationToken ct)
     {
         var payload = new { session.Id, session.Status };
-        await hub.Clients.Group(TelehealthGroups.Room(session.Id)).SendAsync("sessionEnded", payload, ct);
+        await PushAsync("sessionEnded", () => hub.Clients.Group(TelehealthGroups.Room(session.Id)).SendAsync("sessionEnded", payload, ct));
         if (waitingConnections.Count > 0)
         {
-            await hub.Clients.Clients(waitingConnections).SendAsync("sessionEnded", payload, ct);
+            await PushAsync("sessionEnded", () => hub.Clients.Clients(waitingConnections).SendAsync("sessionEnded", payload, ct));
         }
 
         await realtime.ToFacilityAsync(session.FacilityId, ChangedEvent, new { session.Id, session.Status, session.PractitionerId }, ct);
+    }
+
+    private async Task PushAsync(string what, Func<Task> send)
+    {
+        try
+        {
+            await send();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Telehealth push {Event} could not be sent", what);
+        }
     }
 
     public Task ChatAsync(Guid sessionId, TelehealthMessageDto message, CancellationToken ct) =>
