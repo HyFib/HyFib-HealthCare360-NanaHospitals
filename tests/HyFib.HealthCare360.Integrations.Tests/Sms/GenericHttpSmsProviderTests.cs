@@ -88,6 +88,37 @@ public sealed class GenericHttpSmsProviderTests
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.OK, """{"status":"success","data":{"id":"msg-901","to":"+919876543210","text":"Ravi Kumar, your HbA1c report is ready","key":"k3y-in-url"}}""")]
+    [InlineData(HttpStatusCode.OK, "ERROR: sender NANAHS not approved for Ravi Kumar's report to 919876543210")]
+    [InlineData(HttpStatusCode.BadRequest, "Invalid number 919876543210 for 'Ravi Kumar, your HbA1c report is ready'")]
+    public async Task Only_the_status_and_message_id_of_the_gateways_answer_are_logged(HttpStatusCode status, string answer)
+    {
+        // Gateways echo the recipient, the text and sometimes the key, in forms the platform's masking cannot all spot.
+        _http.Respond(status, answer, answer.StartsWith('{') ? "application/json" : "text/plain");
+        var settings = new SmsSettings
+        {
+            Enabled = true,
+            Provider = "generic",
+            Generic = new GenericHttpSmsOptions
+            {
+                Url = "https://sms.example.in/v2/messages",
+                BodyTemplate = """{"to":"{{to}}","text":"{{text}}"}""",
+                SuccessContains = "success",
+                MessageIdPath = "data.id",
+            },
+        };
+
+        var result = await Provider.SendAsync(new SmsMessage("+919876543210", "Ravi Kumar, your HbA1c report is ready", Reference: "ref-1"), settings, Secrets, Ct);
+
+        var entry = _tracing.Entries.ShouldHaveSingleItem();
+        entry.Response.ShouldBe(result.Success ? "HTTP 200 id=msg-901" : $"HTTP {(int)status}");
+        _tracing.AllText.ShouldNotContain("Ravi");
+        _tracing.AllText.ShouldNotContain("9876543210");
+        _tracing.AllText.ShouldNotContain("k3y-in-url");
+        (result.Error ?? string.Empty).ShouldNotContain("Ravi");
+    }
+
+    [Theory]
     [InlineData("ftp://sms.example.in/send")]
     [InlineData("not a url")]
     public async Task Only_http_endpoints_are_called(string url)

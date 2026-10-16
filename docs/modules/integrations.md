@@ -37,8 +37,11 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
 * **Integration log.** Every external call, inbound webhook and analyser message writes one row through the platform
   `IIntegrationLogger`, via the internal `IntegrationTrace` helper. Rows record integration, provider, operation,
   direction, success, duration, reference and summaries. Adapters build their own summaries: masked recipient,
-  template name, counts and status codes. They never log message bodies, patient names or credentials. The platform
-  logger then masks phone numbers, e-mails and secrets as a second line of defence. Raw analyser messages are logged
+  template name, counts and status codes. They never log message bodies, patient names or credentials, nor the
+  provider's answer: SMS gateways echo the recipient and the text, so their row's response is the HTTP status and the
+  provider's message id only (`HTTP 200 id=…`), and a generic gateway's unexpected answer is described, not quoted. The
+  platform logger then masks phone numbers, e-mails and secrets (`"apiKey"`, `"authkey"`, `"token"`, `"access_token"`,
+  `"password"`, `"authorization"`, `"…secret"` and the like in JSON) as a second line of defence. Raw analyser messages are logged
   only after `LabPhiMasking` has removed names, dates of birth, addresses and phones, and has cut identifiers to their
   last four characters.
 * **Facility of a log row.** The dashboard's health and the log list count a row for the signed-in facility when it

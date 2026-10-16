@@ -163,7 +163,7 @@ internal sealed partial class IntegrationLogger(
 
     private static string? Truncate(string? value, int max) => value is null || value.Length <= max ? value : value[..max];
 
-    [GeneratedRegex("(?<name>\"(?:api_?key|apikey|token|secret|password|authorization|auth_token|key_secret)\")(?<sep>\\s*:\\s*)\"[^\"]*\"", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("(?<name>\"(?:api_?key|authkey|(?:access_|auth_|refresh_)?token|(?:client_?|key_?|webhook_?|app_?)?secret|password|authorization)\")(?<sep>\\s*:\\s*)\"[^\"]*\"", RegexOptions.IgnoreCase)]
     private static partial Regex SecretRegex();
 
     [GeneratedRegex(@"\+?\d{10,13}")]
