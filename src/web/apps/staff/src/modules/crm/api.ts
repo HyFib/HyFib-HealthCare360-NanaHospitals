@@ -2,6 +2,7 @@ import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { PatientCategory } from '@/modules/patients/api';
+import type { CommunicationEntry, CommunicationKind } from './communications';
 import type {
   CampaignChannel,
   CampaignStatus,
@@ -514,7 +515,23 @@ export const crmQueries = {
       refetchOnWindowFocus: false,
       retry: false,
     }),
+  communications: (patientId: string, filters: { kind?: CommunicationKind; page?: number }) =>
+    queryOptions({
+      queryKey: ['crm', 'patient360', patientId, 'communications', filters],
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CommunicationEntry>>(`/api/v1/crm/patients/${patientId}/communications`, {
+          query: { ...filters, pageSize: COMMUNICATIONS_PAGE_SIZE },
+          signal,
+        }),
+      placeholderData: keepPreviousData,
+      // Audited like the view itself, so no silent refetches either.
+      staleTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      retry: false,
+    }),
 };
+
+export const COMMUNICATIONS_PAGE_SIZE = 10;
 
 // ------------------------------------------------------------------ commands
 

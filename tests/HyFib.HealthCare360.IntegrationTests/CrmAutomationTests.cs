@@ -6,10 +6,12 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Engagement.Features.Complaints;
 using HyFib.HealthCare360.Modules.Engagement.Features.FollowUps;
+using HyFib.HealthCare360.Modules.Engagement.Features.Patient360;
 using HyFib.HealthCare360.Modules.Engagement.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
@@ -176,6 +178,45 @@ public sealed class CrmAutomationTests(HospitalServer server)
         await RunAsync((monitor, ct) => monitor.EscalateOverdueComplaintsAsync(ct));
         (await quality.GetAsync<ComplaintDetail>($"/api/v1/feedback/complaints/{id}")).EscalatedAt.ShouldBe(escalatedAt);
         (await EscalationAlertsAsync(id)).ShouldBe(alerts);
+    }
+
+    [Fact]
+    public async Task The_communications_history_shows_the_messages_sent_and_the_calls_made_without_their_text()
+    {
+        var patient = await RegisterPatientWithSmsConsentAsync();
+        var crm = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var path = $"/api/v1/crm/patients/{patient.Id}/communications";
+        (await crm.GetAsync<PagedResult<CommunicationEntry>>(path)).Items.ShouldBeEmpty();
+
+        // The CRM team texts the patient about a review, then calls and cannot get through.
+        var task = await crm.PostAsync<Guid>("/api/v1/crm/follow-ups", new CreateFollowUpRequest(
+            patient.Id, VisitId: null, FollowUpType.ChronicReview, Today.AddDays(1), AssigneeUserId: null, FollowUpPriority.Normal, Notes: null));
+        await crm.PostAsync($"/api/v1/crm/follow-ups/{task}/remind");
+        await crm.PostAsync($"/api/v1/crm/follow-ups/{task}/attempts", new FollowUpAttemptRequest(FollowUpOutcome.NotReachable, Notes: null, NextDueDate: null));
+
+        var history = await crm.GetAsync<PagedResult<CommunicationEntry>>(path);
+        history.TotalCount.ShouldBe(2);
+        var sms = history.Items.Where(e => e.Kind == CommunicationKind.Message).ShouldHaveSingleItem();
+        sms.TemplateKey.ShouldBe(FollowUpReminders.Template);
+        sms.Channel.ShouldBe(NotificationChannel.Sms);
+        sms.Recipient.ShouldNotBeNull().ShouldMatch(@"^\+91\*{6}\d{4}$", "Only the last four digits of the number show.");
+        var call = history.Items.Where(e => e.Kind == CommunicationKind.FollowUpCall).ShouldHaveSingleItem();
+        call.FollowUpId.ShouldBe(task);
+        call.CallOutcome.ShouldBe(FollowUpOutcome.NotReachable);
+        call.CallAttempts.ShouldBe(1);
+
+        // One kind at a time, a page at a time.
+        (await crm.GetAsync<PagedResult<CommunicationEntry>>($"{path}?kind=FollowUpCall")).Items.ShouldHaveSingleItem().Id.ShouldBe(task);
+        (await crm.GetAsync<PagedResult<CommunicationEntry>>($"{path}?kind=Campaign")).Items.ShouldBeEmpty();
+        var first = await crm.GetAsync<PagedResult<CommunicationEntry>>($"{path}?pageSize=1");
+        first.Items.ShouldHaveSingleItem();
+        first.TotalCount.ShouldBe(2);
+
+        // Reading it is recorded as access to the patient's record.
+        await using var scope = server.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>().AsNoTracking()
+                .CountAsync(a => a.PatientId == patient.Id && a.Summary == "Viewed the CRM communications history", TestContext.Current.CancellationToken))
+            .ShouldBeGreaterThanOrEqualTo(4);
     }
 
     private async Task<PatientCreated> RegisterPatientWithSmsConsentAsync()

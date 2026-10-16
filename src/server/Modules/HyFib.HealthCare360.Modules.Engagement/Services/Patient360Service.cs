@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Engagement.Features;
 using HyFib.HealthCare360.Modules.Engagement.Features.Patient360;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
 
@@ -119,6 +120,115 @@ public sealed class Patient360Service(HospitalDbContext db, CommunicationConsent
             latest?.Sentiment,
             responses.Count(r => r.IsLowScore),
             latest?.SubmittedAt);
+    }
+
+    /// <summary>
+    /// The patient's communications history (CRM-04), newest first: service messages and campaign messages from the
+    /// notification log, campaigns that passed the patient over, and follow-up call tasks that have been called on.
+    /// Messages are limited to the viewer's facility (and group-wide ones), like the rest of the view. The caller checks
+    /// that the patient may be opened.
+    /// </summary>
+    public async Task<PagedResult<CommunicationEntry>> CommunicationsAsync(Guid patientId, CommunicationKind? kind, PageRequest page, CancellationToken ct)
+    {
+        // Each source is read newest first only as far as the end of the requested page and the rows merged here: the
+        // page can only come from those rows, and one patient's history is short enough for this to stay small.
+        var depth = page.Skip + page.Take;
+        var facility = db.CurrentFacilityId;
+        var entries = new List<CommunicationEntry>();
+        long total = 0;
+
+        if (kind is null or CommunicationKind.Message or CommunicationKind.Campaign)
+        {
+            var campaignLogIds = db.Set<CampaignRecipient>()
+                .Where(r => r.PatientId == patientId && r.NotificationLogId != null)
+                .Select(r => r.NotificationLogId!.Value);
+            var logs = db.Set<NotificationLog>().AsNoTracking()
+                .Where(l => l.PatientId == patientId && (facility == null || l.FacilityId == null || l.FacilityId == facility));
+            logs = kind switch
+            {
+                CommunicationKind.Message => logs.Where(l => !campaignLogIds.Contains(l.Id)),
+                CommunicationKind.Campaign => logs.Where(l => campaignLogIds.Contains(l.Id)),
+                _ => logs,
+            };
+
+            total += await logs.LongCountAsync(ct);
+            entries.AddRange(await LogEntriesAsync(
+                await logs.OrderByDescending(l => l.CreatedAt).ThenByDescending(l => l.Id).Take(depth).ToListAsync(ct), ct));
+        }
+
+        if (kind is null or CommunicationKind.Campaign)
+        {
+            // A campaign the patient was skipped by sent nothing, so it has no log; it still says why nothing came.
+            var skipped =
+                from r in db.Set<CampaignRecipient>().AsNoTracking()
+                join c in db.Set<Campaign>() on r.CampaignId equals c.Id
+                where r.PatientId == patientId && r.NotificationLogId == null
+                select new { r.Id, r.CreatedAt, r.SkipReason, CampaignId = c.Id, c.Name, c.TemplateKey, c.Channel };
+            total += await skipped.LongCountAsync(ct);
+            entries.AddRange((await skipped.OrderByDescending(r => r.CreatedAt).Take(depth).ToListAsync(ct))
+                .Select(r => new CommunicationEntry(
+                    r.Id, CommunicationKind.Campaign, r.CreatedAt, CampaignChannelOf(r.Channel), r.TemplateKey, Purpose: null, Recipient: null,
+                    NotificationStatus.Skipped, SentAt: null, DeliveredAt: null, r.CampaignId, r.Name, r.SkipReason,
+                    FollowUpId: null, FollowUpType: null, FollowUpStatus: null, CallOutcome: null, CallAttempts: null)));
+        }
+
+        if (kind is null or CommunicationKind.FollowUpCall)
+        {
+            // Tasks closed because the patient visited or booked were never called, so they are not communications.
+            var calls = db.Set<FollowUpTask>().AsNoTracking().Where(t => t.PatientId == patientId && t.Attempts > 0);
+            total += await calls.LongCountAsync(ct);
+            entries.AddRange((await calls
+                    .Select(t => new { t.Id, At = t.CompletedAt ?? t.UpdatedAt ?? t.CreatedAt, t.Type, t.Status, t.Outcome, t.Attempts })
+                    .OrderByDescending(t => t.At)
+                    .Take(depth)
+                    .ToListAsync(ct))
+                .Select(t => new CommunicationEntry(
+                    t.Id, CommunicationKind.FollowUpCall, t.At, Channel: null, TemplateKey: null, Purpose: null, Recipient: null, Status: null,
+                    SentAt: null, DeliveredAt: null, CampaignId: null, CampaignName: null, SkipReason: null,
+                    t.Id, t.Type, t.Status, t.Outcome, t.Attempts)));
+        }
+
+        return Page(entries, total, page);
+    }
+
+    /// <summary>The requested page of entries gathered from every source, newest first.</summary>
+    internal static PagedResult<CommunicationEntry> Page(IEnumerable<CommunicationEntry> entries, long total, PageRequest page) =>
+        new(entries.OrderByDescending(e => e.OccurredAt).ThenByDescending(e => e.Id).Skip(page.Skip).Take(page.Take).ToList(), page.Page, page.Take, total);
+
+    private static NotificationChannel CampaignChannelOf(CampaignChannel channel) =>
+        channel == CampaignChannel.WhatsApp ? NotificationChannel.WhatsApp : NotificationChannel.Sms;
+
+    /// <summary>Log rows as entries, with the campaign that sent each one (if any) and what its template is for.</summary>
+    private async Task<IEnumerable<CommunicationEntry>> LogEntriesAsync(IReadOnlyList<NotificationLog> logs, CancellationToken ct)
+    {
+        var logIds = logs.Select(l => (Guid?)l.Id).ToList();
+        var campaignOf = await (
+                from r in db.Set<CampaignRecipient>().AsNoTracking()
+                join c in db.Set<Campaign>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on r.CampaignId equals c.Id
+                where logIds.Contains(r.NotificationLogId)
+                select new { LogId = r.NotificationLogId!.Value, c.Id, c.Name })
+            .ToDictionaryAsync(x => x.LogId, ct);
+
+        // A facility's own template wins over the group's, as it does when the message is sent.
+        var keys = logs.Select(l => l.TemplateKey).Distinct().ToList();
+        var facility = db.CurrentFacilityId;
+        var purposes = (await db.Set<NotificationTemplate>().AsNoTracking()
+                .Where(t => keys.Contains(t.Key) && t.Description != null && (t.FacilityId == null || t.FacilityId == facility))
+                .Select(t => new { t.Key, t.Channel, t.Language, t.FacilityId, t.Description })
+                .ToListAsync(ct))
+            .OrderBy(t => t.FacilityId is null).ThenBy(t => t.Language != "en")
+            .GroupBy(t => (t.Key, t.Channel))
+            .ToDictionary(g => g.Key, g => g.First().Description);
+
+        return logs.Select(l =>
+        {
+            var campaign = campaignOf.GetValueOrDefault(l.Id);
+            return new CommunicationEntry(
+                l.Id, campaign is null ? CommunicationKind.Message : CommunicationKind.Campaign, l.CreatedAt, l.Channel, l.TemplateKey,
+                purposes.GetValueOrDefault((l.TemplateKey, l.Channel)), l.Recipient, l.Status, l.SentAt, l.DeliveredAt,
+                campaign?.Id, campaign?.Name, SkipReason: null, FollowUpId: null, FollowUpType: null, FollowUpStatus: null, CallOutcome: null,
+                CallAttempts: null);
+        });
     }
 
     private async Task<CommunicationSummary> CommunicationAsync(Guid patientId, CancellationToken ct)

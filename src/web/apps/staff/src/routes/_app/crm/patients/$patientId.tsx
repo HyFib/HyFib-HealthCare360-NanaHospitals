@@ -26,6 +26,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { crmApi, crmKeys, crmQueries, type Patient360View } from '@/modules/crm/api';
+import { CommunicationsHistory } from '@/modules/crm/CommunicationsHistory';
 import { FollowUpCreateDialog } from '@/modules/crm/FollowUpCreateDialog';
 import {
   CRM_PERMISSIONS as C,
@@ -357,6 +358,8 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
           />
         </Section>
       </Columns>
+
+      <CommunicationsHistory patientId={p.id} />
 
       {v.sourceLead && (
         <Section title="Came to us through">
