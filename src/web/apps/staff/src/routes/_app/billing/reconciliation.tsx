@@ -1,7 +1,7 @@
 import { makeStyles, MessageBar, MessageBarBody, Tab, TabList } from '@fluentui/react-components';
 import { ArrowSwapRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, todayIso } from '@hc360/core';
-import { KpiCard, Page, PageHeader, Section } from '@hc360/ui';
+import { ErrorState, KpiCard, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { usePermission } from '@/lib/permissions';
@@ -82,6 +82,7 @@ function ReconciliationPage() {
           </MessageBarBody>
         </MessageBar>
       )}
+      {summary.error && <ErrorState error={summary.error} onRetry={() => void summary.refetch()} />}
       {summary.data && (
         <div className={styles.kpis}>
           <KpiCard

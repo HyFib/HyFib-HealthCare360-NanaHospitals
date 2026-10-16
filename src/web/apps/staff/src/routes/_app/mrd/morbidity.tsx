@@ -1,7 +1,17 @@
 import { Button, Field, Input, makeStyles, MessageBar, MessageBarBody, Select, Text } from '@fluentui/react-components';
 import { ArrowDownloadRegular, DataBarHorizontalRegular, PeopleRegular, PersonRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatNumber, todayIso } from '@hc360/core';
-import { DataTable, EmptyState, FilterBar, KpiCard, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  KpiCard,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+} from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo } from 'react';
@@ -143,6 +153,8 @@ function MorbidityPage() {
         </MessageBar>
       ) : report.isLoading ? (
         <LoadingState label="Building the report…" />
+      ) : report.error ? (
+        <ErrorState error={report.error} onRetry={() => void report.refetch()} />
       ) : rows.length === 0 ? (
         <EmptyState
           title="No episodes in this period"
