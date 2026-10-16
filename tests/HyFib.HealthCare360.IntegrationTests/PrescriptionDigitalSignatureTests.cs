@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
@@ -185,6 +186,14 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
         var stale = DetachedCms.Sign(Convert.FromBase64String(toSign.Content), certificate, DateTimeOffset.UtcNow.AddHours(-2), silent: true, issuers: [_pki.Ca]);
         await ShouldRefuseAsync(doctor.SendRawAsync(HttpMethod.Post, $"/api/v1/clinical/prescriptions/{rx.Id}/digital-signature",
             new AttachDigitalSignatureRequest(Convert.ToBase64String(stale))), HttpStatusCode.UnprocessableEntity, "prescription.signature_time");
+
+        // A signing time that is not a time: refused like any other signature that does not check out, not a server error.
+        var garbled = new SignedCms(new ContentInfo(Convert.FromBase64String(toSign.Content)), detached: true);
+        var signer = new CmsSigner(certificate) { DigestAlgorithm = new Oid("2.16.840.1.101.3.4.2.1") };
+        signer.SignedAttributes.Add(new AsnEncodedData(new Oid("1.2.840.113549.1.9.5"), [0x17, 0x03, 0x41, 0x42, 0x43]));
+        garbled.ComputeSignature(signer, silent: true);
+        await ShouldRefuseAsync(doctor.SendRawAsync(HttpMethod.Post, $"/api/v1/clinical/prescriptions/{rx.Id}/digital-signature",
+            new AttachDigitalSignatureRequest(Convert.ToBase64String(garbled.Encode()))), HttpStatusCode.UnprocessableEntity, "prescription.signature_invalid");
 
         // A colleague's DSC, or the hospital's own Class 3 certificate on a shared workstation: a real DSC, not this doctor's.
         foreach (var name in new[] { "SOME OTHER DOCTOR", "NANA HOSPITALS PRIVATE LIMITED" })

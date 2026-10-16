@@ -295,6 +295,54 @@ public sealed class PrescriptionDigitalSignatureTests
         DetachedCms.Verify(content, cms.Encode()).Problem.ShouldBe(CmsProblem.NoSigningTime);
     }
 
+    [Theory]
+    [InlineData(new byte[] { 0x17, 0x03, 0x41, 0x42, 0x43 })] // a UTCTime that is not a time
+    [InlineData(new byte[] { 0x04, 0x02, 0x00, 0x00 })] // not a time at all
+    public void A_signing_time_that_cannot_be_read_is_refused_not_thrown(byte[] signingTime)
+    {
+        using var certificate = Certificate();
+        var content = "{}"u8.ToArray();
+        var cms = new SignedCms(new ContentInfo(content), detached: true);
+        var signer = new CmsSigner(certificate) { DigestAlgorithm = new Oid("2.16.840.1.101.3.4.2.1") };
+        signer.SignedAttributes.Add(new AsnEncodedData(new Oid("1.2.840.113549.1.9.5"), signingTime));
+        cms.ComputeSignature(signer, silent: true);
+
+        var check = DetachedCms.Verify(content, cms.Encode());
+
+        check.IsValid.ShouldBeFalse();
+        check.Problem.ShouldBe(CmsProblem.NoSigningTime);
+        check.Message.ShouldBe("The signature's signing time cannot be read.");
+    }
+
+    [Fact]
+    public void A_certificate_whose_key_usage_cannot_be_read_is_refused_not_thrown()
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest("CN=Dr Meera Shah, O=Personal, C=IN", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509Extension("2.5.29.15", [0x05, 0x00], critical: true)); // key usage that is not a bit string
+        using var certificate = request.CreateSelfSigned(Now.AddDays(-1), Now.AddYears(2));
+        var content = "{}"u8.ToArray();
+
+        var check = DetachedCms.Verify(content, DetachedCms.Sign(content, certificate, Now, silent: true));
+
+        check.IsValid.ShouldBeFalse();
+        check.Problem.ShouldBe(CmsProblem.NotForSigning);
+        SigningCertificates.CanSign(certificate, Now).ShouldBeFalse("nor is it offered on the desktop");
+    }
+
+    [Fact]
+    public void A_certificate_whose_basic_constraints_cannot_be_read_is_not_taken_for_a_persons()
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest("CN=Dr Meera Shah, O=Personal, C=IN", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, critical: true));
+        request.CertificateExtensions.Add(new X509Extension("2.5.29.19", [0x05, 0x00], critical: true)); // basic constraints that are not a sequence
+        using var certificate = request.CreateSelfSigned(Now.AddDays(-1), Now.AddYears(2));
+        var content = "{}"u8.ToArray();
+
+        DetachedCms.Verify(content, DetachedCms.Sign(content, certificate, Now, silent: true)).Problem.ShouldBe(CmsProblem.CertificateAuthority);
+    }
+
     [Fact]
     public void Only_certificates_with_a_private_key_valid_now_and_meant_for_signing_are_offered()
     {
