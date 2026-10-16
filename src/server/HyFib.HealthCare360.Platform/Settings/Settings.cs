@@ -79,33 +79,45 @@ public interface ISettingsService
 /// <summary>
 /// Values are cached for a minute per key and facility. Every cached value of a key (the hospital-wide one and each
 /// facility's merged one) depends on one change token, so saving the key, hospital-wide or for a facility, takes effect
-/// at once for every facility on this server; other servers see it within the minute.
+/// at once for every facility on this server. Other servers on the database hear of it through
+/// <see cref="IClusterSignals"/> and expire it at once too (SCAL-01); while a server cannot hear them, it reads every
+/// value from the database.
 /// </summary>
-internal sealed class SettingsService(HospitalDbContext db, IFieldProtector protector, IMemoryCache cache) : ISettingsService
+internal sealed class SettingsService(HospitalDbContext db, IFieldProtector protector, IMemoryCache cache, IClusterSignals signals) : ISettingsService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
 
     public async Task<T?> GetAsync<T>(string key, Guid? facilityId = null, CancellationToken cancellationToken = default)
     {
-        var json = await cache.GetOrCreateAsync($"setting:{key}:{facilityId}", async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = CacheDuration;
-            // Taken before the read: a change saved while the value is being read expires it at once.
-            entry.AddExpirationToken(ChangeToken(key));
-            var rows = await db.Set<SystemSetting>().AsNoTracking()
-                .Where(s => s.Key == key && (s.FacilityId == null || s.FacilityId == facilityId))
-                .ToListAsync(cancellationToken);
-            var row = rows.OrderByDescending(s => s.FacilityId != null).FirstOrDefault();
-            if (row is null)
+        var json = signals.IsListening
+            ? await cache.GetOrCreateAsync($"setting:{key}:{facilityId}", async entry =>
             {
-                return null;
-            }
+                entry.AbsoluteExpirationRelativeToNow = CacheDuration;
 
-            return row.IsSecret ? protector.Unprotect(JsonSerializer.Deserialize<string>(row.Value)) : row.Value;
-        });
+                // Taken before the read: a change saved while the value is being read, here or on another server, expires it
+                // at once.
+                entry.AddExpirationToken(SettingsCache.ChangeToken(cache, key));
+                entry.AddExpirationToken(SettingsCache.AnyChangeToken(cache));
+                return await ReadAsync(key, facilityId, cancellationToken);
+            })
+            : await ReadAsync(key, facilityId, cancellationToken);
 
         return json is null ? default : JsonSerializer.Deserialize<T>(json, JsonOptions);
+    }
+
+    private async Task<string?> ReadAsync(string key, Guid? facilityId, CancellationToken cancellationToken)
+    {
+        var rows = await db.Set<SystemSetting>().AsNoTracking()
+            .Where(s => s.Key == key && (s.FacilityId == null || s.FacilityId == facilityId))
+            .ToListAsync(cancellationToken);
+        var row = rows.OrderByDescending(s => s.FacilityId != null).FirstOrDefault();
+        if (row is null)
+        {
+            return null;
+        }
+
+        return row.IsSecret ? protector.Unprotect(JsonSerializer.Deserialize<string>(row.Value)) : row.Value;
     }
 
     public Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default) =>
@@ -151,24 +163,53 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
         return removed > 0;
     }
 
+    /// <summary>Expires every cached value of the key, here and on every other server on the database.</summary>
+    private void Changed(string key)
+    {
+        SettingsCache.Expire(cache, key);
+        signals.Publish(SettingsCache.SignalTopic, key);
+    }
+}
+
+/// <summary>
+/// The change tokens cached setting values depend on: one per key, and one for all of them. Another server's change to a
+/// key expires it here (<see cref="IClusterCache"/>), and starting to hear the other servers again expires them all.
+/// </summary>
+internal sealed class SettingsCache(IMemoryCache cache) : IClusterCache
+{
+    public const string SignalTopic = "setting";
+    private const string AnyKey = "setting-changed:*";
+
+    public string Topic => SignalTopic;
+
+    public void Expire(string? argument) => Expire(cache, argument);
+
+    public static CancellationChangeToken ChangeToken(IMemoryCache cache, string key) => Token(cache, TokenKey(key));
+
+    public static CancellationChangeToken AnyChangeToken(IMemoryCache cache) => Token(cache, AnyKey);
+
+    /// <summary>
+    /// Expires every cached value of <paramref name="key"/>, or of every key when it is null. The source is not disposed: a
+    /// reader may still be taking its token.
+    /// </summary>
+    public static void Expire(IMemoryCache cache, string? key)
+    {
+        var tokenKey = key is null ? AnyKey : TokenKey(key);
+        if (cache.TryGetValue(tokenKey, out CancellationTokenSource? source) && source is not null)
+        {
+            cache.Remove(tokenKey);
+            source.Cancel();
+        }
+    }
+
     private static string TokenKey(string key) => $"setting-changed:{key}";
 
-    private CancellationChangeToken ChangeToken(string key) =>
-        new(cache.GetOrCreate(TokenKey(key), entry =>
+    private static CancellationChangeToken Token(IMemoryCache cache, string tokenKey) =>
+        new(cache.GetOrCreate(tokenKey, entry =>
         {
             entry.Priority = CacheItemPriority.NeverRemove;
             return new CancellationTokenSource();
         })!.Token);
-
-    /// <summary>Expires every cached value of the key. The source is not disposed: a reader may still be taking its token.</summary>
-    private void Changed(string key)
-    {
-        if (cache.TryGetValue(TokenKey(key), out CancellationTokenSource? source) && source is not null)
-        {
-            cache.Remove(TokenKey(key));
-            source.Cancel();
-        }
-    }
 }
 
 /// <param name="Version">The row's version, to send back with a change (<see cref="SaveSettingRequest.Version"/>).</param>

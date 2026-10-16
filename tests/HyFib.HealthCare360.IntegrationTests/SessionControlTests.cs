@@ -8,7 +8,6 @@ using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using OtpNet;
@@ -172,16 +171,16 @@ public sealed class SessionControlTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task With_several_servers_a_session_locked_on_another_one_is_locked_here_at_once()
+    public async Task A_server_that_cannot_hear_the_others_does_not_keep_a_session_active()
     {
         var (client, _) = await server.SignInNewSessionAsync(HospitalServer.Users.Pharmacist);
         var id = SessionIdOf(client);
-        var oneServer = Validator(redis: null);
-        var severalServers = Validator(redis: "redis.hospital.local:6379");
-        (await oneServer.GetStateAsync(id, Ct)).ShouldBe(SessionState.Active);
-        (await severalServers.GetStateAsync(id, Ct)).ShouldBe(SessionState.Active);
+        var hearing = Validator(listening: true);
+        var deaf = Validator(listening: false);
+        (await hearing.GetStateAsync(id, Ct)).ShouldBe(SessionState.Active);
+        (await deaf.GetStateAsync(id, Ct)).ShouldBe(SessionState.Active);
 
-        // Another server locks it, and only that server's cache hears of it.
+        // Locked where neither cache hears of it (another server's change signals every server, SCAL-01).
         await using (var scope = server.Services.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserSession>()
@@ -189,11 +188,11 @@ public sealed class SessionControlTests(HospitalServer server)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.LockedAt, DateTimeOffset.UtcNow), Ct);
         }
 
-        // On one server, the change that locks a session also clears the cache, so keeping "active" there is safe...
-        (await oneServer.GetStateAsync(id, Ct)).ShouldBe(SessionState.Active);
+        // A server that hears the others is told of every change, so keeping "active" there is safe...
+        (await hearing.GetStateAsync(id, Ct)).ShouldBe(SessionState.Active);
 
-        // ...but with several, nothing active is kept: the lock holds at once on every server.
-        (await severalServers.GetStateAsync(id, Ct)).ShouldBe(SessionState.Locked);
+        // ...but one that cannot hear them keeps nothing active: the lock holds there at once.
+        (await deaf.GetStateAsync(id, Ct)).ShouldBe(SessionState.Locked);
     }
 
     [Fact]
@@ -285,11 +284,11 @@ public sealed class SessionControlTests(HospitalServer server)
 
     private static string NewUserName(string purpose) => $"it-{purpose}-{Guid.NewGuid():N}"[..24];
 
-    private SessionValidator Validator(string? redis) => new(
+    private SessionValidator Validator(bool listening) => new(
         new MemoryCache(new MemoryCacheOptions()),
         server.Services.GetRequiredService<IServiceScopeFactory>(),
         TimeProvider.System,
-        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Redis"] = redis }).Build());
+        new FixedSignals(listening));
 
     private static async Task<HttpStatusCode> StatusOfAsync(ApiClient client, string page = AnyPage)
     {
@@ -336,5 +335,15 @@ public sealed class SessionControlTests(HospitalServer server)
     {
         await using var scope = server.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(AuthService.MaxSessionsSetting, max, cancellationToken: Ct);
+    }
+
+    /// <summary>Cache signals a server hears, or not, and that never arrive: as if another server changed the session.</summary>
+    private sealed class FixedSignals(bool listening) : IClusterSignals
+    {
+        public bool IsListening => listening;
+
+        public void Publish(string topic, string? argument = null)
+        {
+        }
     }
 }

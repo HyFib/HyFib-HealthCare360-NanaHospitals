@@ -19444,6 +19444,37 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("wards", "inpatient");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.BreakGlassAccess", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset>("GrantedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("granted_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_break_glass_grants");
+
+                    b.HasIndex("PatientId", "UserId", "ExpiresAt")
+                        .HasDatabaseName("ix_break_glass_grants_patient_id_user_id_expires_at");
+
+                    b.ToTable("break_glass_grants", "patients");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.Enquiry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -36549,6 +36580,30 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("specialties", "org");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Persistence.ClusterEntry", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("key");
+
+                    b.Property<long>("Count")
+                        .HasColumnType("bigint")
+                        .HasColumnName("count");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.HasKey("Key")
+                        .HasName("pk_cluster_entries");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_cluster_entries_expires_at");
+
+                    b.ToTable("cluster_entries", "platform");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Settings.SystemSetting", b =>
                 {
                     b.Property<Guid>("Id")
@@ -37900,6 +37955,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasForeignKey("BedServiceItemId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_wards_service_items_bed_service_item_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.BreakGlassAccess", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_break_glass_grants_patient_patient_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PatientConsent", b =>

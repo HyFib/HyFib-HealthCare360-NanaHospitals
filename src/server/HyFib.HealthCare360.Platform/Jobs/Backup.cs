@@ -447,7 +447,7 @@ internal static class BackupEndpoints
         group.MapPost("/recovery-key", async (ReauthenticateRequest request, RecoveryKeyService keys, CancellationToken ct) =>
                 (await keys.CreateAsync(request, ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage)
-            .RequireRateLimiting(AuthEndpoints.AuthRateLimit);
+            .RequireAddressRateLimit(ClusterRateLimits.SignIn);
         group.MapPost("/recovery-key/{keyId}/confirm", async (string keyId, ConfirmRecoveryKeyRequest request, RecoveryKeyService keys, CancellationToken ct) =>
                 (await keys.ConfirmAsync(keyId, request, ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);

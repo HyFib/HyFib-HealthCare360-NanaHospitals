@@ -67,7 +67,23 @@ internal sealed class KeyRotationService(
     /// </summary>
     public static readonly TimeSpan RetireAfter = TimeSpan.FromDays(1);
 
+    /// <summary>The PostgreSQL advisory lock that keeps key changes one at a time across the nodes sharing the keys (SCAL-01).</summary>
+    internal const long ClusterLockKey = 4_247_362;
+
     private static readonly SemaphoreSlim OneAtATime = new(1, 1);
+
+    /// <summary>
+    /// Takes the cluster-wide key lock until the returned transaction ends, then reads the keys again: another node sharing
+    /// the key folder may have changed them a moment ago (SCAL-01). On a single Server Node the lock is never contended.
+    /// </summary>
+    private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> LockKeysAsync(CancellationToken ct)
+    {
+        var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({ClusterLockKey})", ct);
+        ring.Refresh();
+        signing.Refresh();
+        return transaction;
+    }
 
     public async Task<EncryptionKeysStatus> StatusAsync(CancellationToken ct)
     {
@@ -85,6 +101,7 @@ internal sealed class KeyRotationService(
         await OneAtATime.WaitAsync(ct);
         try
         {
+            await using var keys = await LockKeysAsync(ct);
             var previous = ring.CurrentKeyId;
             var id = ring.Rotate();
             logger.LogWarning("Data encryption key rotated from {Previous} to {Current}; earlier data moves to it in the background", previous, id);
@@ -93,6 +110,7 @@ internal sealed class KeyRotationService(
             {
                 Severity = AuditSeverity.Warning,
             }, CancellationToken.None);
+            await keys.CommitAsync(CancellationToken.None);
         }
         finally
         {
@@ -108,6 +126,8 @@ internal sealed class KeyRotationService(
         await OneAtATime.WaitAsync(ct);
         try
         {
+            await using var keys = await LockKeysAsync(ct);
+
             // Tokens signed with the previous key are still valid, and only one previous key is kept.
             if (signing.NextRotationAt is { } next)
             {
@@ -124,6 +144,7 @@ internal sealed class KeyRotationService(
             {
                 Severity = AuditSeverity.Warning,
             }, CancellationToken.None);
+            await keys.CommitAsync(CancellationToken.None);
         }
         finally
         {
@@ -149,6 +170,7 @@ internal sealed class KeyRotationService(
         await OneAtATime.WaitAsync(ct);
         try
         {
+            await using var keys = await LockKeysAsync(ct);
             var id = keyId.Trim().ToUpperInvariant();
             var key = ring.Keys.FirstOrDefault(k => k.Id == id);
             if (key is null)
@@ -192,6 +214,7 @@ internal sealed class KeyRotationService(
             {
                 Severity = AuditSeverity.Warning,
             }, CancellationToken.None);
+            await keys.CommitAsync(CancellationToken.None);
         }
         finally
         {

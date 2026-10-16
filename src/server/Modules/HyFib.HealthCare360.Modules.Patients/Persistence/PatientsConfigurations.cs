@@ -146,6 +146,19 @@ internal sealed class PortalFamilyLinkConfiguration : IEntityTypeConfiguration<P
     }
 }
 
+internal sealed class BreakGlassAccessConfiguration : IEntityTypeConfiguration<BreakGlassAccess>
+{
+    public void Configure(EntityTypeBuilder<BreakGlassAccess> b)
+    {
+        b.ToTable("break_glass_grants", PatientsSchema.Name);
+        b.HasKey(x => x.Id);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+
+        // Every opening of a restricted record looks up the user's grant for it.
+        b.HasIndex(x => new { x.PatientId, x.UserId, x.ExpiresAt });
+    }
+}
+
 internal sealed class PortalFamilyCodeConfiguration : IEntityTypeConfiguration<PortalFamilyCode>
 {
     public void Configure(EntityTypeBuilder<PortalFamilyCode> b)

@@ -124,3 +124,18 @@ public sealed class Patient : AuditableEntity
 public sealed record PatientRegistered(Guid PatientId, string Uhid, Guid FacilityId) : DomainEvent;
 
 public sealed record PatientsMerged(Guid SourcePatientId, Guid TargetPatientId) : DomainEvent;
+
+/// <summary>
+/// An audited, time-boxed emergency opening of a restricted (VIP or confidential) record by one user (EHR-07,
+/// break-the-glass). Kept in the database rather than in one server's memory, so it holds on every API node behind the
+/// reverse proxy and after a restart (SCAL-01). The reason, and the alert to those who review the audit trail, are in the
+/// audit trail.
+/// </summary>
+[NotAudited]
+public sealed class BreakGlassAccess : Entity
+{
+    public Guid PatientId { get; init; }
+    public Guid UserId { get; init; }
+    public DateTimeOffset GrantedAt { get; init; }
+    public DateTimeOffset ExpiresAt { get; init; }
+}

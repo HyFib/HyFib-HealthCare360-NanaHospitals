@@ -46,6 +46,10 @@ builder.Configuration.AddEnvironmentVariables("HC360_");
 builder.Configuration.AddCommandLine(args);
 platformOptions = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? platformOptions;
 
+// Again, now that the site settings are in: they may put the keys and documents in a folder shared by several nodes.
+directories = new DataDirectories(platformOptions);
+directories.EnsureCreated();
+
 builder.Services.AddWindowsService(options => options.ServiceName = "HyFib HealthCare360");
 
 // Every sink writes through RedactingFormatter: phone, Aadhaar and ABHA numbers, e-mail addresses and secrets are masked
@@ -75,7 +79,8 @@ builder.Services.AddSerilog((services, logger) =>
 });
 
 // TLS for the hospital LAN/WiFi: generated hospital CA + server certificate (or an admin-supplied PFX).
-var bootstrapProtection = HospitalDataProtection.CreateProvider(directories);
+// The node's own key ring: with several nodes, each keeps its own CA copy and certificate (SCAL-01).
+var bootstrapProtection = HospitalDataProtection.CreateNodeProvider(directories);
 using var bootstrapLoggers = LoggerFactory.Create(logging => logging.AddSimpleConsole());
 var certificates = new LanCertificateManager(directories, platformOptions, bootstrapProtection, bootstrapLoggers.CreateLogger<LanCertificateManager>());
 certificates.EnsureCertificates();
@@ -169,6 +174,10 @@ if (builder.Configuration["OpenTelemetry:OtlpEndpoint"] is { Length: > 0 } otlp)
 }
 
 var app = builder.Build();
+
+// Before anything looks at the client's address or the scheme: behind a reverse proxy (SCAL-01), the client a named proxy
+// forwarded for. Nothing changes until HealthCare360:Network:KnownProxies or KnownNetworks name one.
+app.UseHospitalForwardedHeaders(platformOptions.Network);
 
 // First, so the request log and the exception handler's entries carry the request's correlation id (OBS-04).
 app.UseCorrelationId();

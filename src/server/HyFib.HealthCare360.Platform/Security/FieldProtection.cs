@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using HyFib.HealthCare360.Platform.Hosting;
 using Microsoft.AspNetCore.DataProtection;
@@ -105,6 +106,12 @@ public interface IFieldKeyRing
     /// </summary>
     /// <exception cref="InvalidOperationException">It is the original key, the current one, or not in the ring.</exception>
     void Retire(string id);
+
+    /// <summary>
+    /// Reads the ring again now when another node sharing the key folder changed it (SCAL-01); nothing on a single Server
+    /// Node. A node of several also looks by itself every <see cref="FieldProtector.SharedCheckInterval"/>.
+    /// </summary>
+    void Refresh();
 }
 
 /// <summary>
@@ -126,30 +133,93 @@ internal interface IFieldKeyEscrow
 /// <summary>The rotated keys of a ring, for a backup's escrow. <see cref="Current"/> is null while the original key is current.</summary>
 public sealed record FieldKeyRingExport(IReadOnlyList<byte[]> Keys, string? Current);
 
+/// <remarks>
+/// With several nodes the ring is in the folder they share (SCAL-01), and a rotation or a retirement on one node reaches
+/// the others: each reads the ring again when it has changed, looking at most every <see cref="SharedCheckInterval"/>, and
+/// at once (at most once a second) when a value names a key it does not have. Until then a node encrypts with the key that
+/// was current, which every node can read: an earlier key is retired only a day after the rotation.
+/// </remarks>
 internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldKeyRing
 {
+    /// <summary>How often a node of several looks whether another one changed the ring.</summary>
+    public static readonly TimeSpan SharedCheckInterval = TimeSpan.FromSeconds(10);
+
     private const byte OriginalKeyVersion = 1;
     private const byte KeyedVersion = 2;
     private const int KeyIdSize = 8;
     private const int NonceSize = 12;
     private const int TagSize = 16;
+    private static readonly TimeSpan UnknownKeyCheckInterval = TimeSpan.FromSeconds(1);
     private readonly DataDirectories _directories;
     private readonly IDataProtector _wrapper;
+    private readonly bool _shared;
     private readonly Lock _rotation = new();
     private readonly Lazy<byte[]> _masterKey;
     private readonly Lazy<FieldKeyRingState> _initialRing;
     private FieldKeyRingState? _ring;
+    private long _checkedAt;
+    private long _unknownCheckedAt;
 
     public FieldProtector(DataDirectories directories, IDataProtectionProvider dataProtection)
     {
         _directories = directories;
         _wrapper = FieldMasterKey.CreateProtector(dataProtection);
+        _shared = directories.IsShared;
         var path = FieldMasterKey.PathIn(directories);
         _masterKey = new Lazy<byte[]>(() => FieldMasterKey.LoadOrCreate(path, _wrapper), LazyThreadSafetyMode.ExecutionAndPublication);
         _initialRing = new Lazy<FieldKeyRingState>(() => FieldKeyRingState.Load(directories, _wrapper, _masterKey.Value), LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
-    private FieldKeyRingState Ring => Volatile.Read(ref _ring) ?? _initialRing.Value;
+    private FieldKeyRingState Ring
+    {
+        get
+        {
+            var ring = Volatile.Read(ref _ring) ?? _initialRing.Value;
+            return _shared && Due(ref _checkedAt, SharedCheckInterval) ? ReloadIfChanged(ring) : ring;
+        }
+    }
+
+    public void Refresh()
+    {
+        if (_shared)
+        {
+            ReloadIfChanged(Volatile.Read(ref _ring) ?? _initialRing.Value);
+        }
+    }
+
+    /// <summary>
+    /// The ring as it is now in the shared folder, when another node changed it since it was read. A folder that cannot be
+    /// read at the moment, or a change half written, leaves the ring as it was until the next look.
+    /// </summary>
+    private FieldKeyRingState ReloadIfChanged(FieldKeyRingState ring)
+    {
+        lock (_rotation)
+        {
+            var current = Volatile.Read(ref _ring) ?? ring;
+            try
+            {
+                if (FieldKeyRing.Stamp(_directories) == current.Stamp)
+                {
+                    return current;
+                }
+
+                var reloaded = FieldKeyRingState.Load(_directories, _wrapper, _masterKey.Value);
+                Volatile.Write(ref _ring, reloaded);
+                return reloaded;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
+            {
+                return current;
+            }
+        }
+    }
+
+    private static bool Due(ref long checkedAt, TimeSpan interval)
+    {
+        var now = Environment.TickCount64;
+        var last = Interlocked.Read(ref checkedAt);
+        return now - last >= (long)interval.TotalMilliseconds && Interlocked.CompareExchange(ref checkedAt, now, last) == last;
+    }
 
     public byte[] ExportMasterKey() => (byte[])_masterKey.Value.Clone();
 
@@ -190,9 +260,10 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
 
     public string Rotate()
     {
+        Refresh();
         lock (_rotation)
         {
-            var ring = Ring;
+            var ring = Volatile.Read(ref _ring) ?? _initialRing.Value;
             byte[] key;
             string id;
             do
@@ -205,16 +276,17 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
             // The key is on disk before anything is encrypted with it, and it is current only once it is there.
             FieldKeyRing.Add(_directories, _wrapper, key);
             FieldKeyRing.SetCurrent(_directories, id);
-            Volatile.Write(ref _ring, ring.With(id, key));
+            Volatile.Write(ref _ring, ring.With(id, key, FieldKeyRing.Stamp(_directories)));
             return id;
         }
     }
 
     public void Retire(string id)
     {
+        Refresh();
         lock (_rotation)
         {
-            var ring = Ring;
+            var ring = Volatile.Read(ref _ring) ?? _initialRing.Value;
             if (id == ring.OriginalId || id == ring.CurrentId || !ring.Keys.ContainsKey(id))
             {
                 throw new InvalidOperationException(id == ring.OriginalId ? $"Key {id} is the original key, which is never retired."
@@ -225,7 +297,7 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
             // Off the disk first, so a restart never brings it back. The bytes are left for the collector, not wiped: a
             // backup may be copying them from the ring it read a moment ago.
             FieldKeyRing.Remove(_directories, id);
-            Volatile.Write(ref _ring, ring.Without(id));
+            Volatile.Write(ref _ring, ring.Without(id, FieldKeyRing.Stamp(_directories)));
         }
     }
 
@@ -314,6 +386,13 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
         else if (protectedData.Length >= 1 + KeyIdSize + NonceSize + TagSize && protectedData[0] == KeyedVersion)
         {
             var id = Convert.ToHexString(protectedData.Slice(1, KeyIdSize));
+
+            // Another node sharing the key folder may have rotated a moment ago: read the ring again before giving up.
+            if (!ring.Keys.ContainsKey(id) && _shared && Due(ref _unknownCheckedAt, UnknownKeyCheckInterval))
+            {
+                ring = ReloadIfChanged(ring);
+            }
+
             masterKey = ring.Keys.TryGetValue(id, out var key) ? key
                 : throw new CryptographicException($"The data was encrypted with key {id}, which this server does not have.");
             header = 1 + KeyIdSize;
@@ -335,13 +414,18 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
 
     public byte[] DeriveKey(string purpose) => FieldMasterKey.DeriveKey(_masterKey.Value, purpose);
 
-    /// <summary>The keys by id, the original key's id, and the current key's id. Replaced whole on a rotation.</summary>
-    private sealed record FieldKeyRingState(IReadOnlyDictionary<string, byte[]> Keys, string OriginalId, string CurrentId)
+    /// <summary>
+    /// The keys by id, the original key's id, and the current key's id. Replaced whole on a rotation. <see cref="Stamp"/> is
+    /// how the ring's folder looked when it was read (<see cref="FieldKeyRing.Stamp"/>).
+    /// </summary>
+    private sealed record FieldKeyRingState(IReadOnlyDictionary<string, byte[]> Keys, string OriginalId, string CurrentId, string Stamp)
     {
         public bool IsOriginalCurrent => CurrentId == OriginalId;
 
         public static FieldKeyRingState Load(DataDirectories directories, IDataProtector wrapper, byte[] original)
         {
+            // Taken first: a change made while the ring is read shows as a change at the next look.
+            var stamp = FieldKeyRing.Stamp(directories);
             var originalId = FieldMasterKey.Fingerprint(original);
             var keys = new Dictionary<string, byte[]>(StringComparer.Ordinal) { [originalId] = original };
             foreach (var key in FieldKeyRing.Load(directories, wrapper))
@@ -351,18 +435,18 @@ internal sealed class FieldProtector : IFieldProtector, IFieldKeyEscrow, IFieldK
 
             var current = FieldKeyRing.Current(directories) ?? originalId;
             return keys.ContainsKey(current)
-                ? new FieldKeyRingState(keys, originalId, current)
+                ? new FieldKeyRingState(keys, originalId, current, stamp)
                 : throw new CryptographicException($"The current field key {current} is missing from {FieldKeyRing.DirectoryIn(directories)}.");
         }
 
-        public FieldKeyRingState With(string id, byte[] key) =>
-            new(new Dictionary<string, byte[]>(Keys, StringComparer.Ordinal) { [id] = key }, OriginalId, id);
+        public FieldKeyRingState With(string id, byte[] key, string stamp) =>
+            new(new Dictionary<string, byte[]>(Keys, StringComparer.Ordinal) { [id] = key }, OriginalId, id, stamp);
 
-        public FieldKeyRingState Without(string id)
+        public FieldKeyRingState Without(string id, string stamp)
         {
             var keys = new Dictionary<string, byte[]>(Keys, StringComparer.Ordinal);
             keys.Remove(id);
-            return new FieldKeyRingState(keys, OriginalId, CurrentId);
+            return new FieldKeyRingState(keys, OriginalId, CurrentId, stamp);
         }
     }
 }
@@ -381,6 +465,27 @@ public static class FieldMasterKey
     public static string PathIn(DataDirectories directories) => Path.Combine(directories.Keys, FileName);
 
     public static IDataProtector CreateProtector(IDataProtectionProvider dataProtection) => dataProtection.CreateProtector(ProtectorPurpose);
+
+    /// <summary>
+    /// Why this node may not start on the folder several nodes share (SCAL-01): it has a data key of its own under its data
+    /// directory, and the shared folder has none, so it would make a new key there, and nothing encrypted before could be
+    /// read. Null when there is no such problem.
+    /// </summary>
+    public static string? SharedFolderProblem(DataDirectories directories)
+    {
+        ArgumentNullException.ThrowIfNull(directories);
+        if (!directories.IsShared)
+        {
+            return null;
+        }
+
+        var own = Path.Combine(directories.Root, "keys", FileName);
+        return File.Exists(own) && !File.Exists(PathIn(directories))
+            ? $"this server has a data encryption key of its own ({own}), and the shared folder {directories.Keys} has none, so the " +
+              "data encrypted with it could not be read. Put the keys in the shared folder first: with the shared folder set, run " +
+              "'HyFib.HealthCare360.Server.exe backup restore --in <the latest backup>' (docs/deployment/DEPLOYMENT.md, section 10)."
+            : null;
+    }
 
     /// <summary>The key for one purpose (HKDF-SHA256), e.g. "field", "files", "backup".</summary>
     public static byte[] DeriveKey(byte[] masterKey, string purpose) =>
@@ -403,12 +508,9 @@ public static class FieldMasterKey
             return existing;
         }
 
+        // Another node sharing the key folder (SCAL-01) may make the key at the same moment: the first one written is used.
         var key = RandomNumberGenerator.GetBytes(Length);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temp = path + ".tmp";
-        File.WriteAllBytes(temp, protector.Protect(key));
-        File.Move(temp, path, overwrite: false);
-        return key;
+        return KeyFiles.CreateNew(path, protector.Protect(key)) ? key : protector.Unprotect(File.ReadAllBytes(path));
     }
 
     /// <summary>
@@ -432,7 +534,7 @@ public static class FieldMasterKey
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temp = path + ".tmp";
+        var temp = KeyFiles.TempPath(path);
         File.WriteAllBytes(temp, protector.Protect(masterKey));
 
         string? keptAs = null;
@@ -527,13 +629,26 @@ public static class FieldKeyRing
         var path = Path.Combine(folder, id + KeyExtension);
         if (!File.Exists(path))
         {
-            Directory.CreateDirectory(folder);
-            var temp = path + ".tmp";
-            File.WriteAllBytes(temp, wrapper.Protect(key));
-            File.Move(temp, path, overwrite: false);
+            KeyFiles.CreateNew(path, wrapper.Protect(key));
         }
 
         return id;
+    }
+
+    /// <summary>
+    /// What changes when the ring does: which keys it holds and which one is current. A node of several compares it to see
+    /// whether another node rotated or retired a key (SCAL-01).
+    /// </summary>
+    public static string Stamp(DataDirectories directories)
+    {
+        var folder = DirectoryIn(directories);
+        if (!Directory.Exists(folder))
+        {
+            return string.Empty;
+        }
+
+        var keys = Directory.EnumerateFiles(folder, "*" + KeyExtension).Select(Path.GetFileName).Order(StringComparer.Ordinal);
+        return string.Join(',', keys) + "|" + Current(directories);
     }
 
     /// <summary>
@@ -570,7 +685,7 @@ public static class FieldKeyRing
         }
 
         Directory.CreateDirectory(DirectoryIn(directories));
-        var temp = path + ".tmp";
+        var temp = KeyFiles.TempPath(path);
         File.WriteAllText(temp, id);
         File.Move(temp, path, overwrite: true);
     }
@@ -587,6 +702,14 @@ public static class FieldKeyRing
 /// The Data Protection key ring of the Server Node (<c>keys/dataprotection</c>, machine DPAPI on Windows). The web host
 /// registers it through DI; code that runs outside the host (the TLS bootstrap and the Server CLI) uses
 /// <see cref="CreateProvider"/> so it wraps and unwraps keys exactly as the service does.
+/// <para>
+/// With several nodes (<see cref="ClusterOptions.SharedDirectory"/>), the ring is in the shared folder, beside the keys it
+/// wraps, and every node must read it: it is protected with the cluster's key certificate instead of machine DPAPI, which
+/// only the machine that wrote it can open (SCAL-01). It is never kept in the database, so a copy of the database (a
+/// backup, the reporting replica, the warm standby) opens no encrypted value without the shared folder as well. What
+/// belongs to one node only, its hospital CA and TLS certificate, stays wrapped by that node's own ring
+/// (<see cref="CreateNodeProvider"/>).
+/// </para>
 /// </summary>
 public static class HospitalDataProtection
 {
@@ -594,8 +717,26 @@ public static class HospitalDataProtection
 
     public static string KeyRingDirectory(DataDirectories directories) => Path.Combine(directories.Keys, "dataprotection");
 
-    public static IDataProtectionProvider CreateProvider(DataDirectories directories) =>
-        DataProtectionProvider.Create(new DirectoryInfo(KeyRingDirectory(directories)), protection =>
+    public static IDataProtectionProvider CreateProvider(DataDirectories directories)
+    {
+        ArgumentNullException.ThrowIfNull(directories);
+        return DataProtectionProvider.Create(new DirectoryInfo(KeyRingDirectory(directories)), protection => Configure(protection, directories));
+    }
+
+    /// <summary>
+    /// The ring of this machine alone (<c>keys/dataprotection</c> under its own data directory, machine DPAPI on Windows),
+    /// for what no other node reads: its hospital CA and TLS certificate. On a single Server Node it is the same ring as
+    /// <see cref="CreateProvider"/>.
+    /// </summary>
+    public static IDataProtectionProvider CreateNodeProvider(DataDirectories directories)
+    {
+        ArgumentNullException.ThrowIfNull(directories);
+        if (!directories.IsShared)
+        {
+            return CreateProvider(directories);
+        }
+
+        return DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(directories.Root, "keys", "dataprotection")), protection =>
         {
             protection.SetApplicationName(ApplicationName);
             if (OperatingSystem.IsWindows())
@@ -603,6 +744,70 @@ public static class HospitalDataProtection
                 protection.ProtectKeysWithDpapi(protectToLocalMachine: true);
             }
         });
+    }
+
+    /// <summary>How keys in the ring are protected at rest: the cluster's certificate when shared, else machine DPAPI on Windows.</summary>
+    public static void Configure(IDataProtectionBuilder protection, DataDirectories directories)
+    {
+        ArgumentNullException.ThrowIfNull(protection);
+        ArgumentNullException.ThrowIfNull(directories);
+        protection.SetApplicationName(ApplicationName);
+        if (directories.IsShared)
+        {
+            // Without a certificate (allowed only in development, PlatformOptionsValidator) the ring is written unprotected,
+            // as it is on a single node that is not Windows.
+            if (ClusterKeyCertificate.Load(directories.Cluster) is { } certificate)
+            {
+                protection.ProtectKeysWithCertificate(certificate).UnprotectKeysWithAnyCertificate(certificate);
+            }
+        }
+        else if (OperatingSystem.IsWindows())
+        {
+            protection.ProtectKeysWithDpapi(protectToLocalMachine: true);
+        }
+    }
+}
+
+/// <summary>
+/// The certificate that protects the shared Data Protection key ring of several nodes (<see cref="ClusterOptions"/>): from
+/// the Local Computer's Personal store by thumbprint, or from a PFX file. It must hold an RSA private key, which wraps each
+/// key of the ring (XML encryption).
+/// </summary>
+public static class ClusterKeyCertificate
+{
+    /// <summary>The configured certificate, or null when none is configured.</summary>
+    /// <exception cref="InvalidOperationException">It is configured but cannot be found, or cannot protect keys.</exception>
+    public static X509Certificate2? Load(ClusterOptions cluster)
+    {
+        ArgumentNullException.ThrowIfNull(cluster);
+        X509Certificate2? certificate = null;
+        if (!string.IsNullOrWhiteSpace(cluster.KeyCertificateThumbprint))
+        {
+            var thumbprint = new string(cluster.KeyCertificateThumbprint.Where(Uri.IsHexDigit).ToArray());
+            using var store = new X509Store(StoreName.My, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+            certificate = store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, validOnly: false).FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    $"HealthCare360:Cluster:KeyCertificateThumbprint names certificate {thumbprint}, which is not in the Local Computer's Personal store of this machine.");
+        }
+        else if (!string.IsNullOrWhiteSpace(cluster.KeyCertificatePath))
+        {
+            var path = Path.GetFullPath(Environment.ExpandEnvironmentVariables(cluster.KeyCertificatePath));
+            certificate = X509CertificateLoader.LoadPkcs12FromFile(path, cluster.KeyCertificatePassword,
+                OperatingSystem.IsMacOS() ? X509KeyStorageFlags.DefaultKeySet : X509KeyStorageFlags.EphemeralKeySet);
+        }
+
+        if (certificate is null)
+        {
+            return null;
+        }
+
+        using var rsa = certificate.GetRSAPrivateKey();
+        return rsa is not null
+            ? certificate
+            : throw new InvalidOperationException(
+                $"The cluster key certificate {certificate.Thumbprint} has no RSA private key this server may use, so it cannot protect the shared keys.");
+    }
 }
 
 /// <summary>Helpers to keep masked display values consistent across modules.</summary>

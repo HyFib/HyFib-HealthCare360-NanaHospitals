@@ -1,7 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Notifications;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace HyFib.HealthCare360.Modules.Patients.Services;
 
@@ -86,13 +85,13 @@ public static class PatientQueries
 /// <summary>
 /// Enforces restricted-record rules (EHR-07): VIP/confidential patients can be opened only with the
 /// <c>patients.restricted.read</c> permission or after an audited, time-boxed break-the-glass request.
-/// Higher modules (EMR, billing, lab) should call <see cref="EnsureCanOpenAsync"/> before showing PHI.
+/// Higher modules (EMR, billing, lab) should call <see cref="EnsureCanOpenAsync"/> before showing PHI. A break-the-glass
+/// grant is a row in <c>patients.break_glass_grants</c>, so it holds on whichever API node answers (SCAL-01).
 /// </summary>
 public sealed class PatientAccessGuard(
     HospitalDbContext db,
     ICurrentUser currentUser,
     IPermissionService permissions,
-    IMemoryCache cache,
     IAuditLogger audit,
     INotificationService notifications,
     TimeProvider time)
@@ -123,8 +122,10 @@ public sealed class PatientAccessGuard(
             return Error.Forbidden("auth.required", "Sign in first.");
         }
 
-        var expires = time.GetUtcNow() + GrantDuration;
-        cache.Set(GrantKey(userId, patientId), true, expires);
+        var now = time.GetUtcNow();
+        var expires = now + GrantDuration;
+        db.Add(new BreakGlassAccess { PatientId = patientId, UserId = userId, GrantedAt = now, ExpiresAt = expires });
+        await db.SaveChangesAsync(ct);
 
         await audit.WriteAsync(new AuditEntry(AuditCategories.Security, "patient.break_glass", reason)
         {
@@ -154,7 +155,9 @@ public sealed class PatientAccessGuard(
             return Error.Forbidden("auth.required", "Sign in first.");
         }
 
-        if (await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct) || cache.TryGetValue(GrantKey(userId, patientId), out _))
+        var now = time.GetUtcNow();
+        if (await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct)
+            || await db.Set<BreakGlassAccess>().AnyAsync(g => g.PatientId == patientId && g.UserId == userId && g.ExpiresAt > now, ct))
         {
             return Result.Success();
         }
@@ -164,8 +167,6 @@ public sealed class PatientAccessGuard(
             Data = new { breakGlassAvailable = true },
         };
     }
-
-    private static string GrantKey(Guid userId, Guid patientId) => $"breakglass:{userId:N}:{patientId:N}";
 }
 
 /// <summary>Links a patient-portal sign-in (mobile OTP) to the earliest active patient record with that mobile number.</summary>
