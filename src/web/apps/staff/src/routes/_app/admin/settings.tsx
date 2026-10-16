@@ -57,9 +57,9 @@ const KNOWN: Record<string, string> = {
   'security.antiAutomation.enabled':
     'Ask the patient portal’s sign-in and feedback forms for a proof of work, against scripts (on unless set to false).',
   'security.antiAutomation.bits':
-    'Work asked of every browser, in bits (14 if not set: under a second on a mid-range phone). Each bit doubles it; at most 24.',
+    'Work asked of every browser, in bits (14 if not set: under a second on a mid-range phone). Each bit doubles it; at most 20.',
   'security.antiAutomation.maxBits':
-    'The most work asked of an address or number that keeps failing, in bits (18 if not set; at most 24).',
+    'The most work asked of an address or number that keeps failing, in bits (18 if not set; at most 20, which a mid-range phone does in under a minute).',
 };
 
 const FEATURE_SWITCH_NOTE = 'A feature switch. Turn it on or off under Hospital setup, Features.';

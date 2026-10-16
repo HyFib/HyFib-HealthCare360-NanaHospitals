@@ -28,6 +28,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -236,11 +237,16 @@ public static class PlatformServiceCollectionExtensions
                 }));
         });
 
-        // The portal's proof of work (SRS SEC-06): challenges signed with a key of this server's, spent ones remembered.
+        // The portal's proof of work (SRS SEC-06): challenges signed with a key of this server's, spent ones remembered, and
+        // the numbers that failed kept as hashes keyed with it. The key is read (or made) once, for both.
         services.AddSingleton<IProofOfWorkReplayCache, MemoryProofOfWorkReplayCache>();
-        services.AddSingleton<AutomationSuspicion>();
+        services.AddSingleton(sp => new AntiAutomationKey(ProofOfWorkKey.LoadOrCreate(directories, sp.GetRequiredService<IDataProtectionProvider>())));
+        services.AddSingleton(sp => new AutomationSuspicion(
+            sp.GetRequiredService<IMemoryCache>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<AntiAutomationKey>().Value));
         services.AddSingleton(sp => new ProofOfWork(
-            ProofOfWorkKey.LoadOrCreate(directories, sp.GetRequiredService<IDataProtectionProvider>()),
+            sp.GetRequiredService<AntiAutomationKey>().Value,
             sp.GetRequiredService<IProofOfWorkReplayCache>(),
             sp.GetRequiredService<TimeProvider>()));
         services.AddScoped<AntiAutomation>();
