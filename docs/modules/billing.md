@@ -15,8 +15,8 @@ from the acquirer's report, the review, the settlement journal, a card receipt n
 (the training terminal: a sale paid after the counter stopped polling is recorded once; one nobody paid is cancelled
 and timed out).
 
-The module implements the Platform contracts `IChargePoster` and `IBillingStatusProvider` (replacing the Null
-fallbacks) — see [Contracts for other modules](#contracts-for-other-modules). For insurance claims it reads the coding
+The module implements the Platform contracts `IChargePoster`, `IBillingStatusProvider` and `IPayerDirectory`
+(replacing the Null fallbacks) — see [Contracts for other modules](#contracts-for-other-modules). For insurance claims it reads the coding
 medical records verified for a stay or visit through `IVerifiedCodingSource`, which the Clinical module implements.
 
 ## Money rules
@@ -367,6 +367,17 @@ Source keys in use: `inpatient.bed` / `inpatient.nursing` (`{admissionId}:{yyyy-
 * `GetOutstandingAsync(patientId)` → the patient's unpaid share of finalized bills (all facilities).
 * `GetDischargeClearanceAsync(admissionId)` → cleared when every IP charge is on a finalized bill, the final bill exists
   and the patient's share is paid, or management approved discharge with dues.
+
+### `IPayerDirectory` (implemented by `PayerDirectory`)
+* `GetCoverageAsync(patientId, payerId)` → `PayerCoverageSummary {payerName, policyNumber, validUntil}`, for the patient
+  banner's payer line (UX-04; `GET /api/v1/patients/{id}/payer`, see `clinical.md`). Each part is shown only to staff
+  whose permissions would let them read it on the insurance screens: the payer's name to payer readers
+  (`PayerDirectory.PayerReaders`: payers, policies, pre-auth or claims managers, OP billing, IP billing, charge readers),
+  the masked policy number and its last valid day to policy readers (`PolicyReaders`: policies, pre-auth or claims
+  managers, IP billing, OP billing). The policy is the one billing would price today's bill with: active, in date
+  today, the longest valid.
+* Without the Billing module the Platform's `NullPayerDirectory` returns all three as null, and the banner shows the
+  payer type alone.
 
 ## Events
 
