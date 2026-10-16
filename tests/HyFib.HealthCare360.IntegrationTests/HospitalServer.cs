@@ -478,9 +478,18 @@ public sealed class HospitalServer : IAsyncLifetime
     /// </summary>
     public HttpMessageHandler CreateHandler() => new StaffAppClient(App.GetTestServer().CreateHandler(), AddressOfCurrentTest());
 
-    private HttpClient CreateHttpClient(bool ownAddress = false, bool portal = false)
+    /// <summary>
+    /// A caller who has not signed in, from the test's own address, that sends no proof of work unless the test adds one
+    /// (AntiAutomationTests). Every other client solves the server's challenges as the portal does (<see cref="BrowserProofHandler"/>).
+    /// </summary>
+    public ApiClient AnonymousWithoutProof(bool portal = true) => new(CreateHttpClient(ownAddress: true, portal: portal, solveChallenges: false));
+
+    private HttpClient CreateHttpClient(bool ownAddress = false, bool portal = false, bool solveChallenges = true)
     {
-        var http = App.GetTestClient();
+        var server = App.GetTestServer();
+        var http = solveChallenges
+            ? new HttpClient(new BrowserProofHandler(server.CreateHandler())) { BaseAddress = server.BaseAddress }
+            : App.GetTestClient();
         if (portal)
         {
             http.BaseAddress = PortalAddress;

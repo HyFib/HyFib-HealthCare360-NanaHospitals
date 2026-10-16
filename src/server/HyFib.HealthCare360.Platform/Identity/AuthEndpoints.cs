@@ -26,18 +26,21 @@ internal static class AuthEndpoints
             .AllowAnonymous()
             .RequireRateLimiting(AuthRateLimit);
 
-        // The patient portal's sign-in, which also registers a new number: off while the portal is switched off.
+        // The patient portal's sign-in, which also registers a new number: off while the portal is switched off. Both
+        // steps ask for a proof of work (SRS SEC-06); failures for a number raise the work asked for it from any address.
         group.MapPost("/otp/request", async (OtpRequest request, AuthService auth, CancellationToken ct) =>
                 (await auth.RequestOtpAsync(request, ct)).ToOk())
             .AllowAnonymous()
             .RequireRateLimiting(OtpRateLimit)
-            .RequireFeature(FeatureKeys.PatientPortal);
+            .RequireFeature(FeatureKeys.PatientPortal)
+            .RequireProofOfWork(AntiAutomationActions.Otp, context => context.Arguments.OfType<OtpRequest>().FirstOrDefault()?.Phone);
 
         group.MapPost("/otp/verify", async (OtpVerifyRequest request, AuthService auth, HttpContext http, CancellationToken ct) =>
                 (await auth.VerifyOtpAsync(request, http, ct)).ToOk())
             .AllowAnonymous()
             .RequireRateLimiting(AuthRateLimit)
-            .RequireFeature(FeatureKeys.PatientPortal);
+            .RequireFeature(FeatureKeys.PatientPortal)
+            .RequireProofOfWork(AntiAutomationActions.Otp);
 
         // A portal session can only be refreshed as the portal (its cookie is read by the client header), so the portal's
         // own refreshes stop while it is switched off and staff sessions are not affected.
