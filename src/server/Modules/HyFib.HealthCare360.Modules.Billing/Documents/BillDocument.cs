@@ -260,25 +260,29 @@ internal static class BillDocument
         ? DocumentFormat.Missing
         : string.Join(" + ", summary.Split('+', StringSplitOptions.TrimEntries).Select(mode => ModeLabel(mode, text ?? DocumentText.English)));
 
-    public static string StatusLabel(BillStatus status, DocumentText? text = null) => (text ?? DocumentText.English)[status switch
+    /// <summary>The status in words; a status added later without words of its own prints its name.</summary>
+    public static string StatusLabel(BillStatus status, DocumentText? text = null) => Label(text, status switch
     {
         BillStatus.Draft => "doc.bill.status.draft",
         BillStatus.Finalized => "doc.bill.status.unpaid",
         BillStatus.PartiallyPaid => "doc.bill.status.partly_paid",
         BillStatus.Paid => "doc.bill.status.paid",
         BillStatus.Cancelled => "doc.bill.status.cancelled",
-        _ => "doc.bill.status.refunded",
-    }];
+        BillStatus.Refunded => "doc.bill.status.refunded",
+        _ => null,
+    }) ?? status.ToString();
 
-    public static string PayerLabel(PayerType payerType, DocumentText? text = null) => (text ?? DocumentText.English)[payerType switch
+    /// <summary>The payer type in words; a type added later without words of its own prints its name.</summary>
+    public static string PayerLabel(PayerType payerType, DocumentText? text = null) => Label(text, payerType switch
     {
         PayerType.Self => "doc.bill.payer.self",
         PayerType.Insurance => "doc.bill.payer.insurance",
         PayerType.Corporate => "doc.bill.payer.corporate",
         PayerType.GovernmentScheme => "doc.bill.payer.government_scheme",
         PayerType.Staff => "doc.bill.payer.staff",
-        _ => "doc.bill.payer.charity",
-    }];
+        PayerType.Charity => "doc.bill.payer.charity",
+        _ => null,
+    }) ?? payerType.ToString();
 
     private static Html Stamp(BillDetail bill, DocumentText text) =>
         Watermark(bill, text) is { } stamp ? Html.Of($"<div class=\"stamp\">{stamp}</div>") : Html.Empty;
@@ -376,8 +380,9 @@ internal static class BillDocument
     private static string LineDetail(BillLineDto line) =>
         string.Join(" · ", new[] { line.ServiceCode, line.PractitionerName, DocumentFormat.Date(line.ServiceDate) }.Where(part => !string.IsNullOrWhiteSpace(part)));
 
+    // A mode added later without words of its own prints its name, and text that is no mode prints as it is.
     private static string ModeLabel(string mode, DocumentText text) => Enum.TryParse<PaymentMode>(mode, out var parsed) && Enum.IsDefined(parsed)
-        ? text[parsed switch
+        ? Label(text, parsed switch
         {
             PaymentMode.Cash => "doc.bill.mode.cash",
             PaymentMode.Card => "doc.bill.mode.card",
@@ -387,9 +392,12 @@ internal static class BillDocument
             PaymentMode.PaymentGateway => "doc.bill.mode.online",
             PaymentMode.Insurance => "doc.bill.mode.insurance",
             PaymentMode.Wallet => "doc.bill.mode.wallet",
-            _ => "doc.bill.mode.advance",
-        }]
+            PaymentMode.Advance => "doc.bill.mode.advance",
+            _ => null,
+        }) ?? parsed.ToString()
         : mode;
+
+    private static string? Label(DocumentText? text, string? key) => key is null ? null : (text ?? DocumentText.English)[key];
 
     // Quantities as the counter keys them: 1, 1.5, 0.25 (stored with three decimals).
     private static string Quantity(decimal quantity) => quantity.ToString("0.###", CultureInfo.InvariantCulture);

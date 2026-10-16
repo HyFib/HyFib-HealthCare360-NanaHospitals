@@ -180,7 +180,10 @@ internal static class PortalEndpoints
         return problem ?? TypedResults.Ok(await summaries.ToDtoAsync(summary!, ct));
     }
 
-    /// <summary>The signed summary as a PDF: the same A4 document the hospital prints.</summary>
+    /// <summary>
+    /// The signed summary as a PDF: the same A4 document the hospital prints, with its headings in the request's language
+    /// (PP-06: the language chosen in the portal, else the record's preference, else Accept-Language, else English).
+    /// </summary>
     private static async Task<IResult> DischargeSummaryPdf(Guid id, PortalPatientScope scope, DischargeSummaryService summaries, IAuditLogger audit,
         DocumentAssets assets, IPdfRenderer renderer, HttpContext http, CancellationToken ct)
     {
@@ -191,7 +194,7 @@ internal static class PortalEndpoints
         }
 
         var print = await summaries.PrintAsync(summary!.Id, ct);
-        // In the patient's language (PP-06): their record's preference, else the portal's.
+        // The portal's choice (X-HC360-Language), else the record's preference, else Accept-Language, else English.
         return print.IsFailure
             ? print.Error!.ToProblem()
             : await (await DischargeSummaryDocument.BuildAsync(print.Value, assets, DocumentText.For(http.PatientLanguage()), ct)).ToPdfAsync(renderer, ct);

@@ -60,11 +60,11 @@ public sealed class PatientLanguageTests(HospitalServer server)
             (await ProblemOf(refused)).GetProperty("detail").GetString().ShouldBe(OwnNumberEnglish);
         }
 
-        (await PdfLanguageAsync(portal, $"/api/v1/portal/bills/{bill.Id}/pdf")).ShouldBe("en");
+        portal.Http.DefaultRequestHeaders.Remove(LanguageHeader);
+        (await PortalPdf.LanguageAsync(server, portal, $"/api/v1/portal/bills/{bill.Id}/pdf", chosen: "en")).ShouldBe("en");
 
         // The same patient without a choice in the request: the record's Hindi.
-        portal.Http.DefaultRequestHeaders.Remove(LanguageHeader);
-        (await PdfLanguageAsync(portal, $"/api/v1/portal/bills/{bill.Id}/pdf")).ShouldBe("hi");
+        (await PortalPdf.LanguageAsync(server, portal, $"/api/v1/portal/bills/{bill.Id}/pdf", chosen: null)).ShouldBe("hi");
     }
 
     [Fact]
@@ -130,26 +130,6 @@ public sealed class PatientLanguageTests(HospitalServer server)
 
     private static RequestFamilyCodeRequest OwnNumber(PatientCreated patient, string phone) => new(patient.Uhid, phone, FamilyRelation.Parent);
 
-    /// <summary>
-    /// The language of the portal's PDF: with a PDF browser on this machine, whether the PDF carries the Hindi font (an
-    /// English bill of a patient with a Latin name has no Devanagari in it); without one, the language of the "cannot
-    /// make the PDF" answer, which the same request decides.
-    /// </summary>
-    private async Task<string> PdfLanguageAsync(ApiClient portal, string path)
-    {
-        using var response = await portal.SendRawAsync(HttpMethod.Get, path);
-        if (!server.Services.GetRequiredService<IPdfRenderer>().Status.Available)
-        {
-            response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
-            var title = (await ProblemOf(response)).GetProperty("title").GetString();
-            return title == "PDF नहीं बन सका" ? "hi" : title == "The PDF could not be made" ? "en" : $"unexpected: {title}";
-        }
-
-        response.EnsureSuccessStatusCode();
-        var pdf = Encoding.Latin1.GetString(await response.Content.ReadAsByteArrayAsync(Ct));
-        return pdf.Contains("NotoSansDevanagari", StringComparison.Ordinal) ? "hi" : "en";
-    }
-
     // The PDF the "bill shared" message would carry, as the document source makes it, with the PDF browser replaced by
     // one that keeps the page it was given.
     private async Task<string> SentDocumentAsync(Guid billId)
@@ -171,7 +151,7 @@ public sealed class PatientLanguageTests(HospitalServer server)
         return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
-    private static async Task<JsonElement> ProblemOf(HttpResponseMessage response)
+    internal static async Task<JsonElement> ProblemOf(HttpResponseMessage response)
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
         return document.RootElement.Clone();
@@ -202,5 +182,37 @@ public sealed class PatientLanguageTests(HospitalServer server)
             Html = source.Html;
             return Task.FromResult("%PDF-1.7"u8.ToArray());
         }
+    }
+}
+
+/// <summary>The language a portal PDF download is made in, for the tests of the portal's PDF endpoints (PP-06).</summary>
+internal static class PortalPdf
+{
+    /// <summary>
+    /// Downloads <paramref name="path"/> with the portal's language choice <paramref name="chosen"/> (none when null) and
+    /// tells which language the document was made in: with a PDF browser on this machine, whether the PDF carries the
+    /// Hindi font (an English document of a patient with a Latin name has no Devanagari in it); without one, the language
+    /// of the "cannot make the PDF" answer, which the same request decides.
+    /// </summary>
+    public static async Task<string> LanguageAsync(HospitalServer server, ApiClient portal, string path, string? chosen)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (chosen is not null)
+        {
+            request.Headers.Add("X-HC360-Language", chosen);
+        }
+
+        using var response = await portal.Http.SendAsync(request, ct);
+        if (!server.Services.GetRequiredService<IPdfRenderer>().Status.Available)
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable, $"GET {path}: {await response.Content.ReadAsStringAsync(ct)}");
+            var title = (await PatientLanguageTests.ProblemOf(response)).GetProperty("title").GetString();
+            return title == "PDF नहीं बन सका" ? "hi" : title == "The PDF could not be made" ? "en" : $"unexpected: {title}";
+        }
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, $"GET {path}");
+        var pdf = Encoding.Latin1.GetString(await response.Content.ReadAsByteArrayAsync(ct));
+        return pdf.Contains("NotoSansDevanagari", StringComparison.Ordinal) ? "hi" : "en";
     }
 }

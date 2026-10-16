@@ -137,7 +137,7 @@ public sealed class LabReportDocumentTests
         html.ShouldContain("<th style=\"width:34%\">जाँच</th><th style=\"width:22%\">परिणाम</th><th style=\"width:7%\">संकेत</th>");
         html.ShouldContain("<th>संदर्भ सीमा</th>");
         html.ShouldContain("title=\"गंभीर रूप से कम\">LL</span>");
-        html.ShouldContain("पृथक किया गया जीवाणु: <strong>E. coli</strong>");
+        html.ShouldContain("पृथक किया गया सूक्ष्मजीव: <strong>E. coli</strong>");
         html.ShouldContain("इस रिपोर्ट की जाँच के लिए स्कैन करें");
         html.ShouldContain("सत्यापन कोड K7Q2M9X4");
         html.ShouldContain("पंजीकरण सं. MMC-55821");

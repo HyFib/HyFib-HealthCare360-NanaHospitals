@@ -174,6 +174,11 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         summary.Status.ShouldBe(DischargeSummaryStatus.Signed);
         summary.SignedByPractitionerId.ShouldBe(consultantId);
 
+        // Patient: downloads it from the portal in the language chosen there (PP-06); the record names none.
+        var portal = await server.SignInToPortalAsync((await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).Phone!);
+        (await PortalPdf.LanguageAsync(server, portal, $"/api/v1/portal/discharge-summaries/{summary.Id}/pdf", chosen: "hi")).ShouldBe("hi");
+        (await PortalPdf.LanguageAsync(server, portal, $"/api/v1/portal/discharge-summaries/{summary.Id}/pdf", chosen: "en")).ShouldBe("en");
+
         // Nurse: initiates the discharge. Every bed day due so far is charged first.
         var initiated = await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/initiate",
             new InitiateDischargeRequest(today, "Discharge advised on the ward round"));

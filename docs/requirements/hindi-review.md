@@ -30,7 +30,11 @@ Points we would most like checked:
 
 * "रोगी" for *patient* throughout (some hospitals prefer "मरीज़").
 * Bill terms: "कर बीजक", "आपूर्ति बिल", "बट्टे खाते में", "पूर्णांकन", "अग्रिम राशि से समायोजित".
-* Report terms: "संदर्भ सीमा" (reference interval), "राय (इम्प्रेशन)", "पृथक किया गया जीवाणु", "प्रतिरोधी / मध्यम / संवेदनशील".
+* Report terms: "संदर्भ सीमा" (reference interval), "राय (इम्प्रेशन)", "प्रतिरोधी / मध्यम / संवेदनशील".
+* "पृथक किया गया सूक्ष्मजीव" for *organism isolated* on culture reports: a neutral word (microorganism) chosen on
+  purpose, because a culture can grow a fungus or a yeast as well as a bacterium; "जीवाणु" (bacterium) would be wrong
+  for those. Please confirm the word your microbiologists and patients use ("सूक्ष्मजीव", "जीव" or the English
+  "ऑर्गेनिज़्म").
 * "दोबारा दिखाना (फ़ॉलो-अप)" and "छुट्टी" for discharge.
 
 ## Document labels (bills, prescriptions, reports, discharge summaries)
@@ -199,7 +203,7 @@ Points we would most like checked:
 | 160 | `doc.lab.interpretation` | Interpretation | व्याख्या | |
 | 161 | `doc.lab.awaited` | Awaited | प्रतीक्षित | |
 | 162 | `doc.lab.not_verified` | (not verified) | (सत्यापित नहीं) | |
-| 163 | `doc.lab.organism` | Organism isolated | पृथक किया गया जीवाणु | |
+| 163 | `doc.lab.organism` | Organism isolated | पृथक किया गया सूक्ष्मजीव | |
 | 164 | `doc.lab.colony_count` | Colony count {count} | कॉलोनी गणना {count} | |
 | 165 | `doc.lab.antibiotic` | Antibiotic | एंटीबायोटिक | |
 | 166 | `doc.lab.sensitive` | Sensitive (S) | संवेदनशील (S) | |

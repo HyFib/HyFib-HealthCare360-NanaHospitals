@@ -314,6 +314,16 @@ public sealed class BillDocumentTests
     }
 
     [Fact]
+    public void A_status_payer_or_mode_without_words_of_its_own_prints_its_name_in_any_language()
+    {
+        BillDocument.StatusLabel(BillStatus.Refunded, DocumentText.Hindi).ShouldBe("रद्द, राशि वापस");
+        BillDocument.StatusLabel((BillStatus)99, DocumentText.Hindi).ShouldBe("99");
+        BillDocument.PayerLabel(PayerType.Charity, DocumentText.Hindi).ShouldBe("धर्मार्थ");
+        BillDocument.PayerLabel((PayerType)42).ShouldBe("42");
+        BillDocument.ModesLabel("Cash + Advance + Barter", DocumentText.Hindi).ShouldBe("नकद + अग्रिम राशि से समायोजित + Barter");
+    }
+
+    [Fact]
     public void An_english_bill_carries_no_hindi_font()
     {
         var html = Render(Bill());
