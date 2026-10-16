@@ -40,6 +40,9 @@ public sealed class PatientRegistrationService(
     WhatsAppConsent whatsApp,
     TimeProvider time)
 {
+    /// <summary>Audit action of a change to the patient's ABHA number or address.</summary>
+    public const string AbhaChangedAction = "patient.abha_changed";
+
     private const int StrongDuplicateScore = 75;
 
     public async Task<IReadOnlyList<DuplicateCandidate>> FindDuplicatesAsync(DuplicateCheckRequest check, Guid? excludeId, CancellationToken ct)
@@ -362,7 +365,8 @@ public sealed class PatientRegistrationService(
         patient.Nationality = Clean(input.Nationality) ?? "Indian";
         patient.PreferredLanguage = Clean(input.PreferredLanguage);
         patient.Category = input.Category ?? patient.Category;
-        patient.AbhaAddress = Clean(input.AbhaAddress)?.ToLowerInvariant();
+        AuditAbhaChange(patient, input, isNew);
+        patient.AbhaAddress = Abha.NormalizeAddress(input.AbhaAddress);
         patient.PhotoFileId = PatientPhoto.Resolve(patient.PhotoFileId, input.PhotoFileId, input.RemovePhoto);
         patient.IsVip = input.IsVip;
         patient.Notes = Clean(input.Notes);
@@ -376,10 +380,10 @@ public sealed class PatientRegistrationService(
             }
             else
             {
-                var abha = Masking.Normalize(input.AbhaNumber);
+                var abha = Abha.Digits(input.AbhaNumber);
                 patient.AbhaNumberCipher = protector.Protect(abha);
                 patient.AbhaNumberIndex = protector.BlindIndex(abha);
-                patient.AbhaNumberMasked = "XX-XXXX-XXXX-" + abha[^4..];
+                patient.AbhaNumberMasked = Abha.Mask(abha);
             }
         }
 
@@ -397,7 +401,53 @@ public sealed class PatientRegistrationService(
                 patient.AadhaarIndex = protector.FixedBlindIndex(aadhaar);
             }
         }
+    }
 
+    /// <summary>
+    /// Records a change to the patient's ABHA link (the number linked, replaced or removed; the address added, changed or
+    /// removed) as an audit entry of its own, so linking and unlinking a national health ID is easy to find in the trail.
+    /// The number appears masked only; entering again the number already on file is not a change.
+    /// </summary>
+    private void AuditAbhaChange(Patient patient, PatientInput input, bool isNew)
+    {
+        var digits = string.IsNullOrWhiteSpace(input.AbhaNumber) ? null : Abha.Digits(input.AbhaNumber);
+        var number = input.AbhaNumber switch
+        {
+            null => null,
+            _ when digits is null => patient.AbhaNumberCipher is null ? null : "removed",
+            _ when patient.AbhaNumberIndex is { } index && protector.BlindIndexes(digits).Contains(index) => null,
+            _ => patient.AbhaNumberCipher is null ? "linked" : "replaced",
+        };
+        var newAddress = Abha.NormalizeAddress(input.AbhaAddress);
+        var address = newAddress == patient.AbhaAddress ? null
+            : newAddress is null ? "removed"
+            : patient.AbhaAddress is null ? "added"
+            : "changed";
+        if (number is null && address is null)
+        {
+            return;
+        }
+
+        var after = digits is null ? null : Abha.Mask(digits);
+        string?[] parts =
+        [
+            number switch
+            {
+                "linked" => $"ABHA number {after} linked",
+                "replaced" => $"ABHA number {patient.AbhaNumberMasked} replaced by {after}",
+                "removed" => $"ABHA number {patient.AbhaNumberMasked} removed",
+                _ => null,
+            },
+            address is null ? null : $"ABHA address {address}",
+        ];
+        var summary = string.Join("; ", parts.OfType<string>());
+        audit.Add(new AuditEntry(AuditCategories.Data, AbhaChangedAction, isNew ? $"At registration: {summary}" : summary)
+        {
+            PatientId = patient.Id,
+            EntityType = nameof(Patient),
+            EntityId = patient.Id.ToString(),
+            Details = new { number, numberMasked = after, previousNumberMasked = number is null ? null : patient.AbhaNumberMasked, address },
+        });
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

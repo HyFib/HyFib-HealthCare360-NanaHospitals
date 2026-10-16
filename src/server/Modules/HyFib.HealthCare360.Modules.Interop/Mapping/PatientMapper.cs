@@ -88,7 +88,7 @@ internal static class PatientMapper
         return identifier;
     }
 
-    /// <summary>ABHA number as an ABDM identifier, formatted NN-NNNN-NNNN-NNNN.</summary>
+    /// <summary>ABHA number as an ABDM identifier, formatted NN-NNNN-NNNN-NNNN (<see cref="SharedKernel.Abha.Format"/>).</summary>
     public static R4.Identifier? Abha(string? abhaNumber)
     {
         if (string.IsNullOrWhiteSpace(abhaNumber))
@@ -96,9 +96,7 @@ internal static class PatientMapper
             return null;
         }
 
-        var digits = new string(abhaNumber.Where(char.IsAsciiDigit).ToArray());
-        var value = digits.Length == 14 ? $"{digits[..2]}-{digits[2..6]}-{digits[6..10]}-{digits[10..]}" : abhaNumber.Trim();
-        return new R4.Identifier(FhirSystems.Abha, value)
+        return new R4.Identifier(FhirSystems.Abha, SharedKernel.Abha.Format(abhaNumber))
         {
             Use = R4.Identifier.IdentifierUse.Official,
             Type = new R4.CodeableConcept

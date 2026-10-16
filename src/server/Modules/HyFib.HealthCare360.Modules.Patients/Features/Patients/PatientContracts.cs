@@ -203,37 +203,6 @@ internal static class PatientRules
     }
 }
 
-/// <summary>Verhoeff checksum used by Aadhaar numbers.</summary>
-internal static class Verhoeff
-{
-    private static readonly int[,] D =
-    {
-        { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }, { 1, 2, 3, 4, 0, 6, 7, 8, 9, 5 }, { 2, 3, 4, 0, 1, 7, 8, 9, 5, 6 },
-        { 3, 4, 0, 1, 2, 8, 9, 5, 6, 7 }, { 4, 0, 1, 2, 3, 9, 5, 6, 7, 8 }, { 5, 9, 8, 7, 6, 0, 4, 3, 2, 1 },
-        { 6, 5, 9, 8, 7, 1, 0, 4, 3, 2 }, { 7, 6, 5, 9, 8, 2, 1, 0, 4, 3 }, { 8, 7, 6, 5, 9, 3, 2, 1, 0, 4 },
-        { 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 },
-    };
-
-    private static readonly int[,] P =
-    {
-        { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }, { 1, 5, 7, 6, 2, 8, 3, 0, 9, 4 }, { 5, 8, 0, 3, 7, 9, 6, 1, 4, 2 },
-        { 8, 9, 1, 6, 0, 4, 3, 5, 2, 7 }, { 9, 4, 5, 3, 1, 2, 6, 8, 7, 0 }, { 4, 2, 8, 6, 5, 7, 3, 9, 0, 1 },
-        { 2, 7, 9, 3, 8, 0, 6, 4, 1, 5 }, { 7, 0, 4, 6, 9, 1, 3, 2, 5, 8 },
-    };
-
-    public static bool IsValid(string digits)
-    {
-        var check = 0;
-        for (var i = 0; i < digits.Length; i++)
-        {
-            var digit = digits[digits.Length - 1 - i] - '0';
-            check = D[check, P[i % 8, digit]];
-        }
-
-        return check == 0;
-    }
-}
-
 public sealed class RegisterPatientRequestValidator : AbstractValidator<RegisterPatientRequest>
 {
     public RegisterPatientRequestValidator(TimeProvider time)
@@ -261,7 +230,7 @@ public sealed class RegisterPatientRequestValidator : AbstractValidator<Register
         RuleFor(x => x.Address!.PinCode).PinCode().When(x => !string.IsNullOrWhiteSpace(x.Address?.PinCode));
         RuleFor(x => x.AbhaNumber).AbhaNumber();
         RuleFor(x => x.AadhaarNumber).Must(PatientRules.ValidAadhaar).WithMessage("Enter a valid 12-digit Aadhaar number.");
-        RuleFor(x => x.AbhaAddress).MaximumLength(128);
+        RuleFor(x => x.AbhaAddress).MaximumLength(128).AbhaAddress();
         RuleFor(x => x.GuardianName).MaximumLength(200);
         RuleFor(x => x.PhotoFileId).NotEqual(Guid.Empty).WithMessage("Choose a valid photo.");
         RuleFor(x => x.Notes).SafeText(2000);
@@ -286,6 +255,7 @@ public sealed class UpdatePatientRequestValidator : AbstractValidator<UpdatePati
         RuleFor(x => x.Email).EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x.Address!.PinCode).PinCode().When(x => !string.IsNullOrWhiteSpace(x.Address?.PinCode));
         RuleFor(x => x.AbhaNumber).AbhaNumber();
+        RuleFor(x => x.AbhaAddress).MaximumLength(128).AbhaAddress();
         RuleFor(x => x.AadhaarNumber).Must(PatientRules.ValidAadhaar).WithMessage("Enter a valid 12-digit Aadhaar number.");
         RuleFor(x => x.PhotoFileId).NotEqual(Guid.Empty).WithMessage("Choose a valid photo.");
 

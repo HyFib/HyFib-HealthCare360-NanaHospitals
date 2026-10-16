@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { PatientDetail } from './api';
 import { photoChange } from './photo';
-import { emptyPatientForm, fromPatientDetail, patientFormSchema, toPatientPayload } from './validation';
+import {
+  emptyPatientForm,
+  fromPatientDetail,
+  isValidAadhaar,
+  isValidAbhaAddress,
+  isValidAbhaNumber,
+  patientFormSchema,
+  toPatientPayload,
+} from './validation';
 
 function patient(photoFileId: string | null): PatientDetail {
   return {
@@ -88,5 +96,55 @@ describe('the photo in the patient form', () => {
 
     expect(photoChange(stored.photoFileId, 'photo-2')).toEqual({ photoFileId: 'photo-2', removePhoto: false });
     expect(photoChange(stored.photoFileId, null)).toEqual({ photoFileId: null, removePhoto: true });
+  });
+});
+
+describe('ABHA details in the patient form (SRS EHR-08)', () => {
+  const valid = { ...emptyPatientForm, firstName: 'Meera', gender: 'Female' as const, dateOfBirth: '1984-04-12' };
+
+  it('accepts a 14-digit ABHA number with its check digit, grouped or run together', () => {
+    expect(isValidAbhaNumber('91123456789010')).toBe(true);
+    expect(isValidAbhaNumber('91-1234-5678-9010')).toBe(true);
+    expect(isValidAbhaNumber(' 91 1234 5678 9010 ')).toBe(true);
+  });
+
+  it('catches a mistyped or swapped digit, a wrong length and stray characters', () => {
+    expect(isValidAbhaNumber('91-1234-5678-9012')).toBe(false); // wrong check digit
+    expect(isValidAbhaNumber('91-1234-5678-9001')).toBe(false); // last two digits swapped
+    expect(isValidAbhaNumber('9112345678901')).toBe(false); // 13 digits
+    expect(isValidAbhaNumber('911234567890100')).toBe(false); // 15 digits
+    expect(isValidAbhaNumber('91/1234/5678/9010')).toBe(false);
+    expect(isValidAbhaNumber('91-1234-5678-901O')).toBe(false); // a letter O
+  });
+
+  it('accepts ABHA addresses at @abdm and the @sbx sandbox only', () => {
+    expect(isValidAbhaAddress('meera.k@abdm')).toBe(true);
+    expect(isValidAbhaAddress('Meera_K@ABDM')).toBe(true);
+    expect(isValidAbhaAddress('meera1984@sbx')).toBe(true);
+    expect(isValidAbhaAddress('meera.k@gmail.com')).toBe(false);
+    expect(isValidAbhaAddress('.meera@abdm')).toBe(false);
+    expect(isValidAbhaAddress('meera..k@abdm')).toBe(false);
+    expect(isValidAbhaAddress('me@abdm')).toBe(false);
+    expect(isValidAbhaAddress('meera.k')).toBe(false);
+  });
+
+  it('keeps the Aadhaar rule as it was', () => {
+    expect(isValidAadhaar('2345 6789 0124')).toBe(true);
+    expect(isValidAadhaar('2345 6789 0123')).toBe(false);
+  });
+
+  it('shows the message on the field that is wrong, and leaves blank fields alone', () => {
+    expect(patientFormSchema.safeParse(valid).success).toBe(true);
+    expect(
+      patientFormSchema.safeParse({ ...valid, abhaNumber: '91-1234-5678-9010', abhaAddress: 'meera.k@abdm' }).success,
+    ).toBe(true);
+
+    const number = patientFormSchema.safeParse({ ...valid, abhaNumber: '91-1234-5678-9012' });
+    expect(number.success).toBe(false);
+    expect(number.error?.issues.map((i) => i.path.join('.'))).toEqual(['abhaNumber']);
+    expect(number.error?.issues[0]?.message).toContain('check digit');
+
+    const address = patientFormSchema.safeParse({ ...valid, abhaAddress: 'meera.k@gmail.com' });
+    expect(address.error?.issues.map((i) => i.path.join('.'))).toEqual(['abhaAddress']);
   });
 });

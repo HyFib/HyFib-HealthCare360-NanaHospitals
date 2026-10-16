@@ -82,17 +82,40 @@ const P = [
   [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
 ];
 
-/** Aadhaar: 12 digits, first digit 2–9, valid Verhoeff checksum (same rule as the server). */
-export function isValidAadhaar(value: string): boolean {
-  const digits = value.replace(/\D/g, '');
-  if (!/^[2-9]\d{11}$/.test(digits)) {
-    return false;
-  }
+/** True when the digits end in their Verhoeff check digit (Aadhaar and ABHA numbers do). */
+function hasVerhoeffCheckDigit(digits: string): boolean {
   let check = 0;
   [...digits].reverse().forEach((ch, i) => {
     check = D[check]![P[i % 8]![Number(ch)]!]!;
   });
   return check === 0;
+}
+
+/** Aadhaar: 12 digits, first digit 2–9, valid Verhoeff checksum (same rule as the server). */
+export function isValidAadhaar(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  return /^[2-9]\d{11}$/.test(digits) && hasVerhoeffCheckDigit(digits);
+}
+
+/**
+ * ABHA number (SRS EHR-08): 14 digits, run together or grouped as 91-1234-5678-9012 with spaces or hyphens, the last a
+ * Verhoeff check digit (same rule as the server), so a mistyped or swapped digit is caught at the desk.
+ */
+export function isValidAbhaNumber(value: string): boolean {
+  const trimmed = value.trim();
+  if (!/^[\d -]+$/.test(trimmed)) {
+    return false;
+  }
+  const digits = trimmed.replace(/\D/g, '');
+  return digits.length === 14 && hasVerhoeffCheckDigit(digits);
+}
+
+/**
+ * ABHA address: a handle of 3 to 32 letters or digits (single dots or underscores between them) at @abdm, or @sbx on
+ * the ABDM sandbox (same rule as the server).
+ */
+export function isValidAbhaAddress(value: string): boolean {
+  return /^(?=[A-Za-z0-9._]{3,32}@)[A-Za-z0-9]+(?:[._][A-Za-z0-9]+)*@(?:abdm|sbx)$/i.test(value.trim());
 }
 
 const NAME = /^[\p{L}\p{M} .'-]*$/u;
@@ -150,8 +173,18 @@ export const patientFormSchema = z
     abhaNumber: z
       .string()
       .trim()
-      .refine((v) => !v || v.replace(/\D/g, '').length === 14, 'ABHA number must have 14 digits.'),
-    abhaAddress: z.string().trim().max(128),
+      .refine(
+        (v) => !v || isValidAbhaNumber(v),
+        'Enter a valid 14-digit ABHA number. Check the digits: the last one is a check digit.',
+      ),
+    abhaAddress: z
+      .string()
+      .trim()
+      .max(128)
+      .refine(
+        (v) => !v || isValidAbhaAddress(v),
+        'Enter the ABHA address as name@abdm (letters, digits, and single dots or underscores).',
+      ),
     aadhaarNumber: z
       .string()
       .trim()
