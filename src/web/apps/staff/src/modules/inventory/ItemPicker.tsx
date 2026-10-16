@@ -140,11 +140,12 @@ export function SearchPicker<T>({
       }
       setOpen(false);
     } else if (event.key === 'Enter') {
+      // Enter here picks; it never submits the form around the picker, even with too little typed to search.
+      event.preventDefault();
       const typed = text.trim();
       if (typed.length < minLength) {
         return;
       }
-      event.preventDefault();
       if (typed === term && results.data && !results.isFetching) {
         const best = open && items[activeIndex] ? items[activeIndex] : (bestMatch?.(items, typed) ?? items[0]);
         if (best) {

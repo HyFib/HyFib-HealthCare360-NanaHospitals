@@ -95,66 +95,80 @@ function CheckInBody({
     },
   });
 
+  const submit = () => {
+    setProblem(null);
+    checkIn.mutate();
+  };
+
   return (
-    <DialogBody>
-      <DialogTitle>Check in for the health check-up</DialogTitle>
-      <DialogContent className={styles.body}>
-        <Text>
-          <Text weight="semibold">{booking.patientName}</Text> · {booking.uhid}
-        </Text>
-        <Text>
-          {booking.packageName} ({booking.packageCode})
-        </Text>
-        <MessageBar intent="info">
-          <MessageBarBody>
-            The package fee {pkg.data ? <strong>{formatInr(pkg.data.price)}</strong> : ''} is added to the patient's
-            bill when you check in. The tests are covered by the package and not charged separately.
-          </MessageBarBody>
-        </MessageBar>
-        {todaysVisits.length > 0 && (
-          <Field
-            label="Link to today's visit"
-            hint="Optional. The bill follows the visit's payer (self, insurance or corporate)."
-          >
-            <Select value={visitId} onChange={(_, d) => setVisitId(d.value)}>
-              <option value="">Do not link a visit</option>
-              {todaysVisits.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.visitNumber} · {formatTime(v.visitedAt)}
-                  {v.departmentName ? ` · ${v.departmentName}` : ''}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        )}
-        {problem && (
-          <MessageBar intent="error" layout="multiline">
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!checkIn.isPending) {
+          submit();
+        }
+      }}
+      noValidate
+    >
+      <DialogBody>
+        <DialogTitle>Check in for the health check-up</DialogTitle>
+        <DialogContent className={styles.body}>
+          <Text>
+            <Text weight="semibold">{booking.patientName}</Text> · {booking.uhid}
+          </Text>
+          <Text>
+            {booking.packageName} ({booking.packageCode})
+          </Text>
+          <MessageBar intent="info">
             <MessageBarBody>
-              <MessageBarTitle>{problem.title}</MessageBarTitle>
-              {problem.message}
+              The package fee {pkg.data ? <strong>{formatInr(pkg.data.price)}</strong> : ''} is added to the patient's
+              bill when you check in. The tests are covered by the package and not charged separately.
             </MessageBarBody>
           </MessageBar>
-        )}
-        {problem && (
-          <Caption1 className={styles.muted}>Nothing was changed: the booking is still waiting for check-in.</Caption1>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={checkIn.isPending}>
-          Cancel
-        </Button>
-        <Button
-          appearance="primary"
-          icon={checkIn.isPending ? <Spinner size="tiny" aria-hidden /> : <PersonAvailableRegular />}
-          disabled={checkIn.isPending}
-          onClick={() => {
-            setProblem(null);
-            checkIn.mutate();
-          }}
-        >
-          Check in
-        </Button>
-      </DialogActions>
-    </DialogBody>
+          {todaysVisits.length > 0 && (
+            <Field
+              label="Link to today's visit"
+              hint="Optional. The bill follows the visit's payer (self, insurance or corporate)."
+            >
+              <Select value={visitId} onChange={(_, d) => setVisitId(d.value)}>
+                <option value="">Do not link a visit</option>
+                {todaysVisits.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.visitNumber} · {formatTime(v.visitedAt)}
+                    {v.departmentName ? ` · ${v.departmentName}` : ''}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          {problem && (
+            <MessageBar intent="error" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>{problem.title}</MessageBarTitle>
+                {problem.message}
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          {problem && (
+            <Caption1 className={styles.muted}>
+              Nothing was changed: the booking is still waiting for check-in.
+            </Caption1>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose} disabled={checkIn.isPending}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            appearance="primary"
+            icon={checkIn.isPending ? <Spinner size="tiny" aria-hidden /> : <PersonAvailableRegular />}
+            disabled={checkIn.isPending}
+          >
+            Check in
+          </Button>
+        </DialogActions>
+      </DialogBody>
+    </form>
   );
 }

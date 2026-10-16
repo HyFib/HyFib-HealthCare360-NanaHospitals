@@ -144,226 +144,237 @@ export function WardIndentDialog({
   return (
     <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 900, width: '96vw' }}>
-        <DialogBody>
-          <DialogTitle>Raise ward indent</DialogTitle>
-          <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {!canReadAdmissions ? (
-              <MessageBar intent="warning">
-                <MessageBarBody>
-                  Your account cannot look up admitted patients. Ask the administrator for access to admissions.
-                </MessageBarBody>
-              </MessageBar>
-            ) : admission ? (
-              <div className={styles.patient}>
-                <PersonRegular fontSize={24} />
-                <div style={{ flex: 1 }}>
-                  <Text weight="semibold">{admission.patientName}</Text>
-                  <Caption1 block>
-                    {admission.uhid} · {admission.age ?? '—'} / {admission.gender.charAt(0)} · Admission{' '}
-                    {admission.admissionNumber}
-                    {admission.consultantName ? ` · ${admission.consultantName}` : ''}
-                  </Caption1>
-                </div>
-                <Button size="small" onClick={() => setAdmission(null)}>
-                  Change patient
-                </Button>
-              </div>
-            ) : (
-              <SearchPicker<AdmissionOption>
-                label="Admitted patient"
-                required
-                placeholder="Name, UHID, mobile or admission number"
-                queryKey={['pharmacy', 'admissions', 'picker']}
-                fetch={(search, signal) =>
-                  api
-                    .get<PagedResult<AdmissionOption>>('/api/v1/inpatient/admissions', {
-                      query: { search, activeOnly: true, pageSize: 10 },
-                      signal,
-                    })
-                    .then((r) => r.items)
-                }
-                minLength={3}
-                getKey={(a) => a.id}
-                onPick={pickAdmission}
-                autoFocus
-                emptyText="No admitted patient matches."
-                renderOption={(a) => (
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <Text weight="semibold">
-                      {a.patientName} · {a.uhid}
-                    </Text>
-                    <Caption1>
-                      {[a.wardName, a.bedLabel].filter(Boolean).join(' / ') || 'No bed'} · Admission {a.admissionNumber}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid && !raise.isPending) {
+              raise.mutate();
+            }
+          }}
+          noValidate
+        >
+          <DialogBody>
+            <DialogTitle>Raise ward indent</DialogTitle>
+            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {!canReadAdmissions ? (
+                <MessageBar intent="warning">
+                  <MessageBarBody>
+                    Your account cannot look up admitted patients. Ask the administrator for access to admissions.
+                  </MessageBarBody>
+                </MessageBar>
+              ) : admission ? (
+                <div className={styles.patient}>
+                  <PersonRegular fontSize={24} />
+                  <div style={{ flex: 1 }}>
+                    <Text weight="semibold">{admission.patientName}</Text>
+                    <Caption1 block>
+                      {admission.uhid} · {admission.age ?? '—'} / {admission.gender.charAt(0)} · Admission{' '}
+                      {admission.admissionNumber}
+                      {admission.consultantName ? ` · ${admission.consultantName}` : ''}
                     </Caption1>
                   </div>
-                )}
-              />
-            )}
-
-            <div className={styles.grid}>
-              <Field label="Ward">
-                <Input value={wardName} maxLength={100} onChange={(_, d) => setWardName(d.value)} />
-              </Field>
-              <Field label="Bed">
-                <Input value={bedLabel} maxLength={32} onChange={(_, d) => setBedLabel(d.value)} />
-              </Field>
-              <Field label="Urgency">
-                <RadioGroup
-                  layout="horizontal"
-                  value={urgency}
-                  onChange={(_, d) => setUrgency(d.value as IndentUrgency)}
-                >
-                  <Radio value="Routine" label="Routine" />
-                  <Radio value="Stat" label="STAT (needed now)" />
-                </RadioGroup>
-              </Field>
-            </div>
-
-            {canUseCatalog ? (
-              <ItemPicker
-                storeId={ipStoreId}
-                label="Add medicine or consumable"
-                onPick={(item) =>
-                  addLine({
-                    itemId: item.id,
-                    name: item.name,
-                    unit: item.baseUnit,
-                    schedule: item.schedule,
-                    isControlled: item.isControlled,
-                    isColdChain: item.isColdChain,
-                    available: item.available,
-                  })
-                }
-              />
-            ) : isCounterStaff && ipStoreId ? (
-              <MedicineSearch
-                storeId={ipStoreId}
-                label="Add medicine or consumable"
-                onPick={(row: PharmacyStockRow) =>
-                  addLine({
-                    itemId: row.itemId,
-                    name: row.name,
-                    unit: row.baseUnit,
-                    schedule: row.schedule,
-                    isControlled: row.isControlled,
-                    isColdChain: row.isColdChain,
-                    available: row.available,
-                  })
-                }
-              />
-            ) : (
-              <MessageBar intent="warning">
-                <MessageBarBody>
-                  Your account cannot search the item master. Ask the administrator for the permission to raise store
-                  indents.
-                </MessageBarBody>
-              </MessageBar>
-            )}
-
-            <LineTable<IndentLine>
-              ariaLabel="Indent lines"
-              rows={lines}
-              getRowId={(l) => l.itemId}
-              empty={
-                <EmptyState
-                  title="No items yet"
-                  description="Search above by name or scan the barcode to add what the patient needs."
+                  <Button size="small" onClick={() => setAdmission(null)}>
+                    Change patient
+                  </Button>
+                </div>
+              ) : (
+                <SearchPicker<AdmissionOption>
+                  label="Admitted patient"
+                  required
+                  placeholder="Name, UHID, mobile or admission number"
+                  queryKey={['pharmacy', 'admissions', 'picker']}
+                  fetch={(search, signal) =>
+                    api
+                      .get<PagedResult<AdmissionOption>>('/api/v1/inpatient/admissions', {
+                        query: { search, activeOnly: true, pageSize: 10 },
+                        signal,
+                      })
+                      .then((r) => r.items)
+                  }
+                  minLength={3}
+                  getKey={(a) => a.id}
+                  onPick={pickAdmission}
+                  autoFocus
+                  emptyText="No admitted patient matches."
+                  renderOption={(a) => (
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <Text weight="semibold">
+                        {a.patientName} · {a.uhid}
+                      </Text>
+                      <Caption1>
+                        {[a.wardName, a.bedLabel].filter(Boolean).join(' / ') || 'No bed'} · Admission{' '}
+                        {a.admissionNumber}
+                      </Caption1>
+                    </div>
+                  )}
                 />
-              }
-              columns={[
-                {
-                  key: 'item',
-                  header: 'Item',
-                  render: (l) => (
-                    <span>
-                      <Text weight="semibold">{l.name}</Text>{' '}
-                      <ItemFlags schedule={l.schedule} isControlled={l.isControlled} isColdChain={l.isColdChain} />
-                      {l.available !== null && (
-                        <Caption1 block className={styles.muted}>
-                          {l.available > 0
-                            ? `${formatQty(l.available, l.unit)} in the IP pharmacy`
-                            : 'Out of stock in the IP pharmacy'}
-                        </Caption1>
-                      )}
-                    </span>
-                  ),
-                },
-                {
-                  key: 'qty',
-                  header: 'Quantity',
-                  width: 140,
-                  render: (l) => (
-                    <Input
-                      type="number"
-                      min={0}
-                      aria-label={`Quantity of ${l.name}`}
-                      contentAfter={<Caption1>{l.unit}</Caption1>}
-                      value={l.quantity}
-                      onChange={(_, d) => update(l.itemId, { quantity: d.value })}
-                    />
-                  ),
-                },
-                {
-                  key: 'remarks',
-                  header: 'Note for the pharmacist',
-                  priority: 'low',
-                  render: (l) => (
-                    <Input
-                      value={l.remarks}
-                      maxLength={300}
-                      aria-label={`Note for ${l.name}`}
-                      onChange={(_, d) => update(l.itemId, { remarks: d.value })}
-                    />
-                  ),
-                },
-                {
-                  key: 'remove',
-                  header: '',
-                  width: 48,
-                  render: (l) => (
-                    <Button
-                      appearance="subtle"
-                      icon={<DeleteRegular />}
-                      aria-label={`Remove ${l.name}`}
-                      onClick={() => setLines(lines.filter((x) => x.itemId !== l.itemId))}
-                    />
-                  ),
-                },
-              ]}
-            />
+              )}
 
-            <Field label="Remarks">
-              <Textarea
-                value={remarks}
-                maxLength={1000}
-                rows={2}
-                onChange={(_, d) => setRemarks(d.value)}
-                placeholder="e.g. Post-operative, needs before 6 pm"
+              <div className={styles.grid}>
+                <Field label="Ward">
+                  <Input value={wardName} maxLength={100} onChange={(_, d) => setWardName(d.value)} />
+                </Field>
+                <Field label="Bed">
+                  <Input value={bedLabel} maxLength={32} onChange={(_, d) => setBedLabel(d.value)} />
+                </Field>
+                <Field label="Urgency">
+                  <RadioGroup
+                    layout="horizontal"
+                    value={urgency}
+                    onChange={(_, d) => setUrgency(d.value as IndentUrgency)}
+                  >
+                    <Radio value="Routine" label="Routine" />
+                    <Radio value="Stat" label="STAT (needed now)" />
+                  </RadioGroup>
+                </Field>
+              </div>
+
+              {canUseCatalog ? (
+                <ItemPicker
+                  storeId={ipStoreId}
+                  label="Add medicine or consumable"
+                  onPick={(item) =>
+                    addLine({
+                      itemId: item.id,
+                      name: item.name,
+                      unit: item.baseUnit,
+                      schedule: item.schedule,
+                      isControlled: item.isControlled,
+                      isColdChain: item.isColdChain,
+                      available: item.available,
+                    })
+                  }
+                />
+              ) : isCounterStaff && ipStoreId ? (
+                <MedicineSearch
+                  storeId={ipStoreId}
+                  label="Add medicine or consumable"
+                  onPick={(row: PharmacyStockRow) =>
+                    addLine({
+                      itemId: row.itemId,
+                      name: row.name,
+                      unit: row.baseUnit,
+                      schedule: row.schedule,
+                      isControlled: row.isControlled,
+                      isColdChain: row.isColdChain,
+                      available: row.available,
+                    })
+                  }
+                />
+              ) : (
+                <MessageBar intent="warning">
+                  <MessageBarBody>
+                    Your account cannot search the item master. Ask the administrator for the permission to raise store
+                    indents.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+
+              <LineTable<IndentLine>
+                ariaLabel="Indent lines"
+                rows={lines}
+                getRowId={(l) => l.itemId}
+                empty={
+                  <EmptyState
+                    title="No items yet"
+                    description="Search above by name or scan the barcode to add what the patient needs."
+                  />
+                }
+                columns={[
+                  {
+                    key: 'item',
+                    header: 'Item',
+                    render: (l) => (
+                      <span>
+                        <Text weight="semibold">{l.name}</Text>{' '}
+                        <ItemFlags schedule={l.schedule} isControlled={l.isControlled} isColdChain={l.isColdChain} />
+                        {l.available !== null && (
+                          <Caption1 block className={styles.muted}>
+                            {l.available > 0
+                              ? `${formatQty(l.available, l.unit)} in the IP pharmacy`
+                              : 'Out of stock in the IP pharmacy'}
+                          </Caption1>
+                        )}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'qty',
+                    header: 'Quantity',
+                    width: 140,
+                    render: (l) => (
+                      <Input
+                        type="number"
+                        min={0}
+                        aria-label={`Quantity of ${l.name}`}
+                        contentAfter={<Caption1>{l.unit}</Caption1>}
+                        value={l.quantity}
+                        onChange={(_, d) => update(l.itemId, { quantity: d.value })}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'remarks',
+                    header: 'Note for the pharmacist',
+                    priority: 'low',
+                    render: (l) => (
+                      <Input
+                        value={l.remarks}
+                        maxLength={300}
+                        aria-label={`Note for ${l.name}`}
+                        onChange={(_, d) => update(l.itemId, { remarks: d.value })}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'remove',
+                    header: '',
+                    width: 48,
+                    render: (l) => (
+                      <Button
+                        appearance="subtle"
+                        icon={<DeleteRegular />}
+                        aria-label={`Remove ${l.name}`}
+                        onClick={() => setLines(lines.filter((x) => x.itemId !== l.itemId))}
+                      />
+                    ),
+                  },
+                ]}
               />
-            </Field>
 
-            {raise.error && (
-              <MessageBar intent="error">
-                <MessageBarBody>
-                  {isApiError(raise.error) ? raise.error.userMessage : 'Could not raise the indent.'}
-                </MessageBarBody>
-              </MessageBar>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={guard.requestClose} disabled={raise.isPending}>
-              Cancel
-            </Button>
-            <Button
-              appearance="primary"
-              disabled={!valid || raise.isPending}
-              icon={raise.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
-              onClick={() => raise.mutate()}
-            >
-              {urgency === 'Stat' ? 'Send STAT indent' : 'Send indent'}
-            </Button>
-          </DialogActions>
-        </DialogBody>
+              <Field label="Remarks">
+                <Textarea
+                  value={remarks}
+                  maxLength={1000}
+                  rows={2}
+                  onChange={(_, d) => setRemarks(d.value)}
+                  placeholder="e.g. Post-operative, needs before 6 pm"
+                />
+              </Field>
+
+              {raise.error && (
+                <MessageBar intent="error">
+                  <MessageBarBody>
+                    {isApiError(raise.error) ? raise.error.userMessage : 'Could not raise the indent.'}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={guard.requestClose} disabled={raise.isPending}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || raise.isPending}
+                icon={raise.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
+              >
+                {urgency === 'Stat' ? 'Send STAT indent' : 'Send indent'}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
         {guard.dialogs}
       </DialogSurface>
     </Dialog>
