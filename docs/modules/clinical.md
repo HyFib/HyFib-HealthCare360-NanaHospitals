@@ -281,7 +281,9 @@ through the held messages every five minutes and send those of facilities that n
 a time. It sends each once (sending it, or finding the patient has no
 mobile number, lets it go; a cancelled prescription's is dropped) and only for prescriptions held in the last 7 days: a
 week on, the pharmacy has dispensed the prescription or the course is over, and the message would be no news (the
-prescription is on the portal either way). A DSC added later still sends a message never sent. The PDF
+prescription is on the portal either way). A DSC added later still sends a message never sent. However it is sent
+(at signing, with the DSC, by the job), the message goes as the prescription's facility: its templates, name and
+WhatsApp account, not those of the job (which has no signed-in user) or of the facility the doctor has since switched to. The PDF
 with that message is made when the message goes out, from the signature as it checks out then; if the DSC rules no
 longer let the prescription be issued (the setting or the trust folder changed in between), the message goes without
 its PDF, or, on a WhatsApp template with a document header, is dropped (the patient finds the prescription on the

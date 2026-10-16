@@ -375,7 +375,9 @@ public sealed class PrescriptionService(
     /// names the prescription's PDF: WhatsApp sends it in the template's document header when the template has one.
     /// Once per prescription (<see cref="Prescription.PatientNotifiedAt"/>): a prescription the patient was told about
     /// at signing is not announced again when the doctor signs it with their DSC. A held message
-    /// (<see cref="Prescription.PatientNoticeHeldAt"/>) is let go here, sent or not.
+    /// (<see cref="Prescription.PatientNoticeHeldAt"/>) is let go here, sent or not. The message is the prescription's
+    /// facility's (its templates, name and WhatsApp account), not the caller's: the job that sends held messages has no
+    /// signed-in user, and a doctor may sign with the DSC after switching facility.
     /// </summary>
     internal async Task QueuePatientNoticeAsync(Prescription prescription, CancellationToken ct)
     {
@@ -403,6 +405,7 @@ public sealed class PrescriptionService(
             },
             [NotificationChannel.WhatsApp],
             TimeSpan.FromDays(2),
+            prescription.FacilityId,
             document: new NotificationDocument(PrescriptionDocumentSource.DocumentKind, prescription.Id));
         prescription.MarkPatientNotified(time.GetUtcNow());
     }

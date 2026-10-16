@@ -335,6 +335,8 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
         (await doctor.GetAsync<PrescriptionDto>($"/api/v1/clinical/prescriptions/{rx.Id}")).FinalCopyAvailable.ShouldBeTrue();
         await ReleaseHeldNoticesAsync();
         (await NoticesAsync(patient.Id)).ShouldBe([NotificationChannel.WhatsApp]);
+        (await NoticeFacilitiesAsync(patient.Id)).ShouldBe([_facilityId],
+            "sent as the prescription's facility (its templates, name and WhatsApp account), though the job has no signed-in user");
         await ReleaseHeldNoticesAsync();
         (await NoticesAsync(patient.Id)).ShouldBe([NotificationChannel.WhatsApp], "once only");
         (await NoticesAsync(stale.Id)).ShouldBeEmpty("held for longer than a week: no longer news");
@@ -610,6 +612,16 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<NotificationLog>().AsNoTracking()
             .Where(l => l.PatientId == patientId && l.TemplateKey == PrescriptionShared)
             .Select(l => l.Channel)
+            .ToListAsync(Ct);
+    }
+
+    /// <summary>The facility each "prescription shared" message queued for the patient was sent as.</summary>
+    private async Task<List<Guid?>> NoticeFacilitiesAsync(Guid patientId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<NotificationLog>().AsNoTracking()
+            .Where(l => l.PatientId == patientId && l.TemplateKey == PrescriptionShared)
+            .Select(l => l.FacilityId)
             .ToListAsync(Ct);
     }
 
