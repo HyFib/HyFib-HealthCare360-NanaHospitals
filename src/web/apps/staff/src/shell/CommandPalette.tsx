@@ -81,7 +81,7 @@ function matches(link: NavLink & { module: string }, term: string): boolean {
 }
 
 /**
- * Ctrl+K: jump to any screen the user may open, or find a patient by UHID, mobile number or name
+ * Ctrl+K: jump to any screen the user may open, or find a patient by UHID, mobile number, ABHA number or name
  * (SRS UX-03: any record within 3 keystrokes).
  */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -170,7 +170,9 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           size="large"
           appearance="underline"
           placeholder={
-            canSearchPatients ? 'Search patients by UHID, mobile or name, or jump to a screen' : 'Jump to a screen'
+            canSearchPatients
+              ? 'Search patients by UHID, mobile, ABHA or name, or jump to a screen'
+              : 'Jump to a screen'
           }
           contentBefore={<SearchRegular />}
           contentAfter={patients.isFetching ? <Spinner size="tiny" aria-hidden /> : undefined}
@@ -194,7 +196,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             <li className={styles.empty} role="presentation">
               {debounced.length >= 3 && patients.isFetching
                 ? 'Searching…'
-                : 'No matches. Try a UHID, a 10-digit mobile number or part of a name.'}
+                : 'No matches. Try a UHID, a 10-digit mobile number, an ABHA number or part of a name.'}
             </li>
           )}
           {items.map((item, index) => (
