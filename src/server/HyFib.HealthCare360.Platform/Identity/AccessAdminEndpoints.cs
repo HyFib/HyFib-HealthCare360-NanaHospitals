@@ -324,8 +324,10 @@ internal static class AccessAdminEndpoints
         user.LockoutEndsAt = null;
 
         // The lock-screen PIN goes too: whoever may know the old password may know it. Until the account's holder sets a
-        // new one, their screen unlocks with the password.
+        // new one, their screen unlocks with the password. So do the devices set up to unlock it, which were set up with
+        // the old password: a lost laptop among them unlocks nothing.
         user.PinHash = null;
+        db.RemoveRange(await db.Set<WebAuthnCredential>().Where(c => c.UserId == user.Id).ToListAsync(ct));
         await RevokeAllSessionsAsync(db, sessions, user.Id, "password_reset", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.password_reset", $"Password reset for {user.UserName}")
         {

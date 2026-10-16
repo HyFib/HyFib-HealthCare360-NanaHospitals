@@ -13,8 +13,17 @@ internal static class SessionLock
 
     private const string RefusedKey = "hc360.session-locked";
 
-    // Who is signed in (for the lock screen), unlocking, locking again, and signing out.
-    private static readonly string[] AllowedPaths = ["/api/v1/auth/me", "/api/v1/auth/unlock", "/api/v1/auth/lock", "/api/v1/auth/logout"];
+    // Who is signed in (for the lock screen), unlocking (with the PIN or password, or with the device's Windows Hello or
+    // fingerprint), locking again, and signing out.
+    private static readonly string[] AllowedPaths =
+    [
+        "/api/v1/auth/me",
+        "/api/v1/auth/unlock",
+        "/api/v1/auth/unlock/webauthn/options",
+        "/api/v1/auth/unlock/webauthn",
+        "/api/v1/auth/lock",
+        "/api/v1/auth/logout",
+    ];
 
     public static bool Allows(HttpRequest request) =>
         AllowedPaths.Any(path => request.Path.Equals(path, StringComparison.OrdinalIgnoreCase));

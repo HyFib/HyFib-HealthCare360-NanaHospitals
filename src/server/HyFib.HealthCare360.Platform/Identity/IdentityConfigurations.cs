@@ -117,6 +117,26 @@ internal sealed class AuthChallengeConfiguration : IEntityTypeConfiguration<Auth
         b.Property(x => x.ClientType).HasMaxLength(16);
         b.HasIndex(x => new { x.Phone, x.CreatedAt });
         b.HasIndex(x => x.ExpiresAt);
+        b.HasIndex(x => x.SessionId);
+    }
+}
+
+internal sealed class WebAuthnCredentialConfiguration : IEntityTypeConfiguration<WebAuthnCredential>
+{
+    public void Configure(EntityTypeBuilder<WebAuthnCredential> b)
+    {
+        b.ToTable("webauthn_credentials", "identity");
+        b.HasKey(x => x.Id);
+
+        // WebAuthn allows ids of up to 1023 bytes; Windows Hello's are far shorter.
+        b.Property(x => x.CredentialId).HasMaxLength(1023);
+        b.Property(x => x.PublicKey).HasMaxLength(2048);
+        b.Property(x => x.RelyingPartyId).HasMaxLength(253);
+        b.Property(x => x.Name).HasMaxLength(64);
+        b.Property(x => x.Transports).HasMaxLength(128);
+        b.HasIndex(x => x.CredentialId).IsUnique();
+        b.HasIndex(x => x.UserId);
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
