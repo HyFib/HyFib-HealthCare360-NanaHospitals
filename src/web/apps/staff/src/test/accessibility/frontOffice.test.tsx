@@ -1,10 +1,10 @@
 import type * as Core from '@hc360/core';
 import { expectNoAxeViolations } from '@hc360/ui/testing';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeServer, openScreen, SCREEN_TESTS, SLOW, stubBrowserApis } from '../appScreen';
+import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, stubBrowserApis } from '../appScreen';
 import { FRONT_OFFICE_ANSWERS } from './fixtures/frontOffice';
 
 // The front desk's screens, whole (shell included) with canned data, checked with axe-core for WCAG 2.2 A and AA
@@ -34,6 +34,14 @@ describe('front office screens', SCREEN_TESTS, () => {
   it('patient search', async () => {
     openScreen('/patients');
     expect(await screen.findByText('Ravi Shankar', {}, SLOW)).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('patient search with nobody registered offers to register the patient', async () => {
+    server = fakeServer({ ...FRONT_OFFICE_ANSWERS, 'GET /api/v1/patients': paged([]) });
+    openScreen('/patients');
+    const empty = (await screen.findByText('No patients registered yet', {}, SLOW)).closest('[role="status"]');
+    expect(within(empty as HTMLElement).getByRole('button', { name: 'Register patient' })).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
