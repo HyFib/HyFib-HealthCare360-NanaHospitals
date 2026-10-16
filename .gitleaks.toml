@@ -32,4 +32,5 @@ regexes = [
   '''^pregnancy_12m$''', # staff app: a blood-donor deferral rule
   '''^Control\+''',      # staff app: keyboard shortcuts
   '''^hc360_replicator$''', # deploy/windows and tests/deploy: the name of the standby's replication role
+  '''^WPA3-Enterprise$''',  # staff app accessibility fixtures (admin.ts): the name of a Wi-Fi security mode
 ]
