@@ -9,16 +9,19 @@ app and the patient portal hide the feature and explain why instead of showing e
 | Code | `src/server/HyFib.HealthCare360.Platform/Features` (catalogue, reader, gate, admin endpoints) |
 | Staff app | `src/web/apps/staff/src/lib/featureSwitches.ts`, `lib/features.ts`, `lib/FeatureOffState.tsx`, `modules/features`, route `/setup/features` |
 | Portal | `src/web/apps/portal/src/lib/featureSwitches.ts`, `lib/features.ts`, `components/FeatureOff.tsx` |
-| Tests | `FeatureFlagsTests`, `FeatureGateTests` (Platform.Tests); `FeatureSwitchTests` (ArchitectureTests: every portal and video endpoint has its switch, and what must keep working has none); `FeatureSwitchTests` (IntegrationTests); `PublicDirectoryTests` (Scheduling.Tests); staff `lib/modules.test.ts`, `modules/features/*.test.*`; portal `app.test.tsx` |
+| Tests | `FeatureFlagsTests`, `FeatureGateTests` (Platform.Tests); `FeatureSwitchTests` (ArchitectureTests: every portal and video endpoint has its switch, and what must keep working has none); `AbdmEndpointTests` (ArchitectureTests: every ABDM endpoint has its switch); `FeatureSwitchTests` (IntegrationTests); `PublicDirectoryTests` (Scheduling.Tests); staff `lib/modules.test.ts`, `modules/features/*.test.*`; portal `app.test.tsx` |
 
 ## The switches
 
-Both are **on** until an administrator turns them off, so an upgrade changes nothing.
+The patient portal and video consultations are **on** until an administrator turns them off, so an upgrade changes
+nothing. ABDM health records are new and send records outside the hospital once the ABDM gateway is live, so they are
+**off** until an administrator turns them on.
 
 | Key | Name | While it is off | Keeps working |
 |---|---|---|---|
 | `features.patientPortal` | Patient portal | Patients cannot sign in or register (`/api/v1/auth/otp/*`), a portal session cannot be refreshed, every `/api/v1/portal/*` API and the public doctor directory (`/api/v1/public/doctors/*`, online booking) answer 503, and a patient's sign-in opens no endpoint that needs one. A signed-in patient cannot join a video consultation from the portal. The portal shows "The patient portal is not available right now. Please contact the hospital." instead of sign-in and every signed-in page | Report and prescription checks from printed QR codes, feedback and unsubscribe links from SMS, the privacy notice, video consultation links sent by SMS (while video consultations are on), payment-gateway webhooks, and everything the staff app uses |
 | `features.telehealth` | Video consultations | Every `/api/v1/telehealth/*` and `/api/v1/portal/telehealth/*` endpoint answers 503, except ending and cancelling a consultation. Nobody joins a consultation on the hub `/hubs/telehealth`: every way to join checks the switch for the consultation's facility (the hub has no switch of its own, as guests and patients connect without a facility). Nothing new is booked, rescheduled or waitlisted as a video consultation (422 `feature.disabled`), and the public directory offers no video (`offersTelehealth: false`, in-person times only). The staff app hides video links, quick actions and the widget, the worklist's Video action and the video option when booking; the portal hides video consultations | Remote patient monitoring. Video appointments already booked stay in the diary: staff move them to an in-person visit (reschedule) or cancel them. A call already running is not cut off |
+| `features.abdm` | ABDM health records (EHR-08, off by default) | Every `/api/v1/abdm/*` endpoint answers 503: no discharge summary, lab report, consultation note or prescription is exported as an ABDM document, and the ABDM gateway's set-up cannot be read ([interop.md](interop.md#abdm-health-records-ehr-08)). The staff app has no ABDM screen yet, so it hides nothing | ABHA numbers and addresses: captured at registration, edited on the patient record, searched and shown masked. Printed documents and the FHIR API |
 
 ## How a switch is read
 

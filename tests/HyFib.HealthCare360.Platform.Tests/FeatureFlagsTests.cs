@@ -95,14 +95,31 @@ public sealed class FeatureFlagsTests
         await Should.ThrowAsync<ArgumentOutOfRangeException>(() => IsEnabledAsync("features.unknown"));
 
     [Fact]
-    public void Every_feature_is_a_features_key_on_by_default_and_explained()
+    public async Task Abdm_health_records_are_off_until_an_administrator_turns_them_on()
     {
+        // A new feature that sends records outside the hospital starts off; turning it off again is a plain switch.
+        (await IsEnabledAsync(FeatureKeys.Abdm)).ShouldBeFalse();
+        (await IsEnabledAsync(FeatureKeys.Abdm, FacilityId)).ShouldBeFalse();
+
+        _settings.Set(FeatureKeys.Abdm, "true");
+        (await IsEnabledAsync(FeatureKeys.Abdm, FacilityId)).ShouldBeTrue();
+
+        _settings.Set(FeatureKeys.Abdm, "false", FacilityId);
+        (await IsEnabledAsync(FeatureKeys.Abdm, FacilityId)).ShouldBeFalse();
+        (await IsEnabledAsync(FeatureKeys.Abdm, OtherFacilityId)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Every_feature_is_a_features_key_on_by_default_unless_new_and_explained()
+    {
+        // Features that existed before their switch are on, so an upgrade switches nothing off; a new one may start off.
+        string[] startOff = [FeatureKeys.Abdm];
         FeatureCatalog.All.Select(f => f.Key).ShouldBeUnique();
         foreach (var feature in FeatureCatalog.All)
         {
             feature.Key.ShouldStartWith(FeatureKeys.Prefix);
             feature.Code.ShouldBe(feature.Key[FeatureKeys.Prefix.Length..]);
-            feature.DefaultEnabled.ShouldBeTrue($"{feature.Key}: an upgrade must not switch anything off.");
+            feature.DefaultEnabled.ShouldBe(!startOff.Contains(feature.Key), $"{feature.Key}: an upgrade must not switch anything off.");
             string[] words = [feature.Name, feature.Description, feature.WhenOff, feature.OffTitle, feature.OffDetailForStaff, feature.OffDetailForPatients];
             words.ShouldAllBe(text => !string.IsNullOrWhiteSpace(text) && !text.Contains('!'));
             FeatureCatalog.Get(feature.Key).ShouldBeSameAs(feature);

@@ -10,6 +10,9 @@ public static class FeatureKeys
 
     /// <summary>Video consultations (telehealth), not remote patient monitoring.</summary>
     public const string Telehealth = Prefix + "telehealth";
+
+    /// <summary>ABDM health records (SRS EHR-08): ABDM FHIR document export and the ABDM gateway. Off until turned on.</summary>
+    public const string Abdm = Prefix + "abdm";
 }
 
 /// <summary>
@@ -20,7 +23,10 @@ public static class FeatureKeys
 /// <param name="Name">What the feature is called on screen.</param>
 /// <param name="Description">What it does, for the administrator deciding.</param>
 /// <param name="WhenOff">What stops, and what keeps working, while it is off.</param>
-/// <param name="DefaultEnabled">The value while nobody has set one (on, so an upgrade changes nothing).</param>
+/// <param name="DefaultEnabled">
+/// The value while nobody has set one: on for what existed before its switch, so an upgrade changes nothing; off for a
+/// new feature that must be turned on deliberately (ABDM).
+/// </param>
 /// <param name="OffTitle">The title of the 503 answer while it is off.</param>
 /// <param name="OffDetailForStaff">What a member of staff can do about it.</param>
 /// <param name="OffDetailForPatients">What a patient can do about it.</param>
@@ -67,7 +73,24 @@ public static class FeatureCatalog
         "Book an in-person visit instead. An administrator can turn video consultations back on under Hospital setup, Features.",
         "Video consultations are not available right now. Please contact the hospital to see the doctor in person.");
 
-    public static IReadOnlyList<FeatureDefinition> All { get; } = [PatientPortal, Telehealth];
+    /// <summary>
+    /// ABDM health records (SRS EHR-08). New, and it sends records outside the hospital once the gateway is live, so it
+    /// starts off: an administrator turns it on when the hospital is registered with ABDM.
+    /// </summary>
+    public static FeatureDefinition Abdm { get; } = new(
+        FeatureKeys.Abdm,
+        "ABDM health records",
+        "Discharge summaries, lab reports, out-patient consultation notes and prescriptions are exported as ABDM health "
+        + "records (FHIR documents of the national implementation guide) carrying the patient's ABHA number, for the "
+        + "Ayushman Bharat Digital Mission. Sending them to ABDM also needs the hospital's ABDM gateway credentials.",
+        "Nothing is exported for ABDM. ABHA numbers and addresses are still recorded at registration and stay on the "
+        + "patient record, and printed documents are not affected.",
+        DefaultEnabled: false,
+        "ABDM health records are turned off",
+        "An administrator can turn them on under Hospital setup, Features.",
+        "This is not available right now. Please contact the hospital.");
+
+    public static IReadOnlyList<FeatureDefinition> All { get; } = [PatientPortal, Telehealth, Abdm];
 
     /// <summary>The feature with this setting key, or null.</summary>
     public static FeatureDefinition? Find(string key) => All.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));
