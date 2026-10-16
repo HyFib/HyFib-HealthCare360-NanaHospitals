@@ -7,10 +7,13 @@ namespace HyFib.HealthCare360.Modules.Clinical.Domain;
 
 /// <summary>
 /// Who the signed prescription names, as printed when the doctor signed it with their DSC. Kept inside the signed
-/// bytes, so a later change of the patient's or the doctor's master record does not break the signature.
+/// bytes, so a later change of the patient's or the doctor's master record does not break the signature — nor a merge
+/// of the patient's duplicate record, which moves the prescription to the surviving record: <see cref="PatientId"/> is
+/// the record the doctor signed for, which the check follows to the record the prescription is on now.
 /// </summary>
 public sealed record PrescriptionSigningParties(
     string FacilityName,
+    Guid PatientId,
     string PatientUhid,
     string PatientName,
     string PrescriberName,
@@ -30,7 +33,8 @@ public sealed record PrescriptionSigningParties(
 /// Any JCS implementation re-derives the same bytes from the same values.
 /// </para>
 /// <para>
-/// <b>Content.</b> <c>format</c>; <c>facility</c> {id, name}; <c>patient</c> {id, uhid, name}; <c>prescriber</c> {id,
+/// <b>Content.</b> <c>format</c>; <c>facility</c> {id, name}; <c>patient</c> {id, uhid, name} (as signed:
+/// <see cref="PrescriptionSigningParties"/>); <c>prescriber</c> {id,
 /// name, qualification, registrationNumber, registrationCouncil}; <c>prescription</c> {id, number, encounterId,
 /// visitId, admissionId, isInpatient, signedAt (the clinical signature), refillsAllowed, refillOfPrescriptionId, notes,
 /// advice, verificationToken (the QR code), items[{sequence, drugName, genericName, strength, dosageForm, route, dose,
@@ -59,7 +63,7 @@ public static class PrescriptionCanonicalForm
             ["facility"] = new Dictionary<string, object?> { ["id"] = Id(prescription.FacilityId), ["name"] = parties.FacilityName },
             ["patient"] = new Dictionary<string, object?>
             {
-                ["id"] = Id(prescription.PatientId),
+                ["id"] = Id(parties.PatientId),
                 ["uhid"] = parties.PatientUhid,
                 ["name"] = parties.PatientName,
             },
@@ -97,6 +101,8 @@ public static class PrescriptionCanonicalForm
 
     /// <summary>The parties recorded in signed bytes, to rebuild them from the prescription as it is now.</summary>
     /// <exception cref="JsonException">The bytes are not a prescription in this format.</exception>
+    /// <exception cref="KeyNotFoundException">A party is missing.</exception>
+    /// <exception cref="FormatException">The patient's id is not a GUID.</exception>
     public static PrescriptionSigningParties ReadParties(byte[] content)
     {
         using var document = JsonDocument.Parse(content);
@@ -111,12 +117,26 @@ public static class PrescriptionCanonicalForm
         var prescriber = root.GetProperty("prescriber");
         return new PrescriptionSigningParties(
             facility.GetProperty("name").GetString() ?? string.Empty,
+            Guid.Parse(patient.GetProperty("id").GetString() ?? string.Empty, CultureInfo.InvariantCulture),
             patient.GetProperty("uhid").GetString() ?? string.Empty,
             patient.GetProperty("name").GetString() ?? string.Empty,
             prescriber.GetProperty("name").GetString() ?? string.Empty,
             prescriber.GetProperty("qualification").GetString(),
             prescriber.GetProperty("registrationNumber").GetString(),
             prescriber.GetProperty("registrationCouncil").GetString());
+    }
+
+    /// <summary><see cref="ReadParties"/>, or null when the bytes are not a prescription in this format.</summary>
+    public static PrescriptionSigningParties? TryReadParties(byte[] content)
+    {
+        try
+        {
+            return ReadParties(content);
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException or ArgumentException)
+        {
+            return null;
+        }
     }
 
     private static Dictionary<string, object?> Item(PrescriptionItem i) => new()

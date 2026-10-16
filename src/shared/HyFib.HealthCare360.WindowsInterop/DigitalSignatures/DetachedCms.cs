@@ -30,16 +30,23 @@ public enum CmsProblem
 
     /// <summary>The certificate's key usage does not allow signing documents.</summary>
     NotForSigning,
+
+    /// <summary>The certificate is a Certifying Authority's, not a person's.</summary>
+    CertificateAuthority,
 }
 
 /// <summary>
-/// Whether the certificate chains to a root this computer trusts, at the signing time. Best effort, reported and never
-/// required: an Indian DSC chains to the CCA India root, which a hospital server may not carry, and the server checks
-/// offline (no revocation lists or certificate downloads on the hospital LAN).
+/// Whether the certificate chains, at the signing time, to one of the DSC roots IT installed for HC360
+/// (<see cref="DscTrustAnchors"/>: the CCA India roots), and if not, why. Checked offline: no revocation lists or
+/// certificate downloads on the hospital LAN, so a revoked DSC is not detected.
 /// </summary>
 public sealed record CertificateChainStatus(bool Trusted, IReadOnlyList<string> Problems)
 {
-    public string Summary => Trusted ? "Trusted" : Problems.Count == 0 ? "Not trusted" : string.Join("; ", Problems);
+    public const string TrustedSummary = "Trusted";
+
+    public const string NoTrustAnchors = "No CCA India root certificates are installed for HC360 to check DSCs against";
+
+    public string Summary => Trusted ? TrustedSummary : Problems.Count == 0 ? "Not trusted" : string.Join("; ", Problems);
 }
 
 /// <summary>The result of checking a detached signature against its content.</summary>
@@ -55,7 +62,8 @@ public sealed record CmsVerification(
 /// Detached CMS/PKCS#7 SignedData (RFC 5652) with SHA-256 over a document's canonical bytes (ERX-04): HC360 Desktop
 /// signs with the doctor's DSC, the server verifies, and anyone can check the same file with
 /// <c>openssl cms -verify -binary -inform DER -in x.p7s -content canonical.json -noverify</c>. The signature carries the
-/// signer's certificate (end certificate only) and the signing time as a signed attribute.
+/// signer's certificate, the CA certificates above it that the signing computer has (not the root), and the signing
+/// time as a signed attribute.
 /// </summary>
 public static class DetachedCms
 {
@@ -70,10 +78,17 @@ public static class DetachedCms
 
     /// <summary>
     /// Signs <paramref name="content"/> with <paramref name="certificate"/>'s private key. A key on a USB token asks for
-    /// its PIN through the token's own dialog unless <paramref name="silent"/>.
+    /// its PIN through the token's own dialog unless <paramref name="silent"/>. <paramref name="issuers"/> (the CA
+    /// certificates between the certificate and its root, <see cref="SigningCertificates.Issuers"/>) go into the
+    /// signature too, so the server can build the chain to the CCA India root without downloading them.
     /// </summary>
     /// <returns>The DER-encoded SignedData, without the content.</returns>
-    public static byte[] Sign(byte[] content, X509Certificate2 certificate, DateTimeOffset signingTime, bool silent = false)
+    public static byte[] Sign(
+        byte[] content,
+        X509Certificate2 certificate,
+        DateTimeOffset signingTime,
+        bool silent = false,
+        IEnumerable<X509Certificate2>? issuers = null)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(certificate);
@@ -83,6 +98,11 @@ public static class DetachedCms
             DigestAlgorithm = Sha256,
             IncludeOption = X509IncludeOption.EndCertOnly,
         };
+        foreach (var issuer in issuers ?? [])
+        {
+            signer.Certificates.Add(issuer);
+        }
+
         signer.SignedAttributes.Add(new Pkcs9SigningTime(signingTime.UtcDateTime));
         cms.ComputeSignature(signer, silent);
         return cms.Encode();
@@ -90,10 +110,11 @@ public static class DetachedCms
 
     /// <summary>
     /// Checks <paramref name="signature"/> over <paramref name="content"/>: one signer, a SHA-256 (or stronger) digest,
-    /// a signature that matches the content, a signing time, and a certificate valid at that time whose key usage allows
-    /// signing. The certificate chain is built as well, against this computer's trusted roots, and reported.
+    /// a signature that matches the content, a signing time, and a person's certificate (not a CA's) valid at that time
+    /// whose key usage allows signing. The certificate chain is built as well, to <paramref name="trust"/>'s roots only,
+    /// and reported in <see cref="CmsVerification.Chain"/>: whether that is required is the caller's decision.
     /// </summary>
-    public static CmsVerification Verify(byte[] content, byte[] signature)
+    public static CmsVerification Verify(byte[] content, byte[] signature, DscTrustAnchors? trust = null)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(signature);
@@ -149,7 +170,12 @@ public static class DetachedCms
             return Refused(CmsProblem.NotForSigning, "The certificate is not for signing documents.", signer, at);
         }
 
-        return new CmsVerification(true, null, "The signature is valid.", signer, at, Chain(certificate, cms.Certificates, at));
+        if (!SigningCertificates.IsEndEntity(certificate))
+        {
+            return Refused(CmsProblem.CertificateAuthority, "The certificate belongs to a Certifying Authority, not to a person.", signer, at);
+        }
+
+        return new CmsVerification(true, null, "The signature is valid.", signer, at, Chain(certificate, cms.Certificates, at, trust ?? DscTrustAnchors.None));
     }
 
     private static CmsVerification Refused(CmsProblem problem, string message, SignerCertificate? signer = null, DateTimeOffset? signedAt = null) =>
@@ -171,15 +197,25 @@ public static class DetachedCms
         return null;
     }
 
-    // Offline on purpose: the server sits on the hospital LAN, and a slow CRL or AIA fetch must not hold up signing.
-    private static CertificateChainStatus Chain(X509Certificate2 certificate, X509Certificate2Collection included, DateTimeOffset at)
+    // To the DSC roots only (CustomRootTrust): the certificates the signature carries help build the chain but are never
+    // trusted themselves. Offline on purpose: the server sits on the hospital LAN, and a slow CRL or AIA fetch must not
+    // hold up signing.
+    private static CertificateChainStatus Chain(X509Certificate2 certificate, X509Certificate2Collection included, DateTimeOffset at, DscTrustAnchors trust)
     {
+        if (trust.IsEmpty)
+        {
+            return new CertificateChainStatus(false, [CertificateChainStatus.NoTrustAnchors]);
+        }
+
         try
         {
             using var chain = new X509Chain();
+            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.CustomTrustStore.AddRange(trust.Roots);
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
             chain.ChainPolicy.DisableCertificateDownloads = true;
             chain.ChainPolicy.VerificationTime = at.UtcDateTime;
+            chain.ChainPolicy.ExtraStore.AddRange(trust.Intermediates);
             chain.ChainPolicy.ExtraStore.AddRange(included);
             var trusted = chain.Build(certificate);
             var problems = chain.ChainStatus.Select(s => string.IsNullOrWhiteSpace(s.StatusInformation) ? s.Status.ToString() : s.StatusInformation.Trim())

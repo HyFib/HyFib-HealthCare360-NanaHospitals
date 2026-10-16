@@ -53,14 +53,18 @@ public sealed class PrescriptionSignatureSettings(ISettingsService settings)
 /// prescription they have already signed in HC360: HC360 Desktop fetches its canonical bytes
 /// (<see cref="PrescriptionCanonicalForm"/>), signs them with a certificate the doctor picks from the Windows store
 /// (the DSC token's CSP/KSP asks for its PIN), and sends back a detached CMS/PKCS#7 signature. The server rebuilds the
-/// bytes itself, checks the signature against them (<see cref="DetachedCms.Verify"/>) and keeps the signature, the bytes
-/// and the certificate. A signed prescription never changes, so the signature stays valid; every later check verifies
-/// the signature again and rebuilds the bytes from the stored prescription to catch a record changed outside HC360.
+/// bytes itself, checks the signature against them (<see cref="DetachedCms.Verify"/>), accepts it only from a
+/// certificate that chains to a CCA India root in its DSC trust folder (<see cref="DscTrustStore"/>), and keeps the
+/// signature, the bytes and the certificate. A signed prescription never changes, so the signature stays valid; every
+/// later check verifies the signature and the chain again and rebuilds the bytes from the stored prescription to catch
+/// a record changed outside HC360. A merge of the patient's duplicate record, which moves the prescription, is not such
+/// a change (<see cref="SignedForCurrentPatientAsync"/>).
 /// </summary>
 public sealed class PrescriptionDigitalSignatureService(
     HospitalDbContext db,
     PrescriptionService prescriptions,
     PrescriptionSignatureSettings settings,
+    DscTrustStore trust,
     ICurrentUser currentUser,
     IAuditLogger audit,
     TimeProvider time)
@@ -70,6 +74,9 @@ public sealed class PrescriptionDigitalSignatureService(
 
     /// <summary>How far ahead of the server's clock a workstation's clock may be.</summary>
     public static readonly TimeSpan MaxClockSkew = TimeSpan.FromMinutes(5);
+
+    /// <summary>More merges than this between the record signed for and the prescription's record now is not a merge history.</summary>
+    public const int MaxMergeHops = 16;
 
     public async Task<Result<PrescriptionSigningContent>> ContentAsync(Guid id, CancellationToken ct)
     {
@@ -103,7 +110,8 @@ public sealed class PrescriptionDigitalSignatureService(
             return Error.Field("signature", "The signature is not base64.");
         }
 
-        var check = DetachedCms.Verify(content, signature);
+        var anchors = trust.Current;
+        var check = DetachedCms.Verify(content, signature, anchors);
         if (!check.IsValid)
         {
             return Error.Rule("prescription.signature_invalid", check.Message);
@@ -114,6 +122,15 @@ public sealed class PrescriptionDigitalSignatureService(
         {
             return Error.Rule("prescription.signature_time",
                 "The signature's time is not close to the server's. Check this computer's date and time, then sign again.");
+        }
+
+        // Whatever the policy: any certificate on the computer that may sign (a self-signed one, the domain's user
+        // certificate) is not a DSC, and the printed copy and the QR page would present it as one.
+        if (check.Chain is not { Trusted: true })
+        {
+            return Error.Rule("prescription.signature_untrusted",
+                "This certificate is not a DSC from a licensed Certifying Authority: it does not chain to a CCA India root installed "
+                + $"on the server ({check.Chain?.Summary}). Sign with the DSC on your token.");
         }
 
         var signer = check.Signer!;
@@ -141,47 +158,86 @@ public sealed class PrescriptionDigitalSignatureService(
         }
 
         await db.SaveChangesAsync(ct);
-        return Check(p, policy);
+        return Check(p, policy, anchors, signedForCurrentPatient: true);
     }
 
     /// <summary>The signature re-checked now; the caller has loaded the prescription through the access guard.</summary>
     public async Task<PrescriptionDigitalSignatureDto> StatusAsync(Prescription prescription, CancellationToken ct) =>
-        Check(prescription, await settings.PolicyAsync(prescription.FacilityId, ct));
+        await CheckAsync(db, trust.Current, prescription, await settings.PolicyAsync(prescription.FacilityId, ct), ct);
+
+    /// <summary><see cref="Check"/>, with the patient the bytes were signed for looked up (<see cref="SignedForCurrentPatientAsync"/>).</summary>
+    public static async Task<PrescriptionDigitalSignatureDto> CheckAsync(HospitalDbContext db, DscTrustAnchors anchors, Prescription p,
+        PrescriptionSignaturePolicy policy, CancellationToken ct) =>
+        Check(p, policy, anchors, p.IsDigitallySigned && await SignedForCurrentPatientAsync(db, p, ct));
 
     /// <summary>
-    /// Verifies the stored signature over the stored bytes, the stored hash, and that the stored prescription still gives
-    /// those bytes. Valid only when all three hold.
+    /// Verifies the stored signature over the stored bytes, the stored hash, that the stored prescription still gives
+    /// those bytes and is still on the record they were signed for (<paramref name="signedForCurrentPatient"/>), and
+    /// that the certificate chains to a root in <paramref name="anchors"/>. <see cref="DigitalSignatureState.Valid"/>
+    /// when all hold; <see cref="DigitalSignatureState.Untrusted"/> when only the chain does not (the roots were changed
+    /// since); <see cref="DigitalSignatureState.Invalid"/> otherwise.
     /// </summary>
-    public static PrescriptionDigitalSignatureDto Check(Prescription p, PrescriptionSignaturePolicy policy)
+    public static PrescriptionDigitalSignatureDto Check(
+        Prescription p,
+        PrescriptionSignaturePolicy policy,
+        DscTrustAnchors anchors,
+        bool signedForCurrentPatient)
     {
         if (p.DigitalSignature is not { } signature || p.SignedContent is not { } content)
         {
-            return new PrescriptionDigitalSignatureDto(DigitalSignatureState.NotSigned, policy, null, null, null, null, null, null, null, false, null, null);
+            return new PrescriptionDigitalSignatureDto(DigitalSignatureState.NotSigned, policy, null, null, null, null, null, null, null, false, null, false,
+                null);
         }
 
-        var cms = DetachedCms.Verify(content, signature);
+        var cms = DetachedCms.Verify(content, signature, anchors);
         var hashMatches = string.Equals(PrescriptionCanonicalForm.Sha256(content), p.SignedContentHash, StringComparison.Ordinal);
-        var recordMatches = RecordMatches(p, content);
-        var valid = cms.IsValid && hashMatches && recordMatches;
-        var message = !cms.IsValid ? cms.Message
-            : !hashMatches || !recordMatches ? "The prescription was changed after it was signed. Do not dispense it."
-            : "The signature is valid.";
-        return new PrescriptionDigitalSignatureDto(valid ? DigitalSignatureState.Valid : DigitalSignatureState.Invalid, policy, p.DigitallySignedAt,
-            p.SignerName, p.SignerSubject, p.SignerSerialNumber, p.SignerIssuer, p.SignerThumbprint, p.SignedContentHash, recordMatches,
-            cms.Chain?.Summary ?? p.SignerChainStatus, message);
+        var recordMatches = signedForCurrentPatient && RecordMatches(p, content);
+        var chainTrusted = cms.Chain is { Trusted: true };
+        var (state, message) = !cms.IsValid ? (DigitalSignatureState.Invalid, cms.Message)
+            : !hashMatches || !recordMatches ? (DigitalSignatureState.Invalid, "The prescription was changed after it was signed. Do not dispense it.")
+            : !chainTrusted ? (DigitalSignatureState.Untrusted, "The prescription is as the doctor signed it, but HC360 could not confirm the "
+                + $"certificate as a DSC from a licensed Certifying Authority ({cms.Chain?.Summary}).")
+            : (DigitalSignatureState.Valid, "The signature is valid.");
+        return new PrescriptionDigitalSignatureDto(state, policy, p.DigitallySignedAt, p.SignerName, p.SignerSubject, p.SignerSerialNumber, p.SignerIssuer,
+            p.SignerThumbprint, p.SignedContentHash, recordMatches, cms.Chain?.Summary ?? p.SignerChainStatus, chainTrusted, message);
     }
 
-    /// <summary>The stored prescription, with the parties recorded in the signed bytes, rebuilds those bytes exactly.</summary>
-    public static bool RecordMatches(Prescription p, byte[] content)
+    /// <summary>
+    /// The stored prescription, with the parties recorded in the signed bytes (the patient's record as signed for,
+    /// names as printed), rebuilds those bytes exactly.
+    /// </summary>
+    public static bool RecordMatches(Prescription p, byte[] content) =>
+        PrescriptionCanonicalForm.TryReadParties(content) is { } parties && PrescriptionCanonicalForm.Build(p, parties).AsSpan().SequenceEqual(content);
+
+    /// <summary>
+    /// The patient record the bytes were signed for is the prescription's record now: the same one, or a duplicate front
+    /// office merged into it, directly or through later merges. <c>PatientsMerged</c> moves the prescription to the
+    /// surviving record, so its patient changes without the prescription changing; any other patient means the record
+    /// was changed outside HC360.
+    /// </summary>
+    public static async Task<bool> SignedForCurrentPatientAsync(HospitalDbContext db, Prescription p, CancellationToken ct)
     {
-        try
-        {
-            return PrescriptionCanonicalForm.Build(p, PrescriptionCanonicalForm.ReadParties(content)).AsSpan().SequenceEqual(content);
-        }
-        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        if (p.SignedContent is not { } content || PrescriptionCanonicalForm.TryReadParties(content) is not { } parties)
         {
             return false;
         }
+
+        var record = parties.PatientId;
+        for (var hops = 0; record != p.PatientId; hops++)
+        {
+            var mergedInto = hops < MaxMergeHops
+                ? await db.Set<Patient>().AsNoTracking().IgnoreQueryFilters().Where(x => x.Id == record).Select(x => x.MergedIntoPatientId)
+                    .FirstOrDefaultAsync(ct)
+                : null;
+            if (mergedInto is not { } next)
+            {
+                return false;
+            }
+
+            record = next;
+        }
+
+        return true;
     }
 
     /// <summary>The parties as they are now: the facility, the patient and the prescriber.</summary>
@@ -190,7 +246,7 @@ public sealed class PrescriptionDigitalSignatureService(
         var facility = await db.Set<Facility>().AsNoTracking().IgnoreQueryFilters().Where(f => f.Id == p.FacilityId).Select(f => f.Name).FirstOrDefaultAsync(ct);
         var patient = await db.Set<Patient>().AsNoTracking().Where(x => x.Id == p.PatientId).Select(x => new { x.Uhid, x.FullName }).FirstAsync(ct);
         var prescriber = await PrintQueries.PrescriberAsync(db, p.PractitionerId, ct);
-        return new PrescriptionSigningParties(facility ?? string.Empty, patient.Uhid, patient.FullName, prescriber?.DisplayName ?? string.Empty,
+        return new PrescriptionSigningParties(facility ?? string.Empty, p.PatientId, patient.Uhid, patient.FullName, prescriber?.DisplayName ?? string.Empty,
             prescriber?.Qualification, prescriber?.RegistrationNumber, prescriber?.RegistrationCouncil);
     }
 
@@ -209,6 +265,13 @@ public sealed class PrescriptionDigitalSignatureService(
         if (policy == PrescriptionSignaturePolicy.Off)
         {
             return Error.Rule("prescription.signature_off", "Signing prescriptions with a DSC is switched off at this hospital.");
+        }
+
+        // Before the doctor enters a PIN for a signature the server would refuse.
+        if (trust.Current.IsEmpty)
+        {
+            return Error.Rule("prescription.signature_not_set_up",
+                "HC360 cannot accept DSC signatures yet: IT has not installed the CCA India root certificates on the server.");
         }
 
         if (currentUser.PractitionerId != p.PractitionerId)

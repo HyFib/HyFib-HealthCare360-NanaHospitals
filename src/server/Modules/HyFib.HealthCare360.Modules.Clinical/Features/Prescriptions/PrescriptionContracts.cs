@@ -183,7 +183,11 @@ public sealed record PrescriptionVerification(
     PublicDigitalSignature? DigitalSignature = null,
     string? SignaturePath = null);
 
-/// <summary>What anyone may see of a DSC signature: no patient data, only the signer, the certificate and the hash.</summary>
+/// <summary>
+/// What anyone may see of a DSC signature: no patient data, only the signer, the certificate and the hash.
+/// <see cref="ChainTrusted"/> is whether the certificate chains to a CCA India root installed on the server (a DSC from a
+/// licensed Certifying Authority); revocation is not checked.
+/// </summary>
 public sealed record PublicDigitalSignature(
     DigitalSignatureState State,
     string SignerName,
@@ -199,11 +203,20 @@ public enum DigitalSignatureState
     /// <summary>Not signed with a DSC.</summary>
     NotSigned = 0,
 
-    /// <summary>The signature checks out against the signed bytes, and the bytes against the prescription as stored.</summary>
+    /// <summary>
+    /// The signature checks out against the signed bytes, the bytes against the prescription as stored, and the
+    /// certificate chains to a CCA India root installed on the server.
+    /// </summary>
     Valid,
 
     /// <summary>The signature, the signed bytes or the stored prescription were changed.</summary>
     Invalid,
+
+    /// <summary>
+    /// The prescription is as signed, but the certificate no longer chains to a root installed on the server (the
+    /// roots were changed after it was signed): not shown as a DSC signature.
+    /// </summary>
+    Untrusted,
 }
 
 /// <summary>Whether a facility's doctors sign prescriptions with their DSC (<c>clinical.prescriptions.signature</c>).</summary>
@@ -239,8 +252,8 @@ public sealed record AttachDigitalSignatureRequest(string Signature);
 /// <summary>
 /// The DSC signature of a prescription as the server re-checked it now. <see cref="ContentMatchesRecord"/> is false when
 /// the stored prescription no longer gives the signed bytes (the record was changed outside HC360).
-/// <see cref="ChainStatus"/> is "Trusted" or why the certificate does not chain to a root this server trusts; it is
-/// reported, not required.
+/// <see cref="ChainStatus"/> is "Trusted" or why the certificate does not chain to a CCA India root installed on the
+/// server; <see cref="ChainTrusted"/> says which. A signature is accepted only from a trusted certificate.
 /// </summary>
 public sealed record PrescriptionDigitalSignatureDto(
     DigitalSignatureState State,
@@ -254,6 +267,7 @@ public sealed record PrescriptionDigitalSignatureDto(
     string? ContentHash,
     bool ContentMatchesRecord,
     string? ChainStatus,
+    bool ChainTrusted,
     string? Message);
 
 public sealed class PrescriptionItemRequestValidator : AbstractValidator<PrescriptionItemRequest>

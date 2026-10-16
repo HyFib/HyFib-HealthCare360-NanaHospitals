@@ -14,8 +14,9 @@ namespace HyFib.HealthCare360.Desktop.Bridge;
 /// the certificates that can sign now (<see cref="SigningCertificates"/>), the doctor picks one in the Windows
 /// certificate dialog, which shows what is being signed, read from the bytes themselves
 /// (<see cref="PrescriptionSigningRequest"/>), and the token asks for its PIN. The result is a detached CMS/PKCS#7
-/// signature (<see cref="DetachedCms"/>); the server checks it again before keeping it. The private key never leaves
-/// the token, and nothing is stored on this computer.
+/// signature (<see cref="DetachedCms"/>) carrying the certificate and the CA certificates above it that this computer
+/// has; the server checks it again, including that the certificate chains to a CCA India root, before keeping it. The
+/// private key never leaves the token, and nothing is stored on this computer.
 /// </summary>
 internal static class DscSigner
 {
@@ -65,9 +66,10 @@ internal static class DscSigner
                 }
 
                 var certificate = chosen[0];
+                var issuers = SigningCertificates.Issuers(certificate);
                 try
                 {
-                    var signature = DetachedCms.Sign(request.Content, certificate, DateTimeOffset.UtcNow);
+                    var signature = DetachedCms.Sign(request.Content, certificate, DateTimeOffset.UtcNow, issuers: issuers);
                     Log.Information("Signed prescription {Number} with certificate {Thumbprint}", request.PrescriptionNumber, certificate.Thumbprint);
                     return new { signature = Convert.ToBase64String(signature), certificate = SignerCertificate.Of(certificate) };
                 }
@@ -76,6 +78,13 @@ internal static class DscSigner
                     // A wrong or cancelled PIN, a token removed mid-way, a key the token will not use for signing.
                     Log.Warning(ex, "Signing prescription {Number} with certificate {Thumbprint} failed", request.PrescriptionNumber, certificate.Thumbprint);
                     throw new BridgeException("signing_failed", "The DSC could not sign. Check that the token is inserted and the PIN is right.");
+                }
+                finally
+                {
+                    foreach (var issuer in issuers)
+                    {
+                        issuer.Dispose();
+                    }
                 }
             }
             finally

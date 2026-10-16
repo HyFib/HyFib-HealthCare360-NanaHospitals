@@ -7,7 +7,8 @@ namespace HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 /// Anonymous QR verification of a printed prescription (ERX-04). A pharmacist outside the hospital scans the code and
 /// sees only non-PHI facts — prescriber, facility, date, prescription number, number of medicines and whether it is still
 /// valid — and, when the doctor signed it with their DSC, the signer, the certificate, the SHA-256 of the signed bytes and
-/// whether the signature checks out now (re-verified on every request). The .p7s can be downloaded for an independent
+/// whether the signature checks out now, from a certificate that chains to a CCA India root (re-verified on every
+/// request). The .p7s can be downloaded for an independent
 /// check; the signed bytes themselves name the patient and are not public. The token is 144 random bits, and both
 /// endpoints are rate-limited to stop enumeration.
 /// </summary>
@@ -29,7 +30,7 @@ internal static class PrescriptionVerificationEndpoints
             .WithSensitivePath();
     }
 
-    private static async Task<IResult> Verify(string token, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Verify(string token, HospitalDbContext db, DscTrustStore trust, CancellationToken ct)
     {
         var rx = await FindAsync(token, db, ct);
         if (rx is null)
@@ -52,7 +53,7 @@ internal static class PrescriptionVerificationEndpoints
             rx.SignedAt is { } signed ? ClinicalClock.LocalDate(signed) : null,
             rx.Items.Count,
             rx.PrescriptionNumber,
-            PublicSignature(rx),
+            await PublicSignatureAsync(rx, db, trust, ct),
             rx.IsDigitallySigned ? PrescriptionVerificationLinks.SignaturePath(token) : null));
     }
 
@@ -76,15 +77,15 @@ internal static class PrescriptionVerificationEndpoints
             .FirstOrDefaultAsync(p => p.VerificationToken == token, ct);
     }
 
-    private static PublicDigitalSignature? PublicSignature(Prescription rx)
+    private static async Task<PublicDigitalSignature?> PublicSignatureAsync(Prescription rx, HospitalDbContext db, DscTrustStore trust, CancellationToken ct)
     {
         if (!rx.IsDigitallySigned)
         {
             return null;
         }
 
-        var check = PrescriptionDigitalSignatureService.Check(rx, PrescriptionSignaturePolicy.Off);
+        var check = await PrescriptionDigitalSignatureService.CheckAsync(db, trust.Current, rx, PrescriptionSignaturePolicy.Off, ct);
         return new PublicDigitalSignature(check.State, rx.SignerName!, rx.SignerSerialNumber!, rx.SignerIssuer!, rx.DigitallySignedAt!.Value,
-            rx.SignedContentHash!, check.ChainStatus == "Trusted", check.Message!);
+            rx.SignedContentHash!, check.ChainTrusted, check.Message!);
     }
 }

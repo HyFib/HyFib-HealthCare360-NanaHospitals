@@ -17,7 +17,7 @@ public sealed class PrescriptionCanonicalFormTests
     internal static readonly DateTimeOffset SignedAt = new DateTimeOffset(2026, 9, 25, 10, 15, 42, TimeSpan.Zero).AddTicks(1_234_567);
 
     internal static readonly PrescriptionSigningParties Parties = new(
-        "Nana Hospitals", "NH-000123", "Asha Rao", "Dr Meera Shah", "MBBS, MD", "MMC-55821", "Maharashtra Medical Council");
+        "Nana Hospitals", PatientId, "NH-000123", "Asha Rao", "Dr Meera Shah", "MBBS, MD", "MMC-55821", "Maharashtra Medical Council");
 
     [Fact]
     public void The_signed_bytes_are_sorted_compact_utf8_json()
@@ -92,6 +92,20 @@ public sealed class PrescriptionCanonicalFormTests
 
         PrescriptionCanonicalForm.ReadParties(content).ShouldBe(Parties);
         Should.Throw<System.Text.Json.JsonException>(() => PrescriptionCanonicalForm.ReadParties("{\"format\":\"other\"}"u8.ToArray()));
+        PrescriptionCanonicalForm.TryReadParties("{\"format\":\"other\"}"u8.ToArray()).ShouldBeNull();
+        PrescriptionCanonicalForm.TryReadParties("not json"u8.ToArray()).ShouldBeNull();
+    }
+
+    [Fact]
+    public void The_patient_record_is_the_one_signed_for_so_a_merge_that_moves_the_prescription_rebuilds_the_same_bytes()
+    {
+        var content = PrescriptionCanonicalForm.Build(Signed(), Parties);
+        var merged = Signed();
+        merged.PatientId = Guid.Parse("0190f000-0000-7000-8000-0000000000ff"); // PatientsMerged re-points the prescription.
+
+        PrescriptionCanonicalForm.ReadParties(content).PatientId.ShouldBe(PatientId);
+        PrescriptionCanonicalForm.Build(merged, PrescriptionCanonicalForm.ReadParties(content)).ShouldBe(content);
+        PrescriptionCanonicalForm.Build(Signed(), Parties with { PatientId = merged.PatientId }).ShouldNotBe(content);
     }
 
     [Fact]

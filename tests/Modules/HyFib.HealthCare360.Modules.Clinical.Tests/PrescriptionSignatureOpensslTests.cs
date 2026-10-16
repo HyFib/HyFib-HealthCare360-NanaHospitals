@@ -36,6 +36,30 @@ public sealed class PrescriptionSignatureOpensslTests : IDisposable
         refused.Output.ShouldContain("Verification failure");
     }
 
+    [Fact]
+    public async Task Openssl_follows_the_chain_to_the_root_and_refuses_another_root()
+    {
+        Assert.SkipWhen(await RunAsync("version") is not { ExitCode: 0 }, "openssl is not installed here.");
+        using var pki = new TestPki();
+        using var other = new TestPki("Some Other Root");
+        using var doctor = pki.Doctor();
+        var content = PrescriptionCanonicalForm.Build(PrescriptionCanonicalFormTests.Signed(), PrescriptionCanonicalFormTests.Parties);
+        var p7s = Path.Combine(_folder, "prescription.p7s");
+        var json = Path.Combine(_folder, "prescription.json");
+        var root = Path.Combine(_folder, "cca-root.pem");
+        var otherRoot = Path.Combine(_folder, "other-root.pem");
+        await File.WriteAllBytesAsync(p7s, DetachedCms.Sign(content, doctor, DateTimeOffset.UtcNow, silent: true, issuers: [pki.Ca]), Ct);
+        await File.WriteAllBytesAsync(json, content, Ct);
+        await File.WriteAllTextAsync(root, pki.Root.ExportCertificatePem(), Ct);
+        await File.WriteAllTextAsync(otherRoot, other.Root.ExportCertificatePem(), Ct);
+
+        var verified = (await VerifyChainAsync(p7s, json, root, Path.Combine(_folder, "out.json")))!.Value;
+        var refused = (await VerifyChainAsync(p7s, json, otherRoot, Path.Combine(_folder, "out2.json")))!.Value;
+
+        verified.ExitCode.ShouldBe(0, verified.Output);
+        refused.ExitCode.ShouldNotBe(0, "a DSC that does not chain to the given root must fail");
+    }
+
     public void Dispose() => Directory.Delete(_folder, recursive: true);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -43,6 +67,10 @@ public sealed class PrescriptionSignatureOpensslTests : IDisposable
     // As documented in docs/modules/clinical.md (Checking a signature with OpenSSL alone).
     private static Task<(int ExitCode, string Output)?> VerifyAsync(string p7s, string content, string output) =>
         RunAsync("cms", "-verify", "-binary", "-inform", "DER", "-in", p7s, "-content", content, "-noverify", "-out", output);
+
+    // With the chain: the root from -CAfile, the licensed CA's certificate from the .p7s (docs/modules/clinical.md).
+    private static Task<(int ExitCode, string Output)?> VerifyChainAsync(string p7s, string content, string root, string output) =>
+        RunAsync("cms", "-verify", "-binary", "-inform", "DER", "-in", p7s, "-content", content, "-CAfile", root, "-purpose", "any", "-out", output);
 
     private static async Task<(int ExitCode, string Output)?> RunAsync(params string[] arguments)
     {

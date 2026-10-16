@@ -14,7 +14,8 @@ namespace HyFib.HealthCare360.Modules.Clinical.Tests;
 /// <summary>
 /// Signing prescriptions with the doctor's DSC (ERX-04): the detached CMS signature HC360 Desktop makes, the server's
 /// check of it, the certificates that may sign, and how a signed prescription stays signed. The certificates are
-/// throwaway self-signed ones made here; a real DSC differs only in its issuer.
+/// throwaway ones made here: self-signed ones, and DSCs from <see cref="TestPki"/>, a root and a licensed CA shaped
+/// like the CCA India hierarchy.
 /// </summary>
 public sealed class PrescriptionDigitalSignatureTests
 {
@@ -35,7 +36,102 @@ public sealed class PrescriptionDigitalSignatureTests
         check.Signer.SerialNumber.ShouldBe(certificate.SerialNumber);
         check.Signer.Thumbprint.ShouldBe(certificate.Thumbprint);
         check.SignedAt!.Value.ShouldBe(Now, TimeSpan.FromSeconds(1));
-        check.Chain.ShouldNotBeNull().Trusted.ShouldBeFalse("a self-signed certificate does not chain to a trusted root, which is reported, not refused");
+        check.Chain.ShouldNotBeNull().Trusted.ShouldBeFalse("without DSC roots nothing chains; the service refuses such a signature");
+        check.Chain.Problems.ShouldBe([CertificateChainStatus.NoTrustAnchors]);
+    }
+
+    [Fact]
+    public void Only_a_certificate_issued_under_an_installed_dsc_root_chains_to_it()
+    {
+        using var pki = new TestPki();
+        using var other = new TestPki("Some Other Root");
+        using var doctor = pki.Doctor();
+        using var selfSigned = Certificate();
+        var content = "{}"u8.ToArray();
+        var signature = DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca]);
+
+        var trusted = DetachedCms.Verify(content, signature, pki.Anchors);
+        trusted.IsValid.ShouldBeTrue(trusted.Message);
+        trusted.Chain!.Trusted.ShouldBeTrue(trusted.Chain.Summary);
+        trusted.Chain.Summary.ShouldBe(CertificateChainStatus.TrustedSummary);
+
+        DetachedCms.Verify(content, signature, other.Anchors).Chain!.Trusted.ShouldBeFalse("another root is not this DSC's");
+        DetachedCms.Verify(content, signature).Chain!.Trusted.ShouldBeFalse("no roots installed: nothing is trusted, whatever the OS trusts");
+        DetachedCms.Verify(content, DetachedCms.Sign(content, selfSigned, Now, silent: true), pki.Anchors).Chain!.Trusted
+            .ShouldBeFalse("a self-signed certificate (New-SelfSignedCertificate) is not a DSC");
+
+        // A root the signature carries itself is never trusted, only the server's.
+        var withOwnRoot = DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca, pki.Root]);
+        DetachedCms.Verify(content, withOwnRoot, other.Anchors).Chain!.Trusted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_licensed_cas_certificate_comes_from_the_signature_or_from_the_trust_folder()
+    {
+        using var pki = new TestPki();
+        using var doctor = pki.Doctor();
+        var content = "{}"u8.ToArray();
+        var endCertOnly = DetachedCms.Sign(content, doctor, Now, silent: true);
+
+        var withCa = new SignedCms();
+        withCa.Decode(DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca]));
+
+        withCa.Certificates.Count.ShouldBe(2);
+        DetachedCms.Verify(content, endCertOnly, pki.Anchors).Chain!.Trusted.ShouldBeFalse("the CA certificate is missing");
+        DetachedCms.Verify(content, endCertOnly, DscTrustAnchors.Of([pki.Root, pki.Ca])).Chain!.Trusted.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Desktop_includes_the_cas_above_the_dsc_but_not_the_root()
+    {
+        using var pki = new TestPki();
+        using var doctor = pki.Doctor();
+
+        var issuers = SigningCertificates.Issuers(doctor, [pki.Ca, pki.Root]);
+
+        issuers.Select(c => c.Thumbprint).ShouldBe([pki.Ca.Thumbprint]);
+        foreach (var issuer in issuers)
+        {
+            issuer.Dispose();
+        }
+    }
+
+    [Fact]
+    public void A_cas_certificate_is_not_a_persons_dsc()
+    {
+        using var pki = new TestPki();
+        using var signingCa = pki.SigningCa();
+        var content = "{}"u8.ToArray();
+
+        SigningCertificates.IsEndEntity(pki.Ca).ShouldBeFalse();
+        SigningCertificates.Problem(signingCa, Now)!.ShouldContain("Certifying Authority");
+        var signature = DetachedCms.Sign(content, signingCa, Now, silent: true);
+        DetachedCms.Verify(content, signature, pki.Anchors).Problem.ShouldBe(CmsProblem.CertificateAuthority);
+    }
+
+    [Fact]
+    public void The_trust_folder_takes_der_and_pem_files_and_says_which_it_could_not_read()
+    {
+        using var pki = new TestPki();
+        var folder = Directory.CreateTempSubdirectory("hc360-dsc-trust-").FullName;
+        try
+        {
+            File.WriteAllBytes(Path.Combine(folder, "cca-india-2022.cer"), pki.Root.RawData);
+            File.WriteAllText(Path.Combine(folder, "licensed-ca.pem"), pki.Ca.ExportCertificatePem());
+            File.WriteAllText(Path.Combine(folder, "broken.crt"), "not a certificate");
+            File.WriteAllText(Path.Combine(folder, "readme.txt"), "ignored");
+
+            var anchors = DscTrustAnchors.Load(folder);
+
+            anchors.Roots.Select(c => c.Thumbprint).ShouldBe([pki.Root.Thumbprint]);
+            anchors.Intermediates.Select(c => c.Thumbprint).ShouldBe([pki.Ca.Thumbprint]);
+            anchors.Problems.ShouldHaveSingleItem().ShouldStartWith("broken.crt: ");
+            DscTrustAnchors.Load(Path.Combine(folder, "missing")).IsEmpty.ShouldBeTrue();
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
     }
 
     [Fact]
@@ -189,24 +285,65 @@ public sealed class PrescriptionDigitalSignatureTests
     [Fact]
     public void The_stored_signature_checks_out_until_the_record_is_changed()
     {
-        using var certificate = Certificate();
+        using var pki = new TestPki();
+        using var doctor = pki.Doctor();
         var prescription = PrescriptionCanonicalFormTests.Signed();
         var content = PrescriptionCanonicalForm.Build(prescription, PrescriptionCanonicalFormTests.Parties);
-        var signature = DetachedCms.Sign(content, certificate, Now, silent: true);
-        PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional).State.ShouldBe(DigitalSignatureState.NotSigned);
+        var signature = DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca]);
+        PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional, pki.Anchors, signedForCurrentPatient: true).State
+            .ShouldBe(DigitalSignatureState.NotSigned);
 
         prescription.AttachDigitalSignature(Evidence(content, signature)).IsSuccess.ShouldBeTrue();
-        var check = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional);
+        var check = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional, pki.Anchors, signedForCurrentPatient: true);
         check.State.ShouldBe(DigitalSignatureState.Valid, check.Message);
         check.ContentMatchesRecord.ShouldBeTrue();
+        check.ChainTrusted.ShouldBeTrue();
         check.ContentHash.ShouldBe(PrescriptionCanonicalForm.Sha256(content));
+
+        // Moved to another patient's record other than by a merge (SignedForCurrentPatientAsync follows merges).
+        var moved = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional, pki.Anchors, signedForCurrentPatient: false);
+        moved.State.ShouldBe(DigitalSignatureState.Invalid);
+        moved.ContentMatchesRecord.ShouldBeFalse();
 
         // A change made in the database behind HC360's back: the signature still matches the bytes, the record does not.
         prescription.Items.First().Quantity = 600m;
-        var tampered = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional);
+        var tampered = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional, pki.Anchors, signedForCurrentPatient: true);
         tampered.State.ShouldBe(DigitalSignatureState.Invalid);
         tampered.ContentMatchesRecord.ShouldBeFalse();
         tampered.Message.ShouldBe("The prescription was changed after it was signed. Do not dispense it.");
+    }
+
+    [Fact]
+    public void A_merge_that_moves_the_prescription_to_the_surviving_record_leaves_the_signature_valid()
+    {
+        using var pki = new TestPki();
+        using var doctor = pki.Doctor();
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+        var content = PrescriptionCanonicalForm.Build(prescription, PrescriptionCanonicalFormTests.Parties);
+        prescription.AttachDigitalSignature(Evidence(content, DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca]))).IsSuccess.ShouldBeTrue();
+
+        prescription.PatientId = Guid.NewGuid(); // As PatientsMergedHandler re-points it.
+
+        PrescriptionDigitalSignatureService.RecordMatches(prescription, content).ShouldBeTrue();
+        PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Optional, pki.Anchors, signedForCurrentPatient: true).State
+            .ShouldBe(DigitalSignatureState.Valid);
+    }
+
+    [Fact]
+    public void A_signature_whose_certificate_no_longer_chains_to_an_installed_root_is_not_shown_as_valid()
+    {
+        using var pki = new TestPki();
+        using var doctor = pki.Doctor();
+        var prescription = PrescriptionCanonicalFormTests.Signed();
+        var content = PrescriptionCanonicalForm.Build(prescription, PrescriptionCanonicalFormTests.Parties);
+        prescription.AttachDigitalSignature(Evidence(content, DetachedCms.Sign(content, doctor, Now, silent: true, issuers: [pki.Ca]))).IsSuccess.ShouldBeTrue();
+
+        var check = PrescriptionDigitalSignatureService.Check(prescription, PrescriptionSignaturePolicy.Required, DscTrustAnchors.None, signedForCurrentPatient: true);
+
+        check.State.ShouldBe(DigitalSignatureState.Untrusted);
+        check.ChainTrusted.ShouldBeFalse();
+        check.ContentMatchesRecord.ShouldBeTrue();
+        check.Message!.ShouldContain("could not confirm the certificate as a DSC from a licensed Certifying Authority");
     }
 
     [Theory]
@@ -239,7 +376,7 @@ public sealed class PrescriptionDigitalSignatureTests
         signature ?? [1], content ?? [2], PrescriptionCanonicalForm.Sha256(content ?? [2]), Now, Guid.NewGuid(), "Dr Meera Shah", "CN=Dr Meera Shah",
         "0A1B", "CN=Test CA", "ABCDEF", "Not trusted");
 
-    /// <summary>A throwaway RSA certificate for "Dr Meera Shah", with the key usage a DSC has unless told otherwise.</summary>
+    /// <summary>A throwaway self-signed RSA certificate for "Dr Meera Shah", with the key usage a DSC has unless told otherwise.</summary>
     internal static X509Certificate2 Certificate(
         X509KeyUsageFlags? usage = X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.NonRepudiation,
         DateTimeOffset? notBefore = null,
@@ -253,5 +390,84 @@ public sealed class PrescriptionDigitalSignatureTests
         }
 
         return request.CreateSelfSigned(notBefore ?? Now.AddDays(-1), notAfter ?? Now.AddYears(2));
+    }
+}
+
+/// <summary>
+/// A throwaway PKI shaped like India's for DSCs: a root (the CCA India root's place), a licensed CA under it, and doctors'
+/// certificates under that, each with the key usage and basic constraints a real one has.
+/// </summary>
+internal sealed class TestPki : IDisposable
+{
+    private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
+
+    public TestPki(string rootName = "Test CCA India Root")
+    {
+        using var rootKey = RSA.Create(2048);
+        var root = new CertificateRequest($"CN={rootName}, O=Test, C=IN", rootKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        AddCaExtensions(root, issuer: null);
+        Root = root.CreateSelfSigned(Now.AddYears(-1), Now.AddYears(10));
+
+        using var caKey = RSA.Create(2048);
+        var ca = new CertificateRequest($"CN=Test Licensed CA under {rootName}, O=Test, C=IN", caKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        AddCaExtensions(ca, Root);
+        using var caPublic = ca.Create(Root, Now.AddMonths(-11), Now.AddYears(5), Serial());
+        Ca = caPublic.CopyWithPrivateKey(caKey);
+    }
+
+    /// <summary>The root, as installed in the server's DSC trust folder.</summary>
+    public X509Certificate2 Root { get; }
+
+    /// <summary>The licensed CA (an intermediate), with its private key.</summary>
+    public X509Certificate2 Ca { get; }
+
+    /// <summary>The server's trust folder holding just <see cref="Root"/>.</summary>
+    public DscTrustAnchors Anchors => DscTrustAnchors.Of([Root]);
+
+    /// <summary>A doctor's DSC from <see cref="Ca"/>, with its private key.</summary>
+    public X509Certificate2 Doctor(string name = "Dr Meera Shah")
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest($"CN={name}, O=Personal, C=IN", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.NonRepudiation, true));
+        request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(Ca, includeKeyIdentifier: true, includeIssuerAndSerial: false));
+        using var publicOnly = request.Create(Ca, Now.AddDays(-1), Now.AddYears(2), Serial());
+        return publicOnly.CopyWithPrivateKey(key);
+    }
+
+    /// <summary><see cref="Ca"/> with a key usage that would also allow signing documents, as some CAs' do.</summary>
+    public X509Certificate2 SigningCa()
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest("CN=Test CA that signs, O=Test, C=IN", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.DigitalSignature, true));
+        using var publicOnly = request.Create(Root, Now.AddDays(-1), Now.AddYears(2), Serial());
+        return publicOnly.CopyWithPrivateKey(key);
+    }
+
+    public void Dispose()
+    {
+        Root.Dispose();
+        Ca.Dispose();
+    }
+
+    private static void AddCaExtensions(CertificateRequest request, X509Certificate2? issuer)
+    {
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, issuer is not null, 0, true));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+        request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+        if (issuer is not null)
+        {
+            request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(issuer, includeKeyIdentifier: true, includeIssuerAndSerial: false));
+        }
+    }
+
+    private static byte[] Serial()
+    {
+        var serial = RandomNumberGenerator.GetBytes(8);
+        serial[0] &= 0x7F;
+        return serial;
     }
 }
