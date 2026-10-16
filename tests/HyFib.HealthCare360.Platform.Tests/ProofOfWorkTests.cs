@@ -117,6 +117,18 @@ public sealed class ProofOfWorkTests
     }
 
     [Fact]
+    public void An_unsolved_challenge_easier_than_needed_is_refused_as_unsolved_not_too_easy()
+    {
+        var challenge = NewChallenge(bits: 24);
+
+        // Too easy is kept for a browser that did the work it was asked for, which AntiAutomation does not hold against it.
+        var outcomes = Enumerable.Range(0, 4).Select(n => Pow.Verify($"{challenge}:{n}", AntiAutomationActions.Otp, 26)).ToList();
+
+        outcomes.ShouldContain(ProofOfWorkOutcome.Unsolved);
+        outcomes.ShouldNotContain(ProofOfWorkOutcome.TooEasy);
+    }
+
+    [Fact]
     public void A_nonce_that_does_not_solve_the_challenge_is_refused()
     {
         var challenge = NewChallenge(bits: 24);
@@ -155,7 +167,7 @@ public sealed class ProofOfWorkTests
     [Fact]
     public void Every_three_failures_ask_for_two_more_bits_up_to_the_most()
     {
-        var suspicion = new AutomationSuspicion(_cache);
+        var suspicion = new AutomationSuspicion(_cache, _time);
 
         suspicion.RequiredBits(14, 18, "10.0.0.1", null).ShouldBe(14);
         RecordFailures(suspicion, 2, "10.0.0.1", null);
@@ -170,12 +182,40 @@ public sealed class ProofOfWorkTests
     [Fact]
     public void Failures_for_a_number_raise_the_work_for_it_from_any_address()
     {
-        var suspicion = new AutomationSuspicion(_cache);
+        var suspicion = new AutomationSuspicion(_cache, _time);
         RecordFailures(suspicion, 3, "10.0.0.1", "98765 43210");
 
         // The number is matched however it is written.
         suspicion.RequiredBits(14, 18, "10.0.0.9", "+919876543210").ShouldBe(16);
         suspicion.RequiredBits(14, 18, "10.0.0.9", "9123456789").ShouldBe(14);
+    }
+
+    [Fact]
+    public void The_count_falls_back_only_after_a_quiet_quarter_of_an_hour()
+    {
+        var suspicion = new AutomationSuspicion(_cache, _time);
+        RecordFailures(suspicion, 2, "10.0.0.3", null);
+        _time.Advance(TimeSpan.FromMinutes(10));
+        RecordFailures(suspicion, 1, "10.0.0.3", null);
+        suspicion.RequiredBits(14, 18, "10.0.0.3", null).ShouldBe(16);
+
+        // 20 minutes after the first failure, 10 after the last: still counted.
+        _time.Advance(TimeSpan.FromMinutes(10));
+        suspicion.Failures("10.0.0.3", null).ShouldBe(3);
+        suspicion.RequiredBits(14, 18, "10.0.0.3", null).ShouldBe(16);
+
+        // A failure now starts the quarter of an hour again, from the count so far.
+        RecordFailures(suspicion, 1, "10.0.0.3", null);
+        _time.Advance(AutomationSuspicion.Window - TimeSpan.FromSeconds(1));
+        suspicion.Failures("10.0.0.3", null).ShouldBe(4);
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        suspicion.Failures("10.0.0.3", null).ShouldBe(0);
+        suspicion.RequiredBits(14, 18, "10.0.0.3", null).ShouldBe(14);
+
+        // And the next failure counts from nothing.
+        RecordFailures(suspicion, 1, "10.0.0.3", null);
+        suspicion.Failures("10.0.0.3", null).ShouldBe(1);
     }
 
     [Fact]
@@ -250,6 +290,45 @@ public sealed class ProofOfWorkTests
             .ShouldBe(ProofOfWorkOutcome.Accepted);
     }
 
+    [Fact]
+    public async Task A_too_easy_proof_is_refused_without_counting_as_a_failure_or_being_audited()
+    {
+        // The portal solves its sign-in challenge before the number is typed: for a number that already failed three times
+        // its first proof is too easy. Retrying must not raise the work asked of the patient's address or number further.
+        var antiAutomation = AntiAutomationWith(new() { [AntiAutomationSettings.Bits] = 4 }, out var audit);
+        var prepared = await antiAutomation.IssueAsync(AntiAutomationActions.Otp, null, "10.0.0.10", Ct);
+        for (var i = 0; i < 3; i++)
+        {
+            antiAutomation.RecordFailure("10.0.0.11", "9876501234");
+        }
+
+        var proof = ProofOfWork.Solve(prepared.Challenge!, prepared.Bits);
+        for (var i = 0; i < 3; i++)
+        {
+            (await antiAutomation.CheckAsync(proof, AntiAutomationActions.Otp, "9876501234", "10.0.0.10", Ct)).ShouldBe(ProofOfWorkOutcome.TooEasy);
+        }
+
+        (await antiAutomation.IssueAsync(AntiAutomationActions.Otp, null, "10.0.0.10", Ct)).Bits.ShouldBe(4);
+        var forTheNumber = await antiAutomation.IssueAsync(AntiAutomationActions.Otp, "9876501234", "10.0.0.10", Ct);
+        forTheNumber.Bits.ShouldBe(6);
+        await audit.DidNotReceiveWithAnyArgs().WriteAsync(default!, Ct);
+        (await antiAutomation.CheckAsync(ProofOfWork.Solve(forTheNumber.Challenge!, forTheNumber.Bits), AntiAutomationActions.Otp, "9876501234", "10.0.0.10", Ct))
+            .ShouldBe(ProofOfWorkOutcome.Accepted);
+    }
+
+    [Theory]
+    [InlineData(ProofOfWorkOutcome.Accepted, false)]
+    [InlineData(ProofOfWorkOutcome.TooEasy, false)]
+    [InlineData(ProofOfWorkOutcome.Missing, true)]
+    [InlineData(ProofOfWorkOutcome.Malformed, true)]
+    [InlineData(ProofOfWorkOutcome.Tampered, true)]
+    [InlineData(ProofOfWorkOutcome.WrongAction, true)]
+    [InlineData(ProofOfWorkOutcome.Expired, true)]
+    [InlineData(ProofOfWorkOutcome.Unsolved, true)]
+    [InlineData(ProofOfWorkOutcome.Replayed, true)]
+    public void Every_refusal_but_a_too_easy_proof_is_a_failure(ProofOfWorkOutcome outcome, bool failure) =>
+        AntiAutomation.IsFailure(outcome).ShouldBe(failure);
+
     private static void RecordFailures(AutomationSuspicion suspicion, int count, string address, string? subject)
     {
         for (var i = 0; i < count; i++)
@@ -264,7 +343,7 @@ public sealed class ProofOfWorkTests
         settings.GetAsync<JsonElement?>(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(call => values.TryGetValue(call.Arg<string>(), out var value) ? JsonSerializer.SerializeToElement(value) : (JsonElement?)null);
         audit = Substitute.For<IAuditLogger>();
-        return new AntiAutomation(Pow, new AutomationSuspicion(_cache), settings, audit, _cache, _time);
+        return new AntiAutomation(Pow, new AutomationSuspicion(_cache, _time), settings, audit, _cache, _time);
     }
 
     private sealed class Clock(DateTimeOffset now) : TimeProvider

@@ -43,8 +43,10 @@ public static class AntiAutomationSettings
     public const string MaxBits = "security.antiAutomation.maxBits";
 
     /// <summary>
-    /// 2^14 = 16,384 hashes on average. WebCrypto SHA-256 in a worker does some 20,000-50,000 a second on a mid-range
-    /// phone (about 40,000 on a server core), so about 0.3-0.8 s; a bot pays the same for every request.
+    /// 2^14 = 16,384 hashes on average: WebCrypto SHA-256 in a worker does some 20,000-50,000 a second on a mid-range
+    /// phone, so about 0.3-0.8 s. It is no wall: a native SHA-256 solver does 2^14-2^18 hashes in milliseconds. The proof
+    /// raises the cost of cheap, high-volume scripting (a fresh challenge and its own work for every request); the rate
+    /// limits per address and per number stay the main control.
     /// </summary>
     public const int DefaultBits = 14;
 
@@ -65,12 +67,13 @@ public sealed record AntiAutomationChallengeRequest(string Action, string? Subje
 public sealed record RequiresProofOfWorkMetadata(string Action);
 
 /// <summary>
-/// Failures seen from a client address or for a mobile number in the last 15 minutes: refused proofs, rate-limit hits and
-/// refused requests (a wrong code, a throttled number, a dead link). Every 3 failures ask for 2 more bits (four times the
-/// work), up to <see cref="AntiAutomationSettings.MaxBits"/>; a quiet quarter of an hour brings it back down. Numbers are
-/// kept hashed. In memory, per server.
+/// Failures from a client address or for a mobile number: refused proofs, rate-limit hits and refused requests (a wrong
+/// code, a throttled number, a dead link). Every 3 failures ask for 2 more bits (four times the work), up to
+/// <see cref="AntiAutomationSettings.MaxBits"/>. The count is kept until <see cref="Window"/> passes without a failure (each
+/// failure starts the quarter of an hour again), so a quiet quarter of an hour brings it back down and a steady trickle
+/// keeps it up. Numbers are kept hashed. In memory, per server.
 /// </summary>
-public sealed class AutomationSuspicion(IMemoryCache cache)
+public sealed class AutomationSuspicion(IMemoryCache cache, TimeProvider time)
 {
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
     public const int FailuresPerStep = 3;
@@ -80,23 +83,31 @@ public sealed class AutomationSuspicion(IMemoryCache cache)
 
     public void RecordFailure(string? address, string? subject)
     {
+        var now = time.GetUtcNow();
         foreach (var key in Keys(address, subject))
         {
             lock (_gate)
             {
-                var counter = cache.GetOrCreate(key, entry =>
-                {
-                    entry.AbsoluteExpirationRelativeToNow = Window;
-                    return new Counter();
-                })!;
+                var counter = Current(key, now) ?? new Counter();
                 counter.Count++;
+                counter.LastFailureAt = now;
+
+                // Kept a quarter of an hour from this failure, not from the first. The cache's own expiry only frees the
+                // memory; the window is judged on this server's TimeProvider (Current).
+                cache.Set(key, counter, Window);
             }
         }
     }
 
-    /// <summary>The most failures seen for the address or the number.</summary>
-    public int Failures(string? address, string? subject) =>
-        Keys(address, subject).Select(key => cache.TryGetValue(key, out Counter? counter) ? counter!.Count : 0).DefaultIfEmpty(0).Max();
+    /// <summary>The most failures counted for the address or the number.</summary>
+    public int Failures(string? address, string? subject)
+    {
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            return Keys(address, subject).Select(key => Current(key, now)?.Count ?? 0).DefaultIfEmpty(0).Max();
+        }
+    }
 
     /// <summary>The bits asked of a client: the base, plus <see cref="BitsPerStep"/> for every <see cref="FailuresPerStep"/> failures, at most <paramref name="maxBits"/>.</summary>
     public int RequiredBits(int baseBits, int maxBits, string? address, string? subject) =>
@@ -116,17 +127,22 @@ public sealed class AutomationSuspicion(IMemoryCache cache)
         }
     }
 
+    private Counter? Current(string key, DateTimeOffset now) =>
+        cache.TryGetValue(key, out Counter? counter) && now - counter!.LastFailureAt < Window ? counter : null;
+
     private sealed class Counter
     {
         public int Count;
+        public DateTimeOffset LastFailureAt;
     }
 }
 
 /// <summary>
 /// Issues and checks the proof of work the portal's anonymous endpoints ask for (SRS SEC-06, ASVS V2.4.1). A refused
 /// proof gets one generic answer whatever the reason; the reason is counted
-/// (<c>hc360.anti_automation.rejected</c>) and audited, at most once per address and reason in 5 minutes so a flood of
-/// bad proofs cannot flood the audit trail.
+/// (<c>hc360.anti_automation.rejected</c>) and, unless it is <see cref="ProofOfWorkOutcome.TooEasy"/>
+/// (<see cref="IsFailure"/>), audited, at most once per address and reason in 5 minutes so a flood of bad proofs cannot
+/// flood the audit trail.
 /// </summary>
 public sealed class AntiAutomation(
     ProofOfWork proofOfWork,
@@ -161,7 +177,10 @@ public sealed class AntiAutomation(
         return new AntiAutomationChallenge(true, proofOfWork.Issue(action, bits, expiresAt), bits, expiresAt);
     }
 
-    /// <summary>Checks the proof sent with a request; a refusal is counted against the address and the number.</summary>
+    /// <summary>
+    /// Checks the proof sent with a request; a refusal that <see cref="IsFailure">is a failure</see> is counted against the
+    /// address and the number.
+    /// </summary>
     public async Task<ProofOfWorkOutcome> CheckAsync(string? proof, string action, string? subject, string? address, CancellationToken ct)
     {
         var config = await ConfigAsync(ct);
@@ -176,9 +195,14 @@ public sealed class AntiAutomation(
             return outcome;
         }
 
-        suspicion.RecordFailure(address, subject);
         var reason = Reason(outcome);
         Rejected.Add(1, new KeyValuePair<string, object?>("action", action), new KeyValuePair<string, object?>("reason", reason));
+        if (!IsFailure(outcome))
+        {
+            return outcome;
+        }
+
+        suspicion.RecordFailure(address, subject);
         if (cache.TryGetValue($"pow:audited:{address}:{reason}", out _))
         {
             return outcome;
@@ -197,6 +221,14 @@ public sealed class AntiAutomation(
 
     /// <summary>A request with a good proof was refused anyway (a wrong code, a dead link): the next ones need more work.</summary>
     public void RecordFailure(string? address, string? subject) => suspicion.RecordFailure(address, subject);
+
+    /// <summary>
+    /// Whether a refused proof counts against the address and the number. A too-easy one does not, and is not audited: it
+    /// was solved, for a challenge issued before the work asked of them went up (the portal solves its sign-in challenge
+    /// before the number is typed), and the browser then solves a harder one. Counting it would raise the work further on
+    /// every try of a patient whose number is already under suspicion.
+    /// </summary>
+    public static bool IsFailure(ProofOfWorkOutcome outcome) => outcome is not (ProofOfWorkOutcome.Accepted or ProofOfWorkOutcome.TooEasy);
 
     public static string Reason(ProofOfWorkOutcome outcome) => outcome switch
     {
@@ -248,7 +280,8 @@ public static class AntiAutomationEndpoints
 
     public static void Map(IEndpointRouteBuilder app)
     {
-        // Under /api/v1/public, so the portal's address and the staff app's both serve it (feedback kiosks use either).
+        // Under /api/v1/public, so the portal's address and the staff app's both serve it (feedback kiosks use either). Its
+        // bits for a number show whether that number has failed lately: an accepted disclosure (SECURITY.md).
         app.MapPost("/api/v1/public/challenge", IssueAsync)
             .WithTags("Public")
             .AllowAnonymous()
@@ -260,8 +293,21 @@ public static class AntiAutomationEndpoints
     /// and a 403 <see cref="FailedCode"/> otherwise, before its handler runs. <paramref name="subject"/> picks the mobile
     /// number out of the request, when it has one, so failures for one number raise the work asked for it from any
     /// address. A 4xx answer from the handler (a wrong code, a dead link) counts as a failure too.
+    /// <para>
+    /// <paramref name="subjectOnFailure"/> is for a request that names the number only through a record (giving a sign-in
+    /// code names its challenge): the number is looked up only when the request fails, and the failure counts against it
+    /// too. The work asked for such a request depends on the address alone.
+    /// </para>
+    /// <para>
+    /// Put it after <c>WithValidation</c>: a request that fails validation then never reaches the check, so it neither
+    /// spends its proof nor counts as a failure.
+    /// </para>
     /// </summary>
-    public static TBuilder RequireProofOfWork<TBuilder>(this TBuilder builder, string action, Func<EndpointFilterInvocationContext, string?>? subject = null)
+    public static TBuilder RequireProofOfWork<TBuilder>(
+        this TBuilder builder,
+        string action,
+        Func<EndpointFilterInvocationContext, string?>? subject = null,
+        Func<EndpointFilterInvocationContext, CancellationToken, Task<string?>>? subjectOnFailure = null)
         where TBuilder : IEndpointConventionBuilder
     {
         if (!AntiAutomationActions.All.Contains(action))
@@ -279,13 +325,19 @@ public static class AntiAutomationEndpoints
             var outcome = await check.CheckAsync(http.Request.Headers[AntiAutomation.ProofHeader].ToString(), action, who, address, http.RequestAborted);
             if (outcome != ProofOfWorkOutcome.Accepted)
             {
+                // CheckAsync counted it against the address, and against the number when the request names it.
+                if (who is null && subjectOnFailure is not null && AntiAutomation.IsFailure(outcome))
+                {
+                    check.RecordFailure(null, await subjectOnFailure(context, http.RequestAborted));
+                }
+
                 return Failed();
             }
 
             var result = await next(context);
             if (result is IStatusCodeHttpResult { StatusCode: >= 400 and < 500 })
             {
-                check.RecordFailure(address, who);
+                check.RecordFailure(address, who ?? (subjectOnFailure is null ? null : await subjectOnFailure(context, http.RequestAborted)));
             }
 
             return result;

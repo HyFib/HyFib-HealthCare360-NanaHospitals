@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HyFib.HealthCare360.Platform.Identity;
 
@@ -35,12 +36,14 @@ internal static class AuthEndpoints
             .RequireFeature(FeatureKeys.PatientPortal)
             .RequireProofOfWork(AntiAutomationActions.Otp, context => context.Arguments.OfType<OtpRequest>().FirstOrDefault()?.Phone);
 
+        // Giving the code names its challenge, not the number: the number is looked up only when the attempt fails (a wrong
+        // or expired code, a refused proof), so that it counts against the number as well as the address.
         group.MapPost("/otp/verify", async (OtpVerifyRequest request, AuthService auth, HttpContext http, CancellationToken ct) =>
                 (await auth.VerifyOtpAsync(request, http, ct)).ToOk())
             .AllowAnonymous()
             .RequireRateLimiting(AuthRateLimit)
             .RequireFeature(FeatureKeys.PatientPortal)
-            .RequireProofOfWork(AntiAutomationActions.Otp);
+            .RequireProofOfWork(AntiAutomationActions.Otp, subjectOnFailure: PhoneOfChallengeAsync);
 
         // A portal session can only be refreshed as the portal (its cookie is read by the client header), so the portal's
         // own refreshes stop while it is switched off and staff sessions are not affected.
@@ -116,4 +119,9 @@ internal static class AuthEndpoints
             .RequirePermission(PlatformPermissions.SystemManage)
             .RequireRateLimiting(AuthRateLimit);
     }
+
+    private static Task<string?> PhoneOfChallengeAsync(EndpointFilterInvocationContext context, CancellationToken ct) =>
+        context.Arguments.OfType<OtpVerifyRequest>().FirstOrDefault() is { } request
+            ? context.HttpContext.RequestServices.GetRequiredService<AuthService>().OtpPhoneAsync(request.ChallengeId, ct)
+            : Task.FromResult<string?>(null);
 }

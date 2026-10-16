@@ -387,6 +387,16 @@ public sealed class AuthService(
         return new OtpChallengeResponse(challenge.Id, challenge.ExpiresAt, SharedKernel.Phone.Mask(phone));
     }
 
+    /// <summary>
+    /// The number a portal sign-in code was sent to. Giving a code names only its challenge, so the anti-automation check
+    /// (SRS SEC-06) looks the number up this way, by key, when an attempt fails, to count the failure against it.
+    /// </summary>
+    public Task<string?> OtpPhoneAsync(Guid challengeId, CancellationToken ct) =>
+        db.Set<AuthChallenge>().AsNoTracking()
+            .Where(c => c.Id == challengeId && c.Kind == AuthChallengeKind.Otp)
+            .Select(c => c.Phone)
+            .FirstOrDefaultAsync(ct);
+
     public async Task<Result<AuthResult>> VerifyOtpAsync(OtpVerifyRequest request, HttpContext http, CancellationToken ct)
     {
         var now = time.GetUtcNow();

@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -17,6 +18,22 @@ public sealed class AntiAutomationEndpointTests
     [InlineData("POST", "/api/v1/public/feedback/invitations/{token}", AntiAutomationActions.Feedback)]
     public void Abusable_anonymous_endpoints_ask_for_a_proof_of_work(string method, string route, string action) =>
         Endpoint(method, route).Metadata.GetMetadata<RequiresProofOfWorkMetadata>().ShouldNotBeNull().Action.ShouldBe(action);
+
+    /// <summary>
+    /// Endpoint filters run in the order they were added, which is the order of their metadata: a form filled in wrongly
+    /// is answered by validation before its proof is checked, so it neither spends the proof nor counts as a failure.
+    /// </summary>
+    [Theory]
+    [InlineData("POST", "/api/v1/public/feedback/forms/{token}")]
+    [InlineData("POST", "/api/v1/public/feedback/invitations/{token}")]
+    public void A_validated_request_is_validated_before_its_proof_is_checked(string method, string route)
+    {
+        var metadata = Endpoint(method, route).Metadata.ToList();
+        var validated = metadata.FindIndex(m => m is ValidatedRequest);
+
+        validated.ShouldBeGreaterThanOrEqualTo(0);
+        validated.ShouldBeLessThan(metadata.FindIndex(m => m is RequiresProofOfWorkMetadata));
+    }
 
     [Theory]
     [InlineData("POST", "/api/v1/auth/login")]

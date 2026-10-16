@@ -205,11 +205,18 @@ after an escalation is not escalated again.
 | Method | Path | Behaviour |
 |---|---|---|
 | GET | `/feedback/forms/{token}` | QR or kiosk form → `PublicFeedbackForm {title, introText, aspects, includesNps, allowsComment, hospital}` |
-| POST | `/feedback/forms/{token}?kiosk=` | `SubmitFeedbackRequest {ratings, nps, comment, wantsCallback, contactPhone}` → `FeedbackReceipt {thankYou, complaintNumber}`. Anonymous (channel QrCode or Kiosk); the complaint number is returned only when a call-back was requested |
+| POST | `/feedback/forms/{token}?kiosk=` | header `X-HC360-Proof` (below); `SubmitFeedbackRequest {ratings, nps, comment, wantsCallback, contactPhone}` → `FeedbackReceipt {thankYou, complaintNumber}`. Anonymous (channel QrCode or Kiosk); the complaint number is returned only when a call-back was requested |
 | GET | `/feedback/invitations/{token}` | the form of a personal link. Returns 422 `feedback.link_used` or `feedback.link_expired` (14 days) |
-| POST | `/feedback/invitations/{token}` | submits once, linked to the patient and the stay (channel SmsLink). The link is used up in the same transaction, and a unique index turns a double submit into a 409 |
+| POST | `/feedback/invitations/{token}` | header `X-HC360-Proof` (below); submits once, linked to the patient and the stay (channel SmsLink). The link is used up in the same transaction, and a unique index turns a double submit into a 409 |
 | GET | `/unsubscribe/{token}` | → `{alreadyOptedOut}`. GET never changes anything, because SMS apps and link scanners pre-fetch links |
 | POST | `/unsubscribe/{token}` | revokes marketing consent and marks the campaign message as opted out. Repeating it is harmless (204) |
+
+Sending feedback (both POSTs above) needs a solved proof-of-work challenge (SRS SEC-06): `POST /api/v1/public/challenge
+{action: "feedback"}`, solved, in `X-HC360-Proof: {challenge}:{nonce}`. A missing, wrong, spent or too easy proof gets
+403 `request.check_failed` ("We could not complete this request. Please try again."), and the portal then solves a fresh
+challenge and tries once more. The body is validated first: a 400 neither spends the proof nor counts as a failure,
+while an unknown, used or expired link does, and every 3 failures from an address ask more work of it (SECURITY.md,
+"Anti-automation on the portal"). Opting out does not ask for a proof.
 
 What the public endpoints never do:
 * They never return anything about a patient: no name, UHID or number.

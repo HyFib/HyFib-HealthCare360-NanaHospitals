@@ -28,7 +28,10 @@ public enum ProofOfWorkOutcome
 
     Expired,
 
-    /// <summary>The challenge asks for fewer bits than the request now needs (the difficulty was raised since).</summary>
+    /// <summary>
+    /// The nonce solves the challenge, but the challenge asks for fewer bits than the request now needs: the work asked of
+    /// the address or the number went up after it was issued.
+    /// </summary>
     TooEasy,
 
     /// <summary>The nonce does not solve the challenge.</summary>
@@ -160,14 +163,16 @@ public sealed class ProofOfWork(byte[] key, IProofOfWorkReplayCache spent, TimeP
             return ProofOfWorkOutcome.Expired;
         }
 
-        if (bits < requiredBits)
-        {
-            return ProofOfWorkOutcome.TooEasy;
-        }
-
         if (LeadingZeroBits(SHA256.HashData(Encoding.UTF8.GetBytes(challenge + nonce))) < bits)
         {
             return ProofOfWorkOutcome.Unsolved;
+        }
+
+        // After the work is checked, so that only a browser that did the work it was asked for is told it now needs more
+        // (AntiAutomation does not count that as a failure).
+        if (bits < requiredBits)
+        {
+            return ProofOfWorkOutcome.TooEasy;
         }
 
         // Last, so only a proof that is good in every other way uses the challenge up.
@@ -192,10 +197,7 @@ public sealed class ProofOfWork(byte[] key, IProofOfWorkReplayCache spent, TimeP
         return bits;
     }
 
-    /// <summary>
-    /// Finds a nonce for a challenge, as the browser does. For the tests and the load test; a server never solves its own
-    /// challenges.
-    /// </summary>
+    /// <summary>Finds a nonce for a challenge, as the browser does. For the tests; a server never solves its own challenges.</summary>
     public static string Solve(string challenge, int bits)
     {
         Span<byte> hash = stackalloc byte[32];
