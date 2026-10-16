@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -15,9 +16,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// Quick unlock of the lock screen with the device's Windows Hello or fingerprint (WebAuthn, SRS UX-11) over the real
 /// API, with a software authenticator in place of the device: setting a device up needs the password, a device unlocks
-/// only its owner's locked session, the device must verify the person, a copied key and a replayed answer are refused,
-/// a session nobody used for the idle limit stays ended, and an administrator can turn it off while the PIN keeps
-/// working. Each test uses an account of its own.
+/// only its owner's locked session, the device must verify the person, a copied key and a replayed answer are refused
+/// and stay on the audit trail, a session nobody used for the idle limit stays ended, and an administrator can turn it
+/// off while the PIN keeps working. Each test uses an account of its own.
 /// </summary>
 public sealed class WebAuthnUnlockTests(HospitalServer server)
 {
@@ -237,6 +238,45 @@ public sealed class WebAuthnUnlockTests(HospitalServer server)
         {
             await SetBiometricUnlockAsync(null);
         }
+    }
+
+    [Fact]
+    public async Task A_refused_answer_stays_on_the_audit_trail_when_the_session_ends_meanwhile()
+    {
+        var (client, userName) = await NewStaffAsync("audit");
+        using var device = new SoftwareAuthenticator();
+        await SetUpAsync(client, device);
+        await client.PostAsync("/api/v1/auth/lock");
+        await UnlockWithAsync(client, device);
+        await client.PostAsync("/api/v1/auth/lock");
+        device.Counter -= 1;
+        var ceremony = await client.PostAsync<WebAuthnCeremony>(UnlockOptions);
+        var copied = new WebAuthnUnlockRequest(ceremony.ChallengeId, device.Sign(ceremony.Options));
+        var sessionId = SessionIdOf(client);
+
+        // Hold the session's row, as a sign-out elsewhere would, so the answer is checked and refused and the unlock
+        // then waits; end the session, and let the unlock go on to find it ended.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            await using var transaction = await db.Database.BeginTransactionAsync(Ct);
+            await db.Database.ExecuteSqlAsync($"SELECT 1 FROM identity.user_sessions WHERE id = {sessionId} FOR NO KEY UPDATE", Ct);
+            var sending = client.SendRawAsync(HttpMethod.Post, Unlock, copied);
+            var waited = Stopwatch.StartNew();
+            while (await db.Database.SqlQuery<int>($"SELECT count(*)::int AS \"Value\" FROM pg_stat_activity WHERE pg_backend_pid() = ANY(pg_blocking_pids(pid))").SingleAsync(Ct) == 0)
+            {
+                sending.IsCompleted.ShouldBeFalse("The unlock finished without waiting for the session's row.");
+                waited.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30), "The unlock never reached the session's row.");
+                await Task.Delay(50, Ct);
+            }
+
+            await db.Database.ExecuteSqlAsync($"UPDATE identity.user_sessions SET revoked_at = now(), revoked_reason = 'signed_out' WHERE id = {sessionId}", Ct);
+            await transaction.CommitAsync(Ct);
+            using var ended = await sending;
+            ended.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        }
+
+        (await AuditAsync(userName, "auth.biometric_unlock_refused")).ShouldContain(e => e.Severity == AuditSeverity.Critical);
     }
 
     [Fact]

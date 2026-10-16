@@ -60,7 +60,8 @@ public sealed record WebAuthnCredentialInfo(
 /// try. Failed tries count with wrong PINs: <see cref="SecurityOptions.MaxPinAttempts"/> end the session.</item>
 /// <item>Setting up a device needs the password (ASVS V7.5.1); its owner can remove it; the
 /// <see cref="AuthService.BiometricUnlockSetting"/> setting turns it off. The PIN and the password always work.</item>
-/// <item>Setting up, removing and unlocking are audited.</item>
+/// <item>Setting up, removing and unlocking are audited; refused answers are audited at once, so the entry stays even
+/// when the unlock then fails.</item>
 /// </list>
 /// </summary>
 public sealed class WebAuthnUnlockService(
@@ -205,13 +206,12 @@ public sealed class WebAuthnUnlockService(
         }
         catch (Fido2VerificationException ex)
         {
-            audit.Add(new AuditEntry(AuditCategories.Security, "auth.biometric_unlock_refused", $"A device's answer to setting up quick unlock was refused ({ex.Code})")
+            await audit.WriteAsync(new AuditEntry(AuditCategories.Security, "auth.biometric_unlock_refused", $"A device's answer to setting up quick unlock was refused ({ex.Code})")
             {
                 UserId = user.Id,
                 UserName = user.UserName,
                 Severity = AuditSeverity.Warning,
-            });
-            await db.SaveChangesAsync(ct);
+            }, ct);
             return NotVerified;
         }
 
@@ -352,8 +352,10 @@ public sealed class WebAuthnUnlockService(
             }
             catch (Fido2VerificationException ex)
             {
+                // Written at once, in a transaction of its own: the unlock below may find the session ended and save
+                // nothing, and a copied key must stay on the record either way.
                 var copied = ex.Code == Fido2ErrorCode.InvalidSignCount;
-                audit.Add(new AuditEntry(AuditCategories.Security, "auth.biometric_unlock_refused", copied
+                await audit.WriteAsync(new AuditEntry(AuditCategories.Security, "auth.biometric_unlock_refused", copied
                     ? $"Quick unlock refused: the signature counter of \"{credential.Name}\" went back, so its key may have been copied"
                     : $"Quick unlock refused: the answer of \"{credential.Name}\" did not check out ({ex.Code})")
                 {
@@ -362,7 +364,7 @@ public sealed class WebAuthnUnlockService(
                     EntityType = nameof(WebAuthnCredential),
                     EntityId = credential.Id.ToString(),
                     Severity = copied ? AuditSeverity.Critical : AuditSeverity.Warning,
-                });
+                }, ct);
             }
         }
 
