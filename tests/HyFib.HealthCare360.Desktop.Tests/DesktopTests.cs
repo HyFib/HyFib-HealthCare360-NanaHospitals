@@ -108,6 +108,8 @@ public sealed class DownloadPolicyTests
     [InlineData("data:text/csv;charset=utf-8,a,b", @"C:\Users\nurse\Downloads\morbidity.csv")]
     [InlineData("https://hc360-srv:7360/api/v1/system/ca-certificate", @"C:\Users\it\Downloads\hc360-hospital-ca.crt")]
     [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000002", @"C:\Users\tech\Downloads\ecg-0412.scp")]
+    [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000003", @"C:\Users\doctor\Downloads\prescription-NHRX260000123.p7s")]
+    [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000004", @"C:\Users\doctor\Downloads\prescription-NHRX260000123.json")]
     public void Documents_from_the_hospital_server_are_saved(string source, string path) =>
         DownloadPolicy.IsAllowed(source, path, Server).ShouldBeTrue();
 
