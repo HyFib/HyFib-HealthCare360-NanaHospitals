@@ -214,8 +214,8 @@ visit (checked in or in consultation); when none is open, of the newest visit th
 (`isCurrentVisit: false`, shown as "Last payer"); and none when the patient has had no visit in the facility. Billing
 (`IPayerDirectory`) adds, for a payer other than self-pay, the payer's name for staff who may look payers up, and for
 staff who may read policies the masked number and last valid day of the patient's policy with that payer that is
-active and in date today (the longest valid, as billing picks it). Screens that know the payer better (an admission's)
-show their own. `usePatientPayer` (`src/modules/patients/payer.ts`) only words it; it shares the patient's visits'
+active and in date today (the longest valid, as billing picks it). Both checks are the insurance endpoints' own, so the
+Super Admin's wildcard (`*`) passes them. Screens that know the payer better (an admission's) show their own. `usePatientPayer` (`src/modules/patients/payer.ts`) only words it; it shares the patient's visits'
 query key, so whatever refreshes the visits refreshes the payer.
 
 #### Drug search

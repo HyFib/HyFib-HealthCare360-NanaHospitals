@@ -110,6 +110,14 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         var doctorsBanner = (await doctor.GetAsync<PatientPayerResponse>($"/api/v1/patients/{patient.Id}/payer")).Current.ShouldNotBeNull();
         (doctorsBanner.PayerType, doctorsBanner.PayerName, doctorsBanner.PolicyNumber, doctorsBanner.ValidUntil).ShouldBe((PayerType.Insurance, null, null, null));
 
+        // The Super Admin's role holds only the wildcard, which the insurance screens honour, so the banner shows them all.
+        var superAdmin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var superAdminsBanner = (await superAdmin.GetAsync<PatientPayerResponse>($"/api/v1/patients/{patient.Id}/payer")).Current.ShouldNotBeNull();
+        superAdminsBanner.ShouldSatisfyAllConditions(
+            b => b.PayerName.ShouldBe(insurer.Name),
+            b => b.PolicyNumber.ShouldBe(policy.PolicyNumberMasked),
+            b => b.ValidUntil.ShouldBe(policy.ValidTo));
+
         // TPA desk: requests cashless pre-authorisation; the insurer approves part of the estimate.
         var preAuth = await ObtainPreAuthorisationAsync(tpaDesk, policy.Id, admission.Id);
         preAuth.Status.ShouldBe(PreAuthStatus.PartiallyApproved);

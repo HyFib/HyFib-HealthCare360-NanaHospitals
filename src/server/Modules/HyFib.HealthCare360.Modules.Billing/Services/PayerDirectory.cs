@@ -42,6 +42,10 @@ internal sealed class PayerDirectory(HospitalDbContext db, ICurrentUser user, IP
         return new PayerCoverageSummary(name, policy?.PolicyNumberMasked, policy?.ValidTo);
     }
 
+    /// <summary>
+    /// Whether the user holds one of the permissions, or the Super Admin's wildcard, as <c>RequireAnyPermission</c> on
+    /// the insurance endpoints decides it (<see cref="PermissionAuthorizationHandler"/>).
+    /// </summary>
     private async Task<bool> HasAnyAsync(string[] permissionNames, CancellationToken ct)
     {
         if (user.UserId is not { } userId)
@@ -50,6 +54,6 @@ internal sealed class PayerDirectory(HospitalDbContext db, ICurrentUser user, IP
         }
 
         var granted = await permissions.GetPermissionsAsync(userId, ct);
-        return permissionNames.Any(granted.Contains);
+        return granted.Contains(PermissionRegistry.Wildcard) || permissionNames.Any(granted.Contains);
     }
 }
