@@ -1,3 +1,4 @@
+import { isApiError } from '@hc360/core';
 import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
@@ -32,7 +33,7 @@ function FeaturesPage() {
 
   const save = useMutation({
     mutationFn: ({ feature, enabled }: { feature: FeatureDto; enabled: boolean }) =>
-      featuresApi.set(feature.key, enabled),
+      featuresApi.set(feature.key, enabled, feature.version),
     onSuccess: (saved) => {
       setTurningOff(null);
       notify.success(changedMessage(saved, saved.enabled));
@@ -46,6 +47,10 @@ function FeaturesPage() {
     onError: (error) => {
       setTurningOff(null);
       notify.error(error, 'Could not change the feature');
+      if (isApiError(error) && error.isConflict) {
+        // Another administrator changed it: show the switch as it is now.
+        void queryClient.invalidateQueries({ queryKey: featureKeys.all });
+      }
     },
   });
 

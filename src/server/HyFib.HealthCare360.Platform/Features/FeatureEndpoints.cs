@@ -1,20 +1,28 @@
 using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 
 namespace HyFib.HealthCare360.Platform.Features;
 
 /// <summary>A feature switch as the Features screen shows it; <see cref="Enabled"/> is the hospital-wide value.</summary>
-public sealed record FeatureDto(string Key, string Code, string Name, string Description, string WhenOff, bool DefaultEnabled, bool Enabled);
+/// <param name="Version">The saved hospital-wide value's version; null while the feature is at its default.</param>
+public sealed record FeatureDto(
+    string Key, string Code, string Name, string Description, string WhenOff, bool DefaultEnabled, bool Enabled, uint? Version = null);
 
 /// <summary>Turns a feature on or off for the whole hospital.</summary>
-public sealed record SetFeatureRequest(bool? Enabled);
+/// <param name="Version">
+/// The version the switch was shown at (<see cref="FeatureDto.Version"/>): 409 when someone changed it since (REL-04).
+/// Omit it while the feature is at its default.
+/// </param>
+public sealed record SetFeatureRequest(bool? Enabled, uint? Version = null);
 
 public sealed class SetFeatureRequestValidator : AbstractValidator<SetFeatureRequest>
 {
@@ -31,12 +39,16 @@ internal static class FeatureEndpoints
     {
         var admin = app.MapGroup("/api/v1/admin/features").WithTags("Administration").RequirePermission(PlatformPermissions.SettingsManage);
 
-        admin.MapGet("/", async (IFeatureFlags features, CancellationToken ct) =>
+        admin.MapGet("/", async (IFeatureFlags features, HospitalDbContext db, CancellationToken ct) =>
         {
+            var keys = FeatureCatalog.All.Select(f => f.Key).ToList();
+            var versions = await db.Set<SystemSetting>().AsNoTracking()
+                .Where(s => s.FacilityId == null && keys.Contains(s.Key))
+                .ToDictionaryAsync(s => s.Key, s => (uint?)s.Version, StringComparer.Ordinal, ct);
             var list = new List<FeatureDto>();
             foreach (var feature in FeatureCatalog.All)
             {
-                list.Add(Dto(feature, await features.IsEnabledAsync(feature.Key, null, ct)));
+                list.Add(Dto(feature, await features.IsEnabledAsync(feature.Key, null, ct), versions.GetValueOrDefault(feature.Key)));
             }
 
             return TypedResults.Ok(list);
@@ -44,7 +56,9 @@ internal static class FeatureEndpoints
 
         // The hospital-wide value, saved with its audit entry in one transaction. A branch's own value, if one was set in
         // the settings store, still overrides it for that branch.
-        admin.MapPut("/{key}", async (string key, SetFeatureRequest request, IFeatureFlags features, ISettingsService settings, IAuditLogger audit, CancellationToken ct) =>
+        admin.MapPut("/{key}", async (
+                string key, SetFeatureRequest request, IFeatureFlags features, ISettingsService settings, IAuditLogger audit, HospitalDbContext db,
+                CancellationToken ct) =>
             {
                 if ((FeatureCatalog.Find(key) ?? FeatureCatalog.Find(FeatureKeys.Prefix + key)) is not { } feature)
                 {
@@ -60,12 +74,14 @@ internal static class FeatureEndpoints
                     Details = new { feature = feature.Code, enabled, wasEnabled },
                     Severity = enabled ? AuditSeverity.Info : AuditSeverity.Warning,
                 });
-                await settings.SetAsync(feature.Key, enabled, facilityId: null, secret: false, ct);
-                return TypedResults.Ok(Dto(feature, enabled));
+                await settings.SetAsync(feature.Key, enabled, facilityId: null, secret: false, request.Version, ct);
+                var version = await db.Set<SystemSetting>().AsNoTracking()
+                    .Where(s => s.Key == feature.Key && s.FacilityId == null).Select(s => (uint?)s.Version).FirstOrDefaultAsync(ct);
+                return TypedResults.Ok(Dto(feature, enabled, version));
             })
             .WithValidation<SetFeatureRequest>();
     }
 
-    private static FeatureDto Dto(FeatureDefinition feature, bool enabled) =>
-        new(feature.Key, feature.Code, feature.Name, feature.Description, feature.WhenOff, feature.DefaultEnabled, enabled);
+    private static FeatureDto Dto(FeatureDefinition feature, bool enabled, uint? version) =>
+        new(feature.Key, feature.Code, feature.Name, feature.Description, feature.WhenOff, feature.DefaultEnabled, enabled, version);
 }

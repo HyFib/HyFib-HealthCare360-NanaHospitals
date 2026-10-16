@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ApiError, toApiError } from '../api/errors';
+import { ApiError, CORRELATION_HEADER, toApiError } from '../api/errors';
 import type { ClientType } from '../api/client';
 
 export interface FacilityOption {
@@ -140,6 +140,7 @@ async function authFetch(path: string, body?: unknown, headers?: Record<string, 
       'Content-Type': 'application/json',
       Accept: 'application/json',
       'X-HC360-Client': clientType,
+      [CORRELATION_HEADER]: crypto.randomUUID(),
       ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),

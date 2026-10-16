@@ -43,10 +43,13 @@ function isStoppedWhileConnecting(message: string): boolean {
   );
 }
 
-/** Reconnect at once, then after 2, 5, 10 and 20 seconds, then every 30 seconds, for as long as the screen is open. */
-export function hubReconnectDelay(previousRetryCount: number): number {
+/**
+ * Reconnect at once, then after 2, 5, 10 and 20 seconds, then every 30 seconds, for as long as the screen is open. Up to
+ * a second of jitter is added, so the screens a WiFi drop cut off together do not all reconnect in the same instant.
+ */
+export function hubReconnectDelay(previousRetryCount: number, random: () => number = Math.random): number {
   const steps = [0, 2_000, 5_000, 10_000, 20_000];
-  return steps[previousRetryCount] ?? 30_000;
+  return (steps[previousRetryCount] ?? 30_000) + Math.floor(random() * 1_000);
 }
 
 /** A null token (the session has ended) connects without one, and the hub refuses it: every hub call is authorised. */

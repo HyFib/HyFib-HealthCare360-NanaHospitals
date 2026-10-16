@@ -1802,10 +1802,11 @@ export const AI_SETTINGS: SettingsSpec = {
       path: 'url',
       label: 'Transcription address',
       kind: 'url',
-      placeholder: 'http://stt.lan:8000/v1/audio/transcriptions',
+      https: true,
+      placeholder: 'https://stt.lan:8000/v1/audio/transcriptions',
       when: whisper,
       requiredWhen: whisper,
-      hint: 'An OpenAI-compatible /audio/transcriptions address, for example an on-premises faster-whisper server.',
+      hint: 'An OpenAI-compatible /audio/transcriptions address, for example an on-premises faster-whisper server. Dictation is patient information, so it is sent only over https, and only while AI features are on.',
     },
     { key: SPEECH, path: 'model', label: 'Speech model', kind: 'text', placeholder: 'whisper-1', when: whisper },
     {

@@ -30,6 +30,8 @@ function item(overrides: Partial<PrintTemplateItem> = {}): PrintTemplateItem {
     allowsPreprinted: true,
     hospitalWide: DEFAULT_PRINT_TEMPLATE,
     facility: null,
+    hospitalWideVersion: null,
+    facilityVersion: null,
     ...overrides,
   };
 }
@@ -117,6 +119,14 @@ describe('the print template editor', () => {
       topSpaceMm: 0,
       paper: null,
     });
+  });
+
+  it('sends back the version of the template it replaces, so a newer save is not overwritten', () => {
+    const saved = item({ facility: stationery, hospitalWideVersion: 41, facilityVersion: 57 });
+
+    expect(toSaveRequest(form({ scope: 'facility' }), saved).version).toBe(57);
+    expect(toSaveRequest(form({ scope: 'hospital' }), saved).version).toBe(41);
+    expect(toSaveRequest(form({ scope: 'facility' }), item())).not.toHaveProperty('version');
   });
 
   it('says in a few words how each kind of document prints', () => {
