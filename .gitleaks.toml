@@ -33,4 +33,5 @@ regexes = [
   '''^Control\+''',      # staff app: keyboard shortcuts
   '''^hc360_replicator$''', # deploy/windows and tests/deploy: the name of the standby's replication role
   '''^WPA3-Enterprise$''',  # staff app accessibility fixtures (admin.ts): the name of a Wi-Fi security mode
+  '''^X509Certificate2$''', # Integrations' UidaiAuthXml.cs: the .NET certificate type, after a parameter named auth
 ]

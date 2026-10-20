@@ -25,7 +25,7 @@ public sealed class WardRoundTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var patient = await admin.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mrs.", FirstName: "Kavitha", MiddleName: null, LastName: "Round" + Letters(8), Gender: Gender.Female,
+            Title: "Mrs.", FirstName: TestPatients.FirstName("Kavitha"), MiddleName: null, LastName: "Round" + Letters(8), Gender: Gender.Female,
             DateOfBirth: null, AgeYears: 47, AgeMonths: null, Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null,
             BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null, EmergencyContactName: null,
             EmergencyContactPhone: null, EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null,

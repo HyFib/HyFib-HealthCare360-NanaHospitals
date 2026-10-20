@@ -186,7 +186,7 @@ public sealed class OpBillPackageTests(HospitalServer server)
         // A patient of this test alone: the unique surname and mobile number keep the duplicate check quiet.
         var surname = "Package" + Letters(8);
         var created = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mrs.", FirstName: "Lata", MiddleName: null, LastName: surname, Gender: Gender.Female,
+            Title: "Mrs.", FirstName: TestPatients.FirstName("Lata"), MiddleName: null, LastName: surname, Gender: Gender.Female,
             DateOfBirth: new DateOnly(1958, 1, 1).AddDays(Random.Shared.Next(365 * 10)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,

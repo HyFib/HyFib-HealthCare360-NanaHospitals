@@ -132,7 +132,7 @@ public sealed class TeleconsultationJourneyTests(HospitalServer server)
 
     private static Task<PatientCreated> RegisterPatientAsync(ApiClient frontOffice) =>
         frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Ms.", FirstName: "Lakshmi", MiddleName: null, LastName: "Video" + Letters(8), Gender: Gender.Female,
+            Title: "Ms.", FirstName: TestPatients.FirstName("Lakshmi"), MiddleName: null, LastName: "Video" + Letters(8), Gender: Gender.Female,
             DateOfBirth: new DateOnly(1980, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
