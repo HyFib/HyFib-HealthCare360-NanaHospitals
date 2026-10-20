@@ -170,14 +170,12 @@ export const patientFormSchema = z
       .string()
       .trim()
       .refine((v) => !v || isValidAbhaNumber(v), 'Enter a valid 14-digit ABHA number.'),
-    abhaAddress: z
-      .string()
-      .trim()
-      .max(128)
-      .refine(
-        (v) => !v || isValidAbhaAddress(v),
-        'Enter the ABHA address as name@abdm (letters, digits, and single dots or underscores).',
-      ),
+    abhaAddress: z.string().trim().max(128),
+    /**
+     * The ABHA address on file when editing. It is kept as it is even if it predates the format check (an old @ndhm
+     * handle, say); only a new or changed address is checked, as on the server.
+     */
+    abhaAddressOnFile: z.string(),
     aadhaarNumber: z
       .string()
       .trim()
@@ -190,6 +188,15 @@ export const patientFormSchema = z
     whatsAppOptIn: z.boolean(),
   })
   .superRefine((v, ctx) => {
+    const abhaAddressChanged = v.abhaAddress.toLowerCase() !== v.abhaAddressOnFile.trim().toLowerCase();
+    if (v.abhaAddress && abhaAddressChanged && !isValidAbhaAddress(v.abhaAddress)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['abhaAddress'],
+        message: 'Enter the ABHA address as name@abdm (letters, digits, and single dots or underscores).',
+      });
+    }
+
     if (v.ageMode === 'dob') {
       if (!v.dateOfBirth) {
         ctx.addIssue({
@@ -235,6 +242,7 @@ export const emptyPatientForm: PatientFormValues = {
   category: 'General',
   abhaNumber: '',
   abhaAddress: '',
+  abhaAddressOnFile: '',
   aadhaarNumber: '',
   photoFileId: null,
   isVip: false,
@@ -333,6 +341,7 @@ export function fromPatientDetail(p: PatientDetail): PatientFormValues {
     nationality: p.nationality ?? '',
     category: p.category,
     abhaAddress: p.abhaAddress ?? '',
+    abhaAddressOnFile: p.abhaAddress ?? '',
     photoFileId: p.photoFileId,
     isVip: p.isVip,
     notes: p.notes ?? '',

@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Features;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
@@ -53,6 +54,44 @@ public sealed class AbdmExportTests(HospitalServer server)
         var linked = await AuditAsync(patient.Id, "patient.abha_changed");
         linked.ShouldNotBeNull().Summary.ShouldBe($"At registration: ABHA number XX-XXXX-XXXX-{abha[^4..]} linked; ABHA address added");
         linked.Details.ShouldNotBeNull().ShouldNotContain(abha);
+    }
+
+    [Fact]
+    public async Task A_record_whose_abha_address_predates_the_check_can_still_be_edited_and_a_changed_address_is_checked()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
+
+        // An address saved before registration checked its format, as an old @ndhm handle could be.
+        var legacy = "meera." + Letters(6) + "@ndhm";
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Patient>().IgnoreQueryFilters()
+                .Where(p => p.Id == patient.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.AbhaAddress, legacy), Ct);
+        }
+
+        // The form sends it back with every edit: a new phone number is saved and the address is kept.
+        var record = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
+        record.AbhaAddress.ShouldBe(legacy);
+        var phone = "9" + Digits(9);
+        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, phone, legacy));
+        record = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
+        record.Phone.ShouldBe(phone);
+        record.AbhaAddress.ShouldBe(legacy);
+
+        // A changed address must be an ABHA address.
+        using (var refused = await frontOffice.SendRawAsync(HttpMethod.Put, $"/api/v1/patients/{patient.Id}", Edit(record, phone, "meera." + Letters(6) + "@ndhm")))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            var problem = await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
+            problem.GetProperty("errors").GetProperty("abhaAddress")[0].GetString().ShouldBe(CommonRules.AbhaAddressMessage);
+        }
+
+        var current = "meera." + Letters(6) + "@abdm";
+        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, phone, current));
+        (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).AbhaAddress.ShouldBe(current);
+        (await AuditAsync(patient.Id, "patient.abha_changed")).ShouldNotBeNull().Summary.ShouldBe("ABHA address changed");
     }
 
     [Fact]
@@ -179,6 +218,14 @@ public sealed class AbdmExportTests(HospitalServer server)
         EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
         Category: null, AbhaNumber: abha, AbhaAddress: address, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
         ConfirmedNotDuplicate: true);
+
+    /// <summary>The record as the edit screen sends it back, with a new phone number and ABHA address.</summary>
+    private static UpdatePatientRequest Edit(PatientDetail p, string phone, string? abhaAddress) => new(
+        p.Title, p.FirstName, p.MiddleName, p.LastName, p.Gender, p.DateOfBirth, AgeYears: null, AgeMonths: null,
+        Phone: phone, p.AlternatePhone, p.Email, p.Address, p.BloodGroup, p.MaritalStatus, p.GuardianName, p.GuardianRelation,
+        p.EmergencyContactName, p.EmergencyContactPhone, p.EmergencyContactRelation, p.Occupation, p.Religion, p.Nationality,
+        p.PreferredLanguage, p.Category, AbhaNumber: null, AbhaAddress: abhaAddress, AadhaarNumber: null, p.PhotoFileId, p.IsVip,
+        p.IsDeceased, p.DeceasedAt, p.Notes, p.IsActive, p.Version);
 
     /// <summary>
     /// An ABHA number of this test alone, made so that it fails a Verhoeff check, as most real ABHA numbers do: they have

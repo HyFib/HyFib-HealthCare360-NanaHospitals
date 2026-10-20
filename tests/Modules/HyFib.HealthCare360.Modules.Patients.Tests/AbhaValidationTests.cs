@@ -1,13 +1,16 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.SharedKernel;
 
 namespace HyFib.HealthCare360.Modules.Patients.Tests;
 
 /// <summary>
 /// ABHA at registration and when the record is edited (SRS EHR-08): the number must be 14 digits (it has no published
-/// check digit, so any 14 digits will do) and the address must be an ABHA address, on both requests. Blank keeps nothing
-/// (registration) or leaves the number as it is (update).
+/// check digit, so any 14 digits will do) on both requests, and the address must be an ABHA address at registration.
+/// On edit the address's format is the service's to check, and only when it changes (AbdmExportTests), because the form
+/// sends the stored address back with every edit. Blank keeps nothing (registration) or leaves the number as it is
+/// (update).
 /// </summary>
 public sealed class AbhaValidationTests
 {
@@ -24,17 +27,31 @@ public sealed class AbhaValidationTests
     }
 
     [Theory]
-    [InlineData("9112345678901", null, "AbhaNumber")]
-    [InlineData("91-1234-5678-901O", null, "AbhaNumber")]
-    [InlineData(null, "meera.k@gmail.com", "AbhaAddress")]
-    [InlineData(null, "meera.k", "AbhaAddress")]
-    public void An_abha_number_that_is_not_14_digits_or_an_address_that_is_not_an_abha_address_is_refused(string? number, string? address, string field)
+    [InlineData("9112345678901")]
+    [InlineData("91-1234-5678-901O")]
+    public void An_abha_number_that_is_not_14_digits_is_refused(string number)
     {
-        new RegisterPatientRequestValidator(TimeProvider.System).Validate(Register(number, address)).Errors
-            .ShouldHaveSingleItem().PropertyName.ShouldBe(field);
-        new UpdatePatientRequestValidator(TimeProvider.System).Validate(Update(number, address)).Errors
-            .ShouldHaveSingleItem().PropertyName.ShouldBe(field);
+        new RegisterPatientRequestValidator(TimeProvider.System).Validate(Register(number, null)).Errors
+            .ShouldHaveSingleItem().PropertyName.ShouldBe("AbhaNumber");
+        new UpdatePatientRequestValidator(TimeProvider.System).Validate(Update(number, null)).Errors
+            .ShouldHaveSingleItem().PropertyName.ShouldBe("AbhaNumber");
     }
+
+    [Theory]
+    [InlineData("meera.k@gmail.com")]
+    [InlineData("meera.k")]
+    [InlineData("meera.k@ndhm")]
+    public void An_address_that_is_not_an_abha_address_is_refused_at_registration_and_left_to_the_service_on_edit(string address)
+    {
+        new RegisterPatientRequestValidator(TimeProvider.System).Validate(Register(null, address)).Errors
+            .ShouldHaveSingleItem().ErrorMessage.ShouldBe(CommonRules.AbhaAddressMessage);
+        new UpdatePatientRequestValidator(TimeProvider.System).Validate(Update(null, address)).IsValid.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void An_address_longer_than_its_column_is_refused_on_edit_too() =>
+        new UpdatePatientRequestValidator(TimeProvider.System).Validate(Update(null, new string('a', 125) + "@abdm")).Errors
+            .ShouldHaveSingleItem().PropertyName.ShouldBe("AbhaAddress");
 
     [Fact]
     public void The_message_asks_for_the_14_digits() =>

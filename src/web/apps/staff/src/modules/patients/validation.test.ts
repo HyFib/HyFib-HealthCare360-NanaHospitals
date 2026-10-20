@@ -158,4 +158,26 @@ describe('ABHA details in the patient form (SRS EHR-08)', () => {
     const address = patientFormSchema.safeParse({ ...valid, abhaAddress: 'meera.k@gmail.com' });
     expect(address.error?.issues.map((i) => i.path.join('.'))).toEqual(['abhaAddress']);
   });
+
+  it('lets a record whose ABHA address predates the check be edited, and checks it once it is changed', () => {
+    // An address saved before the format check, such as an old @ndhm handle, comes back with every edit.
+    const editing = { ...fromPatientDetail({ ...patient(null), abhaAddress: 'meera.k@ndhm' }), phone: '9876500000' };
+    expect(editing.abhaAddressOnFile).toBe('meera.k@ndhm');
+    expect(patientFormSchema.safeParse(editing).success).toBe(true);
+    expect(patientFormSchema.safeParse({ ...editing, abhaAddress: 'MEERA.K@NDHM' }).success).toBe(true);
+    expect(patientFormSchema.safeParse({ ...editing, abhaAddress: '' }).success).toBe(true);
+    expect(patientFormSchema.safeParse({ ...editing, abhaAddress: 'meera.rao@abdm' }).success).toBe(true);
+
+    const changed = patientFormSchema.safeParse({ ...editing, abhaAddress: 'meera.rao@ndhm' });
+    expect(changed.error?.issues.map((i) => i.path.join('.'))).toEqual(['abhaAddress']);
+    expect(changed.error?.issues[0]?.message).toBe(
+      'Enter the ABHA address as name@abdm (letters, digits, and single dots or underscores).',
+    );
+    expect(toPatientPayload(editing)).not.toHaveProperty('abhaAddressOnFile');
+  });
+
+  it('shows every wrong field at once, the ABHA address among them', () => {
+    const result = patientFormSchema.safeParse({ ...valid, phone: '12', abhaAddress: 'meera.k@gmail.com' });
+    expect(result.error?.issues.map((i) => i.path.join('.')).sort()).toEqual(['abhaAddress', 'phone']);
+  });
 });

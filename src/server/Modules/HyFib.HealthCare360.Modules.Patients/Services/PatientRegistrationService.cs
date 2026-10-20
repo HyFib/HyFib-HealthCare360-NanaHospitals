@@ -170,6 +170,14 @@ public sealed class PatientRegistrationService(
             return Error.Rule("patient.merged", "This record was merged into another patient and can no longer be edited.");
         }
 
+        // A new or changed ABHA address must be in ABDM's format; one already on file (an old @ndhm handle, say) is kept.
+        if (Abha.NormalizeAddress(request.AbhaAddress) is { } abhaAddress
+            && abhaAddress != Abha.NormalizeAddress(patient.AbhaAddress)
+            && !Abha.IsValidAddress(abhaAddress))
+        {
+            return Error.Field("abhaAddress", CommonRules.AbhaAddressMessage);
+        }
+
         var input = PatientInput.From(request);
         var identifierConflict = await CheckIdentifierConflictsAsync(input, id, ct);
         if (identifierConflict is not null)
