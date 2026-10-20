@@ -34,7 +34,6 @@ import { useState } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
 import { useAttemptKey } from '@/modules/billing/hooks';
 import { PAYMENT_MODE_LABEL, type PaymentMode } from '@/modules/billing/labels';
-import { parsePercent, parseRupees } from '@/modules/billing/money';
 import { sendToPrinter } from '@/modules/billing/print';
 import { ActionError, Amount, AmountField, SummaryList, SummaryRow } from '@/modules/billing/ui';
 import {
@@ -44,8 +43,10 @@ import {
   PAYOUT_MODE_LABEL,
   PAYOUT_MODES,
   PAYOUT_STATUS_LABEL,
+  type CreatePayoutRequest,
   type PayoutDto,
 } from './api';
+import { checkPayoutForm, needsPaymentReference, previousMonth, type DeductionDraft } from './logic';
 import { PractitionerPicker, type PickedDoctor } from './PractitionerPicker';
 import { buildPayoutAdviceHtml } from './print';
 
@@ -60,21 +61,6 @@ const useStyles = makeStyles({
   deduction: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 150px auto', gap: '8px', alignItems: 'end' },
   muted: { color: tokens.colorNeutralForeground3 },
 });
-
-/** First and last day of the previous calendar month (the usual payout period). */
-function previousMonth(): { from: string; to: string } {
-  const [year, month] = todayIso().split('-').map(Number) as [number, number];
-  const start = new Date(Date.UTC(year, month - 2, 1));
-  const end = new Date(Date.UTC(year, month - 1, 0));
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  return { from: iso(start), to: iso(end) };
-}
-
-interface DeductionDraft {
-  key: number;
-  description: string;
-  amount: string;
-}
 
 /**
  * Prepares a doctor's payout for a period (DFA-03): all unpaid fees in the period, less deductions and TDS. It is a
@@ -93,32 +79,22 @@ export function CreatePayoutDialog({
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [doctor, setDoctor] = useState<PickedDoctor | null>(presetDoctor ?? null);
-  const [period, setPeriod] = useState(previousMonth);
+  const [period, setPeriod] = useState(() => previousMonth(todayIso()));
   const [tds, setTds] = useState('');
   const [notes, setNotes] = useState('');
   const [deductions, setDeductions] = useState<DeductionDraft[]>([]);
 
-  const parsedTds = tds.trim() ? parsePercent(tds, { allowZero: true }) : null;
-  const parsedDeductions = deductions.map((d) => ({ draft: d, amount: parseRupees(d.amount) }));
-  const deductionProblem = parsedDeductions.some((d) => !d.amount.ok || !d.draft.description.trim());
-  const periodOk = Boolean(period.from) && Boolean(period.to) && period.to >= period.from;
-  const valid = doctor !== null && periodOk && (parsedTds === null || parsedTds.ok) && !deductionProblem;
+  const check = checkPayoutForm({
+    doctorId: doctor?.id ?? null,
+    from: period.from,
+    to: period.to,
+    tds,
+    deductions,
+    notes,
+  });
 
   const create = useMutation({
-    mutationFn: () =>
-      feeApi.createPayout({
-        practitionerId: doctor!.id,
-        periodFrom: period.from,
-        periodTo: period.to,
-        deductions: parsedDeductions.length
-          ? parsedDeductions.map((d) => ({
-              description: d.draft.description.trim(),
-              amount: d.amount.ok ? d.amount.rupees : 0,
-            }))
-          : null,
-        tdsPercent: parsedTds?.ok ? parsedTds.percent : null,
-        notes: notes.trim() || null,
-      }),
+    mutationFn: (request: CreatePayoutRequest) => feeApi.createPayout(request),
     onSuccess: (created) => {
       notify.success('Payout prepared', 'Another person must approve it before it is paid.');
       void queryClient.invalidateQueries({ queryKey: feeKeys.all });
@@ -138,8 +114,8 @@ export function CreatePayoutDialog({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (valid && !create.isPending) {
-              create.mutate();
+            if (check.request && !create.isPending) {
+              create.mutate(check.request);
             }
           }}
         >
@@ -159,8 +135,8 @@ export function CreatePayoutDialog({
                 <Field
                   label="To"
                   required
-                  validationMessage={periodOk ? undefined : 'The period must end on or after its start.'}
-                  validationState={periodOk ? 'none' : 'error'}
+                  validationMessage={check.periodOk ? undefined : 'The period must end on or after its start.'}
+                  validationState={check.periodOk ? 'none' : 'error'}
                 >
                   <Input
                     type="date"
@@ -172,8 +148,8 @@ export function CreatePayoutDialog({
                 <Field
                   label="TDS (%)"
                   hint="Empty uses the hospital setting (usually 10 % under section 194J)"
-                  validationMessage={parsedTds && !parsedTds.ok ? parsedTds.error : undefined}
-                  validationState={parsedTds && !parsedTds.ok ? 'error' : 'none'}
+                  validationMessage={check.tdsError ?? undefined}
+                  validationState={check.tdsError ? 'error' : 'none'}
                 >
                   <Input
                     value={tds}
@@ -226,7 +202,7 @@ export function CreatePayoutDialog({
                   </Button>
                 </div>
               )}
-              {deductionProblem && (
+              {check.deductionProblem && (
                 <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>
                   Every deduction needs a description and an amount.
                 </Caption1>
@@ -247,7 +223,7 @@ export function CreatePayoutDialog({
               <Button
                 type="submit"
                 appearance="primary"
-                disabled={!valid || create.isPending}
+                disabled={!check.request || create.isPending}
                 icon={create.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Prepare payout
@@ -308,7 +284,7 @@ export function PayoutDialog({ payoutId, onClose }: { payoutId: string; onClose:
     void sendToPrinter(buildPayoutAdviceHtml(p, letterhead), 'A4').catch((error: unknown) =>
       notify.error(error, 'Printing failed'),
     );
-  const needsReference = mode !== 'Cash' && !reference.trim();
+  const needsReference = needsPaymentReference(mode, reference);
 
   return (
     <>

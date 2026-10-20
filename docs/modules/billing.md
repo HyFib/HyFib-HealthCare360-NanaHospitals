@@ -13,8 +13,11 @@ printed bill's HTML, plus change-tracking checks on the real EF model without a 
 webhook delivered twice, who may reconcile), `PosSettlementTests` (a terminal sale and a typed card payment matched
 from the acquirer's report, the review, the settlement journal, a card receipt never settled), `PosRecheckTests`
 (the training terminal: a sale paid after the counter stopped polling is recorded once; one nobody paid is cancelled
-and timed out) and `InterimBillTests` (a self-paying stay billed in parts, and none for insured, scheme and package
-stays; see [Interim bills](#interim-bills-ipb-05)).
+and timed out), `InterimBillTests` (a self-paying stay billed in parts, and none for insured, scheme and package
+stays; see [Interim bills](#interim-bills-ipb-05)) and `DoctorFeeStatementTests` (a doctor's statement for a period
+from bills that accrued fees under his rules: the fee lines, a cancelled bill's reversal, and the payouts with their
+deductions, TDS and net). The staff app's doctor-fee screens keep their logic in `modules/doctor-fees/logic.ts`,
+tested with the statement and payout-advice prints by vitest.
 
 The module implements the Platform contracts `IChargePoster`, `IBillingStatusProvider` and `IPayerDirectory`
 (replacing the Null fallbacks) — see [Contracts for other modules](#contracts-for-other-modules). For insurance claims it reads the coding
@@ -246,7 +249,7 @@ A self-paying patient's long stay can be billed in parts, so the family pays as 
 | POST | `/payouts/{id}/approve` | `doctorfees.payouts.manage` | `PayoutVersionRequest` → 204 (not by its preparer) |
 | POST | `/payouts/{id}/pay` | `doctorfees.payouts.manage` | `PayPayoutRequest(reference)` → 204 |
 | DELETE | `/payouts/{id}?version` | `doctorfees.payouts.manage` | → 204 (draft only) |
-| GET | `/statements?practitionerId&from&to` | `doctorfees.payouts.manage` | → `DoctorStatement` |
+| GET | `/statements?practitionerId&from&to` | `doctorfees.payouts.manage` | → `DoctorStatement`: the doctor's fee lines earned in the period (by the IST day each was earned; a cancelled bill adds a negative line dated the day of the cancellation, which the doctor's next payout recovers if the fee was already in a payout), each with its bill, service, billed value, rule and share; the totals earned, reversed, in a payout, paid out and unpaid; and the payouts whose period overlaps it, each with gross, deductions, TDS and net. 400 when `to` is before `from` |
 
 ### Tally — `/api/v1/billing/tally`
 Everything works on the signed-in user's facility. See [The Tally day book](#the-tally-day-book) for what the day book

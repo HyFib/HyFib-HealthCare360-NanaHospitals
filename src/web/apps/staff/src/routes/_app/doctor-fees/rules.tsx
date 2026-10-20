@@ -18,17 +18,16 @@ import {
   MoreHorizontalRegular,
   TextBulletListSquareRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, formatInr } from '@hc360/core';
+import { formatDateOnly } from '@hc360/core';
 import { ConfirmDialog, DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { PAYER_TYPE_LABEL, SERVICE_CATEGORY_LABEL } from '@/modules/billing/labels';
-import { formatPercent } from '@/modules/billing/money';
 import { flagParam } from '@/modules/billing/searchParams';
 import { ActionError, NoAccess } from '@/modules/billing/ui';
 import { feeApi, feeKeys, feeQueries, type ShareRuleDto } from '@/modules/doctor-fees/api';
+import { ruleScope, ruleShare } from '@/modules/doctor-fees/logic';
 import { PractitionerPicker, type PickedDoctor } from '@/modules/doctor-fees/PractitionerPicker';
 import { RuleDrawer } from '@/modules/doctor-fees/RuleDrawer';
 
@@ -36,15 +35,6 @@ export const Route = createFileRoute('/_app/doctor-fees/rules')({
   validateSearch: (s: Record<string, unknown>): { inactive?: true } => ({ inactive: flagParam(s.inactive) }),
   component: RulesPage,
 });
-
-function ruleScope(rule: ShareRuleDto): string {
-  const what = rule.serviceItemId
-    ? `Service ${rule.serviceCode ?? ''}`
-    : rule.category
-      ? SERVICE_CATEGORY_LABEL[rule.category]
-      : 'Every service';
-  return rule.payerType ? `${what} · ${PAYER_TYPE_LABEL[rule.payerType]} patients` : what;
-}
 
 /** Doctor revenue-share rules (DFA-01). The most specific rule in force on the service date decides the share. */
 function RulesPage() {
@@ -133,11 +123,7 @@ function RulesPage() {
               key: 'share',
               header: 'Share',
               align: 'end',
-              render: (r) => (
-                <Text weight="semibold">
-                  {r.method === 'Percentage' ? formatPercent(r.value) : `${formatInr(r.value)} per unit`}
-                </Text>
-              ),
+              render: (r) => <Text weight="semibold">{ruleShare(r.method, r.value)}</Text>,
             },
             {
               key: 'valid',
