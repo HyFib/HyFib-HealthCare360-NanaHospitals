@@ -280,12 +280,12 @@ public sealed class AbdmExportTests(HospitalServer server)
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
         var admission = await AdmitAsync(patient.Id);
 
-        // An in-patient's CRP, resulted by the lab and waiting for the pathologist.
-        var crp = await CrpAsync(patient, admission);
-        var path = $"/api/v1/abdm/bundles/lab-reports/{crp.ReportId}";
-
+        // From the admission on, the bed is given back whatever happens.
         try
         {
+            // An in-patient's CRP, resulted by the lab and waiting for the pathologist.
+            var crp = await CrpAsync(patient, admission);
+            var path = $"/api/v1/abdm/bundles/lab-reports/{crp.ReportId}";
             await SwitchAsync(enabled: true);
 
             // Neither verified nor released, it is not a report yet.
@@ -317,23 +317,23 @@ public sealed class AbdmExportTests(HospitalServer server)
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
         var admission = await AdmitAsync(patient.Id);
 
-        // The stay: the doctor's admission note with its diagnosis, a CRP, and paracetamol for the fever.
-        var note = await AdmissionNoteAsync(doctor, patient.Id, admission);
-        await ReleaseAsync(await CrpAsync(patient, admission));
-        var paracetamol = await DrugAsync(doctor, "Paracetamol", "DRG-PCM500");
-        await SignAsync(doctor, await PrescribeAsync(doctor, patient.Id, note, Tablet(paracetamol, DoseFrequency.TDS, days: 3, "After food")));
-
-        var summary = await doctor.PutAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/by-admission/{admission.Id}",
-            new SaveDischargeSummaryRequest(
-                PatientId: patient.Id, EncounterId: null, PractitionerId: null, AdmittedAt: null, DischargedAt: null,
-                Diagnoses: "Acute febrile illness, probably viral", DiagnosisCodes: ["R50.9"], PresentingComplaints: "High fever for three days",
-                CourseInHospital: "The fever settled in two days on paracetamol and oral fluids. CRP was normal.", Procedures: null,
-                InvestigationsSummary: "CRP 3.2 mg/L", ConditionAtDischarge: "Afebrile and well", Medications: "Paracetamol 500 mg when needed for fever",
-                Advice: "Drink plenty of fluids", FollowUpDate: null, FollowUpInstructions: "Come back if the fever returns", Version: null));
-        var path = $"/api/v1/abdm/bundles/discharge-summaries/{summary.Id}";
-
+        // From the admission on, the bed is given back whatever happens.
         try
         {
+            // The stay: the doctor's admission note with its diagnosis, a CRP, and paracetamol for the fever.
+            var note = await AdmissionNoteAsync(doctor, patient.Id, admission);
+            await ReleaseAsync(await CrpAsync(patient, admission));
+            var paracetamol = await DrugAsync(doctor, "Paracetamol", "DRG-PCM500");
+            await SignAsync(doctor, await PrescribeAsync(doctor, patient.Id, note, Tablet(paracetamol, DoseFrequency.TDS, days: 3, "After food")));
+
+            var summary = await doctor.PutAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/by-admission/{admission.Id}",
+                new SaveDischargeSummaryRequest(
+                    PatientId: patient.Id, EncounterId: null, PractitionerId: null, AdmittedAt: null, DischargedAt: null,
+                    Diagnoses: "Acute febrile illness, probably viral", DiagnosisCodes: ["R50.9"], PresentingComplaints: "High fever for three days",
+                    CourseInHospital: "The fever settled in two days on paracetamol and oral fluids. CRP was normal.", Procedures: null,
+                    InvestigationsSummary: "CRP 3.2 mg/L", ConditionAtDischarge: "Afebrile and well", Medications: "Paracetamol 500 mg when needed for fever",
+                    Advice: "Drink plenty of fluids", FollowUpDate: null, FollowUpInstructions: "Come back if the fever returns", Version: null));
+            var path = $"/api/v1/abdm/bundles/discharge-summaries/{summary.Id}";
             await SwitchAsync(enabled: true);
 
             // A draft is still being written.
