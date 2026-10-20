@@ -58,7 +58,7 @@ flowchart LR
 
 | Concern | Mechanism | Where |
 |---|---|---|
-| Find the server without typing IPs | mDNS advertisement `_hc360._tcp.local` (TXT: `ver`, `fac`, `fp`=SHA-256 cert fingerprint) + Desktop discovery | `Platform/Networking/MdnsAdvertiser.cs`, `Desktop/Services/ServerDiscovery.cs` |
+| Find the server without typing IPs | mDNS advertisement `_hc360._tcp.local` (TXT: `ver`, `fac`, `fp`=SHA-256 fingerprint of the hospital CA, `host`, `path`) + Desktop discovery, which reads the TXT record with the code the server writes it with | `Platform/Networking/MdnsAdvertiser.cs`, `shared/WindowsInterop/Discovery/ServerAdvertisement.cs`, `Desktop/Services/ServerDiscovery.cs` |
 | Eavesdropping on shared WiFi | TLS 1.2/1.3 always. A private hospital CA is generated on first start. Desktop pins the fingerprint after enrolment | `Platform/Networking/LanCertificateManager.cs`, `Desktop/MainWindow.xaml.cs` |
 | Duplicate side effects from retries | `Idempotency-Key` on every POST/PUT/PATCH/DELETE. The server stores the response for 24 h and replays it | `Platform/Http/Idempotency.cs`, `web/packages/core/src/api/client.ts` |
 | Lost typing on disconnect | Draft auto-save (`useDraft`) every 5 s to local storage, cleared on sign-out | `web/packages/core/src/hooks/useDraft.ts` |

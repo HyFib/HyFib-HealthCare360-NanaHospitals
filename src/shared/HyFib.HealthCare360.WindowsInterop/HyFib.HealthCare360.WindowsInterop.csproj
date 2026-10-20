@@ -7,6 +7,8 @@
     before they trust a package HC360 Desktop installs by itself (SRS DED-18): one copy of the code, so all three agree.
     And the detached CMS signatures of prescriptions (DigitalSignatures/, ERX-04): HC360 Desktop signs with the doctor's
     Digital Signature Certificate and the server verifies with the same code.
+    And the Server Node's mDNS advertisement (Discovery/, DED-02): its service type and TXT record, which the server writes
+    and HC360 Desktop reads with the same code.
   -->
   <PropertyGroup>
     <RootNamespace>HyFib.HealthCare360.WindowsInterop</RootNamespace>
