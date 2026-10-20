@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
@@ -213,6 +214,20 @@ public sealed class ScaleOutTests(HospitalServer server)
     }
 
     [Fact]
+    public void The_address_a_limit_counts_by_is_kept_as_a_keyed_hash_that_cannot_be_worked_back()
+    {
+        var address = NewAddress();
+        var key = ClusterRateLimits.Key(ClusterRateLimits.SignIn, Address(address));
+
+        key.ShouldStartWith("rate:auth:");
+        key.ShouldNotContain(address);
+
+        // Not a plain hash, which hashing every IPv4 address would give back.
+        key.ShouldNotEndWith(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(address)), 0, 16));
+        ClusterRateLimits.Key(ClusterRateLimits.SignIn, Address(address)).ShouldBe(key, "every server counts the address under one key");
+    }
+
+    [Fact]
     public async Task A_single_server_counts_sign_in_attempts_in_its_own_memory_only()
     {
         await using var first = await AddressLimitedNodeAsync(severalNodes: false);
@@ -294,6 +309,9 @@ public sealed class ScaleOutTests(HospitalServer server)
         }));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton(server.Services.GetRequiredService<IClusterStore>());
+
+        // Every node has the hospital's data key (in the shared folder), which the counts' keys are hashed with.
+        builder.Services.AddSingleton(server.Services.GetRequiredService<IFieldProtector>());
         builder.Services.AddHospitalRateLimiter();
 
         var app = builder.Build();
@@ -316,9 +334,10 @@ public sealed class ScaleOutTests(HospitalServer server)
         return (response.StatusCode, response.Headers.TryGetValues("Retry-After", out var values) ? values.Single() : null);
     }
 
-    private static HttpContext Address(string address)
+    /// <summary>A request from <paramref name="address"/>, on the test server's services (the rate-limit key is keyed with its data key).</summary>
+    private HttpContext Address(string address)
     {
-        var context = new DefaultHttpContext();
+        var context = new DefaultHttpContext { RequestServices = server.Services };
         context.Connection.RemoteIpAddress = IPAddress.Parse(address);
         return context;
     }

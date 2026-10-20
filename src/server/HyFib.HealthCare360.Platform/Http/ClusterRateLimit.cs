@@ -46,14 +46,19 @@ public static class ClusterRateLimits
     }
 
     /// <summary>
-    /// The key a request counts under: the policy and a hash of the client's address (as the reverse proxy forwarded it,
-    /// <see cref="ReverseProxy"/>), so the store holds no address.
+    /// The key a request counts under: the policy and an HMAC of the client's address (as the reverse proxy forwarded it,
+    /// <see cref="ReverseProxy"/>) under a key derived from the hospital's data key, so the store holds no address. A
+    /// plain hash would not do: every IPv4 address can be hashed in minutes, which would give the addresses back to
+    /// anyone who reads the table or a backup of it.
     /// </summary>
     internal static string Key(AddressRateLimit limit, HttpContext http)
     {
         var address = RateLimitPolicies.ClientKey(http);
-        return $"rate:{limit.Policy}:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(address)), 0, 16);
+        var key = http.RequestServices.GetRequiredService<IFieldProtector>().DeriveKey(KeyPurpose);
+        return $"rate:{limit.Policy}:" + Convert.ToHexString(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(address)), 0, 16);
     }
+
+    private const string KeyPurpose = "cluster-rate-limit";
 }
 
 /// <summary>Refuses a request over the hospital-wide budget with 429 and <c>Retry-After</c>, as the in-memory limiter does.</summary>
