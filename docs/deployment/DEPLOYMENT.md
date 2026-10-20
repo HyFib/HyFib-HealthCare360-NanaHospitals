@@ -945,7 +945,8 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 | The keys and the stored documents | The shared folder (`HealthCare360:Cluster:SharedDirectory`). The keys there are protected with a certificate every node holds (`KeyCertificateThumbprint`), because machine DPAPI, which protects them on a single Server Node, opens only on the machine that wrote them. The keys are never in the database: a copy of the database (a backup, the reporting replica) opens no encrypted value without the shared folder too |
 | Real-time updates (queue boards, bed board, critical alerts) | Redis (`ConnectionStrings:Redis`), through which an update raised on any node reaches the screens connected to every other |
 | Permissions, sessions and settings held in memory for speed | Each node, for a moment. A change on one node expires them on every node at once, through PostgreSQL's LISTEN/NOTIFY on the database they share. A node that stops hearing the others reads them from the database every time until it hears them again |
-| The settings file, the TLS certificate, logs, backups, temporary files | Each node's own data folder |
+| Backups | One folder every node names in `HealthCare360:Backup:Directory` (a second share, such as `\\hc360-files\hc360-backups`). The job node makes the scheduled ones; **Back up now** runs on the API node that answers it, so it must write to the same folder, and every API node needs PostgreSQL's client tools (`pg_dump`, `Backup:PgDumpPath`) as the job node does |
+| The settings file, the TLS certificate, logs, temporary files | Each node's own data folder |
 
 **You need:**
 - Two or more API nodes and one job node, each as section 1 says, with HC360 installed by
@@ -1013,6 +1014,7 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
        "SharedDirectory": "\\\\hc360-files\\hc360",
        "KeyCertificateThumbprint": "3F9A…"
      },
+     "Backup": { "Directory": "\\\\hc360-files\\hc360-backups" },
      "Network": { "KnownProxies": [ "10.0.0.5" ], "EnableMdns": false }
    }
    ```
@@ -1049,8 +1051,8 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
   changed, so stop it and start the job node again.
 - **Rotating keys** (section 3) works on any node: the others use the new key within ten seconds, and accept tokens
   signed with it at once.
-- **Restoring** a backup (section 8): stop every node, restore on the job node (its settings name the shared folder, so
-  the documents and keys go there), then start the job node and the API nodes.
+- **Restoring** a backup (section 8): stop every node, restore on the job node from the shared backup folder (its
+  settings name the shared folder, so the documents and keys go there), then start the job node and the API nodes.
 - The limits on sign-in and one-time codes per address (10 sign-in attempts a minute, 5 code requests in 15 minutes)
   are counted for the whole hospital, in the database, whichever node answers. The other limits, on public pages, device
   requests and requests per user, are each node's own, so with *n* API nodes a client may make up to *n* times as many.
