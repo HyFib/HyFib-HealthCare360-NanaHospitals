@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
@@ -100,6 +101,22 @@ public sealed class ChartResultTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Lab_tests_released_together_are_one_result_on_the_timeline()
+    {
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var facilityId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+        var patient = await RegisterPatientAsync(isVip: false);
+
+        var reportId = await ReleaseLabTestsTogetherAsync(facilityId, patient.Id, criticalTest: "LAB-KFT", otherTest: "LAB-CBC");
+
+        var entry = (await doctor.GetAsync<PagedResult<TimelineEntry>>($"/api/v1/emr/patients/{patient.Id}/timeline?types=Result"))
+            .Items.ShouldHaveSingleItem("One report is one result, however many of its tests are released at once.");
+        entry.Id.ShouldBe(reportId);
+        entry.ReportKind.ShouldBe(DiagnosticKind.Laboratory);
+        entry.IsCritical.ShouldBeTrue("The critical test keeps the result critical, though a normal one was released after it.");
+    }
+
+    [Fact]
     public async Task A_restricted_patients_results_stay_behind_the_guard_on_the_way_to_the_report()
     {
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
@@ -183,6 +200,47 @@ public sealed class ChartResultTests(HospitalServer server)
         db.Add(report);
         await db.SaveChangesAsync(Ct);
         return report;
+    }
+
+    /// <summary>
+    /// An accession of two tests the pathologist verified, the first with a critical value, released together as the lab
+    /// report screen does: one announcement to the EHR per test, in that order, all of the same report.
+    /// </summary>
+    private async Task<Guid> ReleaseLabTestsTogetherAsync(Guid facilityId, Guid patientId, string criticalTest, string otherTest)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        var order = new LabOrder
+        {
+            FacilityId = facilityId,
+            PatientId = patientId,
+            AccessionNumber = "NHLBC" + Digits(7),
+            PatientClass = PatientClass.OutPatient,
+            Source = LabOrderSource.WalkIn,
+            Priority = OrderPriority.Routine,
+            OrderedAt = now.AddHours(-3),
+            Status = LabOrderStatus.InProgress,
+        };
+        foreach (var code in new[] { criticalTest, otherTest })
+        {
+            var test = await db.Set<LabTest>().SingleAsync(t => t.Code == code, Ct);
+            order.AddItem(new LabOrderItem
+            {
+                LabTestId = test.Id,
+                TestCode = test.Code,
+                TestName = test.Name,
+                Section = test.Section,
+                Priority = OrderPriority.Routine,
+                Status = LabOrderItemStatus.Verified,
+            });
+        }
+
+        var report = new LabReport { FacilityId = facilityId, LabOrderId = order.Id, PatientId = patientId, ReportNumber = order.AccessionNumber };
+        report.Release(order, new HashSet<Guid> { order.Items[0].Id }, null, now).Value.Count.ShouldBe(2);
+        db.AddRange(order, report);
+        await db.SaveChangesAsync(Ct);
+        return report.Id;
     }
 
     /// <summary>An ECG recorded, reported, signed and released by the cardiologist.</summary>
