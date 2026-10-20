@@ -7,7 +7,7 @@ contracts, preventive maintenance, breakdown tickets, calibration, depreciation,
 SRS **INV-01..08**, **AST-01..06**.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.SupplyChain`. Schema `supplychain`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupplyChain.Tests` (104 unit and EF-model tests, no database needed).
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupplyChain.Tests` (123 unit and EF-model tests, no database needed).
 
 India conventions: amounts in INR. Purchase GST is exclusive and split CGST + SGST within a state, or IGST when
 the vendor's GSTIN state differs from the facility's. MRP is GST-inclusive. HSN codes are 6-digit headings. Dates
@@ -172,7 +172,7 @@ printer the server writes the tag (`asset-tags`); otherwise the tag page prints.
 | GET | `/tickets?page&status&priority&assetId&openOnly` · `/tickets/{id}` | Asset readers | → paged `TicketListItem` · `TicketDetail` |
 | POST | `/tickets` | Asset readers (ward staff report breakdowns) | `ReportBreakdownRequest` (assetId, issue, priority?, assetDown) → 201 `DocumentCreated`; priority defaults from asset criticality; `assetDown` puts the asset under maintenance and alerts biomedical engineering |
 | POST | `/tickets/{id}/assign` · `/start` · `/resolve` · `/close` · `/reopen` | `assets.maintenance` | `AssignTicketRequest` · — · `ResolveTicketRequest` (resolution, rootCause, cost, downtimeMinutes) · — · — → 204 |
-| GET · POST | `/{assetId}/calibrations` | Asset readers · `assets.maintenance` | → `CalibrationDto[]` · `RecordCalibrationRequest` (calibratedOn, agency, certificateNumber, certificateFileId, nextDueDate, outcome, remarks) → 201 |
+| GET · POST | `/{assetId}/calibrations` | Asset readers · `assets.maintenance` | → `CalibrationDto[]` · `RecordCalibrationRequest` (calibratedOn, agency, certificateNumber, certificateFileId, nextDueDate, outcome, remarks) → 201; only the latest certificate counts (`Asset.RecordCalibration`, unit-tested): it sets the asset's next calibration date, and a failed one puts the asset under maintenance. An older certificate entered later changes neither |
 
 ## Stock rules (INV-04)
 

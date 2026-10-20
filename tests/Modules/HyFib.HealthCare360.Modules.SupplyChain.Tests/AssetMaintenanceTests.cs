@@ -86,4 +86,77 @@ public sealed class AssetMaintenanceTests
         contract.IsCurrent(Today).ShouldBeTrue();
         contract.IsCurrent(Today.AddDays(11)).ShouldBeFalse();
     }
+
+    [Fact]
+    public void A_passing_calibration_sets_the_next_due_date_and_keeps_the_equipment_in_use()
+    {
+        var asset = new Asset { AssetTag = "NHAS000002" };
+
+        asset.RecordCalibration(Calibration(Today, CalibrationResult.Pass, Today.AddDays(365)), latestOnFile: null).IsSuccess.ShouldBeTrue();
+
+        asset.NextCalibrationDue.ShouldBe(Today.AddDays(365));
+        asset.RequiresCalibration.ShouldBeTrue();
+        asset.Status.ShouldBe(AssetStatus.InUse);
+    }
+
+    [Fact]
+    public void A_failed_calibration_takes_the_equipment_out_of_use()
+    {
+        var inUse = new Asset { AssetTag = "NHAS000003" };
+        var parked = new Asset { AssetTag = "NHAS000004" };
+        parked.SetOperational(inUse: false).IsSuccess.ShouldBeTrue();
+
+        inUse.RecordCalibration(Calibration(Today, CalibrationResult.Fail, Today.AddDays(30)), latestOnFile: Today.AddDays(-365)).IsSuccess.ShouldBeTrue();
+        parked.RecordCalibration(Calibration(Today, CalibrationResult.Fail, Today.AddDays(30)), latestOnFile: null).IsSuccess.ShouldBeTrue();
+
+        inUse.Status.ShouldBe(AssetStatus.UnderMaintenance);
+        inUse.NextCalibrationDue.ShouldBe(Today.AddDays(30));
+        parked.Status.ShouldBe(AssetStatus.UnderMaintenance, "idle equipment that failed must not be put back to use either");
+    }
+
+    [Fact]
+    public void A_failed_calibration_leaves_condemned_equipment_condemned()
+    {
+        var asset = new Asset { AssetTag = "NHAS000005" };
+        asset.Condemn(Today.AddDays(-1)).IsSuccess.ShouldBeTrue();
+
+        asset.RecordCalibration(Calibration(Today, CalibrationResult.Fail, Today.AddDays(30)), latestOnFile: null).IsSuccess.ShouldBeTrue();
+
+        asset.Status.ShouldBe(AssetStatus.Condemned);
+    }
+
+    [Fact]
+    public void An_older_certificate_entered_later_moves_neither_the_due_date_nor_the_status()
+    {
+        var asset = new Asset { AssetTag = "NHAS000006" };
+        asset.RecordCalibration(Calibration(Today, CalibrationResult.Pass, Today.AddDays(180)), latestOnFile: null).IsSuccess.ShouldBeTrue();
+
+        // Last quarter's certificates, typed in from the backlog after today's.
+        asset.RecordCalibration(Calibration(Today.AddDays(-90), CalibrationResult.Pass, Today.AddDays(90)), latestOnFile: Today).IsSuccess.ShouldBeTrue();
+        asset.RecordCalibration(Calibration(Today.AddDays(-91), CalibrationResult.Fail, Today.AddDays(-60)), latestOnFile: Today).IsSuccess.ShouldBeTrue();
+
+        asset.NextCalibrationDue.ShouldBe(Today.AddDays(180));
+        asset.Status.ShouldBe(AssetStatus.InUse);
+    }
+
+    [Fact]
+    public void A_certificate_dated_the_same_day_as_the_latest_counts_as_the_latest()
+    {
+        var asset = new Asset { AssetTag = "NHAS000007" };
+        asset.RecordCalibration(Calibration(Today, CalibrationResult.Pass, Today.AddDays(365)), latestOnFile: null).IsSuccess.ShouldBeTrue();
+
+        // The recheck the same afternoon failed.
+        asset.RecordCalibration(Calibration(Today, CalibrationResult.Fail, Today.AddDays(7)), latestOnFile: Today).IsSuccess.ShouldBeTrue();
+
+        asset.NextCalibrationDue.ShouldBe(Today.AddDays(7));
+        asset.Status.ShouldBe(AssetStatus.UnderMaintenance);
+    }
+
+    private static CalibrationRecord Calibration(DateOnly on, CalibrationResult outcome, DateOnly nextDue) => new()
+    {
+        CalibratedOn = on,
+        Agency = "NABL-accredited calibration lab",
+        NextDueDate = nextDue,
+        Outcome = outcome,
+    };
 }

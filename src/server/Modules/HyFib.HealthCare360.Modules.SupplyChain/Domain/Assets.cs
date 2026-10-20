@@ -113,6 +113,24 @@ public sealed class Asset : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
+    /// <summary>
+    /// Applies a calibration certificate (AST-05). Only the latest certificate counts: it sets the next calibration date,
+    /// and a failed one takes the equipment out of use. A certificate older than the latest on file (entered late) joins
+    /// the history but changes neither, so it cannot move the due date back or retire equipment that has passed since.
+    /// </summary>
+    /// <param name="latestOnFile">Date of the latest certificate already recorded for this asset, if any.</param>
+    public Result RecordCalibration(CalibrationRecord certificate, DateOnly? latestOnFile)
+    {
+        if (latestOnFile is { } latest && certificate.CalibratedOn < latest)
+        {
+            return Result.Success();
+        }
+
+        NextCalibrationDue = certificate.NextDueDate;
+        RequiresCalibration = true;
+        return certificate.Outcome == CalibrationResult.Fail && IsInService ? MarkUnderMaintenance() : Result.Success();
+    }
+
     /// <summary>Moves between InUse and Idle (parked equipment); maintenance and retirement use their own flows.</summary>
     public Result SetOperational(bool inUse)
     {
