@@ -950,10 +950,13 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 
 **You need:**
 - Two or more API nodes and one job node, each as section 1 says, with HC360 installed by
-  `.\Install-HC360Server.ps1 -PostgresHost <the database server> -DatabaseSignIn Password` (`-CreateDatabase` on the
-  first only) and, on all but the first, `-HospitalCaFile` with the CA exported from the first (`certificates
-  export-ca`, section 9), so that every node's certificate comes from the one hospital CA. The job node also listens
-  for network analysers and modalities: give those its address.
+  `.\Install-HC360Server.ps1 -PostgresHost <the database server> -DatabaseSignIn Password -NoStart` (`-CreateDatabase`
+  on the first only) and, on all but the first, `-HospitalCaFile` with the CA exported from the first (`certificates
+  export-ca`, section 9), so that every node's certificate comes from the one hospital CA. `-NoStart` leaves the service
+  stopped, and not starting with Windows, until step 5: a node started before its settings name its role and the shared
+  folder would run as a whole Server Node (`all`) against the hospital's database, running the background jobs beside
+  the real job node and making data keys of its own that cannot read the hospital's data. The job node also listens for
+  network analysers and modalities: give those its address.
 - PostgreSQL on a machine of its own, reachable from every node, which then signs in with a password (section 3, "How
   the server signs in to the database"). If the nodes reach it through PgBouncer in transaction pooling, also set
   `ConnectionStrings:Signals` to PostgreSQL itself: PgBouncer in that mode does not pass on the notifications that keep
@@ -1034,8 +1037,10 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
    data keys in the shared folder, protected with the certificate. It does not touch the database. A node that has keys
    of its own and finds none in the shared folder refuses to start and says to do this: it would otherwise make new
    keys there, and nothing encrypted before could be read.
-5. Start the job node first, then the API nodes. Each refuses to start, saying why, if the certificate is missing or its
-   private key cannot be read, or if a proxy address is not an address.
+5. Start the job node first, then the API nodes: on each, `.\Install-HC360Server.ps1` again from the same package,
+   without `-NoStart` or `-CreateDatabase`. It has the service start with Windows, starts it and checks that it is
+   ready. Each node refuses to start, saying why, if the certificate is missing or its private key cannot be read, or if
+   a proxy address is not an address.
 6. Point the workstations at the proxy: HC360 Desktop › Change server…, with the proxy's name, and compare the hospital
    CA fingerprint as at first set-up (section 5). Point `portal.baseUrl` at the proxy's portal address.
 7. Check: `/health/ready` on each node answers 200; Administration › System health shows no warning; a bed changed on a

@@ -115,6 +115,15 @@ jobs:
           pwsh -NoProfile -File tests/deploy/Test-InstallerServiceRestart.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
+      # A node of several installed with -NoStart must not start, even after a restart, before its settings are in place.
+      - name: Test that the installer leaves HC360 stopped with -NoStart
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerNoStart.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerNoStart.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       # Windows Update's active hours on the Server Node (SRS DED-15), written to throwaway keys.
       - name: Test the installer's Windows Update active hours
         shell: pwsh

@@ -38,6 +38,10 @@
       the server package (the folder it was extracted to, or the one above), or from -DesktopPackage. The server takes
       it in only when HyFib signed it (desktop publish); otherwise workstations are upgraded with Install-HC360Desktop.ps1.
     - Starts the service, waits until it is healthy and prints the CA fingerprint staff will verify on workstations.
+      With -NoStart the service is left stopped, and does not start with Windows, for a node of several servers whose
+      settings (its role, the shared folder, the database) must be in place before it first starts: running the installer
+      again without -NoStart then starts it, has it start with Windows, and changes the database sign-in if it must
+      (docs/deployment/DEPLOYMENT.md, section 10).
 
     With -Standby it installs HC360 on a warm standby Server Node (SRS DED-20), whose PostgreSQL New-HC360Standby.ps1 made
     a read-only copy of the primary's: everything above, but the service is registered disabled and never started, so
@@ -88,6 +92,9 @@ param(
     [ValidateSet('Windows', 'Password')] [string] $DatabaseSignIn = 'Windows',
     # A warm standby Server Node: HC360 is installed with its service disabled, and never started.
     [switch] $Standby,
+    # Installs HC360 and leaves its service stopped, not starting with Windows, until the installer runs again without it
+    # once the node's settings are in place (several servers).
+    [switch] $NoStart,
     # The hospital CA exported on the primary (or the old server) with "certificates export-ca", and its password.
     [string] $HospitalCaFile,
     [securestring] $HospitalCaPassword,
@@ -600,8 +607,10 @@ if (-not $existing) {
         -Description 'HyFib HealthCare360 hospital information system (API, staff app, patient portal, background jobs).' `
         -StartupType Automatic | Out-Null
 }
-# On a warm standby the service is disabled: HC360 must never run against the standby's read-only database.
-$startMode = if ($Standby) { 'disabled' } else { 'delayed-auto' }
+# On a warm standby the service is disabled: HC360 must never run against the standby's read-only database. With -NoStart
+# it is started by hand only, so that a restart of the machine before the node's settings are in place does not start it
+# as a whole Server Node, with keys of its own, against the hospital's database.
+$startMode = if ($Standby) { 'disabled' } elseif ($NoStart) { 'demand' } else { 'delayed-auto' }
 sc.exe config $ServiceName obj= $ServiceAccount start= $startMode | Out-Null
 Set-RestartOnFailure $ServiceName
 
@@ -795,6 +804,10 @@ if ($Standby) {
     Write-Step 'Leaving HyFib HealthCare360 stopped and disabled: this is a warm standby'
     $ready = $false
 }
+elseif ($NoStart) {
+    Write-Step 'Leaving HyFib HealthCare360 stopped (-NoStart): run the installer again once its settings are in place'
+    $ready = $false
+}
 else {
     Write-Step 'Starting HyFib HealthCare360'
     Start-Service -Name $ServiceName
@@ -828,7 +841,11 @@ elseif ($signIn) {
     if (-not $postgres) { Write-Warning "No PostgreSQL service on this machine listens on port $($signIn['port']), so the database sign-in is left as it is." }
 }
 
-if ($postgres) {
+if ($NoStart) {
+    # Changing it means stopping and starting the server: it waits until the server has started with its own settings.
+    if ($postgres) { Write-Host '    Left as it is (-NoStart): run the installer again without -NoStart, once the settings are in place, to change it.' }
+}
+elseif ($postgres) {
     $role = $signIn['username']
     $databasePort = [int] $signIn['port']
     $withPassword = $signIn['sign-in'] -eq 'password'
@@ -1013,6 +1030,10 @@ if ($Standby) {
     if (-not (Test-Path -LiteralPath $caPath)) {
         Write-Warning "This standby has no hospital CA yet: after a failover every workstation would have to be set up again. Export it on the primary ('certificates export-ca') and run the installer again with -Standby -HospitalCaFile."
     }
+}
+elseif ($NoStart) {
+    Write-Host 'HyFib HealthCare360 is installed, and its service is stopped and does not start with Windows (-NoStart).' -ForegroundColor Green
+    Write-Host 'Put its settings in place, then run this installer again without -NoStart: it starts the service and has it start with Windows.' -ForegroundColor Green
 }
 else {
     Write-Host "HyFib HealthCare360 is available at https://$($env:COMPUTERNAME):$HttpsPort/" -ForegroundColor Green
