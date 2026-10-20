@@ -91,12 +91,11 @@ public sealed class AadhaarAuthenticationTests : IDisposable
     }
 
     [Fact]
-    public async Task Asks_nothing_of_uidai_without_the_persons_consent()
+    public void Asks_nothing_of_uidai_without_the_persons_consent()
     {
-        var result = await Router.AuthenticateAsync(Check() with { ResidentConsented = false }, Ct);
-
-        result.Outcome.ShouldBe(AadhaarCheckOutcome.Failed);
-        result.Message.ShouldBe("Ask for the person's consent to Aadhaar authentication first.");
+        // Without the person's consent there is no check to send: it cannot be made.
+        Should.Throw<ArgumentException>(() => new AadhaarFingerprintCheck(UidaiAuthXmlTests.TestUid, UidaiAuthXmlTests.Capture, residentConsented: false))
+            .ParamName.ShouldBe("residentConsented");
         _asa.Requests.ShouldBeEmpty();
     }
 
@@ -300,7 +299,7 @@ public sealed class AadhaarAuthenticationTests : IDisposable
     }
 
     private static AadhaarFingerprintCheck Check(string number = UidaiAuthXmlTests.TestUid) =>
-        new(number, UidaiAuthXmlTests.Capture, ResidentConsented: true);
+        new(number, UidaiAuthXmlTests.Capture, residentConsented: true);
 
     private static SignedXml SignatureOf(string xml)
     {

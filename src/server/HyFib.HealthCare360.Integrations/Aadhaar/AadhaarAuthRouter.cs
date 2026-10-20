@@ -3,9 +3,9 @@ using HyFib.HealthCare360.WindowsInterop.Biometrics;
 namespace HyFib.HealthCare360.Integrations.Aadhaar;
 
 /// <summary>
-/// The platform's <see cref="IAadhaarAuthenticator"/> (INT-BIO): checks the request — the person agreed, the number is
-/// an Aadhaar number or a Virtual ID, the capture is complete — and asks the provider the facility uses
-/// (<c>integrations.aadhaar</c>). Until it is set up, every check fails with the reason.
+/// The platform's <see cref="IAadhaarAuthenticator"/> (INT-BIO): checks the request — the number is an Aadhaar number or a
+/// Virtual ID, the capture is complete; the person's consent comes with the check, which cannot be made without it — and
+/// asks the provider the facility uses (<c>integrations.aadhaar</c>). Until it is set up, every check fails with the reason.
 /// </summary>
 internal sealed class AadhaarAuthRouter(IEnumerable<IAadhaarAuthProvider> providers, IntegrationSettingsReader settings, ICurrentUser currentUser)
     : IAadhaarAuthenticator
@@ -35,16 +35,7 @@ internal sealed class AadhaarAuthRouter(IEnumerable<IAadhaarAuthProvider> provid
             return AadhaarCheckResult.Fail("none", error!);
         }
 
-        // The Aadhaar Act allows authentication only with the holder's consent, given after being told what it is for.
-        // False positive: this is the staff member's statement that the patient agreed, which UIDAI's own request carries
-        // the same way (rc="Y"). It is not a credential: only staff who may check identities can send it, and UIDAI answers
-        // only for the holder's own finger, captured and encrypted by a registered reader.
-        // codeql[cs/user-controlled-bypass]
-        if (!check.ResidentConsented)
-        {
-            return AadhaarCheckResult.Fail(provider.Key, "Ask for the person's consent to Aadhaar authentication first.");
-        }
-
+        // The person's consent is not asked here: an AadhaarFingerprintCheck cannot be made without it.
         if (AadhaarNumber.Normalize(check.AadhaarNumber) is not { } uid)
         {
             return AadhaarCheckResult.Fail(provider.Key, "Enter the 12-digit Aadhaar number or the 16-digit Virtual ID.");

@@ -222,12 +222,36 @@ public sealed record AadhaarCaptureSetup(
     int TimeoutSeconds = 15,
     bool Training = false);
 
-/// <summary>A fingerprint to check against an Aadhaar number with UIDAI.</summary>
-/// <param name="AadhaarNumber">The 12-digit Aadhaar number or the 16-digit Virtual ID, as given; never stored.</param>
-/// <param name="PidData">The RD service's <c>PidData</c> document, as the device returned it (encrypted for UIDAI).</param>
-/// <param name="ResidentConsented">The person agreed to Aadhaar authentication, after being told what it is for.</param>
-/// <param name="FacilityId">Facility whose settings apply (null: the signed-in user's).</param>
-public sealed record AadhaarFingerprintCheck(string AadhaarNumber, string PidData, bool ResidentConsented, Guid? FacilityId = null);
+/// <summary>
+/// A fingerprint to check against an Aadhaar number with UIDAI. The Aadhaar Act allows authentication only with the
+/// holder's consent, given after being told what it is for, so there is no check without it: whoever makes one states
+/// that the person agreed, as UIDAI's request does (<c>rc="Y"</c>).
+/// </summary>
+public sealed record AadhaarFingerprintCheck
+{
+    /// <param name="aadhaarNumber">The 12-digit Aadhaar number or the 16-digit Virtual ID, as given; never stored.</param>
+    /// <param name="pidData">The RD service's <c>PidData</c> document, as the device returned it (encrypted for UIDAI).</param>
+    /// <param name="residentConsented">The person agreed to Aadhaar authentication, after being told what it is for.</param>
+    /// <param name="facilityId">Facility whose settings apply (null: the signed-in user's).</param>
+    /// <exception cref="ArgumentException">The person did not agree.</exception>
+    public AadhaarFingerprintCheck(string aadhaarNumber, string pidData, bool residentConsented, Guid? facilityId = null)
+    {
+        if (!residentConsented)
+        {
+            throw new ArgumentException("An Aadhaar check needs the person's consent, given after being told what it is for.", nameof(residentConsented));
+        }
+
+        AadhaarNumber = aadhaarNumber;
+        PidData = pidData;
+        FacilityId = facilityId;
+    }
+
+    public string AadhaarNumber { get; init; }
+
+    public string PidData { get; init; }
+
+    public Guid? FacilityId { get; init; }
+}
 
 public enum AadhaarCheckOutcome
 {
