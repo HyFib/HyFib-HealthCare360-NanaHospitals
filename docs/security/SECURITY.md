@@ -266,6 +266,8 @@ and grants nothing.
     ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
     result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
     and safety flags stay, so the patient is still seen to.
+  - Their stored files (documents, photos, reports) follow the same rules: opening a file, or its details, by its id
+    is refused (403 `patient.restricted`) until the user may open the record, so knowing a file's id is not a way in.
 - **Patient portal scope.** A portal account sees the patients registered with the mobile number it signed in with,
   and family members on other numbers only through a family link in force (PP-01):
   - A link is made at the front desk, after staff check both people's identity documents and record who agreed, or in

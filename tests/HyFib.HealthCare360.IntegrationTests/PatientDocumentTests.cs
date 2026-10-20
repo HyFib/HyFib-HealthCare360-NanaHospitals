@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
@@ -110,6 +111,41 @@ public sealed class PatientDocumentTests(HospitalServer server)
         }
 
         (await admin.GetAsync<List<PatientDocumentDto>>(path)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_restricted_records_files_open_only_with_the_access_that_opens_the_record()
+    {
+        var patient = await RegisterPatientAsync(isVip: true);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var fileId = await UploadAsync(admin, patient.Id);
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+
+        // Knowing a file's id is not enough: the file follows its record's rules, as the record's documents list does.
+        foreach (var path in new[] { $"/api/v1/files/{fileId}", $"/api/v1/files/{fileId}/meta" })
+        {
+            using var refused = await nurse.SendRawAsync(HttpMethod.Get, path);
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden, path);
+            (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("patient.restricted");
+        }
+
+        using (var byAdmin = await admin.SendRawAsync(HttpMethod.Get, $"/api/v1/files/{fileId}"))
+        {
+            byAdmin.StatusCode.ShouldBe(HttpStatusCode.OK);
+            (await byAdmin.Content.ReadAsByteArrayAsync(Ct)).ShouldBe(OutsideReport);
+        }
+
+        await nurse.PostAsync($"/api/v1/patients/{patient.Id}/break-glass", new BreakGlassRequest("Unconscious in casualty, needs the outside MRI report"));
+        using (var afterBreakGlass = await nurse.SendRawAsync(HttpMethod.Get, $"/api/v1/files/{fileId}"))
+        {
+            afterBreakGlass.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+
+        // Another patient's file, and a file of no patient, open as before.
+        var unrestricted = await UploadAsync(admin, (await RegisterPatientAsync(isVip: false)).Id);
+        var unowned = await UploadAsync(admin, patientId: null);
+        (await nurse.GetAsync<StoredFileDto>($"/api/v1/files/{unrestricted}/meta")).Id.ShouldBe(unrestricted);
+        (await nurse.GetAsync<StoredFileDto>($"/api/v1/files/{unowned}/meta")).PatientId.ShouldBeNull();
     }
 
     [Fact]

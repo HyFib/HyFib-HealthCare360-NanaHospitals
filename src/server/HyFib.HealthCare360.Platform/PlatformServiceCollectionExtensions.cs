@@ -310,6 +310,7 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddSingleton<IPdfRenderer, UnavailablePdfRenderer>();
         services.TryAddScoped<IIntegrationHealthSource, NoIntegrationHealthSource>();
         services.TryAddScoped<IAadhaarAuthenticator, UnconfiguredAadhaarAuthenticator>();
+        services.TryAddScoped<IPatientRecordAccess, NoPatientRecordAccess>();
 
         // ---------------- background work
         if (options.RunsJobs)

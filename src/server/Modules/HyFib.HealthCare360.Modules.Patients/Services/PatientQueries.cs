@@ -96,7 +96,7 @@ public sealed class PatientAccessGuard(
     IMemoryCache cache,
     IAuditLogger audit,
     INotificationService notifications,
-    TimeProvider time)
+    TimeProvider time) : IPatientRecordAccess
 {
     private static readonly TimeSpan GrantDuration = TimeSpan.FromMinutes(30);
 
