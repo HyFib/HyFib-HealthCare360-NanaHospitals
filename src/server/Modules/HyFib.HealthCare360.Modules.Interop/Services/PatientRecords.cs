@@ -61,7 +61,7 @@ internal sealed class PatientRecords(
             word =>
             {
                 var pattern = word.ToLikePattern();
-                return p => EF.Functions.ILike(p.FullName, pattern);
+                return p => EF.Functions.ILike(p.FullName, pattern, QueryExtensions.LikeEscape);
             });
 
     private async Task<List<R4.Patient>> MapAsync(IReadOnlyList<Patient> patients, CancellationToken ct)

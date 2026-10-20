@@ -54,8 +54,8 @@ internal static class ReferralEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            doctors = doctors.Where(d => EF.Functions.ILike(d.Name, like) || (d.Clinic != null && EF.Functions.ILike(d.Clinic, like))
-                                         || (d.City != null && EF.Functions.ILike(d.City, like)));
+            doctors = doctors.Where(d => EF.Functions.ILike(d.Name, like, QueryExtensions.LikeEscape) || (d.Clinic != null && EF.Functions.ILike(d.Clinic, like, QueryExtensions.LikeEscape))
+                                         || (d.City != null && EF.Functions.ILike(d.City, like, QueryExtensions.LikeEscape)));
         }
 
         var rows = await doctors.Select(d => new { d.Id, d.Name, d.Clinic, d.Specialty, d.City, d.Phone, d.IsActive }).ToListAsync(ct);

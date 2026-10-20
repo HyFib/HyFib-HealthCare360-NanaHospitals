@@ -316,7 +316,7 @@ internal static class OrganizationEndpoints
                 if (!string.IsNullOrWhiteSpace(search))
                 {
                     var like = search.Trim().ToLikePattern();
-                    query = query.Where(p => EF.Functions.ILike(p.DisplayName, like) || EF.Functions.ILike(p.Code, like));
+                    query = query.Where(p => EF.Functions.ILike(p.DisplayName, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(p.Code, like, QueryExtensions.LikeEscape));
                 }
 
                 return TypedResults.Ok(await query.OrderBy(p => p.DisplayName).Take(50).Select(p => new LookupItem(p.Id, p.Code, p.DisplayName)).ToListAsync(ct));
@@ -328,7 +328,7 @@ internal static class OrganizationEndpoints
                 if (!string.IsNullOrWhiteSpace(search))
                 {
                     var like = search.Trim().ToLikePattern();
-                    query = query.Where(s => EF.Functions.ILike(s.Name, like) || EF.Functions.ILike(s.Code, like));
+                    query = query.Where(s => EF.Functions.ILike(s.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(s.Code, like, QueryExtensions.LikeEscape));
                 }
 
                 return TypedResults.Ok(await query.OrderBy(s => s.Name).Take(50).Select(ToServiceDto).ToListAsync(ct));
@@ -508,7 +508,7 @@ internal static class OrganizationEndpoints
         if (!string.IsNullOrWhiteSpace(search))
         {
             var like = search.Trim().ToLikePattern();
-            query = query.Where(d => EF.Functions.ILike(d.Name, like) || EF.Functions.ILike(d.Code, like));
+            query = query.Where(d => EF.Functions.ILike(d.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(d.Code, like, QueryExtensions.LikeEscape));
         }
 
         return TypedResults.Ok(await query.OrderBy(d => d.DisplayOrder).ThenBy(d => d.Name).Select(ToDepartmentDto).ToListAsync(ct));
@@ -678,7 +678,7 @@ internal static class OrganizationEndpoints
         if (searchTerm is not null)
         {
             var like = searchTerm.ToLikePattern();
-            q = q.Where(p => EF.Functions.ILike(p.DisplayName, like) || EF.Functions.ILike(p.Code, like) || (p.RegistrationNumber != null && EF.Functions.ILike(p.RegistrationNumber, like)));
+            q = q.Where(p => EF.Functions.ILike(p.DisplayName, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(p.Code, like, QueryExtensions.LikeEscape) || (p.RegistrationNumber != null && EF.Functions.ILike(p.RegistrationNumber, like, QueryExtensions.LikeEscape)));
         }
 
         return q;
@@ -792,7 +792,7 @@ internal static class OrganizationEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            q = q.Where(s => EF.Functions.ILike(s.Name, like) || EF.Functions.ILike(s.Code, like));
+            q = q.Where(s => EF.Functions.ILike(s.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(s.Code, like, QueryExtensions.LikeEscape));
         }
 
         var sorts = new Dictionary<string, Expression<Func<ServiceItem, object?>>>(StringComparer.OrdinalIgnoreCase)

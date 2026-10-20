@@ -53,7 +53,7 @@ internal static class TemplateEndpoints
         if (!string.IsNullOrWhiteSpace(search))
         {
             var like = search.Trim().ToLikePattern();
-            templates = templates.Where(t => EF.Functions.ILike(t.Name, like) || EF.Functions.ILike(t.Code, like));
+            templates = templates.Where(t => EF.Functions.ILike(t.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(t.Code, like, QueryExtensions.LikeEscape));
         }
 
         return TypedResults.Ok(await templates.OrderBy(t => t.SpecialtyCode).ThenBy(t => t.DisplayOrder).ThenBy(t => t.Name)

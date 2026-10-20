@@ -57,7 +57,7 @@ internal static class WashCycleEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            cycles = cycles.Where(c => EF.Functions.ILike(c.CycleNumber, like) || EF.Functions.ILike(c.WasherName, like));
+            cycles = cycles.Where(c => EF.Functions.ILike(c.CycleNumber, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.WasherName, like, QueryExtensions.LikeEscape));
         }
 
         var result = await cycles.OrderByDescending(c => c.StartedAt)

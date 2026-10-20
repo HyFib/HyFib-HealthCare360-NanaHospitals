@@ -64,7 +64,7 @@ internal static class AuditEndpoints
 
             if (!string.IsNullOrWhiteSpace(action))
             {
-                events = events.Where(e => EF.Functions.ILike(e.Action, action.Trim().ToLikePattern()));
+                events = events.Where(e => EF.Functions.ILike(e.Action, action.Trim().ToLikePattern(), QueryExtensions.LikeEscape));
             }
 
             if (userId is not null)
@@ -95,7 +95,7 @@ internal static class AuditEndpoints
             if (page.SearchTerm is { } term)
             {
                 var like = term.ToLikePattern();
-                events = events.Where(e => (e.Summary != null && EF.Functions.ILike(e.Summary, like)) || (e.UserName != null && EF.Functions.ILike(e.UserName, like)));
+                events = events.Where(e => (e.Summary != null && EF.Functions.ILike(e.Summary, like, QueryExtensions.LikeEscape)) || (e.UserName != null && EF.Functions.ILike(e.UserName, like, QueryExtensions.LikeEscape)));
             }
 
             // Reading the audit trail of a patient is itself PHI access.
