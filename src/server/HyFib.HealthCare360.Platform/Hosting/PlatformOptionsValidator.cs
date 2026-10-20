@@ -1,4 +1,3 @@
-using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -10,7 +9,7 @@ namespace HyFib.HealthCare360.Platform.Hosting;
 /// so the server refuses to start and says which setting to change instead. Development machines are exempt: the
 /// integration tests keep one sign-in for a whole run, longer than any production token may last. The process role must
 /// be one the server knows (SCAL-05), keys shared by several nodes must be protected by a certificate (SCAL-01), and the
-/// partition settings must be in range, with no retention for the audit trail (SCAL-04).
+/// partition settings must be in range (SCAL-04).
 /// </summary>
 public sealed class PlatformOptionsValidator(IHostEnvironment environment) : IValidateOptions<PlatformOptions>
 {
@@ -89,19 +88,6 @@ public sealed class PlatformOptionsValidator(IHostEnvironment environment) : IVa
         if (partitions.MonthsAhead is < 1 or > 24)
         {
             problems.Add($"HealthCare360:Partitions:MonthsAhead is {partitions.MonthsAhead}; it must be between 1 and 24 (SCAL-04).");
-        }
-
-        foreach (var (table, months) in partitions.RetentionMonths)
-        {
-            if (string.Equals(table, PartitionedTables.AuditEvents, StringComparison.OrdinalIgnoreCase))
-            {
-                problems.Add("HealthCare360:Partitions:RetentionMonths cannot list the audit trail: it is kept for at least ten years (SRS SEC-04), " +
-                             "and its hash chain is verified from the first record.");
-            }
-            else if (months < 1)
-            {
-                problems.Add($"HealthCare360:Partitions:RetentionMonths:{table} is {months}; it must be at least 1 month (leave it out to keep everything).");
-            }
         }
 
         return problems;

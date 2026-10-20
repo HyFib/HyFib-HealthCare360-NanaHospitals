@@ -12,10 +12,10 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// SRS SCAL-04: the job that keeps the monthly partitions (<see cref="PartitionMaintenance"/>, on the node that runs the
-/// jobs) makes the months ahead of the clock, moves rows that waited in the default partition into their new month
-/// without changing them (the audit trail too, whose chain still verifies), and, only for a table given a retention, drops
-/// the months entirely older than it; never the audit trail's. The months used are decades away from the test server's
-/// own rows, so nothing other tests wrote is touched.
+/// jobs) makes the months ahead of the clock and moves rows that waited in the default partition into their new month
+/// without changing them (the audit trail too, whose chain still verifies). It never drops a month, however old: deleting
+/// is the Privacy module's retention schedule's alone (legal minimums, medical records reviewed, every run audited). The
+/// months used are decades away from the test server's own rows, so nothing other tests wrote is touched.
 /// </summary>
 public sealed class PartitionMaintenanceTests(HospitalServer server)
 {
@@ -58,46 +58,31 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         await Should.ThrowAsync<PostgresException>(() => ExecuteAsync($"DELETE FROM audit.audit_events WHERE id = {audit}"));
 
         // Nothing more to do on a second pass.
-        (await RunAsync(month.AddDays(21), monthsAhead: 2)).ShouldAllBe(p => p.Created.Count == 0 && p.Dropped.Count == 0);
+        (await RunAsync(month.AddDays(21), monthsAhead: 2)).ShouldAllBe(p => p.Created.Count == 0);
     }
 
     [Fact]
-    public async Task A_retention_drops_only_whole_months_older_than_it_and_never_the_audit_trail()
+    public async Task Old_months_are_never_dropped_whatever_their_age()
     {
         var month = new DateTime(2003, 2, 1, 0, 0, 0, DateTimeKind.Utc);
-        var old = await MessageAsync(month.AddDays(14));
-        var recent = await MessageAsync(month.AddMonths(3).AddDays(14));
+        var message = await MessageAsync(month.AddDays(14));
         var call = await IntegrationCallAsync(month.AddDays(14));
         var audit = await AuditAsync(month.AddDays(14));
-        await RunAsync(month.AddDays(1), monthsAhead: 3);
-        (await PartitionOfAsync("platform.notification_logs", old)).ShouldBe("platform.notification_logs_2003_02");
+        await RunAsync(month.AddDays(1), monthsAhead: 1);
 
-        // Four months on, keeping two months: February and March 2003 end before April, so they go; April stays.
-        var retention = new Dictionary<string, int>
-        {
-            [PartitionedTables.NotificationLogs.Name] = 2,
-            [PartitionedTables.AuditEvents] = 2,
-        };
-        var passes = await RunAsync(month.AddMonths(4).AddDays(1), monthsAhead: 1, retention);
+        // Twelve years on: a message log entry, an integration call and an audit event from 2003 are all still there, in
+        // their month. The message and integration logs are deleted row by row, once the retention the hospital set under
+        // Privacy allows, by the privacy retention run.
+        await RunAsync(month.AddYears(12), monthsAhead: 1);
 
-        passes.Single(p => p.Table == "platform.notification_logs").Dropped.ShouldBe(["notification_logs_2003_02", "notification_logs_2003_03"]);
-        (await CountAsync("platform.notification_logs", old)).ShouldBe(0);
-        (await PartitionOfAsync("platform.notification_logs", recent)).ShouldBe("platform.notification_logs_2003_05");
-
-        // A table without a retention keeps everything, and the audit trail is never given one.
-        passes.Where(p => p.Table != "platform.notification_logs").ShouldAllBe(p => p.Dropped.Count == 0);
+        (await PartitionOfAsync("platform.notification_logs", message)).ShouldBe("platform.notification_logs_2003_02");
         (await PartitionOfAsync("integrations.integration_logs", call)).ShouldBe("integrations.integration_logs_2003_02");
         (await PartitionOfAsync("audit.audit_events", audit)).ShouldBe("audit.audit_events_2003_02");
     }
 
-    private async Task<IReadOnlyList<PartitionPass>> RunAsync(DateTime now, int monthsAhead, Dictionary<string, int>? retention = null)
+    private async Task<IReadOnlyList<PartitionPass>> RunAsync(DateTime now, int monthsAhead)
     {
         var options = new PlatformOptions { Partitions = { MonthsAhead = monthsAhead } };
-        foreach (var (table, months) in retention ?? [])
-        {
-            options.Partitions.RetentionMonths[table] = months;
-        }
-
         await using var scope = server.Services.CreateAsyncScope();
         var maintenance = new PartitionMaintenance(
             scope.ServiceProvider.GetRequiredService<HospitalDbContext>(),
@@ -132,8 +117,6 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
 
     private Task<string> PartitionOfAsync(string table, object id) =>
         ScalarAsync<string>($"SELECT tableoid::regclass::text FROM {table} WHERE id = '{id}'");
-
-    private Task<long> CountAsync(string table, object id) => ScalarAsync<long>($"SELECT count(*) FROM {table} WHERE id = '{id}'");
 
     private Task<string> RowTextAsync<T>(string table, IEnumerable<T> ids) =>
         ScalarAsync<string>($"SELECT string_agg(t::text, '|' ORDER BY t.id) FROM {table} t WHERE id IN ({string.Join(", ", ids.Select(i => $"'{i}'"))})");

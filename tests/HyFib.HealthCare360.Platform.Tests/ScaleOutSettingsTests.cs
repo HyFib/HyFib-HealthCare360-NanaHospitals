@@ -1,7 +1,6 @@
 using System.Net;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
-using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -38,11 +37,11 @@ public sealed class ScaleOutSettingsTests
     }
 
     [Fact]
-    public void The_shipped_partition_settings_keep_everything_three_months_ahead()
+    public void The_shipped_partition_settings_are_three_months_ahead()
     {
         var partitions = new PartitionOptions();
 
-        (partitions.MonthsAhead, partitions.RetentionMonths.Count).ShouldBe((3, 0));
+        partitions.MonthsAhead.ShouldBe(3);
         PlatformOptionsValidator.PartitionProblems(partitions).ShouldBeEmpty();
     }
 
@@ -51,23 +50,6 @@ public sealed class ScaleOutSettingsTests
     [InlineData(25)]
     public void Months_ahead_outside_one_to_twenty_four_are_refused(int months) =>
         PlatformOptionsValidator.PartitionProblems(new PartitionOptions { MonthsAhead = months }).ShouldHaveSingleItem().ShouldContain("MonthsAhead");
-
-    [Fact]
-    public void The_audit_trail_can_never_be_given_a_retention()
-    {
-        var partitions = new PartitionOptions { RetentionMonths = { ["AUDIT.audit_events"] = 240 } };
-
-        PlatformOptionsValidator.PartitionProblems(partitions).ShouldHaveSingleItem().ShouldContain("ten years");
-    }
-
-    [Fact]
-    public void A_retention_is_at_least_a_month()
-    {
-        PlatformOptionsValidator.PartitionProblems(new PartitionOptions { RetentionMonths = { [PartitionedTables.NotificationLogs.Name] = 0 } })
-            .ShouldHaveSingleItem().ShouldContain("at least 1 month");
-        PlatformOptionsValidator.PartitionProblems(new PartitionOptions { RetentionMonths = { [PartitionedTables.IntegrationLogs.Name] = 24 } })
-            .ShouldBeEmpty();
-    }
 
     [Fact]
     public void Proxy_addresses_and_networks_must_be_addresses_and_networks()

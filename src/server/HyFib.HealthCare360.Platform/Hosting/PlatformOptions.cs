@@ -200,21 +200,14 @@ public sealed class ClusterOptions
 
 /// <summary>
 /// Monthly partitions of the busiest tables (SCAL-04): the audit trail, remote-monitoring readings, the patient and staff
-/// message log and the integration log. The node that runs the jobs adds each month's partition ahead of time and, only
-/// when a retention is set, drops the partitions that are entirely older than it.
+/// message log and the integration log. The node that runs the jobs adds each month's partition ahead of time. It never
+/// drops one: what is deleted, and when, is the Privacy module's retention schedule, which keeps each kind of record at
+/// least as long as the law asks, sends medical records for review instead of deleting them, and audits every run.
 /// </summary>
 public sealed class PartitionOptions
 {
     /// <summary>How many months ahead partitions are made (1–24, default 3). Rows for a later month go to the default one.</summary>
     public int MonthsAhead { get; set; } = 3;
-
-    /// <summary>
-    /// Months to keep, per table (<c>virtualcare.rpm_readings</c>, <c>platform.notification_logs</c>,
-    /// <c>integrations.integration_logs</c>): a month's partition is dropped once all of it is older. A table not listed
-    /// keeps everything, which is the default for all of them. The audit trail cannot be listed: it is kept for at least
-    /// ten years by law (SRS SEC-04) and its hash chain covers every row.
-    /// </summary>
-    public Dictionary<string, int> RetentionMonths { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class BackupOptions

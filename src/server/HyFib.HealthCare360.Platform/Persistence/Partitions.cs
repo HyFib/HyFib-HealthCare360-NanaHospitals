@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,10 +14,10 @@ namespace HyFib.HealthCare360.Platform.Persistence;
 /// outside every month that has one (SCAL-04). The migration <c>PartitionHighVolumeTables</c> made it so; modules declare
 /// theirs with <see cref="PartitionServiceCollectionExtensions.AddMonthlyPartitions"/>.
 /// </summary>
-/// <param name="Retainable">
-/// Whether <see cref="PartitionOptions.RetentionMonths"/> may drop its old partitions. Never for the audit trail.
+/// <param name="AppendOnly">
+/// The audit trail: each new partition gets its own trigger against TRUNCATE, which a partition does not inherit.
 /// </param>
-public sealed record PartitionedTable(string Schema, string Table, string KeyColumn, bool Retainable = true)
+public sealed record PartitionedTable(string Schema, string Table, string KeyColumn, bool AppendOnly = false)
 {
     public string Name => $"{Schema}.{Table}";
 
@@ -34,8 +33,8 @@ public static class PartitionedTables
 {
     public const string AuditEvents = "audit.audit_events";
 
-    /// <summary>The append-only, hash-chained audit trail, kept at least ten years (SEC-04): never dropped.</summary>
-    public static readonly PartitionedTable Audit = new("audit", "audit_events", "occurred_at", Retainable: false);
+    /// <summary>The append-only, hash-chained audit trail, kept at least ten years (SEC-04).</summary>
+    public static readonly PartitionedTable Audit = new("audit", "audit_events", "occurred_at", AppendOnly: true);
 
     /// <summary>Every SMS, WhatsApp message and e-mail sent to patients and staff.</summary>
     public static readonly PartitionedTable NotificationLogs = new("platform", "notification_logs", "created_at");
@@ -55,17 +54,22 @@ public static class PartitionServiceCollectionExtensions
 }
 
 /// <summary>What one maintenance pass did to one table.</summary>
-public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, IReadOnlyList<string> Dropped, int RowsMovedFromDefault);
+public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, int RowsMovedFromDefault);
 
 /// <summary>
 /// Keeps the monthly partitions ahead of time (SCAL-04): each partitioned table has a partition for this month and the
 /// next <see cref="PartitionOptions.MonthsAhead"/>. A month whose rows already went to the default partition (a clock far
-/// ahead, or the job not running for months) gets them moved into its new partition, in the same transaction. Only when a
-/// retention is set for a table (<see cref="PartitionOptions.RetentionMonths"/>, none by default) are its partitions that
-/// lie entirely before it dropped, whole; rows in the default partition are never dropped. Audit partitions get the
-/// append-only trigger against TRUNCATE that a partition does not inherit. One node at a time (an advisory lock).
+/// ahead, or the job not running for months) gets them moved into its new partition, in the same transaction. Audit
+/// partitions get the append-only trigger against TRUNCATE that a partition does not inherit. One node at a time (an
+/// advisory lock).
+/// <para>
+/// It never drops a partition. Old rows are deleted by the Privacy module's retention schedule alone, which keeps each kind
+/// of record for at least its legal minimum (a year for the message and integration logs under the DPDP Rules), sends
+/// medical records such as RPM readings for review instead of deleting them (PRV-02), and audits every run; with the
+/// tables partitioned by the same time it deletes by, those deletes read only the months concerned.
+/// </para>
 /// </summary>
-public sealed partial class PartitionMaintenance(
+public sealed class PartitionMaintenance(
     HospitalDbContext db,
     IEnumerable<PartitionedTable> tables,
     IOptions<PlatformOptions> options,
@@ -82,11 +86,6 @@ public sealed partial class PartitionMaintenance(
     {
         var settings = options.Value.Partitions;
         var known = tables.DistinctBy(t => t.Name).ToList();
-        foreach (var unknown in settings.RetentionMonths.Keys.Where(k => !known.Any(t => string.Equals(t.Name, k, StringComparison.OrdinalIgnoreCase))))
-        {
-            logger.LogWarning("HealthCare360:Partitions:RetentionMonths names {Table}, which is not a partitioned table; it is ignored", unknown);
-        }
-
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (!await db.Database.SqlQuery<bool>($"SELECT pg_try_advisory_xact_lock({LockKey}) AS \"Value\"").SingleAsync(ct))
         {
@@ -115,22 +114,15 @@ public sealed partial class PartitionMaintenance(
                 created.Add(table.PartitionFor(month));
             }
 
-            var dropped = new List<string>();
-            if (table.Retainable && settings.RetentionMonths.TryGetValue(table.Name, out var keep) && keep >= 1)
-            {
-                dropped.AddRange(await DropOlderThanAsync(table, thisMonth.AddMonths(-keep), ct));
-            }
-
-            passes.Add(new PartitionPass(table.Name, created, dropped, moved));
+            passes.Add(new PartitionPass(table.Name, created, moved));
         }
 
         await transaction.CommitAsync(ct);
-        foreach (var pass in passes.Where(p => p.Created.Count + p.Dropped.Count > 0))
+        foreach (var pass in passes.Where(p => p.Created.Count > 0))
         {
             logger.LogInformation(
-                "Partitions of {Table}: made {Created}, dropped {Dropped} (older than the retention); {Moved} rows moved out of the default partition",
-                pass.Table, pass.Created.Count == 0 ? "none" : string.Join(", ", pass.Created), pass.Dropped.Count == 0 ? "none" : string.Join(", ", pass.Dropped),
-                pass.RowsMovedFromDefault);
+                "Partitions of {Table}: made {Created}; {Moved} rows moved out of the default partition",
+                pass.Table, string.Join(", ", pass.Created), pass.RowsMovedFromDefault);
         }
 
         return passes;
@@ -184,7 +176,7 @@ public sealed partial class PartitionMaintenance(
             await ExecuteAsync($"ALTER TABLE {table.Qualified} ATTACH PARTITION {defaultPartition} DEFAULT", ct);
         }
 
-        if (!table.Retainable)
+        if (table.AppendOnly)
         {
             await ProtectFromTruncateAsync(partition, ct);
         }
@@ -208,44 +200,6 @@ public sealed partial class PartitionMaintenance(
     // Partition DDL names tables and bounds, which cannot be parameters. Every name comes from a PartitionedTable a module
     // registered and every bound from a date, never from a request.
     private Task<int> ExecuteAsync(string sql, CancellationToken ct) => db.Database.ExecuteSqlRawAsync(sql, ct);
-
-    /// <summary>Drops the month partitions that end on or before <paramref name="before"/>: nothing in them is newer.</summary>
-    private async Task<IReadOnlyList<string>> DropOlderThanAsync(PartitionedTable table, DateOnly before, CancellationToken ct)
-    {
-        var partitions = await db.Database.SqlQuery<string>($"""
-            SELECT c.relname AS "Value"
-            FROM pg_inherits i
-            JOIN pg_class c ON c.oid = i.inhrelid
-            JOIN pg_class p ON p.oid = i.inhparent
-            JOIN pg_namespace n ON n.oid = p.relnamespace
-            WHERE n.nspname = {table.Schema} AND p.relname = {table.Table}
-            """).ToListAsync(ct);
-
-        var dropped = new List<string>();
-        foreach (var name in partitions.Order(StringComparer.Ordinal))
-        {
-            var match = MonthPartition().Match(name);
-            if (!match.Success || !name.StartsWith(table.Table + "_", StringComparison.Ordinal) || name.Length != table.Table.Length + 8)
-            {
-                continue;
-            }
-
-            var month = new DateOnly(int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture), int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture), 1);
-            if (month.AddMonths(1) > before)
-            {
-                continue;
-            }
-
-            await ExecuteAsync($"ALTER TABLE {table.Qualified} DETACH PARTITION \"{table.Schema}\".\"{name}\"", ct);
-            await ExecuteAsync($"DROP TABLE \"{table.Schema}\".\"{name}\"", ct);
-            dropped.Add(name);
-        }
-
-        return dropped;
-    }
-
-    [GeneratedRegex(@"_(\d{4})_(\d{2})$", RegexOptions.CultureInvariant)]
-    private static partial Regex MonthPartition();
 }
 
 /// <summary>
