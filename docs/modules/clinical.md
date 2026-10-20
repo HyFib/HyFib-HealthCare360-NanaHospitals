@@ -18,6 +18,7 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 | ERX-01..06 | Prescriptions, favourites/templates, safety checks, signing → `PrescriptionSigned`, the printed A5 prescription and its PDF with QR verification, refills/repeat, Schedule H1/X confirmation + register. ERX-04: bilingual (English/Hindi) directions, the prescriber's council registration number, the doctor's own DSC signature from HC360 Desktop (see *Signing with the doctor's DSC*) and the QR code that re-verifies it |
 | MRD-01..06 | ICD-10 / ICD-10-PCS catalogues + ranked search + WHO ICD-API lookup, coding at discharge, chart deficiencies, record requests, retention/archival, morbidity index |
 | MHC-01..05 | Packages (billable service items), bookings, itinerary, doctor summary, consolidated report, corporate batches |
+| IMG-02/03 (the record's part) | Released lab, imaging and cardiology reports open from the chart's timeline and orders, with an imaging study's images and the PACS viewer; see *Results on the patient's record* |
 
 All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` where noted. Updates carry `version`
 (PostgreSQL `xmin`); a stale version returns 409. Dates in query strings are IST calendar dates.
@@ -55,7 +56,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | POST | `/emr/results/{id}/acknowledge` | emr.write | `AcknowledgeResultRequest{note}` → 204 |
 | GET | `/emr/patients/{patientId}/summary` | emr.read | → `PatientClinicalSummary` (patient, `allergiesEverRecorded`, `allergyStatus` (`Recorded`\|`NoKnownAllergies`\|`NotRecorded`), allergies, alerts, activeProblems, currentMedications, lastVitals+flags, recentEncounters(5), resultsAwaitingReview) |
 | GET | `/emr/patients/{patientId}/flags` | flags.read or emr.read | → `PatientFlags{allergyStatus, allergies[AllergySummary], alerts[AlertSummary]}`: the summary's flags alone (same rule, same order: most severe first, alerts in force today). Restricted-record guard (403 `patient.restricted`) and a PHI-access audit entry ("Viewed allergies and alerts") like the chart; 404 for an unknown patient |
-| GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&encounterTypes=OutPatient,InPatient,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result, Procedure). `encounterTypes` (OutPatient, InPatient, Emergency, Telehealth, HealthCheckup) and `departmentId` keep the matching encounters and the entries recorded in one of them; documents and entries recorded outside an encounter then drop out. An unknown name is a 400 on `types` or `encounterTypes` |
+| GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&encounterTypes=OutPatient,InPatient,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result, Procedure). `encounterTypes` (OutPatient, InPatient, Emergency, Telehealth, HealthCheckup) and `departmentId` keep the matching encounters and the entries recorded in one of them; documents and entries recorded outside an encounter then drop out. An unknown name is a 400 on `types` or `encounterTypes`. A `Result`'s `id` is the released report's id in its department and `reportKind` (`Laboratory`, `Radiology`, `Cardiology`; null on other entries) says which (see *Results on the patient's record*) |
 | GET | `/emr/patients/{patientId}/medications` | emr.read | → `CurrentMedication[]` |
 | GET | `/emr/patients/{patientId}/encounters?type&page` | emr.read | → `PagedResult<EncounterListItem>` |
 | POST | `/emr/encounters` | emr.write | `StartEncounterRequest{patientId, visitId?, admissionId?, type?, departmentId?, practitionerId?, templateId?, chiefComplaint?}` → 201 `EncounterDetail` (409 `encounter.already_open` with `encounterId`) |
@@ -101,6 +102,32 @@ in (its admission and visit are copied). A correction changes the fields and lea
 (the previous values are in the data-change audit); a record made in error is `EnteredInError` with the reason, kept
 for the audit trail but off the timeline. Operations completed in the theatre arrive on their own (`Source`
 `OperationTheatre`, see *Events*). The chart's *Procedures* tab lists, records, corrects and voids them.
+
+#### Results on the patient's record (IMG-02, IMG-03)
+
+A lab, imaging or cardiology report is on the chart once Diagnostics releases it (`DiagnosticReportReleased`, see
+*Events*): as a *Result* on the timeline, which names the report and its department (`id`, `reportKind`), and on its
+order line, which the release completes with the report's id as `resultReference`. Clinical keeps only that id and
+kind (`ResultReview`): it may not read Diagnostics' tables. The chart opens the report in a dialog (`ResultDialog`, the
+worklist's result review without the note and *Acknowledge*) through the department's own endpoints, so their
+permissions, released-only rule, restricted-record guard and PHI audit apply as on the department's screens:
+
+| Report | The chart asks | It shows | Permission |
+|---|---|---|---|
+| Lab | `GET /lab/reports/{id}` | The results with their flags and reference ranges; Print and Download PDF of the printed report (`…/document`, `…/pdf`); *Full report* opens the lab report screen | `lab.orders.read` |
+| Imaging | `GET /radiology/reports/{id}` for the study, then `GET /radiology/studies/{studyId}` and `…/report` | The signed report as the study screen shows it, with Print and Download PDF; once the study is linked with PACS (`pacsLinkedAt`), its series, thumbnails and image viewer (`…/images`) and *Open in PACS viewer* (`…/viewer`); *Open study* opens the study screen | Report: `radiology.studies.read` or `radiology.reports.write` (both endpoints allow them). Images and viewer: `radiology.images.view` |
+| Cardiology | `GET /cardiology/reports/{id}` for the study, then `GET /cardiology/studies/{studyId}` | The signed report with Print and Download PDF; *Open in PACS viewer* once the PACS holds the study's DICOM files; *Open study* opens the study screen | `cardiology.studies.read` (or `cardiology.studies.manage`, `cardiology.reports.verify`) |
+
+* The timeline opens a result's report only for staff who may open that department's reports; for anyone else a result
+  leads to the *Orders* tab, as before. A completed order line, on the chart's *Orders* tab and in the consultation,
+  offers *View report* on the same terms. Images and the PACS viewer are offered only for a study linked with PACS, and
+  only to staff who may see images (not nurses, by default).
+* Restricted (VIP) records: the chart opens only through the restricted-record guard, and each department endpoint
+  checks it again, so no report, study or image is shown without access; the dialog then says the record is restricted.
+  The report-to-study look-ups return ids and the report's status only.
+* The departments read in the signed-in facility, as on their screens: a result released at another of the hospital's
+  facilities is on the timeline, which spans every facility, but its report opens there only; the dialog says so.
+* The doctor's worklist shows the same report in its result review, with the note and *Acknowledge*.
 
 ### Clinical orders and e-prescribing (`/clinical`)
 
@@ -505,8 +532,10 @@ bill or issues a credit note, then the booking can be cancelled). The component 
 ## The doctor's worklist (EMR-01)
 
 *My worklist* (`/emr`) is the doctor's home screen. The filters (date, department, doctor) apply to every list, and
-the side panel keeps results to review, unsigned encounters and notes, draft prescriptions and chart deficiencies. The
-main panel has three tabs, kept in the address (`?view=appointments`, `?view=rounds`):
+the side panel keeps results to review, unsigned encounters and notes, draft prescriptions and chart deficiencies. A
+result to review opens the report itself, with an imaging study's images and the PACS viewer (see *Results on the
+patient's record*), a note and *Acknowledge*. The main panel has three tabs, kept in the address (`?view=appointments`,
+`?view=rounds`):
 
 * **Queue**: today's tokens for the department, as before. F2 calls the next patient.
 * **Appointments**: the day's bookings in slot order, with a count of those still to come, arrived, seen and absent.
@@ -653,7 +682,7 @@ Handled (same transaction):
 | `PatientsMerged` (Patients) | re-points every clinical row (all facilities, including soft-deleted) to the surviving patient; keeps at most one "no known allergies" statement, and none when an active allergy exists. A DSC-signed prescription stays Valid: its signed bytes keep the duplicate's record, which the check follows to the survivor (*Signing with the doctor's DSC*) |
 | `PatientAdmitted` | opens the MRD chart of the admission |
 | `PatientDischarged` | sets chart discharge time and due date (+7 days), queues ICD coding (Pending), stamps the discharge summary |
-| `DiagnosticReportReleased` | completes the order line and adds/re-opens a "result to review" for the ordering doctor |
+| `DiagnosticReportReleased` | completes the order line, with the report's id as its `resultReference`, and adds/re-opens a "result to review" for the ordering doctor, which is the report's *Result* on the timeline (one per report) |
 | `SurgeryCompleted` (SpecialtyCare) | `SurgeryCompletedHandler` records the operation as a `ProcedureRecord` (source `OperationTheatre`, performed at knife to skin, the surgeon as performer, the booking's side), once per booking (unique `surgery_booking_id`), in the latest encounter of the admission (or visit) that began before it ended. The booking's code is kept only when the procedure catalogue has it, since theatres often book with the hospital's tariff code |
 
 Real-time (ids only): `clinical.order.placed` / `clinical.order.changed` (facility), `pharmacy.prescription.signed` /

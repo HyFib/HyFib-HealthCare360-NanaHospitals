@@ -153,7 +153,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | POST | `/ai-findings/{findingId}/review` | reports.write or reports.verify | `ReviewAiFindingRequest` (acknowledge, note) → `AiFindingDto` |
 | GET | `/worklist/mwl?date&station&modality` | `radiology.worklist` | → `ModalityWorklistItem[]`: the signed-in facility's worklist for one day exactly as the DICOM worklist server offers it (PN names, `yyyyMMdd`/`HHmmss`, sex M/F/O, XR sent as CR, 2.25 UIDs), for checking what a modality should see |
 | GET | `/reporting-worklist?modality` | reports.write or reports.verify | → `PagedResult<ImagingStudyListItem>` (urgent AI findings, then STAT, then oldest acquisition) |
-| GET | `/reports/{reportId}` | studies.read, worklist or reports.write (same as `/studies`) | → `ReportStudyRef` (studyId, reportId, status). Opens a report from the doctor's worklist (`WorklistResult.reportId`) on the study screen; 404 when the report or its study is not visible in the facility. Ids only, so no PHI audit (opening the study audits) |
+| GET | `/reports/{reportId}` | studies.read, worklist or reports.write (same as `/studies`) | → `ReportStudyRef` (studyId, reportId, status). Opens a report from the doctor's worklist (`WorklistResult.reportId`) or the patient's chart (a timeline result's `id`, a completed order line's `resultReference`) by its study; 404 when the report or its study is not visible in the facility. Ids only, so no PHI audit (opening the study audits) |
 | GET | `/tat?from&to&modality` | studies.read or reports.verify | → `RadiologyTatReport` (order→acquisition→report median/P90 per modality, repeat rate and reasons) |
 
 ### Radiology reports — `/api/v1/radiology`
@@ -192,7 +192,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | GET | `/studies/{id}/report/document` | same | → `PrintableDocumentDto`: the A4 report for the staff app to print. Released report only for users without studies.manage/reports.verify; guard; audit "Printed cardiology report …" |
 | GET | `/studies/{id}/report/pdf` | same | → the same report as `application/pdf` (`cardiology-report-<accession>.pdf`); 503 `pdf.unavailable`. Audit "Downloaded cardiology report … as a PDF" |
 | GET | `/reporting-worklist?studyType` | `cardiology.reports.verify` | → `PagedResult<CardiologyStudyListItem>` |
-| GET | `/reports/{reportId}` | studies.read, studies.manage or reports.verify (same as `/studies`) | → `ReportStudyRef` (studyId, reportId, status). Opens a report from the doctor's worklist on the study screen; 404 when the report or its study is not visible in the facility. Ids only, so no PHI audit |
+| GET | `/reports/{reportId}` | studies.read, studies.manage or reports.verify (same as `/studies`) | → `ReportStudyRef` (studyId, reportId, status). Opens a report from the doctor's worklist or the patient's chart by its study; 404 when the report or its study is not visible in the facility. Ids only, so no PHI audit |
 
 ### Patient portal — `/api/v1/portal/reports` (permission `portal.access`, `PortalPatientScope`, PHI audit)
 | Method | Path | Response |
@@ -334,10 +334,12 @@ diagnostics screen.
   unidentified or other-patient study. What the job remembers is kept in memory, so a restart means one more look and
   one more alert. "Link recent studies" on the worklist does the same for the signed-in facility at once.
 * **Images** (`StudyImageService`): once a study is linked, the study page shows its series with thumbnails and an image
-  viewer (step through the images and frames of a series, zoom, keyboard shortcuts), and "Open in PACS viewer". The EMR
-  result review shows the thumbnails of a radiology result to holders of `radiology.images.view`, opening the study
-  page. The study comes from HC360's database, never from the caller: a series must be one PACS lists for the study's
-  UID and an object one it lists for that series, so nobody can reach another study's images by naming its UIDs.
+  viewer (step through the images and frames of a series, zoom, keyboard shortcuts), and "Open in PACS viewer". The
+  EMR shows the same images and "Open in PACS viewer" with a released imaging report, from the doctor's results to
+  review and the patient's chart, to holders of `radiology.images.view`, once the study is linked (clinical.md,
+  *Results on the patient's record*). The study comes from HC360's database, never from the caller: a series must be
+  one PACS lists for the study's UID and an object one it lists for that series, so nobody can reach another study's
+  images by naming its UIDs.
   These lists are kept for five minutes; a UID missing from them is looked up again once. Opening the series list
   always writes a PHI access audit entry; thumbnails and images write one per person and study in 15 minutes. Images
   are fetched from PACS by the server (JPEG or PNG only, 16 MB per image, 2 MB per thumbnail), never cached by the

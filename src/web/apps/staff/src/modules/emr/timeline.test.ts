@@ -27,6 +27,7 @@ function entry(partial: Partial<TimelineEntry>): TimelineEntry {
     status: null,
     encounterId: null,
     isCritical: false,
+    reportKind: null,
     ...partial,
   };
 }
