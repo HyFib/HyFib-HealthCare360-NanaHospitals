@@ -19896,7 +19896,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasName("pk_patients");
 
                     b.HasIndex("AadhaarIndex")
-                        .HasDatabaseName("ix_patients_aadhaar_index");
+                        .IsUnique()
+                        .HasDatabaseName("ux_patients_aadhaar_index")
+                        .HasFilter("aadhaar_index IS NOT NULL AND is_deleted = false");
 
                     b.HasIndex("AbhaNumberIndex")
                         .HasDatabaseName("ix_patients_abha_number_index");

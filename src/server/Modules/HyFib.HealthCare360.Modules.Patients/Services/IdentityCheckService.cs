@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Identity;
+using HyFib.HealthCare360.Modules.Patients.Persistence;
 using HyFib.HealthCare360.Platform.Integrations;
 
 namespace HyFib.HealthCare360.Modules.Patients.Services;
@@ -62,8 +63,7 @@ public sealed class IdentityCheckService(
                 $"This is not the Aadhaar number on {patient.FullName}'s record (it ends in {patient.AadhaarLast4}). Check the number with the patient.");
         }
 
-        if (index is not null && patient.AadhaarIndex is null
-            && await db.Set<Patient>().Where(p => p.AadhaarIndex == index && p.Id != patientId).Select(p => p.Uhid).FirstOrDefaultAsync(ct) is { } holder)
+        if (index is not null && patient.AadhaarIndex is null && await HolderAsync(index, patientId, ct) is { } holder)
         {
             return Error.Conflict("patient.aadhaar_in_use", $"This Aadhaar number is already linked to UHID {holder}.");
         }
@@ -97,17 +97,9 @@ public sealed class IdentityCheckService(
             DeviceModelId = result.DeviceModelId,
             CheckedByName = currentUser.DisplayName ?? currentUser.UserName,
         };
-        if (check.Outcome == IdentityCheckOutcome.Verified && index is not null && patient.AadhaarIndex is null)
-        {
-            patient.AadhaarLast4 = check.AadhaarLast4;
-            patient.AadhaarIndex = index;
-            check.LinkedAadhaar = true;
-        }
-
         db.Add(check);
         audit.Add(new AuditEntry(AuditCategories.Clinical, "patient.identity_checked",
-            $"Checked {patient.Uhid}'s identity with an Aadhaar fingerprint ({(virtualId ? "Virtual ID" : "Aadhaar number")} ending {check.AadhaarLast4}): {check.Outcome}"
-            + (check.LinkedAadhaar ? "; the Aadhaar number was linked to the record" : string.Empty))
+            $"Checked {patient.Uhid}'s identity with an Aadhaar fingerprint ({(virtualId ? "Virtual ID" : "Aadhaar number")} ending {check.AadhaarLast4}): {check.Outcome}")
         {
             PatientId = patient.Id,
             EntityType = nameof(PatientIdentityCheck),
@@ -115,8 +107,40 @@ public sealed class IdentityCheckService(
             Severity = check.Outcome == IdentityCheckOutcome.NotVerified ? AuditSeverity.Warning : AuditSeverity.Info,
         });
         await db.SaveChangesAsync(ct);
+
+        // UIDAI's answer is kept whatever happens next. The number goes on the record unless another desk has linked it to
+        // another record while UIDAI answered: the database keeps one record per Aadhaar number.
+        if (check.Outcome == IdentityCheckOutcome.Verified && index is not null && patient.AadhaarIndex is null)
+        {
+            patient.AadhaarLast4 = check.AadhaarLast4;
+            patient.AadhaarIndex = index;
+            check.LinkedAadhaar = true;
+            audit.Add(new AuditEntry(AuditCategories.Clinical, "patient.aadhaar_linked",
+                $"Linked the Aadhaar number ending {check.AadhaarLast4} to {patient.Uhid}'s record after a verified fingerprint check")
+            {
+                PatientId = patient.Id,
+                EntityType = nameof(Patient),
+                EntityId = patient.Id.ToString(),
+            });
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex) when (PatientConfiguration.AadhaarNumberTaken(ex))
+            {
+                db.ChangeTracker.Clear();
+                var other = await HolderAsync(index, patientId, ct);
+                return Error.Conflict("patient.aadhaar_in_use",
+                    $"The check is kept, but the Aadhaar number was not linked: it was linked to {(other is null ? "another record" : $"UHID {other}")} a moment ago.");
+            }
+        }
+
         return Dto(check);
     }
+
+    /// <summary>The UHID of another record that holds the Aadhaar number, if one does.</summary>
+    private Task<string?> HolderAsync(string index, Guid patientId, CancellationToken ct) =>
+        db.Set<Patient>().Where(p => p.AadhaarIndex == index && p.Id != patientId).Select(p => p.Uhid).FirstOrDefaultAsync(ct);
 
     private static IdentityCheckDto Dto(PatientIdentityCheck c) => new(
         c.Id, c.Method, c.Outcome, c.Message, c.AadhaarLast4, c.UsedVirtualId, c.LinkedAadhaar, c.Provider, c.ErrorCode, c.TransactionId,

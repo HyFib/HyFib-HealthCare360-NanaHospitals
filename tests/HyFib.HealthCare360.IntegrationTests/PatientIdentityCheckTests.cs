@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
@@ -129,6 +130,83 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
             refused.StatusCode.ShouldBe(HttpStatusCode.Conflict);
             (await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain(holder.Uhid);
         });
+    }
+
+    [Fact]
+    public async Task Desks_checking_one_number_on_several_records_at_once_link_it_to_one_and_keep_every_answer()
+    {
+        await WithSimulatorAsync(async () =>
+        {
+            var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+            var aadhaar = NewAadhaar();
+            var patients = new List<PatientCreated>();
+            for (var i = 0; i < 4; i++)
+            {
+                patients.Add(await RegisterAsync(isVip: false, aadhaar: null));
+            }
+
+            // Four desks press Check at the same moment. Each looks before UIDAI answers, so more than one may find the
+            // number free; only one record may end up with it.
+            var responses = await Task.WhenAll(patients.Select(p =>
+                frontOffice.SendRawAsync(HttpMethod.Post, Path(p), new VerifyIdentityRequest(aadhaar, Matching, true))));
+            try
+            {
+                var answers = responses.Zip(patients, (response, patient) => (Response: response, Patient: patient)).ToList();
+                var winner = answers.Where(a => a.Response.IsSuccessStatusCode).ShouldHaveSingleItem().Patient;
+                (await frontOffice.GetAsync<List<IdentityCheckDto>>(Path(winner))).ShouldHaveSingleItem().LinkedAadhaar.ShouldBeTrue();
+                (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{winner.Id}")).AadhaarLast4.ShouldBe(aadhaar[^4..]);
+
+                foreach (var (response, patient) in answers.Where(a => a.Patient != winner))
+                {
+                    response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+                    var problem = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+                    problem.ShouldContain("patient.aadhaar_in_use");
+                    problem.ShouldContain(winner.Uhid);
+
+                    // A desk that asked UIDAI before the number was taken keeps the answer; one told first asked nothing.
+                    var checks = await frontOffice.GetAsync<List<IdentityCheckDto>>(Path(patient));
+                    checks.Count.ShouldBe(problem.Contains("The check is kept") ? 1 : 0);
+                    checks.ShouldAllBe(c => c.Outcome == IdentityCheckOutcome.Verified && !c.LinkedAadhaar);
+                    (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).AadhaarLast4.ShouldBeNull();
+                }
+            }
+            finally
+            {
+                foreach (var response in responses)
+                {
+                    response.Dispose();
+                }
+            }
+        });
+    }
+
+    [Fact]
+    public async Task Desks_registering_one_number_at_once_give_it_to_one_record()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var aadhaar = NewAadhaar();
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ =>
+            frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/patients", NewPatient(isVip: false, aadhaar))));
+        try
+        {
+            var registered = await responses.Where(r => r.IsSuccessStatusCode).ShouldHaveSingleItem()
+                .Content.ReadFromJsonAsync<PatientCreated>(ApiClient.Json, TestContext.Current.CancellationToken);
+            foreach (var refused in responses.Where(r => !r.IsSuccessStatusCode))
+            {
+                refused.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+                var problem = await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+                problem.ShouldContain("patient.aadhaar_in_use");
+                problem.ShouldContain(registered.ShouldNotBeNull().Uhid);
+            }
+        }
+        finally
+        {
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+        }
     }
 
     [Fact]
@@ -315,18 +393,20 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
     private async Task<PatientCreated> RegisterAsync(bool isVip, string? aadhaar)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
-        return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: "Arjun", MiddleName: null, LastName: "Identity" + Letters(8), Gender: Gender.Male,
-            DateOfBirth: new DateOnly(1970, 1, 1).AddDays(Random.Shared.Next(9000)), AgeYears: null, AgeMonths: null,
-            Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
-            GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
-            EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
-            Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: aadhaar, PhotoFileId: null, IsVip: isVip, Notes: null,
-            ConfirmedNotDuplicate: true));
+        return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", NewPatient(isVip, aadhaar));
     }
 
-    // A valid Aadhaar number no other test has used (the database outlives a test run): the first digit 2 to 9 and the one
-    // Verhoeff check digit that fits.
+    private static RegisterPatientRequest NewPatient(bool isVip, string? aadhaar) => new(
+        Title: "Mr.", FirstName: "Arjun", MiddleName: null, LastName: "Identity" + Letters(8), Gender: Gender.Male,
+        DateOfBirth: new DateOnly(1970, 1, 1).AddDays(Random.Shared.Next(9000)), AgeYears: null, AgeMonths: null,
+        Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
+        GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
+        EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
+        Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: aadhaar, PhotoFileId: null, IsVip: isVip, Notes: null,
+        ConfirmedNotDuplicate: true);
+
+    // A valid Aadhaar number no other test has used (all the tests of a run share one database): the first digit 2 to 9
+    // and the one Verhoeff check digit that fits.
     private static string NewAadhaar()
     {
         var start = (char)('2' + Random.Shared.Next(8)) + Digits(10);

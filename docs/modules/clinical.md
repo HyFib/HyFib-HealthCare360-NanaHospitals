@@ -633,9 +633,13 @@ FrontOffice and HospitalAdmin.
   the reason, and nothing is kept.
 * **Kept.** Every check UIDAI (or the simulator) answered: `outcome` (`Verified`, `NotVerified`, `Failed`), the
   message, the number's last 4 digits, `usedVirtualId`, the provider, UIDAI's error code, HC360's transaction id,
-  UIDAI's response code, the reader's provider and model, who checked and when. Never the number or the capture. A
-  verified Aadhaar number is linked to a record that had none (`linkedAadhaar`: last 4 digits and blind index, as at
-  registration). The check is audited (`patient.identity_checked`, a warning when the fingerprint did not match).
+  UIDAI's response code, the reader's provider and model, who checked and when. Never the number or the capture. The
+  check is audited (`patient.identity_checked`, a warning when the fingerprint did not match).
+* **Linked.** A verified Aadhaar number is then linked to a record that had none (`linkedAadhaar`: last 4 digits and
+  blind index, as at registration; audited as `patient.aadhaar_linked`). The database keeps one record per Aadhaar
+  number (`ux_patients_aadhaar_index`). If another desk linked the number to another record while UIDAI answered, the
+  check is still kept but the number is not linked, and the answer is 409 `patient.aadhaar_in_use`, naming that UHID.
+  Registration and editing give the same answer when they lose such a race.
 * **Merging** records moves their identity checks to the surviving record.
 
 ## Prescribing safety (ERX-02/06)
