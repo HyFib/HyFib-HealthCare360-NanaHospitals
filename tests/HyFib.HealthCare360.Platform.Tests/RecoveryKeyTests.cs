@@ -176,6 +176,37 @@ public sealed class RecoveryKeyTests : IDisposable
     }
 
     [Fact]
+    public void A_key_waiting_to_be_typed_back_is_kept_wrapped_beside_the_current_one_until_it_is()
+    {
+        var (store, protector) = Store("m");
+        var created = store.Create(_admin);
+        var pending = Path.Combine(Machine("m").Keys, RecoveryKeyStore.PendingFileName);
+
+        // In the keys folder, which several servers share (SCAL-01), not in this one's memory: a restart keeps it too.
+        BackupRecoveryKey.TryParse(created.Key, out var key, out _).ShouldBeTrue();
+        File.ReadAllBytes(pending).AsSpan().IndexOf(key).ShouldBe(-1);
+        store.IsOriginal.ShouldBeTrue();
+        var restarted = new RecoveryKeyStore(Machine("m"), _protection, protector, _clock);
+
+        restarted.Confirm(created.KeyId, created.Key, _admin).IsSuccess.ShouldBeTrue();
+
+        File.Exists(pending).ShouldBeFalse();
+        store.Current().KeyId.ShouldBe(created.KeyId);
+    }
+
+    [Fact]
+    public void A_key_no_longer_waiting_is_removed_when_it_is_typed_back_too_late()
+    {
+        var (store, _) = Store("m");
+        var created = store.Create(_admin);
+        _clock.Now += RecoveryKeyStore.ConfirmWithin;
+
+        NotWaiting(store.Confirm(created.KeyId, created.Key, _admin));
+
+        File.Exists(Path.Combine(Machine("m").Keys, RecoveryKeyStore.PendingFileName)).ShouldBeFalse();
+    }
+
+    [Fact]
     public void Only_the_administrator_it_was_shown_to_can_confirm_a_key_within_half_an_hour()
     {
         var (store, _) = Store("m");

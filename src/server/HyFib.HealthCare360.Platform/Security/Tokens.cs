@@ -149,6 +149,9 @@ public sealed class SigningKeyStore
 
             var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             WriteReplacing(_path, _protector.Protect(ecdsa.ExportPkcs8PrivateKey()));
+
+            // The files as this node just wrote them: rotations take the cluster's key lock (KeyRotationService), so no other
+            // node writes them meanwhile.
             var next = new SigningKeys(ToSecurityKey(ecdsa), keys.Key, now, Stamp());
             Volatile.Write(ref _keys, next);
             return next.Key.KeyId;
@@ -157,6 +160,9 @@ public sealed class SigningKeyStore
 
     private SigningKeys Load()
     {
+        // Taken first: a rotation another node makes while the files are read shows as a change at the next look. Taken
+        // last, it could match files written after the key was read, and this node would keep the old key for good.
+        var stamp = Stamp();
         var ecdsa = ECDsa.Create();
         if (File.Exists(_path))
         {
@@ -183,7 +189,7 @@ public sealed class SigningKeyStore
             retiredAt = retired;
         }
 
-        return new SigningKeys(ToSecurityKey(ecdsa), previous, retiredAt, Stamp());
+        return new SigningKeys(ToSecurityKey(ecdsa), previous, retiredAt, stamp);
     }
 
     // A rotation rewrites the key file and the time the previous key was retired: either changing means another node rotated.

@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Security;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Platform.Tests;
@@ -111,6 +113,55 @@ public sealed class SharedKeyFolderTests : IDisposable
     }
 
     [Fact]
+    public void A_signing_key_rotated_while_another_node_reads_the_keys_reaches_it_at_its_next_look()
+    {
+        var clock = new ManualClock(DateTimeOffset.UtcNow);
+        var options = Options.Create(new PlatformOptions { Security = { AccessTokenMinutes = 10 } });
+        var (nodeA, nodeB) = (Node("a"), Node("b"));
+        var a = new SigningKeyStore(nodeA, HospitalDataProtection.CreateProvider(nodeA), options, clock);
+        var readingB = new InterruptedProvider(HospitalDataProtection.CreateProvider(nodeB));
+        var b = new SigningKeyStore(nodeB, readingB, options, clock);
+        b.Key.KeyId.ShouldBe(a.Key.KeyId);
+        a.Rotate();
+        clock.Now += TimeSpan.FromMinutes(12);
+
+        // B reads the key files again after the first rotation. Just after it has read the key file, A rotates again.
+        string? second = null;
+        readingB.BeforeNextUnprotect = () => second = a.Rotate();
+        b.Refresh();
+        second.ShouldNotBeNull();
+
+        // What B read is from before the second rotation; at its next look B sees that the files changed since.
+        b.Refresh();
+        b.Key.KeyId.ShouldBe(second);
+        b.ValidationKeys(second).Select(k => k.KeyId).ShouldContain(second);
+    }
+
+    [Fact]
+    public void A_recovery_key_made_on_one_node_is_confirmed_on_another()
+    {
+        var (nodeA, nodeB) = (Node("a"), Node("b"));
+        var a = RecoveryKeys(nodeA);
+        var b = RecoveryKeys(nodeB);
+        var admin = Guid.NewGuid();
+        var original = a.Current().KeyId;
+
+        var created = a.Create(admin);
+
+        // The reverse proxy sends the confirmation to the other node.
+        b.Confirm(created.KeyId, created.Key, admin).Value.ShouldBe(original);
+        a.Current().KeyId.ShouldBe(created.KeyId);
+        a.Confirm(created.KeyId, created.Key, admin).Error.ShouldNotBeNull().Code.ShouldBe("backup.recovery_key_not_waiting");
+
+        // A key made on one node and made again on another: only the last one waits, on both.
+        var first = b.Create(admin);
+        var second = a.Create(admin);
+        b.Confirm(first.KeyId, first.Key, admin).Error.ShouldNotBeNull().Code.ShouldBe("backup.recovery_key_not_waiting");
+        b.Confirm(second.KeyId, second.Key, admin).IsSuccess.ShouldBeTrue();
+        a.Current().KeyId.ShouldBe(second.KeyId);
+    }
+
+    [Fact]
     public void A_node_with_keys_of_its_own_may_not_start_on_a_shared_folder_without_them()
     {
         var local = new DataDirectories(new PlatformOptions { DataDirectory = Path.Combine(_root, "c") });
@@ -145,6 +196,12 @@ public sealed class SharedKeyFolderTests : IDisposable
 
     private static FieldProtector Protector(DataDirectories node) => new(node, HospitalDataProtection.CreateProvider(node));
 
+    private static RecoveryKeyStore RecoveryKeys(DataDirectories node)
+    {
+        var protection = HospitalDataProtection.CreateProvider(node);
+        return new RecoveryKeyStore(node, protection, new FieldProtector(node, protection), TimeProvider.System);
+    }
+
     /// <summary>One server: a data directory of its own, and the shared folder every node uses for keys and documents.</summary>
     private DataDirectories Node(string name)
     {
@@ -160,5 +217,36 @@ public sealed class SharedKeyFolderTests : IDisposable
         });
         node.EnsureCreated();
         return node;
+    }
+
+    private sealed class ManualClock(DateTimeOffset start) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = start;
+
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    /// <summary>Data Protection that runs <see cref="BeforeNextUnprotect"/> once, the next time a key file is opened.</summary>
+    private sealed class InterruptedProvider(IDataProtectionProvider inner) : IDataProtectionProvider, IDataProtector
+    {
+        private IDataProtector? _protector;
+
+        public Action? BeforeNextUnprotect { get; set; }
+
+        public IDataProtector CreateProtector(string purpose)
+        {
+            _protector = inner.CreateProtector(purpose);
+            return this;
+        }
+
+        public byte[] Protect(byte[] plaintext) => _protector!.Protect(plaintext);
+
+        public byte[] Unprotect(byte[] protectedData)
+        {
+            var interrupt = BeforeNextUnprotect;
+            BeforeNextUnprotect = null;
+            interrupt?.Invoke();
+            return _protector!.Unprotect(protectedData);
+        }
     }
 }
