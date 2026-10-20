@@ -231,6 +231,11 @@ public sealed class PatientRegistrationService(
             document.PatientId = target.Id;
         }
 
+        foreach (var check in await db.Set<PatientIdentityCheck>().Where(c => c.PatientId == sourceId).ToListAsync(ct))
+        {
+            check.PatientId = target.Id;
+        }
+
         await MovePortalFamilyLinksAsync(source, target, ct);
 
         target.AbhaNumberCipher ??= source.AbhaNumberCipher;

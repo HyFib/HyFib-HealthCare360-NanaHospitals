@@ -182,6 +182,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.category.privacy.purpose': 'To handle your privacy requests and keep you informed.',
     'myPrivacy.category.privacy.basis': 'Required by the Digital Personal Data Protection Act 2023.',
 
+    'myPrivacy.item.patients.patient_identity_checks': 'Identity checks with your Aadhaar fingerprint',
     'myPrivacy.item.patients.visits': 'Hospital visits',
     'myPrivacy.item.scheduling.appointments': 'Appointments',
     'myPrivacy.item.scheduling.waitlist_entries': 'Waiting-list entries',
@@ -669,6 +670,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.category.privacy.purpose': 'आपके गोपनीयता अनुरोधों को निपटाने और आपको जानकारी देते रहने के लिए।',
     'myPrivacy.category.privacy.basis': 'डिजिटल व्यक्तिगत डेटा संरक्षण अधिनियम 2023 के तहत ज़रूरी।',
 
+    'myPrivacy.item.patients.patient_identity_checks': 'आधार फ़िंगरप्रिंट से आपकी पहचान की जाँच',
     'myPrivacy.item.patients.visits': 'अस्पताल में मुलाक़ातें',
     'myPrivacy.item.scheduling.appointments': 'अपॉइंटमेंट',
     'myPrivacy.item.scheduling.waitlist_entries': 'प्रतीक्षा सूची में नाम',

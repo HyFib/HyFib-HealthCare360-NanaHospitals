@@ -370,3 +370,74 @@ describe('modality worklist and PACS settings', () => {
     });
   });
 });
+
+describe('Aadhaar authentication settings', () => {
+  const aadhaar = INTEGRATION_SETTINGS.aadhaar as SettingsSpec;
+  const uidai = (patch: Record<string, string>) => ({
+    ...toFormValues(aadhaar, {}),
+    [id('integrations.aadhaar', 'enabled')]: true,
+    [id('integrations.aadhaar', 'provider')]: 'uidai',
+    ...Object.fromEntries(Object.entries(patch).map(([path, value]) => [id('integrations.aadhaar', path), value])),
+  });
+
+  it('is off until turned on, and keeps the licence keys and the signing certificate secret', () => {
+    expect(toFormValues(aadhaar, {})[id('integrations.aadhaar', 'enabled')]).toBe(false);
+    expect(aadhaar.secrets.map((secret) => secret.prop)).toEqual([
+      'licenceKey',
+      'asaLicenceKey',
+      'signingCertificate',
+      'signingCertificatePassword',
+    ]);
+    expect(aadhaar.secrets.every((secret) => secret.key === 'integrations.aadhaar.secret')).toBe(true);
+  });
+
+  it('wants the ASA’s https address and both AUA codes for UIDAI, as the server does', () => {
+    const problems = validateSettings(aadhaar, uidai({}));
+    expect(problems[id('integrations.aadhaar', 'authUrl')]).toBeDefined();
+    expect(problems[id('integrations.aadhaar', 'auaCode')]).toBeDefined();
+    expect(problems[id('integrations.aadhaar', 'subAuaCode')]).toBeDefined();
+
+    const plain = validateSettings(
+      aadhaar,
+      uidai({
+        authUrl: 'http://asa.example.in/2.5/{ac}/{uid0}/{uid1}/{asalk}',
+        auaCode: 'HC00 01',
+        subAuaCode: 'NANA01',
+      }),
+    );
+    expect(plain[id('integrations.aadhaar', 'authUrl')]).toBeDefined();
+    expect(plain[id('integrations.aadhaar', 'auaCode')]).toBe('Up to 10 letters or digits, as the ASA gives it.');
+
+    const ready = validateSettings(
+      aadhaar,
+      uidai({
+        authUrl: 'https://asa.example.in/2.5/{ac}/{uid0}/{uid1}/{asalk}',
+        auaCode: 'HC0000001',
+        subAuaCode: 'NANA01',
+      }),
+    );
+    expect(ready).toEqual({});
+  });
+
+  it('asks the readers only for what UIDAI takes', () => {
+    const environment = aadhaar.fields.find((field) => field.path === 'environment')!;
+    expect(environment.options?.map((option) => option.value)).toEqual(['P', 'PP', 'S']);
+    const data = aadhaar.fields.find((field) => field.path === 'fingerData')!;
+    expect(data.options?.map((option) => option.value)).toEqual(['FMR,FIR', 'FMR', 'FIR']);
+    const fingers = aadhaar.fields.find((field) => field.path === 'fingerCount')!;
+    expect(parseFieldValue(fingers, '3').ok).toBe(false);
+    const wait = aadhaar.fields.find((field) => field.path === 'captureTimeoutSeconds')!;
+    expect(parseFieldValue(wait, '90').ok).toBe(false);
+    const tid = aadhaar.fields.find((field) => field.path === 'registeredDeviceTid')!;
+    expect(parseFieldValue(tid, 'registered').ok).toBe(true);
+    expect(parseFieldValue(tid, 'reg-1').ok).toBe(false);
+  });
+
+  it('takes UIDAI’s certificate only as a whole PEM certificate', () => {
+    const certificate = aadhaar.fields.find((field) => field.path === 'uidaiCertificate')!;
+    expect(parseFieldValue(certificate, '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n').ok).toBe(
+      true,
+    );
+    expect(parseFieldValue(certificate, 'MIIB').ok).toBe(false);
+  });
+});

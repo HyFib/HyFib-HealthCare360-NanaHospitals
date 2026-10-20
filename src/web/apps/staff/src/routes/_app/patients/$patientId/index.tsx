@@ -64,14 +64,15 @@ import {
   type PatientDetail,
 } from '@/modules/patients/api';
 import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
+import { IdentityChecksPanel } from '@/modules/patients/IdentityChecksPanel';
 import { PortalAccessPanel } from '@/modules/patients/PortalAccessPanel';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
 
-type TabId = 'overview' | 'visits' | 'consents' | 'portal' | 'documents';
+type TabId = 'overview' | 'visits' | 'consents' | 'identity' | 'portal' | 'documents';
 
 export const Route = createFileRoute('/_app/patients/$patientId/')({
   validateSearch: (search: Record<string, unknown>): { tab?: TabId } => ({
-    tab: ['overview', 'visits', 'consents', 'portal', 'documents'].includes(search.tab as string)
+    tab: ['overview', 'visits', 'consents', 'identity', 'portal', 'documents'].includes(search.tab as string)
       ? (search.tab as TabId)
       : undefined,
   }),
@@ -246,6 +247,7 @@ function PatientProfilePage() {
             <Tab value="overview">Overview</Tab>
             <Tab value="visits">Visits</Tab>
             <Tab value="consents">Consents</Tab>
+            <Tab value="identity">Identity</Tab>
             <Tab value="portal">Portal access</Tab>
             <Tab value="documents">Documents</Tab>
           </TabList>
@@ -254,6 +256,7 @@ function PatientProfilePage() {
           {tab === 'overview' && <Overview patient={p} />}
           {tab === 'visits' && <Visits patientId={patientId} />}
           {tab === 'consents' && <ConsentsPanel patientId={patientId} />}
+          {tab === 'identity' && <IdentityChecksPanel patient={p} />}
           {tab === 'portal' && <PortalAccessPanel patientId={patientId} />}
           {tab === 'documents' && <Documents patientId={patientId} />}
         </div>

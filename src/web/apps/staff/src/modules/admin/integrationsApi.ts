@@ -23,6 +23,7 @@ export const INTEGRATION_NAMES = [
   'labels',
   'icd',
   'biometric',
+  'aadhaar',
 ] as const;
 export type IntegrationName = (typeof INTEGRATION_NAMES)[number];
 
@@ -39,6 +40,7 @@ export const INTEGRATION_LABELS: Record<IntegrationName, string> = {
   labels: 'Barcode labels',
   icd: 'ICD lookup',
   biometric: 'Biometric attendance',
+  aadhaar: 'Aadhaar authentication',
 };
 
 export function isIntegrationName(value: unknown): value is IntegrationName {
@@ -341,6 +343,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   'zpl/tspl': 'ZPL / TSPL printers',
   zkteco: 'ZKTeco / eSSL terminals',
   push: 'Terminals send their punches',
+  uidai: 'UIDAI, through the ASA',
 };
 
 export function providerLabel(provider: string | null | undefined): string {
@@ -467,6 +470,8 @@ export const TEST_DESCRIPTIONS: Record<IntegrationName, string> = {
   icd: 'Searches online ICD lookup (the WHO ICD-API or the simulator) for a sample term.',
   biometric:
     'Checks the settings for reading attendance terminals. Each terminal is read from HR › Attendance terminals with Read now; terminals that send their punches need none of this.',
+  aadhaar:
+    'Checks the AUA settings, the licence keys and the signing certificate (its private key and its dates). Nothing is sent to UIDAI: check a patient’s identity from their record to test the whole path with a fingerprint reader.',
 };
 
 export type TestInput = 'mobile' | 'email' | null;

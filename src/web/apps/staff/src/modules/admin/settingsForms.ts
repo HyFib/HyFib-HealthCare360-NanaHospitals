@@ -1748,6 +1748,157 @@ const labelsSpec: SettingsSpec = {
   secrets: [],
 };
 
+const AADHAAR = 'integrations.aadhaar';
+const AADHAAR_SECRET = 'integrations.aadhaar.secret';
+const throughUidai = when(AADHAAR, 'provider', 'uidai');
+const AUA_CODE = { regex: /^[A-Za-z0-9]{1,10}$/, message: 'Up to 10 letters or digits, as the ASA gives it.' };
+
+const aadhaarSpec: SettingsSpec = {
+  id: 'aadhaar',
+  title: 'Aadhaar authentication',
+  intro:
+    'Checks a patient’s identity with their Aadhaar fingerprint (patient record › Identity), under the hospital’s AUA licence through its authentication service agency (ASA), which gives every value below. Each workstation that checks needs HC360 Desktop and a UIDAI-certified fingerprint reader (a registered device) with its RD service. The licence keys and the signing certificate stay on the server.',
+  prefix: AADHAAR,
+  fields: [
+    { key: AADHAAR, path: 'enabled', label: 'Check identities with Aadhaar fingerprints', kind: 'switch' },
+    {
+      key: AADHAAR,
+      path: 'provider',
+      label: 'Provider',
+      kind: 'select',
+      options: [
+        { value: 'uidai', label: 'UIDAI (Aadhaar Auth API 2.5, through the ASA)' },
+        { value: 'simulator', label: 'Simulator (training: nothing goes to UIDAI)' },
+      ],
+      requiredWhen: switchedOn(AADHAAR),
+    },
+    {
+      key: AADHAAR,
+      path: 'authUrl',
+      label: 'ASA address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://asa.example.in/2.5/{ac}/{uid0}/{uid1}/{asalk}',
+      when: throughUidai,
+      requiredWhen: throughUidai,
+      hint: 'As the ASA gives it. {ac}, {uid0}, {uid1} and {asalk} are filled in for each check.',
+    },
+    {
+      key: AADHAAR,
+      path: 'auaCode',
+      label: 'AUA code',
+      kind: 'text',
+      pattern: AUA_CODE,
+      when: throughUidai,
+      requiredWhen: throughUidai,
+    },
+    {
+      key: AADHAAR,
+      path: 'subAuaCode',
+      label: 'Sub-AUA code',
+      kind: 'text',
+      pattern: AUA_CODE,
+      when: throughUidai,
+      requiredWhen: throughUidai,
+      hint: 'The hospital’s own code when it is a sub-AUA; when the hospital is the AUA, its AUA code again.',
+    },
+    {
+      key: AADHAAR,
+      path: 'environment',
+      label: 'UIDAI environment',
+      kind: 'select',
+      defaultValue: 'P',
+      options: [
+        { value: 'P', label: 'Production (P)' },
+        { value: 'PP', label: 'Pre-production (PP)' },
+        { value: 'S', label: 'Staging (S)' },
+      ],
+      hint: 'The one the licence is for: readers encrypt each fingerprint for it.',
+    },
+    {
+      key: AADHAAR,
+      path: 'fingerData',
+      label: 'Fingerprint data',
+      kind: 'select',
+      defaultValue: 'FMR,FIR',
+      options: [
+        { value: 'FMR,FIR', label: 'Minutiae and image (FMR, FIR)' },
+        { value: 'FMR', label: 'Minutiae (FMR)' },
+        { value: 'FIR', label: 'Image (FIR)' },
+      ],
+      group: 'Fingerprint readers',
+      hint: 'Change only if the ASA asks.',
+    },
+    {
+      key: AADHAAR,
+      path: 'fingerCount',
+      label: 'Fingers per check',
+      kind: 'number',
+      defaultNumber: 1,
+      min: 1,
+      max: 2,
+    },
+    {
+      key: AADHAAR,
+      path: 'captureTimeoutSeconds',
+      label: 'The reader waits for a finger (seconds)',
+      kind: 'number',
+      defaultNumber: 15,
+      min: 5,
+      max: 60,
+    },
+    {
+      key: AADHAAR,
+      path: 'registeredDeviceTid',
+      label: 'Registered device code (tid)',
+      kind: 'text',
+      placeholder: 'registered',
+      pattern: { regex: /^[A-Za-z]{1,16}$/, message: 'Use letters only, such as registered.' },
+      when: throughUidai,
+      group: 'Advanced',
+      hint: 'Change only if the ASA asks: UIDAI answers 520 to a value it does not take.',
+    },
+    {
+      key: AADHAAR,
+      path: 'timeoutSeconds',
+      label: 'Give UIDAI up to (seconds)',
+      kind: 'number',
+      defaultNumber: 20,
+      min: 5,
+      max: 60,
+      when: throughUidai,
+    },
+    {
+      key: AADHAAR,
+      path: 'uidaiCertificate',
+      label: 'UIDAI signing certificate (PEM)',
+      kind: 'textarea',
+      when: throughUidai,
+      pattern: {
+        regex: /^-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----\s*$/,
+        message: 'Paste the certificate from -----BEGIN CERTIFICATE----- to -----END CERTIFICATE-----.',
+      },
+      hint: 'From the ASA. Once it is set, an answer UIDAI did not sign with it is refused.',
+    },
+  ],
+  secrets: [
+    { key: AADHAAR_SECRET, prop: 'licenceKey', label: 'AUA licence key' },
+    {
+      key: AADHAAR_SECRET,
+      prop: 'asaLicenceKey',
+      label: 'ASA licence key',
+      hint: 'Goes into the ASA address as {asalk}.',
+    },
+    {
+      key: AADHAAR_SECRET,
+      prop: 'signingCertificate',
+      label: 'AUA signing certificate (.pfx, base64)',
+      hint: 'The certificate HC360 signs each request with, and its private key. In PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("aua.pfx")).',
+    },
+    { key: AADHAAR_SECRET, prop: 'signingCertificatePassword', label: 'Signing certificate password' },
+  ],
+};
+
 /** Integrations with settings. */
 export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>> = {
   sms: smsSpec,
@@ -1762,6 +1913,7 @@ export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>
   labels: labelsSpec,
   icd: icdSpec,
   biometric: biometricSpec,
+  aadhaar: aadhaarSpec,
 };
 
 const SPEECH = 'ai.speech';
