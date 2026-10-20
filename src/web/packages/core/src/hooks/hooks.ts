@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useState, type RefObject } from 'react';
-import { draftStorageKey, useSession } from '../auth/session';
+import { draftStorageKey, lastActivityAt, useSession } from '../auth/session';
 
 /** Debounces a fast-changing value (search boxes). */
 export function useDebouncedValue<T>(value: T, delayMs = 300): T {
@@ -64,7 +64,12 @@ export function useDraft<T>(key: string | null, value: T, options: { intervalMs?
   return { restore, clear, savedAt };
 }
 
-/** Calls `onIdle` after `timeoutMs` without keyboard/mouse/touch activity (screen lock, SRS UX-11). */
+/**
+ * Calls `onIdle` once `timeoutMs` pass without anyone using the app (screen lock, SRS UX-11), then again only after
+ * another such spell. Use is what the server is told at each refresh (`markActivity`): a key press, click, touch or
+ * scroll in this window or another of the app's windows, or use the app reports itself, such as a video call. The
+ * time it is switched on counts as use.
+ */
 export function useIdle(timeoutMs: number, onIdle: () => void, enabled = true): void {
   const fireIdle = useEffectEvent(onIdle);
 
@@ -72,17 +77,26 @@ export function useIdle(timeoutMs: number, onIdle: () => void, enabled = true): 
     if (!enabled || timeoutMs <= 0) {
       return;
     }
-    let timer = setTimeout(() => fireIdle(), timeoutMs);
-    const reset = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => fireIdle(), timeoutMs);
+    const since = Date.now();
+    let fired = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = () => {
+      const activeAt = Math.max(lastActivityAt(), since);
+      const idleMs = Date.now() - activeAt;
+      if (idleMs < timeoutMs) {
+        fired = false;
+        timer = setTimeout(check, timeoutMs - idleMs);
+        return;
+      }
+      if (!fired) {
+        fired = true;
+        fireIdle();
+      }
+      // Look again a little later: the next use starts a new spell.
+      timer = setTimeout(check, Math.min(timeoutMs, 15_000));
     };
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'] as const;
-    events.forEach((name) => window.addEventListener(name, reset, { passive: true }));
-    return () => {
-      clearTimeout(timer);
-      events.forEach((name) => window.removeEventListener(name, reset));
-    };
+    timer = setTimeout(check, timeoutMs);
+    return () => clearTimeout(timer);
   }, [timeoutMs, enabled]);
 }
 

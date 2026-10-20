@@ -40,6 +40,9 @@ export function BillLinesTable({
     {
       key: 'service',
       header: 'Service',
+      // The amounts have widths of their own: without a minimum, where they fill the table's box (OP billing beside
+      // the payment panel in a 1,280 px window) the service was left no width at all.
+      minWidth: 180,
       render: (line) => (
         <span className={styles.service}>
           <span className={styles.name}>

@@ -285,6 +285,54 @@ public sealed class BillDocumentTests
     public void Amounts_are_written_in_words_on_the_indian_system(string amount, string words) =>
         AmountInWords.Rupees(decimal.Parse(amount, CultureInfo.InvariantCulture)).ShouldBe(words);
 
+    [Fact]
+    public void A_bill_for_a_patient_who_reads_hindi_has_hindi_labels_and_keeps_amounts_and_codes_as_they_are()
+    {
+        var bill = Taxed() with { Type = BillType.InPatient, IsFinalBill = true, Receipts = [Receipt()] };
+
+        var document = BillDocument.Build(bill, Letterhead, DocumentText.Hindi);
+        var html = document.ToHtml();
+
+        BillDocument.Title(bill, DocumentText.Hindi).ShouldBe("कर बीजक (Tax invoice) · आईपी अंतिम बिल");
+        document.Language.ShouldBe("hi");
+        document.Footer.ShouldEndWith(" · बिल NHOB260000001");
+        html.ShouldContain("<html lang=\"hi\">");
+        html.ShouldContain("<div class=\"h-title\">कर बीजक (Tax invoice) · आईपी अंतिम बिल</div>");
+        html.ShouldContain("<div>बिल सं.: <b>NHOB260000001</b></div>");
+        html.ShouldContain("<th>सेवा</th><th>SAC</th><th class=\"num\">मात्रा</th><th class=\"num\">दर</th><th class=\"num\">राशि</th>");
+        html.ShouldContain("<tr><td>कर योग्य मूल्य</td><td class=\"num\">₹1,000.00</td></tr>");
+        html.ShouldContain("<tr class=\"strong\"><td>शुद्ध राशि</td>");
+        html.ShouldContain("<h3>GST सारांश</h3>");
+        html.ShouldContain("<h3>प्राप्त भुगतान</h3>");
+        html.ShouldContain("<div>भुगतानकर्ता: स्वयं भुगतान</div>");
+        html.ShouldContain("रोगी द्वारा देय (शब्दों में): Rupees");
+        html.ShouldContain("<div>रोगी / परिचारक</div><div>अधिकृत हस्ताक्षरकर्ता</div>");
+        html.ShouldContain("यह कंप्यूटर द्वारा बनाया गया कर बीजक (Tax invoice) · आईपी अंतिम बिल है। Subject to Pune jurisdiction.");
+        html.ShouldContain("GSTIN 27AAACN1234F1Z5");
+        html.ShouldContain("@font-face { font-family: \"HC360 Devanagari\"");
+        html.ShouldNotContain("Gross amount");
+    }
+
+    [Fact]
+    public void A_status_payer_or_mode_without_words_of_its_own_prints_its_name_in_any_language()
+    {
+        BillDocument.StatusLabel(BillStatus.Refunded, DocumentText.Hindi).ShouldBe("रद्द, राशि वापस");
+        BillDocument.StatusLabel((BillStatus)99, DocumentText.Hindi).ShouldBe("99");
+        BillDocument.PayerLabel(PayerType.Charity, DocumentText.Hindi).ShouldBe("धर्मार्थ");
+        BillDocument.PayerLabel((PayerType)42).ShouldBe("42");
+        BillDocument.ModesLabel("Cash + Advance + Barter", DocumentText.Hindi).ShouldBe("नकद + अग्रिम राशि से समायोजित + Barter");
+    }
+
+    [Fact]
+    public void An_english_bill_carries_no_hindi_font()
+    {
+        var html = Render(Bill());
+
+        html.ShouldContain("<html lang=\"en\">");
+        html.ShouldNotContain("@font-face");
+        html.ShouldContain("font-family: \"Segoe UI\", \"HC360 Devanagari\", \"Nirmala UI\"");
+    }
+
     private static string Render(BillDetail bill) => BillDocument.Build(bill, Letterhead).ToHtml();
 
     private static BillDetail Taxed()

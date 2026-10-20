@@ -7,7 +7,18 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/routeTree.gen.ts', '**/coverage/**'] },
+  {
+    // Build output, and what a Playwright run leaves behind (its HTML report holds the trace viewer's own scripts).
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/routeTree.gen.ts',
+      '**/coverage/**',
+      '**/playwright-report/**',
+      '**/test-results/**',
+      '**/blob-report/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HyFib.HealthCare360.Platform.Identity;
 
@@ -26,18 +27,25 @@ internal static class AuthEndpoints
             .AllowAnonymous()
             .RequireRateLimiting(AuthRateLimit);
 
-        // The patient portal's sign-in, which also registers a new number: off while the portal is switched off.
+        // The patient portal's sign-in, which also registers a new number: off while the portal is switched off. Both
+        // steps ask for a proof of work (SRS SEC-06); failures for a number raise the work asked for it from any address.
+        // A number that is not a mobile number is answered first, so it neither spends the proof nor counts as a failure.
         group.MapPost("/otp/request", async (OtpRequest request, AuthService auth, CancellationToken ct) =>
                 (await auth.RequestOtpAsync(request, ct)).ToOk())
             .AllowAnonymous()
             .RequireRateLimiting(OtpRateLimit)
-            .RequireFeature(FeatureKeys.PatientPortal);
+            .RequireFeature(FeatureKeys.PatientPortal)
+            .WithValidation<OtpRequest>()
+            .RequireProofOfWork(AntiAutomationActions.Otp, context => context.Arguments.OfType<OtpRequest>().FirstOrDefault()?.Phone);
 
+        // Giving the code names its challenge, not the number: the number is looked up only when the attempt fails (a wrong
+        // or expired code, a refused proof), so that it counts against the number as well as the address.
         group.MapPost("/otp/verify", async (OtpVerifyRequest request, AuthService auth, HttpContext http, CancellationToken ct) =>
                 (await auth.VerifyOtpAsync(request, http, ct)).ToOk())
             .AllowAnonymous()
             .RequireRateLimiting(AuthRateLimit)
-            .RequireFeature(FeatureKeys.PatientPortal);
+            .RequireFeature(FeatureKeys.PatientPortal)
+            .RequireProofOfWork(AntiAutomationActions.Otp, subjectOnFailure: PhoneOfChallengeAsync);
 
         // A portal session can only be refreshed as the portal (its cookie is read by the client header), so the portal's
         // own refreshes stop while it is switched off and staff sessions are not affected.
@@ -77,6 +85,37 @@ internal static class AuthEndpoints
             .RequireAuthorization()
             .RequireRateLimiting(AuthRateLimit);
 
+        // Quick unlock with the device's Windows Hello, fingerprint or face (WebAuthn), allowed while locked too. It only
+        // resumes the caller's own session (WebAuthnUnlockService).
+        group.MapPost("/unlock/webauthn/options", async (WebAuthnUnlockService webAuthn, HttpContext http, CancellationToken ct) =>
+                (await webAuthn.BeginUnlockAsync(http, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        group.MapPost("/unlock/webauthn", async (WebAuthnUnlockRequest request, WebAuthnUnlockService webAuthn, HttpContext http, CancellationToken ct) =>
+                (await webAuthn.UnlockAsync(request, http, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        // The devices set up for it: listed, added after the password is given again, and removed by their owner.
+        group.MapGet("/webauthn/credentials", async (WebAuthnUnlockService webAuthn, ICurrentUser user, HttpContext http, CancellationToken ct) =>
+                TypedResults.Ok(await webAuthn.ListAsync(user.UserId, http, ct)))
+            .RequireAuthorization();
+
+        group.MapPost("/webauthn/credentials/options", async (WebAuthnRegistrationRequest request, WebAuthnUnlockService webAuthn, HttpContext http, CancellationToken ct) =>
+                (await webAuthn.BeginRegistrationAsync(request, http, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        group.MapPost("/webauthn/credentials", async (WebAuthnRegisterRequest request, WebAuthnUnlockService webAuthn, HttpContext http, CancellationToken ct) =>
+                (await webAuthn.RegisterAsync(request, http, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        group.MapDelete("/webauthn/credentials/{id:guid}", async (Guid id, WebAuthnUnlockService webAuthn, CancellationToken ct) =>
+                (await webAuthn.RemoveAsync(id, ct)).ToNoContent())
+            .RequireAuthorization();
+
         group.MapPost("/mfa/setup", async (MfaSetupRequest request, AuthService auth, CancellationToken ct) =>
                 (await auth.BeginMfaSetupAsync(request, ct)).ToOk())
             .RequireAuthorization()
@@ -113,4 +152,9 @@ internal static class AuthEndpoints
             .RequirePermission(PlatformPermissions.SystemManage)
             .RequireRateLimiting(AuthRateLimit);
     }
+
+    private static Task<string?> PhoneOfChallengeAsync(EndpointFilterInvocationContext context, CancellationToken ct) =>
+        context.Arguments.OfType<OtpVerifyRequest>().FirstOrDefault() is { } request
+            ? context.HttpContext.RequestServices.GetRequiredService<AuthService>().OtpPhoneAsync(request.ChallengeId, ct)
+            : Task.FromResult<string?>(null);
 }

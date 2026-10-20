@@ -2,6 +2,7 @@ import {
   createDarkTheme,
   createLightTheme,
   FluentProvider,
+  makeStaticStyles,
   teamsHighContrastTheme,
   tokens,
   type BrandVariants,
@@ -10,8 +11,9 @@ import {
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 /**
- * HyFib clinical teal. Brand 80 (#0A7CA7) carries white text at 4.7:1 (WCAG AA); dark theme lifts
- * foregrounds to brand 110/120 for contrast on dark surfaces.
+ * HyFib clinical teal. Brand 80 (#0A7CA7) carries white text at 4.7:1 (WCAG AA); the light theme draws brand text one
+ * step darker than Fluent does (below), and the dark theme lifts foregrounds to brand 110/120 for contrast on dark
+ * surfaces.
  */
 export const hc360Brand: BrandVariants = {
   10: '#020E12',
@@ -34,7 +36,19 @@ export const hc360Brand: BrandVariants = {
 
 const fontFamily = '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Noto Sans", sans-serif';
 
-export const hc360LightTheme: Theme = { ...createLightTheme(hc360Brand), fontFamilyBase: fontFamily };
+/**
+ * The teal is lighter than Fluent's own blue, so Fluent's light brand text (brand 80, and brand 70 on a brand tint) falls
+ * short of 4.5:1 on the surfaces it is paired with: brand 80 has 4.0:1 on colorBrandBackground2 (a selected link in the
+ * portal's navigation) and 4.3:1 on colorNeutralBackground3. One step darker each keeps every pairing at AA: brand 70
+ * has 4.9:1 on colorBrandBackground2 and 5.3:1 on colorNeutralBackground3; brand 60, for text on a hovered tint, 5.3:1
+ * on colorBrandBackground2Hover. Checked in a browser by a11y/*.spec.ts.
+ */
+export const hc360LightTheme: Theme = {
+  ...createLightTheme(hc360Brand),
+  fontFamilyBase: fontFamily,
+  colorBrandForeground1: hc360Brand[70],
+  colorBrandForeground2: hc360Brand[60],
+};
 
 export const hc360DarkTheme: Theme = {
   ...createDarkTheme(hc360Brand),
@@ -106,9 +120,20 @@ export function useResolvedTheme(): { theme: Theme; isDark: boolean; mode: Theme
   }, [mode, prefersDark, forcedColors]);
 }
 
+/**
+ * Text boxes as wide as the column or card they are in, never wider. A browser sizes an input for 20 characters
+ * (Fluent's input fills its box but keeps that as its smallest width), wider than a phone's sign-in card or a narrow
+ * column of vital signs, so fields spilled out over their neighbours (WCAG 1.4.10). Given a width in per cent, an input
+ * no longer holds its box open, and Fluent's own flex layout still fills the box.
+ */
+const useFieldSizing = makeStaticStyles({
+  '.fui-Input__input, .fui-SpinButton__input': { width: '100%' },
+});
+
 /** Applies the HC360 theme to the whole app and sets the page background/color-scheme. */
 export function Hc360ThemeProvider({ children }: { children: ReactNode }) {
   const { theme, isDark } = useResolvedTheme();
+  useFieldSizing();
 
   useEffect(() => {
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';

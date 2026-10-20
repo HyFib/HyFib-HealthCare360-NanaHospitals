@@ -187,4 +187,70 @@ describe('DataTable width', () => {
     expect(box.display).toBe('grid');
     expect(box.gridTemplateColumns).toBe('minmax(0, 1fr)');
   });
+
+  const renderColumns = (columns: Column<Row>[], buttons: number[] = []) =>
+    act(() =>
+      root.render(
+        <DataTable
+          ariaLabel="Patients"
+          columns={columns}
+          rows={[{ id: '1', name: 'Asha Devi', buttons }]}
+          getRowId={(row) => row.id}
+          rowActions={
+            buttons.length > 0
+              ? (row) =>
+                  row.buttons.map((width, index) => (
+                    <button key={index} type="button" data-width={width}>
+                      Action {index + 1}
+                    </button>
+                  ))
+              : undefined
+          }
+        />,
+      ),
+    );
+
+  const minWidths = () => {
+    const table = container.querySelector('table')!;
+    return [
+      table.style.getPropertyValue('--hc360-table-min-width'),
+      table.style.getPropertyValue('--hc360-table-min-width-narrow'),
+    ];
+  };
+
+  it('stops narrowing where a column would get less than its minimum width, with and without low-priority columns', () => {
+    fakeLayout();
+    renderColumns(
+      [
+        { key: 'uhid', header: 'UHID', width: 120, render: (row) => row.id },
+        { key: 'name', header: 'Name', minWidth: 160, render: (row) => row.name },
+        { key: 'reason', header: 'Reason', width: '20%', priority: 'low', render: (row) => row.name },
+        { key: 'visit', header: 'Last visit', width: 100, priority: 'low', render: (row) => row.name },
+      ],
+      [60],
+    );
+
+    // 120 + 160 + 100 px, every cell's padding (4 × 16) and the actions (60 + 16): 520 px for the 80 % left besides
+    // the reason's 20 %. On a tablet, without the reason and the last visit: 120 + 160 + 2 × 16 + 76.
+    expect(minWidths()).toEqual(['650px', '388px']);
+  });
+
+  it('gives each column without a width the largest minimum, as they share the rest equally', () => {
+    renderColumns([
+      { key: 'name', header: 'Name', minWidth: 200, render: (row) => row.name },
+      { key: 'reason', header: 'Reason', render: (row) => row.name },
+      { key: 'status', header: 'Status', width: 112, render: (row) => row.name },
+    ]);
+
+    expect(minWidths()).toEqual(['560px', '560px']);
+  });
+
+  it('lets the table narrow as before when no column has a minimum width', () => {
+    renderColumns([
+      { key: 'name', header: 'Name', render: (row) => row.name },
+      { key: 'status', header: 'Status', width: 112, render: (row) => row.name },
+    ]);
+
+    expect(minWidths()).toEqual(['', '']);
+  });
 });

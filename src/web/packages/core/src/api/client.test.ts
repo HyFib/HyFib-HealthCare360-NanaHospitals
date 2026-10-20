@@ -22,6 +22,24 @@ describe('api client', () => {
     );
   });
 
+  it('sends the language chosen in the app, and no language when it has none', async () => {
+    const languages: (string | null)[] = [];
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      languages.push(new Headers(init.headers).get('X-HC360-Language'));
+      return jsonResponse(200, {});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    let language: string | undefined = 'hi';
+
+    const client = createApiClient({ ...baseConfig, clientType: 'portal', getLanguage: () => language });
+    await client.get('/api/v1/portal/bills');
+    language = undefined;
+    await client.get('/api/v1/portal/bills');
+    await createApiClient(baseConfig).get('/api/v1/patients');
+
+    expect(languages).toEqual(['hi', null, null]);
+  });
+
   it('retries a POST after a network failure with the same idempotency key', async () => {
     const keys: string[] = [];
     const fetchMock = vi
@@ -125,6 +143,50 @@ describe('api client', () => {
     expect(refreshAccessToken).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(isSessionLocked(new ApiError({ status: 423, code: 'other.code' }))).toBe(false);
+  });
+
+  it('sends a read refused while the screen is locked again once it is unlocked, so the screen behind keeps its data', async () => {
+    const locked = () =>
+      new Response(JSON.stringify({ title: 'Screen locked', status: 423, code: 'auth.session_locked' }), {
+        status: 423,
+        headers: { 'content-type': 'application/problem+json' },
+      });
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => locked())
+      .mockImplementationOnce(async () => jsonResponse(200, [{ id: 'p1' }]));
+    vi.stubGlobal('fetch', fetchMock);
+    let unlock: (unlocked: boolean) => void = () => undefined;
+    const waitForUnlock = vi.fn(() => new Promise<boolean>((resolve) => (unlock = resolve)));
+
+    const client = createApiClient({ ...baseConfig, onSessionLocked: vi.fn(), waitForUnlock });
+    const read = client.get<{ id: string }[]>('/api/v1/patients');
+    await vi.waitFor(() => expect(waitForUnlock).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    unlock(true);
+
+    await expect(read).resolves.toEqual([{ id: 'p1' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not send a write again after the lock, nor a read once the session is over', async () => {
+    const locked = () =>
+      new Response(JSON.stringify({ title: 'Screen locked', status: 423, code: 'auth.session_locked' }), {
+        status: 423,
+        headers: { 'content-type': 'application/problem+json' },
+      });
+    const fetchMock = vi.fn(async () => locked());
+    vi.stubGlobal('fetch', fetchMock);
+    const waitForUnlock = vi.fn(async () => false);
+    const client = createApiClient({ ...baseConfig, onSessionLocked: vi.fn(), waitForUnlock });
+
+    const write = await client.post('/api/v1/patients', { firstName: 'Ravi' }).catch((e: unknown) => e);
+    const read = await client.get('/api/v1/patients').catch((e: unknown) => e);
+
+    expect(isSessionLocked(write)).toBe(true);
+    expect(isSessionLocked(read)).toBe(true);
+    expect(waitForUnlock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('tells a switched-off feature from other refusals', () => {

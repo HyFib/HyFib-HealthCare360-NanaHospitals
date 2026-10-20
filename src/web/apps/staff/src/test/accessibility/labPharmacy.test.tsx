@@ -826,7 +826,8 @@ beforeEach(() => {
       request.path.endsWith('/flags') ? FLAGS[request.path.split('/')[5] ?? ''] : undefined,
     'GET /api/v1/print/letterhead': LETTERHEAD,
     // No visits yet, so the banners name no payer.
-    'GET /api/v1/patients/*': (request: FakeRequest) => (request.path.endsWith('/visits') ? paged([]) : undefined),
+    'GET /api/v1/patients/*': (request: FakeRequest) =>
+      request.path.endsWith('/visits') ? paged([]) : request.path.endsWith('/payer') ? { current: null } : undefined,
     // Laboratory
     'GET /api/v1/lab/worklist': paged(WORKLIST),
     'GET /api/v1/lab/qc/status': QC_STATUS,

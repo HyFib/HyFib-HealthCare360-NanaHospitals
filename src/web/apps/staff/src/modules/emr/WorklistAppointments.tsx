@@ -76,6 +76,7 @@ export function WorklistAppointments({
         {
           key: 'patient',
           header: 'Patient',
+          minWidth: 200,
           render: (a) => (
             <WorklistPatient
               name={a.patientName}
@@ -94,21 +95,31 @@ export function WorklistAppointments({
             </WorklistPatient>
           ),
         },
-        { key: 'reason', header: 'Reason', priority: 'low', render: (a) => a.reason ?? '—' },
+        // The reason and the doctor give way to the patient: cut short with an ellipsis, the whole in the title.
+        {
+          key: 'reason',
+          header: 'Reason',
+          width: '15%',
+          priority: 'low',
+          render: (a) => <span title={a.reason ?? undefined}>{a.reason ?? '—'}</span>,
+        },
         ...(showDoctor
           ? [
               {
                 key: 'doctor',
                 header: 'Doctor',
+                width: 140,
                 priority: 'low' as const,
-                render: (a: WorklistAppointment) => a.practitionerName ?? '—',
+                render: (a: WorklistAppointment) => (
+                  <span title={a.practitionerName ?? undefined}>{a.practitionerName ?? '—'}</span>
+                ),
               },
             ]
           : []),
         {
           key: 'status',
           header: 'Status',
-          width: 150,
+          width: 180,
           render: (a) => (
             <span className={styles.status}>
               <StatusBadge

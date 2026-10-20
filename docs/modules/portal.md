@@ -32,6 +32,19 @@ and `npx eslint apps/portal`.
 
 ## Sign-in, session and family members
 
+* **Anti-automation (SRS SEC-06).** Asking for a code, giving it, and sending feedback from a poster, kiosk or personal
+  link need a proof of work (`src/lib/proofOfWork`). The page asks `POST /api/v1/public/challenge` for a challenge as
+  soon as the form appears, solves it in a Web Worker with WebCrypto (`solver.worker.ts`; SHA-256 with 14 leading zero
+  bits by default, well under a second on a mid-range phone), and sends the answer in `X-HC360-Proof` with the request.
+  Nothing shows unless it takes longer than 1.5 seconds; then a polite status says "Checking your browser…". When the
+  server refuses a proof (403 `request.check_failed`, for instance because it asks more work of the number after
+  failures), the page solves a fresh challenge, for the mobile number when it asks for a code, and tries once more. The
+  challenge solved when the sign-in form appeared cannot name the number, so for a number that failed lately it is too
+  easy: the server refuses it without counting that against the patient's address or number, and the retry gets in.
+  Giving the code sends no number: its work depends on the address only, and the server finds the number from the
+  challenge when a code is wrong. There is no puzzle and no third party. The server side, its settings and the
+  reasoning behind the difficulty are in SECURITY.md, "Anti-automation on the portal".
+
 * **OTP sign-in.** `auth.requestOtp` → `POST /api/v1/auth/otp/request`, then `auth.verifyOtp` →
   `POST /api/v1/auth/otp/verify`. The page never says whether a number is registered. The resend button backs off
   (30 s, 60 s, 2 min, then 5 min), so patients do not hit the server limit. A code that seems to expire implausibly (a
@@ -74,7 +87,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/video`, `/video/{sessionId}` | yes | Video consultations: device check, waiting room, call, chat, audio-only |
 | `/telehealth/{sessionId}?t={joinToken}` | no | The SMS or WhatsApp join link (guest join) |
 | `/reports`, `/reports/{lab\|radiology\|cardiology}/{id}` | yes | Lab values with ranges and flags in plain words, and radiology and cardiology text. Download PDF (the hospital's official copy) or print |
-| `/prescriptions`, `/prescriptions/{id}` | yes | Prescriptions with verification QR code; Download PDF or print; refill requests |
+| `/prescriptions`, `/prescriptions/{id}` | yes | Prescriptions with verification QR code; Download PDF or print; refill requests. Where the hospital requires the doctor's DSC (ERX-04) and the prescription has no valid one yet, it shows no print, PDF or QR code and says, in English and Hindi, that the doctor has not digitally signed it yet; a PDF the server refuses for that reason is worded by its code in the patient's language |
 | `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment; Download PDF or print a bill; receipts (print) |
 | `/records`, `/records/discharge/{id}`, `/records/request` | yes | Health summary, discharge summaries (Download PDF or print), request a copy of records |
 | `/my-feedback`, `/my-feedback/{formId}` | yes | Feedback forms and the patient's feedback with complaint status |
@@ -83,7 +96,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/feedback/{token}` | no | Personal feedback link (SMS after a visit or stay) |
 | `/feedback/form/{token}` | no | QR poster form. Add `?kiosk=true` on a kiosk tablet, which then resets itself after each response |
 | `/unsubscribe/{token}` | no | Opt-out link in campaign messages. Opening it changes nothing; the patient confirms with one tap |
-| `/verify`, `/verify/prescription/{token}`, `/verify/{lab\|radiology\|cardiology}/{code}` | no | Check that a printed prescription or report is genuine. Shows authenticity details only, never results |
+| `/verify`, `/verify/prescription/{token}`, `/verify/{lab\|radiology\|cardiology}/{code}` | no | Check that a printed prescription or report is genuine. Shows authenticity details only, never results. A prescription signed with the doctor's DSC also shows the signer, whether the certificate chains to the CCA India root (a licensed CA's DSC; "the signature checks out" only then, else a warning not to rely on it as a digital signature), the certificate serial and issuer, the SHA-256 of the signed prescription (as the server re-checked them), that revocation is not checked, and a .p7s download |
 | `/privacy` | no | Privacy notice (DPDP Act 2023) in plain language, with the grievance officer and the reply period from the server |
 | `/my-privacy` | yes | "Your privacy": breach notices first, then see your data, correct, erase, raise a concern, your requests, your nominee, messages you get, and whom to contact |
 | `/my-privacy/data` | yes | The summary of the data held about the person (DPDP Act s11): details, each kind of record with counts and dates, purpose, basis and how long it is kept, consents, who received it, service providers. Print or save as PDF |
@@ -108,6 +121,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Area | Endpoints |
 |---|---|
 | System | `GET /api/v1/system/info` (hospital name, and whether the portal and video consultations are switched on), `GET /health/live` (connection check) |
+| Anti-automation | `POST /api/v1/public/challenge {action: otp\|feedback, subject?}` → `{required, challenge, bits, expiresAt, algorithm}`; the proof goes in `X-HC360-Proof: {challenge}:{nonce}` |
 | Profiles | `GET /api/v1/portal/profiles` |
 | Family on other numbers | `GET /api/v1/portal/family/` → `{linked[{linkId, patientId, fullName, uhid, relation, source, linkedAt}], sharedWith[{linkId, patientId, patientName, accountPhoneMasked, relation, linkedAt}]}`; `POST /api/v1/portal/family/codes {uhid, phone, relation}` → `{codeId, expiresAt}` (the same answer whether or not they match; 422 `portal.family_code_throttled`, `portal.family_own_number`; 409 `portal.family_already_linked`); `POST …/codes/{codeId}/verify {code}` → the relative (400 on a wrong code, 422 `portal.family_code_expired` once it is used up); `POST …/links/{linkId}/end` → 204 |
 | Doctors (public) | `GET /api/v1/public/doctors/filters`, `GET /api/v1/public/doctors`, `GET /api/v1/public/doctors/{id}`, `GET /api/v1/public/doctors/{id}/slots` |
@@ -122,7 +136,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Preferences | `GET` and `PUT /api/v1/portal/communication-preferences` |
 | Privacy | `GET /api/v1/portal/privacy/status?patientId=`, `GET …/summary?patientId=`, `GET …/requests?patientId=`, `GET …/requests/{id}`, `POST …/requests`, `POST …/requests/{id}/withdraw`, `GET`, `PUT` and `DELETE …/nominee`, `GET …/notices?patientId=`, `GET …/notices/{id}`; public `GET /api/v1/public/privacy` (see [privacy.md](privacy.md)) |
 | Public links | `GET` and `POST /api/v1/public/feedback/invitations/{token}`, `GET` and `POST /api/v1/public/feedback/forms/{token}[?kiosk=true]`, `GET` and `POST /api/v1/public/unsubscribe/{token}` |
-| Document checks | `GET /api/v1/public/prescriptions/verify/{token}`, `GET /api/v1/{lab\|radiology\|cardiology}/reports/verify/{code}` |
+| Document checks | `GET /api/v1/public/prescriptions/verify/{token}` (and `…/signature.p7s`), `GET /api/v1/{lab\|radiology\|cardiology}/reports/verify/{code}` |
 
 ## When the hospital turns the portal or video off
 
@@ -195,20 +209,49 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 ## Printing and downloads
 
 * **Download PDF.** Reports, prescriptions, discharge summaries and bills come with the hospital's official PDF. It is
-  the same English document the hospital prints and sends, with the letterhead, signatures and QR check. The page
-  fetches it from the document's `…/pdf` endpoint and saves it under the file name the server gives
-  (Content-Disposition). This works on Android Chrome and on iPhone Safari, which asks first. The button says
-  "Preparing your PDF…" while the server makes the PDF, and takes one tap at a time. When the server cannot make PDFs
+  the same document the hospital prints and sends, with the letterhead, signatures and QR check, and its labels in the
+  patient's language (below); the prescription is always in English and Hindi. The page fetches it from the
+  document's `…/pdf` endpoint and saves it under the file name the server gives (Content-Disposition). This works on
+  Android Chrome and on iPhone Safari, which asks first. The button says "Preparing your PDF…" while the server makes
+  the PDF, and takes one tap at a time. When the server cannot make PDFs
   right now (503, code `pdf.unavailable`), the page says so in the patient's language and offers Print instead. Other
   failures show the usual error message. An answer that is not a PDF is never saved.
 * **Print.** Every document can also be printed from the page itself, in the language the patient is reading. Reports
-  and prescriptions carry their verification QR code. Next to the buttons, one line explains the difference; in Hindi
-  it also says that the PDF is in English.
+  and prescriptions carry their verification QR code. Next to the buttons, one line explains the difference.
 * **Documents without a server PDF.** Receipts and the privacy data summary are printed from the page, and "Save as PDF"
   in the print dialog gives a PDF. The data summary can also be downloaded as a self-contained HTML file, marked with
   the language it is in.
 
 Every value in a page template is escaped. The QR code SVG is the only markup accepted, and it is checked first.
+
+## The server's text in the patient's language (PP-06)
+
+The portal sends the language the patient chose in it with every call, the OTP sign-in included, as
+`X-HC360-Language: en|hi` (`getLanguage` of `createApiClient`, the `language` argument of `auth.requestOtp` and
+`auth.verifyOtp`). For portal, public and OTP requests, and any request with a patient's sign-in, the server writes
+its own text in this order:
+
+1. the language chosen in the portal (`X-HC360-Language`): what the patient sees on screen wins, so a patient whose
+   record says Hindi but who reads the portal in English gets English refusals and PDFs;
+2. without a choice in the request (a call with a patient's token from elsewhere), the preferred language on the
+   signed-in patient's record when it is English or Hindi ("Hindi", "hi", "हिन्दी"), read once per patient every five
+   minutes;
+3. Accept-Language;
+4. English.
+
+What the server sends on its own has no request: a document attached to a WhatsApp, SMS or e-mail message follows
+the record's preferred language, else English.
+
+* **Refusals.** The Problem Details `title`, `detail` and field messages of a refusal (400, 409, 422 and the others)
+  are in that language, and the answer says so (`Content-Language: hi`). The `code` and the field names never change,
+  so the portal's own handling of codes is unaffected. A message without a translation is sent in English, as before.
+  The portal shows business-rule messages as sent, so a Hindi reader now sees the server's reason in Hindi; transport
+  and status problems (no connection, 401, 403, 404, 429, 5xx) are still worded by the portal itself.
+* **PDFs.** `…/pdf` answers in the same language as the request, so in the portal's (see print-templates.md, *The
+  patient's language*).
+* **Texts.** One catalogue per language in `src/server/HyFib.HealthCare360.Platform/Localization/Resources`
+  (`patient-texts-en.json`, `patient-texts-hi.json`); a server message is matched on its English text. The Hindi is
+  listed for review by a native speaker in [../requirements/hindi-review.md](../requirements/hindi-review.md).
 
 ## Security and privacy
 
@@ -242,7 +285,7 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 * **Downloads:** the PDF helper (the server's file name from Content-Disposition, safe names, "cannot make PDFs right
   now" without retries, other failures, never saving a web page as a PDF); Download PDF end to end in jsdom on the lab,
   scan and heart test reports, the prescription, the discharge summary and the bill (the busy button, the 503 message,
-  the usual error message, Hindi, printing the page's copy); and the downloaded HTML copy (its font rule and language).
+  the usual error message, Hindi, printing the page's copy, the PDF asked for in Hindi with `X-HC360-Language`); and the downloaded HTML copy (its font rule and language).
 * **Family on other numbers:** the add form's checks and the request it sends, how long the code works on a phone with
   a wrong clock, the server's refusals in the patient's language, the add sheet in jsdom (the details step, the code
   step, a wrong code, a used-up code back to the details, throttling), and the page end to end in jsdom (the link from
@@ -261,8 +304,9 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 ## Known gaps (server follow-ups)
 
 * **Refund status in the portal.** Patients do not see where a refund stands; the hospital tells them.
-* **English-only server text.** Business-rule messages (409 and 422 details, validation messages) arrive in English
-  only and are shown as sent.
-* **Official PDFs in English.** The hospital's PDF of a report, prescription, discharge summary or bill is the English
-  document it prints and sends. Patients reading in Hindi are told so next to the button, and Print gives them the
-  page's copy in Hindi. Receipts and the privacy data summary have no server PDF; they are printed from the page.
+* **Server text not yet translated.** Server messages of features added later, and the validators' built-in messages
+  ("'Reason' must not be empty"), which FluentValidation words in Hindi with the field's English name, are not in the
+  catalogue; they arrive in English (or in that mixed form) until their entries are added. Receipts and the privacy
+  data summary have no server PDF; they are printed from the page.
+* **Hindi review.** The server's Hindi was written by the development team and awaits a native speaker's review
+  ([../requirements/hindi-review.md](../requirements/hindi-review.md)).

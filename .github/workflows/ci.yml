@@ -213,3 +213,50 @@ jobs:
 
       - name: Build
         run: pnpm -r --filter './apps/**' build
+
+  accessibility:
+    name: Accessibility in a browser (WCAG 2.2 AA)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: src/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: src/web/package.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: src/web/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The Chromium build the pinned @playwright/test drives, with the system libraries it needs on Ubuntu.
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Builds the staff app and the portal into their own dist folders, serves them with vite preview, and checks their
+      # key screens with canned data in the light, dark and high-contrast themes (playwright.config.ts): axe-core with
+      # every WCAG 2.2 A/AA rule, colour contrast and 24 px targets included, and a walk with Tab that wants focus
+      # visible at every stop (docs/architecture/FRONTEND-GUIDE.md, "Accessibility").
+      - name: Check the staff app and the portal in Chromium
+        run: pnpm test:a11y
+
+      # Open index.html of the report: each failed check lists the problems with a screenshot and a trace of the page.
+      - name: Keep the report of a failed check
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: accessibility-report
+          path: |
+            src/web/playwright-report
+            src/web/test-results
+          retention-days: 14

@@ -277,7 +277,27 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - To stop sending report PDFs by e-mail and WhatsApp, set `diagnostics.reports.sendPdf` to `false`, and use a
      WhatsApp template without a document header (untick "Document header"). A template with a header can't go
      without its PDF, so those WhatsApp messages would be skipped; the SMS and e-mail still go.
-7. **Administration › System health**: everything should be green, and the WiFi signal above 60%. It also shows each
+7. **Doctors' DSC signatures on prescriptions** (ERX-04; only where the hospital sets
+   `clinical.prescriptions.signature` to `"optional"` or `"required"`, docs/modules/clinical.md): HC360 accepts a
+   doctor's DSC only from a certificate that chains to a CCA India root in the server's **DSC trust folder**, and HC360
+   does not ship those roots. Download the CCA India root certificates from cca.gov.in, check their thumbprints against
+   the ones the CCA publishes, and copy them there:
+
+   ```powershell
+   New-Item -ItemType Directory -Force "$env:ProgramData\HyFib\HealthCare360\certs\dsc-trust"
+   Copy-Item E:\cca-roots\*.cer "$env:ProgramData\HyFib\HealthCare360\certs\dsc-trust\"
+   ```
+
+   No restart is needed. Keep a copy of these files with the backups (on the NAS) and with the standby's set-up: the
+   folder is **not** in the backups and is not streamed to the standby, so a restore on new hardware or a failover
+   needs them again (sections 8 and 9). Until they are there, DSC signing is refused, signatures already made are not
+   printed as DSC signatures, and, where the DSC is required, those prescriptions cannot be printed or shared: System
+   health says so (`prescriptions.dsc_trust_empty`, critical where the DSC is required). The HC360 service's account
+   must be able to read the folder and its files (copied files keep the folder's permissions; a folder locked down by
+   hand may not): a folder it cannot read counts as an empty one, and System health says why
+   (`prescriptions.dsc_trust_unreadable`). In **Hospital setup › Doctors and clinical staff**, write each doctor's name
+   in full as it is on their DSC: a DSC is accepted only from the doctor it is issued to.
+8. **Administration › System health**: everything should be green, and the WiFi signal above 60%. It also shows each
    integration set up in step 6 as Administration › Integrations does, and when the hospital CA and the server
    certificate expire.
 
@@ -327,6 +347,32 @@ to your own software distribution, install with `-NoAutoUpdate` (`"autoUpdate": 
 1. Download `https://HC360-SRV:7360/api/v1/system/ca-certificate`.
 2. Install it as a trusted root certificate on the device (MDM or device settings).
 3. Bookmark `https://HC360-SRV:7360/`.
+
+**Unlocking with Windows Hello** (SRS UX-11). Once it is turned on (below), staff can set up a workstation's Windows
+Hello (face camera, fingerprint reader or the Windows Hello PIN) under My account › Lock screen, and then unlock their
+locked screen with it. Nothing needs installing on the server, and no outside service is used. For it to work:
+- every staff member who uses it signs in to Windows with their **own account** on that computer (see below);
+- open HealthCare360 by the server's **name**, as in the addresses above, not by its IP address: WebAuthn ties each
+  key to the name, and refuses IP addresses. Use one name everywhere; a key set up under `HC360-SRV` does not work
+  for `HC360-SRV.local`. The name must be one of the server certificate's (the computer's name, `name.local`, or one
+  added with `HealthCare360:Network:AdditionalHostNames`);
+- set up Windows Hello in Windows (Settings › Accounts › Sign-in options) first;
+- the browser must trust the hospital CA (step 2 above): Edge and Chrome turn WebAuthn off on a page whose certificate
+  they do not trust. HC360 Desktop checks the server's certificate against the hospital CA itself rather than through
+  Windows, and the WebView2 runtime it uses may treat the page the same way. If "Set up this device" in HC360 Desktop
+  says Windows Hello did not answer, or the address cannot use it, install the hospital CA as a trusted root on that
+  workstation too (as in step 2; for many PCs, with Group Policy). This depends on the WebView2 runtime's version, so
+  try it on one workstation before go-live.
+
+It is **off** until you turn it on: set `ui.biometricUnlock` to `true` in Administration › Settings, for the hospital
+or for one facility (`false` for a facility keeps it off there). The PIN and the password always unlock the screen.
+
+Turn it on only where every staff member signs in to Windows with their own account. Windows Hello answers for
+whoever owns the Windows login, not for the HC360 user: on a computer where staff share one Windows login, as at many
+nursing stations and counters, anyone who knows that login's Windows Hello PIN, or whose finger or face is set up on
+it, could unlock a colleague's locked HC360 screen. HC360 cannot tell a shared Windows login from a personal one, so
+where any computer in a facility has a shared login, leave it off for that facility and use the PIN. Computers
+enrolled as kiosks or display boards never use it, and HC360 Desktop in kiosk mode warns against setting it up.
 
 ## 6. Printers and devices
 
@@ -610,6 +656,10 @@ it.
      9, step 3), install it with step 1's installer run: `.\Install-HC360Server.ps1 -HospitalCaFile <the .pfx>`, before
      the restore. Workstations then trust the new server as they trusted the old one, and find it on the network.
      Otherwise re-run HC360 Desktop setup on each (Change server…) and compare the new fingerprint.
+  4. Where doctors sign prescriptions with their DSC, copy the CCA India root certificates back into
+     `%ProgramData%\HyFib\HealthCare360\certs\dsc-trust` (section 4, step 7): they are not in the backup. Until then
+     DSC signing is refused and DSC-signed prescriptions are not printed as such (where the DSC is required, not at all);
+     System health warns.
 
   Backups listed as "Database only (older backup)" were made before HC360 archive backups. To restore one of those on
   new hardware, first copy the old `%ProgramData%\HyFib\HealthCare360\keys` folder back, if you have it.
@@ -634,6 +684,7 @@ What the standby has, and what comes from elsewhere on a failover:
 | The hospital CA | Imported once, at set-up | Workstations trust the standby, and find it on the network |
 | The data encryption keys, stored documents (`files\`) | Not streamed: they are not in the database | Put back from the latest backup |
 | Settings added to `hc360.settings.json` by hand | Not copied | Add them on the standby too, at set-up |
+| The DSC trust folder (`certs\dsc-trust`: the CCA India roots, section 4 step 7) | Not copied: it is not in the database or the backups | Copy the roots there at set-up (step 6), so they are already there |
 
 Documents uploaded after the latest backup are only on the old primary: copy them from its disk if it can still be read
 (below). After rotating the data encryption key, make a backup at once (Administration › Backups › **Back up now**): the
@@ -707,7 +758,10 @@ machine only. The standby holds every patient record: protect it as the primary 
 
    It asks for the CA file's password. It does everything section 3 lists except start HC360: the service is disabled,
    because HC360 must never run against the standby's read-only database (HC360 refuses to, too). It prints the
-   hospital CA fingerprint: the primary's. Add any setting added by hand to the primary's `hc360.settings.json`.
+   hospital CA fingerprint: the primary's. Add any setting added by hand to the primary's `hc360.settings.json`. Where
+   doctors sign prescriptions with their DSC, copy the primary's DSC trust folder
+   (`%ProgramData%\HyFib\HealthCare360\certs\dsc-trust`, the CCA India roots) to the same place on the standby, and
+   again whenever IT adds a root on the primary.
 
 7. Delete the `.pfx` file from the USB drive, or keep it in the safe with the recovery key: replacement hardware that
    imports it keeps the workstations too (section 8).
@@ -826,7 +880,9 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    certificate names it. Lab agents, network analysers and modalities are set up with the server's name or address:
    point it at the standby the same way, or set them up again with the standby's. Without the CA imported at set-up
    (step 6), every workstation must be set up again: Change server…, and compare the new fingerprint.
-6. **Check**: System health; and that the records made just before the failure are there.
+6. **Check**: System health; and that the records made just before the failure are there. Where doctors sign
+   prescriptions with their DSC, System health warns (`prescriptions.dsc_trust_empty`) if the standby's DSC trust
+   folder is empty: copy the CCA India roots there (section 4, step 7).
 
 ### Making the old primary the new standby
 

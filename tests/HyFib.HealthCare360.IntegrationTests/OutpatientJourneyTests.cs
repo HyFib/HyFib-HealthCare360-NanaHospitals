@@ -390,6 +390,12 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         printable.Html.ShouldContain($"Verification code {report.VerificationCode}");
 
         var portal = await server.SignInToPortalAsync(patient.Phone);
+
+        // The portal's PDF is made in the language chosen there (PP-06); this patient's record names none.
+        (await PortalPdf.LanguageAsync(server, portal, $"/api/v1/portal/reports/lab/{reportId}/pdf", chosen: "hi")).ShouldBe("hi");
+        (await PortalPdf.LanguageAsync(server, portal, $"/api/v1/portal/reports/lab/{reportId}/pdf", chosen: "en")).ShouldBe("en");
+        (await PortalPdf.LanguageAsync(server, portal, $"/api/v1/portal/reports/lab/{reportId}/pdf", chosen: null)).ShouldBe("en");
+
         if (!server.Services.GetRequiredService<IPdfRenderer>().Status.Available)
         {
             // A machine without Microsoft Edge can't make PDFs: the download says why, and the screen offers to print.

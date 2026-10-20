@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -22,6 +23,13 @@ public sealed record LoginRequest(string UserName, string Password, Guid? Facili
 public sealed record MfaVerifyRequest(Guid ChallengeId, string Code);
 
 public sealed record OtpRequest(string Phone);
+
+/// <summary>An Indian mobile number, as <see cref="AuthService.RequestOtpAsync"/> wants it, checked before the proof of work.</summary>
+public sealed class OtpRequestValidator : AbstractValidator<OtpRequest>
+{
+    public OtpRequestValidator() =>
+        RuleFor(r => r.Phone).Cascade(CascadeMode.Stop).NotEmpty().WithMessage("Enter a valid 10-digit mobile number.").IndianMobile();
+}
 
 public sealed record OtpVerifyRequest(Guid ChallengeId, string Code);
 
@@ -59,7 +67,8 @@ public sealed record AuthUser(
     bool HasPin,
     bool MustChangePassword,
     string? Restriction,
-    bool PasswordBreached = false);
+    bool PasswordBreached = false,
+    bool BiometricUnlock = false);
 
 public sealed record AuthResult(
     string? AccessToken,
@@ -134,6 +143,15 @@ public sealed class AuthService(
     /// <summary>Minutes without use before a staff screen locks (0: never); the app's lock and the server's agree.</summary>
     public const string IdleLockMinutesSetting = "ui.idleLockMinutes";
 
+    /// <summary>
+    /// Whether staff may unlock the lock screen with the device's Windows Hello, fingerprint or face (false unless set to
+    /// true, for the hospital or a facility; <see cref="WebAuthnUnlockService"/>). Windows Hello proves who owns the
+    /// Windows login, not who owns the HC360 account: where staff share one Windows login, whoever knows its Windows
+    /// Hello PIN, or has a finger or face set up on it, could unlock a colleague's screen. So it is for hospitals where
+    /// every staff member signs in to Windows with their own account. The PIN and the password work either way.
+    /// </summary>
+    public const string BiometricUnlockSetting = "ui.biometricUnlock";
+
     /// <summary>How many sessions one staff account may have at once (0: no limit).</summary>
     public const string MaxSessionsSetting = "security.maxSessionsPerUser";
 
@@ -151,7 +169,7 @@ public sealed class AuthService(
         "auth.invalid_credentials",
         "Invalid username or password. After repeated failures an account is locked for a while; an administrator can unlock it.",
         ErrorType.Unauthorized);
-    private static readonly Error SessionEnded = new("auth.session_ended", "Your session has ended. Please sign in again.", ErrorType.Unauthorized);
+    internal static readonly Error SessionEnded = new("auth.session_ended", "Your session has ended. Please sign in again.", ErrorType.Unauthorized);
     private static readonly Error ChallengeExpired = new("auth.challenge_expired", "This sign-in attempt has expired. Please start again.", ErrorType.Unauthorized);
     private static readonly Error TemporaryPasswordExpired = new(
         "auth.temporary_password_expired", "This temporary password has expired. Ask an administrator for a new one.", ErrorType.Unauthorized);
@@ -387,6 +405,16 @@ public sealed class AuthService(
         return new OtpChallengeResponse(challenge.Id, challenge.ExpiresAt, SharedKernel.Phone.Mask(phone));
     }
 
+    /// <summary>
+    /// The number a portal sign-in code was sent to. Giving a code names only its challenge, so the anti-automation check
+    /// (SRS SEC-06) looks the number up this way, by key, when an attempt fails, to count the failure against it.
+    /// </summary>
+    public Task<string?> OtpPhoneAsync(Guid challengeId, CancellationToken ct) =>
+        db.Set<AuthChallenge>().AsNoTracking()
+            .Where(c => c.Id == challengeId && c.Kind == AuthChallengeKind.Otp)
+            .Select(c => c.Phone)
+            .FirstOrDefaultAsync(ct);
+
     public async Task<Result<AuthResult>> VerifyOtpAsync(OtpVerifyRequest request, HttpContext http, CancellationToken ct)
     {
         var now = time.GetUtcNow();
@@ -527,14 +555,7 @@ public sealed class AuthService(
 
         if (now - session.LastActiveAt > IdleLimit(session))
         {
-            session.RevokedAt = now;
-            session.RevokedReason = "idle_timeout";
-            audit.Add(new AuditEntry(AuditCategories.Auth, "auth.session_idle_ended",
-                $"Session ended after {IdleLimit(session).TotalMinutes:0} minutes without use ({session.ClientType})")
-            {
-                UserId = user.Id,
-                UserName = user.UserName,
-            });
+            EndIdle(session, user, now);
             await db.SaveChangesAsync(ct);
             sessionValidator.Invalidate(session.Id);
             ClearRefreshCookie(http);
@@ -760,26 +781,58 @@ public sealed class AuthService(
         var ok = withPin
             ? hashing.Verify(user.PinHash!, request.Pin!).Succeeded
             : request.Password is { Length: > 0 } password && user.PasswordHash is not null && hashing.Verify(user.PasswordHash, password).Succeeded;
+        return await FinishUnlockAsync(
+            user,
+            session,
+            ok,
+            withPin ? "Screen unlocked with the PIN" : "Screen unlocked with the password",
+            Error.Field(request.Pin is { Length: > 0 } ? "pin" : "password", "That did not match. Try again."),
+            http,
+            ct);
+    }
 
+    /// <summary>
+    /// Unlocks the screen of <paramref name="session"/> once its user has proven who they are (<paramref name="verified"/>),
+    /// with the PIN, the password or a device set up for it (<see cref="WebAuthnUnlockService"/>), or counts a failed try:
+    /// <see cref="SecurityOptions.MaxPinAttempts"/> of them end the session. Whatever the proof, it only resumes this
+    /// session, and only while it is still open: a session that ended, or that nobody used for the idle limit, is not
+    /// unlocked but ended, and its user signs in again (ASVS V7.3.1).
+    /// </summary>
+    /// <param name="unlockedWith">The audit trail's description of the unlock.</param>
+    /// <param name="mismatch">The answer to a failed try.</param>
+    internal async Task<Result<AuthResult>> FinishUnlockAsync(
+        User user, UserSession session, bool verified, string unlockedWith, Error mismatch, HttpContext http, CancellationToken ct)
+    {
         // Attempts sent at once all read the session before any of them was counted. Read it again under its row lock, one
         // attempt at a time, so that each wrong PIN counts and none is judged once the session has ended (ASVS V6.3.1).
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM identity.user_sessions WHERE id = {session.Id} FOR NO KEY UPDATE", ct);
         await db.Entry(session).ReloadAsync(ct);
-        if (session.RevokedAt is not null)
+        var now = time.GetUtcNow();
+        if (session.RevokedAt is not null || session.ExpiresAt <= now)
         {
             return SessionEnded;
         }
 
-        if (ok)
+        // Nobody has used it for the idle limit: the next refresh would end it, so no unlock resumes it meanwhile.
+        if (now - session.LastActiveAt > IdleLimit(session))
         {
-            var now = time.GetUtcNow();
+            EndIdle(session, user, now);
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            sessionValidator.Invalidate(session.Id);
+            ClearRefreshCookie(http, session.ClientType);
+            return SessionEnded;
+        }
+
+        if (verified)
+        {
             session.FailedUnlockAttempts = 0;
             session.LastActiveAt = now;
             if (session.LockedAt is not null)
             {
                 session.LockedAt = null;
-                audit.Add(new AuditEntry(AuditCategories.Auth, "auth.screen_unlocked", withPin ? "Screen unlocked with the PIN" : "Screen unlocked with the password")
+                audit.Add(new AuditEntry(AuditCategories.Auth, "auth.screen_unlocked", unlockedWith)
                 {
                     UserId = user.Id,
                     UserName = user.UserName,
@@ -799,7 +852,7 @@ public sealed class AuthService(
         session.FailedUnlockAttempts++;
         if (session.FailedUnlockAttempts >= Security.MaxPinAttempts)
         {
-            session.RevokedAt = time.GetUtcNow();
+            session.RevokedAt = now;
             session.RevokedReason = "unlock_attempts_exceeded";
             audit.Add(new AuditEntry(AuditCategories.Security, "auth.unlock_locked_out", "Too many unlock attempts; session ended")
             {
@@ -815,7 +868,7 @@ public sealed class AuthService(
 
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return Error.Field(request.Pin is { Length: > 0 } ? "pin" : "password", "That did not match. Try again.");
+        return mismatch;
     }
 
     // ---------------------------------------------------------------- MFA enrolment
@@ -1137,8 +1190,21 @@ public sealed class AuthService(
             user.PinHash is not null,
             user.MustChangePassword,
             restriction,
-            user.MustChangePassword && user.PasswordBreachedAt is not null);
+            user.MustChangePassword && user.PasswordBreachedAt is not null,
+            user.Type == UserType.Staff && await BiometricUnlockAllowedAsync(facilityId, ct));
     }
+
+    /// <summary>
+    /// Whether the facility lets staff unlock the lock screen with a device's Windows Hello, fingerprint or face (the
+    /// <see cref="BiometricUnlockSetting"/>: off unless an administrator set it to true, for the hospital or the facility).
+    /// </summary>
+    internal async Task<bool> BiometricUnlockAllowedAsync(Guid? facilityId, CancellationToken ct) =>
+        await settings.GetAsync<JsonElement?>(BiometricUnlockSetting, facilityId, ct) switch
+        {
+            { ValueKind: JsonValueKind.True } => true,
+            { ValueKind: JsonValueKind.String } text => string.Equals(text.GetString()?.Trim(), "true", StringComparison.OrdinalIgnoreCase),
+            _ => false,
+        };
 
     /// <summary>The facilities' names and legal names, refused in passwords (ASVS V6.2.11).</summary>
     internal static async Task<List<string?>> FacilityNamesAsync(HospitalDbContext db, CancellationToken ct) =>
@@ -1218,6 +1284,9 @@ public sealed class AuthService(
         user.MustChangePassword ? RestrictionPasswordChange
         : RequiresMfa(user, roles) && !user.MfaEnabled ? RestrictionMfaSetup
         : null;
+
+    /// <summary>The account must change its password or set up two-step verification before anything else.</summary>
+    internal bool IsRestricted(User user) => RestrictionFor(user, RoleNames(user)) is not null;
 
     /// <summary>The account's restriction, else the session's lock.</summary>
     private string? RestrictionFor(User user, IReadOnlyList<string> roles, UserSession session) =>
@@ -1302,6 +1371,19 @@ public sealed class AuthService(
         {
             session.LastActiveAt = activeAt;
         }
+    }
+
+    /// <summary>Ends a session nobody has used for its idle limit (ASVS V7.3.1); save, then invalidate it.</summary>
+    private void EndIdle(UserSession session, User user, DateTimeOffset now)
+    {
+        session.RevokedAt = now;
+        session.RevokedReason = "idle_timeout";
+        audit.Add(new AuditEntry(AuditCategories.Auth, "auth.session_idle_ended",
+            $"Session ended after {IdleLimit(session).TotalMinutes:0} minutes without use ({session.ClientType})")
+        {
+            UserId = user.Id,
+            UserName = user.UserName,
+        });
     }
 
     private void Lock(UserSession session, User user, DateTimeOffset now, string description)
@@ -1394,7 +1476,8 @@ public sealed class AuthService(
         }
     }
 
-    private async Task<(User? User, UserSession? Session)> CurrentUserAndSessionAsync(CancellationToken ct)
+    /// <summary>The signed-in user and their session, while it has not ended; nulls otherwise.</summary>
+    internal async Task<(User? User, UserSession? Session)> CurrentUserAndSessionAsync(CancellationToken ct)
     {
         if (currentUser.UserId is not { } userId || currentUser.SessionId is not { } sessionId)
         {

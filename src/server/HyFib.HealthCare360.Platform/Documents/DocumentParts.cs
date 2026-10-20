@@ -37,17 +37,18 @@ public static class DocumentParts
     /// <summary>
     /// The letterhead: logo, name, address, "Phone · e-mail", accreditation and the facility's own letterhead line.
     /// <paramref name="aside"/> goes on the right (a doctor's block, say). On pre-printed stationery only the aside is
-    /// printed: the paper has the rest.
+    /// printed: the paper has the rest. Its few words are in <paramref name="text"/>'s language (English by default).
     /// </summary>
-    public static Html Letterhead(DocumentLetterhead letterhead, Html aside = default)
+    public static Html Letterhead(DocumentLetterhead letterhead, Html aside = default, DocumentText? text = null)
     {
         ArgumentNullException.ThrowIfNull(letterhead);
+        text ??= DocumentText.English;
         if (!letterhead.Template.PrintsLetterhead)
         {
             return aside.IsEmpty ? Html.Empty : Html.Of($"<header class=\"lh preprinted\"><div class=\"aside\">{aside}</div></header>");
         }
 
-        var contact = string.Join(" · ", new[] { letterhead.Phone is { } phone ? $"Phone {phone}" : null, letterhead.Email }.Where(c => c is not null));
+        var contact = string.Join(" · ", new[] { letterhead.Phone is { } phone ? text.Format("doc.phone", ("phone", phone)) : null, letterhead.Email }.Where(c => c is not null));
         return Html.Of($"""
             <header class="lh">
               {Html.Image(letterhead.Logo, "", "logo")}
@@ -55,7 +56,7 @@ public static class DocumentParts
                 <div class="facility">{letterhead.Name}</div>
                 {Line(letterhead.Address)}
                 {Line(contact)}
-                {Line(letterhead.NabhNumber is { } nabh ? $"NABH accreditation {nabh}" : null)}
+                {Line(letterhead.NabhNumber is { } nabh ? text.Format("doc.nabh_accreditation", ("number", nabh)) : null)}
                 {Line(letterhead.Note)}
               </div>
               {(aside.IsEmpty ? Html.Empty : Html.Of($"<div class=\"aside\">{aside}</div>"))}
@@ -74,14 +75,15 @@ public static class DocumentParts
         Html.Of($"""<section class="fields">{fields.Select(f => Html.Of($"<div class=\"cell\"><span class=\"label\">{f.Label}</span><span class=\"value\">{f.Value ?? DocumentFormat.Missing}</span></div>"))}</section>""");
 
     /// <summary>Signature (or space to sign), name, qualification and registration number of each signatory.</summary>
-    public static Html Signatories(IEnumerable<DocumentSignatory> signatories)
+    public static Html Signatories(IEnumerable<DocumentSignatory> signatories, DocumentText? text = null)
     {
+        text ??= DocumentText.English;
         var signs = signatories.Select(s => Html.Of($"""
             <div class="sign">
               {(s.Signature is null ? Html.Of($"<div class=\"sign-space\"></div>") : Html.Image(s.Signature, "", "sign-img"))}
               <div class="sign-name">{s.Name}</div>
               {Line(s.Qualification)}
-              {Line(s.RegistrationNumber is { } number ? $"Reg. no. {number}" : null)}
+              {Line(s.RegistrationNumber is { } number ? text.Format("doc.registration_number", ("number", number)) : null)}
             </div>
             """)).ToList();
         return signs.Count == 0 ? Html.Empty : Html.Of($"<section class=\"signs\">{signs}</section>");
@@ -89,16 +91,22 @@ public static class DocumentParts
 
     /// <summary>
     /// The QR code with its explanation: scanning it opens the public page that confirms the document is genuine.
+    /// The caption defaults to "Scan to verify this report" in <paramref name="text"/>'s language.
     /// </summary>
-    public static Html Verification(string url, string code, string caption = "Scan to verify this report") => Html.Of($"""
-        <div class="verify">
-          {Html.Image(DocumentAssets.QrCode(url), "QR code to verify this document", "qr")}
-          <div class="verify-text"><strong>{caption}</strong><div class="muted">Verification code {code}</div><div class="muted url">{url}</div></div>
-        </div>
-        """);
+    public static Html Verification(string url, string code, string? caption = null, DocumentText? text = null)
+    {
+        text ??= DocumentText.English;
+        return Html.Of($"""
+            <div class="verify">
+              {Html.Image(DocumentAssets.QrCode(url), text["doc.verify.qr_alt"], "qr")}
+              <div class="verify-text"><strong>{caption ?? text["doc.verify.report"]}</strong><div class="muted">{text.Format("doc.verify.code", ("code", code))}</div><div class="muted url">{url}</div></div>
+            </div>
+            """);
+    }
 
-    /// <summary>The closing line of a report.</summary>
-    public static Html End(string text = "— End of report —") => Html.Of($"<div class=\"end\">{text}</div>");
+    /// <summary>The closing line of a report, "— End of report —" in <paramref name="text"/>'s language by default.</summary>
+    public static Html End(string? line = null, DocumentText? text = null) =>
+        Html.Of($"<div class=\"end\">{line ?? (text ?? DocumentText.English)["doc.report.end"]}</div>");
 
     private static Html Line(string? text) => string.IsNullOrWhiteSpace(text) ? Html.Empty : Html.Of($"<div class=\"muted\">{text}</div>");
 }

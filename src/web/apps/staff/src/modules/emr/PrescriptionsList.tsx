@@ -29,7 +29,7 @@ import {
   OpenRegular,
   PrintRegular,
 } from '@fluentui/react-icons';
-import { formatDateTime, isApiError } from '@hc360/core';
+import { formatDateTime, isApiError, useSession } from '@hc360/core';
 import { DataTable, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -39,6 +39,7 @@ import { printServerDocument, useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
 import { emrKeys } from './api';
 import { directionsText } from './dosing';
+import { afterRefill } from './dscSigning';
 import {
   prescriptionDocument,
   prescriptionQueries,
@@ -96,8 +97,12 @@ function RefillBody({
 }) {
   const styles = useStyles();
   const notify = useNotify();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const myPractitionerId = useSession((s) => s.user?.practitionerId ?? null);
   const detail = useQuery(prescriptionQueries.detail(prescriptionId));
+  // Where the hospital requires the doctor's DSC, the refill cannot be printed until its prescriber signs it with theirs.
+  const dscRequired = useQuery(prescriptionQueries.signature(prescriptionId)).data?.policy === 'Required';
   const [alerts, setAlerts] = useState<SafetyAlert[] | null>(null);
   const [decision, setDecision] = useState<SignDecision>(emptyDecision);
   const [error, setError] = useState<string | null>(null);
@@ -116,12 +121,20 @@ function RefillBody({
         confirmControlledDrugs: decision.confirmControlledDrugs,
       }),
     onSuccess: (result) => {
-      notify.success(`Refill ${result.prescription.prescriptionNumber} issued`, 'It is now in the pharmacy queue.');
+      const next = afterRefill(result.prescription, myPractitionerId);
       void queryClient.invalidateQueries({ queryKey: emrKeys.patient(patientId) });
-      void printServerDocument(prescriptionDocument(result.prescription.id)).catch((printError: unknown) =>
-        notify.error(printError, 'Printing failed'),
-      );
+      if (next.print) {
+        notify.success(next.title, next.body);
+        void printServerDocument(prescriptionDocument(result.prescription.id)).catch((printError: unknown) =>
+          notify.error(printError, 'Printing failed'),
+        );
+      } else {
+        notify.warning(next.title, next.body);
+      }
       onClose();
+      if (next.openToSign) {
+        void navigate({ to: '/emr/prescriptions/$prescriptionId', params: { prescriptionId: result.prescription.id } });
+      }
     },
     onError: (e) => {
       if (isApiError(e)) {
@@ -206,7 +219,7 @@ function RefillBody({
             refill.mutate();
           }}
         >
-          Issue refill and print
+          {dscRequired ? 'Issue refill' : 'Issue refill and print'}
         </Button>
       </DialogActions>
     </DialogBody>

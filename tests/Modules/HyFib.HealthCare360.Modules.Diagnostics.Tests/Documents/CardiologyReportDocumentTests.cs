@@ -156,7 +156,7 @@ public sealed class CardiologyReportDocumentTests
     [Fact]
     public async Task The_document_carries_the_letterhead_the_qr_code_the_device_recordings_and_a_footer_on_every_page()
     {
-        var document = await CardiologyReportDocument.BuildAsync(Report(), Frame(), Ct);
+        var document = await CardiologyReportDocument.BuildAsync(Report(), Frame(), DocumentText.English, Ct);
         var html = document.ToHtml();
 
         document.FileName.ShouldBe("cardiology-report-NHCD260000007");
@@ -174,6 +174,37 @@ public sealed class CardiologyReportDocumentTests
     }
 
     [Fact]
+    public async Task A_report_for_a_patient_who_reads_hindi_has_hindi_headings_and_keeps_the_measurements_as_written()
+    {
+        var document = await CardiologyReportDocument.BuildAsync(Report(), Frame(), DocumentText.Hindi, Ct);
+        var html = document.ToHtml();
+
+        document.Language.ShouldBe("hi");
+        document.Title.ShouldBe("हृदय जाँच रिपोर्ट NHCD260000007");
+        document.FileName.ShouldBe("cardiology-report-NHCD260000007");
+        document.Footer.ShouldBe("Sunil <Patil> · UHID NH26000009 · हृदय जाँच रिपोर्ट NHCD260000007");
+        html.ShouldContain("<html lang=\"hi\">");
+        html.ShouldContain("<h1 class=\"doc-title\">ECG रिपोर्ट</h1>");
+        html.ShouldContain("<span class=\"label\">रोगी</span>");
+        html.ShouldContain("<span class=\"label\">एक्सेशन सं.</span>");
+        html.ShouldContain("<span class=\"label\">रिकॉर्ड किया गया</span>");
+        html.ShouldContain("<p class=\"crit\">गंभीर निष्कर्ष: इलाज करने वाले डॉक्टर को सूचित किया गया।</p>");
+        html.ShouldContain("<h3>निष्कर्ष</h3><div class=\"impression\"><p>Acute anterior STEMI pattern.</p></div>");
+        html.ShouldContain("<h3>सुझाव</h3><p>Urgent cardiology review.</p>");
+        html.ShouldContain("इस रिपोर्ट के साथ उपकरण की 2 रिकॉर्डिंग सुरक्षित हैं।");
+        html.ShouldContain("पंजीकरण सं. MMC-41122");
+        html.ShouldContain("— रिपोर्ट समाप्त —");
+        html.ShouldContain("@bottom-right { content: \"पृष्ठ \" counter(page) \" / \" counter(pages);");
+        html.ShouldContain("@font-face { font-family: \"HC360 Devanagari\"");
+
+        // The study, its type and the measurements stay as clinicians write them.
+        html.ShouldContain("<h2>ECG</h2>");
+        html.ShouldContain("<div class=\"small\">12-lead ECG</div>");
+        html.ShouldContain("<tr><th style=\"width:35%\">Heart rate</th><td>118 /min</td></tr>");
+        html.ShouldNotContain("Recommendations");
+    }
+
+    [Fact]
     public void One_device_recording_is_counted_in_the_singular_and_none_gives_no_note()
     {
         CardiologyReportDocument.Notes(Report() with { Files = [new DeviceFileDto(Guid.NewGuid(), "ecg.pdf", "application/pdf", 1024)] })
@@ -187,7 +218,7 @@ public sealed class CardiologyReportDocumentTests
     [InlineData(DiagnosticReportStatus.Draft, "Draft: not signed by the cardiologist")]
     public async Task A_copy_that_is_not_released_says_so_across_the_page(DiagnosticReportStatus status, string banner)
     {
-        var html = (await CardiologyReportDocument.BuildAsync(Report() with { Status = status, ReleasedAt = null }, Frame(), Ct)).ToHtml();
+        var html = (await CardiologyReportDocument.BuildAsync(Report() with { Status = status, ReleasedAt = null }, Frame(), DocumentText.English, Ct)).ToHtml();
 
         html.ShouldContain($"<div class=\"banner\">{banner}</div>");
     }

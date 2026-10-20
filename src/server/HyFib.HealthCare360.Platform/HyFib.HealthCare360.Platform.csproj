@@ -26,6 +26,7 @@
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Otp.NET" />
+    <PackageReference Include="Fido2" />
     <PackageReference Include="Quartz.Extensions.Hosting" />
     <PackageReference Include="Makaretu.Dns.Multicast.New" />
     <PackageReference Include="System.Management" />
@@ -37,6 +38,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Security\Resources\common-passwords.txt" />
     <EmbeddedResource Include="Security\Resources\breached-passwords.gcs" />
+    <EmbeddedResource Include="Localization\Resources\patient-texts-*.json" />
+    <EmbeddedResource Include="Documents\Fonts\*.woff2" />
   </ItemGroup>
 
   <ItemGroup>

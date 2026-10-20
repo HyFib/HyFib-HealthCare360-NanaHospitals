@@ -2,7 +2,7 @@ import type { PatientFlags } from '@/modules/emr/api';
 import type { BillDetail, BillLineDto, BillListItem, ChargeDto, PatientDues, ShiftDto } from '@/modules/billing/api';
 import type { DiscountAuthority } from '@/modules/billing/billTotals';
 import type { PackageListItem } from '@/modules/billing/mastersApi';
-import type { PatientDetail, VisitListItem } from '@/modules/patients/api';
+import type { PatientDetail, PatientPayer, VisitListItem } from '@/modules/patients/api';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers } from '../../fakeApi';
 import { DOCTORS, OPD, PATIENTS } from './frontOffice';
 
@@ -95,6 +95,17 @@ const VISITS: VisitListItem[] = [
     tokenStatus: null,
   }),
 ];
+
+/** The banner's payer, as the server chooses it from the visits above: the open visit's, self-pay. */
+const PAYER: PatientPayer = {
+  visitId: VISIT_ID,
+  isCurrentVisit: true,
+  payerType: 'Self',
+  payerId: null,
+  payerName: null,
+  policyNumber: null,
+  validUntil: null,
+};
 
 const charge = (overrides: Partial<ChargeDto> & Pick<ChargeDto, 'id' | 'description'>): ChargeDto => ({
   patientId: ASHA.id,
@@ -334,6 +345,7 @@ const DISCOUNT_AUTHORITY: DiscountAuthority = { canApprove: false, maxPercent: 1
 export const BILLING_ANSWERS: FakeAnswers = {
   [`GET /api/v1/patients/${ASHA.id}`]: PATIENT,
   [`GET /api/v1/patients/${ASHA.id}/visits`]: paged(VISITS),
+  [`GET /api/v1/patients/${ASHA.id}/payer`]: { current: PAYER },
   [`GET /api/v1/emr/patients/${ASHA.id}/flags`]: FLAGS,
   [`GET /api/v1/billing/patients/${ASHA.id}/dues`]: DUES,
   'GET /api/v1/billing/charges': paged(CHARGES),

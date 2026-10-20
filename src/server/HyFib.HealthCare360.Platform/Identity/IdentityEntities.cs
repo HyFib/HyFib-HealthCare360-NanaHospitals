@@ -162,13 +162,29 @@ public enum AuthChallengeKind
 {
     Mfa = 0,
     Otp = 1,
+
+    /// <summary>Setting up a device's Windows Hello, fingerprint or face to unlock the lock screen (WebAuthn registration).</summary>
+    WebAuthnRegistration = 2,
+
+    /// <summary>Unlocking the lock screen with a device set up for it (WebAuthn assertion).</summary>
+    WebAuthnUnlock = 3,
 }
 
-/// <summary>Pending second step of a sign-in (TOTP after password, or SMS OTP for the patient portal).</summary>
+/// <summary>
+/// Pending second step of a sign-in (TOTP after password, or SMS OTP for the patient portal), or a WebAuthn ceremony of
+/// a signed-in session (<see cref="WebAuthnCredential"/>).
+/// </summary>
 public sealed class AuthChallenge : Entity
 {
     public AuthChallengeKind Kind { get; set; }
     public Guid? UserId { get; set; }
+
+    /// <summary>The session a WebAuthn ceremony was started by: no other session may finish it.</summary>
+    public Guid? SessionId { get; set; }
+
+    /// <summary>A WebAuthn ceremony's options as the browser was given them, its random challenge among them.</summary>
+    public string? Options { get; set; }
+
     public string? Phone { get; set; }
     public string? CodeHash { get; set; }
     public Guid? FacilityId { get; set; }
@@ -178,6 +194,53 @@ public sealed class AuthChallenge : Entity
     public DateTimeOffset ExpiresAt { get; set; }
     public int Attempts { get; set; }
     public DateTimeOffset? ConsumedAt { get; set; }
+}
+
+/// <summary>
+/// A device's built-in authenticator (Windows Hello, a fingerprint reader or face camera) that a staff member set up to
+/// unlock their lock screen (SRS UX-11, <see cref="WebAuthnUnlockService"/>). It holds only the public half of a key
+/// pair whose private half never leaves the device, which uses it only after checking the person's face, finger or
+/// Windows Hello PIN. It resumes a locked session of its owner and never signs anyone in.
+/// </summary>
+public sealed class WebAuthnCredential : Entity
+{
+    public Guid UserId { get; set; }
+
+    /// <summary>The credential's id, as the device made it.</summary>
+    public byte[] CredentialId { get; set; } = [];
+
+    /// <summary>The public key (COSE), which checks the device's signatures.</summary>
+    public byte[] PublicKey { get; set; } = [];
+
+    /// <summary>
+    /// The signature counter last seen. A device that counts never goes back: a count at or below this one means a copy
+    /// of the key, and is refused.
+    /// </summary>
+    public long SignCount { get; set; }
+
+    /// <summary>
+    /// The server name it was set up under (the WebAuthn relying party id, such as <c>hc360-srv</c>). The device uses
+    /// it only for pages opened by that name.
+    /// </summary>
+    public string RelyingPartyId { get; set; } = string.Empty;
+
+    /// <summary>What its owner called it, such as "OPD Reception 2".</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The make of authenticator, as the device states it (all zeros when it does not say).</summary>
+    public Guid AaGuid { get; set; }
+
+    /// <summary>How the browser reaches it (<c>internal</c> for one built into the device), comma-separated.</summary>
+    public string? Transports { get; set; }
+
+    /// <summary>The key may be copied to the owner's other devices by the platform (a synced passkey).</summary>
+    public bool IsBackupEligible { get; set; }
+
+    /// <summary>The HC360 Desktop it was set up on, when it was.</summary>
+    public Guid? DeviceId { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? LastUsedAt { get; set; }
 }
 
 public enum DeviceKind

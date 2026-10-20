@@ -7,7 +7,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Documents;
 /// <summary>
 /// The A4 lab report (LIS-07): sections, tests and analytes with flag, unit and reference interval; cultures with the
 /// organism and antibiogram; interpretations, amendments and footnotes, in the shared report frame with QR
-/// verification. A value that is not verified is never printed as a result on a released copy.
+/// verification. A value that is not verified is never printed as a result on a released copy. Headings and labels are
+/// in the language it is made in (PP-06); test names, values, units, reference intervals and flag codes print as they are.
 /// </summary>
 internal static class LabReportDocument
 {
@@ -20,57 +21,61 @@ internal static class LabReportDocument
         """;
 
     /// <param name="releasedOnly">A patient's or clinician's copy: only verified values are printed.</param>
-    public static Task<PrintableDocument> BuildAsync(LabReportView view, bool releasedOnly, ReportDocumentFrame frame, CancellationToken cancellationToken)
+    public static Task<PrintableDocument> BuildAsync(
+        LabReportView view, bool releasedOnly, ReportDocumentFrame frame, DocumentText text, CancellationToken cancellationToken)
     {
         var released = view.Status is LabReportStatus.Released or LabReportStatus.Amended;
-        var name = $"Lab report {view.ReportNumber}";
+        var name = text.Format("doc.lab.document_title", ("number", view.ReportNumber));
         return frame.BuildAsync(
             new ReportFrame(
-                "Laboratory report",
+                text["doc.lab.title"],
                 name,
                 $"lab-report-{view.ReportNumber}",
                 ReportDocumentFrame.Footer(view.Patient, name),
                 view.Letterhead,
-                PatientRows(view),
-                Body(view, releasedOnly),
+                PatientRows(view, text),
+                Body(view, releasedOnly, text),
                 view.Signatories,
                 view.VerificationCode,
                 view.VerificationUrl,
-                released ? null : "Preliminary copy for the laboratory: not released",
-                Notes(view),
-                Styles),
+                released ? null : text["doc.lab.preliminary"],
+                Notes(view, text),
+                Styles,
+                text),
             cancellationToken);
     }
 
     /// <summary>Identity, referral and the key times.</summary>
-    public static IReadOnlyList<(string Label, string? Value)> PatientRows(LabReportView view)
+    public static IReadOnlyList<(string Label, string? Value)> PatientRows(LabReportView view, DocumentText? text = null)
     {
+        text ??= DocumentText.English;
         var tests = view.Sections.SelectMany(s => s.Tests).ToList();
         var collected = tests.Select(t => t.CollectedAt).Where(t => t is not null).Min();
         var received = tests.Select(t => t.ReceivedAt).Where(t => t is not null).Min();
         return
         [
-            ("Patient", view.Patient.Name),
-            ("Age / sex", $"{view.Patient.Age ?? DocumentFormat.Missing} / {GenderShort(view.Patient.Gender)}"),
-            ("UHID", view.Patient.Uhid),
-            ("Report no.", view.Revision > 1 ? $"{view.ReportNumber} (revision {view.Revision})" : view.ReportNumber),
-            ("Referred by", view.ReferredBy ?? "Self"),
-            ("Ordered", DocumentFormat.DateTime(view.OrderedAt)),
-            ("Collected", DocumentFormat.DateTime(collected)),
-            ("Received", DocumentFormat.DateTime(received)),
-            ("Released", view.ReleasedAt is { } at ? DocumentFormat.DateTime(at) : "Not released"),
+            .. ReportDocumentFrame.IdentityRows(view.Patient, text),
+            (text["doc.report_number"], view.Revision > 1
+                ? text.Format("doc.report_revision", ("number", view.ReportNumber), ("revision", view.Revision.ToString(Html.Culture)))
+                : view.ReportNumber),
+            (text["doc.referred_by"], view.ReferredBy ?? text["doc.self"]),
+            (text["doc.ordered"], DocumentFormat.DateTime(view.OrderedAt)),
+            (text["doc.lab.collected"], DocumentFormat.DateTime(collected)),
+            (text["doc.lab.received"], DocumentFormat.DateTime(received)),
+            (text["doc.lab.released"], view.ReleasedAt is { } at ? DocumentFormat.DateTime(at) : text["doc.lab.not_released"]),
         ];
     }
 
-    public static Html Body(LabReportView view, bool releasedOnly)
+    public static Html Body(LabReportView view, bool releasedOnly, DocumentText? text = null)
     {
+        text ??= DocumentText.English;
         var sections = view.Sections.Select(section =>
-            Html.Of($"<h2>{SectionLabel(section.Section)}</h2>{section.Tests.Select(test => Test(test, releasedOnly))}"));
+            Html.Of($"<h2>{SectionLabel(section.Section)}</h2>{section.Tests.Select(test => Test(test, releasedOnly, text))}"));
         var amendments = view.Amendments.Count == 0
             ? Html.Empty
             : Html.Of($"""
-                <h2>Amendments</h2>
-                <table><thead><tr><th>Revision</th><th>When</th><th>By</th><th>Reason and changes</th></tr></thead><tbody>
+                <h2>{text["doc.lab.amendments"]}</h2>
+                <table><thead><tr><th>{text["doc.lab.revision"]}</th><th>{text["doc.lab.when"]}</th><th>{text["doc.lab.by"]}</th><th>{text["doc.lab.reason_changes"]}</th></tr></thead><tbody>
                 {view.Amendments.Select(a => Html.Of($"<tr><td>{a.Revision}</td><td>{DocumentFormat.DateTime(a.AmendedAt)}</td><td>{a.AmendedBy}</td><td>{a.Reason}<div class=\"small\">{a.Changes}</div></td></tr>"))}
                 </tbody></table>
                 """);
@@ -78,22 +83,23 @@ internal static class LabReportDocument
     }
 
     /// <summary>Partial report, auto-validation and amendment notices.</summary>
-    public static IReadOnlyList<string> Notes(LabReportView view)
+    public static IReadOnlyList<string> Notes(LabReportView view, DocumentText? text = null)
     {
+        text ??= DocumentText.English;
         var notes = new List<string>();
         if (view.IsPartial)
         {
-            notes.Add("Partial report: some tests are still in progress and will follow in an updated report.");
+            notes.Add(text["doc.lab.note.partial"]);
         }
 
         if (view.HasAutoValidatedResults)
         {
-            notes.Add("* Verified automatically under the laboratory auto-validation rules (in range, QC accepted, delta check passed).");
+            notes.Add(text["doc.lab.note.auto_validated"]);
         }
 
         if (view.Status == LabReportStatus.Amended)
         {
-            notes.Add("This report was amended after release. The amendments and their reasons are listed above.");
+            notes.Add(text["doc.lab.note.amended"]);
         }
 
         return notes;
@@ -106,19 +112,19 @@ internal static class LabReportDocument
         _ => section.ToString(),
     };
 
-    private static Html Test(LabReportTest test, bool releasedOnly)
+    private static Html Test(LabReportTest test, bool releasedOnly, DocumentText text)
     {
         var meta = string.Join(" · ", new[]
         {
             SpecimenLabel(test.SpecimenType),
-            test.Method is { } method ? $"Method: {method}" : null,
-            test.ReferralLabName is { } lab ? $"Tested at {lab}" : null,
+            test.Method is { } method ? text.Format("doc.lab.method", ("method", method)) : null,
+            test.ReferralLabName is { } lab ? text.Format("doc.lab.tested_at", ("lab", lab)) : null,
         }.Where(part => part is not null));
         var status = test.Status switch
         {
             LabOrderItemStatus.Released => Html.Empty,
-            LabOrderItemStatus.Verified => Html.Of($" <span class=\"small\">(verified, not yet released)</span>"),
-            _ => Html.Of($" <span class=\"small\">(in progress)</span>"),
+            LabOrderItemStatus.Verified => Html.Of($" <span class=\"small\">{text["doc.lab.verified_not_released"]}</span>"),
+            _ => Html.Of($" <span class=\"small\">{text["doc.lab.in_progress"]}</span>"),
         };
 
         var rows = new List<Html>();
@@ -134,78 +140,78 @@ internal static class LabReportDocument
 
             // Organism, antibiogram and remarks are part of the result: never shown before verification on a released copy.
             var printable = line.Status == LabResultStatus.Verified || (!releasedOnly && line.Status != LabResultStatus.Pending);
-            var culture = printable ? Culture(line) : Html.Empty;
-            var remarks = printable && line.Remarks is { Length: > 0 } text ? Html.Of($"<div class=\"small\">{text}</div>") : Html.Empty;
-            var flag = line.Status == LabResultStatus.Verified || !releasedOnly ? Flag(line.Flag) : Html.Empty;
+            var culture = printable ? Culture(line, text) : Html.Empty;
+            var remarks = printable && line.Remarks is { Length: > 0 } remark ? Html.Of($"<div class=\"small\">{remark}</div>") : Html.Empty;
+            var flag = line.Status == LabResultStatus.Verified || !releasedOnly ? Flag(line.Flag, text) : Html.Empty;
             // A result and its culture details are one group, so a page never separates them.
             var details = culture.IsEmpty ? Html.Empty : Html.Of($"<tr><td></td><td colspan=\"4\">{culture}</td></tr>");
-            rows.Add(Html.Of($"<tbody class=\"keep\"><tr><td>{line.Name}</td><td>{Value(line, releasedOnly)}{remarks}</td><td>{flag}</td><td>{line.Unit}</td><td>{line.ReferenceText}</td></tr>{details}</tbody>"));
+            rows.Add(Html.Of($"<tbody class=\"keep\"><tr><td>{line.Name}</td><td>{Value(line, releasedOnly, text)}{remarks}</td><td>{flag}</td><td>{line.Unit}</td><td>{line.ReferenceText}</td></tr>{details}</tbody>"));
         }
 
         return Html.Of($"""
             <h3>{test.Name}{status}</h3>
             {(meta.Length == 0 ? Html.Empty : Html.Of($"<div class=\"small keep-next\">{meta}</div>"))}
             <table>
-              <thead><tr><th style="width:34%">Investigation</th><th style="width:22%">Result</th><th style="width:7%">Flag</th><th style="width:12%">Unit</th><th>Reference interval</th></tr></thead>
+              <thead><tr><th style="width:34%">{text["doc.lab.investigation"]}</th><th style="width:22%">{text["doc.lab.result"]}</th><th style="width:7%">{text["doc.lab.flag"]}</th><th style="width:12%">{text["doc.lab.unit"]}</th><th>{text["doc.lab.reference_interval"]}</th></tr></thead>
               {rows}
             </table>
-            {(test.Interpretation is { Length: > 0 } interpretation ? Html.Of($"<div class=\"small\"><strong>Interpretation:</strong> {interpretation}</div>") : Html.Empty)}
+            {(test.Interpretation is { Length: > 0 } interpretation ? Html.Of($"<div class=\"small\"><strong>{text["doc.lab.interpretation"]}:</strong> {interpretation}</div>") : Html.Empty)}
             """);
     }
 
-    private static Html Value(LabReportResultLine line, bool releasedOnly)
+    private static Html Value(LabReportResultLine line, bool releasedOnly, DocumentText text)
     {
         if (line.Status != LabResultStatus.Verified && (releasedOnly || line.Status == LabResultStatus.Pending))
         {
-            return Html.Of($"<span class=\"small\">Awaited</span>");
+            return Html.Of($"<span class=\"small\">{text["doc.lab.awaited"]}</span>");
         }
 
         var (code, _, critical) = FlagDisplay(line.Flag);
         var css = critical ? "crit" : code.Length > 0 ? "abn" : "";
         var star = line.AutoValidated ? "*" : "";
-        var provisional = line.Status != LabResultStatus.Verified ? Html.Of($" <span class=\"small\">(not verified)</span>") : Html.Empty;
+        var provisional = line.Status != LabResultStatus.Verified ? Html.Of($" <span class=\"small\">{text["doc.lab.not_verified"]}</span>") : Html.Empty;
         return Html.Of($"<span class=\"{css}\">{line.Value}{star}</span>{provisional}");
     }
 
-    private static Html Flag(ResultFlag? flag)
+    private static Html Flag(ResultFlag? flag, DocumentText text)
     {
         var (code, label, critical) = FlagDisplay(flag);
-        return code.Length == 0 ? Html.Empty : Html.Of($"<span class=\"{(critical ? "crit" : "flag")}\" title=\"{label}\">{code}</span>");
+        return code.Length == 0 ? Html.Empty : Html.Of($"<span class=\"{(critical ? "crit" : "flag")}\" title=\"{text[label]}\">{code}</span>");
     }
 
-    private static Html Culture(LabReportResultLine line)
+    private static Html Culture(LabReportResultLine line, DocumentText text)
     {
         var organism = line.Organism is { Length: > 0 } name
-            ? Html.Of($"<div>Organism isolated: <strong>{name}</strong>{(line.ColonyCount is { Length: > 0 } count ? $" · Colony count {count}" : "")}</div>")
+            ? Html.Of($"<div>{text["doc.lab.organism"]}: <strong>{name}</strong>{(line.ColonyCount is { Length: > 0 } count ? $" · {text.Format("doc.lab.colony_count", ("count", count))}" : "")}</div>")
             : Html.Empty;
         var antibiogram = line.Susceptibilities.Count == 0
             ? Html.Empty
             : Html.Of($"""
-                <table class="abg"><thead><tr><th>Antibiotic</th><th>Interpretation</th><th>MIC</th></tr></thead><tbody>
-                {line.Susceptibilities.Select(s => Html.Of($"<tr><td>{s.Antibiotic}</td><td class=\"{(s.Interpretation == SusceptibilityInterpretation.Resistant ? "abn" : "")}\">{Interpretation(s.Interpretation)}</td><td>{s.Mic}</td></tr>"))}
+                <table class="abg"><thead><tr><th>{text["doc.lab.antibiotic"]}</th><th>{text["doc.lab.interpretation"]}</th><th>MIC</th></tr></thead><tbody>
+                {line.Susceptibilities.Select(s => Html.Of($"<tr><td>{s.Antibiotic}</td><td class=\"{(s.Interpretation == SusceptibilityInterpretation.Resistant ? "abn" : "")}\">{Interpretation(s.Interpretation, text)}</td><td>{s.Mic}</td></tr>"))}
                 </tbody></table>
                 """);
         return organism + antibiogram;
     }
 
-    // The printed flag code, the words behind it and whether it is critical; colour is never the only signal.
+    // The printed flag code, the key of the words behind it and whether it is critical; colour is never the only signal.
     private static (string Code, string Label, bool Critical) FlagDisplay(ResultFlag? flag) => flag switch
     {
-        ResultFlag.Low => ("L", "Low", false),
-        ResultFlag.High => ("H", "High", false),
-        ResultFlag.CriticalLow => ("LL", "Critically low", true),
-        ResultFlag.CriticalHigh => ("HH", "Critically high", true),
-        ResultFlag.Abnormal => ("A", "Abnormal", false),
-        ResultFlag.Critical => ("C", "Critical", true),
+        ResultFlag.Low => ("L", "doc.lab.flag.low", false),
+        ResultFlag.High => ("H", "doc.lab.flag.high", false),
+        ResultFlag.CriticalLow => ("LL", "doc.lab.flag.critically_low", true),
+        ResultFlag.CriticalHigh => ("HH", "doc.lab.flag.critically_high", true),
+        ResultFlag.Abnormal => ("A", "doc.lab.flag.abnormal", false),
+        ResultFlag.Critical => ("C", "doc.lab.flag.critical", true),
         _ => ("", "", false),
     };
 
-    private static string Interpretation(SusceptibilityInterpretation interpretation) => interpretation switch
+    private static string Interpretation(SusceptibilityInterpretation interpretation, DocumentText text) => text[interpretation switch
     {
-        SusceptibilityInterpretation.Sensitive => "Sensitive (S)",
-        SusceptibilityInterpretation.Intermediate => "Intermediate (I)",
-        _ => "Resistant (R)",
-    };
+        SusceptibilityInterpretation.Sensitive => "doc.lab.sensitive",
+        SusceptibilityInterpretation.Intermediate => "doc.lab.intermediate",
+        _ => "doc.lab.resistant",
+    }];
 
     private static string SpecimenLabel(SpecimenType specimen) => specimen switch
     {

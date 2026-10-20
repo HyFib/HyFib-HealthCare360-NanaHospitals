@@ -32,6 +32,7 @@ const LAB_ID = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
 const SCAN_ID = '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e';
 const HEART_ID = '3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e7f';
 const RX_ID = '4d5e6f7a-8b9c-4d0e-9f2a-3b4c5d6e7f8a';
+const RX_AWAITING_DSC_ID = '7a8b9c0d-1e2f-4a3b-9c4d-5e6f7a8b9c0d';
 const SUMMARY_ID = '5e6f7a8b-9c0d-4e1f-8a3b-4c5d6e7f8a9b';
 const BILL_ID = '6f7a8b9c-0d1e-4f2a-9b4c-5d6e7f8a9b0c';
 const BILL_PDF = `/api/v1/portal/bills/${BILL_ID}/pdf`;
@@ -242,6 +243,17 @@ const RX: PortalPrescriptionDetail = {
   verificationUrl: null,
 };
 
+/** Signed in HC360, at a hospital that issues prescriptions only once the doctor has signed them with their DSC. */
+const RX_AWAITING_DSC: PortalPrescriptionDetail = {
+  ...RX,
+  id: RX_AWAITING_DSC_ID,
+  prescriptionNumber: 'RX2600124',
+  finalCopyAvailable: false,
+  digitalSignatureState: 'NotSigned',
+  verificationToken: null,
+  verificationUrl: null,
+};
+
 const SUMMARY: DischargeSummaryDto = {
   id: SUMMARY_ID,
   admissionId: '2f3a4b5c-6d7e-4f8a-9b0c-1d2e3f4a5b6c',
@@ -344,7 +356,7 @@ function pdf(fileName: string): Response {
   });
 }
 
-const calls: { method: string; path: string }[] = [];
+const calls: { method: string; path: string; language: string | null }[] = [];
 let pdfAnswer: (fileName: string) => Response | Promise<Response>;
 let saved: SavedFile[];
 
@@ -352,7 +364,7 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
   const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const method = (init?.method ?? 'GET').toUpperCase();
   const { pathname } = new URL(raw, 'https://portal.test');
-  calls.push({ method, path: pathname });
+  calls.push({ method, path: pathname, language: new Headers(init?.headers).get('X-HC360-Language') });
   const pdfName = PDF_NAMES[pathname];
   if (method === 'GET' && pdfName) {
     return pdfAnswer(pdfName);
@@ -370,6 +382,8 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
       return json(HEART);
     case `GET /api/v1/portal/prescriptions/${RX_ID}`:
       return json(RX);
+    case `GET /api/v1/portal/prescriptions/${RX_AWAITING_DSC_ID}`:
+      return json(RX_AWAITING_DSC);
     case 'GET /api/v1/portal/refills':
       return json({ prescriptions: [], requests: [] });
     case `GET /api/v1/portal/discharge-summaries/${SUMMARY_ID}`:
@@ -429,7 +443,7 @@ function openAt(path: string) {
 const sent = (method: string, path: string) => calls.filter((call) => call.method === method && call.path === path);
 
 /** Toasts are also read out through a live region, so their text can be on the page twice for a moment. */
-async function findToast(text: string) {
+async function findToast(text: string | RegExp) {
   return (await screen.findAllByText(text, {}, SLOW))[0];
 }
 
@@ -556,18 +570,68 @@ describe('Download PDF', () => {
     expect(await screen.findByRole('button', { name: 'Print receipt' }, SLOW)).toBeInTheDocument();
   });
 
-  it('speaks Hindi, says the official PDF is in English, and prints the Hindi copy', async () => {
+  it('speaks Hindi, prints the Hindi copy, and asks the server for the PDF in Hindi', async () => {
     useLanguageStore.getState().setLanguage('hi');
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     const user = userEvent.setup();
     openAt(`/portal/prescriptions/${RX_ID}`);
     expect(await screen.findByRole('button', { name: 'PDF डाउनलोड करें' }, SLOW)).toBeInTheDocument();
-    expect(screen.getByText(/अस्पताल की आधिकारिक प्रति मिलती है, जो अंग्रेज़ी में होती है/)).toBeInTheDocument();
+    expect(screen.getByText(/अस्पताल की आधिकारिक प्रति मिलती है।/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'प्रिंट करें' }));
     expect(print).toHaveBeenCalledTimes(1);
     expect(document.getElementById('hc360-print-root')?.innerHTML).toContain('दवा का पर्चा');
     expect(calls.some((call) => call.path.endsWith('/pdf'))).toBe(false);
+
+    // The server writes the PDF in the language chosen here, whatever the patient's record prefers.
+    await user.click(screen.getByRole('button', { name: 'PDF डाउनलोड करें' }));
+    expect(await findToast('PDF आपके डाउनलोड में सहेज दिया गया है।')).toBeInTheDocument();
+    expect(saved).toHaveLength(1);
+    expect(calls.find((call) => call.path.endsWith('/pdf'))?.language).toBe('hi');
+  });
+});
+
+describe('a prescription the doctor has not signed with their DSC yet (ERX-04)', () => {
+  const PENDING =
+    'Your doctor has not digitally signed this prescription yet. You can print it, download it and show its QR code at a pharmacy once they have.';
+
+  it('offers no print, PDF or QR code, and says why', async () => {
+    openAt(`/portal/prescriptions/${RX_AWAITING_DSC_ID}`);
+    expect(await screen.findByText('Not ready to print yet', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText(PENDING)).toBeInTheDocument();
+    // The medicines are still listed on the page (an earlier test's print copy may still be in the document too).
+    expect(screen.getAllByText('Paracetamol 500 mg Tablet').some((line) => !line.closest('#hc360-print-root'))).toBe(
+      true,
+    );
+    expect(screen.queryByRole('button', { name: 'Download PDF' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Print' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Show this at the pharmacy')).not.toBeInTheDocument();
+    expect(calls.some((call) => call.path.endsWith('/pdf'))).toBe(false);
+  });
+
+  it('says so in Hindi too', async () => {
+    useLanguageStore.getState().setLanguage('hi');
+    openAt(`/portal/prescriptions/${RX_AWAITING_DSC_ID}`);
+    expect(await screen.findByText('अभी प्रिंट के लिए तैयार नहीं', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText(/आपके डॉक्टर ने अभी इस पर्चे पर डिजिटल हस्ताक्षर नहीं किए हैं/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'PDF डाउनलोड करें' })).not.toBeInTheDocument();
+  });
+
+  it("words the server's refusal of the PDF for the patient, by its code", async () => {
+    // A page opened before the hospital began to require the DSC still offers the PDF; the server refuses it.
+    pdfAnswer = () =>
+      problem(422, {
+        title: 'Not issued yet',
+        detail: 'Your doctor has not digitally signed this prescription yet.',
+        code: 'prescription.digital_signature_required',
+      });
+    useLanguageStore.getState().setLanguage('hi');
+    const user = userEvent.setup();
+    openAt(`/portal/prescriptions/${RX_ID}`);
+    await user.click(await screen.findByRole('button', { name: 'PDF डाउनलोड करें' }, SLOW));
+    expect(await findToast(/आपके डॉक्टर ने अभी इस पर्चे पर डिजिटल हस्ताक्षर नहीं किए हैं/)).toBeInTheDocument();
+    expect(screen.queryByText('Your doctor has not digitally signed this prescription yet.')).not.toBeInTheDocument();
+    expect(saved).toEqual([]);
   });
 });
 

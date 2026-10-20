@@ -16,7 +16,15 @@ import {
   useArrowNavigationGroup,
 } from '@fluentui/react-components';
 import { ChevronLeftRegular, ChevronRightRegular } from '@fluentui/react-icons';
-import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { EmptyState, ErrorState } from '../feedback/feedback';
 
 export interface Column<T> {
@@ -24,6 +32,13 @@ export interface Column<T> {
   header: ReactNode;
   render: (row: T) => ReactNode;
   width?: number | string;
+  /**
+   * For a column without a width, in pixels: the narrowest it gets. Below that the table stops narrowing and scrolls
+   * sideways in its box instead. Columns without a width share what is left equally, so each of them is given the
+   * largest minimum among them: give the less important columns a width (in pixels, or in per cent to grow with the
+   * table), and the one that matters takes the rest.
+   */
+  minWidth?: number;
   sortable?: boolean;
   align?: 'start' | 'end' | 'center';
   /** Hide on narrow screens (tablets on ward rounds). */
@@ -64,6 +79,12 @@ const useStyles = makeStyles({
   wrapper: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', overflowX: 'auto', width: '100%' },
   row: { cursor: 'pointer' },
   lowPriority: { '@media (max-width: 900px)': { display: 'none' } },
+  // The narrowest the table gets for its columns' minWidth (tableMinWidth), without its low-priority columns where they
+  // are hidden.
+  minWidth: {
+    minWidth: 'var(--hc360-table-min-width)',
+    '@media (max-width: 900px)': { minWidth: 'var(--hc360-table-min-width-narrow)' },
+  },
   alignEnd: { textAlign: 'end', justifyContent: 'flex-end' },
   footer: {
     display: 'flex',
@@ -99,6 +120,31 @@ function actionsColumnWidth(table: HTMLTableElement): number | undefined {
   }
   const padding = getComputedStyle(cell);
   return Math.ceil(widest) + parseFloat(padding.paddingLeft) + parseFloat(padding.paddingRight);
+}
+
+/** A cell's padding on its two sides (Fluent's spacingHorizontalS), outside the width a column is given. */
+const CELL_PADDING = 16;
+
+/**
+ * The narrowest the table may get so that its columns without a width keep their minWidth, or undefined when none has
+ * one. The table's layout is fixed: a column with a width in pixels keeps it, one in per cent takes that share of the
+ * table, and the others share the rest equally, so each of those needs as much as the largest minimum among them.
+ * Then the actions column, and every cell's padding.
+ */
+function tableMinWidth<T>(columns: Column<T>[], actionsWidth: number | undefined): number | undefined {
+  const shared = columns.filter((column) => column.width === undefined);
+  const share = Math.max(0, ...shared.map((column) => column.minWidth ?? 0));
+  if (share === 0) {
+    return undefined;
+  }
+  const pixels = columns.reduce((sum, column) => sum + (typeof column.width === 'number' ? column.width : 0), 0);
+  const percent = columns.reduce(
+    (sum, column) =>
+      sum + (typeof column.width === 'string' && column.width.endsWith('%') ? parseFloat(column.width) : 0),
+    0,
+  );
+  const rest = pixels + share * shared.length + CELL_PADDING * columns.length + (actionsWidth ?? 0);
+  return percent < 100 ? Math.ceil(rest / (1 - percent / 100)) : undefined;
 }
 
 /**
@@ -147,6 +193,11 @@ export function DataTable<T>(props: DataTableProps<T>) {
   }
 
   const showSkeleton = loading && !rows;
+  const minWidth = tableMinWidth(columns, actionsWidth);
+  const minWidthNarrow = tableMinWidth(
+    columns.filter((column) => column.priority !== 'low'),
+    actionsWidth,
+  );
   const colClass = (column: Column<T>) =>
     mergeClasses(column.priority === 'low' && styles.lowPriority, column.align === 'end' && styles.alignEnd);
 
@@ -163,6 +214,15 @@ export function DataTable<T>(props: DataTableProps<T>) {
       <div className={styles.wrapper}>
         <Table
           ref={tableRef}
+          className={minWidth === undefined ? undefined : styles.minWidth}
+          style={
+            minWidth === undefined
+              ? undefined
+              : ({
+                  '--hc360-table-min-width': `${minWidth}px`,
+                  '--hc360-table-min-width-narrow': `${minWidthNarrow ?? 0}px`,
+                } as CSSProperties)
+          }
           aria-label={props.ariaLabel}
           size={props.size ?? 'medium'}
           sortable={Boolean(props.onSortChange)}

@@ -53,6 +53,15 @@ public sealed record PowerInfo(bool Available, bool? OnBattery, int? ChargePerce
 
 public sealed record HealthWarning(string Code, string Severity, string Message);
 
+/// <summary>
+/// Warnings a module adds to System health about its own set-up, which Platform cannot see (it references no module):
+/// the Clinical module's DSC trust folder, for one. Each is asked on every report; it should be quick.
+/// </summary>
+public interface IHealthWarningSource
+{
+    Task<IReadOnlyList<HealthWarning>> WarningsAsync(CancellationToken cancellationToken);
+}
+
 public sealed record SystemHealthReport(
     ServerInfo Server,
     NetworkInfo Network,
@@ -87,6 +96,7 @@ public sealed class SystemHealthService(
     SigningKeyStore signingKey,
     IFieldKeyRing dataKeys,
     IIntegrationHealthSource integrationHealth,
+    IEnumerable<IHealthWarningSource> moduleWarnings,
     TimeProvider time)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
@@ -212,6 +222,10 @@ public sealed class SystemHealthService(
         }
 
         warnings.AddRange(IntegrationWarnings(integrations));
+        foreach (var source in moduleWarnings)
+        {
+            warnings.AddRange(await source.WarningsAsync(ct));
+        }
 
         // Reports, prescriptions and bills are printed and sent as server-made documents: say so when that is broken.
         if (pdf.Status is { Available: false } pdfStatus)

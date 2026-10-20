@@ -1,4 +1,12 @@
-import { auth, createApiClient, isDesktop, useConnection, useSession, type ClientType } from '@hc360/core';
+import {
+  auth,
+  createApiClient,
+  isDesktop,
+  useConnection,
+  useSession,
+  whenUnlocked,
+  type ClientType,
+} from '@hc360/core';
 
 export const clientType: ClientType = isDesktop ? 'desktop' : 'web';
 
@@ -12,5 +20,7 @@ export const api = createApiClient({
   refreshAccessToken: () => auth.refresh(),
   onSessionExpired: () => useSession.getState().clear(),
   onSessionLocked: () => useSession.getState().setLocked(true),
+  // What the screens behind the lock ask for waits for it, and is asked again once unlocked (SRS UX-11).
+  waitForUnlock: whenUnlocked,
   onReachability: (reachable) => useConnection.getState().setReachable(reachable),
 });
