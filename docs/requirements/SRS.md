@@ -394,7 +394,7 @@ Patient, PatientIdentifier, Visit, QueueToken, Appointment, Schedule, Encounter,
 ---
 
 ## 9. Acceptance & traceability
-Each requirement ID maps to a module folder in `src/server/Modules/*`, `src/web/apps/staff/src/modules/*` and to automated tests. Release-1 acceptance requires: all "Must" items implemented, and end-to-end journeys passing (register → appointment → consult → lab → pharmacy → bill; admit → bed → charges → discharge bill → insurance claim), with a security checklist (ASVS L2) signed off.
+Each requirement ID maps to a module folder in `src/server/Modules/*`, `src/web/apps/staff/src/modules/*` and to automated tests ([TRACEABILITY.md](TRACEABILITY.md) records the mapping and each requirement's status). Release-1 acceptance requires: all "Must" items implemented, and end-to-end journeys passing (register → appointment → consult → lab → pharmacy → bill; admit → bed → charges → discharge bill → insurance claim), with a security checklist (ASVS L2) signed off.
 
 ---
 
