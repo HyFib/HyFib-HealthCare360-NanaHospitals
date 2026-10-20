@@ -219,19 +219,8 @@ public static class PlatformServiceCollectionExtensions
 
         services.AddHospitalRateLimiter();
 
-        // The portal's proof of work (SRS SEC-06): challenges signed with a key of this server's, spent ones remembered, and
-        // the numbers that failed kept as hashes keyed with it. The key is read (or made) once, for both.
-        services.AddSingleton<IProofOfWorkReplayCache, MemoryProofOfWorkReplayCache>();
-        services.AddSingleton(sp => new AntiAutomationKey(ProofOfWorkKey.LoadOrCreate(directories, sp.GetRequiredService<IDataProtectionProvider>())));
-        services.AddSingleton(sp => new AutomationSuspicion(
-            sp.GetRequiredService<IMemoryCache>(),
-            sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<AntiAutomationKey>().Value));
-        services.AddSingleton(sp => new ProofOfWork(
-            sp.GetRequiredService<AntiAutomationKey>().Value,
-            sp.GetRequiredService<IProofOfWorkReplayCache>(),
-            sp.GetRequiredService<TimeProvider>()));
-        services.AddScoped<AntiAutomation>();
+        // The portal's proof of work (SRS SEC-06), shared by every node of several.
+        services.AddAntiAutomation(directories);
 
         // ---------------- cross-cutting services
         services.AddScoped<IAuditLogger, AuditLogger>();

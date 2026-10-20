@@ -3,12 +3,15 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
@@ -192,6 +195,102 @@ public sealed class ScaleOutTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_count_of_failures_lasts_until_a_quiet_spell_whichever_node_counts()
+    {
+        await using var other = await SecondNode.StartAsync(server, Ct);
+        var clock = new ManualClock(WholeSecond());
+        var (a, b) = (Store(server.Services, clock), Store(other.Services, clock));
+        var key = "it:quiet:" + Guid.NewGuid().ToString("N");
+        var quiet = TimeSpan.FromMinutes(15);
+
+        (await a.IncrementUntilQuietAsync(key, quiet, Ct)).Count.ShouldBe(1);
+        clock.Now += TimeSpan.FromMinutes(10);
+        var second = await b.IncrementUntilQuietAsync(key, quiet, Ct);
+
+        // Each count moves the end on: twenty minutes after the first, ten after the last, it is still counted.
+        (second.Count, second.WindowEndsAt).ShouldBe((2, clock.Now + quiet));
+        clock.Now += TimeSpan.FromMinutes(10);
+        (await a.GetCountAsync(key, Ct)).ShouldBe(2);
+
+        // A quiet quarter of an hour, and the next counts from nothing.
+        clock.Now += TimeSpan.FromMinutes(5);
+        (await b.GetCountAsync(key, Ct)).ShouldBe(0);
+        (await a.IncrementUntilQuietAsync(key, quiet, Ct)).Count.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// A single Server Node keeps the same entries in its memory (<see cref="MemoryClusterStore"/>): the same calls at the
+    /// same moments, the ends of windows and lifetimes included, get the same answers as from the database.
+    /// </summary>
+    [Fact]
+    public async Task A_single_servers_memory_answers_as_the_database_does()
+    {
+        var start = WholeSecond();
+        var databaseClock = new ManualClock(start);
+        var memoryClock = new ManualClock(start);
+
+        var database = await ContractScriptAsync(Store(server.Services, databaseClock), databaseClock);
+        var memory = await ContractScriptAsync(new MemoryClusterStore(new MemoryCache(new MemoryCacheOptions()), memoryClock), memoryClock);
+
+        memory.ShouldBe(database);
+        database.ShouldContain("05:00: TryAdd token True", "an entry that ended is taken over at the moment it ends");
+    }
+
+    [Fact]
+    public async Task A_proof_of_work_is_spent_once_and_failures_are_counted_once_for_every_node()
+    {
+        var shared = NewRoot();
+        var keyRing = new EphemeralDataProtectionProvider();
+        var (firstAudit, secondAudit) = (new RecordingAudit(), new RecordingAudit());
+        await using var first = await ProofOfWorkNodeAsync(shared, keyRing, firstAudit);
+        await using var second = await ProofOfWorkNodeAsync(shared, keyRing, secondAudit);
+        var phone = NewMobile();
+
+        // A challenge from one node, solved and sent to the other, cannot be sent to the first again.
+        var challenge = await ChallengeAsync(first, NewAddress(), phone);
+        var proof = ProofOfWork.Solve(challenge.Challenge!, challenge.Bits);
+        (await SendCodeAsync(second, NewAddress(), phone, proof)).ShouldBe(HttpStatusCode.OK);
+        (await SendCodeAsync(first, NewAddress(), phone, proof)).ShouldBe(HttpStatusCode.Forbidden);
+
+        // Bad proofs for another number, from one address, two to one node and one to the other: three failures, which raise
+        // the work both nodes ask for that number and that address. The refusal is audited once, by the node that saw it first.
+        var script = NewAddress();
+        var target = NewMobile();
+        var before = (await ChallengeAsync(second, NewAddress(), target)).Bits;
+        foreach (var node in new[] { first, second, first })
+        {
+            (await SendCodeAsync(node, script, target, "junk")).ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        (await ChallengeAsync(second, NewAddress(), target)).Bits.ShouldBe(before + AutomationSuspicion.BitsPerStep);
+        (await ChallengeAsync(first, script, null)).Bits.ShouldBe(before + AutomationSuspicion.BitsPerStep);
+        (firstAudit.Malformed(), secondAudit.Malformed()).ShouldBe((1, 0));
+
+        // The store holds them under keyed hashes only: neither the address nor the number.
+        (await EntriesMentioningAsync(script)).ShouldBe(0);
+        (await EntriesMentioningAsync(target[^10..])).ShouldBe(0);
+        var suspicion = first.Services.GetRequiredService<AutomationSuspicion>();
+        (await Store(server.Services, TimeProvider.System).GetCountAsync("pow:fail:ip:" + suspicion.AddressHash(script), Ct)).ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task A_single_server_keeps_its_proof_of_work_in_its_own_memory()
+    {
+        await using var node = await ProofOfWorkNodeAsync(shared: null, new EphemeralDataProtectionProvider(), new RecordingAudit());
+        var script = NewAddress();
+        var before = (await ChallengeAsync(node, script, null)).Bits;
+
+        for (var i = 0; i < AutomationSuspicion.FailuresPerStep; i++)
+        {
+            (await SendCodeAsync(node, script, NewMobile(), "junk")).ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        (await ChallengeAsync(node, script, null)).Bits.ShouldBe(before + AutomationSuspicion.BitsPerStep);
+        var suspicion = node.Services.GetRequiredService<AutomationSuspicion>();
+        (await Store(server.Services, TimeProvider.System).GetCountAsync("pow:fail:ip:" + suspicion.AddressHash(script), Ct)).ShouldBe(0);
+    }
+
+    [Fact]
     public async Task The_sign_in_limit_per_address_is_the_hospitals_not_each_nodes()
     {
         await using var first = await AddressLimitedNodeAsync(severalNodes: true);
@@ -301,7 +400,7 @@ public sealed class ScaleOutTests(HospitalServer server)
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Development });
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
-        var root = Path.Combine(Path.GetTempPath(), "hc360-tests", "node-" + Guid.NewGuid().ToString("N"));
+        var root = NewRoot();
         builder.Services.AddSingleton(new DataDirectories(new PlatformOptions
         {
             DataDirectory = root,
@@ -342,6 +441,116 @@ public sealed class ScaleOutTests(HospitalServer server)
         return context;
     }
 
+    /// <summary>
+    /// Calls every method of <paramref name="store"/> in turn, the clock moving between them, and writes down what it
+    /// answered and when (from the start, with the ends of windows), under keys of its own.
+    /// </summary>
+    private static async Task<List<string>> ContractScriptAsync(IClusterStore store, ManualClock clock)
+    {
+        var run = "it:contract:" + Guid.NewGuid().ToString("N") + ":";
+        var start = clock.Now;
+        var said = new List<string>();
+        void Say(string call, object answer) => said.Add($"{clock.Now - start:mm\\:ss}: {call} {answer}");
+        string Count(ClusterCount count) => $"{count.Count} until {count.WindowEndsAt - start:mm\\:ss}";
+
+        Say("TryAdd token", await store.TryAddAsync(run + "token", TimeSpan.FromMinutes(5), Ct));
+        Say("TryAdd token", await store.TryAddAsync(run + "token", TimeSpan.FromMinutes(5), Ct));
+        Say("Get token", await store.GetCountAsync(run + "token", Ct));
+        Say("Increment window", Count(await store.IncrementAsync(run + "window", TimeSpan.FromMinutes(1), Ct)));
+        Say("UntilQuiet quiet", Count(await store.IncrementUntilQuietAsync(run + "quiet", TimeSpan.FromMinutes(1), Ct)));
+        clock.Now += TimeSpan.FromSeconds(30);
+        Say("Increment window", Count(await store.IncrementAsync(run + "window", TimeSpan.FromMinutes(1), Ct)));
+        Say("UntilQuiet quiet", Count(await store.IncrementUntilQuietAsync(run + "quiet", TimeSpan.FromMinutes(1), Ct)));
+        clock.Now += TimeSpan.FromSeconds(30);
+        Say("Get window", await store.GetCountAsync(run + "window", Ct));
+        Say("Get quiet", await store.GetCountAsync(run + "quiet", Ct));
+        Say("Increment window", Count(await store.IncrementAsync(run + "window", TimeSpan.FromMinutes(1), Ct)));
+        clock.Now += TimeSpan.FromSeconds(60);
+        Say("Get quiet", await store.GetCountAsync(run + "quiet", Ct));
+        Say("UntilQuiet quiet", Count(await store.IncrementUntilQuietAsync(run + "quiet", TimeSpan.FromMinutes(1), Ct)));
+        clock.Now += TimeSpan.FromMinutes(3);
+        Say("TryAdd token", await store.TryAddAsync(run + "token", TimeSpan.FromMinutes(5), Ct));
+        await store.RemoveAsync(run + "token", Ct);
+        Say("Get token", await store.GetCountAsync(run + "token", Ct));
+        Say("TryAdd token", await store.TryAddAsync(run + "token", TimeSpan.FromMinutes(5), Ct));
+        await store.RemoveAsync(run + "missing", Ct);
+        Say("Get missing", await store.GetCountAsync(run + "missing", Ct));
+        return said;
+    }
+
+    /// <summary>
+    /// A node with the server's rate limiter and proof of work, made as the platform makes them, its challenge endpoint, and
+    /// an endpoint that asks for a proof for a mobile number as the portal's code request does, on the test server's
+    /// database. With <paramref name="shared"/> it is one of the nodes sharing that folder, whose keys folder holds the
+    /// anti-automation key; <paramref name="keyRing"/> stands in for their shared Data Protection key ring.
+    /// </summary>
+    private async Task<WebApplication> ProofOfWorkNodeAsync(string? shared, IDataProtectionProvider keyRing, RecordingAudit audit)
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Development });
+        builder.WebHost.UseTestServer();
+        builder.Logging.ClearProviders();
+        var directories = new DataDirectories(new PlatformOptions { DataDirectory = NewRoot(), Cluster = { SharedDirectory = shared } });
+        Directory.CreateDirectory(directories.Keys);
+        builder.Services.AddSingleton(directories);
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddMemoryCache();
+        builder.Services.AddSingleton(keyRing);
+        builder.Services.AddSingleton(server.Services.GetRequiredService<IClusterStore>());
+        builder.Services.AddScoped<ISettingsService, DefaultSettings>();
+        builder.Services.AddSingleton<IAuditLogger>(audit);
+        builder.Services.AddHospitalRateLimiter();
+        builder.Services.AddAntiAutomation(directories);
+
+        var app = builder.Build();
+        app.Use((context, next) =>
+        {
+            context.Connection.RemoteIpAddress = IPAddress.Parse(context.Request.Headers["X-Test-Client-Address"].ToString());
+            return next(context);
+        });
+        app.UseRateLimiter();
+        AntiAutomationEndpoints.Map(app);
+        app.MapPost("/code", (OtpRequest request) => Results.Ok())
+            .RequireProofOfWork(AntiAutomationActions.Otp, context => context.Arguments.OfType<OtpRequest>().FirstOrDefault()?.Phone);
+        await app.StartAsync(Ct);
+        return app;
+    }
+
+    private static async Task<AntiAutomationChallenge> ChallengeAsync(WebApplication node, string address, string? phone)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/public/challenge")
+        {
+            Content = JsonContent.Create(new AntiAutomationChallengeRequest(AntiAutomationActions.Otp, phone)),
+        };
+        request.Headers.Add("X-Test-Client-Address", address);
+        using var response = await node.GetTestClient().SendAsync(request, Ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<AntiAutomationChallenge>(Ct))!;
+    }
+
+    private static async Task<HttpStatusCode> SendCodeAsync(WebApplication node, string address, string phone, string proof)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/code") { Content = JsonContent.Create(new OtpRequest(phone)) };
+        request.Headers.Add("X-Test-Client-Address", address);
+        request.Headers.Add(AntiAutomation.ProofHeader, proof);
+        using var response = await node.GetTestClient().SendAsync(request, Ct);
+        return response.StatusCode;
+    }
+
+    /// <summary>The cluster store's entries whose key holds <paramref name="text"/>.</summary>
+    private async Task<int> EntriesMentioningAsync(string text)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<ClusterEntry>().CountAsync(e => e.Key.Contains(text), Ct);
+    }
+
+    /// <summary>Now, to the whole second: the database keeps microseconds, so moments a whole number of seconds apart compare exactly.</summary>
+    private static DateTimeOffset WholeSecond() =>
+        new(DateTimeOffset.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, TimeSpan.Zero);
+
+    private static string NewRoot() => Path.Combine(Path.GetTempPath(), "hc360-tests", "node-" + Guid.NewGuid().ToString("N"));
+
+    private static string NewMobile() => "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + RandomNumberGenerator.GetInt32(10))));
+
     private static string NewAddress() => $"198.18.{RandomNumberGenerator.GetInt32(0, 256)}.{RandomNumberGenerator.GetInt32(1, 255)}";
 
     private static CreateUserRequest NewUser(string userName, Guid roleId) =>
@@ -366,6 +575,39 @@ public sealed class ScaleOutTests(HospitalServer server)
         public bool Contains(string argument) => _heard.ContainsKey(argument);
 
         public void Expire(string? argument) => _heard.TryAdd(argument ?? string.Empty, true);
+    }
+
+    /// <summary>Every setting at its default: the proof of work on, at its default work.</summary>
+    private sealed class DefaultSettings : ISettingsService
+    {
+        public Task<T?> GetAsync<T>(string key, Guid? facilityId = null, CancellationToken cancellationToken = default) => Task.FromResult(default(T));
+
+        public Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task SetAsync<T>(string key, T value, Guid? facilityId, bool secret, uint? expectedVersion, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>A node's audit trail: the entries it wrote.</summary>
+    private sealed class RecordingAudit : IAuditLogger
+    {
+        private readonly ConcurrentQueue<AuditEntry> _written = new();
+
+        /// <summary>The refusals of a malformed proof audited.</summary>
+        public int Malformed() => _written.Count(e => e.Action == "security.anti_automation_rejected" && e.Summary!.Contains("(malformed)"));
+
+        public void Add(AuditEntry entry) => _written.Enqueue(entry);
+
+        public Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default)
+        {
+            _written.Enqueue(entry);
+            return Task.CompletedTask;
+        }
+
+        public Task PatientRecordAccessedAsync(Guid patientId, string what, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class ManualClock(DateTimeOffset start) : TimeProvider

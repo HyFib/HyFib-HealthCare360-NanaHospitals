@@ -3,13 +3,13 @@ using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 
 namespace HyFib.HealthCare360.Platform.Security;
 
-/// <summary>What became of a proof of work sent with a request (<see cref="ProofOfWork.Verify"/>).</summary>
+/// <summary>What became of a proof of work sent with a request (<see cref="ProofOfWork.VerifyAsync"/>).</summary>
 public enum ProofOfWorkOutcome
 {
     Accepted = 0,
@@ -42,52 +42,24 @@ public enum ProofOfWorkOutcome
 }
 
 /// <summary>
-/// Remembers spent challenges until they expire, so each one is good for a single request. In memory on each server: with
-/// several API servers (SCAL-01), a challenge could be spent once on each within its few minutes, which the rate limits
-/// still bound (SECURITY.md, "Anti-automation").
-/// </summary>
-public interface IProofOfWorkReplayCache
-{
-    /// <summary>Records the challenge as spent; false when it already was.</summary>
-    bool TrySpend(string challengeId, DateTimeOffset expiresAt);
-}
-
-internal sealed class MemoryProofOfWorkReplayCache(IMemoryCache cache, TimeProvider time) : IProofOfWorkReplayCache
-{
-    private readonly Lock _gate = new();
-
-    public bool TrySpend(string challengeId, DateTimeOffset expiresAt)
-    {
-        var key = "pow:spent:" + challengeId;
-        lock (_gate)
-        {
-            if (cache.TryGetValue(key, out _))
-            {
-                return false;
-            }
-
-            // Kept a minute past the challenge's expiry, so a clock step on the server cannot bring it back. Relative to this
-            // server's clock, which is the one the expiry was checked against.
-            cache.Set(key, true, expiresAt - time.GetUtcNow() + TimeSpan.FromMinutes(1));
-            return true;
-        }
-    }
-}
-
-/// <summary>
 /// A self-hosted proof of work (Hashcash, in the manner of ALTCHA) against automated use of the portal's anonymous
 /// endpoints (SRS SEC-06, ASVS V2.4.1). Nothing leaves the hospital: no third-party CAPTCHA sees the patients' traffic.
 /// <para>
 /// The server issues a challenge: <c>1.{action}.{bits}.{expires}.{salt}.{signature}</c>, where the salt is 16 random bytes
 /// and the signature an HMAC-SHA256 of the rest under a key of this server's (<see cref="ProofOfWorkKey"/>). The browser
 /// finds a nonce, a decimal number, for which SHA-256 of the UTF-8 text <c>{challenge}{nonce}</c> starts with
-/// <c>bits</c> zero bits, and sends <c>{challenge}:{nonce}</c>. Checking it takes one HMAC and one hash and no database:
-/// only the spent challenges are remembered (<see cref="IProofOfWorkReplayCache"/>), until they expire.
+/// <c>bits</c> zero bits, and sends <c>{challenge}:{nonce}</c>. Checking it takes one HMAC and one hash; only the spent
+/// challenges are remembered, until they expire, in <paramref name="spent"/>: the cluster store on a node of several, so a
+/// challenge is spent once for the hospital whichever node it is sent to (SCAL-01), and the server's memory on a single
+/// Server Node (<see cref="MemoryClusterStore"/>).
 /// </para>
 /// </summary>
-public sealed class ProofOfWork(byte[] key, IProofOfWorkReplayCache spent, TimeProvider time)
+public sealed class ProofOfWork(byte[] key, IClusterStore spent, TimeProvider time)
 {
     public const string Version = "1";
+
+    /// <summary>What a spent challenge is kept under, with its signature: unique to it, as its salt is.</summary>
+    internal const string SpentPrefix = "pow:spent:";
 
     /// <summary>The longest nonce accepted: 16 decimal digits is far more tries than any difficulty here needs.</summary>
     private const int MaxNonceDigits = 16;
@@ -118,8 +90,25 @@ public sealed class ProofOfWork(byte[] key, IProofOfWorkReplayCache spent, TimeP
     /// Checks a proof (<c>{challenge}:{nonce}</c>) for a request of <paramref name="action"/> that needs
     /// <paramref name="requiredBits"/>. An accepted proof is spent: the same challenge is refused from then on.
     /// </summary>
-    public ProofOfWorkOutcome Verify(string? proof, string action, int requiredBits)
+    public async Task<ProofOfWorkOutcome> VerifyAsync(string? proof, string action, int requiredBits, CancellationToken cancellationToken)
     {
+        var outcome = Check(proof, action, requiredBits, out var signature, out var expiresAt);
+        if (outcome != ProofOfWorkOutcome.Accepted)
+        {
+            return outcome;
+        }
+
+        // Last, so only a proof that is good in every other way uses the challenge up. Kept a minute past the challenge's
+        // expiry, so a clock step on a server cannot bring it back.
+        var lifetime = expiresAt - time.GetUtcNow() + TimeSpan.FromMinutes(1);
+        return await spent.TryAddAsync(SpentPrefix + signature, lifetime, cancellationToken) ? ProofOfWorkOutcome.Accepted : ProofOfWorkOutcome.Replayed;
+    }
+
+    /// <summary>Everything <see cref="VerifyAsync"/> checks but whether the challenge was spent: no store is asked.</summary>
+    private ProofOfWorkOutcome Check(string? proof, string action, int requiredBits, out string signature, out DateTimeOffset expiresAt)
+    {
+        signature = string.Empty;
+        expiresAt = default;
         if (string.IsNullOrEmpty(proof))
         {
             return ProofOfWorkOutcome.Missing;
@@ -157,7 +146,7 @@ public sealed class ProofOfWork(byte[] key, IProofOfWorkReplayCache spent, TimeP
             return ProofOfWorkOutcome.WrongAction;
         }
 
-        var expiresAt = DateTimeOffset.FromUnixTimeSeconds(expires);
+        expiresAt = DateTimeOffset.FromUnixTimeSeconds(expires);
         if (expiresAt <= time.GetUtcNow())
         {
             return ProofOfWorkOutcome.Expired;
@@ -175,8 +164,8 @@ public sealed class ProofOfWork(byte[] key, IProofOfWorkReplayCache spent, TimeP
             return ProofOfWorkOutcome.TooEasy;
         }
 
-        // Last, so only a proof that is good in every other way uses the challenge up.
-        return spent.TrySpend(parts[5], expiresAt) ? ProofOfWorkOutcome.Accepted : ProofOfWorkOutcome.Replayed;
+        signature = parts[5];
+        return ProofOfWorkOutcome.Accepted;
     }
 
     /// <summary>The leading zero bits of a hash, as the browser counts them.</summary>
@@ -222,11 +211,11 @@ public sealed class ProofOfWork(byte[] key, IProofOfWorkReplayCache spent, TimeP
 internal sealed record AntiAutomationKey(byte[] Value);
 
 /// <summary>
-/// The key that signs proof-of-work challenges, and from which the key of the failure counts' number hashes is derived
-/// (<see cref="AutomationSuspicion"/>): 32 random bytes made on first start and kept under the data directory
-/// (<c>keys/anti-automation.key</c>), wrapped by ASP.NET Core Data Protection (machine DPAPI on Windows), as the token
-/// signing key is. Losing it only makes challenges issued before invalid, and forgets the failures counted so far; the
-/// browser asks for a new challenge.
+/// The key that signs proof-of-work challenges, and from which the keys of the failure counts' address and number hashes
+/// are derived (<see cref="AutomationSuspicion"/>): 32 random bytes made on first start and kept in the keys folder
+/// (<c>keys/anti-automation.key</c>, the shared folder's on a node of several, so every node signs and hashes alike),
+/// wrapped by ASP.NET Core Data Protection, as the token signing key is. Losing it only makes challenges issued before
+/// invalid, and forgets the failures counted so far; the browser asks for a new challenge.
 /// </summary>
 public static class ProofOfWorkKey
 {

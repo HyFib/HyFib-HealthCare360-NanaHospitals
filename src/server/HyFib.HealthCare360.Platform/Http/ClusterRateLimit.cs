@@ -80,7 +80,7 @@ internal sealed class ClusterRateLimitFilter(AddressRateLimit limit) : IEndpoint
         }
 
         // As the in-memory limiter's refusals do: on an endpoint that asks for a proof of work, the address is asked for more.
-        AntiAutomationEndpoints.OnRateLimited(http);
+        await AntiAutomationEndpoints.OnRateLimitedAsync(http);
         var wait = count.WindowEndsAt - http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
         http.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
         return Results.StatusCode(StatusCodes.Status429TooManyRequests);

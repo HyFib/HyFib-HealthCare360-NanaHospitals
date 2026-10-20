@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,11 +21,12 @@ namespace HyFib.HealthCare360.Platform.Persistence;
 /// whatever transaction the caller has open: a request that fails afterwards does not take its attempt back.
 /// </summary>
 /// <remarks>
-/// Keys are the caller's own, prefixed with what they are for (<c>signin:</c>, <c>portal-challenge:</c>), at most
-/// <see cref="ClusterStore.MaxKeyLength"/> characters. Use a hash in a key instead of a personal identifier such as a
-/// phone number or an address. Lifetimes and windows are measured by the servers' clocks (<see cref="TimeProvider"/>),
+/// Keys are the caller's own, prefixed with what they are for (<c>rate:</c>, <c>pow:spent:</c>), at most
+/// <see cref="ClusterStore.MaxKeyLength"/> characters. Use a keyed hash in a key instead of a personal identifier such as
+/// a phone number or an address. Lifetimes and windows are measured by the servers' clocks (<see cref="TimeProvider"/>),
 /// which must agree within a second or two, as they must for sign-in tokens. Entries past their end are ignored at once
-/// and removed by the node that runs the jobs.
+/// and removed by the node that runs the jobs. A single Server Node, with no other server to share them with, may keep
+/// the same entries in its memory instead (<see cref="MemoryClusterStore"/>).
 /// </remarks>
 public interface IClusterStore
 {
@@ -41,6 +43,13 @@ public interface IClusterStore
     /// Calls from every server at the same moment are each counted once.
     /// </summary>
     Task<ClusterCount> IncrementAsync(string key, TimeSpan window, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts one more for <paramref name="key"/> and keeps the count until <paramref name="quiet"/> passes without another:
+    /// a count of recent failures, which a steady trickle keeps up and a quiet spell clears. Calls from every server at the
+    /// same moment are each counted once.
+    /// </summary>
+    Task<ClusterCount> IncrementUntilQuietAsync(string key, TimeSpan quiet, CancellationToken cancellationToken = default);
 
     /// <summary>The count of <paramref name="key"/> in its window; 0 when it has none or the window ended.</summary>
     Task<long> GetCountAsync(string key, CancellationToken cancellationToken = default);
@@ -121,6 +130,27 @@ internal sealed class ClusterStore(IServiceScopeFactory scopes, TimeProvider tim
         }, cancellationToken);
     }
 
+    public async Task<ClusterCount> IncrementUntilQuietAsync(string key, TimeSpan quiet, CancellationToken cancellationToken = default)
+    {
+        Check(key);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(quiet, TimeSpan.Zero);
+        var now = time.GetUtcNow();
+
+        // As IncrementAsync, but every count moves the end on: the count lasts until a quiet spell, not a fixed window.
+        const string sql = """
+            INSERT INTO platform.cluster_entries AS e (key, count, expires_at) VALUES (@key, 1, @expires)
+            ON CONFLICT (key) DO UPDATE SET
+                count = CASE WHEN e.expires_at <= @now THEN 1 ELSE e.count + 1 END,
+                expires_at = EXCLUDED.expires_at
+            RETURNING count, expires_at
+            """;
+        return await ExecuteAsync(sql, key, now, now + quiet, async reader =>
+        {
+            await reader.ReadAsync(cancellationToken);
+            return new ClusterCount(reader.GetInt64(0), reader.GetFieldValue<DateTimeOffset>(1));
+        }, cancellationToken);
+    }
+
     public async Task<long> GetCountAsync(string key, CancellationToken cancellationToken = default)
     {
         Check(key);
@@ -136,7 +166,7 @@ internal sealed class ClusterStore(IServiceScopeFactory scopes, TimeProvider tim
             _ => Task.FromResult(true), cancellationToken);
     }
 
-    private static void Check(string key)
+    internal static void Check(string key)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(key.Length, MaxKeyLength, nameof(key));
@@ -171,6 +201,92 @@ internal sealed class ClusterStore(IServiceScopeFactory scopes, TimeProvider tim
             await db.Database.CloseConnectionAsync();
         }
     }
+}
+
+/// <summary>
+/// <see cref="IClusterStore"/> in this server's memory, for a single Server Node, as ASP.NET Core's
+/// <c>MemoryDistributedCache</c> is for <c>IDistributedCache</c>: with no other server to share them with, the entries
+/// need not cost a statement on the database. It keeps the same contract, ends included: an entry's end is judged on
+/// <see cref="TimeProvider"/>, and the cache's own expiry only frees the memory.
+/// </summary>
+internal sealed class MemoryClusterStore(IMemoryCache cache, TimeProvider time) : IClusterStore
+{
+    /// <summary>Keeps the entries apart from everything else in the server's cache.</summary>
+    private const string Prefix = "cluster-store:";
+
+    private readonly Lock _gate = new();
+
+    public Task<bool> TryAddAsync(string key, TimeSpan lifetime, CancellationToken cancellationToken = default)
+    {
+        ClusterStore.Check(key);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lifetime, TimeSpan.Zero);
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            if (Current(key, now) is not null)
+            {
+                return Task.FromResult(false);
+            }
+
+            Set(key, new Entry(1, now + lifetime), now);
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<ClusterCount> IncrementAsync(string key, TimeSpan window, CancellationToken cancellationToken = default)
+    {
+        ClusterStore.Check(key);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(window, TimeSpan.Zero);
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            var entry = Current(key, now) is { } current ? current with { Count = current.Count + 1 } : new Entry(1, now + window);
+            return Task.FromResult(Set(key, entry, now));
+        }
+    }
+
+    public Task<ClusterCount> IncrementUntilQuietAsync(string key, TimeSpan quiet, CancellationToken cancellationToken = default)
+    {
+        ClusterStore.Check(key);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(quiet, TimeSpan.Zero);
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            return Task.FromResult(Set(key, new Entry((Current(key, now)?.Count ?? 0) + 1, now + quiet), now));
+        }
+    }
+
+    public Task<long> GetCountAsync(string key, CancellationToken cancellationToken = default)
+    {
+        ClusterStore.Check(key);
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            return Task.FromResult(Current(key, now)?.Count ?? 0);
+        }
+    }
+
+    public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
+    {
+        ClusterStore.Check(key);
+        lock (_gate)
+        {
+            cache.Remove(Prefix + key);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Entry? Current(string key, DateTimeOffset now) =>
+        cache.TryGetValue(Prefix + key, out Entry? entry) && entry!.ExpiresAt > now ? entry : null;
+
+    private ClusterCount Set(string key, Entry entry, DateTimeOffset now)
+    {
+        cache.Set(Prefix + key, entry, entry.ExpiresAt - now);
+        return new ClusterCount(entry.Count, entry.ExpiresAt);
+    }
+
+    private sealed record Entry(long Count, DateTimeOffset ExpiresAt);
 }
 
 /// <summary>Removes the entries of <see cref="IClusterStore"/> that ended, every ten minutes, on nodes that run jobs (SCAL-05).</summary>

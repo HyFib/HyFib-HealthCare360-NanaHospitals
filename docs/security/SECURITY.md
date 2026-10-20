@@ -446,21 +446,27 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     (feedback, or a sign-in code asked for a number that is not a mobile number) is answered before the proof is
     checked, so it neither spends its proof nor counts. The count for an address or a
     number lasts until 15 minutes pass without a failure for it (each failure starts the quarter of an hour again), so a
-    quiet quarter of an hour brings it back down and a steady trickle keeps it up. Numbers are kept only as keyed
-    hashes, in memory: an HMAC-SHA256 under a key derived from the anti-automation key, since India has few enough
-    mobile numbers to hash every one, and a plain hash would give the number back.
+    quiet quarter of an hour brings it back down and a steady trickle keeps it up. Addresses and numbers are kept only
+    as keyed hashes: an HMAC-SHA256 under keys derived from the anti-automation key, since every IPv4 address and every
+    one of India's mobile numbers can be hashed in minutes, and a plain hash would give them back. Past 30 failures
+    (the most work any setting can ask for), a server counts at most one a minute for an address or number, so a flood
+    of rate-limit refusals does not become a flood of writes; a count that cannot be stored is logged, does not change
+    the answer, and is tried again a minute later.
     Giving a code names only its challenge: the work asked for it depends on the address, and when the attempt fails
     the server looks the challenge's number up (one lookup by key, on that path only), so wrong and expired codes count
     against the number as well.
-  - **Checking.** Stateless: one HMAC, then the kind of request, the expiry, one hash, and the bits against what the
-    address and number need now, with no database. A good proof is spent: the challenge is remembered until it expires and
-    refused again. On several API servers (SCAL-01) the spent challenges and the failure counts are each server's own,
-    so a proof could be used once on each within its 5 minutes; the rate limits still bound that.
+  - **Checking.** One HMAC, then the kind of request, the expiry, one hash, and the bits against what the address and
+    number need now. A good proof is spent: the challenge is remembered until a minute past its expiry and refused
+    again. A single server keeps the spent challenges, the failure counts and the audit throttle (below) in memory. On
+    several API servers (SCAL-01) they are in the database's cluster store (`platform.cluster_entries`, one statement
+    each): a challenge is spent once for the hospital whichever server it is sent to, failures counted by one server
+    raise the work every server asks for, and a refusal is audited once.
   - **Refusals** get one answer, whatever the reason: 403 `request.check_failed`, "We could not complete this request.
     Please try again." The portal then solves a fresh challenge, for the number when there is one, and tries once more.
     Each refusal is counted in the `hc360.anti_automation.rejected` metric (by kind and reason: missing, malformed,
     tampered, wrong action, expired, too easy, unsolved, replayed), and audited as `security.anti_automation_rejected`
-    at most once per address and reason in 5 minutes, so a flood cannot flood the audit trail.
+    at most once per address and reason in 5 minutes (for the hospital, with several servers), so a flood cannot flood
+    the audit trail.
   - **A too-easy proof is not a failure.** It was solved, for a challenge issued before the work asked of the address or
     number went up. The portal solves its sign-in challenge as the form appears, before the number is typed, so a
     patient whose number failed lately (they mistyped the code, or someone tried their number) meets this on every
@@ -594,8 +600,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
     access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
   - *Anti-automation key* (an accepted exception to rotating from System health). It signs only the portal's
-    proof-of-work challenges, which live 5 minutes, and keys the in-memory hashes of the numbers that failed lately; it
-    protects no stored data, so it is rotated by deleting `keys\anti-automation.key` and restarting the server:
+    proof-of-work challenges, which live 5 minutes, and keys the hashes of the addresses and numbers that failed lately;
+    it protects no stored data, so it is rotated by deleting `keys\anti-automation.key` and restarting the server:
     challenges issued before stop working and browsers ask for new ones, and the failures counted so far are forgotten. Rotate it with the sign-in token key when the Server Node may have been exposed (Key policy, below).
 - **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
   says when either is due. Rotate both at once, and change the database password if the server signs in with one, when
@@ -613,7 +619,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Blind-index keys | Derived from each data key | As above | HMAC-SHA256 lookups of ABHA, policy, PAN and bank account numbers (the current data key's), and of Aadhaar numbers (the original key's) | With the data key, indexes computed again in the background; the Aadhaar index stays on the original key (it cannot be rebuilt) |
 | Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
-| Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above), and, through a key derived from it, of the mobile numbers whose failures are counted in memory | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers need the same file |
+| Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above), and, through keys derived from it, of the addresses and mobile numbers whose failures are counted (in memory, or in the database with several servers) | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers share it from the shared folder's `keys` |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI; with several servers, the ring in the shared folder is protected with the cluster key certificate (RSA, in each server's Local Computer store), and each server keeps its own DPAPI ring for its LAN certificates | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
 | Cluster key certificate (several servers only) | The Local Computer's Personal store of each server; the PFX and its password offline, in the hospital's password safe | Windows (the private key readable by `NT SERVICE\HC360Server` and Administrators) | The shared Data Protection key ring, hence every key in the shared folder | Not rotated in place; to replace it, copy the documents and restore the latest backup into a new, empty shared folder named with the new certificate (DEPLOYMENT.md section 10, steps 2 to 4) |
 | Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires |
