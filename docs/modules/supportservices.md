@@ -6,7 +6,8 @@ SRS **CSSD-01..05**, **DIET-01..05**, **CAN-01..04**.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.SupportServices` (references Patients and Inpatient — layer 6 → 5,
 for the admission's current ward and bed). Schema `supportservices`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (101 unit tests).
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (136 unit tests), and the end-to-end `DietChargeTests`
+in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill with the setting on, and none with it off).
 
 ## Permissions
 
@@ -162,10 +163,10 @@ No integration events are raised.
 ## Charges (via `IChargePoster`)
 | SourceModule | SourceReference | When |
 |---|---|---|
-| `supportservices.diet` | `{dietOrderId}:{yyyy-MM-dd}` | once per admission per day when facility setting `supportservices.diet.chargesEnabled` is true and the diet type has a charge service; a day already charged under an earlier order of the same admission is skipped (checked with `IBillingStatusProvider.GetStatesAsync`) |
+| `supportservices.diet` | `{dietOrderId}:{yyyy-MM-dd}` | once per admission per day when facility setting `supportservices.diet.chargesEnabled` is true and the diet type has a charge service; a day already charged under an earlier order of the same admission is skipped, also when that order was superseded the same day (checked with `IBillingStatusProvider.GetStatesAsync`). Posted and saved when the day's plan is generated (`DailyMealPlanJob` or `POST /meal-plans/generate`) |
 
 ## Settings, numbers, notifications, jobs, seed
-* Settings: `supportservices.diet.chargesEnabled` (bool, default false), `supportservices.canteen.staffCreditLimit` (decimal, default 3000; 0 = no limit).
+* Settings: `supportservices.diet.chargesEnabled` (bool, default false; explained on the staff app's Settings page), `supportservices.canteen.staffCreditLimit` (decimal, default 3000; 0 = no limit).
 * Number series (yearly): `cssd-wash` → `{FAC}CW{YY}{SEQ:6}`, `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`.
 * Notifications: in-app only — CSSD recall (critical) and count discrepancy (warning) to `cssd.recalls`; urgent request (warning) to `cssd.process`.
 * Job: `DailyMealPlanJob` — at start-up and hourly when `PlatformOptions.RunsJobs`: generates/refreshes today's and tomorrow's plans for every facility and posts today's diet charges when enabled.
