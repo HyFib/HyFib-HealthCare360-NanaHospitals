@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Modules.AI.Features.Clinical;
 using HyFib.HealthCare360.Modules.AI.Services;
 using HyFib.HealthCare360.Modules.AI.Services.Claude;
 using HyFib.HealthCare360.Modules.AI.Services.Clinical;
+using HyFib.HealthCare360.Modules.AI.Services.OpenAi;
 using HyFib.HealthCare360.Modules.AI.Services.Privacy;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Integrations;
@@ -23,9 +24,9 @@ namespace HyFib.HealthCare360.Modules.AI.Tests;
 /// <summary>
 /// The guards every AI text provider is subject to (SEC-12, AIV-01..06), proved for each provider the server registers.
 /// They sit in the router, the only way to a provider, which the first tests prove from the module's types. The others
-/// drive each real provider through the real gateway and feature to a fake transport (the Anthropic SDK client) and look
-/// at what arrived there: AI off stops the provider, it is handed only redacted text, every call it receives is
-/// recorded, and whatever it answers only becomes a draft for a clinician to review.
+/// drive each real provider through the real gateway and feature to a fake transport (the Anthropic SDK client, the
+/// OpenAI-compatible server) and look at what arrived there: AI off stops the provider, it is handed only redacted text,
+/// every call it receives is recorded, and whatever it answers only becomes a draft for a clinician to review.
 /// </summary>
 public sealed class AiGuardTests
 {
@@ -40,18 +41,21 @@ public sealed class AiGuardTests
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
 
     /// <summary>Every provider the server registers (checked against the module's registrations below).</summary>
-    private static readonly string[] ProviderKeys = [AiProviders.Anthropic];
+    private static readonly string[] ProviderKeys = [AiProviders.Anthropic, AiProviders.OpenAi];
 
     private static readonly Guid PatientId = Guid.Parse("0199a1b2-0000-7000-8000-000000000042");
 
     private readonly AiHarness _ai = new();
     private readonly IAnthropicClientProvider _anthropicClients = Substitute.For<IAnthropicClientProvider>();
     private readonly IAnthropicClient _anthropic = Substitute.For<IAnthropicClient>();
+    private readonly StubHttpHandler _server = new();
 
     public AiGuardTests()
     {
         _anthropicClients.GetClient(default!, default).ReturnsForAnyArgs(_anthropic);
         _ai.Secret(AiSettingKeys.AnthropicSecret, "\"sk-ant-api03-test\"");
+        _ai.Setting(AiSettingKeys.OpenAi, new OpenAiSettings { BaseUrl = "https://llm.hospital.lan/v1", Model = "local-model" });
+        _ai.Secret(AiSettingKeys.OpenAiSecret, "\"server-key\"");
         _ai.Patients.RedactionContextAsync(PatientId, Arg.Any<CancellationToken>()).Returns(new RedactionContext(["Ravi Sharma"], ["NH26000123"]));
     }
 
@@ -59,8 +63,10 @@ public sealed class AiGuardTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    /// <summary>The router as the server builds it, with every real provider.</summary>
-    private AiTextServiceRouter Router => _ai.Router(new ClaudeTextService(_anthropicClients, NullLogger<ClaudeTextService>.Instance));
+    /// <summary>The router as the server builds it, with both real providers.</summary>
+    private AiTextServiceRouter Router => _ai.Router(
+        new ClaudeTextService(_anthropicClients, NullLogger<ClaudeTextService>.Instance),
+        new OpenAiCompatibleTextService(new HttpClient(_server), NullLogger<OpenAiCompatibleTextService>.Instance));
 
     private Task<StructureOutcome> Structure(string specialty = "Internal medicine", CancellationToken? cancellationToken = null) =>
         new ClinicalNoteStructurer(Router, _ai.Clock).StructureAsync(new StructureNoteRequest(Dictation, specialty, PatientId), cancellationToken ?? Ct);
@@ -74,7 +80,7 @@ public sealed class AiGuardTests
         }
         else
         {
-            throw new NotSupportedException(provider);
+            _server.Respond(HttpStatusCode.OK, OpenAiCompatibleTextServiceTests.ChatCompletion(text));
         }
     }
 
@@ -87,7 +93,7 @@ public sealed class AiGuardTests
         }
         else
         {
-            throw new NotSupportedException(provider);
+            _server.Respond(HttpStatusCode.ServiceUnavailable, "{}");
         }
     }
 
@@ -100,14 +106,14 @@ public sealed class AiGuardTests
         }
         else
         {
-            throw new NotSupportedException(provider);
+            _server.Hang();
         }
     }
 
     /// <summary>The text of every call that reached the provider's transport, one entry per call.</summary>
     private IReadOnlyList<string> Transmitted(string provider) => provider == AiProviders.Anthropic
         ? [.. _anthropic.Beta.Messages.ReceivedCalls().SelectMany(c => c.GetArguments()).OfType<MessageCreateParams>().Select(Text)]
-        : throw new NotSupportedException(provider);
+        : [.. _server.Requests.Select(r => r.Body ?? string.Empty)];
 
     private static string Text(MessageCreateParams parameters)
     {
@@ -191,6 +197,8 @@ public sealed class AiGuardTests
     [Theory]
     [InlineData(AiProviders.Anthropic, null)]
     [InlineData(AiProviders.Anthropic, false)]
+    [InlineData(AiProviders.OpenAi, null)]
+    [InlineData(AiProviders.OpenAi, false)]
     public async Task Ai_turned_off_stops_the_provider(string provider, bool? enabled)
     {
         _ai.Setting(AiSettingKeys.Provider, provider);
@@ -208,6 +216,7 @@ public sealed class AiGuardTests
         availability.Provider.ShouldBe(provider);
         availability.Model.ShouldBeNull();
         Transmitted(AiProviders.Anthropic).ShouldBeEmpty();
+        Transmitted(AiProviders.OpenAi).ShouldBeEmpty();
         _ai.Recorded.ShouldBeEmpty();
         await _ai.Settings.DidNotReceive().GetAsync<JsonElement>(Arg.Is<string>(k => k.EndsWith(".secret", StringComparison.Ordinal)), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
@@ -231,6 +240,7 @@ public sealed class AiGuardTests
         sent.ShouldContain("[PHONE_1]");
         sent.ShouldContain("Fever for three days.", customMessage: "Clinical content is sent as dictated.");
         draft.IdentifiersRedacted.ShouldBe(5);
+        Transmitted(provider == AiProviders.Anthropic ? AiProviders.OpenAi : AiProviders.Anthropic).ShouldBeEmpty();
     }
 
     [Theory]

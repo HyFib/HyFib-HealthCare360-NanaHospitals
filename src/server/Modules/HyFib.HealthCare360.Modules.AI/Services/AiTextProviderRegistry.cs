@@ -4,11 +4,11 @@ namespace HyFib.HealthCare360.Modules.AI.Services;
 internal sealed record AiTextSelection(IAiTextProvider? Provider, AiTextSettings Settings);
 
 /// <summary>
-/// The AI text providers this server has, by their <c>ai.provider</c> key: <c>anthropic</c>, also when the setting is
-/// unset. The setting is read per facility, falling back to the one for all facilities. A key no provider has turns AI
-/// text off instead of falling back to another provider, which would send text to a service the hospital did not
-/// choose. Only <see cref="AiTextServiceRouter"/> uses the registry, so every provider is reached through the router's
-/// guards.
+/// The AI text providers this server has, by their <c>ai.provider</c> key: <c>anthropic</c> (also when the setting is
+/// unset) and <c>openai</c>. The setting is read per facility, falling back to the one for all facilities. A key no
+/// provider has turns AI text off instead of falling back to another provider, which would send text to a service the
+/// hospital did not choose. Only <see cref="AiTextServiceRouter"/> uses the registry, so every provider is reached
+/// through the router's guards.
 /// </summary>
 internal sealed class AiTextProviderRegistry
 {

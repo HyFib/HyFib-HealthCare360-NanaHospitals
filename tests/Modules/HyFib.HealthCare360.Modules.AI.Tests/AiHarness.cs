@@ -22,6 +22,7 @@ internal sealed class AiHarness
         Setting<string>(AiSettingKeys.Provider, null);
         Setting<string>(AiSettingKeys.Model, null);
         Setting<int?>(AiSettingKeys.TimeoutSeconds, null);
+        Setting<OpenAiSettings>(AiSettingKeys.OpenAi, null);
         Patients.RedactionContextAsync(default, default).ReturnsForAnyArgs(RedactionContext.Empty);
     }
 
