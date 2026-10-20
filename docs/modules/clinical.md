@@ -12,6 +12,7 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 | EHR-02 timeline by type/kind of care/department/date | `GET /emr/patients/{id}/timeline?types=&encounterTypes=&from=&to=&departmentId=` |
 | EHR-03 banner flags | `GET /emr/patients/{id}/summary` (allergies with `allergyStatus`, alerts, problems, current medicines, last vitals + flags) for the chart; `GET /emr/patients/{id}/flags` (allergies and alerts alone, `clinical.flags.read`) for every other clinical screen's banner (see *Banner flags on every clinical screen*); `GET /emr/patients/{id}/allergies/status`, "no known allergies"; real-time `clinical.flags.changed` on `patient:{id}` |
 | EHR-04/06/07 documents, consent, break-the-glass | Patients module (consents: see *Consents (EHR-06)*); every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
+| INT-BIO patient identity verification | Patients module: checking a patient's identity with their Aadhaar fingerprint (see *Identity checks (INT-BIO)*) |
 | EMR-01 worklist | `GET /emr/worklist` (queue, the doctor's appointments, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) and the ward round `GET /inpatient/rounds` (Inpatient module); see *The doctor's worklist (EMR-01)* |
 | EMR-02..07 | Encounters (SOAP, follow-up, referral, sign, amend), templates, vitals, diagnoses (ICD), orders, prescriptions, favourites; voice dictation into a SOAP draft with ICD suggestions (*Dictate with AI*, AI module) |
 | ERX-01..06 | Prescriptions, favourites/templates, safety checks, signing → `PrescriptionSigned`, the printed A5 prescription and its PDF with QR verification, refills/repeat, Schedule H1/X confirmation + register. ERX-04: bilingual (English/Hindi) directions, the prescriber's council registration number, the doctor's own DSC signature from HC360 Desktop (see *Signing with the doctor's DSC*) and the QR code that re-verifies it |
@@ -556,6 +557,39 @@ on the patient profile and in the chart's **Consents** tab.
 * **Access**: listing, recording and withdrawing follow the record's restricted-record rules (403
   `patient.restricted`), and every listing is in the audit trail ("Viewed consents"). Withdrawals from the portal
   (the patient), WhatsApp STOP replies (no user) and opt-out links go through the same `PatientConsent.Revoke`.
+
+## Identity checks (INT-BIO)
+
+The front desk can check that a patient is the holder of the Aadhaar number they give, with their fingerprint: the
+Patients module's `PatientIdentityCheck` records (`/api/v1/patients/{id}/identity-checks`), on the patient profile's
+**Identity** tab. UIDAI answers through the hospital's AUA (`IAadhaarAuthenticator`; the protocol, the settings and the
+simulator are in [integrations.md](integrations.md#aadhaar-authentication-int-bio-patient-identity)). It is off until
+an administrator sets up `integrations.aadhaar`.
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/patients/identity-checks/setup` | `patients.identity.verify` | `AadhaarCaptureSetup {provider, problem, environment, fingerDataType, fingerCount, timeoutSeconds, training}`: what the workstation's reader is asked for, or why checks are not available |
+| GET | `/patients/{id}/identity-checks` | `patients.read` | The last 50 checks, newest first (`IdentityCheckDto`). Restricted-record rules apply (403 `patient.restricted`), and every listing is in the audit trail ("Viewed identity checks") |
+| POST | `/patients/{id}/identity-checks` | `patients.identity.verify` | `VerifyIdentityRequest {aadhaarNumber, pidData, consent}` → `IdentityCheckDto`. See below |
+
+`patients.identity.verify` ("Check a patient's identity with their Aadhaar fingerprint (UIDAI)") is given to
+FrontOffice and HospitalAdmin.
+
+* **The request.** `aadhaarNumber` is the 12-digit Aadhaar number or 16-digit Virtual ID as the patient gives it
+  (spaces and dashes allowed; an Aadhaar number must pass the Verhoeff check). `pidData` is the capture HC360 Desktop's
+  fingerprint reader returned, encrypted for UIDAI (at most 2 MB). `consent` must be true: the patient agreed after
+  being told what the check is for and that they may show another identity document instead (400 otherwise).
+* **Refused before UIDAI is asked**: a merged record (422 `patient.merged`: check the surviving one); another Aadhaar
+  number than the one on the record (422 `patient.aadhaar_mismatch`, naming its last 4 digits); a number linked to
+  another patient (409 `patient.aadhaar_in_use`, naming the UHID). When UIDAI could not be asked (not set up, a capture
+  that could not be used, a training capture sent to `uidai`), the answer is 422 `patient.identity_check_failed` with
+  the reason, and nothing is kept.
+* **Kept.** Every check UIDAI (or the simulator) answered: `outcome` (`Verified`, `NotVerified`, `Failed`), the
+  message, the number's last 4 digits, `usedVirtualId`, the provider, UIDAI's error code, HC360's transaction id,
+  UIDAI's response code, the reader's provider and model, who checked and when. Never the number or the capture. A
+  verified Aadhaar number is linked to a record that had none (`linkedAadhaar`: last 4 digits and blind index, as at
+  registration). The check is audited (`patient.identity_checked`, a warning when the fingerprint did not match).
+* **Merging** records moves their identity checks to the surviving record.
 
 ## Prescribing safety (ERX-02/06)
 

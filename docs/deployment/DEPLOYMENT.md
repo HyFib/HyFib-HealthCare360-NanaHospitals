@@ -408,6 +408,15 @@ enrolled as kiosks or display boards never use it, and HC360 Desktop in kiosk mo
   the speed, data bits, parity and stop bits as they are set on the scanner (most use 9600, 8, none, 1), then try a
   scan there. It is kept in `%ProgramData%\HyFib\HC360Desktop\Workstation\scanner.json`; IT can fix it with a
   `scanner` entry in `policy.json`, for example `"scanner": { "port": "COM3", "baudRate": 9600 }`.
+- **Fingerprint readers for Aadhaar identity checks** (optional, INT-BIO). Install only a UIDAI-certified reader (a
+  registered device: Mantra, Morpho/IDEMIA, Startek, SecuGen…) and its maker's **RD service** for Windows, and keep the
+  RD service's yearly registration current: an expired one stops capturing. The RD service listens on `127.0.0.1`,
+  on a port from 11100 to 11120; HC360 Desktop finds it there by itself, so no setting is needed on the workstation
+  and no firewall port is opened. Check it on the patient profile's **Identity** tab with the training simulator
+  first. Checking with UIDAI needs, in **Administration › Integrations › Aadhaar authentication**, the hospital's AUA
+  licence details and signing certificate and its ASA's address, all from the ASA, and the server must reach the
+  ASA over https (allow its address in the hospital's firewall). Only enrolled HC360 Desktops can check: a browser
+  cannot reach the reader.
 - PACS, the modality worklist, biometric attendance devices, Tally and payment terminals are configured in
   **Administration › Integrations**. See `docs/modules/integrations.md`.
 - Lab analysers, radiology and BI tools such as Power BI: see below.

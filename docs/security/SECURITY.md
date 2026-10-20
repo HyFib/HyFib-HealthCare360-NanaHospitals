@@ -286,6 +286,12 @@ and grants nothing.
   UHID as patient ID, so a mistyped accession at a modality never shows another patient's images.
 - Only what is needed is stored:
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
+    Checking a patient's identity with their Aadhaar fingerprint (INT-BIO) keeps the outcome, the last 4 digits and
+    UIDAI's references, never the number or the fingerprint: a certified reader encrypts each capture for UIDAI before
+    it leaves the device, HC360 Desktop and the server pass it on without logging it, and the request is signed with
+    the AUA's certificate, whose key is an encrypted secret. Only enrolled HC360 Desktops can send a check, only with
+    the patient's consent, and UIDAI's answer counts only for its own transaction (and with UIDAI's signature once its
+    certificate is set). See [integrations.md](../modules/integrations.md#aadhaar-authentication-int-bio-patient-identity).
   - **ABHA numbers**: encrypted with AES-256-GCM.
   - Uploaded documents: encrypted at rest.
   - **Online payments**: the gateway's settlement data is kept as ids, amounts, the UTR and the payment method only;
@@ -507,7 +513,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     server checks the signature again before it keeps it, and accepts only a certificate that chains to a CCA India
     root IT installed in its DSC trust folder — never one the operating system trusts, such as a domain's user
     certificate or a self-signed one (docs/modules/clinical.md, *Signing with the doctor's DSC*).
-  - Answers bridge calls (printing, device identity, notifications, DSC signing) only from the staff app's pages. The patient
+  - Captures fingerprints for Aadhaar identity checks (`fingerprint.capture`) only from a UIDAI-certified reader's RD
+    service on `127.0.0.1` (ports 11100–11120, paths checked, no proxy, no redirects). The reader encrypts the capture
+    for UIDAI; the desktop passes it to the page as it came, one capture at a time, and never logs or keeps it.
+  - Answers bridge calls (printing, device identity, notifications, DSC signing, fingerprint capture) only from the staff app's pages. The patient
     portal and the API reference, which run third-party script, are on addresses of their own, so it opens them in the
     default browser.
   - Saves only document types HC360 produces (PDF, CSV, XLSX, XML, JSON, text, images, ECG/DICOM files, recordings,
@@ -769,6 +778,11 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 12. Keep Microsoft Edge updating on the Server Node: it makes the PDFs, and HC360 restarts it regularly so updates apply.
     Decide whether report PDFs may go by e-mail and WhatsApp (`diagnostics.reports.sendPdf`, on by default), and say so
     in the privacy notice.
+13. Before checking identities with Aadhaar fingerprints, have the AUA (or the hospital as one) approve the consent
+    words staff read out, the privacy notice's paragraph on it, and what its authentication logs must hold: HC360 keeps
+    each check without the Aadhaar number, and keeping the number would need an Aadhaar Data Vault. Install only
+    UIDAI-certified readers and their makers' RD services, keep the RD service subscriptions current, and keep the AUA
+    signing certificate's .pfx and password out of e-mail and shared folders.
 
 ## 4. Reporting a vulnerability
 
