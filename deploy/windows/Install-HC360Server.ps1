@@ -234,6 +234,43 @@ function Set-AlwaysOnPower([scriptblock] $PowerCfg = { powercfg.exe @args | Out-
     return $taken
 }
 
+# Opens HC360 in Windows Firewall on Private and Domain networks only, never on Public ones (SRS DED-14), and for the
+# server's $Program alone: the staff app's HTTPS port, the patient portal's, and mDNS (UDP 5353) for discovery. HC360's
+# rules from before are replaced. With $LabPorts it also opens the ports network analysers connect to, in a group of
+# their own, so an upgrade without -LabPorts leaves that rule as it is; with $LabAnalyserAddresses, to those addresses
+# only. Then it warns about each network marked Public, where workstations cannot connect. The tests stand in for the
+# firewall cmdlets, so the machine's firewall is left alone.
+function Set-HC360Firewall([int] $HttpsPort, [int] $PortalHttpsPort, [string] $Program, [int[]] $LabPorts, [string[]] $LabAnalyserAddresses) {
+    Get-NetFirewallRule -Group 'HyFib HealthCare360' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+    New-NetFirewallRule -DisplayName 'HC360 Server (HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $HttpsPort `
+        -Program $Program -Profile Private, Domain -Action Allow | Out-Null
+    New-NetFirewallRule -DisplayName 'HC360 Server (patient portal, HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $PortalHttpsPort `
+        -Program $Program -Profile Private, Domain -Action Allow | Out-Null
+    New-NetFirewallRule -DisplayName 'HC360 Server discovery (mDNS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol UDP -LocalPort 5353 `
+        -Program $Program -Profile Private, Domain -Action Allow | Out-Null
+    if ($LabPorts) {
+        # A group of its own, so an upgrade without -LabPorts leaves the analysers' rule as it is.
+        Get-NetFirewallRule -Group 'HyFib HealthCare360 lab analysers' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+        $labRule = @{
+            DisplayName = 'HC360 Server (network lab analysers)'
+            Group = 'HyFib HealthCare360 lab analysers'
+            Direction = 'Inbound'
+            Protocol = 'TCP'
+            LocalPort = $LabPorts
+            Program = $Program
+            Profile = @('Private', 'Domain')
+            Action = 'Allow'
+        }
+        if ($LabAnalyserAddresses) { $labRule.RemoteAddress = $LabAnalyserAddresses }
+        New-NetFirewallRule @labRule | Out-Null
+        Write-Host "    Network analysers may connect on port(s) $($LabPorts -join ', ')."
+    }
+    $public = Get-NetConnectionProfile | Where-Object NetworkCategory -eq 'Public'
+    foreach ($netProfile in $public) {
+        Write-Warning "The network '$($netProfile.Name)' ($($netProfile.InterfaceAlias)) is marked Public, so workstations cannot connect. Mark the hospital WiFi as Private: Set-NetConnectionProfile -InterfaceAlias '$($netProfile.InterfaceAlias)' -NetworkCategory Private"
+    }
+}
+
 function Find-DesktopPackage([string] $PackagePath) {
     $pattern = '^HC360-Desktop-(?<numbers>\d+\.\d+\.\d+(?:\.\d+)?)(?:-[0-9A-Za-z.-]+)?-win-[a-z0-9]+\.zip$'
     $extracted = Split-Path -Parent ([System.IO.Path]::GetFullPath($PackagePath))
@@ -769,34 +806,8 @@ else {
 # ---------------------------------------------------------------- firewall
 if (-not $SkipFirewall) {
     Write-Step 'Configuring Windows Firewall (Private and Domain networks only)'
-    Get-NetFirewallRule -Group 'HyFib HealthCare360' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-    New-NetFirewallRule -DisplayName 'HC360 Server (HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $HttpsPort `
-        -Program (Join-Path $InstallDir $ExeName) -Profile Private, Domain -Action Allow | Out-Null
-    New-NetFirewallRule -DisplayName 'HC360 Server (patient portal, HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $PortalHttpsPort `
-        -Program (Join-Path $InstallDir $ExeName) -Profile Private, Domain -Action Allow | Out-Null
-    New-NetFirewallRule -DisplayName 'HC360 Server discovery (mDNS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol UDP -LocalPort 5353 `
-        -Program (Join-Path $InstallDir $ExeName) -Profile Private, Domain -Action Allow | Out-Null
-    if ($LabPorts) {
-        # A group of its own, so an upgrade without -LabPorts leaves the analysers' rule as it is.
-        Get-NetFirewallRule -Group 'HyFib HealthCare360 lab analysers' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-        $labRule = @{
-            DisplayName = 'HC360 Server (network lab analysers)'
-            Group = 'HyFib HealthCare360 lab analysers'
-            Direction = 'Inbound'
-            Protocol = 'TCP'
-            LocalPort = $LabPorts
-            Program = (Join-Path $InstallDir $ExeName)
-            Profile = @('Private', 'Domain')
-            Action = 'Allow'
-        }
-        if ($LabAnalyserAddresses) { $labRule.RemoteAddress = $LabAnalyserAddresses }
-        New-NetFirewallRule @labRule | Out-Null
-        Write-Host "    Network analysers may connect on port(s) $($LabPorts -join ', ')."
-    }
-    $public = Get-NetConnectionProfile | Where-Object NetworkCategory -eq 'Public'
-    foreach ($netProfile in $public) {
-        Write-Warning "The network '$($netProfile.Name)' ($($netProfile.InterfaceAlias)) is marked Public, so workstations cannot connect. Mark the hospital WiFi as Private: Set-NetConnectionProfile -InterfaceAlias '$($netProfile.InterfaceAlias)' -NetworkCategory Private"
-    }
+    Set-HC360Firewall -HttpsPort $HttpsPort -PortalHttpsPort $PortalHttpsPort -Program (Join-Path $InstallDir $ExeName) `
+        -LabPorts $LabPorts -LabAnalyserAddresses $LabAnalyserAddresses
 }
 
 # ---------------------------------------------------------------- always-on WiFi server
