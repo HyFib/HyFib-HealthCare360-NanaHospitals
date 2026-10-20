@@ -77,7 +77,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         var phone = "9" + Digits(9);
         await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, phone, legacy));
         record = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
-        record.Phone.ShouldBe(phone);
+        record.Phone.ShouldBe(Phone.Normalize(phone), "Phone numbers are stored in E.164.");
         record.AbhaAddress.ShouldBe(legacy);
 
         // A changed address must be an ABHA address.
