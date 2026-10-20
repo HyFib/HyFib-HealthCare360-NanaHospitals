@@ -187,7 +187,7 @@ public sealed class RdServiceTests
     public void The_staff_apps_training_capture_is_the_one_the_server_knows()
     {
         // trainingCapture in packages/core/src/bridge/fingerprint.ts (its test checks the same document).
-        const staffApp =
+        const string staffApp =
             """<PidData><Resp errCode="0" errInfo="Training capture" fCount="1" fType="2" nmPoints="0" qScore="80" />"""
             + """<DeviceInfo dpId="HC360.TRAINING" rdsId="HC360.TRAINING.RD" rdsVer="1.0" mi="TRAINING" mc="TRAINING" dc="TRAINING" />"""
             + """<Skey ci="20991231">TRAINING-MATCH</Skey><Hmac>TRAINING</Hmac><Data type="X">TRAINING</Data></PidData>""";
