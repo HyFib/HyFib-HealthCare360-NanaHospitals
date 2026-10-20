@@ -13,10 +13,16 @@ internal static class AiSettingKeys
     /// <summary><c>true</c> to allow AI calls. Default false: AI is off until an administrator enables it (SEC-12).</summary>
     public const string Enabled = "ai.enabled";
 
-    /// <summary><c>anthropic</c> (default) or <c>disabled</c>.</summary>
+    /// <summary>
+    /// The text provider: <c>anthropic</c> (the default when unset), or anything else (<c>disabled</c>) to turn AI text
+    /// off. A value no provider has never falls back to another one.
+    /// </summary>
     public const string Provider = "ai.provider";
 
+    /// <summary>The Anthropic provider's model; the key predates other providers, so it has no provider in its name.</summary>
     public const string Model = "ai.model";
+
+    /// <summary>The Anthropic provider's time limit in seconds (10–300, default 90).</summary>
     public const string TimeoutSeconds = "ai.timeoutSeconds";
 
     /// <summary>The Anthropic API key: a JSON string, or <c>{"apiKey":"…"}</c>.</summary>
@@ -34,16 +40,24 @@ internal static class AiProviders
     public const string Whisper = "whisper";
 }
 
-/// <summary>Resolved AI text settings for the current facility.</summary>
-internal sealed record AiTextSettings(bool Enabled, string Provider, string Model, string? ApiKey, TimeSpan Timeout)
+/// <summary>
+/// Resolved AI text settings for the current facility: the switch, the chosen provider and that provider's own settings.
+/// <see cref="Problem"/> is the provider's reason it cannot be used (no key, say), looked for only while AI is on.
+/// </summary>
+internal sealed record AiTextSettings(bool Enabled, string Provider, string Model, string? ApiKey, TimeSpan Timeout, string? Problem = null)
 {
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(90);
+
     public bool IsUsable => Reason is null;
 
-    public string? Reason =>
-        !Enabled ? "AI features are turned off for this facility (setting ai.enabled)."
-        : Provider != AiProviders.Anthropic ? $"AI provider '{Provider}' is not available."
-        : string.IsNullOrWhiteSpace(ApiKey) ? "No Anthropic API key is configured (secret setting ai.anthropic.secret)."
-        : null;
+    public string? Reason => !Enabled ? "AI features are turned off for this facility (setting ai.enabled)." : Problem;
+
+    /// <summary>
+    /// <c>ai.provider</c> names a provider this server does not have (or <c>disabled</c>): nothing is sent, and no other
+    /// provider is used instead, since that would send text to a service the hospital did not choose.
+    /// </summary>
+    public static AiTextSettings NotAvailable(bool enabled, string provider) =>
+        new(enabled, provider, string.Empty, null, DefaultTimeout, Problem: $"AI provider '{provider}' is not available.");
 }
 
 /// <summary>
@@ -108,17 +122,28 @@ internal sealed record AiLimits
 /// </summary>
 internal sealed partial class AiSettingsReader(ISettingsService settings, ICurrentUser currentUser, ILogger<AiSettingsReader> logger)
 {
-    public async Task<AiTextSettings> GetTextSettingsAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// The switch (<c>ai.enabled</c>, off unless true) and the chosen text provider (<c>ai.provider</c>, lower case),
+    /// which is Anthropic when unset, as it was before the provider could be chosen, so existing settings keep working.
+    /// </summary>
+    public async Task<(bool Enabled, string Provider)> GetTextChoiceAsync(CancellationToken cancellationToken)
     {
         var enabled = await TryGetAsync<bool?>(AiSettingKeys.Enabled, cancellationToken) ?? false;
-        var provider = (await TryGetAsync<string>(AiSettingKeys.Provider, cancellationToken))?.Trim().ToLowerInvariant() ?? AiProviders.Anthropic;
+        var provider = await TryGetAsync<string>(AiSettingKeys.Provider, cancellationToken);
+        return (enabled, string.IsNullOrWhiteSpace(provider) ? AiProviders.Anthropic : provider.Trim().ToLowerInvariant());
+    }
+
+    /// <summary>Anthropic: <c>ai.model</c>, <c>ai.timeoutSeconds</c> and the key in <c>ai.anthropic.secret</c>.</summary>
+    public async Task<AiTextSettings> GetAnthropicSettingsAsync(bool enabled, CancellationToken cancellationToken)
+    {
         var model = await TryGetAsync<string>(AiSettingKeys.Model, cancellationToken);
         var timeout = await TryGetAsync<int?>(AiSettingKeys.TimeoutSeconds, cancellationToken) ?? 90;
 
         // The key is decrypted only when it would actually be used.
-        var apiKey = enabled && provider == AiProviders.Anthropic ? await ReadSecretAsync(AiSettingKeys.AnthropicSecret, "apiKey", cancellationToken) : null;
+        var apiKey = enabled ? await ReadSecretAsync(AiSettingKeys.AnthropicSecret, "apiKey", cancellationToken) : null;
         var validModel = model is not null && ModelPattern().IsMatch(model.Trim()) ? model.Trim() : ClaudeDefaults.Model;
-        return new AiTextSettings(enabled, provider, validModel, apiKey, TimeSpan.FromSeconds(Math.Clamp(timeout, 10, 300)));
+        return new AiTextSettings(enabled, AiProviders.Anthropic, validModel, apiKey, TimeSpan.FromSeconds(Math.Clamp(timeout, 10, 300)),
+            Problem: enabled && apiKey is null ? "No Anthropic API key is configured (secret setting ai.anthropic.secret)." : null);
     }
 
     public async Task<SpeechConfig> GetSpeechConfigAsync(CancellationToken cancellationToken)

@@ -32,6 +32,7 @@ public sealed class AIModuleTests
     [InlineData(typeof(IAiTextService))]
     [InlineData(typeof(ISpeechToText))]
     [InlineData(typeof(IAiGateway))]
+    [InlineData(typeof(AiTextProviderRegistry))]
     [InlineData(typeof(AssistantCommandService))]
     [InlineData(typeof(ClinicalNoteStructurer))]
     public void Registers_its_services_once(Type service) => Services().Count(d => d.ServiceType == service).ShouldBe(1);

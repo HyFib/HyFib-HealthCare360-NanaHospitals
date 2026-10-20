@@ -44,8 +44,12 @@ public sealed class AIModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<AiSettingsReader>();
+
+        // Text providers, chosen by ai.provider. They are reached only through the router (AiTextServiceRouter), which
+        // applies the AI switch, redaction and usage recording to all of them.
         services.AddSingleton<IAnthropicClientProvider, AnthropicClientProvider>();
-        services.AddScoped<ClaudeTextService>();
+        services.AddScoped<IAiTextProvider, ClaudeTextService>();
+        services.AddScoped<AiTextProviderRegistry>();
         services.AddScoped<AiTextServiceRouter>();
         services.AddScoped<IAiTextService>(sp => sp.GetRequiredService<AiTextServiceRouter>());
         services.AddScoped<IAiGateway>(sp => sp.GetRequiredService<AiTextServiceRouter>());

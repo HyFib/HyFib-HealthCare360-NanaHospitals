@@ -1,47 +1,89 @@
 using System.Text.Json;
-using Anthropic;
 using HyFib.HealthCare360.Modules.AI.Services;
 using HyFib.HealthCare360.Modules.AI.Services.Claude;
 using HyFib.HealthCare360.Platform.Integrations;
-using HyFib.HealthCare360.Platform.Security;
-using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace HyFib.HealthCare360.Modules.AI.Tests;
 
-/// <summary>AI configuration: off by default, a typo disables rather than breaks, and the key is read only when used.</summary>
+/// <summary>
+/// AI configuration: off by default, the provider chosen by <c>ai.provider</c> per facility, a typo disables rather than
+/// breaks or sends text elsewhere, and a key is read only when it would be used.
+/// </summary>
 public sealed class AiSettingsReaderTests
 {
-    private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
-    private readonly IAnthropicClientProvider _clients = Substitute.For<IAnthropicClientProvider>();
+    private const string Off = "AI features are turned off for this facility (setting ai.enabled).";
 
-    public AiSettingsReaderTests()
-    {
-        // The real settings service answers null for missing keys (NSubstitute would answer "" for strings).
-        Setting<bool?>(AiSettingKeys.Enabled, null);
-        Setting<string>(AiSettingKeys.Provider, null);
-        Setting<string>(AiSettingKeys.Model, null);
-        Setting<int?>(AiSettingKeys.TimeoutSeconds, null);
-    }
+    private readonly AiHarness _ai = new();
+
+    private readonly AiTextProviderRegistry _registry =
+        new([new ClaudeTextService(Substitute.For<IAnthropicClientProvider>(), NullLogger<ClaudeTextService>.Instance)]);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private AiSettingsReader Reader => new(_settings, Substitute.For<ICurrentUser>(), NullLogger<AiSettingsReader>.Instance);
+    private async Task<AiTextSettings> Settings() => (await _registry.SelectAsync(_ai.Reader, Ct)).Settings;
 
-    private void Setting<T>(string key, T? value) =>
-        _settings.GetAsync<T>(key, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(value);
-
-    private void Secret(string json) => Setting(AiSettingKeys.AnthropicSecret, JsonDocument.Parse(json).RootElement.Clone());
+    private Task SecretNotRead(string key) =>
+        _ai.Settings.DidNotReceive().GetAsync<JsonElement>(key, Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
 
     [Fact]
     public async Task Ai_is_off_until_an_administrator_enables_it()
     {
-        var settings = await Reader.GetTextSettingsAsync(Ct);
+        var settings = await Settings();
 
-        settings.ShouldBe(new AiTextSettings(false, "anthropic", "claude-opus-5-5", null, TimeSpan.FromSeconds(90)));
-        settings.Reason.ShouldBe("AI features are turned off for this facility (setting ai.enabled).");
-        await _settings.DidNotReceive().GetAsync<JsonElement>(AiSettingKeys.AnthropicSecret, Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        settings.ShouldBe(new AiTextSettings(false, "anthropic", ClaudeDefaults.Model, null, TimeSpan.FromSeconds(90)));
+        settings.Reason.ShouldBe(Off);
+        await SecretNotRead(AiSettingKeys.AnthropicSecret);
+    }
+
+    [Theory]
+    [InlineData(null, "anthropic")]
+    [InlineData("", "anthropic")]
+    [InlineData("  ", "anthropic")]
+    [InlineData("anthropic", "anthropic")]
+    [InlineData("Anthropic", "anthropic")]
+    public async Task Ai_provider_chooses_the_provider_and_unset_keeps_anthropic(string? configured, string expected)
+    {
+        _ai.TurnOn(configured);
+
+        var selection = await _registry.SelectAsync(_ai.Reader, Ct);
+
+        selection.Provider.ShouldNotBeNull().Key.ShouldBe(expected);
+        selection.Settings.Provider.ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("disabled")]
+    [InlineData("none")]
+    [InlineData("openai-compatible")]
+    [InlineData("azure")]
+    public async Task A_provider_this_server_does_not_have_turns_ai_off_instead_of_falling_back(string configured)
+    {
+        _ai.TurnOn(configured);
+        _ai.Secret(AiSettingKeys.AnthropicSecret, "\"sk-ant-api03-test\"");
+
+        var selection = await _registry.SelectAsync(_ai.Reader, Ct);
+
+        selection.Provider.ShouldBeNull();
+        selection.Settings.IsUsable.ShouldBeFalse();
+        selection.Settings.Reason.ShouldBe($"AI provider '{configured}' is not available.");
+        await SecretNotRead(AiSettingKeys.AnthropicSecret);
+    }
+
+    [Fact]
+    public async Task Each_facility_may_choose_its_own_provider()
+    {
+        var withoutAi = Guid.Parse("0199a1b2-0000-7000-8000-0000000000a1");
+        _ai.TurnOn();
+        // The settings service answers a facility's own value, or else the one for all facilities (unset here).
+        _ai.Settings.GetAsync<string>(AiSettingKeys.Provider, withoutAi, Arg.Any<CancellationToken>()).Returns("disabled");
+
+        _ai.User.FacilityId.Returns(withoutAi);
+        (await Settings()).Provider.ShouldBe("disabled");
+
+        _ai.User.FacilityId.Returns(Guid.Parse("0199a1b2-0000-7000-8000-0000000000b2"));
+        (await Settings()).Provider.ShouldBe("anthropic");
     }
 
     [Theory]
@@ -49,10 +91,10 @@ public sealed class AiSettingsReaderTests
     [InlineData("""{ "apiKey": " sk-ant-api03-test " }""")]
     public async Task Reads_the_api_key_as_a_string_or_an_object(string secret)
     {
-        Setting<bool?>(AiSettingKeys.Enabled, true);
-        Secret(secret);
+        _ai.TurnOn();
+        _ai.Secret(AiSettingKeys.AnthropicSecret, secret);
 
-        var settings = await Reader.GetTextSettingsAsync(Ct);
+        var settings = await Settings();
 
         settings.ApiKey.ShouldBe("sk-ant-api03-test");
         settings.IsUsable.ShouldBeTrue();
@@ -61,21 +103,21 @@ public sealed class AiSettingsReaderTests
     [Fact]
     public async Task Enabled_without_a_key_explains_what_is_missing()
     {
-        Setting<bool?>(AiSettingKeys.Enabled, true);
+        _ai.TurnOn();
 
-        (await Reader.GetTextSettingsAsync(Ct)).Reason.ShouldBe("No Anthropic API key is configured (secret setting ai.anthropic.secret).");
+        (await Settings()).Reason.ShouldBe("No Anthropic API key is configured (secret setting ai.anthropic.secret).");
     }
 
     [Theory]
     [InlineData("claude-sonnet-5", "claude-sonnet-5")]
     [InlineData("  claude-haiku-4-5  ", "claude-haiku-4-5")]
-    [InlineData("Claude Opus!", "claude-opus-5-5")]
-    [InlineData("../../v1/admin", "claude-opus-5-5")]
+    [InlineData("Claude Opus!", ClaudeDefaults.Model)]
+    [InlineData("../../v1/admin", ClaudeDefaults.Model)]
     public async Task Uses_a_valid_configured_model_or_the_default(string configured, string expected)
     {
-        Setting<string>(AiSettingKeys.Model, configured);
+        _ai.Setting(AiSettingKeys.Model, configured);
 
-        (await Reader.GetTextSettingsAsync(Ct)).Model.ShouldBe(expected);
+        (await Settings()).Model.ShouldBe(expected);
     }
 
     [Theory]
@@ -84,66 +126,31 @@ public sealed class AiSettingsReaderTests
     [InlineData(1000, 300)]
     public async Task Bounds_the_request_timeout(int configured, int expected)
     {
-        Setting<int?>(AiSettingKeys.TimeoutSeconds, configured);
+        _ai.Setting<int?>(AiSettingKeys.TimeoutSeconds, configured);
 
-        (await Reader.GetTextSettingsAsync(Ct)).Timeout.ShouldBe(TimeSpan.FromSeconds(expected));
-    }
-
-    [Fact]
-    public async Task Another_provider_never_decrypts_the_key()
-    {
-        Setting<bool?>(AiSettingKeys.Enabled, true);
-        Setting<string>(AiSettingKeys.Provider, "None");
-
-        var settings = await Reader.GetTextSettingsAsync(Ct);
-
-        settings.Reason.ShouldBe("AI provider 'none' is not available.");
-        await _settings.DidNotReceive().GetAsync<JsonElement>(AiSettingKeys.AnthropicSecret, Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        (await Settings()).Timeout.ShouldBe(TimeSpan.FromSeconds(expected));
     }
 
     [Fact]
     public async Task A_malformed_setting_disables_ai_instead_of_failing()
     {
-        _settings.GetAsync<bool?>(AiSettingKeys.Enabled, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns<bool?>(_ => throw new JsonException("bad"));
+        _ai.Settings.GetAsync<bool?>(AiSettingKeys.Enabled, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns<bool?>(_ => throw new JsonException("bad"));
 
-        (await Reader.GetTextSettingsAsync(Ct)).Enabled.ShouldBeFalse();
+        (await Settings()).Enabled.ShouldBeFalse();
     }
 
     [Fact]
     public async Task Per_user_limits_default_to_60_an_hour_and_300_a_day()
     {
-        var limits = await Reader.GetLimitsAsync(Ct);
+        var limits = await _ai.Reader.GetLimitsAsync(Ct);
 
         limits.PerUserPerHour.ShouldBe(60);
         limits.PerUserPerDay.ShouldBe(300);
     }
 
     [Fact]
-    public async Task The_router_refuses_without_calling_claude_while_ai_is_off()
-    {
-        var router = new AiTextServiceRouter(Reader, new ClaudeTextService(_clients, NullLogger<ClaudeTextService>.Instance));
-
-        var availability = await router.GetAvailabilityAsync(Ct);
-        var completion = await router.CompleteAsync(AiPrompts.StructureNote("fever for two days", null), Ct);
-
-        availability.ShouldBe(new AiAvailability(false, "anthropic", null, "AI features are turned off for this facility (setting ai.enabled)."));
-        completion.Success.ShouldBeFalse();
-        completion.Error.ShouldBe("AI features are turned off for this facility (setting ai.enabled).");
-        router.IsEnabled.ShouldBeFalse();
-        _clients.DidNotReceiveWithAnyArgs().GetClient(default!, default);
-    }
-
-    [Fact]
-    public async Task The_router_reports_the_model_when_ai_is_usable()
-    {
-        Setting<bool?>(AiSettingKeys.Enabled, true);
-        Secret("\"sk-ant-api03-test\"");
-        _clients.GetClient(default!, default).ReturnsForAnyArgs(Substitute.For<IAnthropicClient>());
-        var router = new AiTextServiceRouter(Reader, new ClaudeTextService(_clients, NullLogger<ClaudeTextService>.Instance));
-
-        (await router.GetAvailabilityAsync(Ct)).ShouldBe(new AiAvailability(true, "anthropic", "claude-opus-5-5", null));
-        router.IsEnabled.ShouldBeTrue();
-    }
+    public void Two_providers_cannot_share_a_key() =>
+        Should.Throw<InvalidOperationException>(() => new AiTextProviderRegistry([new FakeTextProvider("same"), new FakeTextProvider("same")]));
 
     [Fact]
     public void The_disabled_service_never_sends_anything()
