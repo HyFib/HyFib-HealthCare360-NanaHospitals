@@ -72,34 +72,58 @@ internal sealed class ReportingDbContextFactory(
 
     /// <summary>
     /// Runs read-only reporting work on the reporting database. When that is a replica and it cannot be reached
-    /// (maintenance, the network, a query the replica's own recovery cancelled), the same work runs again on the primary
-    /// database, so a report, the KPIs or a look-up never fail because the replica is down (SCAL-03). The work must only
-    /// read: it may run twice.
+    /// (maintenance, the network), or goes away during the work (a restart), the same work runs again on the primary
+    /// database, so a report, the KPIs or a look-up never fail because the replica is down (SCAL-03). A query the replica
+    /// answered with an error, or one that ran past its time there, is not run again: the heavy reports the replica is
+    /// for must not move to the wards' database, and the user is told instead. The work must only read: it may run twice.
     /// </summary>
     /// <param name="what">What is read, for the warning logged when the primary database has to answer.</param>
     public async Task<ReportingResult<T>> RunAsync<T>(Guid? facilityId, string what, Func<HospitalDbContext, Task<T>> work, CancellationToken ct)
     {
+        await using var db = Create(facilityId);
         try
         {
-            await using var db = Create(facilityId);
+            // Opened first, so that a timeout means the replica could not be reached, not that the query took too long.
+            await db.Database.OpenConnectionAsync(ct);
+        }
+        catch (Exception ex) when (reporting.UsesReplica && !ct.IsCancellationRequested && IsUnreachable(ex, connecting: true))
+        {
+            return await OnPrimaryAsync(facilityId, what, work, ex);
+        }
+
+        try
+        {
             return new ReportingResult<T>(await work(db), reporting.SourceLabel);
         }
-        catch (Exception ex) when (reporting.UsesReplica && !ct.IsCancellationRequested && IsUnreachable(ex))
+        catch (Exception ex) when (reporting.UsesReplica && !ct.IsCancellationRequested && IsUnreachable(ex, connecting: false))
         {
-            logger.LogWarning(ex, "Reporting replica unavailable; {What} falls back to the primary database", what);
-            await using var primary = CreatePrimary(facilityId);
-            return new ReportingResult<T>(await work(primary), ReportingDatabase.FallbackLabel);
+            return await OnPrimaryAsync(facilityId, what, work, ex);
         }
     }
 
-    /// <summary>A failure of the replica rather than of the query, so the primary database is worth asking instead.</summary>
-    internal static bool IsUnreachable(Exception ex) => ex switch
+    /// <summary>
+    /// The replica could not be reached (<paramref name="connecting"/>: refused, unresolved, or no answer in time), or the
+    /// connection to it broke or was shut down during the work, so the primary database is worth asking instead. Not an
+    /// error the replica answered with (a missing table, a query its own recovery cancelled), and not a query that ran
+    /// past its time on a replica that answered.
+    /// </summary>
+    internal static bool IsUnreachable(Exception ex, bool connecting) => ex switch
     {
+        // 08: connection exceptions; 57P01-57P03: the server is shutting down, crashed, or cannot take connections yet.
+        PostgresException postgres => postgres.SqlState.StartsWith("08", StringComparison.Ordinal) || postgres.SqlState is "57P01" or "57P02" or "57P03",
+        NpgsqlException { InnerException: TimeoutException } => connecting,
         NpgsqlException npgsql => npgsql.IsTransient,
-        TimeoutException => true,
-        InvalidOperationException { InnerException: { } inner } => IsUnreachable(inner),
+        TimeoutException => connecting,
+        InvalidOperationException { InnerException: { } inner } => IsUnreachable(inner, connecting),
         _ => false,
     };
+
+    private async Task<ReportingResult<T>> OnPrimaryAsync<T>(Guid? facilityId, string what, Func<HospitalDbContext, Task<T>> work, Exception ex)
+    {
+        logger.LogWarning(ex, "Reporting replica unavailable; {What} falls back to the primary database", what);
+        await using var primary = CreatePrimary(facilityId);
+        return new ReportingResult<T>(await work(primary), ReportingDatabase.FallbackLabel);
+    }
 }
 
 /// <summary>The identity a reporting context runs as: only the facility matters (it drives the facility filter).</summary>

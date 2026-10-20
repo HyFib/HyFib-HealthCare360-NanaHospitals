@@ -64,6 +64,24 @@ public sealed class ReportingReplicaTests(HospitalServer server)
         runs.ShouldBe(1);
     }
 
+    [Fact]
+    public async Task A_query_that_runs_past_its_time_on_the_replica_is_not_run_again_on_the_live_database()
+    {
+        // The replica answers, but the report takes longer than the replica's command timeout: the heavy work the replica
+        // is for must not move to the wards' database.
+        await using var replica = await TestDatabase.CreateAsync(Ct);
+        await using var scope = server.Services.CreateAsyncScope();
+        var runs = 0;
+
+        await Should.ThrowAsync<Exception>(() => Factory(scope.ServiceProvider, replica.ConnectionString).RunAsync(null, "an IT query", db =>
+        {
+            runs++;
+            db.Database.SetCommandTimeout(1);
+            return db.Database.SqlQuery<string>($"SELECT pg_sleep(3)::text AS \"Value\"").SingleAsync(Ct);
+        }, Ct));
+        runs.ShouldBe(1);
+    }
+
     private async Task<(string Database, string Source)> WhichDatabaseAsync(string? replica)
     {
         await using var scope = server.Services.CreateAsyncScope();
