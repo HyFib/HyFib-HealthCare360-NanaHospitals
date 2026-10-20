@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -12,9 +13,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -68,6 +71,50 @@ public sealed class ScaleOutTests(HospitalServer server)
 
         (await SecondNode.EventuallyAsync(async () => await other.Sessions.GetStateAsync(session, Ct) == SessionState.Ended, AtOnce, Ct))
             .ShouldBeTrue("the other node should refuse the session as soon as it ends");
+    }
+
+    /// <summary>
+    /// The signal that a session ended goes out once the end is saved. Sent before, it would reach the other node while the
+    /// session was still active in the database: a request there would read it as active and keep that for 30 seconds,
+    /// with no signal after the save to undo it (a stolen device, or the account of someone who left, kept working).
+    /// </summary>
+    [Theory]
+    [InlineData("revoke-sessions")]
+    [InlineData("revoke-device")]
+    public async Task A_session_read_on_another_node_while_it_is_being_ended_is_not_kept_there(string how)
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var device = how == "revoke-device" ? await EnrolAsync(admin) : ((Guid Id, string Secret)?)null;
+        var (user, session) = await SignedInUserAsync(admin, device);
+        var heard = new SignalsHeard(SessionValidator.SignalTopic);
+        await using var other = await SecondNode.StartAsync(server, Ct, services => services.AddSingleton<IClusterCache>(heard));
+        (await other.Sessions.GetStateAsync(session, Ct)).ShouldBe(SessionState.Active);
+
+        // The session's row is held, so the administrator's change waits at its save, past where a signal sent too early
+        // would have gone.
+        await using var holder = await OpenAsync();
+        await using var hold = await holder.BeginTransactionAsync(Ct);
+        await using (var lockRow = new NpgsqlCommand("SELECT 1 FROM identity.user_sessions WHERE id = @id FOR UPDATE", holder, hold))
+        {
+            lockRow.Parameters.AddWithValue("id", session);
+            await lockRow.ExecuteNonQueryAsync(Ct);
+        }
+
+        var ending = how == "revoke-device"
+            ? admin.PostAsync($"/api/v1/admin/devices/{device!.Value.Id}/revoke")
+            : admin.PostAsync($"/api/v1/admin/users/{user}/revoke-sessions");
+        (await SecondNode.EventuallyAsync(() => IsWaitingForAsync(holder.ProcessID), TimeSpan.FromSeconds(30), Ct))
+            .ShouldBeTrue("the change should be waiting for the session's row");
+
+        // A request on the other node now, once any signal sent so far has arrived, finds the session still active.
+        await SecondNode.EventuallyAsync(() => Task.FromResult(heard.Contains(session.ToString("N"))), TimeSpan.FromSeconds(2), Ct);
+        (await other.Sessions.GetStateAsync(session, Ct)).ShouldBe(SessionState.Active, "the change is not saved yet");
+
+        await hold.RollbackAsync(Ct);
+        await ending;
+
+        (await SecondNode.EventuallyAsync(async () => await other.Sessions.GetStateAsync(session, Ct) == SessionState.Ended, AtOnce, Ct))
+            .ShouldBeTrue("the other node should refuse the session as soon as its end is saved");
     }
 
     [Fact]
@@ -183,21 +230,51 @@ public sealed class ScaleOutTests(HospitalServer server)
     private static ClusterStore Store(IServiceProvider node, TimeProvider clock) =>
         new(node.GetRequiredService<IServiceScopeFactory>(), clock);
 
-    /// <summary>A new staff account, signed in once (with its temporary password); its id and the session's.</summary>
-    private async Task<(Guid User, Guid Session)> SignedInUserAsync(ApiClient admin)
+    /// <summary>
+    /// A new staff account, signed in once (with its temporary password), from <paramref name="device"/> when given; its id
+    /// and the session's.
+    /// </summary>
+    private async Task<(Guid User, Guid Session)> SignedInUserAsync(ApiClient admin, (Guid Id, string Secret)? device = null)
     {
         var roleId = (await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles")).Single(r => r.Name == SystemRoles.Billing).Id;
         var facility = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId;
         var name = "it-scale-" + Guid.NewGuid().ToString("N")[..8];
         var created = await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
             name, name, Email: null, Phone: null, [roleId], facility is { } f ? [f] : [], facility, PractitionerId: null, TemporaryPassword: null));
-        using var signedIn = await server.AnonymousFrom(NewAddress()).SendRawAsync(HttpMethod.Post, "/api/v1/auth/login", new LoginRequest(name, created.TemporaryPassword));
+        using var signedIn = await server.AnonymousFrom(NewAddress()).SendRawAsync(HttpMethod.Post, "/api/v1/auth/login",
+            new LoginRequest(name, created.TemporaryPassword, DeviceId: device?.Id, DeviceSecret: device?.Secret));
         signedIn.StatusCode.ShouldBe(HttpStatusCode.OK);
 
         await using var scope = server.Services.CreateAsyncScope();
         var session = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserSession>()
             .Where(s => s.UserId == created.UserId).Select(s => s.Id).SingleAsync(Ct);
         return (created.UserId, session);
+    }
+
+    /// <summary>A newly enrolled workstation: its id and secret.</summary>
+    private async Task<(Guid Id, string Secret)> EnrolAsync(ApiClient admin)
+    {
+        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+            new CreateEnrollmentCodeRequest(DeviceKind.Workstation, null, "Scale-out test", 30));
+        var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
+            new EnrollDeviceRequest(code.Code, "Scale-out test " + Guid.NewGuid().ToString("N")[..6], "OPD-PC-1", "Windows 11", "1.0.0"));
+        return (enrolled.DeviceId, enrolled.DeviceSecret);
+    }
+
+    private async Task<NpgsqlConnection> OpenAsync()
+    {
+        var connection = new NpgsqlConnection(server.Services.GetRequiredService<IConfiguration>().GetConnectionString("Hospital"));
+        await connection.OpenAsync(Ct);
+        return connection;
+    }
+
+    /// <summary>Whether a statement on another connection is waiting for a lock the connection <paramref name="pid"/> holds.</summary>
+    private async Task<bool> IsWaitingForAsync(int pid)
+    {
+        await using var connection = await OpenAsync();
+        await using var command = new NpgsqlCommand("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE @pid = ANY(pg_blocking_pids(pid)))", connection);
+        command.Parameters.AddWithValue("pid", pid);
+        return (bool)(await command.ExecuteScalarAsync(Ct))!;
     }
 
     /// <summary>
@@ -258,6 +335,18 @@ public sealed class ScaleOutTests(HospitalServer server)
         public void Publish(string topic, string? argument = null)
         {
         }
+    }
+
+    /// <summary>A cache on a node that keeps nothing but the signals it hears for <paramref name="topic"/>.</summary>
+    private sealed class SignalsHeard(string topic) : IClusterCache
+    {
+        private readonly ConcurrentDictionary<string, bool> _heard = new(StringComparer.Ordinal);
+
+        public string Topic => topic;
+
+        public bool Contains(string argument) => _heard.ContainsKey(argument);
+
+        public void Expire(string? argument) => _heard.TryAdd(argument ?? string.Empty, true);
     }
 
     private sealed class ManualClock(DateTimeOffset start) : TimeProvider

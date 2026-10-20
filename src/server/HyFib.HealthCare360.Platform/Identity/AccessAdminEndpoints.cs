@@ -277,13 +277,13 @@ internal static class AccessAdminEndpoints
         user.Facilities.RemoveAll(f => !facilityIds.Contains(f.FacilityId));
         user.Facilities.AddRange(facilityIds.Where(f => user.Facilities.All(x => x.FacilityId != f)).Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
 
-        if (wasActive && !user.IsActive)
-        {
-            await RevokeAllSessionsAsync(db, sessions, user.Id, "user_deactivated", time.GetUtcNow(), ct);
-        }
+        var ended = wasActive && !user.IsActive
+            ? await RevokeAllSessionsAsync(db, user.Id, "user_deactivated", time.GetUtcNow(), ct)
+            : [];
 
         audit.Add(new AuditEntry(AuditCategories.Admin, "user.updated", $"Updated user {user.UserName}") { EntityType = nameof(User), EntityId = user.Id.ToString() });
         await db.SaveChangesAsync(ct);
+        Invalidate(sessions, ended);
         permissions.Invalidate(user.Id);
         return TypedResults.NoContent();
     }
@@ -326,7 +326,7 @@ internal static class AccessAdminEndpoints
         // The lock-screen PIN goes too: whoever may know the old password may know it. Until the account's holder sets a
         // new one, their screen unlocks with the password.
         user.PinHash = null;
-        await RevokeAllSessionsAsync(db, sessions, user.Id, "password_reset", now, ct);
+        var ended = await RevokeAllSessionsAsync(db, user.Id, "password_reset", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.password_reset", $"Password reset for {user.UserName}")
         {
             EntityType = nameof(User),
@@ -335,6 +335,7 @@ internal static class AccessAdminEndpoints
         });
         CredentialNotices.QueueEmail(notifications, user, CredentialNotices.PasswordReset, now);
         await db.SaveChangesAsync(ct);
+        Invalidate(sessions, ended);
         await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.PasswordReset, ct);
         return TypedResults.Ok(new TemporaryPasswordResponse(user.Id, password, user.TemporaryPasswordExpiresAt.Value));
     }
@@ -389,7 +390,7 @@ internal static class AccessAdminEndpoints
         user.MfaSecret = null;
         user.MfaLastTimeStep = null;
         // A lost or stolen authenticator: whoever holds it keeps no session either.
-        await RevokeAllSessionsAsync(db, sessions, user.Id, "mfa_reset", now, ct);
+        var ended = await RevokeAllSessionsAsync(db, user.Id, "mfa_reset", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.mfa_reset", $"Two-step verification reset for {user.UserName}")
         {
             EntityType = nameof(User),
@@ -398,6 +399,7 @@ internal static class AccessAdminEndpoints
         });
         CredentialNotices.QueueEmail(notifications, user, CredentialNotices.MfaReset, now);
         await db.SaveChangesAsync(ct);
+        Invalidate(sessions, ended);
         await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.MfaReset, ct);
         return TypedResults.NoContent();
     }
@@ -418,9 +420,10 @@ internal static class AccessAdminEndpoints
             return mayManage.Error!.ToProblem();
         }
 
-        await RevokeAllSessionsAsync(db, sessions, id, "revoked_by_admin", time.GetUtcNow(), ct);
+        var ended = await RevokeAllSessionsAsync(db, id, "revoked_by_admin", time.GetUtcNow(), ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.sessions_revoked", "All sessions revoked") { EntityType = nameof(User), EntityId = id.ToString() });
         await db.SaveChangesAsync(ct);
+        Invalidate(sessions, ended);
         return TypedResults.NoContent();
     }
 
@@ -645,13 +648,30 @@ internal static class AccessAdminEndpoints
     private static async Task<IReadOnlySet<string>> CallerPermissionsAsync(ICurrentUser current, IPermissionService permissions, CancellationToken ct) =>
         current.UserId is { } callerId ? await permissions.GetPermissionsAsync(callerId, ct) : new HashSet<string>(StringComparer.Ordinal);
 
-    private static async Task RevokeAllSessionsAsync(HospitalDbContext db, ISessionValidator validator, Guid userId, string reason, DateTimeOffset now, CancellationToken ct)
+    /// <summary>
+    /// Ends the user's open sessions in <paramref name="db"/>, unsaved, and returns them: the caller saves, then tells every
+    /// server with <see cref="Invalidate"/>.
+    /// </summary>
+    private static async Task<List<UserSession>> RevokeAllSessionsAsync(HospitalDbContext db, Guid userId, string reason, DateTimeOffset now, CancellationToken ct)
     {
         var active = await db.Set<UserSession>().Where(s => s.UserId == userId && s.RevokedAt == null).ToListAsync(ct);
         foreach (var session in active)
         {
             session.RevokedAt = now;
             session.RevokedReason = reason;
+        }
+
+        return active;
+    }
+
+    /// <summary>
+    /// Once their end is saved, never before: another server told sooner could read a session as still active and keep that
+    /// for the 30 seconds it caches it (SCAL-01).
+    /// </summary>
+    private static void Invalidate(ISessionValidator validator, IEnumerable<UserSession> ended)
+    {
+        foreach (var session in ended)
+        {
             validator.Invalidate(session.Id);
         }
     }

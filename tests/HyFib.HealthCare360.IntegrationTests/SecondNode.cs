@@ -26,8 +26,11 @@ internal sealed class SecondNode : IAsyncDisposable
 
     public IClusterSignals Signals => _services.GetRequiredService<IClusterSignals>();
 
-    /// <summary>Starts the node and waits until it hears the cache signals, as a node does a moment after it starts.</summary>
-    public static async Task<SecondNode> StartAsync(HospitalServer server, CancellationToken ct)
+    /// <summary>
+    /// Starts the node and waits until it hears the cache signals, as a node does a moment after it starts.
+    /// <paramref name="configure"/> may add services after the node's own, such as a cache that records the signals heard.
+    /// </summary>
+    public static async Task<SecondNode> StartAsync(HospitalServer server, CancellationToken ct, Action<IServiceCollection>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(server);
         var configuration = server.Services.GetRequiredService<IConfiguration>();
@@ -51,6 +54,7 @@ internal sealed class SecondNode : IAsyncDisposable
         services.AddSingleton<ISessionValidator>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddSingleton<IClusterStore, ClusterStore>();
+        configure?.Invoke(services);
 
         var node = new SecondNode(services.BuildServiceProvider());
         await node._services.GetRequiredService<ClusterSignals>().StartAsync(ct);

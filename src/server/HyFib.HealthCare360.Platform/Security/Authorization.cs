@@ -72,8 +72,13 @@ public interface IPermissionService
 
     ValueTask<bool> HasPermissionAsync(Guid userId, string permission, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Forgets the user's permissions here and on every other server. Call it once the change is saved, as
+    /// <see cref="ISessionValidator.Invalidate"/>.
+    /// </summary>
     void Invalidate(Guid userId);
 
+    /// <summary>Forgets everybody's permissions here and on every other server, once the change is saved.</summary>
     void InvalidateAll();
 }
 
@@ -179,6 +184,11 @@ public interface ISessionValidator
 {
     ValueTask<SessionState> GetStateAsync(Guid sessionId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Forgets what this server and every other one cached about the session. Call it once the change to the session is
+    /// saved (committed), never before: another server told sooner may read the session as it was and cache that, and
+    /// nothing tells it again (SCAL-01).
+    /// </summary>
     void Invalidate(Guid sessionId);
 }
 
