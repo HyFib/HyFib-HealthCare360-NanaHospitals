@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
     Adapters for external systems (SRS §5): SMS, WhatsApp, e-mail, Tally, payment gateway, POS, PACS/DICOMweb,
-    laboratory analysers (HL7/ASTM over TCP), biometric attendance, barcode/label printing and ICD lookup.
+    laboratory analysers (HL7/ASTM over TCP), biometric attendance, Aadhaar authentication of fingerprints, barcode/label
+    printing and ICD lookup.
     Every adapter has a Simulator provider so the hospital can train without real credentials.
   -->
   <PropertyGroup>

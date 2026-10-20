@@ -203,6 +203,79 @@ public interface IAttendanceTerminalClient
     Task<string?> PunchOnTrainingTerminalAsync(AttendanceTerminal terminal, string pin, DateTime localTime, CancellationToken cancellationToken);
 }
 
+// ---------- Aadhaar authentication with a fingerprint (INT-BIO) ----------
+/// <summary>
+/// How the facility's Aadhaar authentication is set up, for the workstation that captures the fingerprint: what to ask
+/// the RD service for, or why fingerprints cannot be checked.
+/// </summary>
+/// <param name="Provider"><c>uidai</c>, <c>simulator</c>, or null when Aadhaar authentication is not available.</param>
+/// <param name="Problem">Why it is not available, in words for staff.</param>
+/// <param name="Environment">The UIDAI environment captures must be encrypted for: <c>P</c>, <c>PP</c> or <c>S</c>.</param>
+/// <param name="FingerDataType">The RD <c>fType</c> to ask for: 0 minutiae, 1 image, 2 both.</param>
+/// <param name="Training">The simulator answers: a training capture may be used where no reader is connected.</param>
+public sealed record AadhaarCaptureSetup(
+    string? Provider,
+    string? Problem,
+    string Environment = "P",
+    int FingerDataType = 2,
+    int FingerCount = 1,
+    int TimeoutSeconds = 15,
+    bool Training = false);
+
+/// <summary>A fingerprint to check against an Aadhaar number with UIDAI.</summary>
+/// <param name="AadhaarNumber">The 12-digit Aadhaar number or the 16-digit Virtual ID, as given; never stored.</param>
+/// <param name="PidData">The RD service's <c>PidData</c> document, as the device returned it (encrypted for UIDAI).</param>
+/// <param name="ResidentConsented">The person agreed to Aadhaar authentication, after being told what it is for.</param>
+/// <param name="FacilityId">Facility whose settings apply (null: the signed-in user's).</param>
+public sealed record AadhaarFingerprintCheck(string AadhaarNumber, string PidData, bool ResidentConsented, Guid? FacilityId = null);
+
+public enum AadhaarCheckOutcome
+{
+    /// <summary>UIDAI says the fingerprint belongs to the Aadhaar number.</summary>
+    Verified,
+
+    /// <summary>UIDAI says it does not, or the number cannot be authenticated (cancelled, biometrics locked…).</summary>
+    NotVerified,
+
+    /// <summary>UIDAI could not be asked or did not answer: nothing is known about the person.</summary>
+    Failed,
+}
+
+/// <summary>What UIDAI answered, without the Aadhaar number or anything biometric.</summary>
+/// <param name="Message">The outcome in words for staff.</param>
+/// <param name="ErrorCode">UIDAI's error code (<c>err</c>) when it refused, such as <c>300</c> for a fingerprint that did not match.</param>
+/// <param name="TransactionId">The transaction id HC360 sent (<c>txn</c>).</param>
+/// <param name="ResponseCode">UIDAI's code for the authentication (<c>AuthRes/@code</c>), the reference to quote to UIDAI.</param>
+/// <param name="DeviceProviderId">The capturing device's provider (<c>dpId</c>), for the record.</param>
+/// <param name="DeviceModelId">The capturing device's model (<c>mi</c>), for the record.</param>
+public sealed record AadhaarCheckResult(
+    AadhaarCheckOutcome Outcome,
+    string Message,
+    string Provider,
+    string? ErrorCode = null,
+    string? TransactionId = null,
+    string? ResponseCode = null,
+    string? DeviceProviderId = null,
+    string? DeviceModelId = null)
+{
+    public static AadhaarCheckResult Fail(string provider, string message) => new(AadhaarCheckOutcome.Failed, message, provider);
+}
+
+/// <summary>
+/// Checks a fingerprint captured by a UIDAI registered device against an Aadhaar number (SRS INT-BIO). A registered
+/// device encrypts the fingerprint for UIDAI before it leaves the reader, so only UIDAI can match it: HC360 sends it,
+/// with the number, through the authentication service agency (ASA) of the AUA licence the hospital holds. The number
+/// and the capture are used for the one request and kept nowhere, and the person must have agreed first.
+/// </summary>
+public interface IAadhaarAuthenticator
+{
+    /// <summary>What the workstation should capture, or why it need not.</summary>
+    Task<AadhaarCaptureSetup> SetupAsync(Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>Asks UIDAI. Never throws for an unusable request or a failed call: the result says why.</summary>
+    Task<AadhaarCheckResult> AuthenticateAsync(AadhaarFingerprintCheck check, CancellationToken cancellationToken);
+}
+
 // ---------- Accounting (Tally) ----------
 public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsDebit, string? CostCentre = null);
 

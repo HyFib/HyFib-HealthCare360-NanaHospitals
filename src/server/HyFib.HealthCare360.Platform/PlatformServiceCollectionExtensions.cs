@@ -309,6 +309,7 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddScoped<IEmailSender>(sp => sp.GetRequiredService<UnconfiguredChannelSender>());
         services.TryAddSingleton<IPdfRenderer, UnavailablePdfRenderer>();
         services.TryAddScoped<IIntegrationHealthSource, NoIntegrationHealthSource>();
+        services.TryAddScoped<IAadhaarAuthenticator, UnconfiguredAadhaarAuthenticator>();
 
         // ---------------- background work
         if (options.RunsJobs)
