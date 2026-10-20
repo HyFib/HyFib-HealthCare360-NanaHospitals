@@ -8,7 +8,10 @@ chronic-medication refills with reminders; and the pharmacist dashboard. SRS **P
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Pharmacy` (references SupplyChain for stock and Patients).
 Schema `pharmacy`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Pharmacy.Tests` (58 unit and EF-model tests).
 All stock movements go through SupplyChain's `StockService` (see `supplychain.md`) in the same transaction as the
-pharmacy document. The pharmacy never changes batch quantities itself.
+pharmacy document. The pharmacy never changes batch quantities itself. A pharmacy store's stock positions and its
+reorder, near-expiry and expired-stock reports (PH-04) are SupplyChain's stock screen (`/api/v1/inventory/stock`) and
+inventory reports, read with the store's id; `PharmacyStockReportTests` in `tests/HyFib.HealthCare360.IntegrationTests`
+proves them on stock received with chosen batches and expiry dates.
 
 ## Permissions
 
