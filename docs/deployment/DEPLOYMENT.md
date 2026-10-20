@@ -259,7 +259,8 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
    password works for 72 hours; after that, reset the password to give out a new one.
 5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
-   `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server WiFi drops or a backup fails).
+   `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server's WiFi drops, its signal stays weak for a minute
+   or its network is not secure, or a backup fails).
 6. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a
