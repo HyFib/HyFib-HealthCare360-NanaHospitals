@@ -224,7 +224,10 @@ internal static class Certificates
         using var key = RSA.Create(2048);
         var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         using var created = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
-        return X509CertificateLoader.LoadPkcs12(created.Export(X509ContentType.Pfx, "pw"), "pw", X509KeyStorageFlags.EphemeralKeySet);
+        // Exportable, for Pfx: Windows refuses to export a private key loaded without it ("Key not valid for use in
+        // specified state"); Linux does not check.
+        return X509CertificateLoader.LoadPkcs12(created.Export(X509ContentType.Pfx, "pw"), "pw",
+            X509KeyStorageFlags.EphemeralKeySet | X509KeyStorageFlags.Exportable);
     }
 
     /// <summary>The certificate with its private key as the Aadhaar settings take it: a .pfx file, base64.</summary>
