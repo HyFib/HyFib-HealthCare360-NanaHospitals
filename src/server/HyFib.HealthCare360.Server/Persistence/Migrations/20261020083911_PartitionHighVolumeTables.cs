@@ -41,9 +41,18 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
         internal const int MonthsBack = 15 * 12;
 
+        /// <summary>
+        /// How long the migration waits for each table's lock before it gives up, rolls back and stops the start-up with
+        /// "canceling statement due to lock timeout". A lock held longer means something still uses the table (another
+        /// HC360 server left running, or a reporting tool with a transaction open): waiting for it would hang the
+        /// upgrade, and every audit write would queue behind the waiting lock meanwhile.
+        /// </summary>
+        internal const string LockTimeoutSql = "SET LOCAL lock_timeout = '30s'";
+
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(LockTimeoutSql);
             migrationBuilder.DropIndex(
                 name: "ix_audit_events_chain_index",
                 schema: "audit",
@@ -62,6 +71,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(LockTimeoutSql);
             migrationBuilder.Sql(UnpartitionSql);
 
             migrationBuilder.DropIndex(

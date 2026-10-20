@@ -1044,7 +1044,9 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
   can be stopped or added at any time.
 - **Upgrades:** stop every node. Upgrade and start the job node first: it backs up the database, applies the database
   changes and starts. Then upgrade and start the API nodes. An upgrade that partitions large tables (below) may take
-  some minutes on the job node before it is ready.
+  some minutes on the job node before it is ready. If it stops with "canceling statement due to lock timeout",
+  something still uses those tables (a node left running, or a reporting tool with a transaction open): nothing has
+  changed, so stop it and start the job node again.
 - **Rotating keys** (section 3) works on any node: the others use the new key within ten seconds, and accept tokens
   signed with it at once.
 - **Restoring** a backup (section 8): stop every node, restore on the job node (its settings name the shared folder, so

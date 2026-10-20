@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
@@ -41,6 +42,34 @@ public sealed class PartitionMigrationTests(HospitalServer server)
     private static readonly int[] MonthsWithRows = [-12 * 20, -40, -13, -2, -1, 0, 1, 12 * 5];
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task An_upgrade_that_cannot_lock_a_table_stops_and_leaves_the_tables_as_they_were()
+    {
+        await using var database = await TestDatabase.CreateAsync(Ct);
+        await using var db = Context(database.ConnectionString);
+        var migrator = db.GetService<IMigrator>();
+        var target = typeof(PartitionHighVolumeTables).GetCustomAttribute<MigrationAttribute>()!.Id;
+        var migrations = db.Database.GetMigrations().ToList();
+        await migrator.MigrateAsync(migrations[migrations.IndexOf(target) - 1], Ct);
+
+        // Another HC360 server left running, or a reporting tool with a transaction open, reading the audit trail.
+        await using var other = new NpgsqlConnection(database.ConnectionString);
+        await other.OpenAsync(Ct);
+        await using var reading = await other.BeginTransactionAsync(Ct);
+        await ExecuteAsync(other, "LOCK TABLE audit.audit_events IN ACCESS SHARE MODE");
+
+        // The upgrade gives up after the lock timeout, with PostgreSQL's own reason, instead of waiting for ever.
+        var waited = Stopwatch.StartNew();
+        var refused = await Should.ThrowAsync<Exception>(() => migrator.MigrateAsync(target, Ct));
+        waited.Elapsed.ShouldBeLessThan(TimeSpan.FromMinutes(1));
+        (refused as PostgresException ?? refused.InnerException as PostgresException).ShouldNotBeNull().SqlState
+            .ShouldBe(PostgresErrorCodes.LockNotAvailable);
+        await reading.RollbackAsync(Ct);
+
+        (await RelationKindsAsync(database.ConnectionString)).ShouldAllBe(k => k == "r");
+        (await db.Database.GetAppliedMigrationsAsync(Ct)).ShouldNotContain(target);
+    }
 
     [Fact]
     public async Task Partitioning_keeps_every_row_puts_each_in_its_month_and_can_be_undone()
