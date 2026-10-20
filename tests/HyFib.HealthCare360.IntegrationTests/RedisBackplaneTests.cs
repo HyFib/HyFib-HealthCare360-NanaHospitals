@@ -1,3 +1,6 @@
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
+using HyFib.HealthCare360.Modules.VirtualCare.Hubs;
 using HyFib.HealthCare360.Platform.Realtime;
 using HyFib.HealthCare360.Server;
 using Microsoft.AspNetCore.Builder;
@@ -17,8 +20,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// SRS SCAL-02: with <c>ConnectionStrings:Redis</c>, the server's SignalR set-up (<see cref="ServerComposition"/>) shares
 /// real-time groups through Redis, so an event raised on one node reaches a client connected to another. Redis being away
 /// does not stop a node: it starts, reports the backplane Degraded on <c>/health/ready</c>, and an event it cannot send
-/// is logged without failing the change that raised it (REL-03). The two-node test needs a Redis server: set
-/// <see cref="RedisVariable"/> (CI does not run one, and skips it).
+/// is logged without failing the change that raised it (REL-03), telehealth pushes included. The two-node test needs a
+/// Redis server: set <see cref="RedisVariable"/> (CI does not run one, and skips it).
 /// </summary>
 public sealed class RedisBackplaneTests
 {
@@ -61,6 +64,13 @@ public sealed class RedisBackplaneTests
         var publisher = new SignalRRealtimePublisher(
             node.Services.GetRequiredService<IHubContext<EventsHub>>(), TimeProvider.System, NullLogger<SignalRRealtimePublisher>.Instance);
         await Should.NotThrowAsync(() => publisher.PublishAsync(Topics.Facility(Guid.NewGuid()), "bed.changed", cancellationToken: Ct));
+
+        // A telehealth chat message is saved before it is pushed to the call: the request that saved it succeeds, so nobody
+        // sends it again and puts it in the consultation record twice.
+        var telehealth = new TelehealthBroadcaster(
+            node.Services.GetRequiredService<IHubContext<TelehealthHub>>(), publisher, NullLogger<TelehealthBroadcaster>.Instance);
+        var message = new TelehealthMessageDto(Guid.NewGuid(), TelehealthRole.Clinician, "Dr. Rao", "Can you hear me?", DateTimeOffset.UtcNow);
+        await Should.NotThrowAsync(() => telehealth.ChatAsync(Guid.NewGuid(), message, Ct));
     }
 
     /// <summary>A node with the server's real-time set-up and a hub to join a group on, on the Redis server given.</summary>

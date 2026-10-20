@@ -270,7 +270,9 @@ export class PatientCall {
     if (!clean) {
       return;
     }
-    await this.requireHub().invoke('SendChat', this.options.sessionId, clean);
+    // Shown from the reply too: the room's echo may not come (with several servers, while the backplane is away).
+    const message = await this.requireHub().invoke<TelehealthMessageDto>('SendChat', this.options.sessionId, clean);
+    this.update({ messages: mergeMessages(this.state.messages, [message]) });
   }
 
   /** Rebuilds the video link: leave and re-enter the room, so the doctor's console sends a fresh offer. */

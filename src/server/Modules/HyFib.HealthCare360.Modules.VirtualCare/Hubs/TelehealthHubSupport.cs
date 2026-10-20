@@ -91,6 +91,13 @@ public sealed class TelehealthBroadcaster(IHubContext<TelehealthHub> hub, IRealt
         await realtime.ToFacilityAsync(session.FacilityId, ChangedEvent, new { session.Id, session.Status, session.PractitionerId }, ct);
     }
 
+    /// <summary>
+    /// Shows a chat message, already saved, to the call. A message that cannot be pushed is still in the consultation's
+    /// chat, which call screens read when they reconnect; failing the request that saved it would have it sent again.
+    /// </summary>
+    public Task ChatAsync(Guid sessionId, TelehealthMessageDto message, CancellationToken ct) =>
+        PushAsync("chatMessage", () => hub.Clients.Group(TelehealthGroups.Room(sessionId)).SendAsync("chatMessage", message, ct));
+
     private async Task PushAsync(string what, Func<Task> send)
     {
         try
@@ -102,7 +109,4 @@ public sealed class TelehealthBroadcaster(IHubContext<TelehealthHub> hub, IRealt
             logger.LogWarning(ex, "Telehealth push {Event} could not be sent", what);
         }
     }
-
-    public Task ChatAsync(Guid sessionId, TelehealthMessageDto message, CancellationToken ct) =>
-        hub.Clients.Group(TelehealthGroups.Room(sessionId)).SendAsync("chatMessage", message, ct);
 }

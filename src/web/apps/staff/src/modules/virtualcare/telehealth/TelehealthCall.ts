@@ -209,12 +209,12 @@ export class TelehealthCall {
     if (!clean) {
       return;
     }
-    if (this.hub?.state === 'Connected') {
-      await this.hub.invoke('SendChat', this.options.sessionId, clean);
-      return;
-    }
-    // Signalling is down (WiFi drop): the REST endpoint stores the message and relays it to the room.
-    const message = await telehealthApi.postMessage(this.options.sessionId, clean);
+    // While signalling is down (WiFi drop), the REST endpoint stores the message and relays it to the room. Either way the
+    // reply shows it here too: the room's echo may not come (with several servers, while the backplane is away).
+    const message =
+      this.hub?.state === 'Connected'
+        ? await this.hub.invoke<TelehealthMessageDto>('SendChat', this.options.sessionId, clean)
+        : await telehealthApi.postMessage(this.options.sessionId, clean);
     this.update({ messages: mergeMessages(this.state.messages, [message]) });
   }
 
