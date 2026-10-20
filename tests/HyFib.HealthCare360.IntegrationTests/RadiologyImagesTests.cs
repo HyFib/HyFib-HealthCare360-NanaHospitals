@@ -113,7 +113,7 @@ public sealed class RadiologyImagesTests(HospitalServer server)
         var surname = "Imaging" + new string(Enumerable.Range(0, 8).Select(_ => (char)('a' + Random.Shared.Next(26))).ToArray());
         var phone = "9" + Random.Shared.Next(100_000_000, 999_999_999).ToString(System.Globalization.CultureInfo.InvariantCulture);
         return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mrs.", FirstName: "Anita", MiddleName: null, LastName: surname, Gender: Gender.Female,
+            Title: "Mrs.", FirstName: TestPatients.FirstName("Anita"), MiddleName: null, LastName: surname, Gender: Gender.Female,
             DateOfBirth: new DateOnly(1975, 6, 15), AgeYears: null, AgeMonths: null,
             Phone: phone, AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,

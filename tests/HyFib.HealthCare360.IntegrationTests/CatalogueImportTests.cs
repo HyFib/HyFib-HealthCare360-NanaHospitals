@@ -258,7 +258,7 @@ public sealed class CatalogueImportTests(HospitalServer server)
 
     private static Task<PatientCreated> RegisterPatientAsync(ApiClient frontOffice) =>
         frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: "Coder" + Random(6, 'a', 26), MiddleName: null, LastName: "Catalogue" + Random(8, 'a', 26),
+            Title: "Mr.", FirstName: TestPatients.FirstName("Coder"), MiddleName: null, LastName: "Catalogue" + Random(8, 'a', 26),
             Gender: Gender.Male, DateOfBirth: new DateOnly(1970, 1, 1).AddDays(System.Random.Shared.Next(3650)),
             AgeYears: null, AgeMonths: null, Phone: "9" + Random(9, '0', 10), AlternatePhone: null, Email: null,
             Address: null, BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null,

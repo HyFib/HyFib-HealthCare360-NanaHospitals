@@ -210,7 +210,7 @@ public sealed class CardiologyPacsTests(HospitalServer server)
         var phone = "9" + Random.Shared.Next(100_000_000, 999_999_999).ToString(CultureInfo.InvariantCulture);
         var born = new DateOnly(1940, 1, 1).AddDays(Random.Shared.Next(0, 365 * 50));
         return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mrs.", FirstName: "Kavitha", MiddleName: null, LastName: surname, Gender: Gender.Female,
+            Title: "Mrs.", FirstName: TestPatients.FirstName("Kavitha"), MiddleName: null, LastName: surname, Gender: Gender.Female,
             DateOfBirth: born, AgeYears: null, AgeMonths: null,
             Phone: phone, AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
