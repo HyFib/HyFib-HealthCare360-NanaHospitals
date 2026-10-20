@@ -320,10 +320,14 @@ public sealed class RetentionService(
         await DeleteAsync(db.Set<IntegrationLog>().IgnoreQueryFilters().Where(l => l.CreatedAt < before), l => l.Id, countOnly, ct)
         + await DeleteAsync(db.Set<Billing.Domain.GatewayWebhookEvent>().Where(e => e.ReceivedAt < before), e => e.Id, countOnly, ct);
 
-    /// <summary>Old sign-in code requests, sessions that ended before the cut-off, and refresh tokens past their expiry.</summary>
+    /// <summary>
+    /// Old sign-in code requests, sessions that ended before the cut-off, refresh tokens past their expiry, and
+    /// break-the-glass grants that ended before it (the audit trail keeps every emergency access).
+    /// </summary>
     private async Task<int> PurgeSignInsAsync(DateTimeOffset before, bool countOnly, CancellationToken ct)
     {
-        var removed = await DeleteAsync(db.Set<AuthChallenge>().IgnoreQueryFilters().Where(c => c.CreatedAt < before), c => c.Id, countOnly, ct);
+        var removed = await DeleteAsync(db.Set<AuthChallenge>().IgnoreQueryFilters().Where(c => c.CreatedAt < before), c => c.Id, countOnly, ct)
+            + await DeleteAsync(db.Set<BreakGlassAccess>().Where(g => g.ExpiresAt < before), g => g.Id, countOnly, ct);
         var ended = db.Set<UserSession>().IgnoreQueryFilters().Where(s => (s.RevokedAt ?? s.ExpiresAt) < before);
         var expiredTokens = db.Set<RefreshToken>().IgnoreQueryFilters().Where(t => t.ExpiresAt < before);
         if (countOnly)

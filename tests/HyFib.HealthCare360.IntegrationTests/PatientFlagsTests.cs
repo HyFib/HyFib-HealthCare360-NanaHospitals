@@ -2,6 +2,7 @@ using System.Net;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Emr;
 using HyFib.HealthCare360.Modules.Clinical.Features.Flags;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -98,6 +99,40 @@ public sealed class PatientFlagsTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Emergency_access_is_not_granted_unless_its_audit_entry_is_saved()
+    {
+        var patient = await RegisterPatientAsync(isVip: true);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+
+        // The audit trail refuses this one entry, as a full disk or a lost connection would.
+        var refuse = "it_refuse_" + Guid.NewGuid().ToString("N")[..12];
+        await ExecuteAsync($"""
+            CREATE FUNCTION public.{refuse}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'The audit trail cannot be written.'; END $$;
+            CREATE TRIGGER {refuse} BEFORE INSERT ON audit.audit_events FOR EACH ROW
+                WHEN (NEW.patient_id = '{patient.Id}' AND NEW.action = 'patient.break_glass') EXECUTE FUNCTION public.{refuse}();
+            """);
+        try
+        {
+            using var refused = await doctor.SendRawAsync(HttpMethod.Post, $"/api/v1/patients/{patient.Id}/break-glass", new BreakGlassRequest("Unconscious in casualty"));
+            refused.IsSuccessStatusCode.ShouldBeFalse();
+        }
+        finally
+        {
+            await ExecuteAsync($"DROP TRIGGER {refuse} ON audit.audit_events; DROP FUNCTION public.{refuse}();");
+        }
+
+        // No record of the emergency access, so no access: the record stays closed to the doctor.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<BreakGlassAccess>()
+                .CountAsync(g => g.PatientId == patient.Id, TestContext.Current.CancellationToken)).ShouldBe(0);
+        }
+
+        using var flags = await doctor.SendRawAsync(HttpMethod.Get, $"/api/v1/emr/patients/{patient.Id}/flags");
+        flags.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task An_unknown_patient_has_no_flags()
     {
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
@@ -129,6 +164,12 @@ public sealed class PatientFlagsTests(HospitalServer server)
             .Where(e => e.PatientId == patientId && e.UserName == userName && e.Category == AuditCategories.PhiAccess)
             .Select(e => e.Summary)
             .ToListAsync(TestContext.Current.CancellationToken);
+    }
+
+    private async Task ExecuteAsync(string sql)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Database.ExecuteSqlRawAsync(sql, TestContext.Current.CancellationToken);
     }
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));

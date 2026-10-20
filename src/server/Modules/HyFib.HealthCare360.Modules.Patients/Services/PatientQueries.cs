@@ -125,16 +125,17 @@ public sealed class PatientAccessGuard(
 
         var now = time.GetUtcNow();
         var expires = now + GrantDuration;
-        db.Add(new BreakGlassAccess { PatientId = patientId, UserId = userId, GrantedAt = now, ExpiresAt = expires });
-        await db.SaveChangesAsync(ct);
 
-        await audit.WriteAsync(new AuditEntry(AuditCategories.Security, "patient.break_glass", reason)
+        // The grant and its audit entry are saved together: no emergency access without the record of it.
+        db.Add(new BreakGlassAccess { PatientId = patientId, UserId = userId, GrantedAt = now, ExpiresAt = expires });
+        audit.Add(new AuditEntry(AuditCategories.Security, "patient.break_glass", reason)
         {
             PatientId = patientId,
             EntityType = nameof(Patient),
             EntityId = patientId.ToString(),
             Severity = AuditSeverity.Critical,
-        }, ct);
+        });
+        await db.SaveChangesAsync(ct);
 
         await notifications.NotifyPermissionHoldersAsync(
             PlatformPermissions.AuditRead,
