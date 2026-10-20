@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 using HyFib.HealthCare360.Modules.VirtualCare.Hubs;
@@ -54,8 +55,8 @@ public sealed class RedisBackplaneTests
     [Fact]
     public async Task A_node_whose_Redis_is_away_starts_reports_it_degraded_and_keeps_its_changes()
     {
-        // Nothing listens on port 1.
-        await using var node = await NodeAsync("127.0.0.1:1,connectTimeout=500,asyncTimeout=1000");
+        // Nothing listens on port 1. The client's own timeouts are left as the server has them (5 s for a command).
+        await using var node = await NodeAsync("127.0.0.1:1,connectTimeout=500");
 
         var report = await node.Services.GetRequiredService<HealthCheckService>().CheckHealthAsync(Ct);
         report.Entries["redis-backplane"].Status.ShouldBe(HealthStatus.Degraded);
@@ -63,7 +64,10 @@ public sealed class RedisBackplaneTests
         // The platform's publisher, as every module raises events: it logs what it cannot send and returns.
         var publisher = new SignalRRealtimePublisher(
             node.Services.GetRequiredService<IHubContext<EventsHub>>(), TimeProvider.System, NullLogger<SignalRRealtimePublisher>.Instance);
+        // At once: a publish that waited for Redis would hold the request that raised the event for the client's timeout.
+        var publishing = Stopwatch.StartNew();
         await Should.NotThrowAsync(() => publisher.PublishAsync(Topics.Facility(Guid.NewGuid()), "bed.changed", cancellationToken: Ct));
+        publishing.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2), "while Redis is away a publish should fail at once, not wait for it");
 
         // A telehealth chat message is saved before it is pushed to the call: the request that saved it succeeds, so nobody
         // sends it again and puts it in the consultation record twice.

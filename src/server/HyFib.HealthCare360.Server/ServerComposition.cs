@@ -49,6 +49,10 @@ public static class ServerComposition
             {
                 redisOptions.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal(RedisBackplane.ChannelPrefix);
                 redisOptions.Configuration.AbortOnConnectFail = false;
+
+                // While Redis is away, a publish fails at once and is logged (REL-03). The default backlog would hold it, and
+                // the request that raised the event, for the client's whole timeout (5 s), on every write that raises one.
+                redisOptions.Configuration.BacklogPolicy = StackExchange.Redis.BacklogPolicy.FailFast;
             });
             services.AddSingleton<RedisBackplane>();
             services.AddHealthChecks().AddCheck<RedisBackplane>(
