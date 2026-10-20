@@ -111,11 +111,15 @@ public sealed class RevokeConsentRequestValidator : AbstractValidator<RevokeCons
 
 public sealed class AttachDocumentRequestValidator : AbstractValidator<AttachDocumentRequest>
 {
-    public AttachDocumentRequestValidator()
+    public AttachDocumentRequestValidator(TimeProvider time)
     {
+        // The hospital's date (IST), which is a day ahead of UTC's between midnight and 05:30.
+        var today = time.Today();
         RuleFor(x => x.FileId).NotEmpty();
-        RuleFor(x => x.Title).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Source).MaximumLength(200);
+        RuleFor(x => x.Type).IsInEnum();
+        RuleFor(x => x.Title).NotEmpty().SafeText(200);
+        RuleFor(x => x.DocumentDate).Must(d => d is null || d <= today).WithMessage("The document date cannot be in the future.");
+        RuleFor(x => x.Source).SafeText(200);
         RuleFor(x => x.Notes).SafeText(1000);
     }
 }
@@ -515,6 +519,9 @@ internal static class FrontOfficeEndpoints
 
     // ------------------------------------------------------------------ documents
 
+    // Restricted (VIP) records: adding and removing documents need the access that lists them (the guard answers 404 for
+    // no patient). The data audit records each document added or removed, with the patient.
+
     private static async Task<IResult> ListDocuments(Guid patientId, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
     {
         var access = await guard.EnsureCanOpenAsync(patientId, ct);
@@ -536,8 +543,14 @@ internal static class FrontOfficeEndpoints
         return TypedResults.Ok(documents);
     }
 
-    private static async Task<IResult> AttachDocument(Guid patientId, AttachDocumentRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> AttachDocument(Guid patientId, AttachDocumentRequest request, HospitalDbContext db, PatientAccessGuard guard, CancellationToken ct)
     {
+        var access = await guard.EnsureCanOpenAsync(patientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
         var file = await db.Set<StoredFile>().FirstOrDefaultAsync(f => f.Id == request.FileId, ct);
         if (file is null)
         {
@@ -565,12 +578,18 @@ internal static class FrontOfficeEndpoints
         return TypedResults.Created($"/api/v1/patients/{patientId}/documents", new { document.Id });
     }
 
-    private static async Task<IResult> RemoveDocument(Guid documentId, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> RemoveDocument(Guid documentId, HospitalDbContext db, PatientAccessGuard guard, CancellationToken ct)
     {
         var document = await db.Set<PatientDocument>().FirstOrDefaultAsync(d => d.Id == documentId, ct);
         if (document is null)
         {
             return Error.NotFound("Document", documentId).ToProblem();
+        }
+
+        var access = await guard.EnsureCanOpenAsync(document.PatientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
         }
 
         db.Remove(document);

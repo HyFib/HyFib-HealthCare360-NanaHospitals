@@ -998,3 +998,9 @@ export const emrApi = {
 
 /** The A4 discharge summary as the server prints it and makes its PDF (see `@/lib/documents`). */
 export const dischargeSummaryDocument = (id: string) => `/api/v1/clinical/discharge-summaries/${id}`;
+
+/**
+ * A signed discharge summary as an ABDM health record: an NRCeS FHIR document bundle (`application/fhir+json`), while
+ * ABDM health records are switched on, for staff with `abdm.export`, of a patient who consented to share their records.
+ */
+export const abdmDischargeSummaryBundle = (id: string) => `/api/v1/abdm/discharge-summaries/${id}/bundle`;

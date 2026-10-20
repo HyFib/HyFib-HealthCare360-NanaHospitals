@@ -26,19 +26,33 @@ internal sealed class TestClock(DateTimeOffset now) : TimeProvider
 /// <summary>Answers HTTP calls with queued responses and records the requests (no network is used).</summary>
 internal sealed class StubHttpHandler : HttpMessageHandler
 {
-    private readonly Queue<Func<HttpResponseMessage>> _responses = new();
+    private readonly Queue<Func<CancellationToken, Task<HttpResponseMessage>>> _responses = new();
 
     public List<(HttpRequestMessage Request, string? Body)> Requests { get; } = [];
 
+    /// <summary>The token each request was sent with.</summary>
+    public List<CancellationToken> Tokens { get; } = [];
+
     public StubHttpHandler Respond(HttpStatusCode status, string body)
     {
-        _responses.Enqueue(() => new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+        _responses.Enqueue(_ => Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") }));
         return this;
     }
 
     public StubHttpHandler Throw(Exception exception)
     {
-        _responses.Enqueue(() => throw exception);
+        _responses.Enqueue(_ => throw exception);
+        return this;
+    }
+
+    /// <summary>Never answers: the request waits until it is cancelled.</summary>
+    public StubHttpHandler Hang()
+    {
+        _responses.Enqueue(async cancellationToken =>
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("Unreachable.");
+        });
         return this;
     }
 
@@ -46,6 +60,7 @@ internal sealed class StubHttpHandler : HttpMessageHandler
     {
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
         Requests.Add((request, body));
-        return _responses.Count == 0 ? throw new InvalidOperationException("No response queued.") : _responses.Dequeue()();
+        Tokens.Add(cancellationToken);
+        return _responses.Count == 0 ? throw new InvalidOperationException("No response queued.") : await _responses.Dequeue()(cancellationToken);
     }
 }

@@ -218,19 +218,12 @@ public sealed class MaintenanceService(
         };
         db.Add(record);
 
+        // The new certificate is only staged, so this is the latest one already on file.
         var latest = await db.Set<CalibrationRecord>().Where(c => c.AssetId == assetId).MaxAsync(c => (DateOnly?)c.CalibratedOn, ct);
-        if (latest is null || request.CalibratedOn >= latest)
+        var applied = asset.RecordCalibration(record, latest);
+        if (applied.IsFailure)
         {
-            asset.NextCalibrationDue = request.NextDueDate;
-            asset.RequiresCalibration = true;
-            if (request.Outcome == CalibrationResult.Fail && asset.IsInService)
-            {
-                var down = asset.MarkUnderMaintenance();
-                if (down.IsFailure)
-                {
-                    return down.Error!;
-                }
-            }
+            return applied.Error!;
         }
 
         await db.SaveChangesAsync(ct);

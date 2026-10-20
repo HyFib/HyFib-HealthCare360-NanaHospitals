@@ -10,6 +10,9 @@ public static class FeatureKeys
 
     /// <summary>Video consultations (telehealth), not remote patient monitoring.</summary>
     public const string Telehealth = Prefix + "telehealth";
+
+    /// <summary>ABDM health records: signed discharge summaries and prescriptions as ABDM (NRCeS) FHIR document bundles (EHR-08). Off by default.</summary>
+    public const string Abdm = Prefix + "abdm";
 }
 
 /// <summary>
@@ -20,7 +23,10 @@ public static class FeatureKeys
 /// <param name="Name">What the feature is called on screen.</param>
 /// <param name="Description">What it does, for the administrator deciding.</param>
 /// <param name="WhenOff">What stops, and what keeps working, while it is off.</param>
-/// <param name="DefaultEnabled">The value while nobody has set one (on, so an upgrade changes nothing).</param>
+/// <param name="DefaultEnabled">
+/// The value while nobody has set one: on for a feature that worked before it had a switch, so an upgrade changes
+/// nothing; off for a new feature the hospital must decide to use (ABDM health records).
+/// </param>
 /// <param name="OffTitle">The title of the 503 answer while it is off.</param>
 /// <param name="OffDetailForStaff">What a member of staff can do about it.</param>
 /// <param name="OffDetailForPatients">What a patient can do about it.</param>
@@ -67,7 +73,24 @@ public static class FeatureCatalog
         "Book an in-person visit instead. An administrator can turn video consultations back on under Hospital setup, Features.",
         "Video consultations are not available right now. Please contact the hospital to see the doctor in person.");
 
-    public static IReadOnlyList<FeatureDefinition> All { get; } = [PatientPortal, Telehealth];
+    /// <summary>
+    /// Off until an administrator turns it on: sharing records in ABDM's format is the hospital's decision, and the
+    /// hospital's ABDM registration (HFR id) should be on its facilities first.
+    /// </summary>
+    public static FeatureDefinition Abdm { get; } = new(
+        FeatureKeys.Abdm,
+        "ABDM health records",
+        "Medical records staff download a signed discharge summary or prescription in the health record format of the "
+        + "Ayushman Bharat Digital Mission (ABDM), for a patient who agreed to share their records with other providers. "
+        + "Linking ABHA numbers and sending records through ABDM itself are not part of this.",
+        "Discharge summaries and prescriptions do not offer the ABDM download, and the server refuses it. Discharge "
+        + "summaries and prescriptions, their printouts and PDFs, and the hospital's FHIR interface keep working.",
+        DefaultEnabled: false,
+        "ABDM health records are turned off",
+        "An administrator can turn them on under Hospital setup, Features.",
+        "ABDM health records are not available right now. Please contact the hospital.");
+
+    public static IReadOnlyList<FeatureDefinition> All { get; } = [PatientPortal, Telehealth, Abdm];
 
     /// <summary>The feature with this setting key, or null.</summary>
     public static FeatureDefinition? Find(string key) => All.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));

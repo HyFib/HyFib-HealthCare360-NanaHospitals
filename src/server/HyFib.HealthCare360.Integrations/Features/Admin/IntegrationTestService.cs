@@ -1,5 +1,8 @@
 using System.Globalization;
 using System.Net.Mail;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using HyFib.HealthCare360.Integrations.Aadhaar;
 using HyFib.HealthCare360.Integrations.Biometric;
 using HyFib.HealthCare360.Integrations.Features.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
@@ -53,6 +56,7 @@ internal sealed class IntegrationTestService(
             IntegrationNames.Lab => Lab(),
             IntegrationNames.Labels => await LabelsAsync(cancellationToken),
             IntegrationNames.Biometric => await BiometricAsync(cancellationToken),
+            IntegrationNames.Aadhaar => await AadhaarAsync(cancellationToken),
             _ => null,
         };
 
@@ -174,6 +178,62 @@ internal sealed class IntegrationTestService(
                 "The settings are complete. Use Read now on a terminal in HR › Attendance terminals to check that HC360 reaches it."),
             _ => new IntegrationTestResult(false, $"Unknown biometric provider '{provider}'. Use zkteco or simulator."),
         };
+    }
+
+    /// <summary>
+    /// An authentication needs a person's finger and their consent, so the test checks the settings and the AUA's
+    /// certificate: it can sign (it holds its private key) and is within its dates.
+    /// </summary>
+    private async Task<IntegrationTestResult> AadhaarAsync(CancellationToken cancellationToken)
+    {
+        var config = await settings.ReadAsync<AadhaarSettings, AadhaarSecrets>(IntegrationNames.Aadhaar, cancellationToken);
+        if (config.ActiveProvider is not { } provider)
+        {
+            return new IntegrationTestResult(false, config.Problem ?? "Aadhaar authentication is not available.");
+        }
+
+        if (provider == ProviderKeys.Simulator)
+        {
+            return config.Settings!.CaptureProblem() is { } capture
+                ? new IntegrationTestResult(false, capture)
+                : new IntegrationTestResult(true,
+                    "The training simulator is ready. Verify a patient's identity from their profile; without a fingerprint reader, use the training fingerprint.");
+        }
+
+        if (provider != ProviderKeys.Uidai)
+        {
+            return new IntegrationTestResult(false, $"Unknown Aadhaar authentication provider '{provider}'. Use uidai or simulator.");
+        }
+
+        if (UidaiAadhaarAuthenticator.Problem(config.Settings!, config.Secrets) is { } problem)
+        {
+            return new IntegrationTestResult(false, problem);
+        }
+
+        try
+        {
+            using var certificate = X509CertificateLoader.LoadPkcs12(
+                Convert.FromBase64String(config.Secrets.SigningCertificate!), config.Secrets.SigningCertificatePassword, X509KeyStorageFlags.EphemeralKeySet);
+            using var key = certificate.GetRSAPrivateKey();
+            var now = time.GetUtcNow();
+            if (key is null)
+            {
+                return new IntegrationTestResult(false, "The AUA signing certificate has no RSA private key, so it cannot sign requests.");
+            }
+
+            if (now < certificate.NotBefore.ToUniversalTime() || now > certificate.NotAfter.ToUniversalTime())
+            {
+                return new IntegrationTestResult(false,
+                    $"The AUA signing certificate is valid from {certificate.NotBefore:yyyy-MM-dd} to {certificate.NotAfter:yyyy-MM-dd}, not today. Get a current one from the AUA.");
+            }
+
+            return new IntegrationTestResult(true,
+                $"The settings are complete and the AUA certificate ({certificate.GetNameInfo(X509NameType.SimpleName, false)}) can sign until {certificate.NotAfter:yyyy-MM-dd}. Verify a patient's identity with a fingerprint reader to test with UIDAI.");
+        }
+        catch (Exception ex) when (ex is CryptographicException or FormatException)
+        {
+            return new IntegrationTestResult(false, "The AUA signing certificate or its password could not be read. Enter them again.");
+        }
     }
 
     private async Task<IntegrationTestResult> IcdAsync(CancellationToken cancellationToken)

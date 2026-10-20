@@ -74,10 +74,15 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
 
     /// <summary>Signed or amended discharge summaries; drafts are not shared.</summary>
     internal IQueryable<DischargeSummaryRow> SignedSummaries(Expression<Func<DischargeSummary, bool>> filter) =>
-        db.Set<DischargeSummary>().AsNoTracking().Where(filter).Where(s => s.Status != DischargeSummaryStatus.Draft).Select(s => new DischargeSummaryRow
+        SummaryRows(db.Set<DischargeSummary>().AsNoTracking().Where(filter).Where(s => s.Status != DischargeSummaryStatus.Draft));
+
+    /// <summary>Discharge summaries as rows, whatever their status (the ABDM export tells a draft from a missing summary).</summary>
+    internal static IQueryable<DischargeSummaryRow> SummaryRows(IQueryable<DischargeSummary> summaries) =>
+        summaries.Select(s => new DischargeSummaryRow
         {
             Id = s.Id,
             PatientId = s.PatientId,
+            FacilityId = s.FacilityId,
             AdmissionId = s.AdmissionId,
             EncounterId = s.EncounterId,
             PractitionerId = s.PractitionerId,

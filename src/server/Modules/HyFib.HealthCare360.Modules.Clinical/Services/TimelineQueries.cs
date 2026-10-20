@@ -116,7 +116,10 @@ public sealed class TimelineQueries(HospitalDbContext db)
                 take, token),
             [TimelineEntryType.Result] = (take, token) => LoadAsync(results, r => r.ReleasedAt,
                 r => new TimelineEntry(TimelineEntryType.Result, r.ReportId, r.ReleasedAt, r.Title, r.Kind.ToString(), r.ReviewedAt == null ? "Awaiting review" : "Reviewed",
-                    r.EncounterId, r.HasCriticalFindings),
+                    r.EncounterId, r.HasCriticalFindings)
+                {
+                    ReportKind = r.Kind,
+                },
                 take, token),
             [TimelineEntryType.Procedure] = (take, token) => LoadAsync(procedures, p => p.PerformedAt,
                 p => new TimelineEntry(TimelineEntryType.Procedure, p.Id, p.PerformedAt, p.Code == null ? p.Display : $"{p.Code} {p.Display}",

@@ -370,10 +370,13 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         var timeline = await doctor.GetAsync<PagedResult<TimelineEntry>>($"/api/v1/emr/patients/{patient.PatientId}/timeline?types=Result");
         var entry = timeline.Items.ShouldHaveSingleItem();
         entry.Id.ShouldBe(reportId);
+        entry.ReportKind.ShouldBe(DiagnosticKind.Laboratory, "The chart opens the result as a lab report.");
         entry.Status.ShouldBe("Awaiting review");
         var order = await doctor.GetAsync<OrderDto>($"/api/v1/clinical/orders/{consultation.OrderId}");
         order.Status.ShouldBe(ClinicalOrderStatus.Completed);
-        order.Items.ShouldHaveSingleItem().Status.ShouldBe(OrderItemStatus.Completed);
+        var line = order.Items.ShouldHaveSingleItem();
+        line.Status.ShouldBe(OrderItemStatus.Completed);
+        line.ResultReference.ShouldBe(reportId.ToString(), "The completed line names its report, which the chart's orders open.");
     }
 
     private async Task ThePatientGetsTheReportAsync(CheckedInPatient patient, Guid reportId)

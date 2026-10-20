@@ -33,9 +33,18 @@ import {
   SERVICE_CATEGORY_LABEL,
   type ServiceCategory,
 } from '@/modules/billing/labels';
-import { amountInputText, parsePercent, parseRupees } from '@/modules/billing/money';
+import { amountInputText } from '@/modules/billing/money';
 import { ActionError } from '@/modules/billing/ui';
-import { feeApi, feeKeys, SHARE_METHOD_LABEL, SHARE_METHODS, type ShareMethod, type ShareRuleDto } from './api';
+import {
+  feeApi,
+  feeKeys,
+  SHARE_METHOD_LABEL,
+  SHARE_METHODS,
+  type SaveShareRuleRequest,
+  type ShareMethod,
+  type ShareRuleDto,
+} from './api';
+import { checkRuleForm, type RuleScope } from './logic';
 import { PractitionerPicker, type PickedDoctor } from './PractitionerPicker';
 
 const useStyles = makeStyles({
@@ -49,8 +58,6 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
-type Scope = 'all' | 'category' | 'service';
-
 /**
  * Doctor revenue-share rule (DFA-01): whose, for what (a service, a category or everything), for which payer type, and
  * how much. The most specific rule in force on the service date wins; leave the doctor empty for the hospital default.
@@ -62,7 +69,7 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
   const [doctor, setDoctor] = useState<PickedDoctor | null>(
     rule?.practitionerId ? { id: rule.practitionerId, name: rule.practitionerName ?? 'Doctor' } : null,
   );
-  const [scope, setScope] = useState<Scope>(rule?.serviceItemId ? 'service' : rule?.category ? 'category' : 'all');
+  const [scope, setScope] = useState<RuleScope>(rule?.serviceItemId ? 'service' : rule?.category ? 'category' : 'all');
   const [service, setService] = useState<{ id: string; label: string } | null>(
     rule?.serviceItemId ? { id: rule.serviceItemId, label: rule.serviceCode ?? 'Service' } : null,
   );
@@ -84,28 +91,23 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
     enabled: scope === 'service' && debounced.length >= 2,
   });
 
-  const parsedValue =
-    method === 'Percentage' ? parsePercent(value, { allowZero: true }) : parseRupees(value, { allowZero: true });
-  const numericValue = parsedValue.ok ? ('percent' in parsedValue ? parsedValue.percent : parsedValue.rupees) : null;
-  const datesOk = Boolean(from) && (!to || to >= from);
-  const scopeOk = scope === 'all' || (scope === 'service' ? service !== null : category !== '');
-  const valid = numericValue !== null && datesOk && scopeOk;
+  const check = checkRuleForm({
+    doctorId: doctor?.id ?? null,
+    scope,
+    serviceId: service?.id ?? null,
+    category,
+    payerType,
+    method,
+    value,
+    from,
+    to,
+    active,
+    notes,
+    version: rule?.version ?? null,
+  });
 
-  const save = useMutation<void, unknown, void>({
-    mutationFn: async () => {
-      const request = {
-        practitionerId: doctor?.id ?? null,
-        serviceItemId: scope === 'service' ? (service?.id ?? null) : null,
-        category: scope === 'category' && category ? category : null,
-        payerType: payerType || null,
-        method,
-        value: numericValue ?? 0,
-        effectiveFrom: from,
-        effectiveTo: to || null,
-        isActive: active,
-        notes: notes.trim() || null,
-        version: rule?.version ?? null,
-      };
+  const save = useMutation<void, unknown, SaveShareRuleRequest>({
+    mutationFn: async (request) => {
       if (rule) {
         await feeApi.updateRule(rule.id, request);
       } else {
@@ -130,8 +132,8 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (valid && !save.isPending) {
-            save.mutate();
+          if (check.request && !save.isPending) {
+            save.mutate(check.request);
           }
         }}
         style={{ display: 'contents' }}
@@ -154,7 +156,7 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
               autoFocus={!rule}
             />
             <Field label="Applies to">
-              <RadioGroup layout="horizontal" value={scope} onChange={(_, d) => setScope(d.value as Scope)}>
+              <RadioGroup layout="horizontal" value={scope} onChange={(_, d) => setScope(d.value as RuleScope)}>
                 <Radio value="all" label="Every service" />
                 <Radio value="category" label="A category" />
                 <Radio value="service" label="One service" />
@@ -225,8 +227,8 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
               <Field
                 label={method === 'Percentage' ? 'Percent' : 'Rupees per unit'}
                 required
-                validationMessage={value && !parsedValue.ok ? parsedValue.error : undefined}
-                validationState={value && !parsedValue.ok ? 'error' : 'none'}
+                validationMessage={check.valueError ?? undefined}
+                validationState={check.valueError ? 'error' : 'none'}
               >
                 <Input
                   value={value}
@@ -241,8 +243,8 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
               </Field>
               <Field
                 label="Until"
-                validationMessage={datesOk ? undefined : 'The end date must be on or after the start date.'}
-                validationState={datesOk ? 'none' : 'error'}
+                validationMessage={check.datesOk ? undefined : 'The end date must be on or after the start date.'}
+                validationState={check.datesOk ? 'none' : 'error'}
               >
                 <Input type="date" value={to} min={from} onChange={(_, d) => setTo(d.value)} />
               </Field>
@@ -262,7 +264,7 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
           <Button
             type="submit"
             appearance="primary"
-            disabled={!valid || save.isPending}
+            disabled={!check.request || save.isPending}
             // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
             disabledFocusable={save.isPending}
             icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}

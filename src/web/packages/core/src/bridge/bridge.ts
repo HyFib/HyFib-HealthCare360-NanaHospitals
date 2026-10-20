@@ -8,6 +8,8 @@
  *   event    { type: 'event', name, payload }
  */
 
+import type { FingerprintCapture, FingerprintCaptureRequest, FingerprintReaderStatus } from './fingerprint';
+
 interface WebViewHost {
   postMessage(message: unknown): void;
   addEventListener(type: 'message', listener: (event: MessageEvent) => void): void;
@@ -255,4 +257,22 @@ export const bridge = {
    * `no_certificate`, `signing_failed` or `busy`; an HC360 Desktop older than this answers `method_not_found`.
    */
   signPrescription: (content: string) => invoke<DscSignature>('dsc.signPrescription', { content }, 300_000),
+  /** Whether this computer's fingerprint reader can capture now. An HC360 Desktop older than this answers `method_not_found`. */
+  fingerprintStatus: () => invoke<FingerprintReaderStatus>('fingerprint.status'),
+  /**
+   * Asks the fingerprint reader for a capture with the options the server set up (INT-BIO); the device encrypts it for
+   * UIDAI alone. The call waits for the device's own timeout, while staff place the finger, and the time to find the
+   * reader and encrypt the capture. Fails with a `FingerprintErrorCode`.
+   */
+  captureFingerprint: (request: FingerprintCaptureRequest) =>
+    invoke<FingerprintCapture>(
+      'fingerprint.capture',
+      {
+        fingerCount: request.fingerCount,
+        dataType: request.fingerDataType,
+        timeoutSeconds: request.timeoutSeconds,
+        environment: request.environment,
+      },
+      (request.timeoutSeconds + 30) * 1000,
+    ),
 };

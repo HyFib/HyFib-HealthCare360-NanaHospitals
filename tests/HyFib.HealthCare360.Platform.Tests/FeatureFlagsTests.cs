@@ -5,9 +5,10 @@ using HyFib.HealthCare360.Platform.Settings;
 namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
-/// The feature switches: on until someone turns them off (so an upgrade changes nothing), the hospital-wide switch the
-/// master (a facility can only turn a feature off for itself), and anything that is not true or false ignored rather than
-/// read as "off".
+/// The feature switches: the features that existed before their switch are on until someone turns them off (so an upgrade
+/// changes nothing) and a new one (ABDM health records) is off until turned on, the hospital-wide switch is the master (a
+/// facility can only turn a feature off for itself), and anything that is not true or false is ignored rather than read
+/// as "off".
 /// </summary>
 public sealed class FeatureFlagsTests
 {
@@ -95,18 +96,46 @@ public sealed class FeatureFlagsTests
         await Should.ThrowAsync<ArgumentOutOfRangeException>(() => IsEnabledAsync("features.unknown"));
 
     [Fact]
-    public void Every_feature_is_a_features_key_on_by_default_and_explained()
+    public void Every_feature_is_a_features_key_and_explained()
     {
         FeatureCatalog.All.Select(f => f.Key).ShouldBeUnique();
         foreach (var feature in FeatureCatalog.All)
         {
             feature.Key.ShouldStartWith(FeatureKeys.Prefix);
             feature.Code.ShouldBe(feature.Key[FeatureKeys.Prefix.Length..]);
-            feature.DefaultEnabled.ShouldBeTrue($"{feature.Key}: an upgrade must not switch anything off.");
             string[] words = [feature.Name, feature.Description, feature.WhenOff, feature.OffTitle, feature.OffDetailForStaff, feature.OffDetailForPatients];
             words.ShouldAllBe(text => !string.IsNullOrWhiteSpace(text) && !text.Contains('!'));
             FeatureCatalog.Get(feature.Key).ShouldBeSameAs(feature);
         }
+    }
+
+    [Theory]
+    [InlineData(FeatureKeys.PatientPortal)]
+    [InlineData(FeatureKeys.Telehealth)]
+    public void Features_that_worked_before_their_switch_are_on_by_default(string feature) =>
+        FeatureCatalog.Get(feature).DefaultEnabled.ShouldBeTrue($"{feature}: an upgrade must not switch anything off.");
+
+    [Fact]
+    public async Task Abdm_health_records_stay_off_until_an_administrator_turns_them_on()
+    {
+        // A new feature: sharing records in ABDM's format is the hospital's decision.
+        FeatureCatalog.Get(FeatureKeys.Abdm).DefaultEnabled.ShouldBeFalse();
+        (await IsEnabledAsync(FeatureKeys.Abdm)).ShouldBeFalse();
+        (await IsEnabledAsync(FeatureKeys.Abdm, FacilityId)).ShouldBeFalse();
+
+        // A facility cannot turn it on alone (the hospital-wide switch is the master), and a value that is not a switch
+        // leaves it as it is.
+        _settings.Set(FeatureKeys.Abdm, "true", FacilityId);
+        (await IsEnabledAsync(FeatureKeys.Abdm, FacilityId)).ShouldBeFalse();
+        _settings.Set(FeatureKeys.Abdm, "\"yes\"");
+        (await IsEnabledAsync(FeatureKeys.Abdm)).ShouldBeFalse();
+
+        _settings.Set(FeatureKeys.Abdm, "true");
+        (await IsEnabledAsync(FeatureKeys.Abdm)).ShouldBeTrue();
+        (await IsEnabledAsync(FeatureKeys.Abdm, FacilityId)).ShouldBeTrue();
+        _settings.Set(FeatureKeys.Abdm, "false", FacilityId);
+        (await IsEnabledAsync(FeatureKeys.Abdm, FacilityId)).ShouldBeFalse();
+        (await IsEnabledAsync(FeatureKeys.Abdm, OtherFacilityId)).ShouldBeTrue();
     }
 
     /// <summary>The settings store's merge, in memory: the facility's row when it has one, else the hospital-wide row.</summary>

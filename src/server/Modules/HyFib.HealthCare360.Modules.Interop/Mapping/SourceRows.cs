@@ -197,6 +197,32 @@ internal sealed record AllergyRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
+/// <summary>A Clinical e-prescription as a whole (its lines are <see cref="PrescriptionItemRow"/>), for an ABDM prescription record.</summary>
+internal sealed record PrescriptionRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid FacilityId { get; init; }
+    public string PrescriptionNumber { get; init; } = string.Empty;
+    public Guid? EncounterId { get; init; }
+    public Guid? VisitId { get; init; }
+    public Guid? AdmissionId { get; init; }
+    public Guid PractitionerId { get; init; }
+    public bool IsInpatient { get; init; }
+    public PrescriptionStatus Status { get; init; }
+    public DateTimeOffset PrescribedAt { get; init; }
+    public DateTimeOffset? SignedAt { get; init; }
+
+    /// <summary>General advice printed for the patient (the pharmacist's notes are not shared).</summary>
+    public string? Advice { get; init; }
+
+    /// <summary>The prescription this one refills: signed by whoever issued the refill, not by the prescriber.</summary>
+    public Guid? RefillOfPrescriptionId { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+
 /// <summary>One medicine line of a signed (or signed-then-cancelled) Clinical e-prescription.</summary>
 internal sealed record PrescriptionItemRow
 {
@@ -329,6 +355,7 @@ internal sealed record DischargeSummaryRow
 {
     public required Guid Id { get; init; }
     public required Guid PatientId { get; init; }
+    public Guid FacilityId { get; init; }
     public Guid AdmissionId { get; init; }
     public Guid? EncounterId { get; init; }
     public Guid? PractitionerId { get; init; }
@@ -349,6 +376,37 @@ internal sealed record DischargeSummaryRow
     public DischargeSummaryStatus Status { get; init; }
     public DateTimeOffset? SignedAt { get; init; }
     public DateTimeOffset? AmendedAt { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+
+/// <summary>Platform <see cref="Practitioner"/> master, as an ABDM document names the doctor (no contact details).</summary>
+internal sealed record PractitionerRow
+{
+    public required Guid Id { get; init; }
+    public string Code { get; init; } = string.Empty;
+    public string? Title { get; init; }
+    public string FirstName { get; init; } = string.Empty;
+    public string? LastName { get; init; }
+    public string DisplayName { get; init; } = string.Empty;
+    public Gender Gender { get; init; }
+    public string? Qualification { get; init; }
+    public string? RegistrationCouncil { get; init; }
+    public string? RegistrationNumber { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+
+/// <summary>Platform <see cref="Facility"/> master: the hospital as an organisation, with its ABDM Health Facility Registry id.</summary>
+internal sealed record FacilityRow
+{
+    public required Guid Id { get; init; }
+    public string Code { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string? HfrId { get; init; }
+    public Address Address { get; init; } = new();
+    public string? Phone { get; init; }
+    public string? Email { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }

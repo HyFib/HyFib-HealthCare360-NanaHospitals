@@ -127,6 +127,9 @@ them; to do the same locally, run `git config blame.ignoreRevsFile .git-blame-ig
 Conventions for new work: `docs/architecture/MODULE-GUIDE.md` (server modules) and
 `docs/architecture/FRONTEND-GUIDE.md` (screens).
 
+What is built against the requirements: `docs/requirements/TRACEABILITY.md` maps every SRS requirement to its code and
+tests, with a verdict (done, partial, missing or blocked on an outside party). The architecture tests keep it complete.
+
 ## Deployment and security
 
 - `docs/deployment/DEPLOYMENT.md`: from a bare Windows machine to a running hospital, plus upgrades, backups and restore.

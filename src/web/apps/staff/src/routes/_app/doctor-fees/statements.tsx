@@ -1,6 +1,6 @@
 import { Badge, Button, Caption1, Field, Input, makeStyles, Text, tokens } from '@fluentui/react-components';
 import { DocumentTextRegular, PrintRegular } from '@fluentui/react-icons';
-import { formatDateOnly, formatInr, todayIso } from '@hc360/core';
+import { formatDateOnly, todayIso } from '@hc360/core';
 import {
   DataTable,
   EmptyState,
@@ -20,11 +20,11 @@ import { useState } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { SERVICE_CATEGORY_LABEL } from '@/modules/billing/labels';
-import { formatPercent } from '@/modules/billing/money';
 import { sendToPrinter } from '@/modules/billing/print';
 import { dateParam } from '@/modules/billing/searchParams';
 import { Amount, NoAccess } from '@/modules/billing/ui';
 import { ACCRUAL_STATUS_LABEL, feeQueries, PAYOUT_STATUS_LABEL } from '@/modules/doctor-fees/api';
+import { feeRate, isPeriod, monthStart } from '@/modules/doctor-fees/logic';
 import { PractitionerPicker, type PickedDoctor } from '@/modules/doctor-fees/PractitionerPicker';
 import { buildStatementHtml } from '@/modules/doctor-fees/print';
 
@@ -43,11 +43,6 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
-/** First day of the current month. */
-function monthStart(): string {
-  return `${todayIso().slice(0, 8)}01`;
-}
-
 /** Doctor fee statement (DFA-04): what a doctor earned in a period, what was reversed, in payouts and paid; printable. */
 function StatementsPage() {
   const styles = useStyles();
@@ -57,9 +52,9 @@ function StatementsPage() {
   const letterhead = useLetterhead();
   const canPayouts = usePermission('doctorfees.payouts.manage');
   const [doctor, setDoctor] = useState<PickedDoctor | null>(null);
-  const from = search.from ?? monthStart();
+  const from = search.from ?? monthStart(todayIso());
   const to = search.to ?? todayIso();
-  const periodOk = to >= from;
+  const periodOk = isPeriod(from, to);
   const statement = useQuery({
     ...feeQueries.statement(doctor?.id ?? '', from, to),
     enabled: canPayouts && doctor !== null && periodOk,
@@ -182,7 +177,7 @@ function StatementsPage() {
                   header: 'Rate',
                   align: 'end',
                   priority: 'low',
-                  render: (a) => (a.method === 'Percentage' ? formatPercent(a.rate) : `${formatInr(a.rate)}/unit`),
+                  render: (a) => feeRate(a.method, a.rate),
                 },
                 {
                   key: 'share',
