@@ -48,7 +48,7 @@ public static class PatientQueries
         foreach (var word in term.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(4))
         {
             var like = word.ToLikePattern();
-            patients = patients.Where(p => EF.Functions.ILike(p.FullName, like));
+            patients = patients.Where(p => EF.Functions.ILike(p.FullName, like, QueryExtensions.LikeEscape));
         }
 
         return patients;

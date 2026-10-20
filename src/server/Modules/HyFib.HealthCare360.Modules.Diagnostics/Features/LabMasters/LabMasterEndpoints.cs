@@ -72,7 +72,7 @@ internal static class LabMasterEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            tests = tests.Where(t => EF.Functions.ILike(t.Name, like) || EF.Functions.ILike(t.Code, like) || (t.ShortName != null && EF.Functions.ILike(t.ShortName, like)));
+            tests = tests.Where(t => EF.Functions.ILike(t.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(t.Code, like, QueryExtensions.LikeEscape) || (t.ShortName != null && EF.Functions.ILike(t.ShortName, like, QueryExtensions.LikeEscape)));
         }
 
         var result = await tests.OrderByKey(page, TestSort, t => t.Name)

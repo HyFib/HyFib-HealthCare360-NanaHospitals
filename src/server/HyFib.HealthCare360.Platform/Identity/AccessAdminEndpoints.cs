@@ -143,7 +143,7 @@ internal static class AccessAdminEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            users = users.Where(u => EF.Functions.ILike(u.UserName, like) || EF.Functions.ILike(u.DisplayName, like) || (u.Phone != null && u.Phone.Contains(term)));
+            users = users.Where(u => EF.Functions.ILike(u.UserName, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(u.DisplayName, like, QueryExtensions.LikeEscape) || (u.Phone != null && u.Phone.Contains(term)));
         }
 
         if (active is { } isActive)

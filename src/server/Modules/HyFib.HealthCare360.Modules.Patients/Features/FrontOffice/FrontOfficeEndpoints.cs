@@ -204,7 +204,7 @@ internal static class FrontOfficeEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            enquiries = enquiries.Where(e => EF.Functions.ILike(e.Name, like) || (e.Phone != null && e.Phone.Contains(term)) || EF.Functions.ILike(e.Details, like));
+            enquiries = enquiries.Where(e => EF.Functions.ILike(e.Name, like, QueryExtensions.LikeEscape) || (e.Phone != null && e.Phone.Contains(term)) || EF.Functions.ILike(e.Details, like, QueryExtensions.LikeEscape));
         }
 
         return TypedResults.Ok(await enquiries.OrderByDescending(e => e.CreatedAt)
@@ -272,7 +272,7 @@ internal static class FrontOfficeEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            passes = passes.Where(v => EF.Functions.ILike(v.VisitorName, like) || v.PassNumber == term.ToUpper());
+            passes = passes.Where(v => EF.Functions.ILike(v.VisitorName, like, QueryExtensions.LikeEscape) || v.PassNumber == term.ToUpper());
         }
 
         var result = await (

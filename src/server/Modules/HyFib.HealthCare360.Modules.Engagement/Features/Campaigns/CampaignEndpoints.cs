@@ -60,7 +60,7 @@ internal static class CampaignEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            campaigns = campaigns.Where(c => EF.Functions.ILike(c.Name, like));
+            campaigns = campaigns.Where(c => EF.Functions.ILike(c.Name, like, QueryExtensions.LikeEscape));
         }
 
         return TypedResults.Ok(await campaigns

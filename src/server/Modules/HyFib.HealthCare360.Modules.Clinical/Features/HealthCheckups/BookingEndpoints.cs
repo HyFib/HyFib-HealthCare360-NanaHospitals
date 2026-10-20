@@ -117,7 +117,7 @@ internal static class BookingEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            batches = batches.Where(b => EF.Functions.ILike(b.CorporateName, like) || b.BatchNumber == term.ToUpper());
+            batches = batches.Where(b => EF.Functions.ILike(b.CorporateName, like, QueryExtensions.LikeEscape) || b.BatchNumber == term.ToUpper());
         }
 
         return TypedResults.Ok(await batches.OrderByDescending(b => b.ScheduledDate)

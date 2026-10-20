@@ -53,7 +53,7 @@ internal static class PayerEndpoints
         if (!string.IsNullOrWhiteSpace(search))
         {
             var like = search.Trim().ToLikePattern();
-            payers = payers.Where(p => EF.Functions.ILike(p.Name, like) || EF.Functions.ILike(p.Code, like));
+            payers = payers.Where(p => EF.Functions.ILike(p.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(p.Code, like, QueryExtensions.LikeEscape));
         }
 
         var rows = await payers.OrderBy(p => p.Name)

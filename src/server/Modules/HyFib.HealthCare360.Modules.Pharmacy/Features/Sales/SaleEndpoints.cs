@@ -138,7 +138,7 @@ internal static class SaleEndpoints
             var upper = term.ToUpperInvariant();
             var like = term.ToLikePattern();
             var patients = db.Set<Patient>().Search(term, protector).Select(p => p.Id);
-            sales = sales.Where(s => s.InvoiceNumber == upper || (s.CustomerName != null && EF.Functions.ILike(s.CustomerName, like))
+            sales = sales.Where(s => s.InvoiceNumber == upper || (s.CustomerName != null && EF.Functions.ILike(s.CustomerName, like, QueryExtensions.LikeEscape))
                                      || (s.PatientId != null && patients.Contains(s.PatientId.Value)));
         }
 

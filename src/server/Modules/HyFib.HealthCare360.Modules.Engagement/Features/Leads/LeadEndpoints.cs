@@ -74,7 +74,7 @@ internal static class LeadEndpoints
             var like = term.ToLikePattern();
             var number = term.ToUpperInvariant();
             var digits = new string(term.Where(char.IsAsciiDigit).ToArray());
-            leads = leads.Where(l => l.LeadNumber == number || EF.Functions.ILike(l.Name, like)
+            leads = leads.Where(l => l.LeadNumber == number || EF.Functions.ILike(l.Name, like, QueryExtensions.LikeEscape)
                                      || (digits.Length >= 4 && l.Phone != null && l.Phone.EndsWith(digits)));
         }
 

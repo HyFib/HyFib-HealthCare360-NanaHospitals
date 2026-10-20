@@ -118,7 +118,7 @@ internal static class TariffEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            var items = db.Set<ServiceItem>().Where(s => EF.Functions.ILike(s.Name, like) || EF.Functions.ILike(s.Code, like)).Select(s => s.Id);
+            var items = db.Set<ServiceItem>().Where(s => EF.Functions.ILike(s.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(s.Code, like, QueryExtensions.LikeEscape)).Select(s => s.Id);
             prices = prices.Where(p => items.Contains(p.ServiceItemId));
         }
 
