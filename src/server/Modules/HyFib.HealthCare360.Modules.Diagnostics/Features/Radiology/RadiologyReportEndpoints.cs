@@ -79,7 +79,7 @@ internal static class RadiologyReportEndpoints
         IPermissionService permissions, CancellationToken ct)
     {
         var (view, problem) = await OpenAsync(id, n => $"Printed radiology report {n}", reports, guard, audit, user, permissions, ct);
-        return problem ?? TypedResults.Ok((await RadiologyReportDocument.BuildAsync(view!, frame, ct)).ToDto());
+        return problem ?? TypedResults.Ok((await RadiologyReportDocument.BuildAsync(view!, frame, DocumentText.English, ct)).ToDto());
     }
 
     private static async Task<IResult> Pdf(
@@ -87,7 +87,7 @@ internal static class RadiologyReportEndpoints
         ICurrentUser user, IPermissionService permissions, CancellationToken ct)
     {
         var (view, problem) = await OpenAsync(id, n => $"Downloaded radiology report {n} as a PDF", reports, guard, audit, user, permissions, ct);
-        return problem ?? await (await RadiologyReportDocument.BuildAsync(view!, frame, ct)).ToPdfAsync(renderer, ct);
+        return problem ?? await (await RadiologyReportDocument.BuildAsync(view!, frame, DocumentText.English, ct)).ToPdfAsync(renderer, ct);
     }
 
     // Every way of opening the printable report applies the same rules: the released report only for read-only users,

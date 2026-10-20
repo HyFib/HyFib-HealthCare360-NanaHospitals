@@ -9136,6 +9136,18 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
 
+                    b.Property<byte[]>("DigitalSignature")
+                        .HasColumnType("bytea")
+                        .HasColumnName("digital_signature");
+
+                    b.Property<DateTimeOffset?>("DigitallySignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("digitally_signed_at");
+
+                    b.Property<Guid?>("DigitallySignedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("digitally_signed_by_user_id");
+
                     b.Property<Guid?>("EncounterId")
                         .HasColumnType("uuid")
                         .HasColumnName("encounter_id");
@@ -9160,6 +9172,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
+
+                    b.Property<DateTimeOffset?>("PatientNoticeHeldAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("patient_notice_held_at");
+
+                    b.Property<DateTimeOffset?>("PatientNotifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("patient_notified_at");
 
                     b.Property<Guid>("PractitionerId")
                         .HasColumnType("uuid")
@@ -9204,6 +9224,45 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("signed_by_user_id");
 
+                    b.Property<byte[]>("SignedContent")
+                        .HasColumnType("bytea")
+                        .HasColumnName("signed_content");
+
+                    b.Property<string>("SignedContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("signed_content_hash");
+
+                    b.Property<string>("SignerChainStatus")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("signer_chain_status");
+
+                    b.Property<string>("SignerIssuer")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("signer_issuer");
+
+                    b.Property<string>("SignerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("signer_name");
+
+                    b.Property<string>("SignerSerialNumber")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("signer_serial_number");
+
+                    b.Property<string>("SignerSubject")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("signer_subject");
+
+                    b.Property<string>("SignerThumbprint")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("signer_thumbprint");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -9247,6 +9306,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("IsDeleted")
                         .HasDatabaseName("ix_prescriptions_is_deleted");
+
+                    b.HasIndex("PatientNoticeHeldAt")
+                        .HasDatabaseName("ix_prescriptions_patient_notice_held_at")
+                        .HasFilter("patient_notice_held_at IS NOT NULL");
 
                     b.HasIndex("PrescriptionNumber")
                         .IsUnique()
@@ -34489,10 +34552,18 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("kind");
 
+                    b.Property<string>("Options")
+                        .HasColumnType("text")
+                        .HasColumnName("options");
+
                     b.Property<string>("Phone")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("phone");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
 
                     b.Property<Guid?>("UserId")
                         .HasColumnType("uuid")
@@ -34503,6 +34574,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("ExpiresAt")
                         .HasDatabaseName("ix_auth_challenges_expires_at");
+
+                    b.HasIndex("SessionId")
+                        .HasDatabaseName("ix_auth_challenges_session_id");
 
                     b.HasIndex("Phone", "CreatedAt")
                         .HasDatabaseName("ix_auth_challenges_phone_created_at");
@@ -35134,6 +35208,82 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_user_sessions_user_id_revoked_at");
 
                     b.ToTable("user_sessions", "identity");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Identity.WebAuthnCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AaGuid")
+                        .HasColumnType("uuid")
+                        .HasColumnName("aa_guid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<byte[]>("CredentialId")
+                        .IsRequired()
+                        .HasMaxLength(1023)
+                        .HasColumnType("bytea")
+                        .HasColumnName("credential_id");
+
+                    b.Property<Guid?>("DeviceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("device_id");
+
+                    b.Property<bool>("IsBackupEligible")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_backup_eligible");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_used_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("name");
+
+                    b.Property<byte[]>("PublicKey")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("bytea")
+                        .HasColumnName("public_key");
+
+                    b.Property<string>("RelyingPartyId")
+                        .IsRequired()
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)")
+                        .HasColumnName("relying_party_id");
+
+                    b.Property<long>("SignCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sign_count");
+
+                    b.Property<string>("Transports")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("transports");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_webauthn_credentials");
+
+                    b.HasIndex("CredentialId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_webauthn_credentials_credential_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_webauthn_credentials_user_id");
+
+                    b.ToTable("webauthn_credentials", "identity");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Integrations.IntegrationLog", b =>
@@ -39192,6 +39342,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_user_roles_users_user_id");
 
                     b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Identity.WebAuthnCredential", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Platform.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_webauthn_credentials_users_user_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Analytics.Domain.ReportDelivery", b =>

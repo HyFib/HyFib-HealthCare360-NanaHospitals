@@ -1,8 +1,8 @@
-/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 
 // The patient portal is served by the HC360 Server at /portal on an address of its own (port 7361; the staff app's is
 // 7360), which answers only the portal's API. During development Vite proxies /api, /hubs and /health to that address
@@ -36,6 +36,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // a11y/*.spec.ts are Playwright's: the built app in a browser (pnpm test:a11y).
+    exclude: [...configDefaults.exclude, 'a11y/**'],
     // Page tests boot the whole router in jsdom and wait up to 8 s for a page (SLOW in app.test.tsx). When the staff
     // and portal suites run side by side (pnpm -r test, as CI does) that can take longer than the 5 s default.
     testTimeout: 20_000,

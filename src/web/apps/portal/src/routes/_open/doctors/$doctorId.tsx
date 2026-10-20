@@ -31,7 +31,7 @@ import { useT } from '@/i18n';
 import { addDays, daysBetween, istDateOf } from '@/i18n/format';
 import { useFormat } from '@/i18n/useFormat';
 import { usePortalFeatures } from '@/lib/features';
-import { useNow } from '@/lib/hooks';
+import { keepFocusClearOf, useNow } from '@/lib/hooks';
 import { guidParam, isGuid } from '@/lib/ids';
 import { useToast } from '@/lib/toast';
 import type { PublicDoctorProfile, PublicSession, Weekday } from '@/lib/types';
@@ -478,6 +478,7 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
 
       {selectedSlot && (
         <div
+          ref={keepFocusClearOf}
           className={styles.bar}
           role="region"
           aria-label={t('booking.selected', { when: describeWhen(selectedSlot.startsAt, f, t, now) })}

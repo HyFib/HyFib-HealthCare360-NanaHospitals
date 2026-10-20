@@ -68,7 +68,7 @@ internal static class RiskEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            risks = risks.Where(r => EF.Functions.ILike(r.Title, like) || r.RiskNumber == term.ToUpper());
+            risks = risks.Where(r => EF.Functions.ILike(r.Title, like, QueryExtensions.LikeEscape) || r.RiskNumber == term.ToUpper());
         }
 
         var result = await risks.OrderByKey(page, SortKeys, r => r.Score, defaultDescending: true).ToPagedResultAsync(page, ct);

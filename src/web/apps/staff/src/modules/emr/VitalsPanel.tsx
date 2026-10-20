@@ -74,7 +74,9 @@ const VitalsTrendChart = lazy(() => import('./VitalsTrendChart'));
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   inline: { display: 'flex', gap: '8px', alignItems: 'flex-end' },
-  bp: { display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'end', gap: '4px' },
+  // The value's field takes what its unit or timing leaves, down to nothing rather than over the next column.
+  grow: { flex: 1, minWidth: 0 },
+  bp: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', alignItems: 'end', gap: '4px' },
   slash: { paddingBottom: '6px', color: tokens.colorNeutralForeground3 },
   actions: { display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -258,9 +260,11 @@ export function VitalsForm({
           </MessageBarBody>
         </MessageBar>
       )}
-      <FormGrid columns={4} minColumnWidth={150}>
+      {/* At least 180 px a column: room for two blood pressure readings, and for the date and time a reading was taken
+          (three columns beside the consultation's section list at 1280 px, four on a wider screen). */}
+      <FormGrid columns={4} minColumnWidth={180}>
         <div className={styles.inline}>
-          <div style={{ flex: 1 }}>
+          <div className={styles.grow}>
             {numberInput('temperature', 'Temperature', {
               step: 0.1,
               autoFocus,
@@ -323,7 +327,7 @@ export function VitalsForm({
           <Input readOnly value={bmi === null ? '' : String(bmi)} placeholder="—" />
         </Field>
         <div className={styles.inline}>
-          <div style={{ flex: 1 }}>{numberInput('bloodGlucose', 'Blood glucose')}</div>
+          <div className={styles.grow}>{numberInput('bloodGlucose', 'Blood glucose')}</div>
           <Field label="Taken">
             <Select
               value={values.glucoseTiming}

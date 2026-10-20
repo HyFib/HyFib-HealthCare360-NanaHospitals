@@ -650,6 +650,14 @@ export interface PortalPrescriptionDetail {
   verificationToken: string | null;
   /** The public check page for the printed QR code, when the server knows the hospital's public address. */
   verificationUrl?: string | null;
+  /**
+   * False while the hospital requires the doctor's DSC and the prescription has none that checks out: it is then not
+   * printed, downloaded or shown as a QR code (the server leaves the token out). Older servers leave it out: read
+   * that as true.
+   */
+  finalCopyAvailable?: boolean;
+  /** Why not: `NotSigned` while the doctor has not signed it with their DSC yet. */
+  digitalSignatureState?: DigitalSignatureState;
 }
 
 /** Public QR verification of a printed prescription (no patient data). */
@@ -662,6 +670,30 @@ export interface PrescriptionVerification {
   facility: string | null;
   issuedOn: string | null;
   itemCount: number;
+  /** Older servers leave out the number and the DSC signature. */
+  prescriptionNumber?: string | null;
+  /** The doctor's DSC signature, re-checked by the server for this answer; null when there is none. */
+  digitalSignature?: PublicDigitalSignature | null;
+  /** The .p7s download (server-relative). */
+  signaturePath?: string | null;
+}
+
+/**
+ * What anyone may see of a prescription's DSC signature: the signer, the certificate and the hash, no patient data.
+ * `Untrusted`: the prescription is as signed, but the certificate does not chain to a CCA India root installed on the
+ * server, so it is not presented as a DSC. `chainTrusted` is whether it does; revocation is not checked.
+ */
+export type DigitalSignatureState = 'NotSigned' | 'Valid' | 'Invalid' | 'Untrusted';
+
+export interface PublicDigitalSignature {
+  state: DigitalSignatureState;
+  signerName: string;
+  certificateSerialNumber: string;
+  certificateIssuer: string;
+  signedAt: string;
+  contentHash: string;
+  chainTrusted: boolean;
+  message: string;
 }
 
 export interface AllergySummary {

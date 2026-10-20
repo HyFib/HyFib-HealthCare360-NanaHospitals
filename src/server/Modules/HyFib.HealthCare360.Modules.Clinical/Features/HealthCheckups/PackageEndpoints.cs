@@ -30,7 +30,7 @@ internal static class PackageEndpoints
         if (!string.IsNullOrWhiteSpace(search))
         {
             var like = search.Trim().ToLikePattern();
-            packages = packages.Where(p => EF.Functions.ILike(p.Name, like) || EF.Functions.ILike(p.Code, like));
+            packages = packages.Where(p => EF.Functions.ILike(p.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(p.Code, like, QueryExtensions.LikeEscape));
         }
 
         return TypedResults.Ok((await packages.OrderBy(p => p.Price).ToListAsync(ct)).Select(HealthCheckupService.ToDto).ToList());

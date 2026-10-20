@@ -87,7 +87,7 @@ internal static class EmployeeEndpoints
             var like = term.ToLikePattern();
             var code = term.ToUpperInvariant();
             var phone = Phone.Normalize(term);
-            employees = employees.Where(e => EF.Functions.ILike(e.FullName, like) || e.EmployeeCode == code || e.EmployeeCode.EndsWith(code)
+            employees = employees.Where(e => EF.Functions.ILike(e.FullName, like, QueryExtensions.LikeEscape) || e.EmployeeCode == code || e.EmployeeCode.EndsWith(code)
                                              || (phone != null && e.Phone == phone) || e.BiometricPin == term);
         }
 

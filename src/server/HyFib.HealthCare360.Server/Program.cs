@@ -170,7 +170,7 @@ if (builder.Configuration["OpenTelemetry:OtlpEndpoint"] is { Length: > 0 } otlp)
             .AddHttpClientInstrumentation()
             .AddNpgsql()
             .AddOtlpExporter(o => o.Endpoint = new Uri(otlp)))
-        .WithMetrics(metrics => metrics.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddMeter("Npgsql").AddOtlpExporter(o => o.Endpoint = new Uri(otlp)));
+        .WithMetrics(metrics => metrics.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddMeter("Npgsql").AddMeter(AntiAutomation.MeterName).AddOtlpExporter(o => o.Endpoint = new Uri(otlp)));
 }
 
 var app = builder.Build();

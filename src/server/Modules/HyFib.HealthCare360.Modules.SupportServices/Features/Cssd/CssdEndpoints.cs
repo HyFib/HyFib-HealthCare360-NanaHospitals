@@ -56,7 +56,7 @@ internal static class CssdEndpoints
         if (!string.IsNullOrWhiteSpace(search))
         {
             var like = search.Trim().ToLikePattern();
-            sets = sets.Where(s => EF.Functions.ILike(s.Name, like) || EF.Functions.ILike(s.Code, like));
+            sets = sets.Where(s => EF.Functions.ILike(s.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(s.Code, like, QueryExtensions.LikeEscape));
         }
 
         var rows = await sets.OrderBy(s => s.Name).Take(500).ToListAsync(ct);

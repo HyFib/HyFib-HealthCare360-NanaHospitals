@@ -11,9 +11,21 @@ export interface FriendlyError {
 }
 
 /**
+ * Server rules the portal words itself, in the patient's language, by their code: the server's own text is English
+ * (a prescription the hospital issues only once the doctor has signed it with their DSC, ERX-04).
+ */
+const BY_CODE: Readonly<Partial<Record<string, MessageKey>>> = {
+  'prescription.digital_signature_required': 'rx.dsc.pending.body',
+  'prescription.digital_signature_untrusted': 'rx.dsc.unavailable.body',
+  'prescription.digital_signature_invalid': 'rx.dsc.unavailable.body',
+};
+
+/**
  * Turns any failure into words a patient understands, in their language. Transport and status problems are
- * translated here; business-rule messages from the server (400/409/422, for example "This slot was just taken")
- * are shown as sent, because they carry the specific reason.
+ * translated here, and the rules in `BY_CODE`; other business-rule messages from the server (400/409/422, for example
+ * "This slot was just taken") are shown as sent, because they carry the specific reason. The server writes them in the
+ * language chosen in the portal (the API client sends it as X-HC360-Language), and in English when it has no
+ * translation of one.
  */
 export function describeError(error: unknown, t: Translate, title: MessageKey = 'errors.title'): FriendlyError {
   if (!isApiError(error)) {
@@ -27,6 +39,9 @@ export function describeError(error: unknown, t: Translate, title: MessageKey = 
       return { title: t(title), message: t('errors.tooMany'), retryable: true, reference };
     case error.status === 401:
       return { title: t(title), message: t('errors.sessionEnded'), retryable: false, reference };
+    // The anti-automation check (lib/proofOfWork) refused the request; asking again solves a fresh challenge.
+    case error.code === 'request.check_failed':
+      return { title: t(title), message: t('errors.checkFailed'), retryable: true, reference };
     case error.status === 403:
       return { title: t(title), message: t('errors.forbidden'), retryable: false, reference };
     case error.status === 404:
@@ -35,8 +50,15 @@ export function describeError(error: unknown, t: Translate, title: MessageKey = 
       return { title: t(title), message: t('errors.server'), retryable: true, reference };
     case error.status === 409 && !error.detail:
       return { title: t(title), message: t('errors.conflict'), retryable: true, reference };
-    default:
-      return { title: t(title), message: error.userMessage || t('errors.generic'), retryable: false, reference };
+    default: {
+      const worded = error.code === undefined ? undefined : BY_CODE[error.code];
+      return {
+        title: t(title),
+        message: worded ? t(worded) : error.userMessage || t('errors.generic'),
+        retryable: false,
+        reference,
+      };
+    }
   }
 }
 

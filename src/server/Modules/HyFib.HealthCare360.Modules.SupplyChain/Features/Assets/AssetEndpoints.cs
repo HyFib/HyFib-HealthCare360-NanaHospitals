@@ -93,8 +93,8 @@ internal static class AssetEndpoints
         {
             var like = term.ToLikePattern();
             var upper = term.ToUpperInvariant();
-            assets = assets.Where(a => a.AssetTag == upper || a.Barcode == term || a.SerialNumber == term || EF.Functions.ILike(a.Name, like)
-                                       || (a.Model != null && EF.Functions.ILike(a.Model, like)));
+            assets = assets.Where(a => a.AssetTag == upper || a.Barcode == term || a.SerialNumber == term || EF.Functions.ILike(a.Name, like, QueryExtensions.LikeEscape)
+                                       || (a.Model != null && EF.Functions.ILike(a.Model, like, QueryExtensions.LikeEscape)));
         }
 
         var result = await assets.OrderBy(a => a.Name).ThenBy(a => a.AssetTag)

@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Patients.Services;
@@ -46,7 +47,7 @@ public static class PatientQueries
         foreach (var word in term.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(4))
         {
             var like = word.ToLikePattern();
-            patients = patients.Where(p => EF.Functions.ILike(p.FullName, like));
+            patients = patients.Where(p => EF.Functions.ILike(p.FullName, like, QueryExtensions.LikeEscape));
         }
 
         return patients;
@@ -181,4 +182,11 @@ internal sealed class PortalAccountResolver(HospitalDbContext db) : IPortalAccou
             .FirstOrDefaultAsync(cancellationToken);
         return patient is null ? null : new PortalAccount(patient.Id, patient.FullName);
     }
+}
+
+/// <summary>The free-text preferred language on a patient's record, for the text HC360 writes for them (PP-06).</summary>
+internal sealed class PatientLanguageSource(HospitalDbContext db) : IPatientLanguageSource
+{
+    public Task<string?> PreferredLanguageAsync(Guid patientId, CancellationToken cancellationToken) =>
+        db.Set<Patient>().AsNoTracking().Where(p => p.Id == patientId).Select(p => p.PreferredLanguage).FirstOrDefaultAsync(cancellationToken);
 }

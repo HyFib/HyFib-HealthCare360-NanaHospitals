@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Jobs;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Networking;
@@ -26,6 +27,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -72,7 +74,8 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddHttpContextAccessor();
         services.AddMemoryCache();
-        services.AddProblemDetails();
+        // Patient-facing answers in the patient's language (PP-06, RequestLanguageMiddleware); staff answers unchanged.
+        services.AddProblemDetails(problems => problems.CustomizeProblemDetails = ProblemLocalization.Localize);
         services.AddExceptionHandler<GlobalExceptionHandler>();
 
         // In the shared folder, protected with the cluster's certificate, when several nodes share the keys (SCAL-01).
@@ -143,6 +146,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<ISessionValidator>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddScoped<AuthService>();
+        services.AddScoped<WebAuthnUnlockService>();
         services.AddScoped<LoadTestAccounts>();
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(jwt =>
@@ -215,6 +219,20 @@ public static class PlatformServiceCollectionExtensions
 
         services.AddHospitalRateLimiter();
 
+        // The portal's proof of work (SRS SEC-06): challenges signed with a key of this server's, spent ones remembered, and
+        // the numbers that failed kept as hashes keyed with it. The key is read (or made) once, for both.
+        services.AddSingleton<IProofOfWorkReplayCache, MemoryProofOfWorkReplayCache>();
+        services.AddSingleton(sp => new AntiAutomationKey(ProofOfWorkKey.LoadOrCreate(directories, sp.GetRequiredService<IDataProtectionProvider>())));
+        services.AddSingleton(sp => new AutomationSuspicion(
+            sp.GetRequiredService<IMemoryCache>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<AntiAutomationKey>().Value));
+        services.AddSingleton(sp => new ProofOfWork(
+            sp.GetRequiredService<AntiAutomationKey>().Value,
+            sp.GetRequiredService<IProofOfWorkReplayCache>(),
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped<AntiAutomation>();
+
         // ---------------- cross-cutting services
         services.AddScoped<IAuditLogger, AuditLogger>();
         services.AddScoped<AuditChainService>();
@@ -254,8 +272,10 @@ public static class PlatformServiceCollectionExtensions
         // Fallbacks replaced by the Billing, Patients and Clinical modules / Integrations project when present.
         services.TryAddScoped<IChargePoster, NullChargePoster>();
         services.TryAddScoped<IBillingStatusProvider, NullBillingStatusProvider>();
+        services.TryAddScoped<IPayerDirectory, NullPayerDirectory>();
         services.TryAddScoped<IPortalAccountResolver, NullPortalAccountResolver>();
         services.TryAddScoped<IVerifiedCodingSource, NullVerifiedCodingSource>();
+        services.TryAddScoped<IPatientLanguageSource, NullPatientLanguageSource>();
 
         services.AddSignalR(hub =>
         {
@@ -334,6 +354,9 @@ public static class PlatformServiceCollectionExtensions
         app.UseExceptionHandler();
         app.UseRouting();
         app.UseAuthentication();
+        // After authentication, so a patient's answers follow their preferred language; ahead of everything that may
+        // answer with Problem Details.
+        app.UseMiddleware<RequestLanguageMiddleware>();
         // After authentication, so the per-user buckets (the global limit, AI) key on the signed-in user rather than on the
         // address; sign-in, OTP and public endpoints stay per address.
         app.UseRateLimiter();
@@ -348,6 +371,7 @@ public static class PlatformServiceCollectionExtensions
     public static IEndpointRouteBuilder MapHospitalPlatform(this IEndpointRouteBuilder endpoints)
     {
         AuthEndpoints.Map(endpoints);
+        AntiAutomationEndpoints.Map(endpoints);
         AccessAdminEndpoints.Map(endpoints);
         DeviceEndpoints.Map(endpoints);
         OrganizationEndpoints.Map(endpoints);

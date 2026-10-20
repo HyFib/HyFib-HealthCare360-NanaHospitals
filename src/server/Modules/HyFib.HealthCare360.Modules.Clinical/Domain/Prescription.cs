@@ -43,12 +43,38 @@ public sealed record PrescriptionSignature(
     bool ControlledDrugsConfirmed);
 
 /// <summary>
+/// The doctor's Digital Signature Certificate signature over the prescription's canonical bytes (ERX-04), as checked
+/// by the server: the detached CMS/PKCS#7 signature, the exact bytes signed (<see cref="PrescriptionCanonicalForm"/>)
+/// and their SHA-256, and the signer's certificate.
+/// </summary>
+public sealed record PrescriptionDigitalSignature(
+    byte[] Signature,
+    byte[] Content,
+    string ContentHash,
+    DateTimeOffset SignedAt,
+    Guid? UserId,
+    string SignerName,
+    string SignerSubject,
+    string SignerSerialNumber,
+    string SignerIssuer,
+    string SignerThumbprint,
+    string ChainStatus);
+
+/// <summary>
 /// An e-prescription (ERX-01..06). Drafts are freely editable; signing runs the safety checks (in the service),
 /// allocates a verification token for the printed QR code and raises <see cref="PrescriptionSigned"/>, which puts
 /// it in the OP or IP pharmacy queue — no paper is needed for dispensing.
 /// </summary>
 public sealed class Prescription : AuditableEntity, IFacilityScoped
 {
+    /// <summary>What the columns that describe the DSC's certificate hold at most (<see cref="AttachDigitalSignature"/>).</summary>
+    public const int SignerNameMaxLength = 200;
+
+    public const int SignerDistinguishedNameMaxLength = 1000;
+    public const int SignerSerialNumberMaxLength = 128;
+    public const int SignerThumbprintMaxLength = 128;
+    public const int SignerChainStatusMaxLength = 1000;
+
     public Guid FacilityId { get; set; }
     public string PrescriptionNumber { get; set; } = string.Empty;
     public Guid PatientId { get; set; }
@@ -83,6 +109,59 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
     public string? SafetyAlerts { get; private set; }
 
     public bool ControlledDrugsConfirmed { get; private set; }
+
+    /// <summary>
+    /// The detached CMS/PKCS#7 signature made with the doctor's DSC in HC360 Desktop (ERX-04); null until then. Once
+    /// set it never changes: the prescription is signed, so its content cannot change either, and a different
+    /// prescription (a repeat) is a new prescription that needs its own signature.
+    /// </summary>
+    public byte[]? DigitalSignature { get; private set; }
+
+    /// <summary>The exact bytes the DSC signed (<see cref="PrescriptionCanonicalForm"/>).</summary>
+    public byte[]? SignedContent { get; private set; }
+
+    /// <summary>Lower-case hex SHA-256 of <see cref="SignedContent"/>, printed and shown on the verification page.</summary>
+    public string? SignedContentHash { get; private set; }
+
+    /// <summary>The signing time in the signature (checked against the server's clock when it was attached).</summary>
+    public DateTimeOffset? DigitallySignedAt { get; private set; }
+
+    public Guid? DigitallySignedByUserId { get; private set; }
+
+    /// <summary>The certificate's common name: the doctor's name on an Indian DSC.</summary>
+    public string? SignerName { get; private set; }
+
+    public string? SignerSubject { get; private set; }
+    public string? SignerSerialNumber { get; private set; }
+    public string? SignerIssuer { get; private set; }
+
+    /// <summary>SHA-1 thumbprint, as the Windows certificate store shows it.</summary>
+    public string? SignerThumbprint { get; private set; }
+
+    /// <summary>
+    /// The certificate's chain when the signature was attached: always "Trusted", because a signature is accepted only from
+    /// a certificate that chains to a CCA India root in the server's DSC trust folder (custom root trust). Every later
+    /// check builds the chain again against the folder as it is then.
+    /// </summary>
+    public string? SignerChainStatus { get; private set; }
+
+    public bool IsDigitallySigned => DigitalSignature is not null;
+
+    /// <summary>
+    /// When the patient was told the prescription is ready (the "prescription shared" message): at signing, or, where the
+    /// hospital requires the doctor's DSC, once signed with it or once the hospital no longer requires it
+    /// (<see cref="PatientNoticeHeldAt"/>). Null until then, so the message goes once whatever the setting was at each step.
+    /// </summary>
+    public DateTimeOffset? PatientNotifiedAt { get; private set; }
+
+    /// <summary>
+    /// When the "prescription shared" message was held back because the hospital required the doctor's DSC when the
+    /// prescription was signed; null when it was not held, or no longer is. A held message goes when the doctor signs it
+    /// with their DSC, or, if the hospital stops requiring the DSC first, when <c>PrescriptionNoticeRelease</c> finds the
+    /// prescription can be issued without it. Either way it is let go once (<see cref="ReleasePatientNotice"/>).
+    /// </summary>
+    public DateTimeOffset? PatientNoticeHeldAt { get; private set; }
+
     public DateTimeOffset? CancelledAt { get; private set; }
     public string? CancelReason { get; private set; }
     public List<PrescriptionItem> Items { get; set; } = [];
@@ -145,6 +224,73 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
+    /// <summary>
+    /// Keeps the doctor's DSC signature, which the caller has verified against <see cref="PrescriptionCanonicalForm"/>.
+    /// Only a signed prescription takes one, and only once: a signed prescription never changes, so a changed
+    /// prescription is a new one (repeat) with its own signature.
+    /// </summary>
+    public Result AttachDigitalSignature(PrescriptionDigitalSignature signature)
+    {
+        ArgumentNullException.ThrowIfNull(signature);
+        if (Status != PrescriptionStatus.Signed)
+        {
+            return Error.Rule("prescription.not_signed", Status == PrescriptionStatus.Draft
+                ? "Sign the prescription before signing it with your DSC."
+                : "This prescription is cancelled.");
+        }
+
+        if (IsDigitallySigned)
+        {
+            return Error.Conflict("prescription.already_digitally_signed",
+                "This prescription is already signed with a DSC and cannot change. Repeat it to issue a new prescription.");
+        }
+
+        DigitalSignature = signature.Signature;
+        SignedContent = signature.Content;
+        SignedContentHash = signature.ContentHash;
+        DigitallySignedAt = signature.SignedAt;
+        DigitallySignedByUserId = signature.UserId;
+        SignerName = signature.SignerName;
+        SignerSubject = signature.SignerSubject;
+        SignerSerialNumber = signature.SignerSerialNumber;
+        SignerIssuer = signature.SignerIssuer;
+        SignerThumbprint = signature.SignerThumbprint;
+        SignerChainStatus = signature.ChainStatus;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Holds back the "prescription shared" message until the prescription can be issued (the hospital requires the
+    /// doctor's DSC). Only an out-patient prescription just signed, whose patient has not been told, is held.
+    /// </summary>
+    public void HoldPatientNotice(DateTimeOffset now)
+    {
+        if (Status == PrescriptionStatus.Signed && !IsInpatient && PatientNotifiedAt is null)
+        {
+            PatientNoticeHeldAt ??= now;
+        }
+    }
+
+    /// <summary>The held message was sent, or could not be (the patient has no mobile number): it is not tried again.</summary>
+    public void ReleasePatientNotice() => PatientNoticeHeldAt = null;
+
+    /// <summary>
+    /// Records that the patient was told the prescription is ready, and raises <see cref="PrescriptionSharedWithPatient"/>
+    /// (Virtual Care adds an SMS after a video consultation). False when they were told already.
+    /// </summary>
+    public bool MarkPatientNotified(DateTimeOffset now)
+    {
+        if (PatientNotifiedAt is not null || Status != PrescriptionStatus.Signed)
+        {
+            return false;
+        }
+
+        PatientNotifiedAt = now;
+        PatientNoticeHeldAt = null;
+        Raise(new PrescriptionSharedWithPatient(Id, PatientId, VisitId, FacilityId, PractitionerId, IsInpatient, SignedAt!.Value));
+        return true;
+    }
+
     /// <summary>Cancelling a signed prescription withdraws it from the pharmacy queue.</summary>
     public Result Cancel(string reason, DateTimeOffset now)
     {
@@ -159,6 +305,7 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         CancelledAt = now;
         CancelReason = trimmed;
         RefillsRemaining = 0;
+        PatientNoticeHeldAt = null; // a cancelled prescription is never announced
         if (wasSigned)
         {
             Raise(new PrescriptionCancelled(Id, PatientId, trimmed));

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,6 +74,8 @@ internal sealed class ClusterRateLimitFilter(AddressRateLimit limit) : IEndpoint
             return await next(context);
         }
 
+        // As the in-memory limiter's refusals do: on an endpoint that asks for a proof of work, the address is asked for more.
+        AntiAutomationEndpoints.OnRateLimited(http);
         var wait = count.WindowEndsAt - http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
         http.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
         return Results.StatusCode(StatusCodes.Status429TooManyRequests);

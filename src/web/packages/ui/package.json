@@ -6,7 +6,9 @@
   "description": "HC360 design system on Fluent UI 2 (Windows 11 look): theme, page anatomy, data table, form fields, clinical widgets, print layouts.",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing/axe.ts"
+    "./testing": "./src/testing/axe.ts",
+    "./testing/browser": "./src/testing/browser.ts",
+    "./testing/fake-api": "./src/testing/fakeApi.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -23,7 +25,9 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@hc360/core": "workspace:*",
+    "@playwright/test": "1.64.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "axe-core": "4.13.0",

@@ -23,9 +23,10 @@ public sealed class DonorService(
     public async Task<Result<Guid>> RegisterAsync(SaveDonorRequest request, CancellationToken ct)
     {
         var phone = Phone.Normalize(request.Phone)!;
-        var firstName = request.FirstName.Trim();
+        // The same first name, whatever its case: escaped, so a name's own % or _ is not a wildcard.
+        var firstName = request.FirstName.Trim().ToLikeLiteral();
         var duplicate = await db.Set<Donor>().AsNoTracking()
-            .Where(d => d.Phone == phone && d.DateOfBirth == request.DateOfBirth && EF.Functions.ILike(d.FirstName, firstName))
+            .Where(d => d.Phone == phone && d.DateOfBirth == request.DateOfBirth && EF.Functions.ILike(d.FirstName, firstName, QueryExtensions.LikeEscape))
             .Select(d => d.DonorNumber)
             .FirstOrDefaultAsync(ct);
         if (duplicate is not null)

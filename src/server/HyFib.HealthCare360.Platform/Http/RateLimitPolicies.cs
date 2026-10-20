@@ -42,6 +42,11 @@ public static class RateLimitPolicies
         services.AddRateLimiter(limiter =>
         {
             limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            limiter.OnRejected = (context, _) =>
+            {
+                AntiAutomationEndpoints.OnRateLimited(context.HttpContext);
+                return ValueTask.CompletedTask;
+            };
             foreach (var address in new[] { ClusterRateLimits.SignIn, ClusterRateLimits.OneTimeCode })
             {
                 limiter.AddPolicy(address.Policy, http => RateLimitPartition.GetFixedWindowLimiter(

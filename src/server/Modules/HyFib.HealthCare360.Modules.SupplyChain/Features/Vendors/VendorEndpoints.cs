@@ -113,7 +113,7 @@ internal static class VendorEndpoints
         {
             var like = term.ToLikePattern();
             var upper = term.ToUpperInvariant();
-            vendors = vendors.Where(v => EF.Functions.ILike(v.Name, like) || v.Code == upper || v.Gstin == upper);
+            vendors = vendors.Where(v => EF.Functions.ILike(v.Name, like, QueryExtensions.LikeEscape) || v.Code == upper || v.Gstin == upper);
         }
 
         var today = HospitalClock.Today(time);

@@ -42,7 +42,7 @@ internal static class DrugSafetyEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            rows = rows.Where(i => EF.Functions.ILike(i.DrugA, like) || EF.Functions.ILike(i.DrugB, like));
+            rows = rows.Where(i => EF.Functions.ILike(i.DrugA, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(i.DrugB, like, QueryExtensions.LikeEscape));
         }
 
         // Severity is stored as text; order by clinical weight, not alphabetically.

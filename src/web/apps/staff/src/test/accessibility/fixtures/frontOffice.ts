@@ -1,10 +1,18 @@
-import type { BillListItem } from '@/modules/billing/api';
-import type { QueueEntry } from '@/modules/front-office/api';
+import type { AuthUser } from '@hc360/core';
+import type { BillListItem, DayEndReport } from '@/modules/billing/api';
+import type { FrontOfficeDashboard, QueueEntry } from '@/modules/front-office/api';
 import type { PatientListItem } from '@/modules/patients/api';
-import type { AppointmentDaySummary, AppointmentListItem } from '@/modules/scheduling/api';
-import { paged, STAFF_USER, type FakeAnswers } from '../../fakeApi';
+import type {
+  AppointmentDaySummary,
+  AppointmentListItem,
+  CalendarAppointment,
+  PractitionerAvailability,
+  SlotDto,
+} from '@/modules/scheduling/api';
+import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers } from '../../fakeApi';
 
-// The front desk's screens with canned data: patient search and registration, the queue, appointments and bills.
+// The front desk's screens with canned data: patient search and registration, the queue, appointments and bills; the
+// appointment calendar; and the front desk's home page.
 
 export const OPD = { id: '0192a000-0000-7000-8000-00000000de01', code: 'GM', name: 'General medicine' };
 export const DOCTORS = [
@@ -199,4 +207,209 @@ export const FRONT_OFFICE_ANSWERS: FakeAnswers = {
   'GET /api/v1/scheduling/appointments': paged(APPOINTMENTS),
   'GET /api/v1/scheduling/appointments/summary': SUMMARY,
   'GET /api/v1/billing/bills': paged(BILLS),
+};
+
+/** A front-desk user: patients, the queue, appointments and the OP billing counter (their home page's widgets). */
+export const FRONT_DESK_USER: AuthUser = {
+  ...STAFF_USER,
+  id: '0192a000-0000-7000-8000-0000000000a2',
+  userName: 'kavita.shah',
+  displayName: 'Kavita Shah',
+  practitionerId: null,
+  roles: ['FrontDesk'],
+  permissions: [
+    'patients.read',
+    'patients.register',
+    'visits.read',
+    'frontoffice.dashboard',
+    'queue.manage',
+    'scheduling.appointments.read',
+    'scheduling.appointments.book',
+    'billing.op.create',
+    'billing.payments.collect',
+    'billing.shifts',
+  ],
+  mfaEnabled: false,
+};
+
+export const FRONT_OFFICE_DASHBOARD: FrontOfficeDashboard = {
+  registrationsToday: 18,
+  visitsToday: 64,
+  openVisits: 21,
+  completedVisits: 43,
+  waitingTokens: 9,
+  averageWaitMinutes: 17,
+  openEnquiries: 3,
+  visitorsInside: 12,
+  departments: [
+    { departmentId: OPD.id, departmentName: OPD.name, waiting: 6, served: 31, nowServing: 'GM-012' },
+    {
+      departmentId: '0192a000-0000-7000-8000-00000000de02',
+      departmentName: 'Cardiology',
+      waiting: 3,
+      served: 12,
+      nowServing: null,
+    },
+  ],
+  visitsByType: [
+    { type: 'OutPatient', count: 52 },
+    { type: 'Emergency', count: 4 },
+    { type: 'Telehealth', count: 8 },
+  ],
+};
+
+/** The hospital's calendar date (IST) today, "yyyy-MM-dd". */
+const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+export const DAY_END: DayEndReport = {
+  date: today,
+  counter: null,
+  shifts: [
+    {
+      shiftId: '0192a000-0000-7000-8000-000000005001',
+      userId: '0192a000-0000-7000-8000-0000000000a2',
+      userName: 'Kavita Shah',
+      counter: 'OPD-1',
+      status: 'Open',
+      openedAt: minutesAgo(300),
+      closedAt: null,
+      collected: 48250,
+      refunded: 500,
+      expectedCash: 21300,
+      declaredCash: null,
+      variance: null,
+    },
+  ],
+  byMode: [
+    { mode: 'Cash', collected: 21800, refunded: 500, net: 21300 },
+    { mode: 'Upi', collected: 19450, refunded: 0, net: 19450 },
+    { mode: 'Card', collected: 7000, refunded: 0, net: 7000 },
+  ],
+  totalCollected: 48250,
+  totalRefunded: 500,
+  netCollection: 47750,
+  depositsCollected: 10000,
+  billsFinalized: 41,
+  billedAmount: 52400,
+  discountGiven: 1200,
+  billsCancelled: 1,
+  cancelledAmount: 350,
+  openShifts: 1,
+};
+
+/** What the front desk's home page asks for: the front office, today's appointments and today's collections. */
+export const FRONT_DESK_HOME_ANSWERS: FakeAnswers = {
+  ...FRONT_OFFICE_ANSWERS,
+  'GET /api/v1/front-office/dashboard': FRONT_OFFICE_DASHBOARD,
+  'GET /api/v1/billing/reports/day-end': DAY_END,
+};
+
+/** A session of 15-minute slots from `start` to `end` (hours, IST) today, the first `booked` of them taken. */
+function session(start: number, end: number, booked: number, room: string) {
+  const slots: SlotDto[] = [];
+  for (let minutes = start * 60; minutes < end * 60; minutes += 15) {
+    const time = (at: number) =>
+      `${String(Math.floor(at / 60)).padStart(2, '0')}:${String(at % 60).padStart(2, '0')}:00`;
+    const taken = slots.length < booked ? 1 : 0;
+    slots.push({
+      startsAt: `${today}T${time(minutes)}+05:30`,
+      endsAt: `${today}T${time(minutes + 15)}+05:30`,
+      date: today,
+      localStart: time(minutes),
+      localEnd: time(minutes + 15),
+      capacity: 1,
+      booked: taken,
+      available: 1 - taken,
+      mode: 'InPerson',
+      facilityId: FACILITY_ID,
+      departmentId: OPD.id,
+      room,
+    });
+  }
+  return slots;
+}
+
+export const AVAILABILITY: PractitionerAvailability[] = [
+  {
+    practitionerId: DOCTORS[0]!.id,
+    practitionerName: DOCTORS[0]!.name,
+    departmentId: OPD.id,
+    departmentName: OPD.name,
+    offersTelehealth: true,
+    freeSlots: 13,
+    slots: session(9, 13, 3, 'Room 3'),
+  },
+  {
+    practitionerId: DOCTORS[1]!.id,
+    practitionerName: DOCTORS[1]!.name,
+    departmentId: OPD.id,
+    departmentName: OPD.name,
+    offersTelehealth: false,
+    freeSlots: 7,
+    slots: session(10, 12, 1, 'Room 5'),
+  },
+];
+
+const booked = (
+  overrides: Partial<CalendarAppointment> & Pick<CalendarAppointment, 'id' | 'number' | 'startsAt' | 'endsAt'>,
+): CalendarAppointment => ({
+  patientId: PATIENTS[0]!.id,
+  patientName: 'Asha Devi',
+  uhid: 'NH26000123',
+  practitionerId: DOCTORS[0]!.id,
+  departmentId: OPD.id,
+  status: 'Booked',
+  visitType: 'New',
+  channel: 'Phone',
+  isTelehealth: false,
+  paymentStatus: 'PayAtHospital',
+  ...overrides,
+});
+
+export const CALENDAR: CalendarAppointment[] = [
+  booked({
+    id: 'c1',
+    number: 'AP2600111',
+    startsAt: `${today}T09:00:00+05:30`,
+    endsAt: `${today}T09:15:00+05:30`,
+    status: 'CheckedIn',
+  }),
+  booked({
+    id: 'c2',
+    number: 'AP2600112',
+    startsAt: `${today}T09:15:00+05:30`,
+    endsAt: `${today}T09:30:00+05:30`,
+    patientId: PATIENTS[1]!.id,
+    patientName: 'Ravi Shankar',
+    uhid: 'NH26000124',
+    status: 'Confirmed',
+    visitType: 'FollowUp',
+  }),
+  booked({
+    id: 'c3',
+    number: 'AP2600113',
+    startsAt: `${today}T09:30:00+05:30`,
+    endsAt: `${today}T09:45:00+05:30`,
+    isTelehealth: true,
+    channel: 'Portal',
+    paymentStatus: 'PaidOnline',
+  }),
+  booked({
+    id: 'c4',
+    number: 'AP2600114',
+    startsAt: `${today}T10:00:00+05:30`,
+    endsAt: `${today}T10:15:00+05:30`,
+    practitionerId: DOCTORS[1]!.id,
+    patientName: 'Kamala Bai',
+    uhid: 'NH26000125',
+    status: 'NoShow',
+  }),
+];
+
+/** The appointment calendar of general medicine today: two doctors' sessions, bookings and free slots. */
+export const CALENDAR_ANSWERS: FakeAnswers = {
+  ...FRONT_OFFICE_ANSWERS,
+  'GET /api/v1/scheduling/slots': AVAILABILITY,
+  'GET /api/v1/scheduling/appointments/calendar': CALENDAR,
+  'GET /api/v1/scheduling/exceptions': [],
 };

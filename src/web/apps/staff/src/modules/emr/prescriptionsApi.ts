@@ -55,6 +55,63 @@ export interface PrescriptionDto {
   cancelReason: string | null;
   items: PrescriptionItemDto[];
   version: number;
+  /** Signed with the doctor's DSC (ERX-04); older servers leave these out. */
+  isDigitallySigned?: boolean;
+  digitallySignedAt?: string | null;
+  digitalSignerName?: string | null;
+  /**
+   * False while the hospital requires the doctor's DSC and the prescription has no valid one: it is then not printed,
+   * downloaded or shared (the pharmacy queue is not held back). Older servers leave it out: read that as true.
+   */
+  finalCopyAvailable?: boolean;
+}
+
+/** Whether the hospital's doctors sign prescriptions with their DSC (setting `clinical.prescriptions.signature`). */
+export type PrescriptionSignaturePolicy = 'Off' | 'Optional' | 'Required';
+/**
+ * `Untrusted`: the prescription is as signed, but the certificate no longer chains to a CCA India root installed on the
+ * server (the roots were changed since), so it is not shown as a DSC signature.
+ */
+export type DigitalSignatureState = 'NotSigned' | 'Valid' | 'Invalid' | 'Untrusted';
+
+/**
+ * The DSC signature as the server re-checked it now. `contentMatchesRecord` is false when the stored prescription no
+ * longer gives the signed bytes; `chainStatus` is "Trusted" or why the certificate does not chain to a CCA India root
+ * installed on the server, and `chainTrusted` says which (the server accepts a signature only from a trusted one).
+ */
+export interface PrescriptionDigitalSignatureDto {
+  state: DigitalSignatureState;
+  policy: PrescriptionSignaturePolicy;
+  signedAt: string | null;
+  signerName: string | null;
+  signerSubject: string | null;
+  certificateSerialNumber: string | null;
+  certificateIssuer: string | null;
+  certificateThumbprint: string | null;
+  contentHash: string | null;
+  contentMatchesRecord: boolean;
+  chainStatus: string | null;
+  /** Older servers leave it out. */
+  chainTrusted?: boolean;
+  message: string | null;
+  /** The DSC rules let it be printed, downloaded and shared (see `PrescriptionDto.finalCopyAvailable`). */
+  finalCopyAvailable?: boolean;
+}
+
+/** The DSC rules let a signed prescription be printed, downloaded and shared (ERX-04); older servers do not say. */
+export const canIssueFinalCopy = (rx: Pick<PrescriptionDto, 'status' | 'finalCopyAvailable'>): boolean =>
+  rx.status === 'Signed' && rx.finalCopyAvailable !== false;
+
+/** The canonical bytes (base64) HC360 Desktop signs, with what the server says they contain. */
+export interface PrescriptionSigningContent {
+  prescriptionId: string;
+  prescriptionNumber: string;
+  format: string;
+  content: string;
+  contentHash: string;
+  patientName: string;
+  patientUhid: string;
+  itemCount: number;
 }
 
 export interface PrescriptionListItem {
@@ -190,6 +247,7 @@ export const prescriptionKeys = {
   list: (patientId: string, params: PrescriptionListParams) =>
     ['emr', 'patient', patientId, 'prescriptions', params] as const,
   detail: (id: string) => ['emr', 'prescription', id] as const,
+  signature: (id: string) => ['emr', 'prescription', id, 'signature'] as const,
   interactions: (search: string, severity: InteractionSeverity | null, page: number) =>
     ['emr', 'drug-interactions', search, severity ?? 'all', page] as const,
   doseLimits: () => ['emr', 'dose-limits'] as const,
@@ -212,6 +270,13 @@ export const prescriptionQueries = {
     queryOptions({
       queryKey: prescriptionKeys.detail(id),
       queryFn: ({ signal }) => api.get<PrescriptionDto>(`/api/v1/clinical/prescriptions/${id}`, { signal }),
+    }),
+  /** The DSC signature, re-checked by the server on every read. */
+  signature: (id: string) =>
+    queryOptions({
+      queryKey: prescriptionKeys.signature(id),
+      queryFn: ({ signal }) =>
+        api.get<PrescriptionDigitalSignatureDto>(`/api/v1/clinical/prescriptions/${id}/digital-signature`, { signal }),
     }),
   interactions: (search: string, severity: InteractionSeverity | null, page: number) =>
     queryOptions({
@@ -260,7 +325,19 @@ export const prescriptionsApi = {
   repeat: (id: string) => api.post<PrescriptionDto>(`/api/v1/clinical/prescriptions/${id}/repeat`),
   refill: (id: string, request: Omit<SignPrescriptionRequest, 'version'>) =>
     api.post<SignPrescriptionResult>(`/api/v1/clinical/prescriptions/${id}/refill`, request),
+  /** The bytes to sign with the DSC (prescribing doctor only). */
+  signingContent: (id: string) =>
+    api.get<PrescriptionSigningContent>(`/api/v1/clinical/prescriptions/${id}/signing-content`),
+  /** Sends HC360 Desktop's detached CMS signature; the server checks it before keeping it. */
+  attachSignature: (id: string, signature: string) =>
+    api.post<PrescriptionDigitalSignatureDto>(`/api/v1/clinical/prescriptions/${id}/digital-signature`, { signature }),
 };
+
+/** The .p7s and the exact bytes it signs, for a check with OpenSSL (see docs/modules/clinical.md). */
+export const prescriptionSignatureFiles = (id: string) => ({
+  signature: `/api/v1/clinical/prescriptions/${id}/signature.p7s`,
+  content: `/api/v1/clinical/prescriptions/${id}/signed-content`,
+});
 
 /** The A5 prescription as the server prints it and makes its PDF (see `@/lib/documents`). */
 export const prescriptionDocument = (id: string) => `/api/v1/clinical/prescriptions/${id}`;

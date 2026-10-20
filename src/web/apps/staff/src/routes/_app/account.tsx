@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Caption1,
+  Divider,
   Field,
   Input,
   makeStyles,
@@ -18,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
+import { DeviceUnlock } from '@/modules/account/DeviceUnlock';
 import { PasswordConfirmDialog } from '@/modules/account/PasswordConfirmDialog';
 import { ChangePasswordForm, MfaSetup, PinForm, reloadCurrentUser } from '@/modules/account/security';
 
@@ -46,6 +48,7 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
   stack: { display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '420px' },
   sessions: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  lockScreen: { display: 'flex', flexDirection: 'column', gap: '12px' },
 });
 
 type TabId = 'password' | 'mfa' | 'pin' | 'sessions';
@@ -63,7 +66,7 @@ function AccountPage() {
     <Page maxWidth={1100}>
       <PageHeader
         title="My account"
-        subtitle="Your profile, password, two-step verification, PIN and signed-in devices"
+        subtitle="Your profile, password, two-step verification, lock screen and signed-in devices"
       />
 
       <Section>
@@ -95,13 +98,21 @@ function AccountPage() {
         <TabList selectedValue={tab} onTabSelect={(_, data) => setTab(data.value as TabId)}>
           <Tab value="password">Password</Tab>
           <Tab value="mfa">Two-step verification</Tab>
-          <Tab value="pin">Unlock PIN</Tab>
+          <Tab value="pin">Lock screen</Tab>
           <Tab value="sessions">Signed-in devices</Tab>
         </TabList>
         <div style={{ paddingTop: 16 }}>
           {tab === 'password' && <ChangePasswordForm />}
           {tab === 'mfa' && (user.mfaEnabled ? <DisableMfa /> : <MfaSetup onDone={() => void reloadCurrentUser()} />)}
-          {tab === 'pin' && <PinForm />}
+          {tab === 'pin' && (
+            <div className={styles.lockScreen}>
+              <Text weight="semibold">PIN</Text>
+              <PinForm />
+              <Divider />
+              <Text weight="semibold">Windows Hello or fingerprint</Text>
+              <DeviceUnlock />
+            </div>
+          )}
           {tab === 'sessions' && <Sessions />}
         </div>
       </Section>

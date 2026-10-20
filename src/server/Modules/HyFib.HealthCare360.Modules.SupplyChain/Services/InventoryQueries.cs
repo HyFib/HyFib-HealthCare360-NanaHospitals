@@ -65,9 +65,9 @@ public static class InventoryQueries
 
         var code = term.ToUpperInvariant();
         var like = term.ToLikePattern();
-        return items.Where(i => i.Code == code || i.Barcode == term || EF.Functions.ILike(i.Name, like)
-                                || (i.GenericName != null && EF.Functions.ILike(i.GenericName, like))
-                                || (i.BrandName != null && EF.Functions.ILike(i.BrandName, like)));
+        return items.Where(i => i.Code == code || i.Barcode == term || EF.Functions.ILike(i.Name, like, QueryExtensions.LikeEscape)
+                                || (i.GenericName != null && EF.Functions.ILike(i.GenericName, like, QueryExtensions.LikeEscape))
+                                || (i.BrandName != null && EF.Functions.ILike(i.BrandName, like, QueryExtensions.LikeEscape)));
     }
 
     public static async Task<Dictionary<Guid, ItemSummary>> ItemSummariesAsync(HospitalDbContext db, IEnumerable<Guid> ids, CancellationToken ct)

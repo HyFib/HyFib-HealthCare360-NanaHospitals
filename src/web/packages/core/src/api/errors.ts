@@ -1,6 +1,12 @@
 /** The server logs every request under this id and sends it back (CorrelationIdMiddleware, SRS OBS-04). */
 export const CORRELATION_HEADER = 'X-Correlation-Id';
 
+/**
+ * The language the user chose in the app (`en`, `hi`). The server writes its text for patients (refusals, the PDFs) in
+ * it, ahead of the preference on the patient's record (RequestLanguageMiddleware, SRS PP-06).
+ */
+export const LANGUAGE_HEADER = 'X-HC360-Language';
+
 /** RFC 9457 Problem Details as produced by the HC360 server. */
 export interface ProblemDetails {
   type?: string;

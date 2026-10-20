@@ -132,6 +132,7 @@ export function WardRoundList({
           {
             key: 'patient',
             header: 'Patient',
+            minWidth: 200,
             render: (p) => (
               <span className={styles.stack}>
                 <WorklistPatient

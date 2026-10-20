@@ -1,4 +1,4 @@
-import { Badge, Button, Field, SearchBox, Select, Text, tokens } from '@fluentui/react-components';
+import { Badge, Button, Field, makeStyles, SearchBox, Select, Text, tokens } from '@fluentui/react-components';
 import { PersonAddRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
 import { formatDate, formatRelative, humanize, useDebouncedValue, type Gender } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
@@ -17,6 +17,14 @@ interface PatientsSearch {
 
 const GENDERS: Gender[] = ['Male', 'Female', 'Other', 'Unknown'];
 
+const useStyles = makeStyles({
+  // The name on one line, ending in an ellipsis where the column is narrower (the whole of it in the title), and the
+  // restricted and deceased marks beside it, or on a line of their own when they do not fit.
+  name: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '6px', rowGap: '2px' },
+  nameText: { minWidth: 0 },
+  marks: { display: 'flex', alignItems: 'center', gap: '6px' },
+});
+
 export const Route = createFileRoute('/_app/patients/')({
   validateSearch: (search: Record<string, unknown>): PatientsSearch => ({
     q: typeof search.q === 'string' && search.q ? search.q : undefined,
@@ -30,6 +38,7 @@ export const Route = createFileRoute('/_app/patients/')({
 });
 
 function PatientsPage() {
+  const styles = useStyles();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const canRegister = usePermission('patients.register');
@@ -128,48 +137,66 @@ function PatientsPage() {
           onRetry={() => void patients.refetch()}
           getRowId={(p) => p.id}
           onRowClick={(p) => void navigate({ to: '/patients/$patientId', params: { patientId: p.id } })}
+          // The other columns are as wide as what they hold and the name takes the rest; with less than 160 px left
+          // for it, the table scrolls sideways instead.
           columns={[
             {
               key: 'uhid',
               header: 'UHID',
-              width: 140,
+              width: 120,
               render: (p) => <Text font="monospace">{p.uhid}</Text>,
             },
             {
               key: 'name',
               header: 'Name',
+              minWidth: 160,
               render: (p) => (
-                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                  <Text weight="semibold">{p.fullName}</Text>
-                  {p.isVip && (
-                    <ShieldKeyholeRegular
-                      aria-label="Restricted record"
-                      color={tokens.colorPaletteMarigoldForeground1}
-                    />
-                  )}
-                  {p.isDeceased && (
-                    <Badge size="small" color="danger">
-                      Deceased
-                    </Badge>
+                <span className={styles.name}>
+                  <Text weight="semibold" wrap={false} truncate title={p.fullName} className={styles.nameText}>
+                    {p.fullName}
+                  </Text>
+                  {(p.isVip || p.isDeceased) && (
+                    <span className={styles.marks}>
+                      {p.isVip && (
+                        <ShieldKeyholeRegular
+                          aria-label="Restricted record"
+                          color={tokens.colorPaletteMarigoldForeground1}
+                        />
+                      )}
+                      {p.isDeceased && (
+                        <Badge size="small" color="danger">
+                          Deceased
+                        </Badge>
+                      )}
+                    </span>
                   )}
                 </span>
               ),
             },
-            { key: 'age', header: 'Age / Sex', width: 110, render: (p) => `${p.age ?? '—'} / ${p.gender.charAt(0)}` },
-            { key: 'phone', header: 'Mobile', width: 140, render: (p) => p.phoneMasked ?? '—' },
+            { key: 'age', header: 'Age / Sex', width: 88, render: (p) => `${p.age ?? '—'} / ${p.gender.charAt(0)}` },
+            { key: 'phone', header: 'Mobile', width: 112, render: (p) => p.phoneMasked ?? '—' },
             {
               key: 'category',
               header: 'Category',
+              width: 140,
               priority: 'low',
-              render: (p) => (p.category === 'General' ? '—' : humanize(p.category)),
+              render: (p) =>
+                p.category === 'General' ? '—' : <span title={humanize(p.category)}>{humanize(p.category)}</span>,
             },
             {
               key: 'lastVisit',
               header: 'Last visit',
+              width: 112,
               priority: 'low',
               render: (p) => (p.lastVisitAt ? formatRelative(p.lastVisitAt) : 'No visits'),
             },
-            { key: 'registered', header: 'Registered', priority: 'low', render: (p) => formatDate(p.registeredAt) },
+            {
+              key: 'registered',
+              header: 'Registered',
+              width: 112,
+              priority: 'low',
+              render: (p) => formatDate(p.registeredAt),
+            },
           ]}
           emptyTitle={search.q ? 'No patients match your search' : 'No patients registered yet'}
           emptyDescription={search.q ? 'Check the UHID or mobile number, or register the patient as new.' : undefined}
