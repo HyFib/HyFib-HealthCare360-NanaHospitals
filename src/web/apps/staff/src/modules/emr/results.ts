@@ -23,8 +23,9 @@ export interface ReleasedResult {
 }
 
 /**
- * Who may open each department's reports, as its endpoints check: lab reports; imaging studies and their reports (the
- * permissions both allow); cardiology studies, which carry their report.
+ * Who may open each department's reports, as its endpoints check: lab reports; an imaging report, which opens through
+ * its study, so the permissions that open both (the radiology worklist opens the study, `RadiologyEndpoints.StudyReaders`,
+ * but not its report, `RadiologyReportEndpoints`); cardiology studies, which carry their report.
  */
 export const RESULT_READERS: Record<DiagnosticKind, string | readonly string[]> = {
   Laboratory: LAB_PERMISSIONS.read,

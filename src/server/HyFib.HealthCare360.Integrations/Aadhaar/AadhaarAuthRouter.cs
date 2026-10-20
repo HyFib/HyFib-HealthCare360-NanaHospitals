@@ -36,6 +36,10 @@ internal sealed class AadhaarAuthRouter(IEnumerable<IAadhaarAuthProvider> provid
         }
 
         // The Aadhaar Act allows authentication only with the holder's consent, given after being told what it is for.
+        // False positive: this is the staff member's statement that the patient agreed, which UIDAI's own request carries
+        // the same way (rc="Y"). It is not a credential: only staff who may check identities can send it, and UIDAI answers
+        // only for the holder's own finger, captured and encrypted by a registered reader.
+        // codeql[cs/user-controlled-bypass]
         if (!check.ResidentConsented)
         {
             return AadhaarCheckResult.Fail(provider.Key, "Ask for the person's consent to Aadhaar authentication first.");
