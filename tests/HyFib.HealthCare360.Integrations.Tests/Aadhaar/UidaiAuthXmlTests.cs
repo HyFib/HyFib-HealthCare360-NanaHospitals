@@ -61,7 +61,13 @@ public sealed class UidaiAuthXmlTests
         auth.Elements().Select(e => e.Name.LocalName).ShouldBe(["Uses", "Meta", "Skey", "Data", "Hmac"]);
         Attributes(auth.Element(ns + "Uses")!).ShouldBe(new Dictionary<string, string>
         {
-            ["pi"] = "n", ["pa"] = "n", ["pfa"] = "n", ["bio"] = "y", ["bt"] = "FMR,FIR", ["pin"] = "n", ["otp"] = "n",
+            ["pi"] = "n",
+            ["pa"] = "n",
+            ["pfa"] = "n",
+            ["bio"] = "y",
+            ["bt"] = "FMR,FIR",
+            ["pin"] = "n",
+            ["otp"] = "n",
         });
         Attributes(auth.Element(ns + "Meta")!).ShouldBe(new Dictionary<string, string>
         {
