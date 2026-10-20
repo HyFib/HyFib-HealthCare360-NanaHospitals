@@ -100,7 +100,7 @@ internal static class FollowUpEndpoints
         {
             var like = term.ToLikePattern();
             var uhid = term.ToUpperInvariant();
-            rows = rows.Where(r => r.Uhid == uhid || EF.Functions.ILike(r.FullName, like));
+            rows = rows.Where(r => r.Uhid == uhid || EF.Functions.ILike(r.FullName, like, QueryExtensions.LikeEscape));
         }
 
         // Enums are stored as text, so priority is ranked explicitly: high-priority calls first, then by due date.

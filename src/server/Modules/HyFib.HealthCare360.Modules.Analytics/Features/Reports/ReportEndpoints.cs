@@ -256,19 +256,19 @@ internal static class ReportEndpoints
         await using var db = contexts.Create(facility);
         IQueryable<LookupItem>? items = kind.ToLowerInvariant() switch
         {
-            "departments" => db.Set<Department>().Where(d => d.IsActive && (like == null || EF.Functions.ILike(d.Name, like)))
+            "departments" => db.Set<Department>().Where(d => d.IsActive && (like == null || EF.Functions.ILike(d.Name, like, QueryExtensions.LikeEscape)))
                 .OrderBy(d => d.DisplayOrder).ThenBy(d => d.Name).Select(d => new LookupItem(d.Id, d.Code, d.Name)),
             "practitioners" => db.Set<Practitioner>()
                 .Where(p => p.IsActive && (facility == null || p.FacilityIds.Count == 0 || p.FacilityIds.Contains(facility.Value))
-                            && (like == null || EF.Functions.ILike(p.DisplayName, like) || EF.Functions.ILike(p.Code, like)))
+                            && (like == null || EF.Functions.ILike(p.DisplayName, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(p.Code, like, QueryExtensions.LikeEscape)))
                 .OrderBy(p => p.DisplayName).Select(p => new LookupItem(p.Id, p.Code, p.DisplayName)),
-            "payers" => db.Set<Payer>().Where(p => p.IsActive && (like == null || EF.Functions.ILike(p.Name, like)))
+            "payers" => db.Set<Payer>().Where(p => p.IsActive && (like == null || EF.Functions.ILike(p.Name, like, QueryExtensions.LikeEscape)))
                 .OrderBy(p => p.Name).Select(p => new LookupItem(p.Id, p.Code, p.Name)),
-            "wards" => db.Set<Ward>().Where(w => w.IsActive && (like == null || EF.Functions.ILike(w.Name, like)))
+            "wards" => db.Set<Ward>().Where(w => w.IsActive && (like == null || EF.Functions.ILike(w.Name, like, QueryExtensions.LikeEscape)))
                 .OrderBy(w => w.DisplayOrder).ThenBy(w => w.Name).Select(w => new LookupItem(w.Id, w.Code, w.Name)),
-            "stores" => db.Set<Store>().Where(s => s.IsActive && (like == null || EF.Functions.ILike(s.Name, like)))
+            "stores" => db.Set<Store>().Where(s => s.IsActive && (like == null || EF.Functions.ILike(s.Name, like, QueryExtensions.LikeEscape)))
                 .OrderBy(s => s.Name).Select(s => new LookupItem(s.Id, s.Code, s.Name)),
-            "theatres" => db.Set<Theatre>().Where(t => t.IsActive && (like == null || EF.Functions.ILike(t.Name, like)))
+            "theatres" => db.Set<Theatre>().Where(t => t.IsActive && (like == null || EF.Functions.ILike(t.Name, like, QueryExtensions.LikeEscape)))
                 .OrderBy(t => t.DisplayOrder).ThenBy(t => t.Code).Select(t => new LookupItem(t.Id, t.Code, t.Code + " · " + t.Name)),
             _ => null,
         };

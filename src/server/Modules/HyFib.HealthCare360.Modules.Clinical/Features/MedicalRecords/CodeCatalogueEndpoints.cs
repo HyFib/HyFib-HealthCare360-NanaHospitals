@@ -110,12 +110,12 @@ internal static class CodeCatalogueEndpoints
             if (word.Length < 3)
             {
                 var (start, inside) = WordStart(word);
-                byWords = byWords.Where(c => EF.Functions.ILike(c.SearchText, start) || EF.Functions.ILike(c.SearchText, inside));
+                byWords = byWords.Where(c => EF.Functions.ILike(c.SearchText, start, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, inside, QueryExtensions.LikeEscape));
             }
             else
             {
                 var like = word.ToLikePattern();
-                byWords = byWords.Where(c => EF.Functions.ILike(c.SearchText, like));
+                byWords = byWords.Where(c => EF.Functions.ILike(c.SearchText, like, QueryExtensions.LikeEscape));
             }
         }
 
@@ -127,12 +127,12 @@ internal static class CodeCatalogueEndpoints
             .ThenByDescending(c => c.Title.ToLower().StartsWith(lower))
             .ThenByDescending(c => c.Title.ToLower().Contains(lower))
             .ThenByDescending(c =>
-                (w.S0 == null || EF.Functions.ILike(c.SearchText, w.S0) || EF.Functions.ILike(c.SearchText, w.I0!))
-                && (w.S1 == null || EF.Functions.ILike(c.SearchText, w.S1) || EF.Functions.ILike(c.SearchText, w.I1!))
-                && (w.S2 == null || EF.Functions.ILike(c.SearchText, w.S2) || EF.Functions.ILike(c.SearchText, w.I2!))
-                && (w.S3 == null || EF.Functions.ILike(c.SearchText, w.S3) || EF.Functions.ILike(c.SearchText, w.I3!))
-                && (w.S4 == null || EF.Functions.ILike(c.SearchText, w.S4) || EF.Functions.ILike(c.SearchText, w.I4!))
-                && (w.S5 == null || EF.Functions.ILike(c.SearchText, w.S5) || EF.Functions.ILike(c.SearchText, w.I5!)))
+                (w.S0 == null || EF.Functions.ILike(c.SearchText, w.S0, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I0!, QueryExtensions.LikeEscape))
+                && (w.S1 == null || EF.Functions.ILike(c.SearchText, w.S1, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I1!, QueryExtensions.LikeEscape))
+                && (w.S2 == null || EF.Functions.ILike(c.SearchText, w.S2, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I2!, QueryExtensions.LikeEscape))
+                && (w.S3 == null || EF.Functions.ILike(c.SearchText, w.S3, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I3!, QueryExtensions.LikeEscape))
+                && (w.S4 == null || EF.Functions.ILike(c.SearchText, w.S4, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I4!, QueryExtensions.LikeEscape))
+                && (w.S5 == null || EF.Functions.ILike(c.SearchText, w.S5, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I5!, QueryExtensions.LikeEscape)))
             .ThenBy(c => c.Title.Length)
             .ThenBy(c => c.Code)
             .Take(CandidateLimit)
@@ -347,12 +347,12 @@ internal static class CodeCatalogueEndpoints
             if (word.Length < 3)
             {
                 var (start, inside) = WordStart(word);
-                byWords = byWords.Where(c => EF.Functions.ILike(c.SearchText, start) || EF.Functions.ILike(c.SearchText, inside));
+                byWords = byWords.Where(c => EF.Functions.ILike(c.SearchText, start, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, inside, QueryExtensions.LikeEscape));
             }
             else
             {
                 var like = word.ToLikePattern();
-                byWords = byWords.Where(c => EF.Functions.ILike(c.SearchText, like));
+                byWords = byWords.Where(c => EF.Functions.ILike(c.SearchText, like, QueryExtensions.LikeEscape));
             }
         }
 
@@ -392,12 +392,12 @@ internal static class CodeCatalogueEndpoints
             .OrderByDescending(c => c.Title.ToLower().StartsWith(lower))
             .ThenByDescending(c => c.Title.ToLower().Contains(lower))
             .ThenByDescending(c =>
-                (w.S0 == null || EF.Functions.ILike(c.SearchText, w.S0) || EF.Functions.ILike(c.SearchText, w.I0!))
-                && (w.S1 == null || EF.Functions.ILike(c.SearchText, w.S1) || EF.Functions.ILike(c.SearchText, w.I1!))
-                && (w.S2 == null || EF.Functions.ILike(c.SearchText, w.S2) || EF.Functions.ILike(c.SearchText, w.I2!))
-                && (w.S3 == null || EF.Functions.ILike(c.SearchText, w.S3) || EF.Functions.ILike(c.SearchText, w.I3!))
-                && (w.S4 == null || EF.Functions.ILike(c.SearchText, w.S4) || EF.Functions.ILike(c.SearchText, w.I4!))
-                && (w.S5 == null || EF.Functions.ILike(c.SearchText, w.S5) || EF.Functions.ILike(c.SearchText, w.I5!)))
+                (w.S0 == null || EF.Functions.ILike(c.SearchText, w.S0, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I0!, QueryExtensions.LikeEscape))
+                && (w.S1 == null || EF.Functions.ILike(c.SearchText, w.S1, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I1!, QueryExtensions.LikeEscape))
+                && (w.S2 == null || EF.Functions.ILike(c.SearchText, w.S2, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I2!, QueryExtensions.LikeEscape))
+                && (w.S3 == null || EF.Functions.ILike(c.SearchText, w.S3, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I3!, QueryExtensions.LikeEscape))
+                && (w.S4 == null || EF.Functions.ILike(c.SearchText, w.S4, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I4!, QueryExtensions.LikeEscape))
+                && (w.S5 == null || EF.Functions.ILike(c.SearchText, w.S5, QueryExtensions.LikeEscape) || EF.Functions.ILike(c.SearchText, w.I5!, QueryExtensions.LikeEscape)))
             .ThenBy(c => c.Title.Length)
             .ThenBy(c => c.Code);
     }

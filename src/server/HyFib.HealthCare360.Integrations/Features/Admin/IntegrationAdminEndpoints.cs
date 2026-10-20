@@ -63,7 +63,7 @@ internal static class IntegrationAdminEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            logs = logs.Where(l => EF.Functions.ILike(l.Reference!, like) || EF.Functions.ILike(l.Operation, like) || EF.Functions.ILike(l.Provider, like));
+            logs = logs.Where(l => EF.Functions.ILike(l.Reference!, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(l.Operation, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(l.Provider, like, QueryExtensions.LikeEscape));
         }
 
         var result = await logs.OrderByDescending(l => l.CreatedAt)
@@ -87,7 +87,7 @@ internal static class IntegrationAdminEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            messages = messages.Where(m => EF.Functions.ILike(m.Body, like) || EF.Functions.ILike(m.Reference!, like) || EF.Functions.ILike(m.Subject!, like));
+            messages = messages.Where(m => EF.Functions.ILike(m.Body, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(m.Reference!, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(m.Subject!, like, QueryExtensions.LikeEscape));
         }
 
         var result = await messages.OrderByDescending(m => m.CreatedAt)

@@ -91,7 +91,7 @@ internal static class PayrollEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            payslips = payslips.Where(p => EF.Functions.ILike(p.EmployeeName, like) || p.EmployeeCode == term.ToUpper());
+            payslips = payslips.Where(p => EF.Functions.ILike(p.EmployeeName, like, QueryExtensions.LikeEscape) || p.EmployeeCode == term.ToUpper());
         }
 
         return TypedResults.Ok(await payslips.OrderBy(p => p.EmployeeCode)

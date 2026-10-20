@@ -79,9 +79,9 @@ internal static class PublicDoctorEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            var specialties = db.Set<Specialty>().Where(s => EF.Functions.ILike(s.Name, like)).Select(s => (Guid?)s.Id);
-            doctors = doctors.Where(p => EF.Functions.ILike(p.DisplayName, like)
-                                         || (p.Qualification != null && EF.Functions.ILike(p.Qualification, like))
+            var specialties = db.Set<Specialty>().Where(s => EF.Functions.ILike(s.Name, like, QueryExtensions.LikeEscape)).Select(s => (Guid?)s.Id);
+            doctors = doctors.Where(p => EF.Functions.ILike(p.DisplayName, like, QueryExtensions.LikeEscape)
+                                         || (p.Qualification != null && EF.Functions.ILike(p.Qualification, like, QueryExtensions.LikeEscape))
                                          || specialties.Contains(p.SpecialtyId));
         }
 

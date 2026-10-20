@@ -54,7 +54,7 @@ internal static class CredentialEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            rows = rows.Where(r => EF.Functions.ILike(r.FullName, like) || r.EmployeeCode == term.ToUpper() || EF.Functions.ILike(r.c.Number, like));
+            rows = rows.Where(r => EF.Functions.ILike(r.FullName, like, QueryExtensions.LikeEscape) || r.EmployeeCode == term.ToUpper() || EF.Functions.ILike(r.c.Number, like, QueryExtensions.LikeEscape));
         }
 
         var result = await rows.OrderBy(r => r.c.ExpiresOn == null).ThenBy(r => r.c.ExpiresOn).ThenBy(r => r.FullName).ToPagedResultAsync(page, ct);
