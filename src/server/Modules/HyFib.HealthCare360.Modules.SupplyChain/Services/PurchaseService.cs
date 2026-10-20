@@ -62,7 +62,9 @@ public sealed class PurchaseService(HospitalDbContext db, INumberSeries numbers,
             return Error.Rule("requisition.nothing_to_order", "No item in this store is at or below its reorder level.");
         }
 
-        var lines = rows.Take(300).Select(r => new RequisitionLineInput(r.ItemId, Math.Max(r.SuggestedPurchaseUnits, 1), "Reorder level reached")).ToList();
+        var lines = rows.Take(ReorderCalculator.MaxRequisitionLines)
+            .Select(r => new RequisitionLineInput(r.ItemId, ReorderCalculator.RequisitionQuantity(r.SuggestedPurchaseUnits), "Reorder level reached"))
+            .ToList();
         return await CreateRequisitionAsync(new CreateRequisitionRequest(storeId, null, "Generated from the reorder report", lines), ct);
     }
 
