@@ -64,6 +64,8 @@ internal static class AbdmTestData
             Qualification = "MBBS, MD (General Medicine)",
             RegistrationCouncil = "Maharashtra Medical Council",
             RegistrationNumber = "MMC-2009-041234",
+            CreatedAt = TestData.Now.AddYears(-3),
+            UpdatedAt = TestData.Now.AddMonths(-6),
         },
         new()
         {
@@ -75,6 +77,7 @@ internal static class AbdmTestData
             DisplayName = "Dr. Vikram Shah",
             Gender = Gender.Male,
             Qualification = "MBBS, MD, DM (Cardiology)",
+            CreatedAt = TestData.Now.AddYears(-2),
         },
     ];
 
@@ -89,6 +92,7 @@ internal static class AbdmTestData
             Phone = "+912026001234",
             Email = "records@nanahospitals.example",
             Address = new Address { Line1 = "1 Hospital Road", City = "Pune", District = "Pune", State = "Maharashtra", PinCode = "411001" },
+            CreatedAt = TestData.Now.AddYears(-4),
         },
     ];
 

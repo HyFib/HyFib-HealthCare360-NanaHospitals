@@ -17,6 +17,8 @@ internal sealed record PractitionerRow
     public string? Qualification { get; init; }
     public string? RegistrationCouncil { get; init; }
     public string? RegistrationNumber { get; init; }
+    public required DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
 }
 
 /// <summary>The facility (hospital or branch) that holds the record, from the facility master.</summary>
@@ -29,6 +31,8 @@ internal sealed record FacilityRow
     public string? Phone { get; init; }
     public string? Email { get; init; }
     public Address Address { get; init; } = new();
+    public required DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
 }
 
 /// <summary>
@@ -43,7 +47,7 @@ internal static class AbdmParticipants
         var practitioner = new R4.Practitioner
         {
             Id = FhirIds.Of(p.Id),
-            Meta = new R4.Meta { Profile = [AbdmProfiles.Practitioner] },
+            Meta = FhirElements.Meta(p.CreatedAt, p.UpdatedAt, AbdmProfiles.Practitioner),
             Gender = PatientMapper.Gender(p.Gender),
         };
 
@@ -88,7 +92,7 @@ internal static class AbdmParticipants
         var organization = new R4.Organization
         {
             Id = FhirIds.Of(f.Id),
-            Meta = new R4.Meta { Profile = [AbdmProfiles.Organization] },
+            Meta = FhirElements.Meta(f.CreatedAt, f.UpdatedAt, AbdmProfiles.Organization),
             Name = f.Name,
             Type = [FhirElements.Concept(AbdmSystems.OrganizationType, "prov", "Healthcare Provider")],
         };
@@ -136,6 +140,13 @@ internal static class AbdmParticipants
 /// </summary>
 internal static class AbdmProfiler
 {
+    /// <summary>
+    /// The conclusion of a laboratory report that flags nothing. The IG requires a conclusion, the laboratory does not
+    /// write one, and an unflagged result is not a normal one (a qualitative result, or one without a reference range,
+    /// is never flagged), so it says nothing about the results themselves.
+    /// </summary>
+    public const string SeeTheResults = "See the individual results.";
+
     /// <summary>Vital signs the IG's ObservationVitalSigns profile names.</summary>
     private static readonly HashSet<string> VitalSignCodes = ["85354-9", "8867-4", "59408-5", "2708-6", "8310-5", "9279-1"];
 
@@ -202,7 +213,8 @@ internal static class AbdmProfiler
     /// <summary>
     /// A laboratory report: the IG's DiagnosticReportLab profile wants a SNOMED CT service section, someone who
     /// interpreted the results (the laboratory, <paramref name="laboratory"/>), and a conclusion. Reports carry no
-    /// written conclusion, so it states which results the laboratory flagged, from the observations' interpretation.
+    /// written conclusion, so it names the results the laboratory flagged (the observations' interpretation), or only
+    /// points to the results (<see cref="SeeTheResults"/>).
     /// </summary>
     public static R4.DiagnosticReport LabReport(R4.DiagnosticReport report, R4.ResourceReference laboratory, IReadOnlyList<R4.Observation> results)
     {
@@ -221,7 +233,7 @@ internal static class AbdmProfiler
         return document;
     }
 
-    /// <summary>"Flagged by the laboratory: Haemoglobin (Low), CRP (High)." or that nothing was flagged.</summary>
+    /// <summary>"Flagged by the laboratory: Haemoglobin (Low), CRP (High).", or <see cref="SeeTheResults"/>.</summary>
     public static string LabConclusion(IReadOnlyList<R4.Observation> results)
     {
         var flagged = results
@@ -230,7 +242,7 @@ internal static class AbdmProfiler
             .Select(r => $"{r.Test} ({r.Flag})")
             .ToList();
         return flagged.Count == 0
-            ? "No result was flagged outside its reference range by the laboratory."
+            ? SeeTheResults
             : $"Flagged by the laboratory: {string.Join(", ", flagged)}.";
     }
 

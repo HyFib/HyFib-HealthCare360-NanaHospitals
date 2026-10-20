@@ -486,6 +486,7 @@
         "resourceType": "Practitioner",
         "id": "c5eb9e84-7367-8996-a1d6-35025a050d1b",
         "meta": {
+          "lastUpdated": "2026-03-25T10:30:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner"
           ]
@@ -555,6 +556,7 @@
         "resourceType": "Organization",
         "id": "8878f630-7199-8fcb-8182-a92e8749eb27",
         "meta": {
+          "lastUpdated": "2022-09-25T10:30:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
           ]

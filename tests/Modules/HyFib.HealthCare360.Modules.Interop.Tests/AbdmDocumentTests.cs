@@ -237,6 +237,20 @@ public sealed class AbdmDocumentTests
     }
 
     [Fact]
+    public void A_lab_report_that_flags_nothing_does_not_call_its_results_normal()
+    {
+        // A qualitative result ("Reactive"), or one with no reference range, is never flagged, so an unflagged report is
+        // not a normal one: the conclusion the IG requires only points to the results.
+        var data = AbdmTestData.LabReportRecord(pdf: null);
+        var bundle = Build(AbdmRecords.LabReport(data with { Results = [.. data.Results.Select(r => r with { Flag = null })] }));
+
+        var report = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().ShouldHaveSingleItem();
+        report.Conclusion.ShouldBe("See the individual results.");
+        report.Text.Div.ShouldNotContain("See the individual results");
+        FhirJson.Serialize(bundle).ShouldNotContain("reference range", Case.Insensitive);
+    }
+
+    [Fact]
     public void A_discharge_summary_has_the_stay_diagnoses_reports_medicines_and_the_summary_text_without_a_pdf()
     {
         var bundle = Sample("discharge-summary");
@@ -304,6 +318,35 @@ public sealed class AbdmDocumentTests
         amended.Identifier.Value.ShouldNotBe(original.Identifier.Value, "a new version of the document is a new document");
         amended.Entry[0].Resource.Id.ShouldBe(original.Entry[0].Resource.Id, "the composition keeps its id across versions");
         amended.Entry.Skip(1).Select(e => e.FullUrl).ShouldBe(original.Entry.Skip(1).Select(e => e.FullUrl));
+    }
+
+    [Fact]
+    public void A_record_exported_again_after_its_patient_or_doctor_changed_is_a_new_version_of_the_document()
+    {
+        var data = AbdmTestData.Prescription(AbdmTestData.Pdf);
+        var original = Build(AbdmRecords.Prescription(data));
+
+        // Front office links the patient's ABHA number after the first export: only the patient changed.
+        var linked = Build(AbdmRecords.Prescription(data with
+        {
+            Context = data.Context with { Patient = data.Context.Patient with { UpdatedAt = TestData.Now.AddMinutes(-5) } },
+        }));
+        linked.Meta.VersionId.ShouldNotBe(original.Meta.VersionId);
+        linked.Meta.LastUpdated.ShouldBe(TestData.Now.AddMinutes(-5));
+        linked.Identifier.Value.ShouldNotBe(original.Identifier.Value, "a receiver that keeps one copy per identifier must not keep the stale one");
+        ((R4.Composition)linked.Entry[0].Resource).Meta.VersionId.ShouldBe(linked.Meta.VersionId);
+
+        // The doctor's registration is corrected in the master.
+        var corrected = Build(AbdmRecords.Prescription(data with
+        {
+            Context = data.Context with
+            {
+                Practitioners = [.. data.Context.Practitioners.Select(p => p with { UpdatedAt = TestData.Now.AddMinutes(-1) })],
+            },
+        }));
+        corrected.Meta.VersionId.ShouldNotBe(original.Meta.VersionId);
+        corrected.Entry.Select(e => e.Resource).OfType<R4.Practitioner>().ShouldHaveSingleItem().Meta.LastUpdated
+            .ShouldBe(TestData.Now.AddMinutes(-1));
     }
 
     [Fact]

@@ -50,8 +50,8 @@ internal sealed record AbdmDocument
     /// <summary>When the record was completed: signed, released or amended.</summary>
     public required DateTimeOffset Date { get; init; }
 
-    /// <summary>The latest change to anything in the document; it versions the document.</summary>
-    public required DateTimeOffset LastUpdated { get; init; }
+    /// <summary>The record's own latest change (created, signed, amended, released).</summary>
+    public required DateTimeOffset RecordUpdated { get; init; }
 
     public required R4.Patient Patient { get; init; }
     public R4.Encounter? Encounter { get; init; }
@@ -71,6 +71,20 @@ internal sealed record AbdmDocument
 
     /// <summary>Resources referenced from the entries rather than listed in a section (a report's observations, other doctors).</summary>
     public IReadOnlyList<R4.Resource> Supporting { get; init; } = [];
+
+    /// <summary>
+    /// The latest change to anything in the document, which versions it: the record and every resource in it, the patient,
+    /// the doctors and the facility included, so a document exported again after an ABHA number was linked, or a doctor's
+    /// registration corrected, gets a new version and Bundle identifier.
+    /// </summary>
+    public DateTimeOffset LastUpdated =>
+        new R4.Resource?[] { Patient, Encounter, Author, Attester, Custodian }
+            .Concat(Sections.SelectMany(s => s.Entries))
+            .Concat(Supporting)
+            .Select(r => r?.Meta?.LastUpdated)
+            .OfType<DateTimeOffset>()
+            .Append(RecordUpdated)
+            .Max();
 
     /// <summary>The document's version: the latest change, in Unix milliseconds.</summary>
     public string VersionId => LastUpdated.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture);

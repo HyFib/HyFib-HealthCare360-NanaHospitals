@@ -293,7 +293,7 @@ internal static class AbdmNarrative
         R4.AllergyIntolerance a => Join("Allergy", Text(a.Code)),
         R4.MedicationRequest m => Join(Text(m.Medication as R4.CodeableConcept) + ":", m.DosageInstruction.FirstOrDefault()?.Text),
         R4.Observation o => Join(Text(o.Code) + ":", Value(o)),
-        R4.DiagnosticReport r => Join(Text(r.Code), r.Conclusion is { } conclusion ? $"({conclusion})" : null),
+        R4.DiagnosticReport r => Join(Text(r.Code), r.Conclusion is { } conclusion and not AbdmProfiler.SeeTheResults ? $"({conclusion})" : null),
         R4.DocumentReference d => d.Description ?? Text(d.Type),
         _ => null,
     };

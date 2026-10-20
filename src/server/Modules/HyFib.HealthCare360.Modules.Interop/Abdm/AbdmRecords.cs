@@ -124,7 +124,7 @@ internal static class AbdmRecords
             Title = "Prescription record",
             Status = R4.CompositionStatus.Final,
             Date = d.SignedAt ?? d.PrescribedAt,
-            LastUpdated = Latest(FhirElements.Latest(d.CreatedAt, d.UpdatedAt), [.. requests, encounter]),
+            RecordUpdated = FhirElements.Latest(d.CreatedAt, d.UpdatedAt),
             Patient = Patient(d.Context, people),
             Encounter = encounter,
             Author = author,
@@ -165,7 +165,7 @@ internal static class AbdmRecords
             Title = "Laboratory report",
             Status = d.Report.Status == LabReportStatus.Amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
             Date = released,
-            LastUpdated = Latest(FhirElements.Latest(d.Report.CreatedAt, d.Report.UpdatedAt), [report, .. results, encounter]),
+            RecordUpdated = FhirElements.Latest(d.Report.CreatedAt, d.Report.UpdatedAt),
             Patient = Patient(d.Context, people),
             Encounter = encounter,
             Author = laboratory,
@@ -229,7 +229,7 @@ internal static class AbdmRecords
             Title = "Consultation report",
             Status = note.Status == EncounterStatus.Amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
             Date = note.AmendedAt ?? note.SignedAt ?? note.CreatedAt,
-            LastUpdated = Latest(FhirElements.Latest(note.CreatedAt, note.UpdatedAt), [encounter, .. conditions, .. observations, .. requests, .. allergies]),
+            RecordUpdated = FhirElements.Latest(note.CreatedAt, note.UpdatedAt),
             Patient = Patient(d.Context, people),
             Encounter = encounter,
             Author = author,
@@ -303,8 +303,7 @@ internal static class AbdmRecords
             Title = "Discharge summary",
             Status = summary.Status == DischargeSummaryStatus.Amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
             Date = summary.AmendedAt ?? summary.SignedAt ?? summary.CreatedAt,
-            LastUpdated = Latest(FhirElements.Latest(summary.CreatedAt, summary.UpdatedAt),
-                [encounter, document, .. conditions, .. requests, .. allergies, .. reports, .. results]),
+            RecordUpdated = FhirElements.Latest(summary.CreatedAt, summary.UpdatedAt),
             Patient = Patient(d.Context, people),
             Encounter = encounter,
             Author = (R4.Resource?)practitioner ?? custodian,
@@ -394,10 +393,6 @@ internal static class AbdmRecords
 
         return document;
     }
-
-    /// <summary>The latest of the record's own change and its resources' <c>meta.lastUpdated</c>.</summary>
-    private static DateTimeOffset Latest(DateTimeOffset record, IEnumerable<R4.Resource?> resources) =>
-        resources.OfType<R4.Resource>().Select(r => r.Meta?.LastUpdated).OfType<DateTimeOffset>().Append(record).Max();
 
     private static string? Field(string label, string? value) => FhirElements.Clean(value) is { } text ? $"{label}: {text}" : null;
 

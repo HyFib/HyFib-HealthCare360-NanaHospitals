@@ -104,6 +104,8 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
                     Qualification = p.Qualification,
                     RegistrationCouncil = p.RegistrationCouncil,
                     RegistrationNumber = p.RegistrationNumber,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
                 })
                 .ToListAsync(ct);
     }
@@ -125,6 +127,8 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
                     Phone = f.Phone,
                     Email = f.Email,
                     Address = f.Address,
+                    CreatedAt = f.CreatedAt,
+                    UpdatedAt = f.UpdatedAt,
                 })
                 .ToListAsync(ct);
     }
