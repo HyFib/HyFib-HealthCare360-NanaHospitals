@@ -338,8 +338,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Administration › Audit log › *Verify integrity* re-checks the chain. It also fails on any seal outside the chain.
   - The log is partitioned by month (SCAL-04). Each month's partition refuses TRUNCATE and DELETE as the table does, and
     the chain-link trigger refuses a seal that takes a chain position another entry has (a unique index would have to
-    include the month). Old months are never dropped: the setting that would drop other tables' old months cannot name
-    the audit log, and the server will not start if it does.
+    include the month). No partition is ever dropped, of the audit log or any other table: records are deleted only by
+    the Privacy retention schedule, row by row, at least as late as the law allows and with every run audited.
 - Records carry who and when on every change, and deletes are soft deletes. Every change to an audited record also
   writes a data audit event with each changed value (from/to); compound values such as addresses, cardiology
   findings and TTI results are recorded part by part.
@@ -448,7 +448,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - A holder of `admin.system.manage` makes a new one from Administration › Backups, after giving their password
     again. It is shown once, to them, as 14 groups of 4 letters and digits whose last group checks the others. Backups
     use it only once they type it back from their copy, so a key nobody wrote down never becomes the one backups need.
-    The server deletes the key it replaces. Showing it and putting it to use are audited, without the key.
+    Until then it waits, wrapped by Data Protection, beside the current key, in the folder the servers share when there
+    are several (SCAL-01), so the confirmation may reach any of them; only the administrator it was shown to can confirm
+    it, within 30 minutes, and it is never used before. The server deletes the key it replaces. Showing it and putting it to use are
+    audited, without the key.
   - Every backup file names its key in a header that each chunk authenticates. The Backups list names each backup's
     key, and the restore tool says which key a backup needs when it is given another.
   - Until the first new key, backups use the original recovery key, derived from the original data key, which any

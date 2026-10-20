@@ -46,7 +46,7 @@ The hub accepts anonymous connections (guests have no JWT) and authorises every 
 | `JoinAsGuest(sessionId, token)` → `TelehealthJoinResult` | holder of the SMS/WhatsApp link | waiting room; sees first names only; 5 failed tries abort the connection |
 | `Admit(sessionId, participantId?)` | clinician | admits one/all waiting; starts the clock |
 | `SendOffer` / `SendAnswer(sessionId, sdp)`, `SendIceCandidate(sessionId, candidate)` | admitted participants | relayed to the others in the room |
-| `SendChat(sessionId, text)` | admitted participants | stored and broadcast (max 2 000 chars) |
+| `SendChat(sessionId, text)` → `TelehealthMessageDto` | admitted participants | stored and broadcast (max 2 000 chars); the reply shows it to the sender even if the broadcast could not be sent |
 | `ChangeMediaMode(sessionId, audioOnly)` | admitted participants | audio-only fallback, recorded |
 | `ReportQuality(sessionId, ConnectionQualitySample)` | joined participants | worst stats stored (at most every 15 s) |
 | `Leave(sessionId)` / disconnect | anyone | left time recorded; waiting room cleared if empty |
@@ -55,7 +55,9 @@ Server → client events: `participantJoined`, `participantLeft`, `waitingRoomCh
 `offer`, `answer`, `iceCandidate` (`{ from, data }`), `chatMessage`, `mediaModeChanged`, `sessionUpdated`,
 `sessionEnded`. `TelehealthJoinResult` = session id, participant id, role, status, admitted, scheduled start,
 practitioner/patient names, ICE servers, waiting list (clinicians) and the last 50 chat messages (admitted).
-Presence is stored with connection ids, so with the Redis backplane any API node can admit a patient.
+Presence is stored with connection ids, so with the Redis backplane any API node can admit a patient. A session change
+or chat message is saved before it is pushed; a push that cannot be sent (Redis away, SCAL-02) is logged and the
+request or hub call that saved it still succeeds (REL-03), so nobody sends a chat message twice.
 
 ### Endpoints — `/api/v1/telehealth`
 
@@ -98,9 +100,8 @@ Permission `portal.access`, scoped by `PortalPatientScope`.
   Implausible values are rejected; retries are de-duplicated (unique enrolment + type + measurement second).
   `rpm_readings` is partitioned by month of `measured_at` (SCAL-04): its primary key is (id, measured_at) in the
   database, the de-duplicating unique index already includes the month, and nothing has a foreign key to a reading
-  (an alert keeps the reading's id). The platform keeps the months ahead; old months are dropped only when
-  `HealthCare360:Partitions:RetentionMonths` names `virtualcare.rpm_readings` (never by default; readings are part of
-  the medical record).
+  (an alert keeps the reading's id). The platform keeps the months ahead and never drops a month: readings are part of
+  the medical record, which the Privacy retention schedule sends for review rather than deleting (PRV-02).
 * **RpmThreshold** – per enrolment and type: min/max and critical min/max (validated order).
 * **RpmAlert** – `Threshold | DeviceSilence`, severity `Warning | Critical`, status `Open | Acknowledged | Resolved`,
   occurrences, acknowledged/resolved by/at, notes. One active alert per enrolment and type; repeats are counted,

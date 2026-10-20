@@ -221,7 +221,8 @@ have been exposed.
 - **Rotate sign-in key.** New sign-in tokens are signed with a new key. Tokens already issued stay valid until they
   expire, within minutes, so nobody is signed out. It can be rotated again once those have expired.
 
-The keys are on the Server Node: rotate them there, not on a second API server, which cannot share them yet.
+The keys are on the Server Node. With several servers (section 10) they are in the folder the servers share, and any
+of them can rotate them.
 
 ### A new backup recovery key
 
@@ -239,7 +240,9 @@ showed the original key on screen; System health says when backups still use tha
 
 The Backups list names the key that opens each backup. Keep every key until the backups made with it, and their copies
 on a NAS or USB drive, are deleted: 30 days by default. Both steps are recorded in the audit log, without the key.
-HC360 keeps the key protected on the Server Node, to encrypt new backups, and never shows it again.
+HC360 keeps the key protected on the Server Node, to encrypt new backups, and never shows it again. Until it is typed
+back, the new key waits, protected the same way, beside it in the keys folder; with several servers (section 10) that
+is the folder they share, so whichever server the reverse proxy sends the confirmation to finds it.
 
 ## 4. First sign-in and security set-up
 
@@ -998,29 +1001,20 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 
 The audit trail, remote-monitoring readings, the message log (SMS, WhatsApp, e-mail) and the integration log grow
 fastest. Each is split into one partition per calendar month (UTC) of the time a row is about, and a default partition
-for times outside every month that has one (SRS SCAL-04). Queries for a period read only its months, and a month can be
-removed whole. The upgrade that brings this in copies each table into its new form in one transaction, after the backup
-taken before every upgrade: it takes a few minutes for a large audit trail, and if anything fails, the tables stay as
-they were.
+for times outside every month that has one (SRS SCAL-04). Queries for a period read only its months. The upgrade that
+brings this in copies each table into its new form in one transaction, after the backup taken before every upgrade: it
+takes a few minutes for a large audit trail, and if anything fails, the tables stay as they were.
 
 The node that runs the jobs adds each table's partitions three months ahead, a minute after it starts and every six
 hours. Rows that ever went to the default partition (a device whose clock was months out, or the job not running for
 months) move into their month's partition when it is made. Change how far ahead with
 `HealthCare360:Partitions:MonthsAhead` (1 to 24).
 
-**Nothing is deleted unless a retention is set**, which is the default for every table. To drop a table's months once
-they are entirely older than some number of months, set, for example:
-
-```json
-"HealthCare360": { "Partitions": { "RetentionMonths": { "integrations.integration_logs": 24, "platform.notification_logs": 36 } } }
-```
-
-Tables that may have one: `integrations.integration_logs`, `platform.notification_logs` and
-`virtualcare.rpm_readings`. Agree any retention with the hospital's records and legal advisers first: readings are part
-of the medical record (SRS PRV-02 asks for at least 3 to 5 years, as state rules require), and messages may be evidence
-that a patient was told something. Rows in the default partition are never dropped. The **audit trail can never be given
-a retention**: the law asks for 10 years (SRS SEC-04, PRV-02), its hash chain is verified from the first record, and the
-server refuses to start if `RetentionMonths` lists it. Its partitions refuse TRUNCATE and DELETE like the table itself.
+**Partitions are never dropped.** How long each kind of record is kept is set in one place, Privacy › Retention, whose
+clean-up keeps every record for at least what the law asks (a year for the message and integration logs), leaves medical
+records, remote-monitoring readings among them, to the medical records department's review instead of deleting them
+(SRS PRV-02), and records every run in the audit trail. Because the logs are partitioned by the time it deletes by, the
+clean-up reads only the months concerned. The audit trail's partitions refuse TRUNCATE and DELETE like the table itself.
 
 ## 11. Troubleshooting
 
