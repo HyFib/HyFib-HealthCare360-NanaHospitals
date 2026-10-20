@@ -4,11 +4,14 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Settings;
@@ -18,11 +21,14 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// The pathologist's sign-off over the real API: a critical value is verified only once the call to the clinician is
-/// documented with read-back (LIS-05), so it can never reach the report without anyone having been told.
+/// documented with read-back (LIS-05), so it can never reach the report without anyone having been told; and while
+/// today's QC of an assay has failed, its results are verified only with a pathologist's audited override, or once QC
+/// passes again (LIS-06).
 /// </summary>
 public sealed class LabVerificationTests(HospitalServer server)
 {
     private const string VerifyPath = "/api/v1/lab/results/verify";
+    private const string OverrideReason = "Patient values match the previous run and the level 2 control is in range";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -93,6 +99,70 @@ public sealed class LabVerificationTests(HospitalServer server)
         (call.InformedPersonName, call.ReadBackConfirmed, call.CalledBy).ShouldBe(("Sr. Kavitha Nair", true, me.DisplayName));
     }
 
+    [Fact]
+    public async Task While_qc_has_failed_results_are_verified_only_with_a_pathologists_audited_override_or_once_qc_passes()
+    {
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+        var pathologistId = (await pathologist.GetAsync<AuthUser>("/api/v1/auth/me")).Id;
+
+        // Two patients' fasting sugars are entered, both normal.
+        var first = (await EnterAsync(lab, await ReceivedSampleAsync("LAB-FBS"), new Dictionary<string, string> { ["LAB-FBS"] = "92" })).Single().ResultId;
+        var second = (await EnterAsync(lab, await ReceivedSampleAsync("LAB-FBS"), new Dictionary<string, string> { ["LAB-FBS"] = "88" })).Single().ResultId;
+
+        // The glucose assay's level 1 control on the chemistry analyser (seeded with three weeks of accepted runs).
+        var fbs = (await lab.GetAsync<PagedResult<LabTestListItem>>("/api/v1/lab/tests?search=LAB-FBS")).Items.Single(t => t.Code == "LAB-FBS");
+        var lot = (await lab.GetAsync<List<QcLotDto>>($"/api/v1/lab/qc/lots?labTestId={fbs.Id}")).First(l => l.Level == 1 && !l.IsExpired);
+        try
+        {
+            // This morning's control reads 5 SD above its target: the 1-3s rule rejects the run.
+            var rejected = await RecordQcRunAsync(lab, lot, sds: 5);
+            rejected.Outcome.ShouldBe(QcOutcome.Rejected);
+            rejected.Violations.ShouldContain("1-3s");
+
+            // Verification of the assay is locked, and the refusal names the assay and the rejected run.
+            var locked = await RefusalAsync(pathologist, VerifyPath, new VerifyResultsRequest([first], null, null, Release: false));
+            locked.GetProperty("code").GetString().ShouldBe("lab.qc_lockout");
+            var lockout = locked.GetProperty("data").GetProperty("lockouts").EnumerateArray().ShouldHaveSingleItem();
+            lockout.GetProperty("labTestId").GetGuid().ShouldBe(fbs.Id);
+            lockout.GetProperty("rejectedRunIds").EnumerateArray().Select(r => r.GetGuid()).ShouldBe([rejected.Id]);
+
+            // Only a pathologist may override: the technician who runs the QC may not, on the QC board or when verifying.
+            await ShouldBeForbiddenAsync(lab, "/api/v1/lab/qc/overrides", new QcOverrideRequest(fbs.Id, OverrideReason));
+            await ShouldBeForbiddenAsync(lab, VerifyPath, new VerifyResultsRequest([first], OverrideReason, null, Release: false));
+            (await QcBoardAsync(lab, lot)).Locked.ShouldBeTrue("the refused attempts recorded no override");
+
+            // The pathologist verifies with a reason: the override is recorded against the rejected run and audited.
+            var overridden = await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest([first], OverrideReason, null, Release: false));
+            (overridden.Verified, overridden.QcOverrides).ShouldBe((1, 1));
+            (await QcRunAsync(pathologist, lot, rejected.Id)).Overridden.ShouldBeTrue();
+            var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+            var audited = (await admin.GetAsync<PagedResult<AuditEventDto>>(
+                $"/api/v1/admin/audit?action=lab.qc.override&entityType=QcRun&entityId={rejected.Id}")).Items.ShouldHaveSingleItem();
+            audited.UserId.ShouldBe(pathologistId);
+            audited.Summary.ShouldBe($"QC lockout overridden: {OverrideReason}");
+            audited.Severity.ShouldBe(AuditSeverity.Warning);
+
+            // The override was for that run only: the next control run is rejected too, and the assay is locked again.
+            (await RecordQcRunAsync(lab, lot, sds: 5)).Outcome.ShouldBe(QcOutcome.Rejected);
+            (await RefusalAsync(pathologist, VerifyPath, new VerifyResultsRequest([second], null, null, Release: false)))
+                .GetProperty("code").GetString().ShouldBe("lab.qc_lockout");
+
+            // After recalibration the control reads on target: QC passes and the lock clears without an override.
+            (await RecordQcRunAsync(lab, lot, sds: 0)).Outcome.ShouldBe(QcOutcome.Accepted);
+            var verified = await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest([second], null, null, Release: false));
+            (verified.Verified, verified.QcOverrides).ShouldBe((1, 0));
+        }
+        finally
+        {
+            // The server is shared by every test of the run: the assay is never left locked.
+            if ((await QcBoardAsync(lab, lot)).Locked)
+            {
+                await RecordQcRunAsync(lab, lot, sds: 0);
+            }
+        }
+    }
+
     /// <summary>A walk-in order for one test, its tube collected and received in the lab (the counter's payment gate waived).</summary>
     private async Task<CreatedSample> ReceivedSampleAsync(string testCode)
     {
@@ -136,12 +206,29 @@ public sealed class LabVerificationTests(HospitalServer server)
     private static async Task<CriticalCallDto> RegisteredCallAsync(ApiClient api, Guid resultId) =>
         (await api.GetAsync<PagedResult<CriticalCallDto>>("/api/v1/lab/critical-calls?kind=Laboratory&pageSize=100")).Items.Single(c => c.LabResultId == resultId);
 
+    /// <summary>A control run of the lot, <paramref name="sds"/> standard deviations from its target mean.</summary>
+    private static Task<QcRunDto> RecordQcRunAsync(ApiClient lab, QcLotDto lot, int sds) =>
+        lab.PostAsync<QcRunDto>("/api/v1/lab/qc/runs", new RecordQcRunRequest(lot.Id, lot.TargetMean + (sds * lot.TargetSd), null));
+
+    private static async Task<QcRunDto> QcRunAsync(ApiClient api, QcLotDto lot, Guid runId) =>
+        (await api.GetAsync<PagedResult<QcRunDto>>($"/api/v1/lab/qc/runs?lotId={lot.Id}&pageSize=200")).Items.Single(r => r.Id == runId);
+
+    /// <summary>The lot's row on today's QC board.</summary>
+    private static async Task<QcStatusRow> QcBoardAsync(ApiClient api, QcLotDto lot) =>
+        (await api.GetAsync<List<QcStatusRow>>("/api/v1/lab/qc/status")).Single(r => r.LotId == lot.Id);
+
     /// <summary>The problem details of a request the server refuses as against its rules (422).</summary>
     private static async Task<JsonElement> RefusalAsync(ApiClient api, string path, object body)
     {
         using var response = await api.SendRawAsync(HttpMethod.Post, path, body);
         response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await response.Content.ReadAsStringAsync(Ct));
         return await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
+    }
+
+    private static async Task ShouldBeForbiddenAsync(ApiClient api, string path, object body)
+    {
+        using var response = await api.SendRawAsync(HttpMethod.Post, path, body);
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden, $"POST {path}");
     }
 
     private static Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>

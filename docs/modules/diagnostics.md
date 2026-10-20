@@ -13,7 +13,9 @@ imaging and cardiology workflows, DICOM formatting, worklist entries, PACS study
 image rate limit, critical call register, seeded catalogue checks incl. LOINC check digits, EF model,
 QR verification links, report id → study look-ups, and the printed documents: content, released-only rules, encoding of
 hostile text, footers and file names), and the end-to-end `LabVerificationTests` in `tests/HyFib.HealthCare360.IntegrationTests`
-(a critical value is not verified until the call to the clinician is documented, before or with the verification).
+(a critical value is not verified until the call to the clinician is documented, before or with the verification; while
+today's QC of an assay is rejected its results are verified only with a pathologist's override, which is audited and bound
+to that run, or once QC passes again).
 
 ## Permissions
 
