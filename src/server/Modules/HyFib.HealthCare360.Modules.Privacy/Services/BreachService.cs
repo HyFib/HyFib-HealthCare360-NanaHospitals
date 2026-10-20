@@ -58,7 +58,7 @@ public sealed class BreachService(
         if (page.SearchTerm is { } term)
         {
             var pattern = term.ToLikePattern();
-            breaches = breaches.Where(b => EF.Functions.ILike(b.BreachNumber, pattern) || EF.Functions.ILike(b.Title, pattern));
+            breaches = breaches.Where(b => EF.Functions.ILike(b.BreachNumber, pattern, QueryExtensions.LikeEscape) || EF.Functions.ILike(b.Title, pattern, QueryExtensions.LikeEscape));
         }
 
         var rows = await breaches

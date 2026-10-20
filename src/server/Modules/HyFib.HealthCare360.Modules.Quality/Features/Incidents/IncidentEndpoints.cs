@@ -113,7 +113,7 @@ internal static class IncidentEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            incidents = incidents.Where(i => i.IncidentNumber == term.ToUpper() || EF.Functions.ILike(i.Description, like) || EF.Functions.ILike(i.Location, like));
+            incidents = incidents.Where(i => i.IncidentNumber == term.ToUpper() || EF.Functions.ILike(i.Description, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(i.Location, like, QueryExtensions.LikeEscape));
         }
 
         var result = await incidents.OrderByKey(page, SortKeys, i => i.ReportedAt, defaultDescending: true)

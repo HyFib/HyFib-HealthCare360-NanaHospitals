@@ -50,6 +50,8 @@ public sealed class PatientRegistrationService(
         var aadhaarIndex = string.IsNullOrWhiteSpace(check.AadhaarNumber) ? null : protector.FixedBlindIndex(Masking.Normalize(check.AadhaarNumber));
         var firstName = string.IsNullOrWhiteSpace(check.FirstName) ? null : check.FirstName.Trim();
         var dob = check.DateOfBirth;
+        // The same first name, whatever its case: escaped, so a name's own % or _ is not a wildcard.
+        var sameFirstName = firstName?.ToLikeLiteral();
 
         if (phone is null && abhaIndexes is null && aadhaarIndex is null && (firstName is null || dob is null))
         {
@@ -61,7 +63,7 @@ public sealed class PatientRegistrationService(
             .Where(p => (abhaIndexes != null && p.AbhaNumberIndex != null && abhaIndexes.Contains(p.AbhaNumberIndex))
                         || (aadhaarIndex != null && p.AadhaarIndex == aadhaarIndex)
                         || (phone != null && p.Phone == phone)
-                        || (firstName != null && dob != null && p.DateOfBirth == dob && EF.Functions.ILike(p.FirstName, firstName)))
+                        || (sameFirstName != null && dob != null && p.DateOfBirth == dob && EF.Functions.ILike(p.FirstName, sameFirstName, QueryExtensions.LikeEscape)))
             .OrderByDescending(p => p.RegisteredAt)
             .Take(25)
             .Select(p => new { p.Id, p.Uhid, p.FullName, p.FirstName, p.Gender, p.DateOfBirth, p.Phone, p.AbhaNumberIndex, p.AadhaarIndex })

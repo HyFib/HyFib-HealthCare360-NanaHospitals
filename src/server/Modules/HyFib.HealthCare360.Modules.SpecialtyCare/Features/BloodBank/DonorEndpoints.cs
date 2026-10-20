@@ -65,7 +65,7 @@ internal static class DonorEndpoints
             var like = term.ToLikePattern();
             var phone = Phone.Normalize(term);
             var number = term.ToUpperInvariant();
-            donors = donors.Where(d => d.DonorNumber == number || EF.Functions.ILike(d.FullName, like) || (phone != null && d.Phone == phone));
+            donors = donors.Where(d => d.DonorNumber == number || EF.Functions.ILike(d.FullName, like, QueryExtensions.LikeEscape) || (phone != null && d.Phone == phone));
         }
 
         var result = await donors.OrderBy(d => d.FullName).ToPagedResultAsync(page, ct);

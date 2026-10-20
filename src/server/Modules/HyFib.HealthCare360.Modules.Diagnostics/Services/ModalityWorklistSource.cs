@@ -47,7 +47,7 @@ internal sealed class ModalityWorklistSource(HospitalDbContext db, DiagnosticsLo
         if (Clean(query.AccessionNumber) is { } accession)
         {
             studies = Like(accession) is { } pattern
-                ? studies.Where(s => EF.Functions.ILike(s.AccessionNumber, pattern))
+                ? studies.Where(s => EF.Functions.ILike(s.AccessionNumber, pattern, QueryExtensions.LikeEscape))
                 : studies.Where(s => s.AccessionNumber == accession.ToUpperInvariant());
         }
 
@@ -56,7 +56,7 @@ internal sealed class ModalityWorklistSource(HospitalDbContext db, DiagnosticsLo
         if (Clean(query.PatientId) is { } uhid)
         {
             patients = Like(uhid) is { } pattern
-                ? patients.Where(p => EF.Functions.ILike(p.Uhid, pattern))
+                ? patients.Where(p => EF.Functions.ILike(p.Uhid, pattern, QueryExtensions.LikeEscape))
                 : patients.Where(p => p.Uhid == uhid.ToUpperInvariant());
             byPatient = true;
         }
@@ -65,10 +65,10 @@ internal sealed class ModalityWorklistSource(HospitalDbContext db, DiagnosticsLo
         {
             // The family name component as DicomConventions.PersonName makes it: the surname, or for a patient
             // registered without one, the whole name.
-            var pattern = Escape(prefix) + "%";
+            var pattern = prefix.ToLikeLiteral() + "%";
             patients = patients.Where(p => p.LastName != null && p.LastName != ""
-                ? EF.Functions.ILike(p.LastName, pattern)
-                : EF.Functions.ILike(p.FirstName + " " + (p.MiddleName ?? ""), pattern));
+                ? EF.Functions.ILike(p.LastName, pattern, QueryExtensions.LikeEscape)
+                : EF.Functions.ILike(p.FirstName + " " + (p.MiddleName ?? ""), pattern, QueryExtensions.LikeEscape));
             byPatient = true;
         }
 
@@ -150,14 +150,8 @@ internal sealed class ModalityWorklistSource(HospitalDbContext db, DiagnosticsLo
     /// <summary>A DICOM wildcard pattern as a LIKE pattern, or null when it has no wildcard (an exact match).</summary>
     internal static string? Like(string pattern) =>
         pattern.Contains('*', StringComparison.Ordinal) || pattern.Contains('?', StringComparison.Ordinal)
-            ? Escape(pattern).Replace('*', '%').Replace('?', '_')
+            ? pattern.ToLikeLiteral().Replace('*', '%').Replace('?', '_')
             : null;
-
-    /// <summary>Escapes LIKE's own wildcards (PostgreSQL's escape character is the backslash).</summary>
-    private static string Escape(string text) =>
-        text.Replace(@"\", @"\\", StringComparison.Ordinal)
-            .Replace("%", @"\%", StringComparison.Ordinal)
-            .Replace("_", @"\_", StringComparison.Ordinal);
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

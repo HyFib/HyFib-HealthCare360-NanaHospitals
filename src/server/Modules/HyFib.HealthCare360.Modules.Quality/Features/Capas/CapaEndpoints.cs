@@ -80,7 +80,7 @@ internal static class CapaEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            capas = capas.Where(c => c.CapaNumber == term.ToUpper() || EF.Functions.ILike(c.Action, like));
+            capas = capas.Where(c => c.CapaNumber == term.ToUpper() || EF.Functions.ILike(c.Action, like, QueryExtensions.LikeEscape));
         }
 
         return TypedResults.Ok(await Project(capas, db, today).ToPagedResultAsync(page, ct));

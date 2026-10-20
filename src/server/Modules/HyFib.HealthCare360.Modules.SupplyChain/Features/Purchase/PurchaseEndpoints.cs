@@ -137,7 +137,7 @@ internal static class PurchaseEndpoints
         {
             var upper = term.ToUpperInvariant();
             var like = term.ToLikePattern();
-            orders = orders.Where(o => o.Number == upper || db.Set<Vendor>().Any(v => v.Id == o.VendorId && EF.Functions.ILike(v.Name, like)));
+            orders = orders.Where(o => o.Number == upper || db.Set<Vendor>().Any(v => v.Id == o.VendorId && EF.Functions.ILike(v.Name, like, QueryExtensions.LikeEscape)));
         }
 
         var result = await orders.OrderByDescending(o => o.OrderDate).ThenByDescending(o => o.CreatedAt)

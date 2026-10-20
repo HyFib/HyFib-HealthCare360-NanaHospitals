@@ -106,7 +106,7 @@ internal static class DialysisSessionEndpoints
             var number = term.ToUpperInvariant();
             var like = term.ToLikePattern();
             sessions = sessions.Where(s => s.SessionNumber == number
-                                           || db.Set<Patient>().Any(p => p.Id == s.PatientId && (p.Uhid == number || EF.Functions.ILike(p.FullName, like))));
+                                           || db.Set<Patient>().Any(p => p.Id == s.PatientId && (p.Uhid == number || EF.Functions.ILike(p.FullName, like, QueryExtensions.LikeEscape))));
         }
 
         return TypedResults.Ok(await Rows(db, sessions.OrderByDescending(s => s.ScheduledDate)

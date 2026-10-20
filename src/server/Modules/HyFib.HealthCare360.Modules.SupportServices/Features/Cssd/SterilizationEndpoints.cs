@@ -72,7 +72,7 @@ internal static class SterilizationEndpoints
         if (page.SearchTerm is { } term)
         {
             var like = term.ToLikePattern();
-            loads = loads.Where(l => EF.Functions.ILike(l.CycleNumber, like) || EF.Functions.ILike(l.SterilizerName, like));
+            loads = loads.Where(l => EF.Functions.ILike(l.CycleNumber, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(l.SterilizerName, like, QueryExtensions.LikeEscape));
         }
 
         var result = await loads.OrderByDescending(l => l.LoadedAt)

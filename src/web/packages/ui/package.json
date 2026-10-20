@@ -27,7 +27,7 @@
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@hc360/core": "workspace:*",
-    "@playwright/test": "1.56.1",
+    "@playwright/test": "1.64.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "axe-core": "4.13.0",

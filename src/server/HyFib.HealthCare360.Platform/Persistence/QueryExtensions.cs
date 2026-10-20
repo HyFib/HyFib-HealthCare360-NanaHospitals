@@ -39,11 +39,25 @@ public static class QueryExtensions
         return defaultDescending ? query.OrderByDescending(defaultKey) : query.OrderBy(defaultKey);
     }
 
-    /// <summary>Case-insensitive "contains" suitable for PostgreSQL (uses ILIKE with escaped wildcards).</summary>
-    public static string ToLikePattern(this string term) =>
-        "%" + term.Replace("\\", "\\\\", StringComparison.Ordinal)
-                  .Replace("%", "\\%", StringComparison.Ordinal)
-                  .Replace("_", "\\_", StringComparison.Ordinal) + "%";
+    /// <summary>
+    /// The escape character of the patterns <see cref="ToLikePattern"/> and <see cref="ToLikeLiteral"/> build: pass it as
+    /// the third argument of <c>EF.Functions.ILike</c>. Without it Npgsql writes <c>ESCAPE ''</c>, the backslashes are then
+    /// matched as themselves, and a search for a term with <c>%</c>, <c>_</c> or <c>\</c> (a gateway reference such as
+    /// <c>pay_A1B2</c>, a user name such as <c>dr_meera</c>) finds nothing.
+    /// </summary>
+    public const string LikeEscape = "\\";
+
+    /// <summary>Case-insensitive "contains" for PostgreSQL's ILIKE, with <see cref="LikeEscape"/> as its escape character.</summary>
+    public static string ToLikePattern(this string term) => "%" + term.ToLikeLiteral() + "%";
+
+    /// <summary>
+    /// <paramref name="term"/> with LIKE's own wildcards (<c>%</c>, <c>_</c>) and its escape character escaped by
+    /// <see cref="LikeEscape"/>: as an ILIKE pattern it is a case-insensitive equality.
+    /// </summary>
+    public static string ToLikeLiteral(this string term) =>
+        term.Replace(LikeEscape, LikeEscape + LikeEscape, StringComparison.Ordinal)
+            .Replace("%", LikeEscape + "%", StringComparison.Ordinal)
+            .Replace("_", LikeEscape + "_", StringComparison.Ordinal);
 
     /// <summary>Loads an entity by id or returns a NotFound error.</summary>
     public static async Task<Result<T>> FindOrNotFoundAsync<T>(this DbSet<T> set, Guid id, CancellationToken cancellationToken)
