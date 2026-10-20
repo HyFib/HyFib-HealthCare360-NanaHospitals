@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Patients.Features.Patients;
 
@@ -206,7 +207,8 @@ public sealed class RegisterPatientRequestValidator : AbstractValidator<Register
 {
     public RegisterPatientRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        // The hospital's date (IST), a day ahead of UTC's between midnight and 05:30: a baby born then is born today.
+        var today = time.Today();
 
         RuleFor(x => x.FirstName).NotEmpty().WithMessage("First name is required.").MaximumLength(100)
             .Must(PatientRules.ValidName).WithMessage("Use letters, spaces, dots, apostrophes or hyphens.");
@@ -240,7 +242,7 @@ public sealed class UpdatePatientRequestValidator : AbstractValidator<UpdatePati
 {
     public UpdatePatientRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        var today = time.Today();
 
         RuleFor(x => x.FirstName).NotEmpty().MaximumLength(100).Must(PatientRules.ValidName).WithMessage("Use letters, spaces, dots, apostrophes or hyphens.");
         RuleFor(x => x.MiddleName).MaximumLength(100).Must(PatientRules.ValidName);
