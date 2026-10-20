@@ -48,6 +48,8 @@ jobs:
           Start-Service -InputObject $service
           & (Join-Path $env:PGBIN 'pg_isready.exe') -h localhost -p 5432 -t 60
           if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL did not start.' }
+          # Which PostgreSQL the journeys ran on (the partitioned tables' migration and upkeep among them), in the log.
+          & (Join-Path $env:PGBIN 'postgres.exe') --version
           $user = if ($env:PGUSER) { $env:PGUSER } else { 'postgres' }
           $password = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
           "HC360_TEST_DATABASE=Host=localhost;Port=5432;Username=$user;Password=$password;Database=postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
