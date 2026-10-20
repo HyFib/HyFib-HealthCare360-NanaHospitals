@@ -449,7 +449,7 @@ public static class AntiAutomationEndpoints
             var http = context.HttpContext;
             var check = http.RequestServices.GetRequiredService<AntiAutomation>();
             var who = subject?.Invoke(context);
-            var address = http.Connection.RemoteIpAddress?.ToString();
+            var address = CountedAddress(http);
             var outcome = await check.CheckAsync(http.Request.Headers[AntiAutomation.ProofHeader].ToString(), action, who, address, http.RequestAborted);
             if (outcome != ProofOfWorkOutcome.Accepted)
             {
@@ -478,7 +478,7 @@ public static class AntiAutomationEndpoints
     {
         if (http.GetEndpoint()?.Metadata.GetMetadata<RequiresProofOfWorkMetadata>() is not null)
         {
-            await http.RequestServices.GetRequiredService<AutomationSuspicion>().RecordFailureAsync(http.Connection.RemoteIpAddress?.ToString(), null);
+            await http.RequestServices.GetRequiredService<AutomationSuspicion>().RecordFailureAsync(CountedAddress(http), null);
         }
     }
 
@@ -493,6 +493,10 @@ public static class AntiAutomationEndpoints
             return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["action"] = ["Unknown request."] });
         }
 
-        return TypedResults.Ok(await antiAutomation.IssueAsync(request.Action, request.Subject, http.Connection.RemoteIpAddress?.ToString(), ct));
+        return TypedResults.Ok(await antiAutomation.IssueAsync(request.Action, request.Subject, CountedAddress(http), ct));
     }
+
+    /// <summary>What failures are counted against for the client, as the rate limits count it (an IPv6 /64 as one), if it has an address.</summary>
+    private static string? CountedAddress(HttpContext http) =>
+        http.Connection.RemoteIpAddress is null ? null : RateLimitPolicies.ClientKey(http);
 }

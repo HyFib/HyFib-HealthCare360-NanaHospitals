@@ -42,7 +42,7 @@ internal static class AiRateLimits
 
     public static RateLimitPartition<string> Partition(HttpContext http) =>
         RateLimitPartition.GetSlidingWindowLimiter(
-            http.User.FindFirst(HcClaims.UserId)?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            http.User.FindFirst(HcClaims.UserId)?.Value ?? RateLimitPolicies.ClientKey(http),
             _ => new SlidingWindowRateLimiterOptions
             {
                 PermitLimit = 20,

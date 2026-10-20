@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HyFib.HealthCare360.Platform.Http;
 
@@ -38,8 +39,10 @@ public static class RateLimitPolicies
     /// <see cref="ClusterRateLimits"/>), the public and device policies above, and a global limit per user (or address)
     /// on every request. Each server keeps these counts in its own memory.
     /// </summary>
-    public static IServiceCollection AddHospitalRateLimiter(this IServiceCollection services) =>
-        services.AddRateLimiter(limiter =>
+    public static IServiceCollection AddHospitalRateLimiter(this IServiceCollection services)
+    {
+        services.TryAddSingleton<ClientAddresses>();
+        return services.AddRateLimiter(limiter =>
         {
             limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             limiter.OnRejected = (context, _) => AntiAutomationEndpoints.OnRateLimitedAsync(context.HttpContext);
@@ -67,12 +70,18 @@ public static class RateLimitPolicies
                     QueueLimit = 0,
                 }));
         });
+    }
 
     /// <summary>
-    /// The client's address a per-address limit counts by: the TCP peer's, or behind a reverse proxy named in the settings
-    /// the client's the proxy forwarded (<see cref="ReverseProxy"/>, SCAL-01).
+    /// The address a per-address limit counts the client by: the TCP peer's, or behind a reverse proxy named in the settings
+    /// the client's the proxy forwarded (<see cref="ReverseProxy"/>, SCAL-01), with an IPv6 address from outside the
+    /// hospital taken by its /64 (<see cref="ClientAddresses"/>).
     /// </summary>
-    internal static string ClientKey(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    public static string ClientKey(HttpContext http)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+        return http.RequestServices.GetRequiredService<ClientAddresses>().Key(http.Connection.RemoteIpAddress);
+    }
 
     /// <summary>Partition for <see cref="Device"/>: a hash of the presented credential, never the raw value.</summary>
     internal static string DevicePartition(HttpContext http, string clientKey)

@@ -8,8 +8,9 @@ namespace HyFib.HealthCare360.Platform.Hosting;
 /// minutes and a session at most 12 hours after sign-in. A site setting beyond either would quietly weaken every sign-in,
 /// so the server refuses to start and says which setting to change instead. Development machines are exempt: the
 /// integration tests keep one sign-in for a whole run, longer than any production token may last. The process role must
-/// be one the server knows (SCAL-05), keys shared by several nodes must be protected by a certificate (SCAL-01), and the
-/// partition settings must be in range (SCAL-04).
+/// be one the server knows (SCAL-05), keys shared by several nodes must be protected by a certificate (SCAL-01), the
+/// partition settings must be in range (SCAL-04), and the proxies and networks the network settings name must be addresses
+/// and networks.
 /// </summary>
 public sealed class PlatformOptionsValidator(IHostEnvironment environment) : IValidateOptions<PlatformOptions>
 {
@@ -48,6 +49,7 @@ public sealed class PlatformOptionsValidator(IHostEnvironment environment) : IVa
 
         problems.AddRange(ClusterProblems(options.Cluster));
         problems.AddRange(Http.ReverseProxy.Problems(options.Network));
+        problems.AddRange(Http.ClientAddresses.Problems(options.Network));
         problems.AddRange(PartitionProblems(options.Partitions));
         return problems;
     }

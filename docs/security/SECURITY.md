@@ -213,6 +213,7 @@ What they all share:
 - Each secret allows a set number of tries, and tries sent at once are judged one at a time, so the limit holds
   however they arrive. Requests are limited per address as well: 10 a minute for sign-in, codes, PINs and password
   prompts, 5 portal code requests in 15 minutes, 60 a minute for patient links, and an allowance per device for devices.
+  An IPv6 address from outside the hospital counts by its /64 (Rate limits, below).
 - Every pathway but the analyser and modality connections is HTTPS only.
 
 | Pathway | Proof, and its strength | What stops guessing |
@@ -421,6 +422,15 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - They apply to every response, including the staff and portal pages and their static assets, not just API calls.
 - Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user. With
   several servers (below), the sign-in and OTP limits per address are counted for the hospital, in the database.
+  - **What counts as one address** (`ClientAddresses`), for these limits and for the proof of work's failure counts
+    (below): an IPv4 address; an IPv4 address carried in an IPv6 one (IPv4-mapped, 6to4, Teredo) as that IPv4 address;
+    and an IPv6 address from outside the hospital by its /64. A home, a phone on a mobile network or a rented server
+    holds a whole /64 or more (RFC 6177) and can send every request from a new address in it (RFC 8981), which would
+    otherwise sidestep every per-address limit and the extra work asked of a failing address. The hospital's own network
+    counts address by address, as IPv4 does: link-local and unique local addresses, the /64s the server has an address
+    in itself (read again every minute), and `HealthCare360:Network:LocalNetworks` for other subnets that reach it over
+    internet IPv6 addresses. The workstations on one WiFi share its /64, and do not share one sign-in budget. The
+    audit trail, the logs, address allow-lists and the idempotency of anonymous requests keep the client's full address.
 - **Anti-automation on the portal** (SRS SEC-06, ASVS V2.4.1; V11.1.4 in ASVS 4.0). The portal's anonymous requests
   that a script could abuse ask the browser for a proof of work first: asking for a sign-in code (which also signs a
   new number up, and sends an SMS), giving the code, and sending feedback from a QR poster, a kiosk or a personal link.
@@ -440,7 +450,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     raises the cost of cheap, high-volume scripting (every request needs a fresh challenge from this server and its own
     work, and a script has to run a solver at all). The rate limits stay the primary control: per address (above), and
     per number for sign-in codes (3 in 15 minutes, 5 tries each).
-  - **Raised for failures.** Every 3 failures from an address, or for a mobile number from any address, ask 2 bits
+  - **Raised for failures.** Every 3 failures from an address (an IPv6 /64 from outside the hospital counting as one,
+    as for the rate limits), or for a mobile number from any address, ask 2 bits
     more (four times the work), up to 18 bits (5 to 13 seconds on a phone). A failure is a refused proof, a rate-limit
     refusal, or a refused request (a wrong or expired code, too many codes, a dead link). A form that fails validation
     (feedback, or a sign-in code asked for a number that is not a mobile number) is answered before the proof is

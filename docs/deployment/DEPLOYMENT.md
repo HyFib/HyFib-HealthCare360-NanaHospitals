@@ -1027,6 +1027,12 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
    is taken to come from the client the proxy names, so sign-in limits, the audit trail and webhook and device address
    checks see the real client. A request from anywhere else that carries the headers is taken as it is: nobody can
    claim another address by sending them. mDNS is off because workstations connect to the proxy, not to a node.
+   If workstations reach the proxy over internet (global) IPv6 addresses, also list the hospital's IPv6 networks in
+   `LocalNetworks`, such as `"LocalNetworks": [ "2001:db8:12::/48" ]`. Sign-in and code limits count an IPv6 address
+   from outside the hospital by its /64, which all the workstations on one subnet share; only addresses in a
+   `LocalNetworks` network, the /64s of the node's own addresses, and link-local and unique local (`fd…`) addresses
+   count one by one (SECURITY.md, "What counts as one address"). A single Server Node needs it only for workstations
+   on other subnets than its own.
 4. Put the keys in the shared folder. On the first node, with the settings above in place:
 
    ```powershell
@@ -1089,6 +1095,7 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | "HC360 now connects to the server at …" (tray) | The server stopped answering at its usual address, and answered at this one. Usually its IP address changed: give the server a fixed address or a DHCP reservation. The desktop log (`%LocalAppData%\HyFib\HC360Desktop\logs`) has both addresses |
 | Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal; Administration › System health shows the server's |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
+| At busy times staff on some workstations are told to wait before signing in again | Do those workstations reach the server over internet (global) IPv6 addresses from another subnet than the server's? Sign-in limits count such an address by its /64, which the whole subnet shares. List the hospital's IPv6 networks in `HealthCare360:Network:LocalNetworks` in `hc360.settings.json` (for example `[ "2001:db8:12::/48" ]`) and restart the `HC360Server` service: addresses there count one by one, as on the server's own subnet |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
 | "HC360 stopped: the server could not be verified" | Something answered for the server with a certificate that is not from the hospital CA; the screen shows its issuer. A proxy or security product that inspects HTTPS: exempt the HC360 server from it. The server was reinstalled with a new CA: re-run setup (Change server…) and compare the fingerprint. Also check the workstation's date and time |
 | Service will not start | `%ProgramData%\HyFib\HealthCare360\logs\`, then Windows Event Viewer › Application (source *HyFib HealthCare360*) |

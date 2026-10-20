@@ -274,6 +274,22 @@ public sealed class ScaleOutTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Proof_of_work_failures_from_any_address_in_an_IPv6_64_raise_the_work_asked_of_all_of_it()
+    {
+        await using var node = await ProofOfWorkNodeAsync(shared: null, new EphemeralDataProtectionProvider(), new RecordingAudit());
+        var network = NewIPv6Network();
+        var before = (await ChallengeAsync(node, AddressIn(network), null)).Bits;
+
+        for (var i = 0; i < AutomationSuspicion.FailuresPerStep; i++)
+        {
+            (await SendCodeAsync(node, AddressIn(network), NewMobile(), "junk")).ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        (await ChallengeAsync(node, AddressIn(network), null)).Bits.ShouldBe(before + AutomationSuspicion.BitsPerStep);
+        (await ChallengeAsync(node, AddressIn(NewIPv6Network()), null)).Bits.ShouldBe(before);
+    }
+
+    [Fact]
     public async Task A_single_server_keeps_its_proof_of_work_in_its_own_memory()
     {
         await using var node = await ProofOfWorkNodeAsync(shared: null, new EphemeralDataProtectionProvider(), new RecordingAudit());
@@ -310,6 +326,51 @@ public sealed class ScaleOutTests(HospitalServer server)
 
         // Another address has a budget of its own.
         (await SignInAsync(first, NewAddress())).Status.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Sign_ins_from_any_address_in_one_IPv6_64_count_as_one_client(bool severalNodes)
+    {
+        // With several nodes, each sees six attempts, under its own limit of ten: the hospital's count refuses the rest.
+        await using var first = await AddressLimitedNodeAsync(severalNodes);
+        await using var second = await AddressLimitedNodeAsync(severalNodes);
+        WebApplication[] nodes = severalNodes ? [first, second] : [first];
+        var network = NewIPv6Network();
+
+        var answers = new List<HttpStatusCode>();
+        for (var attempt = 0; attempt < ClusterRateLimits.SignIn.PermitLimit + 2; attempt++)
+        {
+            answers.Add((await SignInAsync(nodes[attempt % nodes.Length], AddressIn(network))).Status);
+        }
+
+        // A script holding a /64, as any home, phone or rented server does, gains nothing by a new address for every try.
+        answers.Take(ClusterRateLimits.SignIn.PermitLimit).ShouldAllBe(a => a == HttpStatusCode.OK);
+        answers.Skip(ClusterRateLimits.SignIn.PermitLimit).ShouldAllBe(a => a == HttpStatusCode.TooManyRequests);
+        (await SignInAsync(first, AddressIn(NewIPv6Network()))).Status.ShouldBe(HttpStatusCode.OK, "another /64 has a budget of its own");
+    }
+
+    [Fact]
+    public async Task On_the_hospitals_own_IPv6_network_each_address_has_a_budget_of_its_own()
+    {
+        var network = NewIPv6Network();
+        await using var node = await AddressLimitedNodeAsync(severalNodes: true, localNetworks: [network + "::/64"]);
+
+        // A ward's workstations at the start of a shift.
+        for (var attempt = 0; attempt < ClusterRateLimits.SignIn.PermitLimit + 2; attempt++)
+        {
+            (await SignInAsync(node, AddressIn(network))).Status.ShouldBe(HttpStatusCode.OK);
+        }
+
+        var workstation = AddressIn(network);
+        var answers = new List<HttpStatusCode>();
+        for (var attempt = 0; attempt < ClusterRateLimits.SignIn.PermitLimit + 1; attempt++)
+        {
+            answers.Add((await SignInAsync(node, workstation)).Status);
+        }
+
+        answers[^1].ShouldBe(HttpStatusCode.TooManyRequests, "one address is still limited");
     }
 
     [Fact]
@@ -393,9 +454,10 @@ public sealed class ScaleOutTests(HospitalServer server)
 
     /// <summary>
     /// A node with the server's rate limiter and one endpoint limited as sign-in is, sharing the test server's database.
-    /// With <paramref name="severalNodes"/> it is one of several (it has a shared folder, <see cref="DataDirectories.IsShared"/>).
+    /// With <paramref name="severalNodes"/> it is one of several (it has a shared folder, <see cref="DataDirectories.IsShared"/>);
+    /// <paramref name="localNetworks"/> are the hospital's own IPv6 networks (<see cref="NetworkOptions.LocalNetworks"/>).
     /// </summary>
-    private async Task<WebApplication> AddressLimitedNodeAsync(bool severalNodes)
+    private async Task<WebApplication> AddressLimitedNodeAsync(bool severalNodes, string[]? localNetworks = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Development });
         builder.WebHost.UseTestServer();
@@ -411,6 +473,7 @@ public sealed class ScaleOutTests(HospitalServer server)
 
         // Every node has the hospital's data key (in the shared folder), which the counts' keys are hashed with.
         builder.Services.AddSingleton(server.Services.GetRequiredService<IFieldProtector>());
+        builder.Services.Configure<PlatformOptions>(options => options.Network.LocalNetworks = localNetworks ?? []);
         builder.Services.AddHospitalRateLimiter();
 
         var app = builder.Build();
@@ -552,6 +615,13 @@ public sealed class ScaleOutTests(HospitalServer server)
     private static string NewMobile() => "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + RandomNumberGenerator.GetInt32(10))));
 
     private static string NewAddress() => $"198.18.{RandomNumberGenerator.GetInt32(0, 256)}.{RandomNumberGenerator.GetInt32(1, 255)}";
+
+    /// <summary>A /64 of the documentation prefix, 2001:db8::/32, as its first four groups.</summary>
+    private static string NewIPv6Network() => $"2001:db8:{RandomNumberGenerator.GetInt32(0x10000):x}:{RandomNumberGenerator.GetInt32(0x10000):x}";
+
+    /// <summary>Any address in <paramref name="network"/>, as a client holding it may pick for each request.</summary>
+    private static string AddressIn(string network) =>
+        network + string.Concat(Enumerable.Range(0, 4).Select(_ => $":{RandomNumberGenerator.GetInt32(1, 0x10000):x}"));
 
     private static CreateUserRequest NewUser(string userName, Guid roleId) =>
         new(userName, userName, Email: null, Phone: null, [roleId], FacilityIds: [], DefaultFacilityId: null, PractitionerId: null, TemporaryPassword: null);

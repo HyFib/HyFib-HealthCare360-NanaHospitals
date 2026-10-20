@@ -165,6 +165,14 @@ public sealed class NetworkOptions
     /// <summary>Networks the reverse proxies are on, in CIDR form (<c>10.0.0.0/29</c>), as for <see cref="KnownProxies"/>.</summary>
     public string[] KnownNetworks { get; set; } = [];
 
+    /// <summary>
+    /// The hospital's own IPv6 networks with internet (global) addresses, in CIDR form (<c>2001:db8:12::/48</c>), where they
+    /// are not the server's own: per-address limits count each address in them on its own, as on the server's own network,
+    /// instead of by its /64 (<see cref="Http.ClientAddresses"/>). Needed only where workstations on other subnets reach the
+    /// server over such addresses.
+    /// </summary>
+    public string[] LocalNetworks { get; set; } = [];
+
     public bool BehindReverseProxy => KnownProxies.Length > 0 || KnownNetworks.Length > 0;
 }
 
