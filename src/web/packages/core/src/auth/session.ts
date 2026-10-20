@@ -296,11 +296,15 @@ export const auth = {
     return refreshing;
   },
 
-  /** Restores the session from the refresh cookie on app start. */
+  /**
+   * Restores the session from the refresh cookie on app start. Without it the sign-in page shows. A session the server
+   * said is over was signed out by the refresh, drafts and all; but when the server could not answer (a server error,
+   * the WiFi down) nobody signed out, so the drafts stay for their user to find once signed in again (SRS DED-10).
+   */
   async restore(): Promise<boolean> {
     const token = await auth.refresh();
     if (!token) {
-      useSession.getState().clear();
+      useSession.setState({ status: 'anonymous', accessToken: null, expiresAt: null, user: null, locked: false });
     }
     return token !== null;
   },
