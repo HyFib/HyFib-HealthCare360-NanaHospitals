@@ -267,6 +267,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IFileStore, EncryptedFileStore>();
         services.AddScoped<IPrintTemplates, PrintTemplates>();
         services.AddScoped<DocumentAssets>();
+        services.AddSingleton<SettingChangeTokens>();
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IFeatureFlags, FeatureFlags>();
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();

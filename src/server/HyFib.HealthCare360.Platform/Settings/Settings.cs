@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -77,11 +78,34 @@ public interface ISettingsService
 }
 
 /// <summary>
-/// Values are cached for a minute per key and facility. Every cached value of a key (the hospital-wide one and each
-/// facility's merged one) depends on one change token, so saving the key, hospital-wide or for a facility, takes effect
-/// at once for every facility on this server; other servers see it within the minute.
+/// One change token per setting key, which every cached value of the key expires with when the key is saved. Readers who
+/// miss the cache at the same moment all take the same token: the memory cache's GetOrCreate is not atomic, so tokens kept
+/// in it could be replaced by a second reader, and a value cached with the replaced token outlived the next change by up to
+/// a minute.
 /// </summary>
-internal sealed class SettingsService(HospitalDbContext db, IFieldProtector protector, IMemoryCache cache) : ISettingsService
+internal sealed class SettingChangeTokens
+{
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _sources = new(StringComparer.Ordinal);
+
+    public IChangeToken For(string key) => new CancellationChangeToken(_sources.GetOrAdd(key, _ => new CancellationTokenSource()).Token);
+
+    /// <summary>Expires every cached value of the key. The source is not disposed: a reader may still be taking its token.</summary>
+    public void Changed(string key)
+    {
+        if (_sources.TryRemove(key, out var source))
+        {
+            source.Cancel();
+        }
+    }
+}
+
+/// <summary>
+/// Values are cached for a minute per key and facility. Every cached value of a key (the hospital-wide one and each
+/// facility's merged one) depends on one change token (<see cref="SettingChangeTokens"/>), so saving the key,
+/// hospital-wide or for a facility, takes effect at once for every facility on this server; other servers see it within
+/// the minute.
+/// </summary>
+internal sealed class SettingsService(HospitalDbContext db, IFieldProtector protector, IMemoryCache cache, SettingChangeTokens changes) : ISettingsService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
@@ -92,7 +116,7 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
         {
             entry.AbsoluteExpirationRelativeToNow = CacheDuration;
             // Taken before the read: a change saved while the value is being read expires it at once.
-            entry.AddExpirationToken(ChangeToken(key));
+            entry.AddExpirationToken(changes.For(key));
             var rows = await db.Set<SystemSetting>().AsNoTracking()
                 .Where(s => s.Key == key && (s.FacilityId == null || s.FacilityId == facilityId))
                 .ToListAsync(cancellationToken);
@@ -141,33 +165,14 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        Changed(key);
+        changes.Changed(key);
     }
 
     public async Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default)
     {
         var removed = await db.Set<SystemSetting>().Where(s => s.Key == key && s.FacilityId == facilityId).ExecuteDeleteAsync(cancellationToken);
-        Changed(key);
+        changes.Changed(key);
         return removed > 0;
-    }
-
-    private static string TokenKey(string key) => $"setting-changed:{key}";
-
-    private CancellationChangeToken ChangeToken(string key) =>
-        new(cache.GetOrCreate(TokenKey(key), entry =>
-        {
-            entry.Priority = CacheItemPriority.NeverRemove;
-            return new CancellationTokenSource();
-        })!.Token);
-
-    /// <summary>Expires every cached value of the key. The source is not disposed: a reader may still be taking its token.</summary>
-    private void Changed(string key)
-    {
-        if (cache.TryGetValue(TokenKey(key), out CancellationTokenSource? source) && source is not null)
-        {
-            cache.Remove(TokenKey(key));
-            source.Cancel();
-        }
     }
 }
 
