@@ -11,7 +11,7 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 | EHR-01 longitudinal record | Encounters, vitals, allergies, diagnoses/problems, notes, procedures (see *Procedures*), immunisations, orders, prescriptions, discharge summaries; `GET /emr/patients/{id}/timeline` |
 | EHR-02 timeline by type/kind of care/department/date | `GET /emr/patients/{id}/timeline?types=&encounterTypes=&from=&to=&departmentId=` |
 | EHR-03 banner flags | `GET /emr/patients/{id}/summary` (allergies with `allergyStatus`, alerts, problems, current medicines, last vitals + flags) for the chart; `GET /emr/patients/{id}/flags` (allergies and alerts alone, `clinical.flags.read`) for every other clinical screen's banner (see *Banner flags on every clinical screen*); `GET /emr/patients/{id}/allergies/status`, "no known allergies"; real-time `clinical.flags.changed` on `patient:{id}` |
-| EHR-04/06/07 documents, consent, break-the-glass | Patients module (consents: see *Consents (EHR-06)*); every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
+| EHR-04/06/07 documents, consent, break-the-glass | Patients module (documents: see *Patient documents (EHR-04)*; consents: see *Consents (EHR-06)*); every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
 | INT-BIO patient identity verification | Patients module: checking a patient's identity with their Aadhaar fingerprint (see *Identity checks (INT-BIO)*) |
 | EMR-01 worklist | `GET /emr/worklist` (queue, the doctor's appointments, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) and the ward round `GET /inpatient/rounds` (Inpatient module); see *The doctor's worklist (EMR-01)* |
 | EMR-02..07 | Encounters (SOAP, follow-up, referral, sign, amend), templates, vitals, diagnoses (ICD), orders, prescriptions, favourites; voice dictation into a SOAP draft with ICD suggestions (*Dictate with AI*, AI module) |
@@ -557,6 +557,24 @@ on the patient profile and in the chart's **Consents** tab.
 * **Access**: listing, recording and withdrawing follow the record's restricted-record rules (403
   `patient.restricted`), and every listing is in the audit trail ("Viewed consents"). Withdrawals from the portal
   (the patient), WhatsApp STOP replies (no user) and opt-out links go through the same `PatientConsent.Revoke`.
+
+## Patient documents (EHR-04)
+
+Scans, outside reports, referral letters and signed forms attached to the record are the Patients module's
+`PatientDocument` records, each with its type, the date on the document and where it came from. The file itself is
+uploaded first to the file store (`POST /api/v1/files`), which keeps it encrypted at rest. Staff attach them on the
+patient profile's **Documents** tab, and open them there and on the chart's.
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/patients/{patientId}/documents` | patients.documents | → `PatientDocumentDto[]{id, fileId, type, title, documentDate, source, notes, createdAt, fileName, contentType, sizeBytes}`, newest first; audit "Listed documents" |
+| POST | `/patients/{patientId}/documents` | patients.documents | `AttachDocumentRequest{fileId, type, title, documentDate?, source?, notes?}` → 201 `{id}`. `type`: IdProof, InsuranceCard, ExternalReport, ReferralLetter, Consent, Prescription, DischargeSummary, Imaging, Photo, Other. `title` (required) and `source` (such as the outside lab or hospital) up to 200 characters, `notes` up to 1,000, none with control characters; `documentDate` not after today in the hospital (IST). 400 on `fileId` for a file not uploaded; 422 `document.other_patient` for a file uploaded for another patient |
+| DELETE | `/patients/documents/{documentId}` | patients.documents | → 204. The document leaves the list; the encrypted file is kept |
+
+* **Access**: listing, attaching and removing follow the record's restricted-record rules (403 `patient.restricted`
+  until break-the-glass, or with `patients.restricted.read`), and a patient who does not exist is a 404
+  (`patient.not_found`). Each document attached or removed is in the audit trail as a data change
+  (`PatientDocument.create`, `PatientDocument.delete`), with the patient, who and when.
 
 ## Identity checks (INT-BIO)
 

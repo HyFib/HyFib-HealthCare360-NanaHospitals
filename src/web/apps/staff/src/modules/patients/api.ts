@@ -413,18 +413,48 @@ export interface LinkFamilyMemberRequest {
   identityChecked: boolean;
 }
 
+export const PATIENT_DOCUMENT_TYPES = [
+  'IdProof',
+  'InsuranceCard',
+  'ExternalReport',
+  'ReferralLetter',
+  'Consent',
+  'Prescription',
+  'DischargeSummary',
+  'Imaging',
+  'Photo',
+  'Other',
+] as const;
+export type PatientDocumentType = (typeof PATIENT_DOCUMENT_TYPES)[number];
+
+/** A document attached to the patient record (EHR-04), newest first. */
 export interface PatientDocumentDto {
   id: string;
   fileId: string;
-  type: string;
+  type: PatientDocumentType;
   title: string;
+  /** The date on the document ("yyyy-MM-dd"), not when it was attached (`createdAt`). */
   documentDate: string | null;
+  /** Where the document came from, such as an outside lab or hospital. */
   source: string | null;
   notes: string | null;
   createdAt: string;
   fileName: string | null;
   contentType: string | null;
   sizeBytes: number | null;
+}
+
+/** Attaches a file already uploaded to the file store (`POST /api/v1/files`). */
+export interface AttachDocumentRequest {
+  fileId: string;
+  type: PatientDocumentType;
+  /** Required; at most 200 characters. */
+  title: string;
+  /** Not after today in the hospital (IST). */
+  documentDate: string | null;
+  /** At most 200 characters. */
+  source: string | null;
+  notes: string | null;
 }
 
 export interface PatientSearchParams {
@@ -584,6 +614,23 @@ export const consentApi = {
     api.post<void>(`/api/v1/patients/consents/${consentId}/revoke`, { reason }),
   /** Records that the patient told the desk they want WhatsApp messages; 422 `patient.no_mobile` without a number. */
   whatsAppOptIn: (patientId: string) => api.post<WhatsAppConsentDto>(`/api/v1/patients/${patientId}/whatsapp/opt-in`),
+};
+
+/**
+ * Attaching a document needs `files.write` to upload the file and `patients.documents` to attach it; a restricted
+ * record answers 403 `patient.restricted`.
+ */
+export const documentApi = {
+  /** Stores the file encrypted, for this patient; the server checks what it is from its content, and takes up to 25 MB. */
+  upload: (patientId: string, file: File) => {
+    const data = new FormData();
+    data.append('file', file);
+    data.append('category', 'patient-document');
+    data.append('patientId', patientId);
+    return api.post<{ id: string }>('/api/v1/files', data, { timeoutMs: 120_000 });
+  },
+  attach: (patientId: string, request: AttachDocumentRequest) =>
+    api.post<{ id: string }>(`/api/v1/patients/${patientId}/documents`, request),
 };
 
 /**

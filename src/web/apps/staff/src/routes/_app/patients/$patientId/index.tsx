@@ -1,14 +1,7 @@
 import {
   Button,
   Caption1,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
   Field,
-  Input,
   makeStyles,
   Menu,
   MenuItem,
@@ -18,7 +11,6 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
-  Select,
   Tab,
   TabList,
   Text,
@@ -26,44 +18,26 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import {
-  ArrowUploadRegular,
   BedRegular,
   CalendarAddRegular,
   CalendarLtrRegular,
-  DocumentRegular,
   EditRegular,
   MoreHorizontalRegular,
   PrintRegular,
   StethoscopeRegular,
 } from '@fluentui/react-icons';
-import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError, useSession } from '@hc360/core';
-import {
-  DataTable,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  Page,
-  Section,
-  StatusBadge,
-  useLeaveGuard,
-  useNotify,
-} from '@hc360/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatDateOnly, formatDateTime, formatPhone, humanize, isApiError, useSession } from '@hc360/core';
+import { DataTable, ErrorState, LoadingState, Page, Section, StatusBadge, useNotify } from '@hc360/ui';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useEffect, useState, type ReactNode } from 'react';
-import { api } from '@/lib/api';
+import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
-import {
-  guardianRelationLabel,
-  patientApi,
-  patientKeys,
-  patientQueries,
-  type PatientDetail,
-} from '@/modules/patients/api';
+import { guardianRelationLabel, patientApi, patientQueries, type PatientDetail } from '@/modules/patients/api';
 import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
+import { DocumentsPanel } from '@/modules/patients/DocumentsPanel';
 import { IdentityChecksPanel } from '@/modules/patients/IdentityChecksPanel';
 import { PortalAccessPanel } from '@/modules/patients/PortalAccessPanel';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
@@ -85,8 +59,6 @@ const useStyles = makeStyles({
   label: { color: tokens.colorNeutralForeground3 },
   tabs: { marginBottom: '8px' },
   breakGlass: { display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '560px' },
-  viewer: { width: '100%', height: '70vh', border: 'none', backgroundColor: tokens.colorNeutralBackground3 },
-  image: { maxWidth: '100%', maxHeight: '70vh', display: 'block', margin: '0 auto' },
 });
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
@@ -258,7 +230,7 @@ function PatientProfilePage() {
           {tab === 'consents' && <ConsentsPanel patientId={patientId} />}
           {tab === 'identity' && <IdentityChecksPanel patient={p} />}
           {tab === 'portal' && <PortalAccessPanel patientId={patientId} />}
-          {tab === 'documents' && <Documents patientId={patientId} />}
+          {tab === 'documents' && <DocumentsPanel patientId={patientId} />}
         </div>
       </Section>
 
@@ -343,169 +315,6 @@ function Visits({ patientId }: { patientId: string }) {
       onPageChange={setPage}
       size="small"
     />
-  );
-}
-
-const DOCUMENT_TYPES = [
-  'IdProof',
-  'InsuranceCard',
-  'ExternalReport',
-  'ReferralLetter',
-  'Consent',
-  'Prescription',
-  'DischargeSummary',
-  'Imaging',
-  'Photo',
-  'Other',
-];
-
-function Documents({ patientId }: { patientId: string }) {
-  const styles = useStyles();
-  const notify = useNotify();
-  const queryClient = useQueryClient();
-  const canManageDocuments = usePermission('patients.documents');
-  const canWriteFiles = usePermission('files.write');
-  const canUpload = canManageDocuments && canWriteFiles;
-  const documents = useQuery(patientQueries.documents(patientId));
-  const [file, setFile] = useState<File | null>(null);
-  const [title, setTitle] = useState('');
-  const [type, setType] = useState('ExternalReport');
-  const [viewer, setViewer] = useState<{ url: string; contentType: string; title: string } | null>(null);
-
-  // Release the decrypted document from memory when the viewer closes or shows another file.
-  useEffect(
-    () => () => {
-      if (viewer) {
-        URL.revokeObjectURL(viewer.url);
-      }
-    },
-    [viewer],
-  );
-
-  const upload = useMutation({
-    mutationFn: async () => {
-      if (!file) {
-        return;
-      }
-      const data = new FormData();
-      data.append('file', file);
-      data.append('category', 'patient-document');
-      data.append('patientId', patientId);
-      const stored = await api.post<{ id: string }>('/api/v1/files', data, { timeoutMs: 120_000 });
-      await api.post(`/api/v1/patients/${patientId}/documents`, {
-        fileId: stored.id,
-        type,
-        title: title || file.name,
-        documentDate: null,
-        source: null,
-        notes: null,
-      });
-    },
-    onSuccess: () => {
-      setFile(null);
-      setTitle('');
-      notify.success('Document attached');
-      void queryClient.invalidateQueries({ queryKey: patientKeys.documents(patientId) });
-    },
-    onError: (error) => notify.error(error, 'Could not attach the document'),
-  });
-
-  const open = async (fileId: string, contentType: string | null, docTitle: string) => {
-    try {
-      const blob = await api.blob(`/api/v1/files/${fileId}`);
-      setViewer({ url: URL.createObjectURL(blob), contentType: contentType ?? blob.type, title: docTitle });
-    } catch (error) {
-      notify.error(error, 'Could not open the document');
-    }
-  };
-
-  // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
-  useLeaveGuard({ dirty: file !== null || title !== '', busy: upload.isPending });
-
-  return (
-    <>
-      {canUpload && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
-          <Field label="File (PDF, JPG, PNG, max 25 MB)">
-            <input
-              type="file"
-              accept="application/pdf,image/png,image/jpeg,image/webp"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
-          </Field>
-          <Field label="Type">
-            <Select value={type} onChange={(_, d) => setType(d.value)}>
-              {DOCUMENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {humanize(t)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Title">
-            <Input
-              value={title}
-              onChange={(_, d) => setTitle(d.value)}
-              placeholder={file?.name ?? 'e.g. MRI report from Apollo'}
-            />
-          </Field>
-          <Button
-            icon={<ArrowUploadRegular />}
-            appearance="primary"
-            disabled={!file || upload.isPending}
-            onClick={() => upload.mutate()}
-          >
-            Attach
-          </Button>
-        </div>
-      )}
-      {documents.data && documents.data.length === 0 ? (
-        <EmptyState
-          title="No documents"
-          description="Scanned IDs, insurance cards and outside reports appear here."
-          icon={<DocumentRegular />}
-        />
-      ) : (
-        <DataTable
-          ariaLabel="Documents"
-          rows={documents.data}
-          loading={documents.isLoading}
-          error={documents.error}
-          onRetry={() => void documents.refetch()}
-          getRowId={(d) => d.id}
-          onRowClick={(d) => void open(d.fileId, d.contentType, d.title)}
-          columns={[
-            { key: 'title', header: 'Title', render: (d) => d.title },
-            { key: 'type', header: 'Type', render: (d) => humanize(d.type) },
-            { key: 'date', header: 'Added', render: (d) => formatDate(d.createdAt) },
-            {
-              key: 'size',
-              header: 'Size',
-              render: (d) => (d.sizeBytes ? `${Math.ceil(d.sizeBytes / 1024)} KB` : '—'),
-              priority: 'low',
-            },
-          ]}
-          size="small"
-        />
-      )}
-      <Dialog open={viewer !== null} onOpenChange={(_, d) => !d.open && setViewer(null)}>
-        <DialogSurface style={{ maxWidth: '90vw', width: 1000 }}>
-          <DialogBody>
-            <DialogTitle>{viewer?.title}</DialogTitle>
-            <DialogContent>
-              {viewer?.contentType.startsWith('image/') ? (
-                <img src={viewer.url} alt={viewer.title} className={styles.image} />
-              ) : (
-                viewer && <iframe src={viewer.url} title={viewer.title} className={styles.viewer} />
-              )}
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setViewer(null)}>Close</Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
-    </>
   );
 }
 
