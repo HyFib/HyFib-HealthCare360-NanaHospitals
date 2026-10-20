@@ -177,8 +177,12 @@ public sealed class FeatureSwitchTests(HospitalServer server)
 
         var features = await admin.GetAsync<List<FeatureDto>>("/api/v1/admin/features");
 
-        features.Select(f => f.Key).ShouldBe([FeatureKeys.PatientPortal, FeatureKeys.Telehealth]);
-        features.ShouldAllBe(f => f.Enabled && f.DefaultEnabled && f.Name.Length > 0 && f.WhenOff.Length > 0);
+        features.Select(f => f.Key).ShouldBe([FeatureKeys.PatientPortal, FeatureKeys.Telehealth, FeatureKeys.Abdm]);
+        features.ShouldAllBe(f => f.Name.Length > 0 && f.WhenOff.Length > 0);
+        features.Where(f => f.Key != FeatureKeys.Abdm).ShouldAllBe(f => f.Enabled && f.DefaultEnabled);
+        features.Single(f => f.Key == FeatureKeys.Abdm).ShouldSatisfyAllConditions(
+            f => f.Enabled.ShouldBeFalse("ABDM health records are off until an administrator turns them on"),
+            f => f.DefaultEnabled.ShouldBeFalse());
         try
         {
             var off = await admin.PutAsync<FeatureDto>($"/api/v1/admin/features/{FeatureKeys.Telehealth}", new SetFeatureRequest(false));
@@ -242,8 +246,8 @@ public sealed class FeatureSwitchTests(HospitalServer server)
 }
 
 /// <summary>
-/// Tests that turn a hospital-wide switch off. xUnit runs a collection with parallelization disabled by itself, after
-/// all the others, so no other test can meet a switch these tests turned off.
+/// Tests that turn a hospital-wide switch off (or, for ABDM health records, on). xUnit runs a collection with
+/// parallelization disabled by itself, after all the others, so no other test can meet a switch these tests changed.
 /// </summary>
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class FeatureSwitchCollection
