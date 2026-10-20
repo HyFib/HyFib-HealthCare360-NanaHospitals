@@ -129,7 +129,8 @@ internal static class PlatformSql
     public const string PostMigrationScript = """
         -- Audit events are append-only: forbid DELETE/TRUNCATE, rows inserted already sealed, and any change except
         -- sealing the hash chain. Sealing is all or nothing: the hash, the chain position and the link to the previous
-        -- hash together (only the first event has no previous hash), so no event can drop out of verification.
+        -- hash together (only the first event has no previous hash), so no event can drop out of verification. It
+        -- changes nothing else in the row, a column added later included.
         CREATE OR REPLACE FUNCTION audit.protect_audit_events() RETURNS trigger AS $$
         BEGIN
             IF TG_OP = 'DELETE' OR TG_OP = 'TRUNCATE' THEN
@@ -148,11 +149,9 @@ internal static class PlatformSql
                OR NEW.chain_index IS NULL
                OR NEW.chain_index < 1
                OR (NEW.chain_index = 1) <> (NEW.previous_hash IS NULL)
-               OR (NEW.id, NEW.occurred_at, NEW.category, NEW.action, NEW.entity_type, NEW.entity_id, NEW.patient_id,
-                   NEW.user_id, NEW.facility_id, NEW.summary, NEW.details)
+               OR (to_jsonb(NEW) - 'hash' - 'chain_index' - 'previous_hash')
                   IS DISTINCT FROM
-                  (OLD.id, OLD.occurred_at, OLD.category, OLD.action, OLD.entity_type, OLD.entity_id, OLD.patient_id,
-                   OLD.user_id, OLD.facility_id, OLD.summary, OLD.details) THEN
+                  (to_jsonb(OLD) - 'hash' - 'chain_index' - 'previous_hash') THEN
                 RAISE EXCEPTION 'audit events can only be sealed completely, not edited';
             END IF;
             RETURN NEW;

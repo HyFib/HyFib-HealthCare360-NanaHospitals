@@ -79,7 +79,7 @@ public sealed class AuditChainService(HospitalDbContext db)
             {
                 if (auditEvent.ChainIndex != expectedIndex
                     || !string.Equals(auditEvent.PreviousHash, previous, StringComparison.Ordinal)
-                    || !string.Equals(auditEvent.Hash, AuditEvent.ComputeHash(previous, auditEvent.CanonicalContent()), StringComparison.Ordinal))
+                    || !auditEvent.IsSealedAfter(previous))
                 {
                     return new AuditVerification(false, checkedCount, expectedIndex, 0,
                         $"The audit chain is broken at position {expectedIndex}. Records may have been altered or removed.");
