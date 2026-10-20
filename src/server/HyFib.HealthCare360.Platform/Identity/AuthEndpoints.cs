@@ -29,11 +29,13 @@ internal static class AuthEndpoints
 
         // The patient portal's sign-in, which also registers a new number: off while the portal is switched off. Both
         // steps ask for a proof of work (SRS SEC-06); failures for a number raise the work asked for it from any address.
+        // A number that is not a mobile number is answered first, so it neither spends the proof nor counts as a failure.
         group.MapPost("/otp/request", async (OtpRequest request, AuthService auth, CancellationToken ct) =>
                 (await auth.RequestOtpAsync(request, ct)).ToOk())
             .AllowAnonymous()
             .RequireRateLimiting(OtpRateLimit)
             .RequireFeature(FeatureKeys.PatientPortal)
+            .WithValidation<OtpRequest>()
             .RequireProofOfWork(AntiAutomationActions.Otp, context => context.Arguments.OfType<OtpRequest>().FirstOrDefault()?.Phone);
 
         // Giving the code names its challenge, not the number: the number is looked up only when the attempt fails (a wrong

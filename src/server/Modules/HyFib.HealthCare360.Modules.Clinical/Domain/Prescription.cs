@@ -149,10 +149,18 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
 
     /// <summary>
     /// When the patient was told the prescription is ready (the "prescription shared" message): at signing, or, where the
-    /// hospital requires the doctor's DSC, once signed with it. Null until then, so the message goes once whatever the
-    /// setting was at each step.
+    /// hospital requires the doctor's DSC, once signed with it or once the hospital no longer requires it
+    /// (<see cref="PatientNoticeHeldAt"/>). Null until then, so the message goes once whatever the setting was at each step.
     /// </summary>
     public DateTimeOffset? PatientNotifiedAt { get; private set; }
+
+    /// <summary>
+    /// When the "prescription shared" message was held back because the hospital required the doctor's DSC when the
+    /// prescription was signed; null when it was not held, or no longer is. A held message goes when the doctor signs it
+    /// with their DSC, or, if the hospital stops requiring the DSC first, when <c>PrescriptionNoticeRelease</c> finds the
+    /// prescription can be issued without it. Either way it is let go once (<see cref="ReleasePatientNotice"/>).
+    /// </summary>
+    public DateTimeOffset? PatientNoticeHeldAt { get; private set; }
 
     public DateTimeOffset? CancelledAt { get; private set; }
     public string? CancelReason { get; private set; }
@@ -252,6 +260,21 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
     }
 
     /// <summary>
+    /// Holds back the "prescription shared" message until the prescription can be issued (the hospital requires the
+    /// doctor's DSC). Only an out-patient prescription just signed, whose patient has not been told, is held.
+    /// </summary>
+    public void HoldPatientNotice(DateTimeOffset now)
+    {
+        if (Status == PrescriptionStatus.Signed && !IsInpatient && PatientNotifiedAt is null)
+        {
+            PatientNoticeHeldAt ??= now;
+        }
+    }
+
+    /// <summary>The held message was sent, or could not be (the patient has no mobile number): it is not tried again.</summary>
+    public void ReleasePatientNotice() => PatientNoticeHeldAt = null;
+
+    /// <summary>
     /// Records that the patient was told the prescription is ready, and raises <see cref="PrescriptionSharedWithPatient"/>
     /// (Virtual Care adds an SMS after a video consultation). False when they were told already.
     /// </summary>
@@ -263,6 +286,7 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         }
 
         PatientNotifiedAt = now;
+        PatientNoticeHeldAt = null;
         Raise(new PrescriptionSharedWithPatient(Id, PatientId, VisitId, FacilityId, PractitionerId, IsInpatient, SignedAt!.Value));
         return true;
     }
@@ -281,6 +305,7 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         CancelledAt = now;
         CancelReason = trimmed;
         RefillsRemaining = 0;
+        PatientNoticeHeldAt = null; // a cancelled prescription is never announced
         if (wasSigned)
         {
             Raise(new PrescriptionCancelled(Id, PatientId, trimmed));

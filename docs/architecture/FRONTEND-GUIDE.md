@@ -292,7 +292,10 @@ matches its pinned version: `pnpm exec playwright install chromium` once, unless
 has it. To add a screen, add an entry to the spec's list: its path, the canned answers (from the `fixtures/` of the
 jsdom checks, typed with the module's DTOs) and what shows once its data is there. Fix what it finds in the component
 or, better, in the theme or the shared component it comes from; `{ skip: { '<rule id>': '<why>' } }` is only for a rule
-that cannot apply.
+that cannot apply. What a run leaves behind (each app's `dist`, `playwright-report`, `test-results`, `blob-report`) is
+ignored by git, `pnpm lint` and `pnpm format:check`. Each package that imports `@playwright/test` (or
+`@axe-core/playwright`, as `@hc360/ui/testing/browser` does) declares it as a dev dependency, at the version the
+workspace root pins.
 
 **Fonts.** CI's Ubuntu runner has none of the theme's named fonts, so Chromium paints there in DejaVu Sans, which is
 about as wide as Segoe UI on Windows. A Mac, or a Linux desktop whose fonts stand in for those names (Inter, Noto

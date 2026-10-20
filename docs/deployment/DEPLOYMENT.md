@@ -292,9 +292,11 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    folder is **not** in the backups and is not streamed to the standby, so a restore on new hardware or a failover
    needs them again (sections 8 and 9). Until they are there, DSC signing is refused, signatures already made are not
    printed as DSC signatures, and, where the DSC is required, those prescriptions cannot be printed or shared: System
-   health says so (`prescriptions.dsc_trust_empty`, critical where the DSC is required). In **Hospital setup › Doctors
-   and clinical staff**, write each doctor's name in full as it is on their DSC: a DSC is accepted only from the doctor
-   it is issued to.
+   health says so (`prescriptions.dsc_trust_empty`, critical where the DSC is required). The HC360 service's account
+   must be able to read the folder and its files (copied files keep the folder's permissions; a folder locked down by
+   hand may not): a folder it cannot read counts as an empty one, and System health says why
+   (`prescriptions.dsc_trust_unreadable`). In **Hospital setup › Doctors and clinical staff**, write each doctor's name
+   in full as it is on their DSC: a DSC is accepted only from the doctor it is issued to.
 8. **Administration › System health**: everything should be green, and the WiFi signal above 60%. It also shows each
    integration set up in step 6 as Administration › Integrations does, and when the hospital CA and the server
    certificate expire.

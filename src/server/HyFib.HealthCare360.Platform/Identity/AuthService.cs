@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -22,6 +23,13 @@ public sealed record LoginRequest(string UserName, string Password, Guid? Facili
 public sealed record MfaVerifyRequest(Guid ChallengeId, string Code);
 
 public sealed record OtpRequest(string Phone);
+
+/// <summary>An Indian mobile number, as <see cref="AuthService.RequestOtpAsync"/> wants it, checked before the proof of work.</summary>
+public sealed class OtpRequestValidator : AbstractValidator<OtpRequest>
+{
+    public OtpRequestValidator() =>
+        RuleFor(r => r.Phone).Cascade(CascadeMode.Stop).NotEmpty().WithMessage("Enter a valid 10-digit mobile number.").IndianMobile();
+}
 
 public sealed record OtpVerifyRequest(Guid ChallengeId, string Code);
 

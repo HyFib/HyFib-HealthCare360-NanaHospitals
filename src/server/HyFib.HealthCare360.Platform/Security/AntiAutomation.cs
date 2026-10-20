@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Settings;
@@ -53,8 +54,38 @@ public static class AntiAutomationSettings
     /// <summary>2^18: sixteen times the default, some 5-13 s on a mid-range phone.</summary>
     public const int DefaultMaxBits = 18;
 
-    /// <summary>The highest either setting may be: 2^24 hashes are minutes on a phone.</summary>
-    public const int Ceiling = 24;
+    /// <summary>
+    /// The highest either setting may be: 2^20 hashes, some 20-50 s on a mid-range phone on average. A challenge lives
+    /// 5 minutes (<see cref="AntiAutomation.ChallengeLifetime"/>) and the tries a solution takes vary (geometrically): a
+    /// slow phone needs three times the average one time in twenty, some 2.5 minutes, still within it. At 2^22 the
+    /// average alone is 1.5-3.5 minutes, and at 2^24 six to fourteen: patients' phones would run out of time.
+    /// </summary>
+    public const int Ceiling = 20;
+
+    /// <summary>
+    /// Why <paramref name="value"/> cannot be saved as <paramref name="key"/>, or null (and for any other key): the
+    /// bits are a whole number from 0 to <see cref="Ceiling"/> (a number or its text, as they are read), the switch true or
+    /// false. Clearing a value (null) is fine: the default applies.
+    /// </summary>
+    public static string? Problem(string key, JsonNode? value) => key switch
+    {
+        _ when value is null => null,
+        Bits or MaxBits => IntOf(value) is >= 0 and <= Ceiling ? null : $"Enter a whole number of bits from 0 to {Ceiling}.",
+        Enabled => BoolOf(value) is not null ? null : "Enter true or false.",
+        _ => null,
+    };
+
+    private static int? IntOf(JsonNode value) => value is JsonValue v
+        ? v.TryGetValue<int>(out var n) ? n
+            : v.TryGetValue<string>(out var text) && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed
+            : null
+        : null;
+
+    private static bool? BoolOf(JsonNode value) => value is JsonValue v
+        ? v.TryGetValue<bool>(out var on) ? on
+            : v.TryGetValue<string>(out var text) && bool.TryParse(text, out var parsed) ? parsed
+            : null
+        : null;
 }
 
 /// <summary>A challenge for the browser to solve, or <c>Required = false</c> while the check is turned off.</summary>
@@ -71,15 +102,18 @@ public sealed record RequiresProofOfWorkMetadata(string Action);
 /// code, a throttled number, a dead link). Every 3 failures ask for 2 more bits (four times the work), up to
 /// <see cref="AntiAutomationSettings.MaxBits"/>. The count is kept until <see cref="Window"/> passes without a failure (each
 /// failure starts the quarter of an hour again), so a quiet quarter of an hour brings it back down and a steady trickle
-/// keeps it up. Numbers are kept hashed. In memory, per server.
+/// keeps it up. In memory, per server. Numbers are kept only as an HMAC-SHA256 under a key derived from the server's
+/// anti-automation key (<see cref="ProofOfWorkKey"/>): India has few enough mobile numbers (some 10^9) to hash every one,
+/// so a plain hash would give the number back to whoever saw the memory.
 /// </summary>
-public sealed class AutomationSuspicion(IMemoryCache cache, TimeProvider time)
+public sealed class AutomationSuspicion(IMemoryCache cache, TimeProvider time, byte[] key)
 {
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
     public const int FailuresPerStep = 3;
     public const int BitsPerStep = 2;
 
     private readonly Lock _gate = new();
+    private readonly byte[] _subjectKey = FieldMasterKey.DeriveKey(key, "anti-automation-subject");
 
     public void RecordFailure(string? address, string? subject)
     {
@@ -113,7 +147,7 @@ public sealed class AutomationSuspicion(IMemoryCache cache, TimeProvider time)
     public int RequiredBits(int baseBits, int maxBits, string? address, string? subject) =>
         Math.Max(baseBits, Math.Min(maxBits, baseBits + (BitsPerStep * (Failures(address, subject) / FailuresPerStep))));
 
-    private static IEnumerable<string> Keys(string? address, string? subject)
+    private IEnumerable<string> Keys(string? address, string? subject)
     {
         if (!string.IsNullOrEmpty(address))
         {
@@ -122,9 +156,15 @@ public sealed class AutomationSuspicion(IMemoryCache cache, TimeProvider time)
 
         if (!string.IsNullOrWhiteSpace(subject))
         {
-            var normalized = SharedKernel.Phone.Normalize(subject) ?? subject;
-            yield return "pow:fail:subject:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)), 0, 16);
+            yield return "pow:fail:subject:" + SubjectHash(subject);
         }
+    }
+
+    /// <summary>What the count for a mobile number is kept under: the keyed hash of the number, written as HC360 stores numbers.</summary>
+    internal string SubjectHash(string subject)
+    {
+        var normalized = SharedKernel.Phone.Normalize(subject) ?? subject;
+        return Convert.ToHexString(HMACSHA256.HashData(_subjectKey, Encoding.UTF8.GetBytes(normalized)), 0, 16);
     }
 
     private Counter? Current(string key, DateTimeOffset now) =>
@@ -272,11 +312,11 @@ public static class AntiAutomationEndpoints
 {
     public const string FailedCode = "request.check_failed";
 
+    /// <summary>What a refused proof is told, which the portal shows in the patient's language (patient texts, PP-06).</summary>
+    public const string FailedMessage = "We could not complete this request. Please try again.";
+
     /// <summary>The one answer to every refused proof, whatever the reason.</summary>
-    public static IResult Failed() => new Error(
-        FailedCode,
-        "We could not complete this request. Please try again.",
-        ErrorType.Forbidden).ToProblem();
+    public static IResult Failed() => new Error(FailedCode, FailedMessage, ErrorType.Forbidden).ToProblem();
 
     public static void Map(IEndpointRouteBuilder app)
     {

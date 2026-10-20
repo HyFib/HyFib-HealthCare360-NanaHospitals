@@ -24,6 +24,7 @@ public sealed class AntiAutomationEndpointTests
     /// is answered by validation before its proof is checked, so it neither spends the proof nor counts as a failure.
     /// </summary>
     [Theory]
+    [InlineData("POST", "/api/v1/auth/otp/request")]
     [InlineData("POST", "/api/v1/public/feedback/forms/{token}")]
     [InlineData("POST", "/api/v1/public/feedback/invitations/{token}")]
     public void A_validated_request_is_validated_before_its_proof_is_checked(string method, string route)

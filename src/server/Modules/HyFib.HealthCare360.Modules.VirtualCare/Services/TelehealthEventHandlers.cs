@@ -95,8 +95,8 @@ internal sealed class LinkVisitToTelehealthSession(HospitalDbContext db) : IDoma
 /// TEL-04: when the e-prescription of a video consultation is shared with the patient, they are told it is on the portal
 /// (the pharmacy flow itself belongs to Pharmacy). Clinical sends <see cref="Template"/> on WhatsApp for every
 /// out-patient prescription, this one included, so this handler adds only the SMS — at the same moment: when the doctor
-/// signs it, or, where the hospital requires the doctor's DSC (ERX-04), once signed with it, and once only
-/// (<see cref="PrescriptionSharedWithPatient"/>).
+/// signs it, or, where the hospital requires the doctor's DSC (ERX-04), once signed with it (or once the hospital no
+/// longer requires it), and once only (<see cref="PrescriptionSharedWithPatient"/>).
 /// </summary>
 internal sealed class SharePrescriptionAfterTeleconsultation(HospitalDbContext db, INotificationService notifications)
     : IDomainEventHandler<PrescriptionSharedWithPatient>

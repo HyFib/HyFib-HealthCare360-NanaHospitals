@@ -218,10 +218,15 @@ public sealed class ProofOfWork(byte[] key, IProofOfWorkReplayCache spent, TimeP
     private string Sign(string body) => Base64UrlEncoder.Encode(HMACSHA256.HashData(key, Encoding.ASCII.GetBytes(body)));
 }
 
+/// <summary>This server's anti-automation key (<see cref="ProofOfWorkKey"/>), read once for the services that use it.</summary>
+internal sealed record AntiAutomationKey(byte[] Value);
+
 /// <summary>
-/// The key that signs proof-of-work challenges: 32 random bytes made on first start and kept under the data directory
+/// The key that signs proof-of-work challenges, and from which the key of the failure counts' number hashes is derived
+/// (<see cref="AutomationSuspicion"/>): 32 random bytes made on first start and kept under the data directory
 /// (<c>keys/anti-automation.key</c>), wrapped by ASP.NET Core Data Protection (machine DPAPI on Windows), as the token
-/// signing key is. Losing it only makes challenges issued before invalid; the browser asks for a new one.
+/// signing key is. Losing it only makes challenges issued before invalid, and forgets the failures counted so far; the
+/// browser asks for a new challenge.
 /// </summary>
 public static class ProofOfWorkKey
 {

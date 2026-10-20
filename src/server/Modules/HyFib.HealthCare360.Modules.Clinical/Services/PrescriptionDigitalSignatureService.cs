@@ -363,10 +363,11 @@ public sealed class PrescriptionDigitalSignatureService(
         }
 
         // Before the doctor enters a PIN for a signature the server would refuse.
-        if (trust.Current.IsEmpty)
+        if (trust.Current is { IsEmpty: true } anchors)
         {
-            return Error.Rule("prescription.signature_not_set_up",
-                "HC360 cannot accept DSC signatures yet: IT has not installed the CCA India root certificates on the server.");
+            return Error.Rule("prescription.signature_not_set_up", anchors.FolderProblem is null
+                ? "HC360 cannot accept DSC signatures yet: IT has not installed the CCA India root certificates on the server."
+                : "HC360 cannot accept DSC signatures right now: the server cannot read its DSC trust folder. Ask IT to check it.");
         }
 
         if (currentUser.PractitionerId != p.PractitionerId)

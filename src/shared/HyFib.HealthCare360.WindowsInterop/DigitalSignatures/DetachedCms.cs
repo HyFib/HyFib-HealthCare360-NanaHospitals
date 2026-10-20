@@ -112,7 +112,9 @@ public static class DetachedCms
     /// Checks <paramref name="signature"/> over <paramref name="content"/>: one signer, a SHA-256 (or stronger) digest,
     /// a signature that matches the content, a signing time, and a person's certificate (not a CA's) valid at that time
     /// whose key usage allows signing. The certificate chain is built as well, to <paramref name="trust"/>'s roots only,
-    /// and reported in <see cref="CmsVerification.Chain"/>: whether that is required is the caller's decision.
+    /// and reported in <see cref="CmsVerification.Chain"/>: whether that is required is the caller's decision. Whatever
+    /// the bytes, a signature that does not check out is refused with a <see cref="CmsProblem"/>, never an exception: the
+    /// parts .NET decodes only when read (the signing time, the certificate's extensions) are read with that in mind.
     /// </summary>
     public static CmsVerification Verify(byte[] content, byte[] signature, DscTrustAnchors? trust = null)
     {
@@ -140,7 +142,18 @@ public static class DetachedCms
         }
 
         var signer = SignerCertificate.Of(certificate);
-        var signedAt = SigningTime(info);
+        DateTimeOffset? signedAt;
+        try
+        {
+            signedAt = SigningTime(info);
+        }
+        catch (CryptographicException)
+        {
+            // Pkcs9SigningTime decodes its value only when it is read: one that is not a time is refused as no time at all,
+            // not left to fail the request.
+            return Refused(CmsProblem.NoSigningTime, "The signature's signing time cannot be read.", signer);
+        }
+
         if (!StrongDigests.Contains(info.DigestAlgorithm.Value ?? string.Empty))
         {
             return Refused(CmsProblem.WeakDigest, "The signature must use SHA-256 or stronger.", signer, signedAt);

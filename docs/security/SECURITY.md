@@ -121,7 +121,10 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     only portal sessions, and nothing there can renew a staff session.
   - A refresh token presented after it was spent ends the whole session, and is audited as critical. A retry within
     60 seconds (a response lost on the WiFi link) is re-issued a token once. The token it replaces is retired, so if a
-    copy was being replayed, the real client's next refresh ends the session for both.
+    copy was being replayed, the real client's next refresh ends the session for both. The app's windows on one
+    computer share the cookie, so they take turns to refresh (a Web Lock only that address's windows share): two
+    refreshing at once, as all do when the screen is unlocked in one, would present the same token, and the browser
+    could keep the retired one and sign everyone out.
 - **Sessions** (ASVS V7):
   - **How long:** a session ends 12 hours after sign-in (one clinical shift), or after 2 hours nobody has used it. A
     patient portal session ends after 20 minutes unused, because portals run on shared and family phones. Together
@@ -434,9 +437,12 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - **Raised for failures.** Every 3 failures from an address, or for a mobile number from any address, ask 2 bits
     more (four times the work), up to 18 bits (5 to 13 seconds on a phone). A failure is a refused proof, a rate-limit
     refusal, or a refused request (a wrong or expired code, too many codes, a dead link). A form that fails validation
-    is answered before the proof is checked, so it neither spends its proof nor counts. The count for an address or a
+    (feedback, or a sign-in code asked for a number that is not a mobile number) is answered before the proof is
+    checked, so it neither spends its proof nor counts. The count for an address or a
     number lasts until 15 minutes pass without a failure for it (each failure starts the quarter of an hour again), so a
-    quiet quarter of an hour brings it back down and a steady trickle keeps it up. Numbers are kept only as hashes.
+    quiet quarter of an hour brings it back down and a steady trickle keeps it up. Numbers are kept only as keyed
+    hashes, in memory: an HMAC-SHA256 under a key derived from the anti-automation key, since India has few enough
+    mobile numbers to hash every one, and a plain hash would give the number back.
     Giving a code names only its challenge: the work asked for it depends on the address, and when the attempt fails
     the server looks the challenge's number up (one lookup by key, on that path only), so wrong and expired codes count
     against the number as well.
@@ -459,8 +465,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     It says nothing about whether the number has an account or who failed, anyone who typed the number can cause such
     failures, and the sign-in itself never says whether a number is registered.
   - **Settings** (Administration › Settings): `security.antiAutomation.enabled` (on unless set to `false`),
-    `security.antiAutomation.bits` (14) and `security.antiAutomation.maxBits` (18); neither above 24. Turning it off
-    lets every request through without a proof.
+    `security.antiAutomation.bits` (14) and `security.antiAutomation.maxBits` (18); neither above 20, and a value
+    outside 0 to 20 (or not true or false) is refused when it is saved. 2^20 hashes take a mid-range phone 20 to 50
+    seconds on average, and an unlucky one in twenty three times that, still within the 5 minutes a challenge lives; at
+    22 bits the average alone would be 1.5 to 3.5 minutes. Turning it off lets every request through without a proof.
   - Unsubscribing does not ask for one: its link is personal, and doing it twice changes nothing. Neither do the
     read-only public pages (the doctor directory, document checks, the privacy notice) or signed-in requests, which the
     per-user limits cover.
@@ -563,9 +571,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
     access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
   - *Anti-automation key* (an accepted exception to rotating from System health). It signs only the portal's
-    proof-of-work challenges, which live 5 minutes, and protects no data, so it is rotated by deleting
-    `keys\anti-automation.key` and restarting the server: challenges issued before stop working and browsers ask for
-    new ones. Rotate it with the sign-in token key when the Server Node may have been exposed (Key policy, below).
+    proof-of-work challenges, which live 5 minutes, and keys the in-memory hashes of the numbers that failed lately; it
+    protects no stored data, so it is rotated by deleting `keys\anti-automation.key` and restarting the server:
+    challenges issued before stop working and browsers ask for new ones, and the failures counted so far are forgotten. Rotate it with the sign-in token key when the Server Node may have been exposed (Key policy, below).
 - **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
   says when either is due. Rotate both at once, and change the database password if the server signs in with one, when
   the Server Node, its disks or a backup may have been exposed, and when someone with administrator access to the
@@ -582,7 +590,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Blind-index keys | Derived from each data key | As above | HMAC-SHA256 lookups of ABHA, policy, PAN and bank account numbers (the current data key's), and of Aadhaar numbers (the original key's) | With the data key, indexes computed again in the background; the Aadhaar index stays on the original key (it cannot be rebuilt) |
 | Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
-| Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above) | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers need the same file |
+| Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above), and, through a key derived from it, of the mobile numbers whose failures are counted in memory | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers need the same file |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
 | Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires |
 | Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby or replacement hardware; kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
@@ -593,7 +601,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Desktop and lab agent device secrets | Each workstation | DPAPI (user or machine) | A device's sign-in | Revoke and enrol the device again |
 | Release signing key (HyFib's, ECDSA P-256) | The `HC360_RELEASE_SIGNING_KEY` secret of the release workflow, and one copy offline at HyFib; the public keys are built into HC360 (`ReleaseKeys.cs`) | GitHub's encrypted secrets: only the release job reads it, from its environment, never on a command line or in a log | The manifest of each HC360 Desktop package, which the Server Node, HC360 Desktop and its updater check before they take, offer or install it (SRS DED-18; Release signing key, below) | A new pair every few years, at once on exposure or when someone who held it leaves: release with both public keys, then sign with the new one |
 | Doctors' Digital Signature Certificates (DSC) | The doctor's own USB token, issued by a licensed Indian CA; never on the server or in HC360 | The token and its PIN (the vendor's CSP/KSP); HC360 Desktop only asks Windows to sign | Their detached CMS signatures over prescriptions (SHA-256; ERX-04), checked by the server and anyone with OpenSSL | By the CA (one to three years); a new certificate signs new prescriptions, earlier signatures stay checkable with the certificate inside them |
-| DSC trust anchors (the CCA India root certificates) | The server's DSC trust folder (`HealthCare360:Clinical:DscTrustDirectory`, by default `certs\dsc-trust` in the data folder): public certificates only, which IT downloads from cca.gov.in and checks against the thumbprints the CCA publishes | File permissions of the data folder: whoever can write there decides which certificates count as DSCs | Accepting a DSC signature: the certificate must chain to one of them, offline, at the signing time (no revocation check), and be issued in the prescribing doctor's name; every printed copy re-checks it and states the DSC only while it is Valid | When the CCA issues a new root, add it; a removed root turns the signatures under it to "not confirmed as a DSC" (`Untrusted`: printed as "Signed electronically", and not issued at all where the DSC is required). The folder is not in the backups or streamed to the standby: IT copies the roots onto new hardware and the standby (DEPLOYMENT.md, sections 4, 8 and 9), and System health warns while it is empty and DSC signing is on |
+| DSC trust anchors (the CCA India root certificates) | The server's DSC trust folder (`HealthCare360:Clinical:DscTrustDirectory`, by default `certs\dsc-trust` in the data folder): public certificates only, which IT downloads from cca.gov.in and checks against the thumbprints the CCA publishes | File permissions of the data folder: whoever can write there decides which certificates count as DSCs | Accepting a DSC signature: the certificate must chain to one of them, offline, at the signing time (no revocation check), and be issued in the prescribing doctor's name; every printed copy re-checks it and states the DSC only while it is Valid | When the CCA issues a new root, add it; a removed root turns the signatures under it to "not confirmed as a DSC" (`Untrusted`: printed as "Signed electronically", and not issued at all where the DSC is required). The folder is not in the backups or streamed to the standby: IT copies the roots onto new hardware and the standby (DEPLOYMENT.md, sections 4, 8 and 9), and System health warns while it is empty, or the server cannot read it (which counts as empty), and DSC signing is on |
 | Passwords, refresh tokens, one-time codes | The database | PBKDF2-SHA512 (passwords), SHA-256 (tokens and codes) | Sign-in | Refresh tokens on every use; passwords rehashed when the work factor rises |
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.

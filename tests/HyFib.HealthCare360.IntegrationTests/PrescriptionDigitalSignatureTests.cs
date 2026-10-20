@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
@@ -186,6 +187,14 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
         await ShouldRefuseAsync(doctor.SendRawAsync(HttpMethod.Post, $"/api/v1/clinical/prescriptions/{rx.Id}/digital-signature",
             new AttachDigitalSignatureRequest(Convert.ToBase64String(stale))), HttpStatusCode.UnprocessableEntity, "prescription.signature_time");
 
+        // A signing time that is not a time: refused like any other signature that does not check out, not a server error.
+        var garbled = new SignedCms(new ContentInfo(Convert.FromBase64String(toSign.Content)), detached: true);
+        var signer = new CmsSigner(certificate) { DigestAlgorithm = new Oid("2.16.840.1.101.3.4.2.1") };
+        signer.SignedAttributes.Add(new AsnEncodedData(new Oid("1.2.840.113549.1.9.5"), [0x17, 0x03, 0x41, 0x42, 0x43]));
+        garbled.ComputeSignature(signer, silent: true);
+        await ShouldRefuseAsync(doctor.SendRawAsync(HttpMethod.Post, $"/api/v1/clinical/prescriptions/{rx.Id}/digital-signature",
+            new AttachDigitalSignatureRequest(Convert.ToBase64String(garbled.Encode()))), HttpStatusCode.UnprocessableEntity, "prescription.signature_invalid");
+
         // A colleague's DSC, or the hospital's own Class 3 certificate on a shared workstation: a real DSC, not this doctor's.
         foreach (var name in new[] { "SOME OTHER DOCTOR", "NANA HOSPITALS PRIVATE LIMITED" })
         {
@@ -304,6 +313,43 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
         await SetPolicyAsync("optional");
         (await _pki.SignAsync(doctor, later.Id, certificate)).State.ShouldBe(DigitalSignatureState.Valid);
         (await NoticesAsync(patient.Id)).Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_message_held_for_the_dsc_is_sent_once_when_the_hospital_stops_requiring_it()
+    {
+        // Signed where the DSC is required: the patient is not told, and nothing tells them while it still is.
+        await SetPolicyAsync("required");
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var patient = await RegisterPatientAsync(NewMobile());
+        var rx = await SignedPrescriptionAsync(doctor, patient.Id);
+        var stale = await RegisterPatientAsync(NewMobile());
+        var old = await SignedPrescriptionAsync(doctor, stale.Id);
+        await HeldSinceAsync(old.Id, DateTimeOffset.UtcNow - PrescriptionNoticeRelease.Window - TimeSpan.FromHours(1));
+        await ReleaseHeldNoticesAsync();
+        (await NoticesAsync(patient.Id)).ShouldBeEmpty();
+
+        // The hospital stops requiring it before the doctor signed with it: the prescription can be issued now, and the
+        // patient is told, once, however often the held messages are looked through.
+        await SetPolicyAsync("optional");
+        (await doctor.GetAsync<PrescriptionDto>($"/api/v1/clinical/prescriptions/{rx.Id}")).FinalCopyAvailable.ShouldBeTrue();
+        await ReleaseHeldNoticesAsync();
+        (await NoticesAsync(patient.Id)).ShouldBe([NotificationChannel.WhatsApp]);
+        (await NoticeFacilitiesAsync(patient.Id)).ShouldBe([_facilityId],
+            "sent as the prescription's facility (its templates, name and WhatsApp account), though the job has no signed-in user");
+        await ReleaseHeldNoticesAsync();
+        (await NoticesAsync(patient.Id)).ShouldBe([NotificationChannel.WhatsApp], "once only");
+        (await NoticesAsync(stale.Id)).ShouldBeEmpty("held for longer than a week: no longer news");
+
+        // Switched again, and signed with the DSC after all: still once.
+        await SetPolicyAsync("off");
+        await ReleaseHeldNoticesAsync();
+        await SetPolicyAsync("required");
+        await SetPolicyAsync("optional");
+        await ReleaseHeldNoticesAsync();
+        using var certificate = _pki.Doctor(_doctorName);
+        (await _pki.SignAsync(doctor, rx.Id, certificate)).State.ShouldBe(DigitalSignatureState.Valid);
+        (await NoticesAsync(patient.Id)).ShouldBe([NotificationChannel.WhatsApp], "once only");
     }
 
     [Theory]
@@ -544,6 +590,21 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
             .Where(p => p.Id == prescriptionId).Select(p => p.VerificationToken!).SingleAsync(Ct);
     }
 
+    /// <summary>Looks through the held "prescription shared" messages, as the job does every few minutes.</summary>
+    private async Task ReleaseHeldNoticesAsync()
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<PrescriptionNoticeRelease>().ReleaseAsync(Ct);
+    }
+
+    private async Task HeldSinceAsync(Guid prescriptionId, DateTimeOffset since)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Prescription>().IgnoreQueryFilters()
+            .Where(p => p.Id == prescriptionId && p.PatientNoticeHeldAt != null)
+            .ExecuteUpdateAsync(p => p.SetProperty(x => x.PatientNoticeHeldAt, since), Ct)).ShouldBe(1);
+    }
+
     /// <summary>The channel of each "prescription shared" message queued for the patient.</summary>
     private async Task<List<NotificationChannel>> NoticesAsync(Guid patientId)
     {
@@ -551,6 +612,16 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<NotificationLog>().AsNoTracking()
             .Where(l => l.PatientId == patientId && l.TemplateKey == PrescriptionShared)
             .Select(l => l.Channel)
+            .ToListAsync(Ct);
+    }
+
+    /// <summary>The facility each "prescription shared" message queued for the patient was sent as.</summary>
+    private async Task<List<Guid?>> NoticeFacilitiesAsync(Guid patientId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<NotificationLog>().AsNoTracking()
+            .Where(l => l.PatientId == patientId && l.TemplateKey == PrescriptionShared)
+            .Select(l => l.FacilityId)
             .ToListAsync(Ct);
     }
 

@@ -272,12 +272,13 @@ export const auth = {
   },
 
   /**
-   * Single-flight refresh; network failures keep the session (WiFi blips must not sign people out). It tells the server
-   * how long nobody has used the app, since refreshing alone, in the background, is no sign of anyone at the screen:
-   * the server locks the screen and ends the session by that.
+   * Single-flight refresh, taking turns with the app's other windows (`oneWindowAtATime`); network failures keep the
+   * session (WiFi blips must not sign people out). It tells the server how long nobody has used the app, since refreshing
+   * alone, in the background, is no sign of anyone at the screen: the server locks the screen and ends the session by
+   * that.
    */
   refresh(): Promise<string | null> {
-    refreshing ??= (async () => {
+    refreshing ??= oneWindowAtATime(async () => {
       try {
         const result = await authFetch('refresh', undefined, { 'X-HC360-Idle': String(idleSeconds()) });
         accept(result);
@@ -291,7 +292,7 @@ export const auth = {
       } finally {
         refreshing = null;
       }
-    })();
+    });
     return refreshing;
   },
 
@@ -314,6 +315,22 @@ export const auth = {
     useSession.getState().clear();
   },
 };
+
+/**
+ * The app's windows on this computer share one refresh cookie, which the server replaces at every refresh. One presented
+ * again once replaced is a stolen copy to the server, which ends the session (after a short grace for an answer lost on
+ * the WiFi, which it answers once more and retires the replacement). Windows refreshing at the same moment (all of them
+ * after an unlock in one, timers that fall together) would present the same cookie, and the browser would keep whichever
+ * answer came last: possibly a retired one, which signs everyone out at the next refresh. So the windows take turns,
+ * under a Web Lock that only this site's windows share, and each presents the cookie the one before it was given.
+ * Where the browser has no Web Locks, a window refreshes on its own, as before.
+ */
+const REFRESH_LOCK = 'hc360:auth-refresh';
+
+function oneWindowAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+  return locks ? locks.request(REFRESH_LOCK, work) : work();
+}
 
 /** Refresh a minute before the access token expires so requests never stall on a 401 round-trip. */
 function scheduleRefresh(): void {
