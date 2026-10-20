@@ -172,8 +172,8 @@ public sealed class PatientDuplicateTests(HospitalServer server)
     private static async Task<IReadOnlyList<PatientListItem>> RegisteredWithAsync(ApiClient client, string mobile) =>
         (await client.GetAsync<PagedResult<PatientListItem>>($"/api/v1/patients?search={mobile}")).Items;
 
-    // Names, numbers and dates no other test uses (the database outlives a test run), so a match is always this test's
-    // own patient: a first name is matched with the date of birth whatever the rest of the record says.
+    // Names, numbers and dates no other test uses (all the tests of a run share one database), so a match is always
+    // this test's own patient: a first name is matched with the date of birth whatever the rest of the record says.
     private static string NewFirstName() => "Kavya" + Letters(6);
 
     private static DateOnly NewDateOfBirth() => new DateOnly(1950, 1, 1).AddDays(Random.Shared.Next(15000));
