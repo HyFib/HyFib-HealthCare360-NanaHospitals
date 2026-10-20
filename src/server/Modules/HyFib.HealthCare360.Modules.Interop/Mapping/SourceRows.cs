@@ -197,6 +197,32 @@ internal sealed record AllergyRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
+/// <summary>A Clinical e-prescription as a whole (its lines are <see cref="PrescriptionItemRow"/>), for an ABDM prescription record.</summary>
+internal sealed record PrescriptionRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid FacilityId { get; init; }
+    public string PrescriptionNumber { get; init; } = string.Empty;
+    public Guid? EncounterId { get; init; }
+    public Guid? VisitId { get; init; }
+    public Guid? AdmissionId { get; init; }
+    public Guid PractitionerId { get; init; }
+    public bool IsInpatient { get; init; }
+    public PrescriptionStatus Status { get; init; }
+    public DateTimeOffset PrescribedAt { get; init; }
+    public DateTimeOffset? SignedAt { get; init; }
+
+    /// <summary>General advice printed for the patient (the pharmacist's notes are not shared).</summary>
+    public string? Advice { get; init; }
+
+    /// <summary>The prescription this one refills: signed by whoever issued the refill, not by the prescriber.</summary>
+    public Guid? RefillOfPrescriptionId { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+
 /// <summary>One medicine line of a signed (or signed-then-cancelled) Clinical e-prescription.</summary>
 internal sealed record PrescriptionItemRow
 {

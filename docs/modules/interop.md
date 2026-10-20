@@ -5,23 +5,23 @@ Read-only HL7 FHIR R4 API that lets other providers read a patient's record, **s
 and DocumentReference under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only
 and writes nothing.
 
-The module also turns a signed discharge summary into an **ABDM health record** that medical records staff download
-(SRS **EHR-08**, in part; [ABDM health records](#abdm-health-records-ehr-08)): a FHIR document built to the NRCeS
-profiles, behind the `abdm` feature switch, under the same consent rules.
+The module also turns a signed discharge summary or prescription into an **ABDM health record** that medical records
+staff download (SRS **EHR-08**, in part; [ABDM health records](#abdm-health-records-ehr-08)): a FHIR document built to
+the NRCeS profiles, behind the `abdm` feature switch, under the same consent rules.
 
 | | |
 |---|---|
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.Interop` (layer 8; references Patients, Clinical, Diagnostics and Inpatient) |
 | Schema | none. The module owns no tables and reads the other modules' entities through `HospitalDbContext` (no migration) |
-| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08 in part (ABDM document bundles of discharge summaries; ABHA linking and the ABDM gateway are not built); PRV-04 (exports are audited); ABDM-friendly identifiers (ABHA number, HFR id) |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database). ABDM (`Abdm/`): the discharge summary mapping, the document builder, and validation of the bundles against the NRCeS profiles ([Validation](#validation)). `AbdmExportTests` (IntegrationTests): the export end to end |
+| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08 in part (ABDM document bundles of discharge summaries and prescriptions; ABHA linking and the ABDM gateway are not built); PRV-04 (exports are audited); ABDM-friendly identifiers (ABHA number, HFR id) |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database). ABDM (`Abdm/`): the discharge summary and prescription mappings, the document builder, and validation of the bundles against the NRCeS profiles ([Validation](#validation)). `AbdmExportTests` (IntegrationTests): both exports end to end |
 
 ## Permission and set-up
 
 | Permission | Purpose | Default roles |
 |---|---|---|
 | `fhir.read` | Read and search patient records through the FHIR API (patients with record-sharing consent only; every access is audited) | HospitalAdmin |
-| `abdm.export` | Download signed discharge summaries as ABDM health records (FHIR document bundles; patients with record-sharing consent only; every export is audited) | HospitalAdmin, MrdOfficer |
+| `abdm.export` | Download signed discharge summaries and prescriptions as ABDM health records (FHIR document bundles; patients with record-sharing consent only; every export is audited) | HospitalAdmin, MrdOfficer |
 
 Integration partners (a referral hospital, a health information exchange) get their own service user:
 
@@ -70,8 +70,8 @@ Every read and search passes the same gate for the patient the data belongs to:
 | Patient search | `phi` / `patient.accessed` | one entry per returned patient, written in one transaction |
 | Patient search that returned nobody | `integration` / `fhir.search` | counts and parameter names |
 | Read or search refused for consent or restriction | `security` / `fhir.access_denied` (Warning) | patient id, type, id, reason |
-| ABDM health record downloaded | `phi` / `abdm.record.exported` | patient id, `DischargeSummary` and its id, `{ format: fhir-r4-document, profile, document, resources }` (`document` is the bundle's identifier, `resources` its entry count) |
-| ABDM download refused for consent or restriction | `security` / `abdm.export_refused` (Warning) | patient id, `DischargeSummary` and its id, reason (`consent-required`, `restricted-record`) |
+| ABDM health record downloaded | `phi` / `abdm.record.exported` | patient id, `DischargeSummary` or `Prescription` and its id, `{ format: fhir-r4-document, profile, document, resources }` (`document` is the bundle's identifier, `resources` its entry count) |
+| ABDM download refused for consent or restriction | `security` / `abdm.export_refused` (Warning) | patient id, `DischargeSummary` or `Prescription` and its id, reason (`consent-required`, `restricted-record`) |
 
 Downloads appear in the patient's record access history like any other PHI access. No part of the document's content is
 written to the audit trail.
@@ -256,22 +256,25 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
 
 ## ABDM health records (EHR-08)
 
-Medical records staff download a signed discharge summary as an ABDM health record: a FHIR document (`Bundle` of type
-`document`) built to the **NRCeS "FHIR Implementation Guide for ABDM"**, package `ndhm.in` **6.5.0** (canonical
-`https://nrces.in/ndhm/fhir/r4`), profiles **DocumentBundle** and **DischargeSummaryRecord**. HC360 does not send it
-anywhere: the file is for the hospital to hand over or upload itself. Sending records through ABDM needs the
-registrations listed under [Limitations](#limitations-and-follow-ups).
+Medical records staff download a signed discharge summary or prescription as an ABDM health record: a FHIR document
+(`Bundle` of type `document`) built to the **NRCeS "FHIR Implementation Guide for ABDM"**, package `ndhm.in` **6.5.0**
+(canonical `https://nrces.in/ndhm/fhir/r4`), profiles **DocumentBundle** with **DischargeSummaryRecord** or
+**PrescriptionRecord**. HC360 does not send it anywhere: the file is for the hospital to hand over or upload itself.
+Sending records through ABDM needs the registrations listed under [Limitations](#limitations-and-follow-ups).
 
 * **Switch.** `features.abdm` ("ABDM health records", [features.md](features.md)) is **off** until an administrator
-  turns it on under Hospital setup > Features. While it is off the endpoint answers 503 `feature.disabled` and the
+  turns it on under Hospital setup > Features. While it is off the endpoints answer 503 `feature.disabled` and the
   staff app does not offer the download.
-* **Staff app.** **Download ABDM record** on a signed or amended discharge summary (patient chart > Admissions >
-  Discharge summary), for users with `abdm.export`; disabled while the summary has unsaved changes, and hidden while it
-  is being amended. A refusal is shown with the server's reason.
+* **Staff app**, for users with `abdm.export`; a refusal is shown with the server's reason:
+  * **Download ABDM record** on a signed or amended discharge summary (patient chart > Admissions > Discharge
+    summary); disabled while the summary has unsaved changes, and hidden while it is being amended.
+  * **Download ABDM record** in the menu of a signed prescription (the patient chart's and the encounter's
+    prescriptions).
 
 | Method | Path | Access | Response |
 |---|---|---|---|
 | GET | `/api/v1/abdm/discharge-summaries/{id}/bundle` | `abdm.export`, switch `abdm` | the document, indented `application/fhir+json; charset=utf-8`, as the attachment `discharge-summary-{UHID}-{discharge date}-abdm.json`, `Cache-Control: no-store` |
+| GET | `/api/v1/abdm/prescriptions/{id}/bundle` | `abdm.export`, switch `abdm` | the same, as the attachment `prescription-{number}-abdm.json` |
 
 Refusals are problem+json, in the order they are checked; the patient's consent, restriction, deletion and merging
 follow the FHIR API's rules ([Consent and access rules](#consent-and-access-rules)):
@@ -280,19 +283,23 @@ follow the FHIR API's rules ([Consent and access rules](#consent-and-access-rule
 |---|---|
 | No `abdm.export` | 403 |
 | Switch off | 503 `feature.disabled` (nothing is read) |
-| No such summary (or deleted) | 404 |
-| Summary of another facility than the user's | 422 `abdm.other_facility` |
+| No such summary or prescription (or deleted) | 404 |
+| Summary or prescription of another facility than the user's | 422 `abdm.other_facility` |
 | Patient deleted, or merged into another UHID | 422 `abdm.patient_deleted`, `abdm.patient_merged` |
 | No active record-sharing (`DataSharing`) consent | **403 `abdm.consent_required`**, audited |
 | Restricted (VIP) record the user may not open | 403 `patient.restricted` (`breakGlassAvailable`), audited |
-| Summary not signed (draft) | 422 `abdm.not_signed` |
+| Not signed (draft) | 422 `abdm.not_signed` |
+| Prescription cancelled | 422 `abdm.cancelled` |
+| Prescription the hospital may not issue under its DSC rule (the facility requires the doctor's DSC and it has no valid one) | 422 `prescription.digital_signature_required`, `…_untrusted` or `…_invalid`, as for its printout and PDF ([clinical.md](clinical.md)) |
 
-### What the document holds
+What the doctor wrote is free text and stays text: it becomes the narrative of a section, as written (escaped,
+paragraphs and line breaks kept). Only what HC360 holds in coded or structured form becomes entries, and no codes are
+invented. Each entry claims its NRCeS profile in `meta.profile`.
 
-What the doctor wrote is free text and stays text: each part of the summary is the narrative of a section, as written
-(escaped, paragraphs and line breaks kept). Only what HC360 holds in coded form becomes coded entries. HC360 keeps
-complaints, investigations, procedures and discharge medicines as text, so the document has no Observation, Procedure
-or MedicationRequest entries for them, and no codes are invented. Each entry claims its NRCeS profile in `meta.profile`.
+### What a discharge summary holds
+
+HC360 keeps a summary's complaints, investigations, procedures and discharge medicines as text, so the document has no
+Observation, Procedure or MedicationRequest entries for them.
 
 | Entry | From |
 |---|---|
@@ -321,10 +328,26 @@ Composition sections, in this order, each only when it has text or entries:
 
 The profile slices sections by code and is open at the end, so the two sections it does not define come last.
 
-* **Ids.** Entries are `urn:uuid:{id}`. Patient, practitioner, facility, stay and composition keep HC360's record ids;
-  the conditions, care plan and document reference have ids derived from the summary (RFC 9562 version 8 UUIDs from
-  SHA-256), the same at every export. Every reference points at an entry, or names its target by display or identifier
-  only (other doctors of the stay); the stay does not list the conditions back, so references never run in a circle.
+### What a prescription holds
+
+| Entry | From |
+|---|---|
+| Composition (first entry) | SNOMED CT 440545006 "Prescription record"; status `final`; title "Prescription {number}"; date = signing; author = the prescribing doctor (else the hospital); attester `legal` = the prescribing doctor at signing, except for a refill, which whoever issued it signed; custodian = the hospital; identifier `urn:uuid:{prescription id}` |
+| Patient, Practitioner, Organization | as for a discharge summary (the practitioner is the prescribing doctor) |
+| Encounter | the visit the prescription was written in (its own, else its encounter's, else its admission's in-patient visit, with the admission), as in the FHIR API; none when no visit is known |
+| MedicationRequest, one per medicine line, in the doctor's order | the FHIR API's MedicationRequest of the line: the medicine as text (brand, strength, form, generic; HC360 holds no SNOMED CT medicine codes), the dosage as text and as timing (OD QD, BD BID, TDS TID, QID QID, HS BED, weekly WK, STAT once, SOS as needed), route as text, course, quantity and refills, the prescription number as `groupIdentifier`, status active or completed by the course; subject, encounter and requester point at the document's entries |
+
+The profile allows one section (SNOMED CT 440545006), whose entries are told apart by `type` (`MedicationRequest`). Its
+text lists each medicine with its dosage and then the advice printed for the patient. The notes for the pharmacist are
+not shared. A cancelled prescription is not exported, and no PDF (`Binary`) is attached.
+
+### Ids and identity
+
+* **Ids.** Entries are `urn:uuid:{id}`. Patient, practitioner, facility, visit, composition and medicine lines keep
+  HC360's record ids; a summary's conditions, care plan and document reference have ids derived from the summary
+  (RFC 9562 version 8 UUIDs from SHA-256), the same at every export. Every reference points at an entry, or names its
+  target by display or identifier only (other doctors of the stay); the stay does not list the conditions back, so
+  references never run in a circle.
 * **Each download is a new document**: a new `Bundle.id` and identifier (`urn:uuid:` and a version 7 UUID),
   `meta.versionId` 1 (the profile requires it), `timestamp` = time of the download.
 
@@ -337,19 +360,24 @@ where they came from).
 
 * SNOMED CT and LOINC cannot be checked offline, so terminology-server checks are skipped and listed. Everything else
   is checked: structure, cardinality, slicing, fixed values, invariants, and bindings to value sets that can be expanded
-  offline. HC360's documents must pass with no error, no warning and no skipped check (`DischargeSummaryRecordTests`: a
-  full summary, the least a signed summary holds (no codes, ABHA number, HFR id, doctor or admission record), an
-  amended one, one with markup and control characters in its text, and one with a diagnosis resolved during the stay).
-* The guide's own discharge summary example passes, and nine deliberately broken documents fail with the rule they
-  break (`ValidatorSetupTests`), so a validator that checks nothing cannot pass the tests.
-* `AbdmExportTests` (IntegrationTests) validates the file downloaded from the endpoint, after checking the switch,
-  permission, consent and signing rules and before checking the audit trail.
+  offline. HC360's documents must pass with no error, no warning and no skipped check:
+  * `DischargeSummaryRecordTests`: a full summary, the least a signed summary holds (no codes, ABHA number, HFR id,
+    doctor or admission record), an amended one, one with markup and control characters in its text, and one with a
+    diagnosis resolved during the stay;
+  * `PrescriptionRecordTests`: a prescription with every way HC360 writes a frequency (OD, TDS, HS, SOS, STAT, weekly,
+    custom), the least a signed prescription holds (one medicine, no visit, doctor, ABHA number or HFR id), an
+    in-patient one with its stay, a refill, and one with markup and control characters in its text.
+* The guide's own discharge summary and prescription examples pass, and fourteen deliberately broken documents (nine
+  discharge summaries, five prescriptions) fail with the rule they break (`ValidatorSetupTests`), so a validator that
+  checks nothing cannot pass the tests.
+* `AbdmExportTests` (IntegrationTests) validates the files downloaded from the endpoints, after checking the switch,
+  permission, consent, signing, cancellation and DSC rules and before checking the audit trail.
 
 ## Limitations and follow-ups
 
-* **EHR-08 is done in part.** Signed discharge summaries download as NRCeS DischargeSummaryRecord documents
-  ([ABDM health records](#abdm-health-records-ehr-08)). Still to build, and blocked until the National Health
-  Authority (NHA) and the hospital provide what they need:
+* **EHR-08 is done in part.** Signed discharge summaries and prescriptions download as NRCeS DischargeSummaryRecord and
+  PrescriptionRecord documents ([ABDM health records](#abdm-health-records-ehr-08)). Still to build, and blocked until
+  the National Health Authority (NHA) and the hospital provide what they need:
   * **ABHA verification and linking.** HC360 stores the ABHA number as entered; checking it, creating or linking ABHA
     numbers and addresses needs the ABDM APIs, with client credentials NHA issues (sandbox, then production).
   * **ABDM health information provider and user (HIP/HIU).** Linking care contexts to a patient's ABHA, answering
@@ -358,9 +386,9 @@ where they came from).
     registration as a HIP/HIU (bridge and service registration), and NHA's sign-off of the integration.
   * **Doctors' Healthcare Professionals Registry (HPR) ids.** HC360 does not record them; ABDM documents name the
     doctor by council registration number and HC360 code until it does.
-  * **Other NRCeS documents** (PrescriptionRecord, DiagnosticReportRecord, OPConsultRecord and others), a digital
-    signature on the bundle (`Bundle.signature`), and the summary's PDF in the document. The FHIR API's own resources
-    still claim no NRCeS profiles.
+  * **Other NRCeS documents** (DiagnosticReportRecord, OPConsultRecord and others), a digital signature on the bundle
+    (`Bundle.signature`; a prescription's DSC signature covers its printed form, not the bundle), and the PDFs in the
+    documents (`Binary`). The FHIR API's own resources still claim no NRCeS profiles.
   * The privacy data summary lists FHIR API readers as recipients of a patient's data. ABDM downloads are in the
     patient's record access log, but not listed as recipients, as HC360 does not know who receives the file.
 * No `vread`/history, `_include`/`_revinclude`, `_sort`, `_summary`, `_elements`, XML, or bulk export (`$export`);

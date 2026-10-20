@@ -76,7 +76,7 @@ internal static class DischargeSummaryRecordMapper
     public static R4.Bundle Map(DischargeSummarySource source, Guid documentId, DateTimeOffset now)
     {
         var s = source.Summary;
-        var refs = WithEntries(source);
+        var refs = AbdmParticipants.WithEntries(source.References, source.Facility, source.Author);
         var stayId = source.Stay?.Id ?? s.AdmissionId;
         var diagnoses = CodedDiagnoses(source, stayId);
         var carePlan = CarePlanOf(source, stayId);
@@ -312,8 +312,7 @@ internal static class DischargeSummaryRecordMapper
         ServiceProvider = refs.Organization(s.FacilityId),
     };
 
-    private static R4.ResourceReference PatientReference(DischargeSummarySource source) =>
-        DocumentBundleBuilder.Reference(source.Patient.Id, source.Patient.FullName);
+    private static R4.ResourceReference PatientReference(DischargeSummarySource source) => AbdmParticipants.Patient(source.Patient);
 
     /// <summary>"27 Oct 2026: Review in the OPD", the date or the instructions alone, or null.</summary>
     private static string? FollowUp(DischargeSummaryRow s)
@@ -322,32 +321,6 @@ internal static class DischargeSummaryRecordMapper
         return s.FollowUpDate is { } date
             ? instructions is null ? DocumentFormat.Date(date) : $"{DocumentFormat.Date(date)}: {instructions}"
             : instructions;
-    }
-
-    /// <summary>The directory, with the document's doctor and hospital referenced by their entries.</summary>
-    private static ReferenceDirectory WithEntries(DischargeSummarySource source)
-    {
-        var refs = source.References;
-        var practitioners = new Dictionary<Guid, string>(refs.Practitioners);
-        var facilities = new Dictionary<Guid, FacilityInfo>(refs.Facilities)
-        {
-            [source.Facility.Id] = new(source.Facility.Name, source.Facility.HfrId),
-        };
-        var entries = new Dictionary<Guid, string> { [source.Facility.Id] = DocumentBundleBuilder.FullUrl(source.Facility.Id) };
-        if (source.Author is { } author)
-        {
-            practitioners[author.Id] = author.DisplayName;
-            entries[author.Id] = DocumentBundleBuilder.FullUrl(author.Id);
-        }
-
-        return new ReferenceDirectory
-        {
-            Practitioners = practitioners,
-            Departments = refs.Departments,
-            Facilities = facilities,
-            AdmissionVisits = refs.AdmissionVisits,
-            Entries = entries,
-        };
     }
 
     private static void Section(

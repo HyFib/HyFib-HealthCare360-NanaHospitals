@@ -14,16 +14,18 @@ profiles of the **FHIR Implementation Guide for ABDM**, published by the Nationa
 
 The files are copied from the package unchanged; only the ones the tests need are here.
 
-- `package/StructureDefinition-DocumentBundle.json` and `package/StructureDefinition-DischargeSummaryRecord.json`: the
-  profiles a discharge summary bundle must meet.
-- The other `package/StructureDefinition-*.json` files: every profile those two can point to (a Composition section entry
+- `package/StructureDefinition-DocumentBundle.json`, `package/StructureDefinition-DischargeSummaryRecord.json` and
+  `package/StructureDefinition-PrescriptionRecord.json`: the profiles a discharge summary or prescription bundle must
+  meet.
+- The other `package/StructureDefinition-*.json` files: every profile those can point to (a Composition section entry
   or reference may target any of them), plus the profiles those in turn point to. Firely's validator compiles each
   profile a reference may target before it validates, so it refuses to run with any of them missing.
 - `package/ValueSet-ndhm-identifier-type-code.json` and `package/CodeSystem-ndhm-identifier-type-code.json`: the
   identifier types the Patient, Practitioner and Organization profiles bind (extensible), so that binding is checked
   offline rather than skipped.
-- `example/Bundle-DischargeSummary-example-04.json`: the guide's own discharge summary example. It must validate, which
-  shows the validator is set up the way NRCeS intended.
+- `example/Bundle-DischargeSummary-example-04.json` and `example/Bundle-Prescription-example-06.json`: the guide's own
+  discharge summary and prescription examples. They must validate, which shows the validator is set up the way NRCeS
+  intended.
 
 The FHIR R4 core definitions come from the `Hl7.Fhir.Specification.Data.R4` NuGet package (`specification.zip`), not
 from here. SNOMED CT, LOINC and other external terminologies cannot be checked offline; see `Abdm/AbdmProfileValidator.cs`

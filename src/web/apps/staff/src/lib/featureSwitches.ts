@@ -53,6 +53,7 @@ export const FEATURE_OFF_TEXT: Record<FeatureKey, { title: string; description: 
   },
   abdm: {
     title: 'ABDM health records are turned off',
-    description: 'Signed discharge summaries cannot be downloaded as ABDM health records until they are turned on.',
+    description:
+      'Signed discharge summaries and prescriptions cannot be downloaded as ABDM health records until they are turned on.',
   },
 };

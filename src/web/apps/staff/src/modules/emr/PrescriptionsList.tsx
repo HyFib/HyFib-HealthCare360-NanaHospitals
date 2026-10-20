@@ -25,6 +25,7 @@ import {
   ArrowRepeatAllRegular,
   ArrowSyncRegular,
   DismissRegular,
+  DocumentArrowDownRegular,
   MoreHorizontalRegular,
   OpenRegular,
   PrintRegular,
@@ -37,10 +38,12 @@ import { useState } from 'react';
 import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { printServerDocument, useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
+import { useAbdmRecordDownload, useAbdmRecordsAvailable } from './abdmRecords';
 import { emrKeys } from './api';
 import { directionsText } from './dosing';
 import { afterRefill } from './dscSigning';
 import {
+  abdmPrescriptionBundle,
   prescriptionDocument,
   prescriptionQueries,
   prescriptionsApi,
@@ -226,7 +229,10 @@ function RefillBody({
   );
 }
 
-/** Prescriptions of a patient (or one encounter): open, print, download as a PDF, repeat, refill or cancel. */
+/**
+ * Prescriptions of a patient (or one encounter): open, print, download as a PDF or (while switched on) as an ABDM health
+ * record, repeat, refill or cancel.
+ */
 export function PrescriptionsList({
   patientId,
   encounterId = null,
@@ -245,6 +251,8 @@ export function PrescriptionsList({
   const canWrite = usePermission('clinical.prescriptions.write');
   const canSign = usePermission('clinical.prescriptions.sign');
   const canRefill = usePermission('clinical.prescriptions.refill');
+  const abdmAvailable = useAbdmRecordsAvailable();
+  const abdmDownload = useAbdmRecordDownload();
   const [page, setPage] = useState(1);
   const [cancelling, setCancelling] = useState<PrescriptionListItem | null>(null);
   const [refilling, setRefilling] = useState<string | null>(null);
@@ -334,6 +342,14 @@ export function PrescriptionsList({
                     >
                       Download PDF
                     </MenuItem>
+                    {abdmAvailable && (
+                      <MenuItem
+                        icon={<DocumentArrowDownRegular />}
+                        onClick={() => abdmDownload.mutate(abdmPrescriptionBundle(p.id))}
+                      >
+                        Download ABDM record
+                      </MenuItem>
+                    )}
                   </>
                 )}
                 {canWrite && p.status !== 'Draft' && (

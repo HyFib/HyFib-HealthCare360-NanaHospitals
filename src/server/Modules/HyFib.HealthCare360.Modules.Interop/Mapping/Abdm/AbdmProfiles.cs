@@ -14,6 +14,7 @@ internal static class AbdmProfiles
 
     public const string DocumentBundle = Base + "DocumentBundle";
     public const string DischargeSummaryRecord = Base + "DischargeSummaryRecord";
+    public const string PrescriptionRecord = Base + "PrescriptionRecord";
     public const string Patient = Base + "Patient";
     public const string Practitioner = Base + "Practitioner";
     public const string Organization = Base + "Organization";
@@ -21,4 +22,5 @@ internal static class AbdmProfiles
     public const string Condition = Base + "Condition";
     public const string CarePlan = Base + "CarePlan";
     public const string DocumentReference = Base + "DocumentReference";
+    public const string MedicationRequest = Base + "MedicationRequest";
 }

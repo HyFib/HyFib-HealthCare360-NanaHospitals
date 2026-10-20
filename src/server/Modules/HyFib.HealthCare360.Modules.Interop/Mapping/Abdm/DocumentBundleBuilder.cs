@@ -19,8 +19,12 @@ internal sealed class DocumentBundleBuilder
     /// <summary>The <c>fullUrl</c> of the entry holding the resource with this id.</summary>
     public static string FullUrl(Guid id) => "urn:uuid:" + FhirIds.Of(id);
 
-    /// <summary>A reference to the entry holding the resource with this id.</summary>
-    public static R4.ResourceReference Reference(Guid id, string? display = null) => new(FullUrl(id), FhirElements.Clean(display));
+    /// <summary>
+    /// A reference to the entry holding the resource with this id; <paramref name="type"/> names the resource type where a
+    /// profile tells entries apart by it (a prescription's section entries).
+    /// </summary>
+    public static R4.ResourceReference Reference(Guid id, string? display = null, string? type = null) =>
+        new(FullUrl(id), FhirElements.Clean(display)) { Type = type };
 
     /// <summary>
     /// A stable id for a resource HC360 derives from a record rather than storing (the coded diagnoses of a discharge

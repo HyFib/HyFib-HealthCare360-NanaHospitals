@@ -4,6 +4,8 @@ namespace HyFib.HealthCare360.Modules.Interop.Services;
 internal sealed record AbdmRecord(string EntityType, Guid Id, string Name)
 {
     public static AbdmRecord DischargeSummary(Guid id) => new("DischargeSummary", id, "discharge summary");
+
+    public static AbdmRecord Prescription(Guid id, string number) => new("Prescription", id, $"prescription {number}");
 }
 
 /// <summary>

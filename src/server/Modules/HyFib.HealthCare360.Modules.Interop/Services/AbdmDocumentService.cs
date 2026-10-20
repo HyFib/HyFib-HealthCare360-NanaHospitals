@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
@@ -25,12 +26,12 @@ internal sealed record StayDiagnosisRow
 }
 
 /// <summary>
-/// ABDM health records (EHR-08): a signed discharge summary as an NRCeS document bundle
-/// (<see cref="DischargeSummaryRecordMapper"/>). A record leaves the hospital under the FHIR API's sharing rules
-/// (<see cref="PatientSharingService"/>): the patient exists and was not deleted or merged, holds an active record-sharing
-/// consent, and, for a restricted record, the caller may open it. Staff export the summaries of the facility they are
-/// signed in to, as the FHIR API shares a facility's own records. Every export is audited, and so is every refusal for
-/// consent or restriction (<see cref="AbdmAuditTrail"/>).
+/// ABDM health records (EHR-08): a signed discharge summary (<see cref="DischargeSummaryRecordMapper"/>) or a signed
+/// prescription (<see cref="PrescriptionRecordMapper"/>) as an NRCeS document bundle. A record leaves the hospital under
+/// the FHIR API's sharing rules (<see cref="PatientSharingService"/>): the patient exists and was not deleted or merged,
+/// holds an active record-sharing consent, and, for a restricted record, the caller may open it. Staff export the records
+/// of the facility they are signed in to, as the FHIR API shares a facility's own records. Every export is audited, and
+/// so is every refusal for consent or restriction (<see cref="AbdmAuditTrail"/>).
 /// </summary>
 internal sealed class AbdmDocumentService(
     HospitalDbContext db,
@@ -38,6 +39,7 @@ internal sealed class AbdmDocumentService(
     PatientAccessGuard guard,
     PatientRecords patients,
     ReferenceDirectoryLoader references,
+    PrescriptionFinalCopies finalCopies,
     AbdmAuditTrail audit,
     TimeProvider time)
 {
@@ -47,10 +49,7 @@ internal sealed class AbdmDocumentService(
         var summary = await Summaries(s => s.Id == id).FirstOrDefaultAsync(ct);
         if (summary is null)
         {
-            var elsewhere = await db.Set<DischargeSummary>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(s => s.Id == id, ct);
-            return elsewhere
-                ? Error.Rule("abdm.other_facility", "This discharge summary was written at another facility. Sign in to that facility to export it.")
-                : Error.NotFound(nameof(DischargeSummary), id);
+            return await MissingAsync<DischargeSummary>(id, "discharge summary", ct);
         }
 
         if (await RefuseAsync(record, summary.PatientId, ct) is { } refused)
@@ -63,7 +62,7 @@ internal sealed class AbdmDocumentService(
             return Error.Rule("abdm.not_signed", "Only a signed discharge summary can be shared as an ABDM health record. Sign it first.");
         }
 
-        var source = await LoadAsync(summary, ct);
+        var source = await SummarySourceAsync(summary, ct);
         if (source.IsFailure)
         {
             return source.Error!;
@@ -75,6 +74,58 @@ internal sealed class AbdmDocumentService(
         await audit.ExportedAsync(record, summary.PatientId, AbdmProfiles.DischargeSummaryRecord, DocumentBundleBuilder.FullUrl(documentId), bundle.Entry.Count, ct);
         return new AbdmDocument(bundle, FileName(summary, source.Value.Patient.Uhid));
     }
+
+    public async Task<Result<AbdmDocument>> PrescriptionAsync(Guid id, CancellationToken ct)
+    {
+        var prescription = await Prescriptions(p => p.Id == id).FirstOrDefaultAsync(ct);
+        if (prescription is null)
+        {
+            return await MissingAsync<Prescription>(id, "prescription", ct);
+        }
+
+        var record = AbdmRecord.Prescription(id, prescription.PrescriptionNumber);
+        if (await RefuseAsync(record, prescription.PatientId, ct) is { } refused)
+        {
+            return refused;
+        }
+
+        switch (prescription.Status)
+        {
+            case PrescriptionStatus.Draft:
+                return Error.Rule("abdm.not_signed", "Only a signed prescription can be shared as an ABDM health record. Sign it first.");
+            case PrescriptionStatus.Cancelled:
+                return Error.Rule("abdm.cancelled", "This prescription was cancelled, so it is not shared as a health record.");
+        }
+
+        // The health record is one more copy of the prescription the hospital issues: where the hospital requires the
+        // doctor's DSC, no copy goes out without a valid one (the printout's and the PDF's rule, with their codes).
+        var issued = await db.Set<Prescription>().AsNoTracking().Include(p => p.Items).FirstAsync(p => p.Id == id, ct);
+        if (PrescriptionFinalCopies.Problem(await finalCopies.CheckAsync(issued, ct)) is { } notIssued)
+        {
+            return notIssued;
+        }
+
+        var source = await PrescriptionSourceAsync(prescription, ct);
+        if (source.IsFailure)
+        {
+            return source.Error!;
+        }
+
+        var now = time.GetUtcNow();
+        var documentId = Guid.CreateVersion7(now);
+        var bundle = PrescriptionRecordMapper.Map(source.Value, documentId, now);
+        await audit.ExportedAsync(record, prescription.PatientId, AbdmProfiles.PrescriptionRecord, DocumentBundleBuilder.FullUrl(documentId), bundle.Entry.Count, ct);
+        return new AbdmDocument(bundle, FileName(prescription));
+    }
+
+    /// <summary>
+    /// A record the user's facility does not hold: 422 when another facility holds it (so the user knows where to sign
+    /// in), 404 when there is no such record.
+    /// </summary>
+    private async Task<Error> MissingAsync<T>(Guid id, string name, CancellationToken ct) where T : Entity =>
+        await db.Set<T>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(x => x.Id == id, ct)
+            ? Error.Rule("abdm.other_facility", $"This {name} was written at another facility. Sign in to that facility to export it.")
+            : Error.NotFound(typeof(T).Name, id);
 
     /// <summary>
     /// The FHIR API's sharing rules for the patient, worded for staff: null when the record may be shared. Refusals for
@@ -105,7 +156,7 @@ internal sealed class AbdmDocumentService(
     }
 
     /// <summary>The records the summary names: the patient, its facility, its doctor, the stay and the codes' titles.</summary>
-    private async Task<Result<DischargeSummarySource>> LoadAsync(DischargeSummaryRow summary, CancellationToken ct)
+    private async Task<Result<DischargeSummarySource>> SummarySourceAsync(DischargeSummaryRow summary, CancellationToken ct)
     {
         if (await patients.FindRowAsync(summary.PatientId, ct) is not { } patient)
         {
@@ -140,6 +191,78 @@ internal sealed class AbdmDocumentService(
         };
     }
 
+    /// <summary>The records the prescription names: the patient, its facility, its doctor, its visit and its lines.</summary>
+    private async Task<Result<PrescriptionSource>> PrescriptionSourceAsync(PrescriptionRow prescription, CancellationToken ct)
+    {
+        if (await patients.FindRowAsync(prescription.PatientId, ct) is not { } patient)
+        {
+            return Error.NotFound(nameof(Patient), prescription.PatientId);
+        }
+
+        if (await Facilities(f => f.Id == prescription.FacilityId).FirstOrDefaultAsync(ct) is not { } facility)
+        {
+            return Error.NotFound(nameof(Facility), prescription.FacilityId);
+        }
+
+        var prescriber = await Practitioners(p => p.Id == prescription.PractitionerId).FirstOrDefaultAsync(ct);
+        var visit = await PrescriptionVisitAsync(prescription, ct);
+        var lines = await MedicationRequestProvider.LineRows(
+                db.Set<PrescriptionItem>().AsNoTracking().Where(i => i.PrescriptionId == prescription.Id),
+                db.Set<Prescription>().Where(p => p.Id == prescription.Id))
+            .ToListAsync(ct);
+        var ids = new ReferenceIds()
+            .Practitioner(prescription.PractitionerId, visit?.PractitionerId, visit?.Admission?.AdmittingPractitionerId,
+                visit?.Admission?.ConsultantPractitionerId)
+            .Department(visit?.DepartmentId, visit?.Admission?.DepartmentId)
+            .Facility(prescription.FacilityId, visit?.FacilityId, patient.RegisteredFacilityId)
+            .Admission(prescription.AdmissionId, visit?.Admission?.Id);
+
+        return new PrescriptionSource
+        {
+            Prescription = prescription,
+            Lines = lines,
+            Patient = patient,
+            Facility = facility,
+            Prescriber = prescriber,
+            Visit = visit,
+            References = await references.LoadAsync(ids, ct),
+        };
+    }
+
+    /// <summary>
+    /// The visit the prescription was written in: its own, else its encounter's, else its admission's in-patient visit;
+    /// null when none is known or it can no longer be read.
+    /// </summary>
+    private async Task<VisitRow?> PrescriptionVisitAsync(PrescriptionRow prescription, CancellationToken ct)
+    {
+        var visitId = prescription.VisitId;
+        var admissionId = prescription.AdmissionId;
+        if (visitId is null && prescription.EncounterId is { } encounterId)
+        {
+            var encounter = await db.Set<Encounter>().AsNoTracking().Where(e => e.Id == encounterId)
+                .Select(e => new { e.VisitId, e.AdmissionId })
+                .FirstOrDefaultAsync(ct);
+            visitId = encounter?.VisitId;
+            admissionId ??= encounter?.AdmissionId;
+        }
+
+        if (visitId is null && admissionId is { } admission)
+        {
+            visitId = await db.Set<Admission>().AsNoTracking().Where(a => a.Id == admission).Select(a => (Guid?)a.VisitId).FirstOrDefaultAsync(ct);
+        }
+
+        if (visitId is not { } id
+            || await EncounterProvider.VisitRows(db.Set<Visit>().AsNoTracking().Where(v => v.Id == id)).FirstOrDefaultAsync(ct) is not { } visit)
+        {
+            return null;
+        }
+
+        // An in-patient visit carries its admission (the latest, as the FHIR API shows it).
+        var admitted = await EncounterProvider.AdmissionRows(db.Set<Admission>().AsNoTracking().Where(a => a.VisitId == id).OrderByDescending(a => a.AdmittedAt))
+            .FirstOrDefaultAsync(ct);
+        return admitted is null ? visit : visit with { Admission = admitted.Admission };
+    }
+
     /// <summary>What doctors recorded about the summary's codes in the stay's encounters: the latest record of each code.</summary>
     private async Task<Dictionary<string, RecordedDiagnosis>> RecordedDiagnosesAsync(Guid admissionId, IReadOnlyList<string> codes, CancellationToken ct)
     {
@@ -168,6 +291,28 @@ internal sealed class AbdmDocumentService(
             OnsetDate = d.OnsetDate,
             ResolvedOn = d.ResolvedOn,
         };
+
+    /// <summary>Prescriptions of the user's facility, whatever their status.</summary>
+    internal IQueryable<PrescriptionRow> Prescriptions(Expression<Func<Prescription, bool>> filter) =>
+        db.Set<Prescription>().AsNoTracking().Where(filter).Select(p => new PrescriptionRow
+        {
+            Id = p.Id,
+            PatientId = p.PatientId,
+            FacilityId = p.FacilityId,
+            PrescriptionNumber = p.PrescriptionNumber,
+            EncounterId = p.EncounterId,
+            VisitId = p.VisitId,
+            AdmissionId = p.AdmissionId,
+            PractitionerId = p.PractitionerId,
+            IsInpatient = p.IsInpatient,
+            Status = p.Status,
+            PrescribedAt = p.PrescribedAt,
+            SignedAt = p.SignedAt,
+            Advice = p.Advice,
+            RefillOfPrescriptionId = p.RefillOfPrescriptionId,
+            CreatedAt = p.CreatedAt,
+            UpdatedAt = p.UpdatedAt,
+        });
 
     /// <summary>Discharge summaries of the user's facility, whatever their status.</summary>
     internal IQueryable<DischargeSummaryRow> Summaries(Expression<Func<DischargeSummary, bool>> filter) =>
@@ -236,6 +381,9 @@ internal sealed class AbdmDocumentService(
             CreatedAt = f.CreatedAt,
             UpdatedAt = f.UpdatedAt,
         });
+
+    /// <summary>"prescription-NHRX260000123-abdm.json": the prescription number, as the prescription's PDF is named.</summary>
+    internal static string FileName(PrescriptionRow prescription) => $"prescription-{prescription.PrescriptionNumber}-abdm.json";
 
     /// <summary>"discharge-summary-NH-000123-2026-09-25-abdm.json": the UHID and the discharge date (else the signing or admission date).</summary>
     internal static string FileName(DischargeSummaryRow summary, string uhid) =>

@@ -11,7 +11,7 @@ public static class FeatureKeys
     /// <summary>Video consultations (telehealth), not remote patient monitoring.</summary>
     public const string Telehealth = Prefix + "telehealth";
 
-    /// <summary>ABDM health records: signed discharge summaries as ABDM (NRCeS) FHIR document bundles (EHR-08). Off by default.</summary>
+    /// <summary>ABDM health records: signed discharge summaries and prescriptions as ABDM (NRCeS) FHIR document bundles (EHR-08). Off by default.</summary>
     public const string Abdm = Prefix + "abdm";
 }
 
@@ -80,11 +80,11 @@ public static class FeatureCatalog
     public static FeatureDefinition Abdm { get; } = new(
         FeatureKeys.Abdm,
         "ABDM health records",
-        "Medical records staff download a signed discharge summary in the health record format of the Ayushman Bharat "
-        + "Digital Mission (ABDM), for a patient who agreed to share their records with other providers. Linking ABHA "
-        + "numbers and sending records through ABDM itself are not part of this.",
-        "Discharge summaries do not offer the ABDM download, and the server refuses it. Discharge summaries, their "
-        + "printouts and PDFs, and the hospital's FHIR interface keep working.",
+        "Medical records staff download a signed discharge summary or prescription in the health record format of the "
+        + "Ayushman Bharat Digital Mission (ABDM), for a patient who agreed to share their records with other providers. "
+        + "Linking ABHA numbers and sending records through ABDM itself are not part of this.",
+        "Discharge summaries and prescriptions do not offer the ABDM download, and the server refuses it. Discharge "
+        + "summaries and prescriptions, their printouts and PDFs, and the hospital's FHIR interface keep working.",
         DefaultEnabled: false,
         "ABDM health records are turned off",
         "An administrator can turn them on under Hospital setup, Features.",

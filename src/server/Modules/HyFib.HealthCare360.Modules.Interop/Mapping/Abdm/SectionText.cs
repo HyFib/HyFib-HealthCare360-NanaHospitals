@@ -26,27 +26,28 @@ internal sealed class SectionText
         }
 
         var paragraph = new List<string>();
-        foreach (var line in value.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n'))
+        foreach (var line in Lines(value))
         {
-            if (line.Trim().Length == 0)
+            if (line.Length == 0)
             {
                 Paragraph(paragraph);
                 continue;
             }
 
-            paragraph.Add(line.Trim());
+            paragraph.Add(line);
         }
 
         Paragraph(paragraph);
         return this;
     }
 
-    /// <summary>One paragraph that starts with a label in bold ("Follow-up: 27 Oct 2026").</summary>
+    /// <summary>One paragraph that starts with a label in bold ("Follow-up: 27 Oct 2026"), its line breaks kept.</summary>
     public SectionText Labelled(string label, string? text)
     {
         if (FhirElements.Clean(text) is { } value)
         {
-            _html.Append("<p><b>").Append(Escape(label)).Append(":</b> ").Append(Escape(value)).Append("</p>");
+            _html.Append("<p><b>").Append(Escape(label)).Append(":</b> ")
+                .AppendJoin("<br/>", Lines(value).Where(line => line.Length > 0).Select(Escape)).Append("</p>");
         }
 
         return this;
@@ -79,6 +80,10 @@ internal sealed class SectionText
                 Status = R4.Narrative.NarrativeStatus.Additional,
                 Div = string.Create(CultureInfo.InvariantCulture, $"<div xmlns=\"http://www.w3.org/1999/xhtml\">{_html}</div>"),
             };
+
+    /// <summary>The lines of a text, trimmed, whatever its line endings.</summary>
+    private static IEnumerable<string> Lines(string text) =>
+        text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n').Select(line => line.Trim());
 
     private void Paragraph(List<string> lines)
     {

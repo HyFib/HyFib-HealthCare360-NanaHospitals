@@ -4,8 +4,8 @@ using R4 = Hl7.Fhir.Model;
 namespace HyFib.HealthCare360.Modules.Interop.Mapping.Abdm;
 
 /// <summary>
-/// The doctor and the hospital of an ABDM health record, as the NRCeS Practitioner and Organization profiles want them:
-/// each with at least one typed identifier.
+/// The doctor and the hospital of an ABDM health record, as the NRCeS Practitioner and Organization profiles want them
+/// (each with at least one typed identifier), and the references to them and to the patient within the document.
 /// <list type="bullet">
 /// <item>Practitioner: the medical council registration number (v2-0203 <c>MD</c>, the council as assigner) when on
 /// file, and the HC360 practitioner code; name, gender when known and the qualification as written. No telephone or
@@ -17,6 +17,34 @@ namespace HyFib.HealthCare360.Modules.Interop.Mapping.Abdm;
 /// </summary>
 internal static class AbdmParticipants
 {
+    /// <summary>A reference to the document's patient entry.</summary>
+    public static R4.ResourceReference Patient(PatientRow patient) => DocumentBundleBuilder.Reference(patient.Id, patient.FullName);
+
+    /// <summary>
+    /// The names a document's resources refer to, with its doctor and hospital referenced by their entries (and named as
+    /// on file), so the mappers the FHIR API shares (patient, encounter, medication request) point inside the document.
+    /// </summary>
+    public static ReferenceDirectory WithEntries(ReferenceDirectory refs, FacilityRow facility, PractitionerRow? doctor)
+    {
+        var practitioners = new Dictionary<Guid, string>(refs.Practitioners);
+        var facilities = new Dictionary<Guid, FacilityInfo>(refs.Facilities) { [facility.Id] = new(facility.Name, facility.HfrId) };
+        var entries = new Dictionary<Guid, string> { [facility.Id] = DocumentBundleBuilder.FullUrl(facility.Id) };
+        if (doctor is not null)
+        {
+            practitioners[doctor.Id] = doctor.DisplayName;
+            entries[doctor.Id] = DocumentBundleBuilder.FullUrl(doctor.Id);
+        }
+
+        return new ReferenceDirectory
+        {
+            Practitioners = practitioners,
+            Departments = refs.Departments,
+            Facilities = facilities,
+            AdmissionVisits = refs.AdmissionVisits,
+            Entries = entries,
+        };
+    }
+
     public static R4.Practitioner Practitioner(PractitionerRow p)
     {
         var practitioner = new R4.Practitioner

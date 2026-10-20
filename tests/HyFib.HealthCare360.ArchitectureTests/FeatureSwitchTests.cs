@@ -11,7 +11,7 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 /// consultations, and the telehealth hub checks them for the consultation's facility whenever someone joins; every ABDM
 /// health record download stops with ABDM health records. A new portal, telehealth or ABDM endpoint gets its switch, or
 /// these tests fail. What must keep working whatever is switched off (QR checks, provider callbacks, SMS links, staff
-/// screens, discharge summary PDFs, the FHIR API) has no switch.
+/// screens, discharge summary and prescription PDFs, the FHIR API) has no switch.
 /// </summary>
 public sealed class FeatureSwitchTests
 {
@@ -116,6 +116,7 @@ public sealed class FeatureSwitchTests
     [InlineData("POST /api/v1/rpm/ingest")]
     [InlineData("GET /api/v1/settings/public")]
     [InlineData("GET /api/v1/clinical/discharge-summaries/{id:guid}/pdf")]
+    [InlineData("GET /api/v1/clinical/prescriptions/{id:guid}/pdf")]
     [InlineData("GET /fhir/r4/{type}/{id}")]
     [InlineData("GET /fhir/r4/{type}")]
     public void What_must_keep_working_has_no_switch(string key) =>

@@ -40,9 +40,13 @@ internal sealed class MedicationRequestProvider(HospitalDbContext db, ReferenceD
 
     /// <summary>Lines of signed prescriptions, and of signed ones cancelled later; drafts never leave the hospital.</summary>
     internal IQueryable<PrescriptionItemRow> SignedLines(Expression<Func<PrescriptionItem, bool>> items, Expression<Func<Prescription, bool>> prescriptions) =>
-        from i in db.Set<PrescriptionItem>().AsNoTracking().Where(items)
-        join p in db.Set<Prescription>().Where(prescriptions) on i.PrescriptionId equals p.Id
-        where p.Status == PrescriptionStatus.Signed || (p.Status == PrescriptionStatus.Cancelled && p.SignedAt != null)
+        LineRows(db.Set<PrescriptionItem>().AsNoTracking().Where(items), db.Set<Prescription>().Where(prescriptions)
+            .Where(p => p.Status == PrescriptionStatus.Signed || (p.Status == PrescriptionStatus.Cancelled && p.SignedAt != null)));
+
+    /// <summary>The lines of these prescriptions as rows, whatever their status (also an ABDM prescription record's).</summary>
+    internal static IQueryable<PrescriptionItemRow> LineRows(IQueryable<PrescriptionItem> items, IQueryable<Prescription> prescriptions) =>
+        from i in items
+        join p in prescriptions on i.PrescriptionId equals p.Id
         select new PrescriptionItemRow
         {
             Id = i.Id,

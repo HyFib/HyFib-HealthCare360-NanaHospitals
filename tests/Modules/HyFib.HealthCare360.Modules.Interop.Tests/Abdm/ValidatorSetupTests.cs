@@ -4,13 +4,14 @@ using R4 = Hl7.Fhir.Model;
 namespace HyFib.HealthCare360.Modules.Interop.Tests.Abdm;
 
 /// <summary>
-/// The validator setup is real: the implementation guide's own discharge summary example passes with it, and a bundle
-/// broken against the profiles fails, for each kind of rule the profiles make (cardinality, fixed values, slicing,
-/// invariants, the profiles of referenced resources, required terminology bindings checked offline).
+/// The validator setup is real: the implementation guide's own discharge summary and prescription examples pass with it,
+/// and a bundle broken against the profiles fails, for each kind of rule the profiles make (cardinality, fixed values,
+/// slicing, invariants, the profiles of referenced resources, required terminology bindings checked offline).
 /// </summary>
 public sealed class ValidatorSetupTests
 {
     private const string Example = "Bundle-DischargeSummary-example-04.json";
+    private const string PrescriptionExample = "Bundle-Prescription-example-06.json";
 
     [Fact]
     public void The_igs_own_discharge_summary_example_validates()
@@ -76,6 +77,60 @@ public sealed class ValidatorSetupTests
                 break;
             case "not a mime type":
                 bundle.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().Single().Content[0].Attachment.ContentType = "PDF document";
+                break;
+        }
+
+        var result = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+
+        TestContext.Current.SendDiagnosticMessage($"{breakage}: {result.Describe()}");
+        result.Errors.ShouldNotBeEmpty();
+        result.Errors.ShouldContain(e => (e.Details.Text ?? e.Diagnostics ?? string.Empty).Contains(expected), result.Describe());
+    }
+
+    [Fact]
+    public void The_igs_own_prescription_example_validates()
+    {
+        var bundle = AbdmProfileValidator.Example(PrescriptionExample).ShouldBeOfType<R4.Bundle>();
+
+        var result = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+
+        result.Errors.ShouldBeEmpty(result.Describe());
+        bundle.Entry.Select(e => e.Resource.TypeName).ShouldBe(
+            ["Composition", "Patient", "Practitioner", "MedicationRequest", "MedicationRequest", "Condition", "Binary"]);
+    }
+
+    [Theory]
+    [InlineData("untyped section entry", "Missing required member: 'type'")]
+    [InlineData("two sections", "cardinality of 1..1")]
+    [InlineData("medicine coded outside snomed", "is not exactly equal to fixed value 'http://snomed.info/sct'")]
+    [InlineData("no dosage", "Missing required member: 'dosageInstruction'")]
+    [InlineData("no requester", "Missing required member: 'requester'")]
+    public void A_prescription_broken_against_the_profiles_fails(string breakage, string expected)
+    {
+        var bundle = AbdmProfileValidator.Example(PrescriptionExample).ShouldBeOfType<R4.Bundle>();
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        var request = bundle.Entry.Select(e => e.Resource).OfType<R4.MedicationRequest>().First();
+        switch (breakage)
+        {
+            case "untyped section entry":
+                composition.Section[0].Entry[0].Type = null;
+                break;
+            case "two sections":
+                composition.Section.Add(new R4.Composition.SectionComponent
+                {
+                    Title = "Prescription record",
+                    Code = new R4.CodeableConcept("http://snomed.info/sct", "440545006", "Prescription record"),
+                    Entry = [new R4.ResourceReference(composition.Section[0].Entry[0].Reference) { Type = "MedicationRequest" }],
+                });
+                break;
+            case "medicine coded outside snomed":
+                request.Medication = new R4.CodeableConcept("urn:hc360:drug", "AZI-250", "Azithromycin 250 mg tablet");
+                break;
+            case "no dosage":
+                request.DosageInstruction.Clear();
+                break;
+            case "no requester":
+                request.Requester = null;
                 break;
         }
 

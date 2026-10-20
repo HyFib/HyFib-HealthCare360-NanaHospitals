@@ -166,9 +166,11 @@ permissions, released-only rule, restricted-record guard and PHI audit apply as 
 | GET | `/clinical/discharge-summaries/{id}/document` | emr.read | → `PrintableDocumentDto` (`pageSize: "A4"`): the printed discharge summary. Same rules as `/print`: drafts print too, marked "DRAFT — not signed"; restricted-record guard; audit "Printed discharge summary" |
 | GET | `/clinical/discharge-summaries/{id}/pdf` | emr.read | → `application/pdf` attachment `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`, the same document. Same rules; audit "Downloaded discharge summary as a PDF"; 503 `pdf.unavailable` |
 
-A signed or amended summary also downloads as an ABDM health record (an NRCeS FHIR document bundle) from the Interop
-module: `GET /abdm/discharge-summaries/{id}/bundle`, permission `abdm.export`, while ABDM health records are switched
-on and the patient has consented to share their records ([interop.md](interop.md#abdm-health-records-ehr-08)).
+A signed or amended summary, and a signed prescription, also download as ABDM health records (NRCeS FHIR document
+bundles) from the Interop module: `GET /abdm/discharge-summaries/{id}/bundle` and `GET /abdm/prescriptions/{id}/bundle`,
+permission `abdm.export`, while ABDM health records are switched on and the patient has consented to share their
+records. A cancelled prescription is not exported, and a prescription is exported only under the DSC rule of its
+printout ([interop.md](interop.md#abdm-health-records-ehr-08)).
 
 Public (anonymous, rate limit policy `public`): `GET /public/prescriptions/verify/{token}` → `PrescriptionVerification{found, status: Valid|Cancelled, doctor, qualification, registrationNumber, facility, issuedOn, itemCount, prescriptionNumber, digitalSignature?: {state: Valid|Invalid|Untrusted, signerName, certificateSerialNumber, certificateIssuer, signedAt, contentHash, chainTrusted, message}, signaturePath}` — no patient data; the DSC signature, and its chain to the DSC trust folder's roots, are verified again for each answer. `GET /public/prescriptions/verify/{token}/signature.p7s` → the .p7s (404 without a DSC signature).
 

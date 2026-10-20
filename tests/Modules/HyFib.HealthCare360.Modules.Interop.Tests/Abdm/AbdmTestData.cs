@@ -8,8 +8,9 @@ using HyFib.HealthCare360.SharedKernel;
 namespace HyFib.HealthCare360.Modules.Interop.Tests.Abdm;
 
 /// <summary>
-/// A discharge summary as HC360 holds it: Mrs Meera Kulkarni (ABHA number on file), admitted with community-acquired
-/// pneumonia at Nana Hospitals, Pune (HFR id on file), signed by Dr Asha Rao.
+/// Records as HC360 holds them: Mrs Meera Kulkarni (ABHA number on file), admitted with community-acquired pneumonia at
+/// Nana Hospitals, Pune (HFR id on file), with the discharge summary Dr Asha Rao signed; and a prescription Dr Rao signed
+/// for her at an out-patient visit.
 /// </summary>
 internal static class AbdmTestData
 {
@@ -132,6 +133,108 @@ internal static class AbdmTestData
             Facilities = TestData.Directory.Facilities,
             AdmissionVisits = new Dictionary<Guid, Guid> { [AdmissionId] = VisitId },
         },
+    };
+
+    public static readonly Guid PrescriptionId = Guid.Parse("01923a4b-0000-7000-8000-00000000e501");
+    public static readonly Guid OutpatientVisitId = Guid.Parse("01923a4b-0000-7000-8000-00000000e502");
+
+    /// <summary>Dr Asha Rao's prescription for Mrs Kulkarni at an out-patient visit, signed an hour ago.</summary>
+    public static PrescriptionRow Prescription() => new()
+    {
+        Id = PrescriptionId,
+        PatientId = TestData.PatientId,
+        FacilityId = TestData.FacilityId,
+        PrescriptionNumber = "NHRX260000123",
+        VisitId = OutpatientVisitId,
+        PractitionerId = TestData.DoctorId,
+        Status = PrescriptionStatus.Signed,
+        PrescribedAt = TestData.Now.AddHours(-2),
+        SignedAt = TestData.Now.AddHours(-1),
+        Advice = "Drink plenty of fluids.\nCome back if the fever lasts beyond 3 days.",
+        CreatedAt = TestData.Now.AddHours(-2),
+        UpdatedAt = TestData.Now.AddHours(-1),
+    };
+
+    /// <summary>A line of <see cref="Prescription"/>, as the FHIR API reads it.</summary>
+    public static PrescriptionItemRow Line(
+        int sequence, string drug, string? generic, string? strength, string dose, DoseFrequency frequency, int days, decimal quantity,
+        string? instructions = null, string? custom = null) => new()
+        {
+            Id = Guid.Parse($"01923a4b-0000-7000-8000-00000000e6{sequence:D2}"),
+            PatientId = TestData.PatientId,
+            PrescriptionId = PrescriptionId,
+            PrescriptionNumber = "NHRX260000123",
+            VisitId = OutpatientVisitId,
+            PractitionerId = TestData.DoctorId,
+            Status = PrescriptionStatus.Signed,
+            PrescribedAt = TestData.Now.AddHours(-2),
+            SignedAt = TestData.Now.AddHours(-1),
+            Sequence = sequence,
+            DrugName = drug,
+            GenericName = generic,
+            Strength = strength,
+            DosageForm = "Tablet",
+            Route = "Oral",
+            Dose = dose,
+            Frequency = frequency,
+            CustomFrequency = custom,
+            DurationDays = days,
+            Quantity = quantity,
+            Instructions = instructions,
+            CreatedAt = TestData.Now.AddHours(-2),
+        };
+
+    /// <summary>Every way HC360 writes how often a medicine is taken.</summary>
+    public static IReadOnlyList<PrescriptionItemRow> Lines() =>
+    [
+        Line(1, "Dolo 650", "Paracetamol", "650 mg", "1 tab", DoseFrequency.TDS, 3, 9m, "After food"),
+        Line(2, "Azithral", "Azithromycin", "500 mg", "1 tab", DoseFrequency.OD, 3, 3m, "One hour before food"),
+        Line(3, "Cetirizine", null, "10 mg", "1 tab", DoseFrequency.HS, 5, 5m),
+        Line(4, "Ondansetron", null, "4 mg", "1 tab", DoseFrequency.SOS, 2, 4m, "If vomiting"),
+        Line(5, "Methylprednisolone", null, "16 mg", "1 tab", DoseFrequency.STAT, 1, 1m),
+        Line(6, "Vitamin D3", "Cholecalciferol", "60000 IU", "1 sachet", DoseFrequency.Weekly, 56, 8m),
+        Line(7, "Pantoprazole", null, "40 mg", "1 tab", DoseFrequency.Custom, 5, 10m, custom: "1-0-1"),
+    ];
+
+    public static VisitRow OutpatientVisit() => new()
+    {
+        Id = OutpatientVisitId,
+        PatientId = TestData.PatientId,
+        FacilityId = TestData.FacilityId,
+        VisitNumber = "NHOP260001234",
+        Type = VisitType.OutPatient,
+        Status = VisitStatus.Completed,
+        DepartmentId = TestData.DepartmentId,
+        PractitionerId = TestData.DoctorId,
+        VisitedAt = TestData.Now.AddHours(-3),
+        CompletedAt = TestData.Now.AddHours(-1),
+        ChiefComplaint = "Fever and sore throat",
+        CreatedAt = TestData.Now.AddHours(-3),
+    };
+
+    public static PrescriptionSource PrescriptionSource() => new()
+    {
+        Prescription = Prescription(),
+        Lines = Lines(),
+        Patient = Patient(),
+        Facility = Facility(),
+        Prescriber = Doctor(),
+        Visit = OutpatientVisit(),
+        References = new ReferenceDirectory
+        {
+            Practitioners = TestData.Directory.Practitioners,
+            Departments = TestData.Directory.Departments,
+            Facilities = TestData.Directory.Facilities,
+        },
+    };
+
+    /// <summary>The least a signed prescription holds: one medicine, and no visit, doctor, ABHA number or HFR id on file.</summary>
+    public static PrescriptionSource MinimalPrescription() => new()
+    {
+        Prescription = Prescription() with { VisitId = null, Advice = null },
+        Lines = [Line(1, "Paracetamol", null, "500 mg", "1 tab", DoseFrequency.BD, 3, 6m) with { VisitId = null }],
+        Patient = Patient(abha: null),
+        Facility = Facility(hfrId: null),
     };
 
     /// <summary>The least a signed summary holds: what signing requires, and nothing coded or on file beyond it.</summary>
