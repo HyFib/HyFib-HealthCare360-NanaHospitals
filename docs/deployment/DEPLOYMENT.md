@@ -104,7 +104,10 @@ The installer:
   *HC360 database watchdog* (see "When PostgreSQL stops" below).
 - Opens the firewall, for Private networks only: HTTPS for the staff app (7360) and the patient portal (7361), and
   mDNS.
-- Keeps the machine and its WiFi adapter from sleeping.
+- Keeps the machine from sleeping or hibernating, its disk from stopping and its WiFi adapter from saving power, on
+  mains and on the UPS's battery: in a power cut Windows switches to its battery settings, just when the UPS is keeping
+  the hospital running. What Windows does when the battery is nearly empty is left as it is, so the server can still
+  shut down cleanly before the UPS runs out, which protects the database.
 - Sets Windows Update's active hours to 06:00–23:00, so updates restart the server only overnight. Choose other hours
   with `-UpdateActiveHoursStart` and `-UpdateActiveHoursEnd` (at most 18 apart, as Windows allows); an upgrade keeps
   the hours set before.
