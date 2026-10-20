@@ -13212,6 +13212,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("loinc");
 
+                    b.Property<string>("LoincName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("loinc_name");
+
                     b.Property<string>("Method")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")

@@ -167,6 +167,7 @@ internal static class LabMasterEndpoints
         test.Method = Clean(request.Method);
         test.TatHours = request.TatHours;
         test.Loinc = Clean(request.Loinc);
+        test.LoincName = test.Loinc is null ? null : Clean(request.LoincName);
         test.ServiceItemId = request.ServiceItemId;
         test.IsOrderable = request.IsOrderable;
         test.IsPanel = request.IsPanel;
@@ -323,7 +324,7 @@ internal static class LabMasterEndpoints
         var names = await db.Set<LabTest>().AsNoTracking().Where(x => componentIds.Contains(x.Id))
             .Select(x => new { x.Id, x.Code, x.Name }).ToDictionaryAsync(x => x.Id, ct);
         return new LabTestDetail(
-            t.Id, t.Code, t.Name, t.ShortName, t.Section, t.SpecimenType, t.Container, t.Method, t.TatHours, t.Loinc, t.ServiceItemId, t.IsOrderable,
+            t.Id, t.Code, t.Name, t.ShortName, t.Section, t.SpecimenType, t.Container, t.Method, t.TatHours, t.Loinc, t.LoincName, t.ServiceItemId, t.IsOrderable,
             t.IsPanel, t.ResultType, t.Unit, t.Decimals, t.Options, t.InstrumentChannelCodes, t.QcGroup, t.DeltaThresholdPercent, t.AllowAutoValidation,
             t.Preparation, t.DrawSeparately, t.Interpretation, t.DefaultReferralLabId, t.DisplayOrder, t.IsProvisional, t.IsActive,
             t.Components.OrderBy(c => c.DisplayOrder).Select(c => new LabTestComponentDto(

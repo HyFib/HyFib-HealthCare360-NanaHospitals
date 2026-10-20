@@ -1,8 +1,8 @@
 {
   "resourceType": "Bundle",
-  "id": "2db55665-13da-8b5d-8e8b-524e79b5db51",
+  "id": "3caabacc-005f-87cc-a4ad-0845e6a37d13",
   "meta": {
-    "versionId": "1790053200000",
+    "versionId": "1790053200000-dcc40b7040096158",
     "lastUpdated": "2026-09-22T10:30:00+05:30",
     "profile": [
       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
@@ -17,7 +17,7 @@
   },
   "identifier": {
     "system": "urn:ietf:rfc:3986",
-    "value": "urn:uuid:2db55665-13da-8b5d-8e8b-524e79b5db51"
+    "value": "urn:uuid:3caabacc-005f-87cc-a4ad-0845e6a37d13"
   },
   "type": "document",
   "timestamp": "2026-09-25T10:30:00+05:30",
@@ -28,7 +28,7 @@
         "resourceType": "Composition",
         "id": "1d78966a-4639-8c28-aa2c-61c6019f0e70",
         "meta": {
-          "versionId": "1790053200000",
+          "versionId": "1790053200000-dcc40b7040096158",
           "lastUpdated": "2026-09-22T10:30:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DischargeSummaryRecord"
@@ -101,8 +101,8 @@
               ]
             },
             "text": {
-              "status": "generated",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Presenting complaints: Central chest pain for two hours, sweating.</p><p>Diagnoses: Non-ST elevation myocardial infarction</p><p>ICD-10 codes: I21.4</p></div>"
+              "status": "additional",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Presenting complaints: Central chest pain for two hours, sweating.</p><p>Diagnoses: Non-ST elevation myocardial infarction</p><p>ICD-10 codes: I21.4</p><p>Diagnoses recorded during the stay:</p><p>Non-ST elevation (NSTEMI) myocardial infarction</p></div>"
             },
             "entry": [
               {
@@ -147,8 +147,8 @@
               ]
             },
             "text": {
-              "status": "generated",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Investigations: Troponin I raised; ECG with ST depression in V4 to V6.</p></div>"
+              "status": "additional",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Investigations: Troponin I raised; ECG with ST depression in V4 to V6.</p><p>Lab reports:</p><p>Troponin I (Flagged by the laboratory: Troponin I (Critical high).)</p></div>"
             },
             "entry": [
               {
@@ -170,8 +170,8 @@
               ]
             },
             "text": {
-              "status": "generated",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Medications on discharge: Aspirin 75 mg once daily; Atorvastatin 40 mg at night.</p></div>"
+              "status": "additional",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Medications on discharge: Aspirin 75 mg once daily; Atorvastatin 40 mg at night.</p><p>Prescribed during the stay:</p><p>Atorvastatin 40 mg Tablet: 1 tab, at bedtime, for 30 days</p></div>"
             },
             "entry": [
               {
@@ -193,7 +193,7 @@
               ]
             },
             "text": {
-              "status": "generated",
+              "status": "additional",
               "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Procedures: None</p></div>"
             }
           },
@@ -209,7 +209,7 @@
               ]
             },
             "text": {
-              "status": "generated",
+              "status": "additional",
               "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Advice: Low-salt, low-fat diet. No heavy exertion for four weeks.</p><p>Follow-up on 2026-10-02</p><p>Follow-up instructions: Cardiology OPD with the angiography report.</p></div>"
             }
           },
@@ -248,7 +248,7 @@
               ]
             },
             "text": {
-              "status": "generated",
+              "status": "additional",
               "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Course in hospital: Managed medically in the CCU. Pain settled; no arrhythmia. Coronary angiography advised as an out-patient.</p><p>Condition at discharge: Stable, pain free.</p></div>"
             }
           }
@@ -1041,7 +1041,7 @@
             {
               "system": "http://loinc.org",
               "code": "10839-9",
-              "display": "Troponin I"
+              "display": "Troponin I.cardiac [Mass/volume] in Serum or Plasma"
             }
           ],
           "text": "Troponin I"

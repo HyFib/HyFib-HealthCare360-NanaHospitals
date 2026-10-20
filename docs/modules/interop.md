@@ -16,7 +16,7 @@ live.
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.Interop` (layer 8; references Patients, Clinical, Diagnostics and Inpatient) |
 | Schema | none. The module owns no tables and reads the other modules' entities through `HospitalDbContext` (no migration) |
 | Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08, **partly met**: ABHA capture and the ABDM document export of consultations, prescriptions, lab reports and discharge summaries are built; verifying an ABHA with ABDM and linking care contexts to it need the ABDM gateway (the hospital's NHA credentials, not live), and imaging reports are not exported yet |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, the validated samples in `Fixtures/Abdm`) and `AbdmGatewayTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example numbers, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, read-only), `AbdmExportTests` (IntegrationTests: registration, export, who may export), staff `modules/patients/validation.test.ts` |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, the validated samples in `Fixtures/Abdm`) and `AbdmGatewayTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example numbers, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, read-only), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts` |
 
 ## Permission and set-up
 
@@ -200,14 +200,15 @@ Only recorded measurements become observations. A set marked "entered in error" 
 `entered-in-error` (read by id; searches leave it out unless asked for). Stored decimals lose trailing zeros.
 
 ### Observation — laboratory (category `laboratory`)
-Released, verified results only. `code`: the analyte's LOINC code when the test master has one, plus the HC360 test code
-(`urn:hc360:lab-test`), text = test name. Numeric results are quantities parsed from the printed value (comparators
-`<`, `<=`, `>=`, `>` and Indian digit grouping kept), UCUM when the printed unit is known (for example `10³/µL` →
-`10*3/uL`, `mm/hr` → `mm/h`, `µIU/mL` → `u[IU]/mL`) and otherwise the unit as text without a system. Text, option and
-culture results are strings; organism and colony count are notes. Flag → v3 interpretation (N, L, H, LL, HH, A, AA).
-The printed reference interval is the `referenceRange` text, with low/high for "a - b", "Up to b", "a and above",
-"< b" and "> a". `effective` = sample collection (else order) time, `issued` = release time, encounter = the visit.
-A result re-verified after release (a numbered amendment) is `amended`.
+Released, verified results only. `code`: the analyte's LOINC code when the test master has one (with the LOINC name
+entered for it in the test master as display), plus the HC360 test code (`urn:hc360:lab-test`), text = test name.
+Numeric results are quantities parsed from the printed value (comparators `<`, `<=`, `>=`, `>` and Indian digit grouping
+kept), UCUM when the printed unit is known (for example `10³/µL` → `10*3/uL`, `mm/hr` → `mm/h`, `µIU/mL` → `u[IU]/mL`)
+and otherwise the unit as text without a system. Text, option and culture results are strings; organism and colony count
+are notes. Flag → v3 interpretation (N, L, H, LL, HH, A, AA). The printed reference interval is the `referenceRange`
+text, with low/high for "a - b", "Up to b", "a and above", "< b" and "> a". `effective` = sample collection (else order)
+time, `issued` = release time, encounter = the visit. A result re-verified after release (a numbered amendment) is
+`amended`.
 
 ### Condition
 ICD-10 (`http://hl7.org/fhir/sid/icd-10`, code upper-cased, title as display) when chosen from the catalogue; free-text
@@ -291,15 +292,22 @@ ABHA numbers, end in).
 * Bundles are `application/fhir+json; charset=utf-8`, never cached; `?pretty=true` indents.
 * The record must be in the caller's facility (404 otherwise, as for a record that does not exist) and of a patient
   who is not deleted (404). A restricted (VIP) record needs `patients.restricted.read` or break-the-glass (403), as on
-  screen, and this is checked before anything else about the record is told. Then the patient must not be merged (422
-  `abdm.patient_merged`) and the record must be complete (422 `abdm.not_exportable`: a draft, a cancelled
-  prescription, an unreleased report, an unsigned note, an in-patient note, which travels with the discharge summary).
+  screen, and this is checked before anything else about the record is told. A refusal is audited as a security
+  warning: `security` / `abdm.export_denied`, "ABDM health record export refused: lab report", details
+  `{ api: "abdm", record, reason }`. Then the record must be complete (422 `abdm.not_exportable`: a draft, a cancelled
+  prescription, an unreleased report, an unsigned note, an in-patient note, whose diagnoses and prescriptions are in
+  the stay's discharge summary).
+* A record still kept under a duplicate UHID that was merged into another patient (a lab report: the Diagnostics module
+  leaves its records where they are) is exported as the surviving patient's, with that patient's UHID and ABHA, once
+  both patients may be opened (a restricted patient on either side needs the permission). A chain of merges is followed
+  to its end; a deleted patient on it, or a loop, is 404.
 * An export is a staff download, like the printed copy, so it does not need the record-sharing consent of the FHIR
   API, and `abdm.export` is for hospital staff only: an integration partner's service user reads records through
   `fhir.read`, where consent applies. Sending a record to ABDM is authorised by the patient's ABDM consent artefact,
   through the gateway.
-* Every export is audited: `phi` / `patient.accessed`, "ABDM health record exported: discharge summary", entity
-  `abdm.{Type}` and the record id, details `{ api: "abdm", record, document, version, entries }`.
+* Every export is audited under the document's patient: `phi` / `patient.accessed`, "ABDM health record exported:
+  discharge summary", entity `abdm.{Type}` and the record id, details `{ api: "abdm", record, document, version,
+  entries }`.
 * The staff app has no export button yet: the API is what the gateway client will use, and what the hospital's staff
   call for NHA's sandbox testing.
 
@@ -315,10 +323,13 @@ profiles.
 | Prescription | `PrescriptionRecord`, SNOMED CT 440545006 "Prescription record" | 440545006: one MedicationRequest per medicine, and the printed PDF as Binary; advice as text |
 | Lab report | `DiagnosticReportRecord`, SNOMED CT 721981007 "Diagnostic studies report" | 4241000179101 "Laboratory report": the DiagnosticReport (results as Observations) and the printed PDF as DocumentReference. The laboratory (facility) is the author |
 | Consultation | `OPConsultRecord`, SNOMED CT 371530004 "Clinical consultation report" | 422843007 chief complaint: Conditions; 371529009 medical history (HPI); 425044008 physical examination: vital-sign Observations; 722446000 allergies; 721912009 medications: MedicationRequests; 390906007 follow-up; 306206005 referral; then LOINC 51847-2 assessment and plan (the IG has no such section; its slicing is open) |
-| Discharge summary | `DischargeSummaryRecord`, SNOMED CT 373942005 "Discharge summary" | 422843007 complaints and diagnoses: the stay's Conditions; 722446000 allergies; 721981007 investigations: the stay's lab DiagnosticReports; 1003606003 medications: the stay's MedicationRequests; 1003640003 procedures; 734163000 care plan (advice, follow-up); 373942005 the summary as DocumentReference (the printed PDF, else the summary's text); then LOINC 8648-8 hospital course |
+| Discharge summary | `DischargeSummaryRecord`, SNOMED CT 373942005 "Discharge summary" | 422843007 complaints and diagnoses: the stay's Conditions; 722446000 allergies; 721981007 investigations: the stay's lab DiagnosticReports; 1003606003 medications: the doctor's medicines on discharge as text, then the MedicationRequests prescribed during the stay; 1003640003 procedures; 734163000 care plan (advice, follow-up); 373942005 the summary as DocumentReference (the printed PDF, else the summary's text); then LOINC 8648-8 hospital course |
 
-Section and document codes, systems and displays are the ones the IG's profiles fix. Empty sections are left out;
-every section has a narrative (its text, or one line per entry). Every resource has a generated narrative.
+Section and document codes, systems and displays are the ones the IG's profiles fix. Empty sections are left out.
+A section's narrative reads whole on its own, since it is what the doctor attests: the free text the doctor wrote,
+then one line per entry under a heading ("Diagnoses:", "Vital signs:", "Medicines:", "Lab reports:", "Prescribed
+during the stay:"), with status `additional`; a section without free text has one line per entry, `generated`. Every
+resource has a generated narrative.
 
 | Resource | Profile | What the IG adds to the read API's resource |
 |---|---|---|
@@ -329,24 +340,37 @@ every section has a narrative (its text, or one line per entry). Every resource 
 | Condition | `Condition` | ICD-10 coding only (free-text diagnoses as text) |
 | AllergyIntolerance | `AllergyIntolerance` | Allergen as text; allergies recorded in error left out |
 | MedicationRequest | `MedicationRequest` | As the read API (medicine as text, dosage with v3-GTSAbbreviation timing codes and their displays) |
-| Observation | `ObservationVitalSigns`, `ObservationBodyMeasurement` (weight, height, BMI) or `Observation` (lab results, pain, GCS) | LOINC (and SNOMED CT) codings only, each with a display; performer = the laboratory (results) or the hospital (vital signs) |
+| Observation | `ObservationVitalSigns`, `ObservationBodyMeasurement` (weight, height, BMI) or `Observation` (lab results, pain, GCS) | LOINC (and SNOMED CT) codings only, and only with the code system's own display, which the IG requires: a lab result's LOINC coding needs its LOINC name in the test master, else the test goes by its name as text; performer = the laboratory (results) or the hospital (vital signs) |
 | DiagnosticReport | `DiagnosticReportLab` | Category SNOMED CT 394595002 "Pathology"; LOINC 11502-2; performer and results interpreter = the laboratory; conclusion (the IG requires one; the laboratory writes none) = the results the laboratory flagged ("Flagged by the laboratory: Haemoglobin (Low)."), or "See the individual results." when it flagged none: an unflagged result is not a normal one (a qualitative result, or one without a reference range, is never flagged), so nothing is said about the results |
 | DocumentReference, Binary | `DocumentReference`, `Binary` | The printed PDF (made by the same document sources as the download and the messages); when this server cannot make PDFs, the lab report and prescription go without it and the discharge summary carries its text |
 
 * **Ids** are UUIDs derived from HC360's ids (SHA-256, RFC 9562 version 8), so exporting a record again gives the
   same ids and a patient or doctor has one id in every document.
 * **Versions.** `meta.versionId` of the Bundle and Composition is the latest change to anything in the document (Unix
-  milliseconds); the Bundle's id and `identifier` (`urn:ietf:rfc:3986`, `urn:uuid:…`) change with it, the
-  Composition's id does not. An amended record is an `amended` Composition. `meta.security` is v3-Confidentiality V.
-* **Not coded:** medicines (no SNOMED CT drug codes), allergens, free-text diagnoses, lab tests without a LOINC code in
-  the test master. They travel as text, which the IG allows.
+  milliseconds), a hyphen and the first 8 bytes of a SHA-256 hash of its resources as JSON, in hex
+  (`1790306700000-173f6d813eaf32be` in the sample prescription). The hash catches what moves no change time forward,
+  such as an entry that drops out (an allergy recorded in error); the printed PDF is left out of it, as it is made again
+  at every export. Exporting an unchanged record again gives the same version. The Bundle's id and `identifier`
+  (`urn:ietf:rfc:3986`, `urn:uuid:…`) change with the version, the Composition's id does not. `meta.security` is
+  v3-Confidentiality V.
+* **As of the record.** A document says what its record said whenever it is exported: a medicine is active or
+  completed as of the document's date (the day it was signed, released or amended), not the day of the export.
+* **Status and attestation.** An amended record is an `amended` Composition. A lab report released before all its
+  results is `preliminary` (its Composition and its PDF's DocumentReference), as its DiagnosticReport is `partial`.
+  The signing doctor is the author and the legal attester. An amended consultation note or discharge summary has two
+  authors, the signer and the doctor who made the latest amendment, and that doctor attests it at the time of the
+  amendment; when the amendment was made by a user who is not a doctor, no one is named as its legal attester. A lab
+  report has no attester: the laboratory is its author.
+* **Not coded:** medicines (no SNOMED CT drug codes), allergens, free-text diagnoses, lab tests without a LOINC code
+  and its LOINC name in the test master. They travel as text, which the IG allows.
 
 ### Validation
 
 The four sample documents built by `AbdmDocumentTests` are kept in
 `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests/Fixtures/Abdm` (a test fails when the code builds anything
 else; `HC360_WRITE_ABDM_FIXTURES=1` writes them again, after which they are validated again). They were checked on
-2026-10-16 with the official **HL7 FHIR validator** (`validator_cli.jar` 7.0.2) against `ndhm.in#6.5.0`:
+2026-10-16, and again on 2026-10-20 after the review's fixes with the same results, with the official **HL7 FHIR
+validator** (`validator_cli.jar` 7.0.2) against `ndhm.in#6.5.0`:
 
 ```
 java -jar validator_cli.jar Fixtures/Abdm/*.json -version 4.0.1 -ig ndhm.in#6.5.0 -tx n/a

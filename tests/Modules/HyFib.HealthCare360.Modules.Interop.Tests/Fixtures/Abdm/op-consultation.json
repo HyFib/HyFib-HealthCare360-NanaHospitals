@@ -1,8 +1,8 @@
 {
   "resourceType": "Bundle",
-  "id": "949c6f44-882e-8798-a347-9febdc17c387",
+  "id": "e950dd2f-a4aa-8ad8-be2a-7a3f9fe44050",
   "meta": {
-    "versionId": "1790306700000",
+    "versionId": "1790306700000-4a8cd5056df24361",
     "lastUpdated": "2026-09-25T08:55:00+05:30",
     "profile": [
       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
@@ -17,7 +17,7 @@
   },
   "identifier": {
     "system": "urn:ietf:rfc:3986",
-    "value": "urn:uuid:949c6f44-882e-8798-a347-9febdc17c387"
+    "value": "urn:uuid:e950dd2f-a4aa-8ad8-be2a-7a3f9fe44050"
   },
   "type": "document",
   "timestamp": "2026-09-25T10:30:00+05:30",
@@ -28,7 +28,7 @@
         "resourceType": "Composition",
         "id": "c5c1e0cf-6fb9-8ad7-ae3b-f75aed00dc26",
         "meta": {
-          "versionId": "1790306700000",
+          "versionId": "1790306700000-4a8cd5056df24361",
           "lastUpdated": "2026-09-25T08:55:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/OPConsultRecord"
@@ -101,8 +101,8 @@
               ]
             },
             "text": {
-              "status": "generated",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Chief complaint: Fever for three days</p></div>"
+              "status": "additional",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Chief complaint: Fever for three days</p><p>Diagnoses:</p><p>Fever, unspecified</p><p>Viral fever</p></div>"
             },
             "entry": [
               {
@@ -129,7 +129,7 @@
               ]
             },
             "text": {
-              "status": "generated",
+              "status": "additional",
               "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>History of present illness: Intermittent fever up to 101 F for three days with body ache. No cough, rash or bleeding.</p></div>"
             }
           },
@@ -145,8 +145,8 @@
               ]
             },
             "text": {
-              "status": "generated",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Examination: Throat mildly congested, chest clear.</p></div>"
+              "status": "additional",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Examination: Throat mildly congested, chest clear.</p><p>Vital signs:</p><p>Blood pressure: 122 / 78 mmHg</p><p>Heart rate: 96 beats/minute</p><p>Oxygen saturation (SpO2): 98 %</p><p>Body temperature: 100.4 °F</p><p>Respiratory rate: 18 breaths/minute</p><p>Body weight: 64.5 kg</p><p>Body height: 162 cm</p><p>Body mass index: 24.6 kg/m2</p></div>"
             },
             "entry": [
               {
@@ -254,7 +254,7 @@
               ]
             },
             "text": {
-              "status": "generated",
+              "status": "additional",
               "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Follow-up on 2026-09-28</p><p>Come back if the fever lasts beyond two more days.</p></div>"
             }
           },
@@ -270,7 +270,7 @@
               ]
             },
             "text": {
-              "status": "generated",
+              "status": "additional",
               "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Referred to Dr. Vikram Shah: Palpitations on exertion</p></div>"
             }
           },
@@ -286,7 +286,7 @@
               ]
             },
             "text": {
-              "status": "generated",
+              "status": "additional",
               "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Assessment: Acute febrile illness, probably viral.</p><p>Plan: CBC and CRP today. Paracetamol for the fever, oral fluids.</p></div>"
             }
           }

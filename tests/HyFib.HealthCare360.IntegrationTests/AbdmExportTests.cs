@@ -9,6 +9,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
@@ -48,6 +49,7 @@ public sealed class AbdmExportTests(HospitalServer server)
 
     /// <summary>The CRP the lab reports, in mg/L: within the reference interval, so it needs no critical call.</summary>
     private const decimal Crp = 3.2m;
+    private const string CrpLoincName = "C reactive protein [Mass/volume] in Serum or Plasma";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -223,6 +225,10 @@ public sealed class AbdmExportTests(HospitalServer server)
                 (await refused.Content.ReadAsStringAsync(Ct)).ShouldNotContain("abdm.not_exportable");
             }
 
+            // The refusal is a security event, as the FHIR API's are.
+            var refusal = (await AuditAsync(patient.Id, "abdm.export_denied")).ShouldNotBeNull();
+            (refusal.Category, refusal.Severity).ShouldBe((AuditCategories.Security, AuditSeverity.Warning));
+
             // Someone who may open the record is told why it cannot be exported yet.
             using var draft = await admin.SendRawAsync(HttpMethod.Get, path);
             draft.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
@@ -291,11 +297,17 @@ public sealed class AbdmExportTests(HospitalServer server)
             // Neither verified nor released, it is not a report yet.
             await NotExportableAsync(path);
 
+            // The laboratory gives CRP's LOINC code its LOINC name in the test master.
+            await NameCrpsLoincCodeAsync();
+
             await ReleaseAsync(crp);
             var bundle = await ExportAsync(path, DiagnosticReportRecord, abha);
             var result = Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem();
             result.GetProperty("resourceType").GetString().ShouldBe("Observation");
             result.GetProperty("valueQuantity").GetProperty("value").GetDecimal().ShouldBe(Crp);
+            var coding = result.GetProperty("code").GetProperty("coding").EnumerateArray().ShouldHaveSingleItem();
+            (coding.GetProperty("system").GetString(), coding.GetProperty("code").GetString(), coding.GetProperty("display").GetString())
+                .ShouldBe(("http://loinc.org", "1988-5", CrpLoincName));
 
             var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
             exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: lab report");
@@ -325,6 +337,8 @@ public sealed class AbdmExportTests(HospitalServer server)
             await ReleaseAsync(await CrpAsync(patient, admission));
             var paracetamol = await DrugAsync(doctor, "Paracetamol", "DRG-PCM500");
             await SignAsync(doctor, await PrescribeAsync(doctor, patient.Id, note, Tablet(paracetamol, DoseFrequency.TDS, days: 3, "After food")));
+            var admissionNote = await doctor.GetAsync<EncounterDetail>($"/api/v1/emr/encounters/{note}");
+            await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{note}/sign", new SignEncounterRequest(admissionNote.Version));
 
             var summary = await doctor.PutAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/by-admission/{admission.Id}",
                 new SaveDischargeSummaryRequest(
@@ -339,12 +353,25 @@ public sealed class AbdmExportTests(HospitalServer server)
             // A draft is still being written.
             await NotExportableAsync(path);
 
+            // The admission note, signed, is part of the stay's record rather than a document of its own.
+            (await NotExportableAsync($"/api/v1/abdm/bundles/op-consultations/{note}"))
+                .ShouldBe("An in-patient note is not exported on its own: its diagnoses and prescriptions are in the stay's discharge summary.");
+
             await doctor.PostAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/{summary.Id}/sign", new SignDischargeSummaryRequest(summary.Version));
             var bundle = await ExportAsync(path, DischargeSummaryRecord, abha);
             Resources(bundle, "Condition").ShouldHaveSingleItem().GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString()
                 .ShouldBe("R50.9");
             Resources(bundle, "MedicationRequest").ShouldHaveSingleItem().GetProperty("medicationCodeableConcept").GetProperty("text").GetString()
                 .ShouldBe(paracetamol.Name);
+
+            // The section reads whole: the doctor's list of medicines on discharge, then what was prescribed during the stay.
+            var medications = Composition(bundle).GetProperty("section").EnumerateArray().Single(s => s.GetProperty("title").GetString() == "Medications");
+            var narrative = medications.GetProperty("text");
+            narrative.GetProperty("status").GetString().ShouldBe("additional");
+            narrative.GetProperty("div").GetString().ShouldNotBeNull().ShouldSatisfyAllConditions(
+                div => div.ShouldContain("Medications on discharge: Paracetamol 500 mg when needed for fever"),
+                div => div.ShouldContain("Prescribed during the stay:"),
+                div => div.ShouldContain(paracetamol.Name));
             Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem()
                 .GetProperty("valueQuantity").GetProperty("value").GetDecimal().ShouldBe(Crp);
 
@@ -355,6 +382,79 @@ public sealed class AbdmExportTests(HospitalServer server)
             var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
             exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: discharge summary");
             exportAudit.EntityId.ShouldBe(summary.Id.ToString("D"));
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+            await CancelAdmissionAsync(admission);
+        }
+    }
+
+    [Fact]
+    public async Task An_amended_consultation_is_attested_by_the_doctor_who_amended_it()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var colleague = await server.SignInAsync(HospitalServer.Users.SecondDoctor);
+        var abha = NewAbha();
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+        var signed = await ConsultAsync(doctor, patient.Id, sign: true);
+
+        // A colleague corrects the plan after the note was signed.
+        var note = await colleague.GetAsync<EncounterDetail>($"/api/v1/emr/encounters/{signed}");
+        var amended = await colleague.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{signed}/amend", new AmendEncounterRequest(
+            "Review date added", note.ChiefComplaint, note.HistoryOfPresentIllness, note.Examination, note.Assessment,
+            "Paracetamol, fluids. Review in two days.", note.FollowUpDate, note.FollowUpAdvice, note.ReferralDepartmentId,
+            note.ReferralPractitionerId, note.ReferralExternal, note.ReferralReason, note.Version));
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            var composition = Composition(await ExportAsync($"/api/v1/abdm/bundles/op-consultations/{signed}", "371530004", abha));
+
+            // Both doctors wrote this version; the one who amended it answers for it, from the moment they did.
+            composition.GetProperty("status").GetString().ShouldBe("amended");
+            var authors = composition.GetProperty("author").EnumerateArray().Select(a => a.GetProperty("reference").GetString()).ToList();
+            authors.Count.ShouldBe(2);
+            var attester = composition.GetProperty("attester").EnumerateArray().ShouldHaveSingleItem();
+            attester.GetProperty("mode").GetString().ShouldBe("legal");
+            attester.GetProperty("party").GetProperty("reference").GetString().ShouldBe(authors[1]);
+            DateTimeOffset.Parse(attester.GetProperty("time").GetString()!, CultureInfo.InvariantCulture)
+                .ShouldBe(amended.AmendedAt.ShouldNotBeNull(), TimeSpan.FromSeconds(1));
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
+    public async Task A_lab_report_kept_under_a_merged_duplicate_is_exported_as_the_surviving_patients()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var medicalRecords = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var abha = NewAbha();
+        var kept = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+        var duplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
+        var admission = await AdmitAsync(duplicate.Id);
+
+        // From the admission on, the bed is given back whatever happens.
+        try
+        {
+            // The CRP was done under the duplicate UHID. Merging moves the visits, but the laboratory keeps its reports
+            // under the UHID they were made for.
+            var crp = await CrpAsync(duplicate, admission);
+            await ReleaseAsync(crp);
+            await medicalRecords.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+            await SwitchAsync(enabled: true);
+
+            var bundle = await ExportAsync($"/api/v1/abdm/bundles/lab-reports/{crp.ReportId}", DiagnosticReportRecord, abha);
+            var patient = Resources(bundle, "Patient").ShouldHaveSingleItem();
+            patient.GetProperty("identifier").EnumerateArray().Single(i => i.GetProperty("system").GetString() == "urn:hc360:uhid")
+                .GetProperty("value").GetString().ShouldBe(kept.Uhid);
+            Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem()
+                .GetProperty("valueQuantity").GetProperty("value").GetDecimal().ShouldBe(Crp);
+            (await AuditAsync(kept.Id, "patient.accessed")).ShouldNotBeNull().EntityId.ShouldBe(crp.ReportId.ToString("D"));
         }
         finally
         {
@@ -478,13 +578,29 @@ public sealed class AbdmExportTests(HospitalServer server)
             new VerifyResultsRequest([crp.ResultId], QcOverrideReason: null, CriticalCall: null, Release: true))).ReleasedItemIds.ShouldHaveSingleItem();
     }
 
-    /// <summary>The hospital administrator, who exports records for ABDM, is told the record cannot be exported yet.</summary>
-    private async Task NotExportableAsync(string path)
+    /// <summary>Gives the CRP test's LOINC code (1988-5) its LOINC name in the test master, as the hospital administrator.</summary>
+    private async Task NameCrpsLoincCodeAsync()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var listed = (await admin.GetAsync<PagedResult<LabTestListItem>>("/api/v1/lab/tests?search=LAB-CRP")).Items.Single(t => t.Code == "LAB-CRP");
+        var t = await admin.GetAsync<LabTestDetail>($"/api/v1/lab/tests/{listed.Id}");
+        t.Loinc.ShouldBe("1988-5");
+        await admin.PutAsync($"/api/v1/lab/tests/{t.Id}", new SaveLabTestRequest(
+            t.Code, t.Name, t.ShortName, t.Section, t.SpecimenType, t.Container, t.Method, t.TatHours, t.Loinc, CrpLoincName, t.ServiceItemId,
+            t.IsOrderable, t.IsPanel, t.ResultType, t.Unit, t.Decimals, t.Options, t.InstrumentChannelCodes, t.QcGroup, t.DeltaThresholdPercent,
+            t.AllowAutoValidation, t.Preparation, t.DrawSeparately, t.Interpretation, t.DefaultReferralLabId, t.DisplayOrder, t.IsActive, t.Version));
+        (await admin.GetAsync<LabTestDetail>($"/api/v1/lab/tests/{t.Id}")).LoincName.ShouldBe(CrpLoincName);
+    }
+
+    /// <summary>The hospital administrator, who exports records for ABDM, is told the record cannot be exported yet, and why.</summary>
+    private async Task<string?> NotExportableAsync(string path)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         using var refused = await admin.SendRawAsync(HttpMethod.Get, path);
         refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
-        (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("abdm.not_exportable");
+        var problem = await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
+        problem.GetProperty("code").GetString().ShouldBe("abdm.not_exportable");
+        return problem.GetProperty("detail").GetString();
     }
 
     /// <summary>
@@ -518,6 +634,8 @@ public sealed class AbdmExportTests(HospitalServer server)
         references.Except(addresses).ShouldBeEmpty("Every reference in the document is to one of its entries.");
         return bundle;
     }
+
+    private static JsonElement Composition(JsonElement bundle) => bundle.GetProperty("entry")[0].GetProperty("resource");
 
     /// <summary>The document's resources of one type, in document order.</summary>
     private static List<JsonElement> Resources(JsonElement bundle, string type) =>

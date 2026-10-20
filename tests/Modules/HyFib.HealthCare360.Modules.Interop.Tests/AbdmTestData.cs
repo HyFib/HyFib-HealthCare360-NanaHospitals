@@ -105,7 +105,6 @@ internal static class AbdmTestData
         Practitioners = Practitioners,
         Facilities = Facilities,
         FacilityId = TestData.FacilityId,
-        Today = TestData.Today,
         Pdf = pdf,
     };
 
@@ -271,8 +270,10 @@ internal static class AbdmTestData
 
     public static IReadOnlyList<LabResultRow> LabResults() =>
     [
-        Result(Guid.Parse("01923a4b-0000-7000-8000-0000000ac040"), LabOrderId, OpVisitId, "HB", "Haemoglobin", "718-7", "11.2", 11.2m, "g/dL", ResultFlag.Low, "12.0 - 15.0"),
-        Result(Guid.Parse("01923a4b-0000-7000-8000-0000000ac041"), LabOrderId, OpVisitId, "CRP", "C-reactive protein", "1988-5", "18", 18m, "mg/L", ResultFlag.High, "< 6"),
+        Result(Guid.Parse("01923a4b-0000-7000-8000-0000000ac040"), LabOrderId, OpVisitId, "HB", "Haemoglobin", "718-7", "Hemoglobin [Mass/volume] in Blood",
+            "11.2", 11.2m, "g/dL", ResultFlag.Low, "12.0 - 15.0"),
+        Result(Guid.Parse("01923a4b-0000-7000-8000-0000000ac041"), LabOrderId, OpVisitId, "CRP", "C-reactive protein", "1988-5",
+            "C reactive protein [Mass/volume] in Serum or Plasma", "18", 18m, "mg/L", ResultFlag.High, "< 6"),
     ];
 
     public static LabReportData LabReportRecord(AbdmPdf? pdf) => new(Context(visit: OpVisit(), pdf: pdf), LabReport(), LabResults());
@@ -387,8 +388,8 @@ internal static class AbdmTestData
             },
         ],
         [
-            Result(Guid.Parse("01923a4b-0000-7000-8000-0000000ac070"), StayLabOrderId, StayVisitId, "TROPI", "Troponin I", "10839-9", "2.4", 2.4m, "ng/mL",
-                ResultFlag.CriticalHigh, "< 0.04") with
+            Result(Guid.Parse("01923a4b-0000-7000-8000-0000000ac070"), StayLabOrderId, StayVisitId, "TROPI", "Troponin I", "10839-9",
+                "Troponin I.cardiac [Mass/volume] in Serum or Plasma", "2.4", 2.4m, "ng/mL", ResultFlag.CriticalHigh, "< 0.04") with
             {
                 OrderedAt = Admitted.AddMinutes(10),
                 CollectedAt = Admitted.AddMinutes(20),
@@ -427,7 +428,8 @@ internal static class AbdmTestData
         };
 
     private static LabResultRow Result(
-        Guid id, Guid order, Guid visit, string code, string name, string loinc, string value, decimal number, string unit, ResultFlag flag, string range) => new()
+        Guid id, Guid order, Guid visit, string code, string name, string loinc, string loincName, string value, decimal number, string unit, ResultFlag flag,
+        string range) => new()
         {
             Id = id,
             PatientId = TestData.PatientId,
@@ -436,6 +438,7 @@ internal static class AbdmTestData
             TestCode = code,
             TestName = name,
             Loinc = loinc,
+            LoincName = loincName,
             ResultType = LabResultType.Numeric,
             ValueText = value,
             NumericValue = number,

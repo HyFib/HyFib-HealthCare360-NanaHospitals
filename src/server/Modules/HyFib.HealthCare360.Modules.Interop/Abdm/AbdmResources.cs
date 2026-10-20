@@ -196,8 +196,8 @@ internal static class AbdmProfiler
 
     /// <summary>
     /// Vital signs and body measurements get the IG's profiles for them, every other observation (laboratory results,
-    /// pain score, GCS) the IG's general Observation profile. Only LOINC and SNOMED CT codings stay (the IG closes the
-    /// code's slicing on them), each with a display.
+    /// pain score, GCS) the IG's general Observation profile. Only LOINC and SNOMED CT codings with a display stay
+    /// (<see cref="Codings"/>): a lab test whose LOINC name the laboratory has not entered goes by its own name, as text.
     /// </summary>
     public static R4.Observation Observation(R4.Observation observation)
     {
@@ -246,18 +246,18 @@ internal static class AbdmProfiler
             : $"Flagged by the laboratory: {string.Join(", ", flagged)}.";
     }
 
-    /// <summary>Keeps the codings of the allowed systems and gives each a display (the concept's text when it has none).</summary>
+    /// <summary>
+    /// Keeps the codings of the allowed systems that have a display. The IG requires one on each, and a display is the
+    /// code system's own name for the code, never the hospital's: a coding without it is left out, and the concept's text
+    /// still says what it is.
+    /// </summary>
     private static void Codings(R4.CodeableConcept? concept, string[] systems)
     {
-        if (concept is null)
+        if (concept is not null)
         {
-            return;
-        }
-
-        concept.Coding = concept.Coding.Where(c => systems.Contains(c.System, StringComparer.Ordinal)).ToList();
-        foreach (var coding in concept.Coding.Where(c => string.IsNullOrWhiteSpace(c.Display)))
-        {
-            coding.Display = FhirElements.Clean(concept.Text) ?? coding.Code;
+            concept.Coding = concept.Coding
+                .Where(c => systems.Contains(c.System, StringComparer.Ordinal) && !string.IsNullOrWhiteSpace(c.Display))
+                .ToList();
         }
     }
 

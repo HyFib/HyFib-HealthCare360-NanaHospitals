@@ -74,7 +74,7 @@ internal static partial class LabObservations
         var concept = new R4.CodeableConcept { Text = r.TestName };
         if (FhirElements.Clean(r.Loinc) is { } loinc)
         {
-            concept.Coding.Add(FhirElements.Coding(FhirSystems.Loinc, loinc));
+            concept.Coding.Add(FhirElements.Coding(FhirSystems.Loinc, loinc, FhirElements.Clean(r.LoincName)));
         }
 
         if (FhirElements.Clean(r.TestCode) is { } code)

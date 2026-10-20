@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
 using Microsoft.Extensions.Logging;
 using ClinicalEncounter = HyFib.HealthCare360.Modules.Clinical.Domain.Encounter;
@@ -28,7 +29,6 @@ internal sealed class AbdmRecordLoader(
     PatientRecords patients,
     ReferenceDirectoryLoader references,
     IEnumerable<INotificationDocumentSource> documents,
-    TimeProvider time,
     ILogger<AbdmRecordLoader> logger)
 {
     // The printed PDFs, made by the modules' document sources (the kinds messages name them by).
@@ -74,7 +74,8 @@ internal sealed class AbdmRecordLoader(
                 return row is null ? Error.NotFound("Encounter", id)
                     : new AbdmSource(row.PatientId, row.FacilityId,
                         row.Status == EncounterStatus.InProgress ? "Sign the consultation note before exporting it."
-                        : row.Type == EncounterType.InPatient ? "In-patient notes are exported with the discharge summary."
+                        : row.Type == EncounterType.InPatient
+                            ? "An in-patient note is not exported on its own: its diagnoses and prescriptions are in the stay's discharge summary."
                         : null);
             }
 
@@ -144,13 +145,22 @@ internal sealed class AbdmRecordLoader(
                 UpdatedAt = e.UpdatedAt,
             })
             .FirstAsync(ct);
+        if (note.Status == EncounterStatus.Amended)
+        {
+            note = note with
+            {
+                AmendedByPractitionerId = await AmenderAsync(
+                    db.Set<EncounterAmendment>().Where(a => a.EncounterId == id).OrderByDescending(a => a.AmendedAt).Select(a => a.AmendedByUserId), ct),
+            };
+        }
+
         var diagnoses = await Conditions.Diagnoses(d => d.EncounterId == id).ToListAsync(ct);
         var vitals = await Observations.Vitals(v => v.EncounterId == id && !v.IsEnteredInError).ToListAsync(ct);
         var lines = await Medications.SignedLines(i => true, p => p.EncounterId == id && p.Status == PrescriptionStatus.Signed).ToListAsync(ct);
         var allergies = await Allergies.Allergies(a => a.PatientId == source.PatientId && a.Status != AllergyStatus.EnteredInError).ToListAsync(ct);
         var (visit, encounter) = await EncounterRowsAsync(id, null, null, ct);
         var context = await ContextAsync(source, visit, encounter,
-            [note.PractitionerId, note.SignedByPractitionerId, note.ReferralPractitionerId, .. lines.Select(l => (Guid?)l.PractitionerId)],
+            [note.PractitionerId, note.SignedByPractitionerId, note.AmendedByPractitionerId, note.ReferralPractitionerId, .. lines.Select(l => (Guid?)l.PractitionerId)],
             [.. lines.Select(l => l.AdmissionId)], [note.ReferralDepartmentId], null, id, ct);
         return AbdmRecords.Consultation(new ConsultationData(context, note, diagnoses, vitals, lines, allergies));
     }
@@ -171,19 +181,30 @@ internal sealed class AbdmRecordLoader(
             .ToListAsync(ct);
         var allergies = await Allergies.Allergies(a => a.PatientId == source.PatientId && a.Status != AllergyStatus.EnteredInError).ToListAsync(ct);
 
-        // The stay's lab reports: those ordered in its in-patient visit.
+        // The stay's lab reports: those ordered in its in-patient visit (under whichever UHID they are kept).
         var reports = stayVisitId is { } stayVisit
-            ? await Reports.CompleteAsync((await Reports.LabReports(r => r.PatientId == source.PatientId).ToListAsync(ct)).Where(r => r.VisitId == stayVisit).ToList(), ct)
+            ? await Reports.CompleteAsync(await Reports.LabReports(r => true).Where(r => r.VisitId == stayVisit).ToListAsync(ct), ct)
             : [];
         Guid[] orders = [.. reports.Select(r => r.LabOrderId).Distinct()];
         var results = orders.Length == 0 ? [] : await Observations.ReleasedResults(r => orders.Contains(r.LabOrderId)).ToListAsync(ct);
 
+        var amender = summary.Status == DischargeSummaryStatus.Amended
+            ? await AmenderAsync(
+                db.Set<DischargeSummaryAmendment>().Where(a => a.DischargeSummaryId == id).OrderByDescending(a => a.AmendedAt).Select(a => a.AmendedByUserId), ct)
+            : null;
+
         var (visit, encounter) = await EncounterRowsAsync(stayVisitId is null ? summary.EncounterId : null, stayVisitId, null, ct);
         var context = await ContextAsync(source, visit, encounter,
-            [summary.PractitionerId, summary.SignedByPractitionerId, .. lines.Select(l => (Guid?)l.PractitionerId)],
+            [summary.PractitionerId, summary.SignedByPractitionerId, amender, .. lines.Select(l => (Guid?)l.PractitionerId)],
             [summary.AdmissionId, .. lines.Select(l => l.AdmissionId)], [], DischargeSummaryPdf, id, ct);
-        return AbdmRecords.DischargeSummary(new DischargeSummaryData(context, summary, diagnoses, lines, allergies, reports, results));
+        return AbdmRecords.DischargeSummary(new DischargeSummaryData(context, summary, diagnoses, lines, allergies, reports, results, amender));
     }
+
+    /// <summary>The doctor who made the latest of <paramref name="amendments"/> (their users), when that user is a doctor.</summary>
+    private async Task<Guid?> AmenderAsync(IQueryable<Guid?> amendments, CancellationToken ct) =>
+        await amendments.FirstOrDefaultAsync(ct) is { } userId
+            ? await db.Set<User>().AsNoTracking().Where(u => u.Id == userId).Select(u => u.PractitionerId).FirstOrDefaultAsync(ct)
+            : null;
 
     /// <summary>
     /// The encounter rows of a record: the clinician's encounter when there is one, else the visit (with its admission),
@@ -211,8 +232,8 @@ internal sealed class AbdmRecordLoader(
     }
 
     /// <summary>
-    /// The patient, the names every row refers to, the doctors' and facility's master details, today's date and the
-    /// printed PDF (<paramref name="pdfKind"/> null for none).
+    /// The patient, the names every row refers to, the doctors' and facility's master details and the printed PDF
+    /// (<paramref name="pdfKind"/> null for none).
     /// </summary>
     private async Task<AbdmContext> ContextAsync(
         AbdmSource source, VisitRow? visit, ClinicalEncounterRow? encounter, IEnumerable<Guid?> practitioners, IEnumerable<Guid?> admissions,
@@ -241,7 +262,6 @@ internal sealed class AbdmRecordLoader(
             Practitioners = await references.PractitionersAsync(ids.Practitioners, ct),
             Facilities = await references.FacilitiesAsync(ids.Facilities, ct),
             FacilityId = source.FacilityId,
-            Today = time.Today(),
             Pdf = pdfKind is null ? null : await PdfAsync(pdfKind, id, ct),
         };
     }

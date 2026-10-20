@@ -1,8 +1,8 @@
 {
   "resourceType": "Bundle",
-  "id": "6e7ed960-0b6c-88d5-a964-86ca66c24199",
+  "id": "f3758f93-6b71-8fc1-9b0e-81a817faf94b",
   "meta": {
-    "versionId": "1790306700000",
+    "versionId": "1790306700000-173f6d813eaf32be",
     "lastUpdated": "2026-09-25T08:55:00+05:30",
     "profile": [
       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
@@ -17,7 +17,7 @@
   },
   "identifier": {
     "system": "urn:ietf:rfc:3986",
-    "value": "urn:uuid:6e7ed960-0b6c-88d5-a964-86ca66c24199"
+    "value": "urn:uuid:f3758f93-6b71-8fc1-9b0e-81a817faf94b"
   },
   "type": "document",
   "timestamp": "2026-09-25T10:30:00+05:30",
@@ -28,7 +28,7 @@
         "resourceType": "Composition",
         "id": "3344c50c-fbfe-86c4-986b-3fd4346bc7e4",
         "meta": {
-          "versionId": "1790306700000",
+          "versionId": "1790306700000-173f6d813eaf32be",
           "lastUpdated": "2026-09-25T08:55:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/PrescriptionRecord"
@@ -101,8 +101,8 @@
               ]
             },
             "text": {
-              "status": "generated",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dolo 650 Tablet (Paracetamol): 1 tab, three times a day, for 3 days. After food</p><p>Cetirizine 10 mg Tablet: 1 tab, at bedtime, for 5 days</p><p>Advice: Drink plenty of fluids and rest.</p></div>"
+              "status": "additional",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Advice: Drink plenty of fluids and rest.</p><p>Medicines:</p><p>Dolo 650 Tablet (Paracetamol): 1 tab, three times a day, for 3 days. After food</p><p>Cetirizine 10 mg Tablet: 1 tab, at bedtime, for 5 days</p></div>"
             },
             "entry": [
               {

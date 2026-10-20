@@ -3,6 +3,7 @@ using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Modules.Interop.Domain;
+using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using R4 = Hl7.Fhir.Model;
 
@@ -12,11 +13,13 @@ namespace HyFib.HealthCare360.Modules.Interop.Abdm;
 /// Assembles an <see cref="AbdmDocument"/> into the IG's DocumentBundle: a FHIR <c>document</c> Bundle whose first entry
 /// is the Composition, followed by every resource it refers to, each with a <c>urn:uuid:</c> full URL. The document is
 /// self-contained, so every reference is resolved inside it: a reference to a resource that is not in the document keeps
-/// only its display (an encounter of the same stay or visit points to the document's encounter instead).
+/// only its display (an encounter of the same stay or visit points to the document's encounter instead, and a patient to
+/// the document's patient: a record kept under a duplicate UHID that was merged into it).
 /// <para>
 /// Ids are derived from HC360's ids (a SHA-256 based UUID, RFC 9562 version 8), so exporting the same record again gives
-/// the same ids, and a patient or doctor keeps one id across documents. The Bundle's identifier changes with the
-/// document's version (the latest change to anything in it).
+/// the same ids, and a patient or doctor keeps one id across documents. The document's version, and with it the Bundle's
+/// id and identifier, is its latest change and a hash of its content (<see cref="Version"/>): it changes whenever the
+/// document does, and only then.
 /// </para>
 /// </summary>
 internal static class AbdmDocumentBuilder
@@ -31,10 +34,11 @@ internal static class AbdmDocumentBuilder
         var composition = Composition(document, ids[compositionKey]);
         var encounterKey = document.Encounter is { } encounter ? Key(encounter) : null;
         var encounterUrn = encounterKey is null ? null : Urn(ids[encounterKey]);
+        var patientUrn = Urn(ids[Key(document.Patient)]);
         foreach (var resource in resources.Prepend(composition))
         {
             // The encounter's own links (the visit a consultation is part of) are not redirected to itself.
-            Resolve(resource, ids, Key(resource) == encounterKey ? null : encounterUrn);
+            Resolve(resource, ids, Key(resource) == encounterKey ? null : encounterUrn, patientUrn);
         }
 
         resources = Reachable(composition, resources, ids);
@@ -47,13 +51,15 @@ internal static class AbdmDocumentBuilder
             }
         }
 
-        var bundleId = Uuid($"Bundle/{document.Type}/{FhirIds.Of(document.SourceId)}/{document.VersionId}");
+        var version = Version(document.LastUpdated, resources.Prepend(composition));
+        (composition.Meta ??= new R4.Meta()).VersionId = version;
+        var bundleId = Uuid($"Bundle/{document.Type}/{FhirIds.Of(document.SourceId)}/{version}");
         var bundle = new R4.Bundle
         {
             Id = bundleId,
             Meta = new R4.Meta
             {
-                VersionId = document.VersionId,
+                VersionId = version,
                 LastUpdated = FhirTime.ToMilliseconds(document.LastUpdated),
                 Profile = [AbdmProfiles.DocumentBundle],
                 Security = [FhirElements.Coding(AbdmSystems.Confidentiality, "V", "very restricted")],
@@ -84,6 +90,33 @@ internal static class AbdmDocumentBuilder
 
     public static string Urn(string uuid) => "urn:uuid:" + uuid;
 
+    /// <summary>
+    /// The document's version: its latest change in Unix milliseconds, and the first 8 bytes of a SHA-256 hash of its
+    /// resources as JSON. The hash catches what moves no change time forward: an entry that drops out (an allergy recorded
+    /// in error, a diagnosis deleted). The printed PDF is left out of it, as it is made again at every export.
+    /// </summary>
+    internal static string Version(DateTimeOffset lastUpdated, IEnumerable<R4.Resource> resources)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var resource in resources)
+        {
+            var content = R4.BaseExtensions.DeepCopy(resource);
+            if (content is R4.Binary binary)
+            {
+                binary.Data = null;
+            }
+
+            foreach (var attachment in Descendants<R4.Attachment>(content))
+            {
+                (attachment.Data, attachment.SizeUnsignedInt, attachment.Hash) = (null, null, null);
+            }
+
+            hash.AppendData(Encoding.UTF8.GetBytes(FhirJson.Serialize(content)));
+        }
+
+        return $"{lastUpdated.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}-{Convert.ToHexStringLower(hash.GetHashAndReset(), 0, 8)}";
+    }
+
     /// <summary>The resources of the document in order, each once: patient, encounter, people, sections, supporting.</summary>
     private static List<R4.Resource> Resources(AbdmDocument document)
     {
@@ -100,6 +133,7 @@ internal static class AbdmDocumentBuilder
         Add(document.Patient);
         Add(document.Encounter);
         Add(document.Author);
+        Add(document.AmendedBy);
         Add(document.Attester);
         Add(document.Custodian);
         foreach (var entry in document.Sections.SelectMany(s => s.Entries))
@@ -122,7 +156,6 @@ internal static class AbdmDocumentBuilder
             Id = id,
             Meta = new R4.Meta
             {
-                VersionId = document.VersionId,
                 LastUpdated = FhirTime.ToMilliseconds(document.LastUpdated),
                 Profile = [document.Profile],
             },
@@ -137,6 +170,11 @@ internal static class AbdmDocumentBuilder
             Custodian = Reference(document.Custodian),
         };
 
+        if (document.AmendedBy is { } amender && Key(amender) != Key(document.Author))
+        {
+            composition.Author.Add(Reference(amender));
+        }
+
         if (document.Attester is { } attester)
         {
             composition.Attester.Add(new R4.Composition.AttesterComponent
@@ -149,12 +187,11 @@ internal static class AbdmDocumentBuilder
 
         foreach (var section in document.Sections.Where(s => !s.IsEmpty))
         {
-            var lines = section.Text.Count > 0 ? section.Text : section.Entries.Select(e => AbdmNarrative.Summary(e)).OfType<string>().ToList();
             composition.Section.Add(new R4.Composition.SectionComponent
             {
                 Title = section.Title,
                 Code = section.Code.Concept(),
-                Text = AbdmNarrative.Generated(lines.Count > 0 ? lines : [section.Title]),
+                Text = SectionText(section),
                 Entry = section.Entries.Select(Reference).ToList(),
             });
         }
@@ -168,16 +205,41 @@ internal static class AbdmDocumentBuilder
         return composition;
     }
 
+    /// <summary>
+    /// A section's narrative, which must read whole on its own (it is what a doctor attests): its free text, then a line
+    /// for each entry, under the section's heading for them when there is free text. With free text it is <c>additional</c>
+    /// (it says more than the entries), else <c>generated</c> from them.
+    /// </summary>
+    private static R4.Narrative SectionText(AbdmSection section)
+    {
+        var entries = section.Entries.Select(e => AbdmNarrative.Summary(e)).OfType<string>().ToList();
+        if (section.Text.Count == 0)
+        {
+            return AbdmNarrative.Generated(entries.Count > 0 ? entries : [section.Title]);
+        }
+
+        List<string> lines = [.. section.Text];
+        if (entries.Count > 0 && section.EntriesHeading is { } heading)
+        {
+            lines.Add(heading);
+        }
+
+        lines.AddRange(entries);
+        return AbdmNarrative.Generated(lines, R4.Narrative.NarrativeStatus.Additional);
+    }
+
     /// <summary>A typed reference written as in the read API; <see cref="Resolve"/> turns it into the entry's full URL.</summary>
     private static R4.ResourceReference Reference(R4.Resource resource) =>
         new(Key(resource)) { Type = resource.TypeName, Display = AbdmNarrative.Label(resource) };
 
     /// <summary>
     /// Points every reference in the resource at the entry it names. A reference to an encounter outside the document
-    /// becomes a reference to the document's encounter (it is the same visit or stay); any other reference outside the
-    /// document keeps only its display or identifier, as a reference may.
+    /// becomes a reference to the document's encounter (it is the same visit or stay), and one to another patient a
+    /// reference to the document's patient (a document is one patient's: a record still under a duplicate UHID merged into
+    /// the patient's names it); any other reference outside the document keeps only its display or identifier, as a
+    /// reference may.
     /// </summary>
-    private static void Resolve(R4.Resource resource, Dictionary<string, string> ids, string? encounterUrn)
+    private static void Resolve(R4.Resource resource, Dictionary<string, string> ids, string? encounterUrn, string patientUrn)
     {
         foreach (var reference in References(resource).ToList())
         {
@@ -193,6 +255,10 @@ internal static class AbdmDocumentBuilder
             else if (target.StartsWith("Encounter/", StringComparison.Ordinal) && encounterUrn is not null)
             {
                 reference.Reference = encounterUrn;
+            }
+            else if (target.StartsWith("Patient/", StringComparison.Ordinal))
+            {
+                reference.Reference = patientUrn;
             }
             else
             {
@@ -228,7 +294,10 @@ internal static class AbdmDocumentBuilder
         return [.. resources.Where(r => reached.Contains(Urn(ids[Key(r)])))];
     }
 
-    private static IEnumerable<R4.ResourceReference> References(R4.Base element)
+    private static IEnumerable<R4.ResourceReference> References(R4.Base element) => Descendants<R4.ResourceReference>(element);
+
+    private static IEnumerable<T> Descendants<T>(R4.Base element)
+        where T : R4.Base
     {
         foreach (var (_, value) in element.EnumerateElements())
         {
@@ -240,12 +309,12 @@ internal static class AbdmDocumentBuilder
             };
             foreach (var child in children)
             {
-                if (child is R4.ResourceReference reference)
+                if (child is T match)
                 {
-                    yield return reference;
+                    yield return match;
                 }
 
-                foreach (var nested in References(child))
+                foreach (var nested in Descendants<T>(child))
                 {
                     yield return nested;
                 }
@@ -262,7 +331,7 @@ internal static class AbdmDocumentBuilder
 /// </summary>
 internal static class AbdmNarrative
 {
-    public static R4.Narrative Generated(IEnumerable<string> lines)
+    public static R4.Narrative Generated(IEnumerable<string> lines, R4.Narrative.NarrativeStatus status = R4.Narrative.NarrativeStatus.Generated)
     {
         var html = new StringBuilder("<div xmlns=\"http://www.w3.org/1999/xhtml\">");
         foreach (var line in lines.SelectMany(l => l.Split('\n')).Select(l => l.Trim()).Where(l => l.Length > 0))
@@ -270,7 +339,7 @@ internal static class AbdmNarrative
             html.Append("<p>").Append(SecurityElement.Escape(line)).Append("</p>");
         }
 
-        return new R4.Narrative { Status = R4.Narrative.NarrativeStatus.Generated, Div = html.Append("</div>").ToString() };
+        return new R4.Narrative { Status = status, Div = html.Append("</div>").ToString() };
     }
 
     /// <summary>A short name for a reference's display.</summary>

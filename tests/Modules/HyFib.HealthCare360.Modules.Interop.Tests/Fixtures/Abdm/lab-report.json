@@ -1,8 +1,8 @@
 {
   "resourceType": "Bundle",
-  "id": "1a47958d-e184-8f4f-a520-006941a75b59",
+  "id": "aee06134-29b8-83cc-86dc-5e6369ab481f",
   "meta": {
-    "versionId": "1790311800000",
+    "versionId": "1790311800000-dcc649366004d978",
     "lastUpdated": "2026-09-25T10:20:00+05:30",
     "profile": [
       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
@@ -17,7 +17,7 @@
   },
   "identifier": {
     "system": "urn:ietf:rfc:3986",
-    "value": "urn:uuid:1a47958d-e184-8f4f-a520-006941a75b59"
+    "value": "urn:uuid:aee06134-29b8-83cc-86dc-5e6369ab481f"
   },
   "type": "document",
   "timestamp": "2026-09-25T10:30:00+05:30",
@@ -28,7 +28,7 @@
         "resourceType": "Composition",
         "id": "c3c3debc-3b6f-885c-951a-d899de6acea9",
         "meta": {
-          "versionId": "1790311800000",
+          "versionId": "1790311800000-dcc649366004d978",
           "lastUpdated": "2026-09-25T10:20:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportRecord"
@@ -582,7 +582,7 @@
             {
               "system": "http://loinc.org",
               "code": "718-7",
-              "display": "Haemoglobin"
+              "display": "Hemoglobin [Mass/volume] in Blood"
             }
           ],
           "text": "Haemoglobin"
@@ -674,7 +674,7 @@
             {
               "system": "http://loinc.org",
               "code": "1988-5",
-              "display": "C-reactive protein"
+              "display": "C reactive protein [Mass/volume] in Serum or Plasma"
             }
           ],
           "text": "C-reactive protein"

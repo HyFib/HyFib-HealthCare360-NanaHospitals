@@ -9,8 +9,10 @@ namespace HyFib.HealthCare360.Modules.Interop.Services;
 /// Exports one record as an ABDM health record (SRS EHR-08): a FHIR document of the NRCeS implementation guide for the
 /// record's type. The record must be complete (signed or released) and in the caller's facility; a restricted (VIP)
 /// record needs <c>patients.restricted.read</c> or a break-the-glass grant (EHR-07), as when it is opened on screen,
-/// and that is checked before anything about the record is told (that it is a draft, or its patient merged); a record
-/// of a merged or deleted patient is not exported. Every export is audited as an access to the patient's record.
+/// and that is checked before anything about the record is told (that it is a draft); a refusal is audited as a
+/// security event. A record still kept under a duplicate UHID that was merged (a lab report: the Diagnostics module keeps
+/// its records where they are) is exported as the surviving patient's, once both may be opened; a record of a deleted
+/// patient is not exported. Every export is audited as an access to the patient's record.
 /// <para>
 /// The export is a staff download, like the printed document: it does not need the patient's record-sharing consent
 /// of the FHIR read API. Sending a document to ABDM is a separate step that ABDM itself authorises with the patient's
@@ -25,6 +27,10 @@ internal sealed class AbdmBundleService(
     TimeProvider time)
 {
     public const string Exported = "patient.accessed";
+    public const string Refused = "abdm.export_denied";
+
+    /// <summary>More merges in a row than any real chain of duplicates has: a loop in the data, which is not followed.</summary>
+    private const int MaxMerges = 16;
 
     public async Task<Result<R4.Bundle>> ExportAsync(AbdmRecordType type, Guid id, CancellationToken ct)
     {
@@ -35,24 +41,41 @@ internal sealed class AbdmBundleService(
         }
 
         var source = located.Value;
-        var patient = await db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
-            .Where(p => p.Id == source.PatientId)
-            .Select(p => new { p.IsDeleted, p.MergedIntoPatientId })
-            .FirstOrDefaultAsync(ct);
-        if (patient is null || patient.IsDeleted)
+        var patients = new List<Guid>();
+        for (Guid? next = source.PatientId; next is { } patientId;)
         {
-            return Error.NotFound(nameof(Patient), source.PatientId);
+            var patient = await db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                .Where(p => p.Id == patientId)
+                .Select(p => new { p.IsDeleted, p.MergedIntoPatientId })
+                .FirstOrDefaultAsync(ct);
+            if (patient is null || patient.IsDeleted || patients.Contains(patientId) || patients.Count == MaxMerges)
+            {
+                return Error.NotFound(nameof(Patient), source.PatientId);
+            }
+
+            patients.Add(patientId);
+            next = patient.MergedIntoPatientId;
         }
 
-        var access = await guard.EnsureCanOpenAsync(source.PatientId, ct);
-        if (access.IsFailure)
+        foreach (var patientId in patients)
         {
-            return access.Error!;
-        }
+            var access = await guard.EnsureCanOpenAsync(patientId, ct);
+            if (access.Error is { } error)
+            {
+                if (error.Type == ErrorType.Forbidden)
+                {
+                    await audit.WriteAsync(new AuditEntry(AuditCategories.Security, Refused, $"ABDM health record export refused: {Describe(type)}")
+                    {
+                        PatientId = patientId,
+                        EntityType = $"abdm.{type}",
+                        EntityId = id.ToString("D"),
+                        Severity = AuditSeverity.Warning,
+                        Details = new { api = "abdm", record = type.ToString(), reason = error.Code },
+                    }, ct);
+                }
 
-        if (patient.MergedIntoPatientId is not null)
-        {
-            return Error.Rule("abdm.patient_merged", "This patient's record was merged into another UHID. Export the record from the surviving patient.");
+                return error;
+            }
         }
 
         if (source.NotExportable is { } reason)
@@ -60,6 +83,7 @@ internal sealed class AbdmBundleService(
             return Error.Rule("abdm.not_exportable", reason);
         }
 
+        source = source with { PatientId = patients[^1] };
         var document = await records.LoadAsync(type, id, source, ct);
         var bundle = AbdmDocumentBuilder.Build(document, time.GetUtcNow());
         await audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, Exported, $"ABDM health record exported: {Describe(type)}")
@@ -67,7 +91,7 @@ internal sealed class AbdmBundleService(
             PatientId = source.PatientId,
             EntityType = $"abdm.{type}",
             EntityId = id.ToString("D"),
-            Details = new { api = "abdm", record = type.ToString(), document = bundle.Id, version = document.VersionId, entries = bundle.Entry.Count },
+            Details = new { api = "abdm", record = type.ToString(), document = bundle.Id, version = bundle.Meta?.VersionId, entries = bundle.Entry.Count },
         }, ct);
         return bundle;
     }

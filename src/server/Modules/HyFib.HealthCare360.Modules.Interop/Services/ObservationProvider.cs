@@ -105,6 +105,7 @@ internal sealed class ObservationProvider(HospitalDbContext db) : IFhirResourceP
             TestCode = r.TestCode,
             TestName = r.TestName,
             Loinc = t.Loinc,
+            LoincName = t.LoincName,
             ResultType = r.ResultType,
             ValueText = r.ValueText,
             NumericValue = r.NumericValue,

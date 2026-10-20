@@ -12,7 +12,8 @@ internal sealed record AbdmPdf(byte[] Content, string ContentType = "application
 /// <summary>
 /// What every document needs besides its record: the patient, the encounter rows (a clinician's encounter, or a visit
 /// with its admission), the names of the people, departments and facilities the rows refer to, the doctors' and the
-/// facility's master details, the record's facility, today's date (IST) and the printed PDF when there is one.
+/// facility's master details, the record's facility and the printed PDF when there is one. Nothing depends on the day of
+/// the export: a document says what its record says.
 /// </summary>
 internal sealed record AbdmContext
 {
@@ -23,7 +24,6 @@ internal sealed record AbdmContext
     public IReadOnlyList<PractitionerRow> Practitioners { get; init; } = [];
     public IReadOnlyList<FacilityRow> Facilities { get; init; } = [];
     public required Guid FacilityId { get; init; }
-    public required DateOnly Today { get; init; }
     public AbdmPdf? Pdf { get; init; }
 }
 
@@ -51,6 +51,9 @@ internal sealed record ConsultationNote
     public EncounterStatus Status { get; init; }
     public DateTimeOffset? SignedAt { get; init; }
     public DateTimeOffset? AmendedAt { get; init; }
+
+    /// <summary>The doctor who made the latest amendment, when its author is a doctor.</summary>
+    public Guid? AmendedByPractitionerId { get; init; }
     public string? ChiefComplaint { get; init; }
     public string? HistoryOfPresentIllness { get; init; }
     public string? Examination { get; init; }
@@ -75,7 +78,10 @@ internal sealed record ConsultationData(
     IReadOnlyList<PrescriptionItemRow> Lines,
     IReadOnlyList<AllergyRow> Allergies);
 
-/// <summary>A signed discharge summary with the stay's diagnoses, prescriptions and lab reports, and the patient's allergies.</summary>
+/// <summary>
+/// A signed discharge summary with the stay's diagnoses, prescriptions and lab reports, the patient's allergies, and the
+/// doctor who made the latest amendment, when its author is a doctor.
+/// </summary>
 internal sealed record DischargeSummaryData(
     AbdmContext Context,
     DischargeSummaryRow Summary,
@@ -83,21 +89,27 @@ internal sealed record DischargeSummaryData(
     IReadOnlyList<PrescriptionItemRow> Lines,
     IReadOnlyList<AllergyRow> Allergies,
     IReadOnlyList<LabReportRow> LabReports,
-    IReadOnlyList<LabResultRow> LabResults);
+    IReadOnlyList<LabResultRow> LabResults,
+    Guid? AmendedByPractitionerId = null);
 
 /// <summary>
 /// The contents of each ABDM document type, from the rows of its record (no database: every rule here is unit-tested).
 /// The resources come from the FHIR read API's mappers, with literal Practitioner and Organization references, fitted to
 /// the IG's profiles by <see cref="AbdmProfiler"/>; the sections are the IG's, in its order, with the record's free text
-/// as their narrative.
+/// as their narrative. A medicine's status (active, completed) is as of the document's date, the day it was signed,
+/// released or amended, so exporting it again later gives the same document.
 /// </summary>
 internal static class AbdmRecords
 {
-    /// <summary>A signed e-prescription (PrescriptionRecord): one MedicationRequest per medicine, and the printed PDF.</summary>
+    /// <summary>
+    /// A signed e-prescription (PrescriptionRecord): one MedicationRequest per medicine, and the printed PDF; the advice
+    /// in the narrative.
+    /// </summary>
     public static AbdmDocument Prescription(PrescriptionData d)
     {
         var people = People.Of(d.Context);
-        var requests = MedicationRequests(d.Lines, people, d.Context.Today);
+        var date = d.SignedAt ?? d.PrescribedAt;
+        var requests = MedicationRequests(d.Lines, people, date);
         var author = people.Practitioner(d.PractitionerId);
         var encounter = Encounter(d.Context, people);
 
@@ -113,8 +125,6 @@ internal static class AbdmRecords
             });
         }
 
-        var text = requests.Select(r => AbdmNarrative.Summary(r)).OfType<string>().ToList();
-        text.AddRange(Lines(Field("Advice", d.Advice)));
         return new AbdmDocument
         {
             Type = AbdmRecordType.Prescription,
@@ -123,7 +133,7 @@ internal static class AbdmRecords
             DocumentType = AbdmCodes.PrescriptionRecord,
             Title = "Prescription record",
             Status = R4.CompositionStatus.Final,
-            Date = d.SignedAt ?? d.PrescribedAt,
+            Date = date,
             RecordUpdated = FhirElements.Latest(d.CreatedAt, d.UpdatedAt),
             Patient = Patient(d.Context, people),
             Encounter = encounter,
@@ -131,14 +141,15 @@ internal static class AbdmRecords
             Attester = author,
             AttestedAt = d.SignedAt,
             Custodian = people.Organization(d.Context.FacilityId),
-            Sections = [new AbdmSection(AbdmCodes.PrescriptionRecord, "Prescription record", text, entries)],
+            Sections = [new AbdmSection(AbdmCodes.PrescriptionRecord, "Prescription record", Lines(Field("Advice", d.Advice)), entries, "Medicines:")],
             Supporting = people.All,
         };
     }
 
     /// <summary>
     /// A released lab report (DiagnosticReportRecord): the report with its released results, and the printed PDF. The
-    /// laboratory (the facility) is the author and interprets the results.
+    /// laboratory (the facility) is the author and interprets the results. A report released with results still to come
+    /// is a preliminary document, as its DiagnosticReport is partial.
     /// </summary>
     public static AbdmDocument LabReport(LabReportData d)
     {
@@ -147,13 +158,16 @@ internal static class AbdmRecords
         var (report, results) = LabReportWithResults(d.Report, d.Results, people, d.Context.FacilityId);
         var encounter = Encounter(d.Context, people);
         var released = d.Report.ReleasedAt ?? d.Report.CreatedAt;
+        var status = d.Report.Status == LabReportStatus.Amended ? R4.CompositionStatus.Amended
+            : d.Report.IsPartial ? R4.CompositionStatus.Preliminary
+            : R4.CompositionStatus.Final;
 
         List<R4.Resource> entries = [report];
         if (d.Context.Pdf is { } pdf)
         {
             entries.Add(PdfDocument(FhirIds.Of(FhirIds.Lab, d.Report.Id), d.Context.Patient.Id, pdf,
                 FhirElements.Concept(FhirSystems.Loinc, DiagnosticReportMapper.LaboratoryReportLoinc, "Laboratory report", "Laboratory report"),
-                d.Report.Status == LabReportStatus.Amended, released, people.Names.Organization(d.Context.FacilityId), Reference(d.Context)));
+                status, released, people.Names.Organization(d.Context.FacilityId), Reference(d.Context)));
         }
 
         return new AbdmDocument
@@ -163,7 +177,7 @@ internal static class AbdmRecords
             Profile = AbdmProfiles.DiagnosticReportRecord,
             DocumentType = AbdmCodes.DiagnosticStudiesReport,
             Title = "Laboratory report",
-            Status = d.Report.Status == LabReportStatus.Amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
+            Status = status,
             Date = released,
             RecordUpdated = FhirElements.Latest(d.Report.CreatedAt, d.Report.UpdatedAt),
             Patient = Patient(d.Context, people),
@@ -178,11 +192,12 @@ internal static class AbdmRecords
     /// <summary>
     /// A signed consultation (OPConsultRecord): complaint and diagnoses, history, examination with the vital signs,
     /// allergies, medicines prescribed, follow-up and referral, then the assessment and plan in a section of its own (the
-    /// IG has none; its slicing is open at the end).
+    /// IG has none; its slicing is open at the end). An amended note is attested by the doctor who amended it.
     /// </summary>
     public static AbdmDocument Consultation(ConsultationData d)
     {
         var note = d.Note;
+        var date = note.AmendedAt ?? note.SignedAt ?? note.CreatedAt;
         var people = People.Of(d.Context);
         var conditions = Conditions(d.Diagnoses);
         var observations = d.Vitals.Where(v => !v.IsEnteredInError).OrderBy(v => v.RecordedAt)
@@ -194,9 +209,11 @@ internal static class AbdmRecords
             observation.Performer = [R4.BaseExtensions.DeepCopy(hospital)];
         }
 
-        var requests = MedicationRequests(d.Lines, people, d.Context.Today);
+        var requests = MedicationRequests(d.Lines, people, date);
         var allergies = Allergies(d.Allergies);
         var author = people.Practitioner(note.SignedByPractitionerId ?? note.PractitionerId);
+        var amended = note.Status == EncounterStatus.Amended;
+        var amender = amended ? people.Find(note.AmendedByPractitionerId) : null;
         var encounter = Encounter(d.Context, people);
 
         var referredTo = string.Join(", ", new[]
@@ -208,9 +225,9 @@ internal static class AbdmRecords
         var referral = referredTo.Length == 0 ? null : Field($"Referred to {referredTo}", note.ReferralReason) ?? $"Referred to {referredTo}";
         List<AbdmSection> sections =
         [
-            new(AbdmCodes.ChiefComplaints, "Chief complaints", Lines(Field("Chief complaint", note.ChiefComplaint)), conditions),
+            new(AbdmCodes.ChiefComplaints, "Chief complaints", Lines(Field("Chief complaint", note.ChiefComplaint)), conditions, "Diagnoses:"),
             new(AbdmCodes.HistoryAndPhysical, "Medical history", Lines(Field("History of present illness", note.HistoryOfPresentIllness)), []),
-            new(AbdmCodes.PhysicalExamination, "Physical examination", Lines(Field("Examination", note.Examination)), observations),
+            new(AbdmCodes.PhysicalExamination, "Physical examination", Lines(Field("Examination", note.Examination)), observations, "Vital signs:"),
             new(AbdmCodes.Allergies, "Allergies", [], allergies),
             new(AbdmCodes.MedicationSummary, "Medications", [], requests),
             new(AbdmCodes.FollowUp, "Follow up", Lines(
@@ -227,14 +244,15 @@ internal static class AbdmRecords
             Profile = AbdmProfiles.OpConsultRecord,
             DocumentType = AbdmCodes.ConsultationReport,
             Title = "Consultation report",
-            Status = note.Status == EncounterStatus.Amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
-            Date = note.AmendedAt ?? note.SignedAt ?? note.CreatedAt,
+            Status = amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
+            Date = date,
             RecordUpdated = FhirElements.Latest(note.CreatedAt, note.UpdatedAt),
             Patient = Patient(d.Context, people),
             Encounter = encounter,
             Author = author,
-            Attester = author,
-            AttestedAt = note.SignedAt,
+            AmendedBy = amender,
+            Attester = amended ? amender : author,
+            AttestedAt = amended ? note.AmendedAt : note.SignedAt,
             Custodian = people.Organization(d.Context.FacilityId),
             Sections = sections,
             Supporting = people.All,
@@ -244,16 +262,19 @@ internal static class AbdmRecords
     /// <summary>
     /// A signed discharge summary (DischargeSummaryRecord): the stay as the encounter; complaints and the diagnoses
     /// recorded during the stay (the IG has no diagnosis section; its examples put them here); allergies; the stay's lab
-    /// reports; the medicines prescribed for it; procedures; the care plan; the summary itself (the printed PDF, else its
-    /// text); and the hospital course in a section of its own at the end.
+    /// reports; the medicines prescribed during the stay, each active or completed as of the summary's date, under the
+    /// doctor's own list of medicines on discharge; procedures; the care plan; the summary itself (the printed PDF, else
+    /// its text); and the hospital course in a section of its own at the end. An amended summary is attested by the doctor
+    /// who amended it.
     /// </summary>
     public static AbdmDocument DischargeSummary(DischargeSummaryData d)
     {
         var summary = d.Summary;
+        var date = summary.AmendedAt ?? summary.SignedAt ?? summary.CreatedAt;
         var people = People.Of(d.Context);
         var custodian = people.Organization(d.Context.FacilityId);
         var conditions = Conditions(d.Diagnoses);
-        var requests = MedicationRequests(d.Lines, people, d.Context.Today);
+        var requests = MedicationRequests(d.Lines, people, date);
         var allergies = Allergies(d.Allergies);
         var reports = new List<R4.DiagnosticReport>();
         var results = new List<R4.Observation>();
@@ -271,17 +292,20 @@ internal static class AbdmRecords
         }
 
         // A summary signed before signers were recorded may name no doctor: the hospital is then its author.
-        var signer = summary.SignedByPractitionerId ?? summary.PractitionerId;
-        var practitioner = signer is { } id && people.Practitioners.TryGetValue(id, out var doctor) ? doctor : null;
+        var practitioner = people.Find(summary.SignedByPractitionerId ?? summary.PractitionerId);
+        var amended = summary.Status == DischargeSummaryStatus.Amended;
+        var amender = amended ? people.Find(d.AmendedByPractitionerId) : null;
         List<AbdmSection> sections =
         [
             new(AbdmCodes.ChiefComplaints, "Chief complaints and diagnoses", Lines(
                 Field("Presenting complaints", summary.PresentingComplaints),
                 Field("Diagnoses", summary.Diagnoses),
-                summary.DiagnosisCodes.Count > 0 ? $"ICD-10 codes: {string.Join(", ", summary.DiagnosisCodes)}" : null), conditions),
+                summary.DiagnosisCodes.Count > 0 ? $"ICD-10 codes: {string.Join(", ", summary.DiagnosisCodes)}" : null), conditions,
+                "Diagnoses recorded during the stay:"),
             new(AbdmCodes.Allergies, "Allergies", [], allergies),
-            new(AbdmCodes.Investigations, "Investigations", Lines(Field("Investigations", summary.InvestigationsSummary)), reports),
-            new(AbdmCodes.MedicationHistory, "Medications", Lines(Field("Medications on discharge", summary.Medications)), requests),
+            new(AbdmCodes.Investigations, "Investigations", Lines(Field("Investigations", summary.InvestigationsSummary)), reports, "Lab reports:"),
+            new(AbdmCodes.MedicationHistory, "Medications", Lines(Field("Medications on discharge", summary.Medications)), requests,
+                "Prescribed during the stay:"),
             new(AbdmCodes.PastProcedures, "Procedures", Lines(Field("Procedures", summary.Procedures)), []),
             new(AbdmCodes.CarePlan, "Care plan", Lines(
                 Field("Advice", summary.Advice),
@@ -301,14 +325,15 @@ internal static class AbdmRecords
             Profile = AbdmProfiles.DischargeSummaryRecord,
             DocumentType = AbdmCodes.DischargeSummary,
             Title = "Discharge summary",
-            Status = summary.Status == DischargeSummaryStatus.Amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
-            Date = summary.AmendedAt ?? summary.SignedAt ?? summary.CreatedAt,
+            Status = amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
+            Date = date,
             RecordUpdated = FhirElements.Latest(summary.CreatedAt, summary.UpdatedAt),
             Patient = Patient(d.Context, people),
             Encounter = encounter,
             Author = (R4.Resource?)practitioner ?? custodian,
-            Attester = practitioner,
-            AttestedAt = summary.SignedAt,
+            AmendedBy = amender,
+            Attester = amended ? amender : practitioner,
+            AttestedAt = amended ? summary.AmendedAt : summary.SignedAt,
             Custodian = custodian,
             Sections = sections,
             Supporting = [.. results, .. people.All],
@@ -335,9 +360,10 @@ internal static class AbdmRecords
     private static List<R4.AllergyIntolerance> Allergies(IReadOnlyList<AllergyRow> allergies) =>
         [.. allergies.Where(a => a.Status != AllergyStatus.EnteredInError).OrderBy(a => a.RecordedAt).Select(a => AbdmProfiler.Allergy(AllergyIntoleranceMapper.Map(a)))];
 
-    private static List<R4.MedicationRequest> MedicationRequests(IReadOnlyList<PrescriptionItemRow> lines, People people, DateOnly today) =>
+    /// <summary>The medicines, each active or completed as of <paramref name="asOf"/> (its day in IST).</summary>
+    private static List<R4.MedicationRequest> MedicationRequests(IReadOnlyList<PrescriptionItemRow> lines, People people, DateTimeOffset asOf) =>
         [.. lines.OrderBy(l => l.SignedAt ?? l.PrescribedAt).ThenBy(l => l.PrescriptionId).ThenBy(l => l.Sequence)
-            .Select(l => AbdmProfiler.MedicationRequest(MedicationRequestMapper.Map(l, people.Names, today)))];
+            .Select(l => AbdmProfiler.MedicationRequest(MedicationRequestMapper.Map(l, people.Names, FhirTime.IstDate(asOf))))];
 
     private static (R4.DiagnosticReport Report, List<R4.Observation> Results) LabReportWithResults(
         LabReportRow row, IReadOnlyList<LabResultRow> results, People people, Guid laboratoryId)
@@ -365,7 +391,7 @@ internal static class AbdmRecords
     };
 
     private static R4.DocumentReference PdfDocument(
-        string id, Guid patientId, AbdmPdf pdf, R4.CodeableConcept type, bool amended, DateTimeOffset created, R4.ResourceReference? author,
+        string id, Guid patientId, AbdmPdf pdf, R4.CodeableConcept type, R4.CompositionStatus status, DateTimeOffset created, R4.ResourceReference? author,
         R4.ResourceReference? encounter)
     {
         var document = new R4.DocumentReference
@@ -373,7 +399,7 @@ internal static class AbdmRecords
             Id = id,
             Meta = new R4.Meta { Profile = [AbdmProfiles.DocumentReference] },
             Status = R4.DocumentReferenceStatus.Current,
-            DocStatus = amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
+            DocStatus = status,
             Type = type,
             Subject = FhirReferences.Patient(patientId),
             Date = FhirTime.ToMilliseconds(created),
@@ -410,6 +436,9 @@ internal static class AbdmRecords
 
         public R4.Practitioner Practitioner(Guid id) =>
             Practitioners.TryGetValue(id, out var practitioner) ? practitioner : throw new InvalidOperationException("The record's doctor is missing.");
+
+        /// <summary>The doctor, when there is one and the document knows them.</summary>
+        public R4.Practitioner? Find(Guid? id) => id is { } doctor && Practitioners.TryGetValue(doctor, out var practitioner) ? practitioner : null;
 
         public R4.Organization Organization(Guid id) =>
             Organizations.TryGetValue(id, out var organization) ? organization : throw new InvalidOperationException("The record's facility is missing.");

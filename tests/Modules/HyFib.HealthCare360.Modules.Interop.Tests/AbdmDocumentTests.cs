@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
@@ -347,6 +348,159 @@ public sealed class AbdmDocumentTests
         corrected.Meta.VersionId.ShouldNotBe(original.Meta.VersionId);
         corrected.Entry.Select(e => e.Resource).OfType<R4.Practitioner>().ShouldHaveSingleItem().Meta.LastUpdated
             .ShouldBe(TestData.Now.AddMinutes(-1));
+    }
+
+    [Fact]
+    public void A_document_says_what_its_record_said_whenever_it_is_exported()
+    {
+        // Three days of paracetamol and five of cetirizine, from the consultation on: exported a month later, when both
+        // courses are over, the prescription still shows the medicines as the doctor signed them, and is the same document.
+        var data = AbdmTestData.Prescription(AbdmTestData.Pdf);
+        var first = AbdmDocumentBuilder.Build(AbdmRecords.Prescription(data), TestData.Now);
+        var later = AbdmDocumentBuilder.Build(AbdmRecords.Prescription(data), TestData.Now.AddMonths(1));
+
+        (later.Id, later.Identifier.Value, later.Meta.VersionId).ShouldBe((first.Id, first.Identifier.Value, first.Meta.VersionId));
+        later.Entry.Select(e => e.Resource).OfType<R4.MedicationRequest>().Select(m => m.Status)
+            .ShouldBe([R4.MedicationRequest.MedicationrequestStatus.Active, R4.MedicationRequest.MedicationrequestStatus.Active]);
+    }
+
+    [Fact]
+    public void A_document_that_loses_an_entry_is_a_new_version_though_nothing_in_it_changed_later()
+    {
+        // A sulfonamide allergy recorded yesterday; then the penicillin allergy of a year ago is marked as recorded in error.
+        // The latest change in the document is still yesterday's, but a receiver must not keep the copy with penicillin.
+        var data = AbdmTestData.DischargeSummaryRecord(pdf: null);
+        var penicillin = data.Allergies[0];
+        var sulfonamides = penicillin with
+        {
+            Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac022"),
+            Allergen = "Sulfonamides",
+            RecordedAt = TestData.Now.AddDays(-1),
+            CreatedAt = TestData.Now.AddDays(-1),
+        };
+        var before = Build(AbdmRecords.DischargeSummary(data with { Allergies = [penicillin, sulfonamides] }));
+        var after = Build(AbdmRecords.DischargeSummary(data with { Allergies = [penicillin with { Status = AllergyStatus.EnteredInError }, sulfonamides] }));
+
+        after.Entry.Select(e => e.Resource).OfType<R4.AllergyIntolerance>().ShouldHaveSingleItem().Code.Text.ShouldBe("Sulfonamides");
+        after.Meta.LastUpdated.ShouldBe(before.Meta.LastUpdated);
+        after.Meta.VersionId.ShouldNotBe(before.Meta.VersionId);
+        after.Identifier.Value.ShouldNotBe(before.Identifier.Value);
+        ((R4.Composition)after.Entry[0].Resource).Meta.VersionId.ShouldBe(after.Meta.VersionId);
+    }
+
+    [Fact]
+    public void A_documents_version_leaves_out_the_pdf_which_is_made_again_at_every_export()
+    {
+        var data = AbdmTestData.Prescription(AbdmTestData.Pdf);
+        var reprinted = data with { Context = data.Context with { Pdf = new AbdmPdf([.. AbdmTestData.Pdf.Content, .. "% printed again"u8]) } };
+
+        Build(AbdmRecords.Prescription(reprinted)).Meta.VersionId.ShouldBe(Build(AbdmRecords.Prescription(data)).Meta.VersionId);
+    }
+
+    [Fact]
+    public void A_sections_narrative_reads_whole_with_its_free_text_and_then_its_entries()
+    {
+        var composition = (R4.Composition)Sample("op-consultation").Entry[0].Resource;
+
+        // The doctor's own words, then the diagnoses the section lists: more than the entries say, so "additional".
+        var complaints = composition.Section[0].Text;
+        complaints.Status.ShouldBe(R4.Narrative.NarrativeStatus.Additional);
+        complaints.Div.ShouldContain("<p>Chief complaint: Fever for three days</p><p>Diagnoses:</p><p>Fever, unspecified</p><p>Viral fever</p>");
+        composition.Section[2].Text.Div.ShouldSatisfyAllConditions(
+            div => div.ShouldContain("<p>Examination: "), div => div.ShouldContain("<p>Vital signs:</p>"), div => div.ShouldContain("<p>Heart rate: 96 beats/minute</p>"));
+
+        // A section of entries alone is generated from them.
+        composition.Section[3].Text.Status.ShouldBe(R4.Narrative.NarrativeStatus.Generated);
+        composition.Section[3].Text.Div.ShouldBe("<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>");
+
+        // A prescription: the advice, then the medicines.
+        var prescription = ((R4.Composition)Sample("prescription").Entry[0].Resource).Section[0].Text.Div;
+        prescription.ShouldContain("<p>Advice: Drink plenty of fluids and rest.</p><p>Medicines:</p><p>Dolo 650 Tablet (Paracetamol):");
+    }
+
+    [Fact]
+    public void A_discharge_summary_lists_the_stays_medicines_under_the_doctors_list_of_medicines_on_discharge()
+    {
+        var medications = ((R4.Composition)Sample("discharge-summary").Entry[0].Resource).Section[3].Text;
+
+        medications.Status.ShouldBe(R4.Narrative.NarrativeStatus.Additional);
+        medications.Div.ShouldContain("<p>Medications on discharge: ");
+        medications.Div.ShouldContain("<p>Prescribed during the stay:</p><p>Atorvastatin 40 mg Tablet:");
+    }
+
+    [Fact]
+    public void An_amended_note_is_written_by_both_doctors_and_attested_by_the_one_who_amended_it()
+    {
+        var data = AbdmTestData.ConsultationRecord();
+        var amendedAt = TestData.Now.AddHours(-1);
+        var composition = (R4.Composition)Build(AbdmRecords.Consultation(data with
+        {
+            Note = data.Note with { Status = EncounterStatus.Amended, AmendedAt = amendedAt, UpdatedAt = amendedAt, AmendedByPractitionerId = AbdmTestData.CardiologistId },
+        })).Entry[0].Resource;
+
+        composition.Status.ShouldBe(R4.CompositionStatus.Amended);
+        composition.Author.Select(a => a.Display).ShouldBe(["Dr. Asha Rao", "Dr. Vikram Shah"]);
+        var attester = composition.Attester.ShouldHaveSingleItem();
+        (attester.Mode, attester.Party.Display, attester.Time).ShouldBe((R4.Composition.CompositionAttestationMode.Legal, "Dr. Vikram Shah", FhirTime.DateTime(amendedAt)));
+    }
+
+    [Fact]
+    public void An_amended_record_whose_amender_is_not_a_doctor_names_no_one_as_answering_for_it()
+    {
+        // The doctor who signed attested what they signed, not what someone changed afterwards.
+        var data = AbdmTestData.DischargeSummaryRecord(pdf: null);
+        var amended = data with { Summary = data.Summary with { Status = DischargeSummaryStatus.Amended, AmendedAt = TestData.Now.AddHours(-1) } };
+
+        var composition = (R4.Composition)Build(AbdmRecords.DischargeSummary(amended)).Entry[0].Resource;
+        composition.Attester.ShouldBeEmpty();
+        composition.Author.ShouldHaveSingleItem().Display.ShouldBe("Dr. Vikram Shah");
+
+        var byDoctor = (R4.Composition)Build(AbdmRecords.DischargeSummary(amended with { AmendedByPractitionerId = TestData.DoctorId })).Entry[0].Resource;
+        byDoctor.Attester.ShouldHaveSingleItem().Party.Display.ShouldBe("Dr. Asha Rao");
+        byDoctor.Author.Select(a => a.Display).ShouldBe(["Dr. Vikram Shah", "Dr. Asha Rao"]);
+    }
+
+    [Fact]
+    public void A_lab_report_released_before_all_its_results_is_a_preliminary_document()
+    {
+        var data = AbdmTestData.LabReportRecord(AbdmTestData.Pdf);
+        var bundle = Build(AbdmRecords.LabReport(data with { Report = data.Report with { IsPartial = true } }));
+
+        ((R4.Composition)bundle.Entry[0].Resource).Status.ShouldBe(R4.CompositionStatus.Preliminary);
+        bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().Single().Status.ShouldBe(R4.DiagnosticReport.DiagnosticReportStatus.Partial);
+        bundle.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().Single().DocStatus.ShouldBe(R4.CompositionStatus.Preliminary);
+    }
+
+    [Fact]
+    public void A_lab_code_goes_with_its_loinc_name_or_not_at_all()
+    {
+        // The laboratory entered the LOINC name of haemoglobin's code, not of CRP's: CRP goes by the test's own name.
+        var data = AbdmTestData.LabReportRecord(pdf: null);
+        var bundle = Build(AbdmRecords.LabReport(data with { Results = [data.Results[0], data.Results[1] with { LoincName = null }] }));
+
+        var results = bundle.Entry.Select(e => e.Resource).OfType<R4.Observation>().ToList();
+        results[0].Code.Coding.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            c => c.Code.ShouldBe("718-7"), c => c.Display.ShouldBe("Hemoglobin [Mass/volume] in Blood"));
+        results[0].Code.Text.ShouldBe("Haemoglobin");
+        results[1].Code.Coding.ShouldBeEmpty();
+        results[1].Code.Text.ShouldBe("C-reactive protein");
+    }
+
+    [Fact]
+    public void A_record_kept_under_a_merged_duplicate_uhid_is_about_the_documents_patient()
+    {
+        // The laboratory keeps a report under the UHID it was made for; merged into the patient's, the document is theirs.
+        var duplicate = Guid.Parse("01923a4b-0000-7000-8000-0000000ab0ff");
+        var data = AbdmTestData.LabReportRecord(AbdmTestData.Pdf);
+        var bundle = Build(AbdmRecords.LabReport(data with
+        {
+            Report = data.Report with { PatientId = duplicate },
+            Results = [.. data.Results.Select(r => r with { PatientId = duplicate })],
+        }));
+
+        var patient = FullUrl<R4.Patient>(bundle);
+        bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().Single().Subject.Reference.ShouldBe(patient);
+        bundle.Entry.Select(e => e.Resource).OfType<R4.Observation>().ShouldAllBe(o => o.Subject.Reference == patient);
     }
 
     [Fact]

@@ -142,6 +142,10 @@ internal sealed record LabResultRow
     public string TestCode { get; init; } = string.Empty;
     public string TestName { get; init; } = string.Empty;
     public string? Loinc { get; init; }
+
+    /// <summary>The LOINC name of <see cref="Loinc"/> in the test master (the code's display), when the laboratory gave it.</summary>
+    public string? LoincName { get; init; }
+
     public LabResultType ResultType { get; init; }
     public string? ValueText { get; init; }
     public decimal? NumericValue { get; init; }

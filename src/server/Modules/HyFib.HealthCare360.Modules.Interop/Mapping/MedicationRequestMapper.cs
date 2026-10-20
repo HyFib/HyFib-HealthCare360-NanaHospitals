@@ -51,7 +51,7 @@ internal static class MedicationRequestMapper
             return R4.MedicationRequest.MedicationrequestStatus.Cancelled;
         }
 
-        var start = DateOnly.FromDateTime((i.SignedAt ?? i.PrescribedAt).ToOffset(FhirTime.Ist).DateTime);
+        var start = FhirTime.IstDate(i.SignedAt ?? i.PrescribedAt);
         var lastDay = start.AddDays(Math.Max(i.DurationDays, 1) - 1);
         return today > lastDay ? R4.MedicationRequest.MedicationrequestStatus.Completed : R4.MedicationRequest.MedicationrequestStatus.Active;
     }
