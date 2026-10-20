@@ -175,6 +175,40 @@ public sealed class AbdmExportTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task A_restricted_record_is_refused_before_anything_about_it_is_told()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var medicalRecords = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null) with { IsVip = true });
+        await doctor.PostAsync($"/api/v1/patients/{patient.Id}/break-glass", new BreakGlassRequest("Seen in casualty, needs the history"));
+        var path = $"/api/v1/abdm/bundles/op-consultations/{await ConsultAsync(doctor, patient.Id, sign: false)}";
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+
+            // The medical records officer exports records but does not open restricted ones: they learn nothing about the
+            // note, not even that it is unsigned.
+            using (var refused = await medicalRecords.SendRawAsync(HttpMethod.Get, path))
+            {
+                refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+                (await refused.Content.ReadAsStringAsync(Ct)).ShouldNotContain("abdm.not_exportable");
+            }
+
+            // Someone who may open the record is told why it cannot be exported yet.
+            using var draft = await admin.SendRawAsync(HttpMethod.Get, path);
+            draft.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            (await draft.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("abdm.not_exportable");
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+        }
+    }
+
     /// <summary>A consultation without a visit: complaint, assessment and a coded diagnosis; signed or left open.</summary>
     private static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign)
     {

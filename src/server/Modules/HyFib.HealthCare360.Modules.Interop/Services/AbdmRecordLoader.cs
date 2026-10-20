@@ -11,8 +11,11 @@ using ClinicalEncounter = HyFib.HealthCare360.Modules.Clinical.Domain.Encounter;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
 
-/// <summary>The patient and facility of a record that can be exported.</summary>
-internal sealed record AbdmSource(Guid PatientId, Guid FacilityId);
+/// <summary>
+/// The patient and facility of a record, and why it cannot be exported yet (a draft, an unsigned note), which the caller
+/// may learn only once they may open the patient's record.
+/// </summary>
+internal sealed record AbdmSource(Guid PatientId, Guid FacilityId, string? NotExportable = null);
 
 /// <summary>
 /// Reads one record and the rows its ABDM document is made from, with the FHIR read API's queries (so the same rules
@@ -41,7 +44,7 @@ internal sealed class AbdmRecordLoader(
     private DiagnosticReportProvider Reports => Provider<DiagnosticReportProvider>();
     private DocumentReferenceProvider DocumentReferences => Provider<DocumentReferenceProvider>();
 
-    /// <summary>The record's patient and facility, or why it cannot be exported (missing, or not complete yet).</summary>
+    /// <summary>The record's patient and facility, and whether it is complete; a failure only when it does not exist.</summary>
     public async Task<Result<AbdmSource>> LocateAsync(AbdmRecordType type, Guid id, CancellationToken ct)
     {
         switch (type)
@@ -51,8 +54,8 @@ internal sealed class AbdmRecordLoader(
                 var row = await db.Set<Prescription>().AsNoTracking().Where(p => p.Id == id)
                     .Select(p => new { p.PatientId, p.FacilityId, p.Status }).FirstOrDefaultAsync(ct);
                 return row is null ? Error.NotFound(nameof(Prescription), id)
-                    : row.Status != PrescriptionStatus.Signed ? NotExportable("Only a signed prescription that has not been cancelled can be exported.")
-                    : new AbdmSource(row.PatientId, row.FacilityId);
+                    : new AbdmSource(row.PatientId, row.FacilityId,
+                        row.Status != PrescriptionStatus.Signed ? "Only a signed prescription that has not been cancelled can be exported." : null);
             }
 
             case AbdmRecordType.LabReport:
@@ -60,8 +63,8 @@ internal sealed class AbdmRecordLoader(
                 var row = await db.Set<LabReport>().AsNoTracking().Where(r => r.Id == id)
                     .Select(r => new { r.PatientId, r.FacilityId, r.Status }).FirstOrDefaultAsync(ct);
                 return row is null ? Error.NotFound(nameof(LabReport), id)
-                    : row.Status is not (LabReportStatus.Released or LabReportStatus.Amended) ? NotExportable("Only a released lab report can be exported.")
-                    : new AbdmSource(row.PatientId, row.FacilityId);
+                    : new AbdmSource(row.PatientId, row.FacilityId,
+                        row.Status is not (LabReportStatus.Released or LabReportStatus.Amended) ? "Only a released lab report can be exported." : null);
             }
 
             case AbdmRecordType.OpConsultation:
@@ -69,9 +72,10 @@ internal sealed class AbdmRecordLoader(
                 var row = await db.Set<ClinicalEncounter>().AsNoTracking().Where(e => e.Id == id)
                     .Select(e => new { e.PatientId, e.FacilityId, e.Status, e.Type }).FirstOrDefaultAsync(ct);
                 return row is null ? Error.NotFound("Encounter", id)
-                    : row.Status == EncounterStatus.InProgress ? NotExportable("Sign the consultation note before exporting it.")
-                    : row.Type == EncounterType.InPatient ? NotExportable("In-patient notes are exported with the discharge summary.")
-                    : new AbdmSource(row.PatientId, row.FacilityId);
+                    : new AbdmSource(row.PatientId, row.FacilityId,
+                        row.Status == EncounterStatus.InProgress ? "Sign the consultation note before exporting it."
+                        : row.Type == EncounterType.InPatient ? "In-patient notes are exported with the discharge summary."
+                        : null);
             }
 
             default:
@@ -79,8 +83,8 @@ internal sealed class AbdmRecordLoader(
                 var row = await db.Set<DischargeSummary>().AsNoTracking().Where(s => s.Id == id)
                     .Select(s => new { s.PatientId, s.FacilityId, s.Status }).FirstOrDefaultAsync(ct);
                 return row is null ? Error.NotFound(nameof(DischargeSummary), id)
-                    : row.Status == DischargeSummaryStatus.Draft ? NotExportable("Sign the discharge summary before exporting it.")
-                    : new AbdmSource(row.PatientId, row.FacilityId);
+                    : new AbdmSource(row.PatientId, row.FacilityId,
+                        row.Status == DischargeSummaryStatus.Draft ? "Sign the discharge summary before exporting it." : null);
             }
         }
     }
@@ -92,8 +96,6 @@ internal sealed class AbdmRecordLoader(
         AbdmRecordType.OpConsultation => ConsultationAsync(id, source, ct),
         _ => DischargeSummaryAsync(id, source, ct),
     };
-
-    private static Error NotExportable(string message) => Error.Rule("abdm.not_exportable", message);
 
     private async Task<AbdmDocument> PrescriptionAsync(Guid id, AbdmSource source, CancellationToken ct)
     {

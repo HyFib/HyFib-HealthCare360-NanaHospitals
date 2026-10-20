@@ -8,8 +8,9 @@ namespace HyFib.HealthCare360.Modules.Interop.Services;
 /// <summary>
 /// Exports one record as an ABDM health record (SRS EHR-08): a FHIR document of the NRCeS implementation guide for the
 /// record's type. The record must be complete (signed or released) and in the caller's facility; a restricted (VIP)
-/// record needs <c>patients.restricted.read</c> or a break-the-glass grant (EHR-07), as when it is opened on screen; a
-/// record of a merged or deleted patient is not exported. Every export is audited as an access to the patient's record.
+/// record needs <c>patients.restricted.read</c> or a break-the-glass grant (EHR-07), as when it is opened on screen,
+/// and that is checked before anything about the record is told (that it is a draft, or its patient merged); a record
+/// of a merged or deleted patient is not exported. Every export is audited as an access to the patient's record.
 /// <para>
 /// The export is a staff download, like the printed document: it does not need the patient's record-sharing consent
 /// of the FHIR read API. Sending a document to ABDM is a separate step that ABDM itself authorises with the patient's
@@ -43,15 +44,20 @@ internal sealed class AbdmBundleService(
             return Error.NotFound(nameof(Patient), source.PatientId);
         }
 
+        var access = await guard.EnsureCanOpenAsync(source.PatientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!;
+        }
+
         if (patient.MergedIntoPatientId is not null)
         {
             return Error.Rule("abdm.patient_merged", "This patient's record was merged into another UHID. Export the record from the surviving patient.");
         }
 
-        var access = await guard.EnsureCanOpenAsync(source.PatientId, ct);
-        if (access.IsFailure)
+        if (source.NotExportable is { } reason)
         {
-            return access.Error!;
+            return Error.Rule("abdm.not_exportable", reason);
         }
 
         var document = await records.LoadAsync(type, id, source, ct);
