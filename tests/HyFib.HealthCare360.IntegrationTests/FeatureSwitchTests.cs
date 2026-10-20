@@ -228,7 +228,7 @@ public sealed class FeatureSwitchTests(HospitalServer server)
 
     private static Task<PatientCreated> RegisterPatientAsync(ApiClient frontOffice) =>
         frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: "Arjun", MiddleName: null, LastName: "Switch" + Letters(8), Gender: Gender.Male,
+            Title: "Mr.", FirstName: TestPatients.FirstName("Arjun"), MiddleName: null, LastName: "Switch" + Letters(8), Gender: Gender.Male,
             DateOfBirth: new DateOnly(1975, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: NewMobile(), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,

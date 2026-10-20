@@ -36,7 +36,7 @@ public sealed class LabelPrintingTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: "Arun", MiddleName: null, LastName: "Band" + Letters(8), Gender: Gender.Male,
+            Title: "Mr.", FirstName: TestPatients.FirstName("Arun"), MiddleName: null, LastName: "Band" + Letters(8), Gender: Gender.Male,
             DateOfBirth: new DateOnly(1980, 3, 14), AgeYears: null, AgeMonths: null, Phone: "9" + Digits(9), AlternatePhone: null,
             Email: null, Address: null, BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null,
             EmergencyContactName: null, EmergencyContactPhone: null, EmergencyContactRelation: null, Occupation: null, Religion: null,

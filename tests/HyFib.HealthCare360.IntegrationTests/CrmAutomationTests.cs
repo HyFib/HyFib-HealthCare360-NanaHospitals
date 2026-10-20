@@ -223,7 +223,7 @@ public sealed class CrmAutomationTests(HospitalServer server)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mrs.", FirstName: "Lata", MiddleName: null, LastName: "Recall" + Letters(8), Gender: Gender.Female,
+            Title: "Mrs.", FirstName: TestPatients.FirstName("Lata"), MiddleName: null, LastName: "Recall" + Letters(8), Gender: Gender.Female,
             DateOfBirth: new DateOnly(1965, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
