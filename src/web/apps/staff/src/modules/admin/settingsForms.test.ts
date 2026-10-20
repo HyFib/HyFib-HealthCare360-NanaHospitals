@@ -9,7 +9,9 @@ import {
   fieldId,
   INTEGRATION_SETTINGS,
   isFeatureSettingKey,
+  isFieldVisible,
   isIpAddress,
+  isLoopbackHost,
   isValidSettingKey,
   parseFieldValue,
   replaceFlagId,
@@ -20,6 +22,7 @@ import {
   urlProblem,
   validateSettings,
   viewerLinkProblem,
+  type FormValues,
   type SettingRow,
   type SettingsSpec,
 } from './settingsForms';
@@ -305,6 +308,115 @@ describe('setting names', () => {
     expect(warning).toMatch(/their own account/);
     expect(warning).toMatch(/share one Windows\s+login/);
     expect(settingWarning('ui.idleLockMinutes')).toBeNull();
+  });
+});
+
+describe('AI settings', () => {
+  const provider = id('ai.provider');
+  const baseUrl = id('ai.openai', 'baseUrl');
+  const model = id('ai.openai', 'model');
+  const field = (key: string, path?: string) =>
+    AI_SETTINGS.fields.find((item) => item.key === key && item.path === path)!;
+  const visible = (values: FormValues) =>
+    AI_SETTINGS.fields.filter((item) => isFieldVisible(item, values)).map(fieldId);
+  const withServer = { ...toFormValues(AI_SETTINGS, {}), [provider]: 'openai' };
+
+  it('offers Anthropic, the default, an OpenAI-compatible server or off, as the server does', () => {
+    expect(field('ai.provider').options?.map((option) => option.value)).toEqual(['anthropic', 'openai', 'disabled']);
+    expect(toFormValues(AI_SETTINGS, {})[provider]).toBe('anthropic');
+    expect(toFormValues(AI_SETTINGS, { 'ai.provider': 'OpenAI' })[provider]).toBe('openai');
+  });
+
+  it('shows only the chosen provider’s settings', () => {
+    const anthropic = visible(toFormValues(AI_SETTINGS, {}));
+    expect(anthropic).toEqual(expect.arrayContaining([id('ai.model'), id('ai.timeoutSeconds')]));
+    expect(anthropic).not.toContain(baseUrl);
+
+    const server = visible(withServer);
+    expect(server).toEqual(expect.arrayContaining([baseUrl, model, id('ai.openai', 'timeoutSeconds')]));
+    expect(server).not.toContain(id('ai.model'));
+    expect(server).not.toContain(id('ai.timeoutSeconds'));
+  });
+
+  it('needs the server’s address and model once it is chosen', () => {
+    const errors = validateSettings(AI_SETTINGS, withServer);
+    expect(errors[baseUrl]).toBe('Fill this in.');
+    expect(errors[model]).toBe('Fill this in.');
+    expect(
+      validateSettings(AI_SETTINGS, {
+        ...withServer,
+        [baseUrl]: 'https://llm.hospital.lan/v1',
+        [model]: 'local-model',
+      }),
+    ).toEqual({});
+  });
+
+  it.each([
+    'https://llm.hospital.lan/v1',
+    'https://res.openai.azure.com/openai/v1',
+    'http://localhost:8000/v1',
+    'http://127.0.0.1:11434/v1',
+    'http://[::1]:8080/v1',
+  ])('accepts the server address %s, as the server does', (address) => {
+    expect(parseFieldValue(field('ai.openai', 'baseUrl'), address)).toEqual({ ok: true, value: address });
+  });
+
+  it.each([
+    ['http://llm.hospital.lan/v1', 'https://'],
+    ['http://192.168.1.20:8000/v1', 'http://localhost'],
+    ['https://user:secret@llm.hospital.lan/v1', 'user name or password'],
+    ['https://llm.hospital.lan/v1?api-key=secret', '? or #'],
+    ['https://llm.hospital.lan/v1#models', '? or #'],
+    ['llm.hospital.lan/v1', 'https://'],
+  ])('refuses the server address %s, as the server does', (address, problem) => {
+    expect(parseFieldValue(field('ai.openai', 'baseUrl'), address)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(problem),
+    });
+  });
+
+  it.each(['local-model', 'Org/Model-7B-Instruct', 'model:8b', 'ward_notes.v2'])(
+    'accepts the model name %s',
+    (name) => {
+      expect(parseFieldValue(field('ai.openai', 'model'), ` ${name} `)).toEqual({ ok: true, value: name });
+    },
+  );
+
+  it.each(['two words', '-leading-dash', 'a'.repeat(129)])('refuses the model name %j', (name) => {
+    expect(parseFieldValue(field('ai.openai', 'model'), name)).toMatchObject({ ok: false });
+  });
+
+  it('saves the server as one ai.openai setting, and its key as a secret of its own', () => {
+    const values = {
+      ...withServer,
+      [id('ai.enabled')]: true,
+      [baseUrl]: 'http://localhost:8000/v1',
+      [model]: 'local-model',
+      [id('ai.openai', 'timeoutSeconds')]: 240,
+      [replaceFlagId('ai.openai.secret')]: true,
+      [secretFieldId({ key: 'ai.openai.secret', prop: 'apiKey' })]: ' server-key ',
+    };
+    expect(buildSettingChanges(AI_SETTINGS, values, {})).toEqual([
+      { key: 'ai.enabled', value: true },
+      { key: 'ai.provider', value: 'openai' },
+      { key: 'ai.openai', value: { baseUrl: 'http://localhost:8000/v1', model: 'local-model', timeoutSeconds: 240 } },
+    ]);
+    expect(buildSecretChanges(AI_SETTINGS, values)).toEqual([
+      { key: 'ai.openai.secret', value: { apiKey: 'server-key' } },
+    ]);
+  });
+
+  it('allows plain http only to the computer that makes the call', () => {
+    expect(['localhost', 'LOCALHOST', '127.0.0.1', '127.10.20.30', '[::1]'].every(isLoopbackHost)).toBe(true);
+    expect(['localhost.example.com', '10.0.0.5', '1270.0.0.1', 'llm.hospital.lan'].some(isLoopbackHost)).toBe(false);
+    expect(urlProblem('http://localhost:8000/v1', true)).toContain('https');
+    expect(urlProblem('http://localhost:8000/v1', true, true)).toBeNull();
+  });
+
+  it('lets the speech server run on the HC360 server itself too', () => {
+    const url = field('ai.speech', 'url');
+    expect(parseFieldValue(url, 'http://localhost:8000/v1/audio/transcriptions')).toMatchObject({ ok: true });
+    expect(parseFieldValue(url, 'http://stt.lan:8000/v1/audio/transcriptions')).toMatchObject({ ok: false });
   });
 });
 
