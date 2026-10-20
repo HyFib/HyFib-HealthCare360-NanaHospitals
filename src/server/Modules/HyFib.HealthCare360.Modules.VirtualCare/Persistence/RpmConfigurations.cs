@@ -65,7 +65,9 @@ internal sealed class RpmReadingConfiguration : IEntityTypeConfiguration<RpmRead
     public void Configure(EntityTypeBuilder<RpmReading> b)
     {
         b.ToTable("rpm_readings", VirtualCareSchema.Name);
-        b.HasKey(x => x.Id);
+
+        // As in the database, which partitions the readings by month (SCAL-04): an update then names the row's month.
+        b.HasKey(x => new { x.Id, x.MeasuredAt });
         b.Property(x => x.Unit).HasMaxLength(16);
         b.Property(x => x.TextValue).HasMaxLength(200);
         b.HasOne<RpmEnrollment>().WithMany().HasForeignKey(x => x.EnrollmentId).OnDelete(DeleteBehavior.Restrict);

@@ -33727,6 +33727,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset>("MeasuredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("measured_at");
+
                     b.Property<Guid?>("DeviceId")
                         .HasColumnType("uuid")
                         .HasColumnName("device_id");
@@ -33742,10 +33746,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<bool>("IsOutOfRange")
                         .HasColumnType("boolean")
                         .HasColumnName("is_out_of_range");
-
-                    b.Property<DateTimeOffset>("MeasuredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("measured_at");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
@@ -33793,7 +33793,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("value");
 
-                    b.HasKey("Id")
+                    b.HasKey("Id", "MeasuredAt")
                         .HasName("pk_rpm_readings");
 
                     b.HasIndex("FacilityId")
@@ -34206,6 +34206,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
 
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
                     b.Property<string>("Action")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -34259,10 +34263,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("ip_address");
 
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("occurred_at");
-
                     b.Property<Guid?>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
@@ -34296,7 +34296,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("user_name");
 
-                    b.HasKey("Id")
+                    b.HasKey("Id", "OccurredAt")
                         .HasName("pk_audit_events");
 
                     b.HasIndex("ChainIndex")
@@ -35292,18 +35292,17 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Integrations.IntegrationLog", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
 
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("correlation_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
 
                     b.Property<string>("Direction")
                         .IsRequired()
@@ -35361,7 +35360,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("success");
 
-                    b.HasKey("Id")
+                    b.HasKey("Id", "CreatedAt")
                         .HasName("pk_integration_logs");
 
                     b.HasIndex("Integration", "CreatedAt")
@@ -35581,15 +35580,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
                     b.Property<string>("Channel")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("channel");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
 
                     b.Property<DateTimeOffset?>("DeliveredAt")
                         .HasColumnType("timestamp with time zone")
@@ -35634,7 +35633,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("template_key");
 
-                    b.HasKey("Id")
+                    b.HasKey("Id", "CreatedAt")
                         .HasName("pk_notification_logs");
 
                     b.HasIndex("CreatedAt")

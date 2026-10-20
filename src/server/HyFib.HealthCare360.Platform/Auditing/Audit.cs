@@ -67,18 +67,19 @@ public sealed class AuditEvent
 
 /// <remarks>
 /// The table is partitioned by month of <see cref="AuditEvent.OccurredAt"/> (SCAL-04, migration
-/// <c>PartitionHighVolumeTables</c>). PostgreSQL wants the partition key in every unique index, so in the database the
-/// primary key is (id, occurred_at), and the chain position is indexed but not unique: <see cref="AuditChainService"/>
-/// seals under one advisory lock, the chain-link trigger refuses a seal that does not follow the one before, and
-/// verification walks the positions in order, so a repeated position breaks it. The model keeps <see cref="AuditEvent.Id"/>
-/// as the key, which nothing references.
+/// <c>PartitionHighVolumeTables</c>). PostgreSQL wants the partition key in every unique index, so the primary key is
+/// (id, occurred_at), in the database and in the model, and the chain position is indexed but not unique:
+/// <see cref="AuditChainService"/> seals under one advisory lock, the chain-link trigger refuses a seal that does not
+/// follow the one before, and verification walks the positions in order, so a repeated position breaks it. With the time
+/// in the key, every UPDATE EF writes names the row's month, which PostgreSQL then reads alone: by the id alone it looks in
+/// every month's partition, and with ten years of them sealing 500 events took 2 seconds instead of 0.1.
 /// </remarks>
 internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEvent>
 {
     public void Configure(EntityTypeBuilder<AuditEvent> b)
     {
         b.ToTable("audit_events", "audit");
-        b.HasKey(x => x.Id);
+        b.HasKey(x => new { x.Id, x.OccurredAt });
         b.Property(x => x.Id).UseIdentityAlwaysColumn();
         b.Property(x => x.Category).HasMaxLength(32);
         b.Property(x => x.Action).HasMaxLength(128);

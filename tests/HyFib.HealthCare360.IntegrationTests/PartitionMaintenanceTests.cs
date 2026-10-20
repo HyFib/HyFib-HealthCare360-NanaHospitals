@@ -1,7 +1,13 @@
+using System.Data.Common;
 using System.Globalization;
+using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Modules;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -80,6 +86,50 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         (await PartitionOfAsync("audit.audit_events", audit)).ShouldBe("audit.audit_events_2003_02");
     }
 
+    /// <summary>
+    /// An update EF writes for a row of a partitioned table names the row's month, so PostgreSQL reads that partition alone.
+    /// By the id alone it looks in every month's: with ten years of months, the audit sealer took 2 seconds to seal 500
+    /// events instead of 0.1, and every message sent paid the same per update.
+    /// </summary>
+    [Fact]
+    public async Task An_update_of_a_row_in_a_partitioned_table_reads_only_its_month()
+    {
+        // Every partitioned table's key in the model is the database's: the id and the column it is partitioned by.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var model = scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Model;
+            var tables = scope.ServiceProvider.GetServices<PartitionedTable>().ToList();
+            tables.ShouldNotBeEmpty();
+            foreach (var table in tables)
+            {
+                var entity = model.GetEntityTypes().Single(e => e.GetTableName() == table.Table && e.GetSchema() == table.Schema);
+                entity.FindPrimaryKey().ShouldNotBeNull().Properties.Select(p => p.GetColumnName()).ShouldBe(["id", table.KeyColumn], table.Name);
+            }
+        }
+
+        // And the statement EF sends to change a message log entry reads its month's partition alone.
+        var month = new DateTime(2044, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+        var message = await MessageAsync(month.AddDays(5));
+        await RunAsync(month.AddDays(1), monthsAhead: 1);
+        var recorder = new CommandRecorder();
+        await using (var db = new HospitalDbContext(
+            new DbContextOptionsBuilder<HospitalDbContext>().UseNpgsql(ConnectionString()).UseSnakeCaseNamingConvention().AddInterceptors(recorder).Options,
+            server.Services.GetRequiredService<ModuleCatalog>()))
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(Ct);
+            (await db.Set<NotificationLog>().IgnoreQueryFilters().SingleAsync(l => l.Id == message, Ct)).Error = "it.partition";
+            await db.SaveChangesAsync(Ct);
+            await transaction.RollbackAsync(Ct);
+        }
+
+        var update = recorder.Commands.Where(c => c.Text.TrimStart().StartsWith("UPDATE", StringComparison.Ordinal)).ShouldHaveSingleItem();
+        await using var connection = await OpenAsync();
+        await using var explain = new NpgsqlCommand("EXPLAIN (FORMAT JSON) " + update.Text, connection);
+        explain.Parameters.AddRange(update.Parameters);
+        using var plan = JsonDocument.Parse((string)(await explain.ExecuteScalarAsync(Ct))!);
+        RelationsIn(plan.RootElement).Where(r => r != "notification_logs").Distinct().ShouldBe(["notification_logs_2044_07"], "the partitions it reads");
+    }
+
     private async Task<IReadOnlyList<PartitionPass>> RunAsync(DateTime now, int monthsAhead)
     {
         var options = new PlatformOptions { Partitions = { MonthsAhead = monthsAhead } };
@@ -135,11 +185,45 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         await command.ExecuteNonQueryAsync(Ct);
     }
 
+    private string ConnectionString() => server.Services.GetRequiredService<IConfiguration>().GetConnectionString("Hospital")!;
+
     private async Task<NpgsqlConnection> OpenAsync()
     {
-        var connection = new NpgsqlConnection(server.Services.GetRequiredService<IConfiguration>().GetConnectionString("Hospital"));
+        var connection = new NpgsqlConnection(ConnectionString());
         await connection.OpenAsync(Ct);
         return connection;
+    }
+
+    /// <summary>The tables a plan reads, at any depth.</summary>
+    private static IEnumerable<string> RelationsIn(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Object => element.EnumerateObject().SelectMany(p =>
+            p is { Name: "Relation Name", Value.ValueKind: JsonValueKind.String } ? [p.Value.GetString()!] : RelationsIn(p.Value)),
+        JsonValueKind.Array => element.EnumerateArray().SelectMany(RelationsIn),
+        _ => [],
+    };
+
+    /// <summary>The statements EF sends, with their parameters.</summary>
+    private sealed class CommandRecorder : DbCommandInterceptor
+    {
+        public List<(string Text, NpgsqlParameter[] Parameters)> Commands { get; } = [];
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Record(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Record(command);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Record(DbCommand command) =>
+            Commands.Add((command.CommandText, [.. command.Parameters.Cast<NpgsqlParameter>().Select(p => p.Clone())]));
     }
 
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider

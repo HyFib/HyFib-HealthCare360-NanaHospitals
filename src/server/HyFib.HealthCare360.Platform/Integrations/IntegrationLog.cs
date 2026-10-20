@@ -39,7 +39,9 @@ internal sealed class IntegrationLogConfiguration : IEntityTypeConfiguration<Int
     public void Configure(EntityTypeBuilder<IntegrationLog> b)
     {
         b.ToTable("integration_logs", "integrations");
-        b.HasKey(x => x.Id);
+
+        // As in the database, which partitions the log by month (SCAL-04): an update then names the row's month.
+        b.HasKey(x => new { x.Id, x.CreatedAt });
         b.Property(x => x.Integration).HasMaxLength(32);
         b.Property(x => x.Provider).HasMaxLength(64);
         b.Property(x => x.Operation).HasMaxLength(64);
