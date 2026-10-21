@@ -60,9 +60,34 @@ jobs:
         shell: pwsh
         run: tests/deploy/Enable-TestWindowsSignIn.ps1
 
-      # A hung run fails in half an hour instead of the runner's six.
+      # A hung run fails in half an hour instead of the runner's six. Each test assembly also writes a JUnit report.
       - name: Test
-        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m
+        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m --report-xunit-junit --results-directory "${{ runner.temp }}/test-results"
+
+      # A failed journey's report is followed by everything the server under test logged meanwhile, tens of thousands of
+      # lines that bury the test's name and message. They are here again, alone, as the job's last lines.
+      - name: List the tests that failed
+        if: failure()
+        shell: python
+        run: |
+          import glob, os, sys, xml.etree.ElementTree as ET
+          sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+          reports = glob.glob(os.path.join(os.environ["RUNNER_TEMP"], "test-results", "**", "*.junit.xml"), recursive=True)
+          failed = 0
+          for report in sorted(reports):
+              for case in ET.parse(report).iter("testcase"):
+                  problem = case.find("failure")
+                  if problem is None:
+                      problem = case.find("error")
+                  if problem is None:
+                      continue
+                  failed += 1
+                  print(f"FAILED {case.get('name')}")
+                  print(f"  {problem.get('message', '')}")
+                  for line in (problem.text or "").splitlines()[:25]:
+                      print(f"    {line}")
+          if not failed:
+              print(f"No failed test in the {len(reports)} test report(s): the run failed before its tests ended, or outside them.")
 
       # The database watchdog (SRS DED-01) against the runner's PostgreSQL service: it kills the database and checks the
       # watchdog starts it again, and that it leaves alone a PostgreSQL someone stopped. Last, after the tests that use it.
