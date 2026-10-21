@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Diagnoses;
@@ -23,6 +24,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Organization;
@@ -328,6 +330,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             var bundle = await ExportAsync(path, PrescriptionRecord, abha, $"prescription-{prescription.PrescriptionNumber}");
             Resources(bundle, "MedicationRequest").Select(r => r.GetProperty("medicationCodeableConcept").GetProperty("text").GetString())
                 .ShouldBe([paracetamol.Name, cetirizine.Name], ignoreOrder: true);
+            ShouldCarryThePrintedCopy(Resources(bundle, "Binary"));
 
             // The advice printed for the patient travels; the notes for the pharmacist do not.
             var text = bundle.GetRawText();
@@ -373,6 +376,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             await ReleaseAsync(crp);
             var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-");
             (await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-")).GetRawText().ShouldBe(bundle.GetRawText(), "the same report exports as the same document");
+            ShouldCarryThePrintedCopy(Attachments(bundle));
             var result = Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem();
             result.GetProperty("resourceType").GetString().ShouldBe("Observation");
             result.GetProperty("valueQuantity").GetProperty("value").GetDecimal().ShouldBe(Crp);
@@ -443,6 +447,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             // The summary itself, as a LOINC discharge summary document.
             Resources(bundle, "DocumentReference").ShouldHaveSingleItem().GetProperty("type").GetProperty("coding")[0].GetProperty("code").GetString()
                 .ShouldBe("18842-5");
+            ShouldCarryThePrintedCopy(Attachments(bundle));
 
             var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
             exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: discharge summary");
@@ -909,6 +914,27 @@ public sealed class AbdmExportTests(HospitalServer server)
     [
         .. bundle.GetProperty("entry").EnumerateArray().Select(e => e.GetProperty("resource")).Where(r => r.GetProperty("resourceType").GetString() == type),
     ];
+
+    /// <summary>The files the document's DocumentReferences hold.</summary>
+    private static IEnumerable<JsonElement> Attachments(JsonElement bundle) =>
+        Resources(bundle, "DocumentReference").SelectMany(d => d.GetProperty("content").EnumerateArray().Select(c => c.GetProperty("attachment")));
+
+    /// <summary>
+    /// A document holds the PDF the hospital prints of its record wherever this server has a browser to make PDFs with,
+    /// as CI's Windows runner has Edge, and none where it has none.
+    /// </summary>
+    private void ShouldCarryThePrintedCopy(IEnumerable<JsonElement> files)
+    {
+        var printed = files.Where(f => f.TryGetProperty("contentType", out var type) && type.GetString() == "application/pdf").ToList();
+        if (server.Services.GetRequiredService<IPdfRenderer>().Status.Browser is null)
+        {
+            printed.ShouldBeEmpty("this server has no browser to make PDFs with");
+            return;
+        }
+
+        var pdf = printed.ShouldHaveSingleItem().GetProperty("data").GetBytesFromBase64();
+        Encoding.ASCII.GetString(pdf, 0, 5).ShouldBe("%PDF-");
+    }
 
     /// <summary>The resources a DiagnosticReport's <c>result</c> references point to.</summary>
     private static List<JsonElement> Results(JsonElement bundle, JsonElement report) =>
