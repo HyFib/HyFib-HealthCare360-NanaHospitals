@@ -121,6 +121,52 @@ public sealed class ScaleOutTests(HospitalServer server)
             .ShouldBeTrue("the other node should refuse the session as soon as its end is saved");
     }
 
+    /// <summary>
+    /// A setting saved in a transaction (Privacy saves a retention period with its record and audit entry) is announced
+    /// once the transaction commits, here and to the other nodes. Announced at the save, as it was, another node could
+    /// expire its value, read the old one again before the commit and keep it for a minute, with nothing left to expire
+    /// it. A change rolled back is announced nowhere, and the transaction reads its own change meanwhile.
+    /// </summary>
+    [Fact]
+    public async Task A_setting_saved_in_a_transaction_is_announced_once_it_is_committed()
+    {
+        var key = "it.setting." + Guid.NewGuid().ToString("N");
+        var rolledBack = "it.setting." + Guid.NewGuid().ToString("N");
+        var heard = new SignalsHeard(SettingChangeTokens.SignalTopic);
+        await using var other = await SecondNode.StartAsync(server, Ct, services => services.AddSingleton<IClusterCache>(heard));
+        var tokens = server.Services.GetRequiredService<SettingChangeTokens>();
+        var cached = tokens.For(key);
+        var untouched = tokens.For(rolledBack);
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+
+        await using (var transaction = await db.Database.BeginTransactionAsync(Ct))
+        {
+            await settings.SetAsync(key, "new", cancellationToken: Ct);
+
+            // Long enough for a signal sent at the save to have reached the other node.
+            await SecondNode.EventuallyAsync(() => Task.FromResult(heard.Contains(key)), TimeSpan.FromSeconds(2), Ct);
+            heard.Contains(key).ShouldBeFalse("the other node should hear of the change only once it is committed");
+            cached.HasChanged.ShouldBeFalse("this node should keep what it cached until the change is committed");
+            (await settings.GetAsync<string>(key, cancellationToken: Ct)).ShouldBe("new");
+            await transaction.CommitAsync(Ct);
+        }
+
+        cached.HasChanged.ShouldBeTrue();
+        (await SecondNode.EventuallyAsync(() => Task.FromResult(heard.Contains(key)), AtOnce, Ct)).ShouldBeTrue("the other node should hear of it once committed");
+
+        await using (var transaction = await db.Database.BeginTransactionAsync(Ct))
+        {
+            await settings.SetAsync(rolledBack, "never", cancellationToken: Ct);
+            await transaction.RollbackAsync(Ct);
+        }
+
+        await SecondNode.EventuallyAsync(() => Task.FromResult(heard.Contains(rolledBack)), TimeSpan.FromSeconds(2), Ct);
+        heard.Contains(rolledBack).ShouldBeFalse();
+        untouched.HasChanged.ShouldBeFalse();
+    }
+
     [Fact]
     public async Task A_node_that_cannot_hear_the_others_reads_every_session_from_the_database()
     {

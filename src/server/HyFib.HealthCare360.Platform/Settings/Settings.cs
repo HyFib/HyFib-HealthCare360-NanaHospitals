@@ -138,9 +138,12 @@ internal sealed class SettingsService(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
 
+    // Keys changed in a transaction that has not committed yet: read from the database meanwhile, not cached.
+    private HashSet<string>? _uncommitted;
+
     public async Task<T?> GetAsync<T>(string key, Guid? facilityId = null, CancellationToken cancellationToken = default)
     {
-        var json = signals.IsListening
+        var json = signals.IsListening && _uncommitted?.Contains(key) != true
             ? await cache.GetOrCreateAsync($"setting:{key}:{facilityId}", async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = CacheDuration;
@@ -212,11 +215,24 @@ internal sealed class SettingsService(
         return removed > 0;
     }
 
-    /// <summary>Expires every cached value of the key, here and on every other server on the database.</summary>
+    /// <summary>
+    /// Expires every cached value of the key, here and on every other server on the database, once the change is
+    /// committed (a setting saved in a caller's transaction too). Expired before, a reader here or on another server could
+    /// read the old value meanwhile and cache it for a minute, with nothing left to expire it.
+    /// </summary>
     private void Changed(string key)
     {
-        changes.Changed(key);
-        signals.Publish(SettingChangeTokens.SignalTopic, key);
+        if (db.Database.CurrentTransaction is not null)
+        {
+            (_uncommitted ??= new HashSet<string>(StringComparer.Ordinal)).Add(key);
+        }
+
+        db.AfterCommit(() =>
+        {
+            _uncommitted?.Remove(key);
+            changes.Changed(key);
+            signals.Publish(SettingChangeTokens.SignalTopic, key);
+        });
     }
 }
 
