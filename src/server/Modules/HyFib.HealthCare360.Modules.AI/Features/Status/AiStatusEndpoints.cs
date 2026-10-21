@@ -15,13 +15,12 @@ internal static class AiStatusEndpoints
         group.MapGet("/usage", Usage).RequirePermission(AIPermissions.SettingsManage);
     }
 
-    private static async Task<IResult> Status(IAiGateway ai, SpeechToTextRouter speech, AiSettingsReader settings, CancellationToken ct)
+    private static async Task<IResult> Status(IAiGateway ai, SpeechToTextRouter speech, CancellationToken ct)
     {
         var text = await ai.GetAvailabilityAsync(ct);
         var stt = await speech.GetConfigAsync(ct);
-        var timeout = (await settings.GetTextSettingsAsync(ct)).Timeout;
         return TypedResults.Ok(new AiStatusDto(text.Enabled, text.Provider, text.Model, text.Reason, stt.IsUsable, stt.Settings.Provider, stt.Reason,
-            (int)timeout.TotalSeconds));
+            (int)text.Timeout.TotalSeconds));
     }
 
     private static async Task<IResult> Usage(

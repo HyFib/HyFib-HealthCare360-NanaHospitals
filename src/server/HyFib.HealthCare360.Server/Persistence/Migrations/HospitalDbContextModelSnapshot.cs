@@ -19901,7 +19901,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasName("pk_patients");
 
                     b.HasIndex("AadhaarIndex")
-                        .HasDatabaseName("ix_patients_aadhaar_index");
+                        .IsUnique()
+                        .HasDatabaseName("ux_patients_aadhaar_index")
+                        .HasFilter("aadhaar_index IS NOT NULL AND is_deleted = false");
 
                     b.HasIndex("AbhaNumberIndex")
                         .HasDatabaseName("ix_patients_abha_number_index");
@@ -20132,6 +20134,134 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_patient_documents_patient_id");
 
                     b.ToTable("patient_documents", "patients");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PatientIdentityCheck", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AadhaarLast4")
+                        .IsRequired()
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)")
+                        .HasColumnName("aadhaar_last4");
+
+                    b.Property<string>("CheckedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("checked_by_name");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("DeviceModelId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("device_model_id");
+
+                    b.Property<string>("DeviceProviderId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("device_provider_id");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("error_code");
+
+                    b.Property<Guid?>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<bool>("LinkedAadhaar")
+                        .HasColumnType("boolean")
+                        .HasColumnName("linked_aadhaar");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("message");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("method");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("outcome");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ResponseCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("response_code");
+
+                    b.Property<string>("TransactionId")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("transaction_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<bool>("UsedVirtualId")
+                        .HasColumnType("boolean")
+                        .HasColumnName("used_virtual_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_patient_identity_checks");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_patient_identity_checks_is_deleted");
+
+                    b.HasIndex("PatientId", "CreatedAt")
+                        .HasDatabaseName("ix_patient_identity_checks_patient_id_created_at");
+
+                    b.ToTable("patient_identity_checks", "patients");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PortalFamilyCode", b =>
@@ -38075,6 +38205,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_patient_documents_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PatientIdentityCheck", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_patient_identity_checks_patients_patient_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PortalFamilyLink", b =>

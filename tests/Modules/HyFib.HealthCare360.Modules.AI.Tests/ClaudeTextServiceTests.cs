@@ -4,6 +4,7 @@ using Anthropic.Exceptions;
 using Anthropic.Models.Beta.Messages;
 using HyFib.HealthCare360.Modules.AI.Services;
 using HyFib.HealthCare360.Modules.AI.Services.Claude;
+using HyFib.HealthCare360.Modules.AI.Services.Privacy;
 using HyFib.HealthCare360.Platform.Integrations;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -14,7 +15,9 @@ public sealed class ClaudeTextServiceTests
 {
     private static readonly AiTextSettings Settings = new(true, "anthropic", "claude-opus-5", "sk-ant-test-key", TimeSpan.FromSeconds(90));
 
-    private static readonly AiRequest Request = AiPrompts.Command("go to billing", "/", patientOpen: false, TestClock.Today);
+    private static readonly AiRequest Command = AiPrompts.Command("go to billing", "/", patientOpen: false, TestClock.Today);
+
+    private static readonly RedactedAiRequest Request = RedactedAiRequest.Redact(Command, RedactionContext.Empty);
 
     private readonly IAnthropicClientProvider _clients = Substitute.For<IAnthropicClientProvider>();
     private readonly IAnthropicClient _client = Substitute.For<IAnthropicClient>();
@@ -58,7 +61,7 @@ public sealed class ClaudeTextServiceTests
     [Fact]
     public async Task An_invalid_schema_fails_before_anything_is_sent()
     {
-        var completion = await Service.CompleteAsync(Request with { JsonSchema = "not json" }, Settings, Ct);
+        var completion = await Service.CompleteAsync(RedactedAiRequest.Redact(Command with { JsonSchema = "not json" }, RedactionContext.Empty), Settings, Ct);
 
         completion.ShouldBe(new AiCompletion(false, null, "claude-opus-5", 0, 0, "The AI request could not be prepared."));
         _clients.DidNotReceiveWithAnyArgs().GetClient(default!, default);

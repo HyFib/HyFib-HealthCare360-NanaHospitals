@@ -9,8 +9,8 @@ internal sealed record FacilityInfo(string Name, string? HfrId);
 /// <summary>
 /// Display names for the people, departments and facilities a page of resources refers to, loaded once per request.
 /// The facade does not serve Practitioner or Organization resources, so these become display references (with the HFR
-/// id for facilities, which ABDM systems recognise). It also maps admissions to the in-patient visit that represents
-/// them as an Encounter.
+/// id for facilities, which ABDM systems recognise); an ABDM document, which includes them, links them (<see cref="Linked"/>).
+/// It also maps admissions to the in-patient visit that represents them as an Encounter.
 /// </summary>
 internal sealed class ReferenceDirectory
 {

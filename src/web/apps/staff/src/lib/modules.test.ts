@@ -168,4 +168,12 @@ describe('featureSwitches', () => {
     expect(isFeatureOn(undefined, 'patientPortal')).toBe(true);
     expect(isFeatureOn({ telehealth: false }, undefined)).toBe(true);
   });
+
+  it('counts ABDM health records as off unless they are known to be on, as the server does', () => {
+    expect(featureSwitches({ 'features.abdm': true })).toEqual({ abdm: true });
+    expect(isFeatureOn({}, 'abdm')).toBe(false);
+    expect(isFeatureOn(undefined, 'abdm')).toBe(false);
+    expect(isFeatureOn({ abdm: false }, 'abdm')).toBe(false);
+    expect(isFeatureOn({ abdm: true }, 'abdm')).toBe(true);
+  });
 });

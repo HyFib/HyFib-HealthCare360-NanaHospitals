@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Modules.Patients.Persistence;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -151,7 +152,16 @@ public sealed class PatientRegistrationService(
             await whatsApp.OptInAsync(patient.Phone, patient.Id, WhatsAppOptInSource.RegistrationDesk, facilityId, byNumberHolder: false, ct);
         }
 
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (PatientConfiguration.AadhaarNumberTaken(ex))
+        {
+            await transaction.RollbackAsync(ct);
+            return await AadhaarNumberTakenAsync(input, null, ct);
+        }
+
         await transaction.CommitAsync(ct);
 
         return new PatientCreated(patient.Id, patient.Uhid);
@@ -198,7 +208,15 @@ public sealed class PatientRegistrationService(
         patient.DeceasedAt = request.IsDeceased ? request.DeceasedAt ?? patient.DeceasedAt ?? time.GetUtcNow() : null;
         patient.IsActive = request.IsActive;
 
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (PatientConfiguration.AadhaarNumberTaken(ex))
+        {
+            return await AadhaarNumberTakenAsync(input, id, ct);
+        }
+
         return Result.Success();
     }
 
@@ -242,6 +260,11 @@ public sealed class PatientRegistrationService(
         foreach (var document in await db.Set<PatientDocument>().Where(d => d.PatientId == sourceId).ToListAsync(ct))
         {
             document.PatientId = target.Id;
+        }
+
+        foreach (var check in await db.Set<PatientIdentityCheck>().Where(c => c.PatientId == sourceId).ToListAsync(ct))
+        {
+            check.PatientId = target.Id;
         }
 
         await MovePortalFamilyLinksAsync(source, target, ct);
@@ -319,6 +342,17 @@ public sealed class PatientRegistrationService(
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The answer when the save found the Aadhaar number on another record: another desk linked it after this request
+    /// looked (<see cref="PatientConfiguration.OneRecordPerAadhaarNumber"/>). It names that record, as the first look does.
+    /// </summary>
+    private async Task<Error> AadhaarNumberTakenAsync(PatientInput input, Guid? excludeId, CancellationToken ct)
+    {
+        db.ChangeTracker.Clear();
+        return await CheckIdentifierConflictsAsync(input, excludeId, ct)
+            ?? Error.Conflict("patient.aadhaar_in_use", "This Aadhaar number is already linked to another patient.");
     }
 
     /// <summary>

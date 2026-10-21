@@ -11,9 +11,13 @@ Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Test
 printed bill's HTML, plus change-tracking checks on the real EF model without a database), and the end-to-end
 `GatewayReconciliationTests` in `tests/HyFib.HealthCare360.IntegrationTests` (payment link to settlement journal, a
 webhook delivered twice, who may reconcile), `PosSettlementTests` (a terminal sale and a typed card payment matched
-from the acquirer's report, the review, the settlement journal, a card receipt never settled) and `PosRecheckTests`
+from the acquirer's report, the review, the settlement journal, a card receipt never settled), `PosRecheckTests`
 (the training terminal: a sale paid after the counter stopped polling is recorded once; one nobody paid is cancelled
-and timed out).
+and timed out), `InterimBillTests` (a self-paying stay billed in parts, and none for insured, scheme and package
+stays; see [Interim bills](#interim-bills-ipb-05)) and `DoctorFeeStatementTests` (a doctor's statement for a period
+from bills that accrued fees under his rules: the fee lines, a cancelled bill's reversal, and the payouts with their
+deductions, TDS and net). The staff app's doctor-fee screens keep their logic in `modules/doctor-fees/logic.ts`,
+tested with the statement and payout-advice prints by vitest.
 
 The module implements the Platform contracts `IChargePoster`, `IBillingStatusProvider` and `IPayerDirectory`
 (replacing the Null fallbacks) — see [Contracts for other modules](#contracts-for-other-modules). For insurance claims it reads the coding
@@ -180,7 +184,7 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 | GET | `/{id}/running-bill` | readers | → `RunningBill` (by category, by day, lines with `isReturn`, `returnsNet`, package vs actuals, insurance estimate, deposit, estimated balance); guarded + audited |
 | GET | `/{id}/package-status` | readers | → `PackageStatus` |
 | PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204; 400 `packageId` for a package for out-patient visits only |
-| POST | `/{id}/interim-bills` | `billing.ip.manage` | `CreateInterimBillRequest(upTo?)` → 201 `BillDetail` (self-pay, non-package stays only) |
+| POST | `/{id}/interim-bills` | `billing.ip.manage` | `CreateInterimBillRequest(upTo?)` → 201 `BillDetail`: the services not billed yet up to the end of `upTo` (today when empty). Self-pay, non-package stays only; 422 `billing.interim_insured`, `billing.interim_package`, `billing.ip_account_inactive`, `billing.nothing_to_bill` ([Interim bills](#interim-bills-ipb-05)) |
 | POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services) |
 | POST | `/{id}/settle` | `billing.ip.manage` | → `SettlementResult` (advance adjusted oldest bill first; unused advance becomes a refund request) |
 | GET | `/{id}/clearance` | readers | → `ClearanceDto` |
@@ -188,6 +192,30 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 
 IP account statuses: `Open`, `DischargeInitiated`, `Discharged`, `Closed`, `Cancelled` (admission cancelled; no new
 advances or packages; leftover services can still be billed; any advance is refunded through the refund flow).
+
+#### Interim bills (IPB-05)
+A self-paying patient's long stay can be billed in parts, so the family pays as the stay goes on:
+
+* **What one takes.** Every service of the admission that is on no bill yet, not even a draft, up to the end of the chosen
+  day (IST); with no day, up to the end of today. Later services wait for the next bill.
+* **What it is.** An in-patient bill that is not the final bill, with no payer: the patient pays all of it. Its draft holds
+  its services, so a second interim bill of the same days answers 422 `billing.nothing_to_bill`. Finalized, it takes the
+  next number of the IP series and its services are billed, so no later bill carries them again: the final bill holds
+  only what no interim bill took. At settlement the advance pays what is still due on every bill of the stay, interim
+  bills included.
+* **Only during the stay:** 422 `billing.ip_account_inactive` once the patient is discharged or the admission cancelled.
+* **Not for insured, credit or package stays** (422 `billing.interim_insured` when the account has an insurer, corporate
+  or government scheme as payer; `billing.interim_package` when it has a package). This is deliberate: such a stay is
+  billed once, on the final bill, because its split or its package is worked out over the whole stay.
+  * The payer's share (the co-pay, what the payer never pays, and at most the amount the pre-authorisation approved) is
+    worked out per bill, and the TPA desk claims it from one bill. A stay billed in parts would cap each bill at the
+    approved amount, so the insurer could be billed more than it approved, and would need a claim per bill. The payer
+    settles the stay after discharge; meanwhile the running bill shows the estimated payer and patient shares.
+  * A package absorbs the services it includes, up to its caps, from the lines of the final bill (`PackageCalculator`). A
+    service billed earlier on an interim bill would be charged in full, outside the package, and the package price would
+    still be charged at discharge. Taken off its package, a self-paying stay can be billed in parts again.
+
+`InterimBillTests` (in `tests/HyFib.HealthCare360.IntegrationTests`) proves these rules end to end.
 
 ### Insurance — `/api/v1/insurance`
 | Method | Path | Permission | Request → response |
@@ -221,7 +249,7 @@ advances or packages; leftover services can still be billed; any advance is refu
 | POST | `/payouts/{id}/approve` | `doctorfees.payouts.manage` | `PayoutVersionRequest` → 204 (not by its preparer) |
 | POST | `/payouts/{id}/pay` | `doctorfees.payouts.manage` | `PayPayoutRequest(reference)` → 204 |
 | DELETE | `/payouts/{id}?version` | `doctorfees.payouts.manage` | → 204 (draft only) |
-| GET | `/statements?practitionerId&from&to` | `doctorfees.payouts.manage` | → `DoctorStatement` |
+| GET | `/statements?practitionerId&from&to` | `doctorfees.payouts.manage` | → `DoctorStatement`: the doctor's fee lines earned in the period (by the IST day each was earned; a cancelled bill adds a negative line dated the day of the cancellation, which the doctor's next payout recovers if the fee was already in a payout), each with its bill, service, billed value, rule and share; the totals earned, reversed, in a payout, paid out and unpaid; and the payouts whose period overlaps it, each with gross, deductions, TDS and net. 400 when `to` is before `from` |
 
 ### Tally — `/api/v1/billing/tally`
 Everything works on the signed-in user's facility. See [The Tally day book](#the-tally-day-book) for what the day book
@@ -771,6 +799,12 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
 (foreign key to `packages`, restrict) and `packages.used_for` (text; packages that existed before are `InPatient`).
 
 ## Not covered yet
+* **A stay billed entirely on interim bills.** When interim bills have taken every service (for example one raised on
+  the discharge day for everything up to today, with nothing charged after it), the final bill has nothing to hold and
+  an empty bill cannot be finalized: preparing it answers `billing.nothing_to_bill`, the discharge clearance waits for
+  a final bill ("The final bill has not been prepared."), and the account cannot be settled. Until this is decided,
+  raise the last interim bill before the discharge day's services are charged; if it has happened, management can
+  approve the discharge with dues (nothing is outstanding) and the unused advance is refunded with a refund request.
 * **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
   bill.
 * **An admission's package is not checked against its tariff plan.** OP bills take only packages for their tariff plan

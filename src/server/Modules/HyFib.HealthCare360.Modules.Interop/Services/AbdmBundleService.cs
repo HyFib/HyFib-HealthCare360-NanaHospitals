@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
@@ -12,13 +13,18 @@ namespace HyFib.HealthCare360.Modules.Interop.Services;
 /// and that is checked before anything about the record is told (that it is a draft); a refusal is audited as a
 /// security event. A record still kept under a duplicate UHID that was merged (a lab report: the Diagnostics module keeps
 /// its records where they are) is exported as the surviving patient's, once both may be opened; a record of a deleted
-/// patient is not exported. Every export is audited as an access to the patient's record.
+/// patient is not exported. A prescription the hospital's DSC rule does not let it issue is not exported either: it is a
+/// copy of the prescription like the printout (<see cref="PrescriptionFinalCopies"/>). Every export is audited as an access
+/// to the patient's record.
 /// <para>
 /// The export is a staff download, like the printed document: it does not need the patient's record-sharing consent
 /// of the FHIR read API. Sending a document to ABDM is a separate step that ABDM itself authorises with the patient's
 /// consent artefact, through the gateway (<see cref="IAbdmGatewayClient"/>), which is not live yet.
 /// </para>
 /// </summary>
+/// <summary>An exported document and the name to save it under.</summary>
+internal sealed record AbdmExport(R4.Bundle Bundle, string FileName);
+
 internal sealed class AbdmBundleService(
     AbdmRecordLoader records,
     PatientAccessGuard guard,
@@ -32,7 +38,7 @@ internal sealed class AbdmBundleService(
     /// <summary>More merges in a row than any real chain of duplicates has: a loop in the data, which is not followed.</summary>
     private const int MaxMerges = 16;
 
-    public async Task<Result<R4.Bundle>> ExportAsync(AbdmRecordType type, Guid id, CancellationToken ct)
+    public async Task<Result<AbdmExport>> ExportAsync(AbdmRecordType type, Guid id, CancellationToken ct)
     {
         var located = await records.LocateAsync(type, id, ct);
         if (located.IsFailure)
@@ -83,6 +89,11 @@ internal sealed class AbdmBundleService(
             return Error.Rule("abdm.not_exportable", reason);
         }
 
+        if (type == AbdmRecordType.Prescription && await records.PrescriptionNotIssuedAsync(id, ct) is { } notIssued)
+        {
+            return notIssued;
+        }
+
         source = source with { PatientId = patients[^1] };
         var document = await records.LoadAsync(type, id, source, ct);
         var bundle = AbdmDocumentBuilder.Build(document, time.GetUtcNow());
@@ -93,7 +104,7 @@ internal sealed class AbdmBundleService(
             EntityId = id.ToString("D"),
             Details = new { api = "abdm", record = type.ToString(), document = bundle.Id, version = bundle.Meta?.VersionId, entries = bundle.Entry.Count },
         }, ct);
-        return bundle;
+        return new AbdmExport(bundle, document.FileName);
     }
 
     public static string Describe(AbdmRecordType type) => type switch

@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Interop.Domain;
@@ -31,6 +33,7 @@ internal sealed record AbdmContext
 internal sealed record PrescriptionData(
     AbdmContext Context,
     Guid Id,
+    string Number,
     Guid PractitionerId,
     DateTimeOffset PrescribedAt,
     DateTimeOffset? SignedAt,
@@ -92,6 +95,26 @@ internal sealed record DischargeSummaryData(
     IReadOnlyList<LabResultRow> LabResults,
     Guid? AmendedByPractitionerId = null);
 
+/// <summary>The names ABDM documents download under: the record's kind, its number or the UHID and day, then <c>-abdm.json</c>.</summary>
+internal static class AbdmFiles
+{
+    public static string Name(string kind, string number, DateOnly? day = null)
+    {
+        var name = new StringBuilder(kind).Append('-');
+        foreach (var c in number.Trim())
+        {
+            name.Append(char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '-');
+        }
+
+        if (day is { } date)
+        {
+            name.Append('-').Append(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        }
+
+        return name.Append("-abdm.json").ToString();
+    }
+}
+
 /// <summary>
 /// The contents of each ABDM document type, from the rows of its record (no database: every rule here is unit-tested).
 /// The resources come from the FHIR read API's mappers, with literal Practitioner and Organization references, fitted to
@@ -128,6 +151,7 @@ internal static class AbdmRecords
         return new AbdmDocument
         {
             Type = AbdmRecordType.Prescription,
+            FileName = AbdmFiles.Name("prescription", d.Number),
             SourceId = d.Id,
             Profile = AbdmProfiles.PrescriptionRecord,
             DocumentType = AbdmCodes.PrescriptionRecord,
@@ -173,6 +197,7 @@ internal static class AbdmRecords
         return new AbdmDocument
         {
             Type = AbdmRecordType.LabReport,
+            FileName = AbdmFiles.Name("lab-report", d.Report.ReportNumber),
             SourceId = d.Report.Id,
             Profile = AbdmProfiles.DiagnosticReportRecord,
             DocumentType = AbdmCodes.DiagnosticStudiesReport,
@@ -240,6 +265,7 @@ internal static class AbdmRecords
         return new AbdmDocument
         {
             Type = AbdmRecordType.OpConsultation,
+            FileName = AbdmFiles.Name("consultation", d.Context.Patient.Uhid, FhirTime.IstDate(date)),
             SourceId = note.Id,
             Profile = AbdmProfiles.OpConsultRecord,
             DocumentType = AbdmCodes.ConsultationReport,
@@ -321,6 +347,7 @@ internal static class AbdmRecords
         return new AbdmDocument
         {
             Type = AbdmRecordType.DischargeSummary,
+            FileName = AbdmFiles.Name("discharge-summary", d.Context.Patient.Uhid, FhirTime.IstDate(summary.DischargedAt ?? summary.SignedAt ?? summary.AdmittedAt ?? summary.CreatedAt)),
             SourceId = summary.Id,
             Profile = AbdmProfiles.DischargeSummaryRecord,
             DocumentType = AbdmCodes.DischargeSummary,

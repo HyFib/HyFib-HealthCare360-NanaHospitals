@@ -40,6 +40,7 @@ import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { IcdCodePicker } from '@/modules/mrd/CodePicker';
+import { AbdmRecordButton } from './AbdmRecordButton';
 import {
   dischargeSummaryDocument,
   emrApi,
@@ -202,7 +203,8 @@ function TextSection({
 /**
  * Discharge summary of one admission: prefilled from the structured record (diagnoses, procedures, investigations,
  * discharge medicines), kept on this computer while typing, signed by the consultant and amended with a reason. The
- * saved summary prints, or downloads as a PDF, from the server: the same document the patient receives.
+ * saved summary prints, or downloads as a PDF, from the server: the same document the patient receives. A signed summary
+ * also downloads as an ABDM health record while that is switched on.
  */
 export function DischargeSummaryEditor({
   patientId,
@@ -470,6 +472,7 @@ export function DischargeSummaryEditor({
         {current && (
           <DocumentButtons path={dischargeSummaryDocument(current.id)} printLabel="Print (A4)" disabled={isDirty} />
         )}
+        {current && signedOrAmended && !amending && <AbdmRecordButton summaryId={current.id} disabled={isDirty} />}
         {canWrite && !signedOrAmended && (
           <>
             <Button

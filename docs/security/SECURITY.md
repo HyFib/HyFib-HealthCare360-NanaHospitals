@@ -266,6 +266,8 @@ and grants nothing.
     ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
     result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
     and safety flags stay, so the patient is still seen to.
+  - Their stored files (documents, photos, reports) follow the same rules: opening a file, or its details, by its id
+    is refused (403 `patient.restricted`) until the user may open the record, so knowing a file's id is not a way in.
 - **Patient portal scope.** A portal account sees the patients registered with the mobile number it signed in with,
   and family members on other numbers only through a family link in force (PP-01):
   - A link is made at the front desk, after staff check both people's identity documents and record who agreed, or in
@@ -296,6 +298,12 @@ and grants nothing.
     number masked.
 - Only what is needed is stored:
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
+    Checking a patient's identity with their Aadhaar fingerprint (INT-BIO) keeps the outcome, the last 4 digits and
+    UIDAI's references, never the number or the fingerprint: a certified reader encrypts each capture for UIDAI before
+    it leaves the device, HC360 Desktop and the server pass it on without logging it, and the request is signed with
+    the AUA's certificate, whose key is an encrypted secret. Only enrolled HC360 Desktops can send a check, only with
+    the patient's consent, and UIDAI's answer counts only for its own transaction (and with UIDAI's signature once its
+    certificate is set). See [integrations.md](../modules/integrations.md#aadhaar-authentication-int-bio-patient-identity).
   - **ABHA numbers**: encrypted with AES-256-GCM. Their blind index, like the number, is left out of the audit trail's
     record of changes. A number must be 14 digits before it is stored; it has no published check digit, so a mistyped
     number cannot be caught until it is checked with ABDM, which needs the gateway (not live).
@@ -382,10 +390,16 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 
 ### Integrity and audit
 - **Tamper-evident audit log**:
-  - Each entry is hash-chained to the previous one.
-  - Database triggers block deletes, rows inserted pre-sealed, and every update except a complete seal: hash, chain
-    position and previous hash together, linked to the sealed entry before it (checked at commit).
-  - Administration › Audit log › *Verify integrity* re-checks the chain. It also fails on any seal outside the chain.
+  - Each entry is hash-chained to the previous one, over every column: what happened, to what and whom, who did it
+    (user, name, device, session, address), how severe it was and the correlation ID. Entries sealed before the chain
+    covered every column are still checked against what was hashed then.
+  - Database triggers block deletes and truncates, rows inserted pre-sealed, and every update except a complete seal:
+    hash, chain position and previous hash together, linked to the sealed entry before it (checked at commit), with
+    nothing else in the row changed.
+  - Administration › Audit log › *Verify integrity* re-checks the chain, and names the position of the first entry
+    changed, moved or removed, even by someone who turned the triggers off. The chain has no key, so someone who also
+    sealed every later entry again would not be found (ASVS V16.4.2). It also fails on any seal outside the chain.
+    Tests: `AuditTrailTests` (against PostgreSQL) and `AuditSealTests`.
 - Records carry who and when on every change, and deletes are soft deletes. Every change to an audited record also
   writes a data audit event with each changed value (from/to); compound values such as addresses, cardiology
   findings and TTI results are recorded part by part. Binary values (a prescription's DSC signature and the bytes it
@@ -519,7 +533,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     server checks the signature again before it keeps it, and accepts only a certificate that chains to a CCA India
     root IT installed in its DSC trust folder — never one the operating system trusts, such as a domain's user
     certificate or a self-signed one (docs/modules/clinical.md, *Signing with the doctor's DSC*).
-  - Answers bridge calls (printing, device identity, notifications, DSC signing) only from the staff app's pages. The patient
+  - Captures fingerprints for Aadhaar identity checks (`fingerprint.capture`) only from a UIDAI-certified reader's RD
+    service on `127.0.0.1` (ports 11100–11120, paths checked, no proxy, no redirects). The reader encrypts the capture
+    for UIDAI; the desktop passes it to the page as it came, one capture at a time, and never logs or keeps it.
+  - Answers bridge calls (printing, device identity, notifications, DSC signing, fingerprint capture) only from the staff app's pages. The patient
     portal and the API reference, which run third-party script, are on addresses of their own, so it opens them in the
     default browser.
   - Saves only document types HC360 produces (PDF, CSV, XLSX, XML, JSON, text, images, ECG/DICOM files, recordings,
@@ -742,6 +759,8 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 |---|---|---|
 | Clear-text storage of sensitive information (high) | `IdentitySeeder.CreateInitialAdministratorAsync` | False positive: what it flags is the log line giving the path of `initial-admin-password.txt`, which CodeQL takes for a password because the file's name contains the word. Marked with a `codeql[...]` comment there; with Code Security on, also dismiss as "false positive". The file itself does hold the first administrator's one-time password, so the installer can show it. That is an accepted risk: the data directory is open only to administrators and the service, and HC360 deletes the file as soon as `admin` sets a new password (and at start-up if that already happened) |
 | Clear-text storage of sensitive information (high) | Portal `lib/payments.ts` `rememberPendingPayment` | False positive: before the gateway's own payment page opens, the tab keeps which bill or appointment it pays, so the page can confirm the payment when the patient comes back. That is a random id and an order row id, no personal or clinical data, in `sessionStorage`, which ends with the tab; CodeQL takes the word "appointment" for health data. Marked with a `codeql[...]` comment there; with Code Security on, also dismiss as "false positive" |
+| User-controlled bypass of sensitive method (high) | `AadhaarAuthRouter.AuthenticateAsync` (Integrations) | Fixed in the code. The router decided whether to ask UIDAI on a consent flag taken from the request. The flag is the staff member's statement that the patient agreed, which UIDAI's request carries the same way (`rc="Y"`), so the router's check was no credential. Consent is now part of the check itself: `AadhaarFingerprintCheck` cannot be made without it, and the endpoint refuses a request without it (400) |
+| Missing XML validation (medium) | `RdService.Load` (WindowsInterop, HC360 Desktop's fingerprint reader) | False positive: UIDAI publishes no schema for an RD service's answers, so there is none to validate against. The parser refuses DTDs and external entities, caps the size, and checks the root element. Numbers are parsed and range-checked, the paths the service names must be plain local paths, and the rest is carried as text. With Code Security on, dismiss as "false positive" |
 | Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. With Code Security on, dismiss as "false positive" |
 | Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). With Code Security on, dismiss as "false positive" |
 
@@ -781,6 +800,11 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 12. Keep Microsoft Edge updating on the Server Node: it makes the PDFs, and HC360 restarts it regularly so updates apply.
     Decide whether report PDFs may go by e-mail and WhatsApp (`diagnostics.reports.sendPdf`, on by default), and say so
     in the privacy notice.
+13. Before checking identities with Aadhaar fingerprints, have the AUA (or the hospital as one) approve the consent
+    words staff read out, the privacy notice's paragraph on it, and what its authentication logs must hold: HC360 keeps
+    each check without the Aadhaar number, and keeping the number would need an Aadhaar Data Vault. Install only
+    UIDAI-certified readers and their makers' RD services, keep the RD service subscriptions current, and keep the AUA
+    signing certificate's .pfx and password out of e-mail and shared folders.
 
 ## 4. Reporting a vulnerability
 

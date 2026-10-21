@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using HyFib.HealthCare360.WindowsInterop.Discovery;
 using Makaretu.Dns;
 using Serilog;
 
@@ -38,14 +39,15 @@ internal sealed record DiscoveredServer(
 
 /// <summary>
 /// Browses <c>_hc360._tcp.local</c> so staff never type IP addresses (SRS DED-02). The Server Node advertises its
-/// host name, port, version, facility code and CA fingerprint in TXT records.
+/// host name, port, version, facility code and CA fingerprint in TXT records, which are read as the server writes them
+/// (<see cref="ServerAdvertisement"/>).
 /// </summary>
 internal static class ServerDiscovery
 {
     /// <summary>The HC360 server's HTTPS port unless IT changed it.</summary>
     public const int DefaultPort = 7360;
 
-    private const string ServiceType = "_hc360._tcp";
+    private const string ServiceType = ServerAdvertisement.ServiceType;
 
     /// <summary>
     /// The server on this computer, for an all-in-one installation (SRS DED-03), when something listens on
@@ -128,27 +130,21 @@ internal static class ServerDiscovery
                 continue;
             }
 
-            var txt = records.OfType<TXTRecord>()
+            var txt = ServerAdvertisement.Read(records.OfType<TXTRecord>()
                 .Where(t => string.Equals(t.Name.ToString(), instance, StringComparison.OrdinalIgnoreCase))
-                .SelectMany(t => t.Strings)
-                .Select(s => s.Split('=', 2))
-                .Where(p => p.Length == 2)
-                .GroupBy(p => p[0], StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First()[1], StringComparer.OrdinalIgnoreCase);
+                .SelectMany(t => t.Strings));
 
             var target = Normalize(srv.Target.ToString());
-            var host = txt.TryGetValue("host", out var advertisedHost) && !string.IsNullOrWhiteSpace(advertisedHost)
-                ? advertisedHost
-                : target.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ? target[..^6] : target;
+            var host = txt.HostName ?? (target.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ? target[..^6] : target);
 
             servers.Add(new DiscoveredServer(
                 instance,
                 host,
                 srv.Port,
                 addresses.TryGetValue(target, out var ips) ? ips : [],
-                txt.GetValueOrDefault("ver"),
-                txt.GetValueOrDefault("fac"),
-                txt.TryGetValue("fp", out var fp) && fp.Length == 64 ? fp.ToUpperInvariant() : null));
+                txt.Version,
+                txt.FacilityCode,
+                txt.CaFingerprint));
         }
 
         return servers;

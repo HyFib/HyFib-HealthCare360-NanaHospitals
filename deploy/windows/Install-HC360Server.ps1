@@ -28,9 +28,11 @@
       (UDP 5353) in Windows Firewall for Private/Domain networks only. Serial analysers reach the server through their
       lab agent on 7360. With -LabPorts it also opens the ports network analysers connect
       to (Lab setup > Analysers > Connection), limited to -LabAnalyserAddresses when given.
-    - Tunes the machine for an always-on WiFi server: no sleep/hibernate, WiFi adapter never powered down, and Windows
-      Update's active hours set to -UpdateActiveHoursStart..-UpdateActiveHoursEnd (default 06:00-23:00), so updates do
-      not restart the server during clinical hours (SRS DED-15).
+    - Tunes the machine for an always-on WiFi server: no sleep, hibernation, disk spin-down or WiFi power saving, on
+      mains and on the UPS's battery in a power cut (what Windows does at critical battery is left as it is, so the
+      server can still shut down cleanly), WiFi adapter never powered down, and Windows Update's active hours set to
+      -UpdateActiveHoursStart..-UpdateActiveHoursEnd (default 06:00-23:00), so updates do not restart the server during
+      clinical hours (SRS DED-15).
     - With -HospitalCaFile, installs the hospital CA exported on another Server Node ("certificates export-ca"), so
       workstations that pinned it trust this server too (a warm standby, or replacement hardware).
     - Offers the release's HC360 Desktop package to the enrolled workstations, which then update themselves from the
@@ -203,6 +205,70 @@ function Set-UpdateActiveHours([int] $Start, [int] $End,
     Set-ItemProperty -LiteralPath $PolicyKey -Name ActiveHoursEnd -Value $End -Type DWord
     Set-ItemProperty -LiteralPath $SettingsKey -Name ActiveHoursStart -Value $Start -Type DWord
     Set-ItemProperty -LiteralPath $SettingsKey -Name ActiveHoursEnd -Value $End -Type DWord
+}
+
+# Keeps the machine awake, its disk spinning and its WiFi adapter at full power, on mains (AC) and on battery (DC): in a
+# power cut Windows applies the battery values while the USB UPS carries the node, just when it must keep the hospital
+# running (SRS DED-15). The critical-battery action is left as it is, so the UPS can still shut the node down cleanly
+# before it runs out, which protects the database. $PowerCfg runs powercfg and returns its exit code; the tests pass one
+# that records the calls instead. Returns whether Windows took every setting.
+function Set-AlwaysOnPower([scriptblock] $PowerCfg = { powercfg.exe @args | Out-Null; $LASTEXITCODE }) {
+    # Wireless Adapter Settings > Power Saving Mode in the active plan, where 0 is Maximum Performance.
+    $wifiPowerSaving = 'SCHEME_CURRENT 19cbb8fa-5279-450e-9fac-8a3d5fedd0c1 12bbebe6-58d6-4636-95bb-3217ef867c1a'
+    $settings = @(
+        '/change standby-timeout-ac 0', '/change standby-timeout-dc 0',
+        '/change hibernate-timeout-ac 0', '/change hibernate-timeout-dc 0',
+        '/change disk-timeout-ac 0', '/change disk-timeout-dc 0',
+        "/setacvalueindex $wifiPowerSaving 0", "/setdcvalueindex $wifiPowerSaving 0",
+        # Applies the values set above to the active plan now.
+        '/setactive SCHEME_CURRENT')
+    $taken = $true
+    foreach ($setting in $settings) {
+        $arguments = $setting -split ' '
+        $exitCode = & $PowerCfg @arguments
+        if ($exitCode -ne 0) {
+            Write-Warning "Windows did not take the power setting 'powercfg $setting' (exit code $exitCode)."
+            $taken = $false
+        }
+    }
+    return $taken
+}
+
+# Opens HC360 in Windows Firewall on Private and Domain networks only, never on Public ones (SRS DED-14), and for the
+# server's $Program alone: the staff app's HTTPS port, the patient portal's, and mDNS (UDP 5353) for discovery. HC360's
+# rules from before are replaced. With $LabPorts it also opens the ports network analysers connect to, in a group of
+# their own, so an upgrade without -LabPorts leaves that rule as it is; with $LabAnalyserAddresses, to those addresses
+# only. Then it warns about each network marked Public, where workstations cannot connect. The tests stand in for the
+# firewall cmdlets, so the machine's firewall is left alone.
+function Set-HC360Firewall([int] $HttpsPort, [int] $PortalHttpsPort, [string] $Program, [int[]] $LabPorts, [string[]] $LabAnalyserAddresses) {
+    Get-NetFirewallRule -Group 'HyFib HealthCare360' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+    New-NetFirewallRule -DisplayName 'HC360 Server (HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $HttpsPort `
+        -Program $Program -Profile Private, Domain -Action Allow | Out-Null
+    New-NetFirewallRule -DisplayName 'HC360 Server (patient portal, HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $PortalHttpsPort `
+        -Program $Program -Profile Private, Domain -Action Allow | Out-Null
+    New-NetFirewallRule -DisplayName 'HC360 Server discovery (mDNS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol UDP -LocalPort 5353 `
+        -Program $Program -Profile Private, Domain -Action Allow | Out-Null
+    if ($LabPorts) {
+        # A group of its own, so an upgrade without -LabPorts leaves the analysers' rule as it is.
+        Get-NetFirewallRule -Group 'HyFib HealthCare360 lab analysers' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+        $labRule = @{
+            DisplayName = 'HC360 Server (network lab analysers)'
+            Group = 'HyFib HealthCare360 lab analysers'
+            Direction = 'Inbound'
+            Protocol = 'TCP'
+            LocalPort = $LabPorts
+            Program = $Program
+            Profile = @('Private', 'Domain')
+            Action = 'Allow'
+        }
+        if ($LabAnalyserAddresses) { $labRule.RemoteAddress = $LabAnalyserAddresses }
+        New-NetFirewallRule @labRule | Out-Null
+        Write-Host "    Network analysers may connect on port(s) $($LabPorts -join ', ')."
+    }
+    $public = Get-NetConnectionProfile | Where-Object NetworkCategory -eq 'Public'
+    foreach ($netProfile in $public) {
+        Write-Warning "The network '$($netProfile.Name)' ($($netProfile.InterfaceAlias)) is marked Public, so workstations cannot connect. Mark the hospital WiFi as Private: Set-NetConnectionProfile -InterfaceAlias '$($netProfile.InterfaceAlias)' -NetworkCategory Private"
+    }
 }
 
 function Find-DesktopPackage([string] $PackagePath) {
@@ -740,45 +806,16 @@ else {
 # ---------------------------------------------------------------- firewall
 if (-not $SkipFirewall) {
     Write-Step 'Configuring Windows Firewall (Private and Domain networks only)'
-    Get-NetFirewallRule -Group 'HyFib HealthCare360' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-    New-NetFirewallRule -DisplayName 'HC360 Server (HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $HttpsPort `
-        -Program (Join-Path $InstallDir $ExeName) -Profile Private, Domain -Action Allow | Out-Null
-    New-NetFirewallRule -DisplayName 'HC360 Server (patient portal, HTTPS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol TCP -LocalPort $PortalHttpsPort `
-        -Program (Join-Path $InstallDir $ExeName) -Profile Private, Domain -Action Allow | Out-Null
-    New-NetFirewallRule -DisplayName 'HC360 Server discovery (mDNS)' -Group 'HyFib HealthCare360' -Direction Inbound -Protocol UDP -LocalPort 5353 `
-        -Program (Join-Path $InstallDir $ExeName) -Profile Private, Domain -Action Allow | Out-Null
-    if ($LabPorts) {
-        # A group of its own, so an upgrade without -LabPorts leaves the analysers' rule as it is.
-        Get-NetFirewallRule -Group 'HyFib HealthCare360 lab analysers' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-        $labRule = @{
-            DisplayName = 'HC360 Server (network lab analysers)'
-            Group = 'HyFib HealthCare360 lab analysers'
-            Direction = 'Inbound'
-            Protocol = 'TCP'
-            LocalPort = $LabPorts
-            Program = (Join-Path $InstallDir $ExeName)
-            Profile = @('Private', 'Domain')
-            Action = 'Allow'
-        }
-        if ($LabAnalyserAddresses) { $labRule.RemoteAddress = $LabAnalyserAddresses }
-        New-NetFirewallRule @labRule | Out-Null
-        Write-Host "    Network analysers may connect on port(s) $($LabPorts -join ', ')."
-    }
-    $public = Get-NetConnectionProfile | Where-Object NetworkCategory -eq 'Public'
-    foreach ($netProfile in $public) {
-        Write-Warning "The network '$($netProfile.Name)' ($($netProfile.InterfaceAlias)) is marked Public, so workstations cannot connect. Mark the hospital WiFi as Private: Set-NetConnectionProfile -InterfaceAlias '$($netProfile.InterfaceAlias)' -NetworkCategory Private"
-    }
+    Set-HC360Firewall -HttpsPort $HttpsPort -PortalHttpsPort $PortalHttpsPort -Program (Join-Path $InstallDir $ExeName) `
+        -LabPorts $LabPorts -LabAnalyserAddresses $LabAnalyserAddresses
 }
 
 # ---------------------------------------------------------------- always-on WiFi server
 if (-not $SkipPowerTuning) {
     Write-Step 'Tuning power settings for an always-on server'
-    powercfg /change standby-timeout-ac 0 | Out-Null
-    powercfg /change hibernate-timeout-ac 0 | Out-Null
-    powercfg /change disk-timeout-ac 0 | Out-Null
-    # Wireless adapter power saving: Maximum Performance on mains power.
-    powercfg /setacvalueindex SCHEME_CURRENT 19cbb8fa-5279-450e-9fac-8a3d5fedd0c1 12bbebe6-58d6-4636-95bb-3217ef867c1a 0 | Out-Null
-    powercfg /setactive SCHEME_CURRENT | Out-Null
+    if (Set-AlwaysOnPower) {
+        Write-Host '    The server will not sleep, hibernate, stop its disk or save power on its WiFi adapter, on mains or on the UPS''s battery.'
+    }
     Get-NetAdapter -Physical | Where-Object { $_.NdisPhysicalMedium -eq 9 -or $_.InterfaceDescription -match 'Wi-?Fi|Wireless|802\.11' } | ForEach-Object {
         try {
             Set-NetAdapterPowerManagement -Name $_.Name -AllowComputerToTurnOffDevice Disabled -ErrorAction Stop

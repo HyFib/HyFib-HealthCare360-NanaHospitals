@@ -42,6 +42,13 @@ internal sealed record AbdmDocument
     /// <summary>The HC360 record the document is made from (discharge summary, lab report, encounter, prescription).</summary>
     public required Guid SourceId { get; init; }
 
+    /// <summary>
+    /// The name to save it under, as its PDF is named: <c>prescription-NHRX260000123-abdm.json</c>,
+    /// <c>lab-report-LR2600042-abdm.json</c>, <c>consultation-NH-000123-2026-09-25-abdm.json</c>,
+    /// <c>discharge-summary-NH-000123-2026-09-25-abdm.json</c> (the UHID and the day in IST).
+    /// </summary>
+    public required string FileName { get; init; }
+
     /// <summary>The Composition profile (DischargeSummaryRecord, …).</summary>
     public required string Profile { get; init; }
 

@@ -236,6 +236,14 @@ internal sealed class BridgeHost(
                 // dialog and with the token's PIN; the server checks the signature again before it keeps it.
                 return DscSigner.Sign(String(parameters, "content"));
 
+            case "fingerprint.status":
+                return await FingerprintReader.StatusAsync();
+
+            case "fingerprint.capture":
+                // The capture is encrypted for UIDAI by the device, and only the server's Aadhaar check can use it, for a
+                // patient who agreed; the staff app asks only when staff press Capture.
+                return await FingerprintReader.CaptureAsync(parameters);
+
             default:
                 throw new BridgeException("method_not_found", $"'{method}' is not supported by this version of HC360 Desktop.");
         }

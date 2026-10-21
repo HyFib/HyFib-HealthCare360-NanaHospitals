@@ -18,28 +18,23 @@ public sealed class ClinicalNoteStructurerTests
 
     private static readonly Guid PatientId = Guid.Parse("0199a1b2-0000-7000-8000-000000000042");
 
-    private readonly IAiGateway _ai = Substitute.For<IAiGateway>();
-    private readonly IAiUsageRecorder _usage = Substitute.For<IAiUsageRecorder>();
-    private readonly IPatientDirectory _patients = Substitute.For<IPatientDirectory>();
-    private readonly TestClock _clock = new();
+    private readonly AiHarness _ai = new AiHarness().TurnOn();
+    private readonly FakeTextProvider _provider = new();
 
     public ClinicalNoteStructurerTests()
     {
-        _ai.GetAvailabilityAsync(Ct).ReturnsForAnyArgs(new AiAvailability(true, "anthropic", "claude-opus-5", null));
-        _patients.RedactionContextAsync(PatientId, Ct).ReturnsForAnyArgs(new RedactionContext(["Ravi Sharma"], ["NH26000123"]));
+        _ai.Patients.RedactionContextAsync(PatientId, Ct).ReturnsForAnyArgs(new RedactionContext(["Ravi Sharma"], ["NH26000123"]));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private Task<StructureOutcome> Structure() =>
-        new ClinicalNoteStructurer(_ai, _usage, _patients, _clock).StructureAsync(new StructureNoteRequest(Transcript, "Internal medicine", PatientId), Ct);
-
-    private void AiAnswers(AiCompletion completion) => _ai.CompleteAsync(null!, Ct).ReturnsForAnyArgs(completion);
+        new ClinicalNoteStructurer(_ai.Router(_provider), _ai.Clock).StructureAsync(new StructureNoteRequest(Transcript, "Internal medicine", PatientId), Ct);
 
     [Fact]
     public async Task Returns_a_draft_that_always_requires_clinician_review()
     {
-        AiAnswers(new AiCompletion(true, Answer, "claude-opus-5", 1200, 300, null));
+        _provider.Answers(Answer);
 
         var outcome = await Structure();
 
@@ -49,7 +44,7 @@ public sealed class ClinicalNoteStructurerTests
         draft.RequiresClinicianReview.ShouldBeTrue();
         draft.Assessment.ShouldBe("Viral fever.");
         draft.SuggestedIcd.ShouldHaveSingleItem().Code.ShouldBe("B34.9");
-        draft.Model.ShouldBe("claude-opus-5");
+        draft.Model.ShouldBe("test-model");
         draft.GeneratedAt.ShouldBe(TestClock.Friday);
         draft.Warnings[0].ShouldBe(ClinicalNoteStructurer.ReviewWarning);
         draft.Warnings.ShouldContain("Duration of paracetamol not dictated.");
@@ -58,11 +53,11 @@ public sealed class ClinicalNoteStructurerTests
     [Fact]
     public async Task Sends_only_the_redacted_dictation_and_says_how_much_was_removed()
     {
-        AiAnswers(new AiCompletion(true, Answer, "claude-opus-5", 1200, 300, null));
+        _provider.Answers(Answer);
 
         var draft = (await Structure()).Draft.ShouldNotBeNull();
 
-        var sent = (AiRequest)_ai.ReceivedCalls().Single(c => c.GetMethodInfo().Name == nameof(IAiGateway.CompleteAsync)).GetArguments()[0]!;
+        var sent = _provider.Received.ShouldHaveSingleItem().Request;
         var prompt = sent.Messages.ShouldHaveSingleItem().Content;
         prompt.ShouldNotContain("Ravi");
         prompt.ShouldNotContain("Sharma");
@@ -70,6 +65,7 @@ public sealed class ClinicalNoteStructurerTests
         prompt.ShouldContain("[NAME_1]");
         prompt.ShouldContain("Specialty: Internal medicine");
         sent.Purpose.ShouldBe("clinical.structure-note");
+        await _ai.Patients.Received(1).RedactionContextAsync(PatientId, Arg.Any<CancellationToken>());
         draft.IdentifiersRedacted.ShouldBe(2);
         draft.Warnings.ShouldContain("2 identifier(s) were replaced with placeholders such as [NAME_1] before AI processing.");
     }
@@ -77,42 +73,48 @@ public sealed class ClinicalNoteStructurerTests
     [Fact]
     public async Task Records_usage_for_the_patient_without_any_text()
     {
-        AiAnswers(new AiCompletion(true, Answer, "claude-opus-5", 1200, 300, null));
+        _provider.Answers(Answer);
 
         await Structure();
 
-        await _usage.Received(1).RecordAsync(
-            Arg.Is<AiUsageRecord>(u => u.Purpose == "clinical.structure-note" && u.Success && u.PatientId == PatientId && u.InputTokens == 1200 && u.OutputTokens == 300),
-            Arg.Any<CancellationToken>());
+        var usage = _ai.Recorded.ShouldHaveSingleItem();
+        usage.Purpose.ShouldBe("clinical.structure-note");
+        usage.Success.ShouldBeTrue();
+        usage.PatientId.ShouldBe(PatientId);
+        usage.InputTokens.ShouldBe(1200);
+        usage.OutputTokens.ShouldBe(300);
     }
 
     [Fact]
     public async Task Refuses_while_ai_is_turned_off()
     {
-        _ai.GetAvailabilityAsync(Ct).ReturnsForAnyArgs(new AiAvailability(false, "anthropic", null, "AI features are turned off for this facility (setting ai.enabled)."));
+        _ai.Setting<bool?>(AiSettingKeys.Enabled, false);
 
         var outcome = await Structure();
 
         outcome.Draft.ShouldBeNull();
         outcome.Failure.ShouldBe("AI features are turned off for this facility (setting ai.enabled).");
-        await _ai.DidNotReceiveWithAnyArgs().CompleteAsync(null!, Ct);
+        _provider.Received.ShouldBeEmpty();
+        _ai.Recorded.ShouldBeEmpty();
     }
 
     [Fact]
     public async Task Reports_an_unreadable_draft()
     {
-        AiAnswers(new AiCompletion(true, "Sure, here is the note: S: fever", "claude-opus-5", 1200, 20, null));
+        _provider.Answers("Sure, here is the note: S: fever", 1200, 20);
 
         var outcome = await Structure();
 
         outcome.Failure.ShouldBe("The AI service returned a draft HC360 could not read.");
-        await _usage.Received(1).RecordAsync(Arg.Is<AiUsageRecord>(u => !u.Success && u.Error == "The draft could not be read."), Arg.Any<CancellationToken>());
+        var usage = _ai.Recorded.ShouldHaveSingleItem();
+        usage.Success.ShouldBeFalse();
+        usage.Error.ShouldBe("The draft could not be read.");
     }
 
     [Fact]
     public async Task Passes_on_provider_failures()
     {
-        AiAnswers(new AiCompletion(false, null, "claude-opus-5", 0, 0, "The AI service declined this request. Please write the note manually."));
+        _provider.Answers(new AiCompletion(false, null, "test-model", 0, 0, "The AI service declined this request. Please write the note manually."));
 
         (await Structure()).Failure.ShouldBe("The AI service declined this request. Please write the note manually.");
     }

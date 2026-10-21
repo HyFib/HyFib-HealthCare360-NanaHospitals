@@ -10,6 +10,7 @@ import {
   Text,
   ToggleButton,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   BeakerRegular,
@@ -28,9 +29,11 @@ import {
 import { formatDateOnly, formatTime, todayIso } from '@hc360/core';
 import { EmptyState, ErrorState, LoadingState, Pagination, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { emrQueries, type TimelineFilters } from './api';
+import { timelineResult, useResultReaders, type ReleasedResult } from './results';
+import { ResultDialog } from './ResultReviewDialog';
 import {
   groupByDay,
   prettyTitle,
@@ -97,7 +100,8 @@ const TYPE_ICON: Record<TimelineEntryType, ReactElement> = {
 
 /**
  * The longitudinal record across OP, IP, emergency, telehealth and health check-ups, filterable by type of entry, kind
- * of care, date and department (EHR-02).
+ * of care, date and department (EHR-02). A released result opens its report here (IMG-03), for staff who may open the
+ * department's reports.
  */
 export function TimelinePanel({
   patientId,
@@ -111,14 +115,26 @@ export function TimelinePanel({
   onOpen: (target: TimelineTarget) => void;
 }) {
   const styles = useStyles();
+  // Closing a result's report returns focus to its entry.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const departments = useDepartments('Clinical');
   const timeline = useQuery(emrQueries.timeline(patientId, filters));
+  const readers = useResultReaders();
+  const [result, setResult] = useState<ReleasedResult | null>(null);
   const today = todayIso();
   const set = (patch: Partial<TimelineFilters>) => onFiltersChange({ ...filters, ...patch, page: undefined });
   const filtered = Boolean(
     filters.types || filters.encounterTypes || filters.from || filters.to || filters.departmentId,
   );
   const days = groupByDay(timeline.data?.items ?? []);
+  const open = (entry: TimelineEntry) => {
+    const released = timelineResult(entry);
+    if (released && readers[released.kind]) {
+      setResult(released);
+    } else {
+      onOpen(timelineTarget(entry));
+    }
+  };
 
   return (
     <div>
@@ -208,13 +224,14 @@ export function TimelinePanel({
                   className={mergeClasses(styles.entry, entry.isCritical ? styles.critical : undefined)}
                   role="button"
                   tabIndex={0}
-                  onClick={() => onOpen(timelineTarget(entry))}
+                  onClick={() => open(entry)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
-                      onOpen(timelineTarget(entry));
+                      open(entry);
                     }
                   }}
+                  {...restoreFocusTarget}
                 >
                   <Caption1 className={styles.muted}>{formatTime(entry.occurredAt)}</Caption1>
                   <span className={styles.icon} aria-hidden>
@@ -251,6 +268,7 @@ export function TimelinePanel({
           )}
         </>
       )}
+      <ResultDialog result={result} onClose={() => setResult(null)} />
     </div>
   );
 }

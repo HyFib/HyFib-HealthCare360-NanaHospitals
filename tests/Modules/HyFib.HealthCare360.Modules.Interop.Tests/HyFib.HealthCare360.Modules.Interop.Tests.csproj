@@ -11,4 +11,15 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\server\Modules\HyFib.HealthCare360.Modules.Interop\HyFib.HealthCare360.Modules.Interop.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Validates the ABDM bundles against the NRCeS profiles in TestData (EHR-08); versions in Directory.Packages.props. -->
+    <PackageReference Include="Firely.Fhir.Validation.R4" />
+    <PackageReference Include="Hl7.Fhir.Specification.Data.R4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The NRCeS ndhm.in 6.5.0 files the validator reads at run time (TestData/ndhm.in-6.5.0/README.md says where from). -->
+    <None Update="TestData\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

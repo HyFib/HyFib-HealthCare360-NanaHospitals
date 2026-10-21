@@ -92,7 +92,12 @@ public enum TimelineEntryType
     Procedure,
 }
 
-/// <summary>One row of the longitudinal EHR timeline (EHR-01/02).</summary>
+/// <summary>
+/// One row of the longitudinal EHR timeline (EHR-01/02). For a <see cref="TimelineEntryType.Result"/>, <see cref="Id"/>
+/// is the released report's id in its department (the lab report, or the imaging or cardiology report) and
+/// <see cref="ReportKind"/> says which, so the chart opens the report, and an imaging study's images, through the
+/// department's own endpoints (IMG-02, IMG-03).
+/// </summary>
 public sealed record TimelineEntry(
     TimelineEntryType Type,
     Guid Id,
@@ -101,4 +106,8 @@ public sealed record TimelineEntry(
     string? Summary,
     string? Status,
     Guid? EncounterId,
-    bool IsCritical);
+    bool IsCritical)
+{
+    /// <summary>The department of a result's report; null for every other type of entry.</summary>
+    public DiagnosticKind? ReportKind { get; init; }
+}

@@ -192,9 +192,9 @@ public sealed class DischargeSummaryService(HospitalDbContext db, ClinicalAccess
     }
 
     /// <summary>
-    /// Discharge summaries must use valid catalogue codes so MRD coding and ABDM exports stay consistent. A code no
-    /// longer in use (withdrawn by an import, or switched off by MRD) is accepted only where the summary already has
-    /// it.
+    /// Discharge summaries must use valid catalogue codes so MRD coding and what is shared (the FHIR API, and ABDM health
+    /// records, which code each diagnosis with its catalogue title) stay consistent. A code no longer in use (withdrawn
+    /// by an import, or switched off by MRD) is accepted only where the summary already has it.
     /// </summary>
     private async Task<Result> CheckCodesAsync(
         IReadOnlyList<string>? codes, IReadOnlyCollection<string>? recorded, CancellationToken ct)

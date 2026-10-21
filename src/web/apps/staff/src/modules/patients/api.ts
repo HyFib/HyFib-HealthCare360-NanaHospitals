@@ -1,4 +1,12 @@
-import type { Address, BloodGroup, Gender, MaritalStatus, PagedResult, PayerType } from '@hc360/core';
+import type {
+  AadhaarCaptureSetup,
+  Address,
+  BloodGroup,
+  Gender,
+  MaritalStatus,
+  PagedResult,
+  PayerType,
+} from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { photoDataUrl } from './photo';
@@ -405,18 +413,48 @@ export interface LinkFamilyMemberRequest {
   identityChecked: boolean;
 }
 
+export const PATIENT_DOCUMENT_TYPES = [
+  'IdProof',
+  'InsuranceCard',
+  'ExternalReport',
+  'ReferralLetter',
+  'Consent',
+  'Prescription',
+  'DischargeSummary',
+  'Imaging',
+  'Photo',
+  'Other',
+] as const;
+export type PatientDocumentType = (typeof PATIENT_DOCUMENT_TYPES)[number];
+
+/** A document attached to the patient record (EHR-04), newest first. */
 export interface PatientDocumentDto {
   id: string;
   fileId: string;
-  type: string;
+  type: PatientDocumentType;
   title: string;
+  /** The date on the document ("yyyy-MM-dd"), not when it was attached (`createdAt`). */
   documentDate: string | null;
+  /** Where the document came from, such as an outside lab or hospital. */
   source: string | null;
   notes: string | null;
   createdAt: string;
   fileName: string | null;
   contentType: string | null;
   sizeBytes: number | null;
+}
+
+/** Attaches a file already uploaded to the file store (`POST /api/v1/files`). */
+export interface AttachDocumentRequest {
+  fileId: string;
+  type: PatientDocumentType;
+  /** Required; at most 200 characters. */
+  title: string;
+  /** Not after today in the hospital (IST). */
+  documentDate: string | null;
+  /** At most 200 characters. */
+  source: string | null;
+  notes: string | null;
 }
 
 export interface PatientSearchParams {
@@ -427,6 +465,44 @@ export interface PatientSearchParams {
   desc?: boolean;
   gender?: Gender;
   category?: PatientCategory;
+}
+
+export type IdentityCheckOutcome = 'Verified' | 'NotVerified' | 'Failed';
+
+/**
+ * A check of the patient's identity with their Aadhaar fingerprint (INT-BIO), as UIDAI answered it. The number itself is
+ * never kept: only its last 4 digits, and whether a Virtual ID was used.
+ */
+export interface IdentityCheckDto {
+  id: string;
+  method: 'AadhaarFingerprint';
+  outcome: IdentityCheckOutcome;
+  message: string;
+  aadhaarLast4: string;
+  usedVirtualId: boolean;
+  /** The check linked the Aadhaar number to a record that had none. */
+  linkedAadhaar: boolean;
+  /** `uidai`, or `simulator` for training. */
+  provider: string;
+  /** UIDAI's error code when the fingerprint did not match or could not be checked. */
+  errorCode: string | null;
+  /** HC360's transaction id, which UIDAI's answer repeats. */
+  transactionId: string | null;
+  /** UIDAI's response code: its reference for the check. */
+  responseCode: string | null;
+  deviceProviderId: string | null;
+  deviceModelId: string | null;
+  checkedAt: string;
+  checkedByName: string | null;
+}
+
+export interface VerifyIdentityRequest {
+  /** The 12-digit Aadhaar number or the 16-digit Virtual ID, as the patient gives it. */
+  aadhaarNumber: string;
+  /** The capture as the fingerprint reader encrypted it (`PidData`). */
+  pidData: string;
+  /** The patient agreed to Aadhaar authentication. */
+  consent: boolean;
 }
 
 export const patientKeys = {
@@ -442,6 +518,8 @@ export const patientKeys = {
   portalFamily: (id: string) => ['patients', 'portal-family', id] as const,
   documents: (id: string) => ['patients', 'documents', id] as const,
   photo: (fileId: string) => ['patients', 'photo', fileId] as const,
+  identityChecks: (id: string) => ['patients', 'identity-checks', id] as const,
+  identitySetup: ['patients', 'identity-setup'] as const,
 };
 
 export const patientQueries = {
@@ -494,6 +572,18 @@ export const patientQueries = {
       queryKey: patientKeys.documents(id),
       queryFn: ({ signal }) => api.get<PatientDocumentDto[]>(`/api/v1/patients/${id}/documents`, { signal }),
     }),
+  identityChecks: (id: string) =>
+    queryOptions({
+      queryKey: patientKeys.identityChecks(id),
+      queryFn: ({ signal }) => api.get<IdentityCheckDto[]>(`/api/v1/patients/${id}/identity-checks`, { signal }),
+    }),
+  /** What the workstation should capture, or why identity cannot be checked here (needs `patients.identity.verify`). */
+  identitySetup: () =>
+    queryOptions({
+      queryKey: patientKeys.identitySetup,
+      queryFn: ({ signal }) => api.get<AadhaarCaptureSetup>('/api/v1/patients/identity-checks/setup', { signal }),
+      staleTime: 60_000,
+    }),
   /** A stored photo as an image source, or null when it cannot be read. A photo file never changes, so it is kept. */
   photo: (fileId: string) =>
     queryOptions({
@@ -527,6 +617,23 @@ export const consentApi = {
 };
 
 /**
+ * Attaching a document needs `files.write` to upload the file and `patients.documents` to attach it; a restricted
+ * record answers 403 `patient.restricted`.
+ */
+export const documentApi = {
+  /** Stores the file encrypted, for this patient; the server checks what it is from its content, and takes up to 25 MB. */
+  upload: (patientId: string, file: File) => {
+    const data = new FormData();
+    data.append('file', file);
+    data.append('category', 'patient-document');
+    data.append('patientId', patientId);
+    return api.post<{ id: string }>('/api/v1/files', data, { timeoutMs: 120_000 });
+  },
+  attach: (patientId: string, request: AttachDocumentRequest) =>
+    api.post<{ id: string }>(`/api/v1/patients/${patientId}/documents`, request),
+};
+
+/**
  * Sharing the patient's records with a family member's portal account needs `patients.consents`. Linking answers 422
  * `portal.family_same_number` for the patient's own number and 409 `portal.family_already_linked`; ending answers 422
  * `portal.family_link_ended` when it has already ended.
@@ -536,4 +643,14 @@ export const portalFamilyApi = {
     api.post<{ id: string }>(`/api/v1/patients/${patientId}/portal-family`, request),
   revoke: (linkId: string, reason: string) =>
     api.post<void>(`/api/v1/patients/portal-family/${linkId}/revoke`, { reason }),
+};
+
+/**
+ * Checking the patient's identity with their Aadhaar fingerprint needs `patients.identity.verify`. The server answers
+ * 422 `patient.aadhaar_mismatch` for another number than the record's, 409 `patient.aadhaar_in_use` for a number linked
+ * to another patient, and 422 `patient.identity_check_failed` when UIDAI was not asked (not set up, an unusable capture).
+ */
+export const identityCheckApi = {
+  verify: (patientId: string, request: VerifyIdentityRequest) =>
+    api.post<IdentityCheckDto>(`/api/v1/patients/${patientId}/identity-checks`, request),
 };

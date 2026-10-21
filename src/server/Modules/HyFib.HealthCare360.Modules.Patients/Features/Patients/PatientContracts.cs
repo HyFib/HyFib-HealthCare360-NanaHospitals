@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Patients.Features.Patients;
 
@@ -181,8 +182,7 @@ internal static class PatientRules
             return true;
         }
 
-        var digits = new string(value.Where(char.IsAsciiDigit).ToArray());
-        return digits.Length == 12 && digits[0] is >= '2' and <= '9' && Verhoeff.IsValid(digits);
+        return AadhaarNumber.IsAadhaar(new string(value.Where(char.IsAsciiDigit).ToArray()));
     }
 
     public static DateOnly? ResolveDateOfBirth(DateOnly? dateOfBirth, int? ageYears, int? ageMonths, DateOnly today, out bool estimated)
@@ -207,7 +207,8 @@ public sealed class RegisterPatientRequestValidator : AbstractValidator<Register
 {
     public RegisterPatientRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        // The hospital's date (IST), a day ahead of UTC's between midnight and 05:30: a baby born then is born today.
+        var today = time.Today();
 
         RuleFor(x => x.FirstName).NotEmpty().WithMessage("First name is required.").MaximumLength(100)
             .Must(PatientRules.ValidName).WithMessage("Use letters, spaces, dots, apostrophes or hyphens.");
@@ -241,7 +242,7 @@ public sealed class UpdatePatientRequestValidator : AbstractValidator<UpdatePati
 {
     public UpdatePatientRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        var today = time.Today();
 
         RuleFor(x => x.FirstName).NotEmpty().MaximumLength(100).Must(PatientRules.ValidName).WithMessage("Use letters, spaces, dots, apostrophes or hyphens.");
         RuleFor(x => x.MiddleName).MaximumLength(100).Must(PatientRules.ValidName);

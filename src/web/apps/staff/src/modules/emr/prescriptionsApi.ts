@@ -342,6 +342,14 @@ export const prescriptionSignatureFiles = (id: string) => ({
 /** The A5 prescription as the server prints it and makes its PDF (see `@/lib/documents`). */
 export const prescriptionDocument = (id: string) => `/api/v1/clinical/prescriptions/${id}`;
 
+/**
+ * A signed prescription as an ABDM health record: an NRCeS FHIR document (`application/fhir+json`, a file to save), while
+ * ABDM health records are switched on, for staff with `abdm.export`, and, where the hospital requires the doctor's DSC,
+ * only once the prescription carries a valid one (as for its PDF). Like the printed copy, it does not need the patient's
+ * record-sharing consent.
+ */
+export const abdmPrescriptionBundle = (id: string) => `/api/v1/abdm/bundles/prescriptions/${id}`;
+
 export const safetyTablesApi = {
   saveInteraction: (id: string | null, request: SaveDrugInteractionRequest) =>
     id

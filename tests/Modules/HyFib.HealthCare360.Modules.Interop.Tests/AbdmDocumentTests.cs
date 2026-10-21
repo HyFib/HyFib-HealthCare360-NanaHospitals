@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
+using HyFib.HealthCare360.Testing.Abdm;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Tests;
@@ -534,6 +535,20 @@ public sealed class AbdmDocumentTests
 
         narrative.Div.ShouldBe("<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>&lt;b&gt;Fever&lt;/b&gt; &amp; chills</p><p>second</p><p>third</p></div>");
         narrative.Status.ShouldBe(R4.Narrative.NarrativeStatus.Generated);
+    }
+
+    /// <summary>
+    /// Each sample document validates against the NRCeS ndhm.in 6.5.0 profiles with Firely's validator, as CI runs it
+    /// (<see cref="AbdmProfileValidator"/>; <c>ValidatorSetupTests</c> shows it fails documents that break the profiles).
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RecordTypes))]
+    public void Every_sample_document_validates_against_the_ig(string name)
+    {
+        var validation = AbdmProfileValidator.Validate(Sample(name), AbdmProfileValidator.DocumentBundle);
+
+        validation.Errors.ShouldBeEmpty(validation.Describe());
+        validation.Warnings.ShouldBeEmpty(validation.Describe());
     }
 
     [Theory]

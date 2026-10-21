@@ -57,6 +57,13 @@ and rostering outside employment are **errors**. Less than 8 h rest between duty
 are **warnings**. A contiguous double duty on one date is allowed.
 
 ### Biometric attendance (INT-BIO)
+
+INT-BIO's other parts are elsewhere: checking a patient's identity with their Aadhaar fingerprint is in the Patients
+module ([clinical.md](clinical.md#identity-checks-int-bio)); staff fingerprint sign-in at workstations is not built,
+because it needs an Aadhaar AUA licence and an Aadhaar Data Vault (see
+[integrations.md](integrations.md#not-implemented-here)). Attendance terminals match fingerprints on the terminal and
+send HC360 only the punch.
+
 | Method | Path | Permission | Notes |
 |---|---|---|---|
 | GET | `/api/v1/hr/biometric-devices` | attendance.manage | `BiometricDeviceDto` incl. `isOnline` (heard from in the last 10 min; a terminal HC360 reads: read successfully within its quiet window, below), `connection`, `pullAddress`, `pullPort`, `pullEveryMinutes`, `lastPullAt`, `lastPullError`, `clockOffsetSeconds`, `offlineSince` |

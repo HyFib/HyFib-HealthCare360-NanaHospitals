@@ -12,7 +12,6 @@ namespace HyFib.HealthCare360.Modules.Interop;
 public static class InteropPermissions
 {
     public const string FhirRead = "fhir.read";
-
     public const string AbdmExport = "abdm.export";
 
     internal static IEnumerable<PermissionDefinition> All { get; } =

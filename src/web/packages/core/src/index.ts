@@ -4,6 +4,7 @@ export * from './api/queryClient';
 export * from './auth/session';
 export * from './auth/webauthn';
 export * from './bridge/bridge';
+export * from './bridge/fingerprint';
 export * from './bridge/scans';
 export * from './connection/connection';
 export * from './format/format';

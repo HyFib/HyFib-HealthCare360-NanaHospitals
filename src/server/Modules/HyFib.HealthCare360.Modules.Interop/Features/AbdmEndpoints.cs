@@ -5,7 +5,7 @@ namespace HyFib.HealthCare360.Modules.Interop.Features;
 
 /// <summary>
 /// <c>/api/v1/abdm</c> (SRS EHR-08), only while ABDM health records are switched on (<see cref="FeatureKeys.Abdm"/>):
-/// one record as an ABDM FHIR document (<c>application/fhir+json</c>, never cached), and the gateway's set-up for
+/// one record as an ABDM FHIR document (<c>application/fhir+json</c>, a file to save, never cached), and the gateway's set-up for
 /// administrators. Errors are the API's usual problem details: 404 for a record that does not exist in the caller's
 /// facility, 422 <c>abdm.not_exportable</c> for one not signed or released yet, 403 for a restricted record.
 /// </summary>
@@ -33,7 +33,9 @@ internal static class AbdmEndpoints
 
     private static async Task<IResult> ExportAsync(AbdmRecordType type, Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct)
     {
-        var bundle = await service.ExportAsync(type, id, ct);
-        return bundle.IsSuccess ? new FhirResult(bundle.Value, StatusCodes.Status200OK, pretty == true) : bundle.Error!.ToProblem();
+        var export = await service.ExportAsync(type, id, ct);
+        return export.IsSuccess
+            ? new FhirResult(export.Value.Bundle, StatusCodes.Status200OK, pretty == true, fileName: export.Value.FileName)
+            : export.Error!.ToProblem();
     }
 }

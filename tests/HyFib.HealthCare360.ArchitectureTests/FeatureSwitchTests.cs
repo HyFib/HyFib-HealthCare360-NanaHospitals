@@ -8,9 +8,10 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 /// <summary>
 /// The feature switches cover what the Features screen says they do: every patient-portal API, the portal's sign-in and
 /// the public booking directory stop with the patient portal; every video consultation endpoint stops with video
-/// consultations, and the telehealth hub checks them for the consultation's facility whenever someone joins. A new portal
-/// or telehealth endpoint gets its switch, or these tests fail. What must keep working whatever is switched off (QR
-/// checks, provider callbacks, SMS links, staff screens) has no switch.
+/// consultations, and the telehealth hub checks them for the consultation's facility whenever someone joins; every ABDM
+/// health record download stops with ABDM health records. A new portal, telehealth or ABDM endpoint gets its switch, or
+/// these tests fail. What must keep working whatever is switched off (QR checks, provider callbacks, SMS links, staff
+/// screens, discharge summary and prescription PDFs, the FHIR API) has no switch.
 /// </summary>
 public sealed class FeatureSwitchTests
 {
@@ -77,6 +78,16 @@ public sealed class FeatureSwitchTests
     }
 
     [Fact]
+    public void Every_abdm_endpoint_stops_with_abdm_health_records()
+    {
+        var abdm = Endpoints.Value.Where(e => e.Route.StartsWith("/api/v1/abdm/", StringComparison.Ordinal)).ToList();
+
+        abdm.ShouldNotBeEmpty("the ABDM health record downloads");
+        abdm.Where(e => !e.AlwaysNeeds(FeatureKeys.Abdm)).Select(e => e.Key).Order()
+            .ShouldBeEmpty("Add .RequireFeature(FeatureKeys.Abdm) to these ABDM endpoints");
+    }
+
+    [Fact]
     public void The_hub_has_no_switch_because_every_join_checks_the_consultations_facility()
     {
         // Guests and portal patients connect without a facility, so a switch on the hub could only read the hospital-wide
@@ -104,6 +115,10 @@ public sealed class FeatureSwitchTests
     [InlineData("POST /api/v1/auth/logout")]
     [InlineData("POST /api/v1/rpm/ingest")]
     [InlineData("GET /api/v1/settings/public")]
+    [InlineData("GET /api/v1/clinical/discharge-summaries/{id:guid}/pdf")]
+    [InlineData("GET /api/v1/clinical/prescriptions/{id:guid}/pdf")]
+    [InlineData("GET /fhir/r4/{type}/{id}")]
+    [InlineData("GET /fhir/r4/{type}")]
     public void What_must_keep_working_has_no_switch(string key) =>
         Endpoints.Value.Single(e => e.Key == key).Requirements.ShouldBeEmpty();
 

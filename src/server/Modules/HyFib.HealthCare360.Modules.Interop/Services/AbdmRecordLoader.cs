@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Patients.Services;
@@ -29,6 +30,7 @@ internal sealed class AbdmRecordLoader(
     PatientRecords patients,
     ReferenceDirectoryLoader references,
     IEnumerable<INotificationDocumentSource> documents,
+    PrescriptionFinalCopies finalCopies,
     ILogger<AbdmRecordLoader> logger)
 {
     // The printed PDFs, made by the modules' document sources (the kinds messages name them by).
@@ -98,16 +100,26 @@ internal sealed class AbdmRecordLoader(
         _ => DischargeSummaryAsync(id, source, ct),
     };
 
+    /// <summary>
+    /// Why the hospital may not issue this signed prescription, by the DSC rule of its printout and PDF (a doctor's DSC
+    /// required and missing, untrusted or broken), with that rule's codes; null when it may.
+    /// </summary>
+    public async Task<Error?> PrescriptionNotIssuedAsync(Guid id, CancellationToken ct)
+    {
+        var prescription = await db.Set<Prescription>().AsNoTracking().Include(p => p.Items).FirstAsync(p => p.Id == id, ct);
+        return PrescriptionFinalCopies.Problem(await finalCopies.CheckAsync(prescription, ct));
+    }
+
     private async Task<AbdmDocument> PrescriptionAsync(Guid id, AbdmSource source, CancellationToken ct)
     {
         var header = await db.Set<Prescription>().AsNoTracking().Where(p => p.Id == id)
-            .Select(p => new { p.EncounterId, p.VisitId, p.AdmissionId, p.PractitionerId, p.SignedAt, p.PrescribedAt, p.Advice, p.CreatedAt, p.UpdatedAt })
+            .Select(p => new { p.PrescriptionNumber, p.EncounterId, p.VisitId, p.AdmissionId, p.PractitionerId, p.SignedAt, p.PrescribedAt, p.Advice, p.CreatedAt, p.UpdatedAt })
             .FirstAsync(ct);
         var lines = await Medications.SignedLines(i => true, p => p.Id == id).ToListAsync(ct);
         var (visit, encounter) = await EncounterRowsAsync(header.EncounterId, header.VisitId, header.AdmissionId, ct);
         var context = await ContextAsync(source, visit, encounter, [header.PractitionerId], [header.AdmissionId], [], PrescriptionPdf, id, ct);
         return AbdmRecords.Prescription(new PrescriptionData(
-            context, id, header.PractitionerId, header.PrescribedAt, header.SignedAt, header.Advice, header.CreatedAt, header.UpdatedAt, lines));
+            context, id, header.PrescriptionNumber, header.PractitionerId, header.PrescribedAt, header.SignedAt, header.Advice, header.CreatedAt, header.UpdatedAt, lines));
     }
 
     private async Task<AbdmDocument> LabReportAsync(Guid id, AbdmSource source, CancellationToken ct)

@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Integrations.Aadhaar;
 using HyFib.HealthCare360.Integrations.Biometric;
 using HyFib.HealthCare360.Integrations.Email;
 using HyFib.HealthCare360.Integrations.Features.Admin;
@@ -39,6 +40,9 @@ internal static class IntegrationsServiceCollectionExtensions
 
     // Sending a DICOM file to the PACS (STOW-RS) moves up to 25 MB, so it gets longer than a search, which must fail fast.
     private static readonly TimeSpan PacsStowTimeout = TimeSpan.FromMinutes(2);
+
+    // An Aadhaar authentication waits on UIDAI through the ASA while the person stands at the counter.
+    private static readonly TimeSpan AadhaarTimeout = TimeSpan.FromSeconds(60);
 
     public static IServiceCollection AddIntegrations(this IServiceCollection services)
     {
@@ -100,6 +104,12 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddScoped<IAttendanceTerminalProvider, ZkTecoTerminal>();
         services.AddScoped<IAttendanceTerminalProvider, SimulatorAttendanceTerminal>();
         services.AddScoped<IAttendanceTerminalClient, AttendanceTerminalRouter>();
+
+        // The provider gives UIDAI the facility's own time limit (5 to 60 s); this is only the backstop.
+        services.AddIntegrationHttpClient<UidaiAadhaarAuthenticator>(AadhaarTimeout, AadhaarTimeout);
+        services.AddScoped<IAadhaarAuthProvider>(sp => sp.GetRequiredService<UidaiAadhaarAuthenticator>());
+        services.AddScoped<IAadhaarAuthProvider, SimulatorAadhaarAuthenticator>();
+        services.AddScoped<IAadhaarAuthenticator, AadhaarAuthRouter>();
     }
 
     private static void AddAccountingAndImaging(IServiceCollection services)

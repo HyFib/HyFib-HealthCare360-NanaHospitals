@@ -127,12 +127,14 @@ internal sealed class WifiMonitor(
     TimeProvider time,
     ILogger<WifiMonitor> logger) : BackgroundService
 {
-    private const int WeakStreakThreshold = 3;
-    private int _weakStreak;
-    private bool _weakAlerted;
-    private string? _lastInsecureAlertSsid;
-    private string? _lastSharedPasswordAlertSsid;
+    /// <summary>The on-call number that gets the SMS alerts (an administrator sets it in Settings).</summary>
+    private const string OnCallPhoneSetting = "alerts.oncallPhone";
+
+    private readonly WifiEventDetector _detector = new();
     private DateTimeOffset _lastCleanup = DateTimeOffset.MinValue;
+
+    /// <summary>How often the link is sampled: <see cref="NetworkOptions.WifiSampleSeconds"/>, kept between 10 seconds and 10 minutes.</summary>
+    internal static TimeSpan SampleInterval(NetworkOptions network) => TimeSpan.FromSeconds(Math.Clamp(network.WifiSampleSeconds, 10, 600));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -142,7 +144,7 @@ internal sealed class WifiMonitor(
             return;
         }
 
-        var interval = TimeSpan.FromSeconds(Math.Clamp(network.WifiSampleSeconds, 10, 600));
+        var interval = SampleInterval(network);
         WifiConnectionInfo? previous = null;
 
         while (!stoppingToken.IsCancellationRequested)
@@ -161,7 +163,12 @@ internal sealed class WifiMonitor(
                     continue;
                 }
 
-                var events = Evaluate(previous, current, now, network);
+                var events = _detector.Evaluate(previous, current, now, network);
+                foreach (var wifiEvent in events)
+                {
+                    state.Add(wifiEvent);
+                }
+
                 await PersistAsync(current, now, events, stoppingToken);
                 previous = current;
             }
@@ -174,7 +181,100 @@ internal sealed class WifiMonitor(
         }
     }
 
-    private List<WifiEvent> Evaluate(WifiConnectionInfo? previous, WifiConnectionInfo current, DateTimeOffset now, NetworkOptions network)
+    private async Task PersistAsync(WifiConnectionInfo current, DateTimeOffset now, List<WifiEvent> events, CancellationToken ct)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+
+        db.Add(new WifiSample
+        {
+            At = now,
+            Connected = current.IsConnected,
+            Ssid = current.Ssid,
+            Bssid = current.Bssid,
+            SignalQuality = current.SignalQuality,
+            RssiDbm = current.RssiDbm,
+            ReceiveRateMbps = current.ReceiveRateMbps,
+            TransmitRateMbps = current.TransmitRateMbps,
+            Security = current.Security.ToString(),
+        });
+
+        if (events.Count > 0)
+        {
+            var audit = scope.ServiceProvider.GetRequiredService<IAuditLogger>();
+            var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+            var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+            var onCallPhone = await settings.GetAsync<string>(OnCallPhoneSetting, cancellationToken: ct);
+            await AlertAsync(events, audit, notifications, onCallPhone, Environment.MachineName, ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        if (now - _lastCleanup > TimeSpan.FromHours(24))
+        {
+            _lastCleanup = now;
+            var cutoff = now.AddDays(-30);
+            await db.Set<WifiSample>().Where(s => s.At < cutoff).ExecuteDeleteAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// Logs each event in the audit trail and alerts on it: administrators (those who may see System health) in-app, for
+    /// every event but a roam to another access point; and, for a warning or worse (a drop, a weak signal, an insecure,
+    /// shared-password or unapproved network), the IT on-call number by SMS when one is set. The SMS is queued in the
+    /// outbox, with the audit entries and the sample, so it goes as soon as the internet is back, for 6 hours.
+    /// </summary>
+    internal static async Task AlertAsync(
+        IReadOnlyList<WifiEvent> events, IAuditLogger audit, INotificationService notifications, string? onCallPhone, string server, CancellationToken ct)
+    {
+        foreach (var wifiEvent in events)
+        {
+            var severity = wifiEvent.Kind switch
+            {
+                WifiEventKind.Disconnected or WifiEventKind.InsecureNetwork or WifiEventKind.UnapprovedNetwork => AuditSeverity.Critical,
+                WifiEventKind.WeakSignal or WifiEventKind.SharedPasswordNetwork => AuditSeverity.Warning,
+                _ => AuditSeverity.Info,
+            };
+            var category = wifiEvent.Kind is WifiEventKind.InsecureNetwork or WifiEventKind.SharedPasswordNetwork or WifiEventKind.UnapprovedNetwork
+                ? AuditCategories.Security
+                : AuditCategories.Admin;
+            audit.Add(new AuditEntry(category, $"network.wifi_{wifiEvent.Kind.ToString().ToLowerInvariant()}", wifiEvent.Message) { Severity = severity });
+
+            if (wifiEvent.Kind is not WifiEventKind.AccessPointChanged)
+            {
+                await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, "Server WiFi: " + wifiEvent.Kind, wifiEvent.Message,
+                    "/admin/system", "system", severity == AuditSeverity.Critical ? "critical" : severity == AuditSeverity.Warning ? "warning" : "info", ct);
+            }
+
+            if (severity >= AuditSeverity.Warning && !string.IsNullOrWhiteSpace(onCallPhone))
+            {
+                notifications.Queue("system.alert", new NotificationRecipient(Phone.Normalize(onCallPhone), null, null, "IT on-call"),
+                    new Dictionary<string, string> { ["server"] = server, ["message"] = wifiEvent.Message },
+                    [NotificationChannel.Sms], TimeSpan.FromHours(6));
+            }
+        }
+    }
+}
+
+/// <summary>
+/// Decides which events a new sample of the Server Node's WiFi link raises (DED-06/12), remembering what it has already
+/// reported so that one episode is reported once: a drop when the link goes down and a reconnection when it comes back; a
+/// weak signal once it has stayed below <see cref="NetworkOptions.WifiWeakSignalThreshold"/> for
+/// <see cref="WeakStreakThreshold"/> samples in a row, and its recovery once it is back at the threshold or above; a roam
+/// to another access point; and an insecure, shared-password or unapproved network.
+/// </summary>
+internal sealed class WifiEventDetector
+{
+    /// <summary>Weak samples in a row before the signal is reported weak: a minute below the threshold, sampled every 30 s.</summary>
+    internal const int WeakStreakThreshold = 3;
+
+    private int _weakStreak;
+    private bool _weakAlerted;
+    private string? _lastInsecureAlertSsid;
+    private string? _lastSharedPasswordAlertSsid;
+
+    /// <param name="previous">The sample before, or null for the first since the server started.</param>
+    public List<WifiEvent> Evaluate(WifiConnectionInfo? previous, WifiConnectionInfo current, DateTimeOffset now, NetworkOptions network)
     {
         var events = new List<WifiEvent>();
 
@@ -235,74 +335,6 @@ internal sealed class WifiMonitor(
             }
         }
 
-        foreach (var wifiEvent in events)
-        {
-            state.Add(wifiEvent);
-        }
-
         return events;
-    }
-
-    private async Task PersistAsync(WifiConnectionInfo current, DateTimeOffset now, List<WifiEvent> events, CancellationToken ct)
-    {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-
-        db.Add(new WifiSample
-        {
-            At = now,
-            Connected = current.IsConnected,
-            Ssid = current.Ssid,
-            Bssid = current.Bssid,
-            SignalQuality = current.SignalQuality,
-            RssiDbm = current.RssiDbm,
-            ReceiveRateMbps = current.ReceiveRateMbps,
-            TransmitRateMbps = current.TransmitRateMbps,
-            Security = current.Security.ToString(),
-        });
-
-        if (events.Count > 0)
-        {
-            var audit = scope.ServiceProvider.GetRequiredService<IAuditLogger>();
-            var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
-            var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-            var onCallPhone = await settings.GetAsync<string>("alerts.oncallPhone", cancellationToken: ct);
-
-            foreach (var wifiEvent in events)
-            {
-                var severity = wifiEvent.Kind switch
-                {
-                    WifiEventKind.Disconnected or WifiEventKind.InsecureNetwork or WifiEventKind.UnapprovedNetwork => AuditSeverity.Critical,
-                    WifiEventKind.WeakSignal or WifiEventKind.SharedPasswordNetwork => AuditSeverity.Warning,
-                    _ => AuditSeverity.Info,
-                };
-                var category = wifiEvent.Kind is WifiEventKind.InsecureNetwork or WifiEventKind.SharedPasswordNetwork or WifiEventKind.UnapprovedNetwork
-                    ? AuditCategories.Security
-                    : AuditCategories.Admin;
-                audit.Add(new AuditEntry(category, $"network.wifi_{wifiEvent.Kind.ToString().ToLowerInvariant()}", wifiEvent.Message) { Severity = severity });
-
-                if (wifiEvent.Kind is not WifiEventKind.AccessPointChanged)
-                {
-                    await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, "Server WiFi: " + wifiEvent.Kind, wifiEvent.Message,
-                        "/admin/system", "system", severity == AuditSeverity.Critical ? "critical" : severity == AuditSeverity.Warning ? "warning" : "info", ct);
-                }
-
-                if (severity >= AuditSeverity.Warning && !string.IsNullOrWhiteSpace(onCallPhone))
-                {
-                    notifications.Queue("system.alert", new NotificationRecipient(Phone.Normalize(onCallPhone), null, null, "IT on-call"),
-                        new Dictionary<string, string> { ["server"] = Environment.MachineName, ["message"] = wifiEvent.Message },
-                        [NotificationChannel.Sms], TimeSpan.FromHours(6));
-                }
-            }
-        }
-
-        await db.SaveChangesAsync(ct);
-
-        if (now - _lastCleanup > TimeSpan.FromHours(24))
-        {
-            _lastCleanup = now;
-            var cutoff = now.AddDays(-30);
-            await db.Set<WifiSample>().Where(s => s.At < cutoff).ExecuteDeleteAsync(ct);
-        }
     }
 }

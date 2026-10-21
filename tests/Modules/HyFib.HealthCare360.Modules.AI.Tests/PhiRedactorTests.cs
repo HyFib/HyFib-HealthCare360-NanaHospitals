@@ -1,4 +1,6 @@
+using HyFib.HealthCare360.Modules.AI.Services;
 using HyFib.HealthCare360.Modules.AI.Services.Privacy;
+using HyFib.HealthCare360.Platform.Integrations;
 
 namespace HyFib.HealthCare360.Modules.AI.Tests;
 
@@ -85,4 +87,29 @@ public sealed class PhiRedactorTests
     public void Builds_name_variants_longest_first_without_honorifics_or_initials() =>
         PhiRedactor.NameVariants(["  Dr.  Anil   Mehta ", "A", "Smt. Lakshmi"])
             .ShouldBe(["Dr. Anil Mehta", "Smt. Lakshmi", "Lakshmi", "Mehta", "Anil"]);
+
+    [Fact]
+    public void Texts_sent_together_share_one_set_of_placeholders()
+    {
+        var result = PhiRedactor.Redact(["Call 9876543210 about Ravi Kumar Sharma.", "Ravi Kumar Sharma: 9876543210, or 9123456789."], Patient);
+
+        result.Texts.ShouldBe(["Call [PHONE_1] about [NAME_1].", "[NAME_1]: [PHONE_1], or [PHONE_2]."]);
+        result.Text.ShouldBe("Call [PHONE_1] about [NAME_1].");
+        result.Total.ShouldBe(3);
+    }
+
+    [Fact]
+    public void A_request_is_redacted_in_its_system_prompt_and_every_message_and_nothing_else_changes()
+    {
+        var request = new AiRequest("other.module", "Background: Ravi Kumar Sharma, 9876543210.",
+            [new AiMessage("user", "Is Ravi Kumar Sharma (UHID NH26000123) due?"), new AiMessage("assistant", "Call 9876543210.")], 512, AiPrompts.NoteSchema);
+
+        var redacted = RedactedAiRequest.Redact(request, Patient);
+
+        redacted.Request.SystemPrompt.ShouldBe("Background: [NAME_1], [PHONE_1].");
+        redacted.Request.Messages.ShouldBe([new AiMessage("user", "Is [NAME_1] (UHID [ID_1]) due?"), new AiMessage("assistant", "Call [PHONE_1].")]);
+        (redacted.Request with { SystemPrompt = request.SystemPrompt, Messages = request.Messages }).ShouldBe(request);
+        redacted.Redaction.Total.ShouldBe(3);
+        redacted.Redaction.Restore("[NAME_1]").ShouldBe("Ravi Kumar Sharma");
+    }
 }

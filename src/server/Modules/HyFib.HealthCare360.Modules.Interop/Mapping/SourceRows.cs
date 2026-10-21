@@ -333,6 +333,7 @@ internal sealed record DischargeSummaryRow
 {
     public required Guid Id { get; init; }
     public required Guid PatientId { get; init; }
+    public Guid FacilityId { get; init; }
     public Guid AdmissionId { get; init; }
     public Guid? EncounterId { get; init; }
     public Guid? PractitionerId { get; init; }
@@ -356,3 +357,4 @@ internal sealed record DischargeSummaryRow
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }
+

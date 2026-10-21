@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
+using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
@@ -26,15 +27,21 @@ using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
+using HyFib.HealthCare360.Testing.Abdm;
+using Hl7.Fhir.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// ABDM health records over the real API (SRS EHR-08): a patient registered with an ABHA number and address; a signed
 /// consultation, a signed prescription, a released lab report and a signed discharge summary exported as ABDM documents,
-/// each refused while it is still a draft; and who may do it. The ABDM switch is hospital-wide and off by default, so
+/// each refused while it is still a draft, downloaded as a named file that validates against the NRCeS profiles (Firely,
+/// <see cref="AbdmProfileValidator"/>), without the patient's record-sharing consent (a staff copy, like the printout);
+/// a prescription only where the hospital's DSC rule lets it issue one; and who may do it. The ABDM switch is
+/// hospital-wide and off by default, so
 /// these tests are in the feature-switch collection and turn it off again in a <c>finally</c> block. The in-patient
 /// records come from a stay in the female general ward, which the journeys don't use, and the admission is cancelled at
 /// the end, as the ward-round test does.
@@ -50,6 +57,11 @@ public sealed class AbdmExportTests(HospitalServer server)
     /// <summary>The CRP the lab reports, in mg/L: within the reference interval, so it needs no critical call.</summary>
     private const decimal Crp = 3.2m;
     private const string CrpLoincName = "C reactive protein [Mass/volume] in Serum or Plasma";
+
+    /// <summary>A prescription's notes for the pharmacist and nurse: not printed for the patient, and not shared.</summary>
+    private const string PharmacistNotes = "Check the patient's allergy card before dispensing";
+
+    private static readonly JsonSerializerOptions Fhir = new JsonSerializerOptions().ForFhir(R4.ModelInfo.ModelInspector);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -264,9 +276,29 @@ public sealed class AbdmExportTests(HospitalServer server)
             await NotExportableAsync(path);
 
             await SignAsync(doctor, prescription);
-            var bundle = await ExportAsync(path, PrescriptionRecord, abha);
+
+            // Where the hospital requires the doctor's DSC, the document is a copy of the prescription like the printout:
+            // not without a valid DSC signature, with the printout's own code.
+            var facilityId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+            await DscTestPki.SetPolicyAsync(server, facilityId, "required", Ct);
+            try
+            {
+                (await RefusedAsync(path)).ShouldBe(PrescriptionFinalCopies.RequiredCode);
+            }
+            finally
+            {
+                await DscTestPki.SetPolicyAsync(server, facilityId, null, Ct);
+            }
+
+            // The patient has not given the record-sharing consent of the FHIR API: a staff copy does not need it.
+            var bundle = await ExportAsync(path, PrescriptionRecord, abha, $"prescription-{prescription.PrescriptionNumber}");
             Resources(bundle, "MedicationRequest").Select(r => r.GetProperty("medicationCodeableConcept").GetProperty("text").GetString())
                 .ShouldBe([paracetamol.Name, cetirizine.Name], ignoreOrder: true);
+
+            // The advice printed for the patient travels; the notes for the pharmacist do not.
+            var text = bundle.GetRawText();
+            text.ShouldContain("Drink plenty of fluids and rest.");
+            text.ShouldNotContain(PharmacistNotes, Case.Insensitive);
 
             var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
             exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: prescription");
@@ -301,7 +333,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             await NameCrpsLoincCodeAsync();
 
             await ReleaseAsync(crp);
-            var bundle = await ExportAsync(path, DiagnosticReportRecord, abha);
+            var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-");
             var result = Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem();
             result.GetProperty("resourceType").GetString().ShouldBe("Observation");
             result.GetProperty("valueQuantity").GetProperty("value").GetDecimal().ShouldBe(Crp);
@@ -358,7 +390,7 @@ public sealed class AbdmExportTests(HospitalServer server)
                 .ShouldBe("An in-patient note is not exported on its own: its diagnoses and prescriptions are in the stay's discharge summary.");
 
             await doctor.PostAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/{summary.Id}/sign", new SignDischargeSummaryRequest(summary.Version));
-            var bundle = await ExportAsync(path, DischargeSummaryRecord, abha);
+            var bundle = await ExportAsync(path, DischargeSummaryRecord, abha, $"discharge-summary-{patient.Uhid}-");
             Resources(bundle, "Condition").ShouldHaveSingleItem().GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString()
                 .ShouldBe("R50.9");
             Resources(bundle, "MedicationRequest").ShouldHaveSingleItem().GetProperty("medicationCodeableConcept").GetProperty("text").GetString()
@@ -410,7 +442,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         try
         {
             await SwitchAsync(enabled: true);
-            var composition = Composition(await ExportAsync($"/api/v1/abdm/bundles/op-consultations/{signed}", "371530004", abha));
+            var composition = Composition(await ExportAsync($"/api/v1/abdm/bundles/op-consultations/{signed}", "371530004", abha, $"consultation-{patient.Uhid}-"));
 
             // Both doctors wrote this version; the one who amended it answers for it, from the moment they did.
             composition.GetProperty("status").GetString().ShouldBe("amended");
@@ -448,7 +480,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             await medicalRecords.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
             await SwitchAsync(enabled: true);
 
-            var bundle = await ExportAsync($"/api/v1/abdm/bundles/lab-reports/{crp.ReportId}", DiagnosticReportRecord, abha);
+            var bundle = await ExportAsync($"/api/v1/abdm/bundles/lab-reports/{crp.ReportId}", DiagnosticReportRecord, abha, "lab-report-");
             var patient = Resources(bundle, "Patient").ShouldHaveSingleItem();
             patient.GetProperty("identifier").EnumerateArray().Single(i => i.GetProperty("system").GetString() == "urn:hc360:uhid")
                 .GetProperty("value").GetString().ShouldBe(kept.Uhid);
@@ -496,7 +528,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     private static async Task<PrescriptionDto> PrescribeAsync(ApiClient doctor, Guid patientId, Guid encounterId, params PrescriptionItemRequest[] lines)
     {
         var prescription = await doctor.PostAsync<PrescriptionDto>("/api/v1/clinical/prescriptions", new CreatePrescriptionRequest(
-            patientId, encounterId, VisitId: null, AdmissionId: null, IsInpatient: false, PractitionerId: null, Notes: null,
+            patientId, encounterId, VisitId: null, AdmissionId: null, IsInpatient: false, PractitionerId: null, Notes: PharmacistNotes,
             Advice: "Drink plenty of fluids and rest.", RefillsAllowed: 0, lines));
         prescription.Status.ShouldBe(PrescriptionStatus.Draft);
         return prescription;
@@ -593,6 +625,15 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     /// <summary>The hospital administrator, who exports records for ABDM, is told the record cannot be exported yet, and why.</summary>
+    /// <summary>The code of a refused export (422).</summary>
+    private async Task<string?> RefusedAsync(string path)
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        using var refused = await admin.SendRawAsync(HttpMethod.Get, path);
+        refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await refused.Content.ReadAsStringAsync(Ct));
+        return (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString();
+    }
+
     private async Task<string?> NotExportableAsync(string path)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -608,13 +649,23 @@ public sealed class AbdmExportTests(HospitalServer server)
     /// first entry is the Composition of the record's type, about the patient with their ABHA number, and which stands
     /// alone: each entry has a <c>urn:uuid:</c> address, and every reference in the document is to one of them.
     /// </summary>
-    private async Task<JsonElement> ExportAsync(string path, string documentType, string abha)
+    private async Task<JsonElement> ExportAsync(string path, string documentType, string abha, string fileName)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         using var exported = await admin.SendRawAsync(HttpMethod.Get, path);
         var body = await exported.Content.ReadAsStringAsync(Ct);
         exported.StatusCode.ShouldBe(HttpStatusCode.OK, body);
         exported.Content.Headers.ContentType.ShouldNotBeNull().MediaType.ShouldBe("application/fhir+json");
+        exported.Headers.CacheControl.ShouldNotBeNull().NoStore.ShouldBeTrue();
+        var disposition = exported.Content.Headers.ContentDisposition.ShouldNotBeNull();
+        disposition.DispositionType.ShouldBe("attachment");
+        var saved = (disposition.FileNameStar ?? disposition.FileName).ShouldNotBeNull().Trim('"');
+        saved.ShouldStartWith(fileName);
+        saved.ShouldEndWith("-abdm.json");
+
+        // It validates against the NRCeS ndhm.in 6.5.0 profiles (Firely, with the FHIR R4 core definitions).
+        var validation = AbdmProfileValidator.Validate(JsonSerializer.Deserialize<R4.Bundle>(body, Fhir).ShouldNotBeNull(), AbdmProfileValidator.DocumentBundle);
+        validation.Errors.ShouldBeEmpty(validation.Describe());
         var bundle = JsonSerializer.Deserialize<JsonElement>(body, ApiClient.Json);
         bundle.GetProperty("resourceType").GetString().ShouldBe("Bundle");
         bundle.GetProperty("type").GetString().ShouldBe("document");

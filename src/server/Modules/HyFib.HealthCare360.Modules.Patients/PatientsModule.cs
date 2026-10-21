@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
+using HyFib.HealthCare360.Modules.Patients.Features.Identity;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Queue;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
@@ -17,6 +18,7 @@ public static class PatientsPermissions
     public const string BreakGlass = "patients.break_glass";
     public const string Consents = "patients.consents";
     public const string Documents = "patients.documents";
+    public const string IdentityVerify = "patients.identity.verify";
     public const string VisitsRead = "visits.read";
     public const string VisitsManage = "visits.manage";
     public const string QueueManage = "queue.manage";
@@ -40,6 +42,7 @@ public static class PatientsPermissions
         new(BreakGlass, "Patients", "Emergency access to restricted records (audited)", Clinical),
         new(Consents, "Patients", "Capture and revoke patient consents", [.. Desk, .. Clinical]),
         new(Documents, "Patients", "Attach and view patient documents", [.. Desk, .. Clinical, SystemRoles.MrdOfficer, SystemRoles.InsuranceDesk]),
+        new(IdentityVerify, "Patients", "Check a patient's identity with their Aadhaar fingerprint (UIDAI)", Desk),
         new(VisitsRead, "Visits", "View visits and queues", PlatformPermissions.AllStaff),
         new(VisitsManage, "Visits", "Create, cancel and complete visits", [.. Desk, .. Clinical]),
         new(QueueManage, "Visits", "Call, start and complete queue tokens", [.. Desk, .. Clinical]),
@@ -66,11 +69,13 @@ public sealed class PatientsModule : IModule
         services.AddScoped<PatientRegistrationService>();
         services.AddScoped<Seed.LoadTestPatients>();
         services.AddScoped<PatientAccessGuard>();
+        services.AddScoped<IPatientRecordAccess>(sp => sp.GetRequiredService<PatientAccessGuard>());
         services.AddScoped<VisitService>();
         services.AddScoped<PortalPatientScope>();
         services.AddScoped<PortalFamilyService>();
         services.AddScoped<IPortalAccountResolver, PortalAccountResolver>();
         services.AddScoped<IPatientLanguageSource, PatientLanguageSource>();
+        services.AddScoped<IdentityCheckService>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -80,5 +85,6 @@ public sealed class PatientsModule : IModule
         QueueEndpoints.Map(endpoints);
         FrontOfficeEndpoints.Map(endpoints);
         PortalFamilyEndpoints.Map(endpoints);
+        IdentityCheckEndpoints.Map(endpoints);
     }
 }

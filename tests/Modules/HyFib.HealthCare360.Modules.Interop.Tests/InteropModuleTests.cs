@@ -33,7 +33,6 @@ public sealed class InteropModuleTests
     {
         var permission = new InteropModule().Permissions.Single(p => p.Name == InteropPermissions.FhirRead);
 
-        permission.Name.ShouldBe(InteropPermissions.FhirRead);
         permission.Name.ShouldBe("fhir.read");
         permission.DefaultRoles.ShouldBe([SystemRoles.HospitalAdmin]);
         permission.Group.ShouldNotBeNullOrWhiteSpace();
@@ -47,7 +46,9 @@ public sealed class InteropModuleTests
 
         permission.Name.ShouldBe("abdm.export");
         permission.DefaultRoles.ShouldBe([SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]);
+        permission.Group.ShouldBe("Interoperability");
         permission.Description.ShouldContain("audited");
+        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport]);
     }
 
     [Fact]

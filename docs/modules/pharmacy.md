@@ -8,7 +8,10 @@ chronic-medication refills with reminders; and the pharmacist dashboard. SRS **P
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Pharmacy` (references SupplyChain for stock and Patients).
 Schema `pharmacy`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Pharmacy.Tests` (58 unit and EF-model tests).
 All stock movements go through SupplyChain's `StockService` (see `supplychain.md`) in the same transaction as the
-pharmacy document. The pharmacy never changes batch quantities itself.
+pharmacy document. The pharmacy never changes batch quantities itself. A pharmacy store's stock positions and its
+reorder, near-expiry and expired-stock reports (PH-04) are SupplyChain's stock screen (`/api/v1/inventory/stock`) and
+inventory reports, read with the store's id; `PharmacyStockReportTests` in `tests/HyFib.HealthCare360.IntegrationTests`
+proves them on stock received with chosen batches and expiry dates.
 
 ## Permissions
 
@@ -66,7 +69,7 @@ or tag in hand against the prescription and picks the tag's batch for its line. 
 blocked, expired or used up is warned about, not picked. Scanners that type like a keyboard and scanners on a COM port
 (through HC360 Desktop) both work. See [integrations.md](integrations.md#barcode-labels-int-bar).
 
-### Counter sales, payments, returns, stock — `/sales`, `/stock` (PH-02, PH-06)
+### Counter sales, payments, returns, stock — `/sales`, `/stock` (PH-02, PH-04)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/stock?storeId&search&inStockOnly&take` | Counter staff | → `PharmacyStockRow[]` (schedule, controlled, Rx-only, cold chain, available, MRP, nearest expiry). A pharmacy tag's barcode as `search` (`PCM500#AB1234`) finds the item by its exact code and adds `scanned` (the batch it names, or why it cannot be handed out) |
@@ -102,7 +105,7 @@ pay out. Only unexpired stock is restocked; expired or damaged returns are refun
   line with `SourceModule = "pharmacy.ip.return"` and `SourceReference = <return line id>`.
 * Missing or inactive service items fail with `pharmacy.service_items_missing`.
 
-### Registers — `/registers` (PH-05 statutory)
+### Registers — `/registers` (PH-06 statutory)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/registers/controlled?page&storeId&itemId&schedule&from&to` | `pharmacy.registers` | → paged `ControlledRegisterRow` (Schedule H1/X and NDPS; per item and store in posting order: movement, quantity in/out, running balance, batch/expiry, patient name/UHID/address, prescriber and registration number, prescription and document number, recorded by) |

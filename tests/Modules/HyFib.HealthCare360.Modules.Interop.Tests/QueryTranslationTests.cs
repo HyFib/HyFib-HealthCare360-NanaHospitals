@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Clinical;
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics;
 using HyFib.HealthCare360.Modules.Inpatient;
 using HyFib.HealthCare360.Modules.Interop.Services;
@@ -102,6 +103,17 @@ public sealed class QueryTranslationTests : IDisposable
         documents.ShouldContain("'IdProof'");
         documents.ShouldContain("'InsuranceCard'");
         provider.SignedSummaries(s => s.PatientId == TestData.PatientId).ToQueryString().ShouldContain("'Draft'");
+    }
+
+    [Fact]
+    public void A_prescriptions_lines_translate_whatever_its_status()
+    {
+        var sql = MedicationRequestProvider.LineRows(
+            _db.Set<PrescriptionItem>().Where(i => i.PrescriptionId == TestData.PatientId),
+            _db.Set<Prescription>().Where(p => p.Id == TestData.PatientId)).ToQueryString();
+
+        sql.ShouldContain("prescription_items");
+        sql.ShouldNotContain("'Signed'");
     }
 
     [Fact]

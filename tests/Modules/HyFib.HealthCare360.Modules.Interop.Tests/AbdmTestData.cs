@@ -245,7 +245,7 @@ internal static class AbdmTestData
     ];
 
     public static PrescriptionData Prescription(AbdmPdf? pdf) => new(
-        Context(encounter: Consultation(), pdf: pdf), PrescriptionId, TestData.DoctorId, Seen.AddMinutes(20), Seen.AddMinutes(22),
+        Context(encounter: Consultation(), pdf: pdf), PrescriptionId, "NHRX2600873", TestData.DoctorId, Seen.AddMinutes(20), Seen.AddMinutes(22),
         "Drink plenty of fluids and rest.", Seen.AddMinutes(20), Seen.AddMinutes(22), PrescriptionLines());
 
     public static ConsultationData ConsultationRecord() => new(

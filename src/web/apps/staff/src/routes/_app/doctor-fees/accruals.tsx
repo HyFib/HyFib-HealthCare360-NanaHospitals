@@ -7,10 +7,10 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { SERVICE_CATEGORY_LABEL } from '@/modules/billing/labels';
-import { formatPercent, sumRupees } from '@/modules/billing/money';
 import { dateParam, enumParam, pageParam } from '@/modules/billing/searchParams';
 import { Amount, NoAccess } from '@/modules/billing/ui';
 import { ACCRUAL_STATUS_LABEL, ACCRUAL_STATUSES, feeQueries, type AccrualStatus } from '@/modules/doctor-fees/api';
+import { feeRate, feeTotal } from '@/modules/doctor-fees/logic';
 import { PractitionerPicker, type PickedDoctor } from '@/modules/doctor-fees/PractitionerPicker';
 
 interface AccrualsSearch {
@@ -54,7 +54,7 @@ function AccrualsPage() {
     );
   }
 
-  const pageTotal = accruals.data ? sumRupees(accruals.data.items.map((a) => a.shareAmount)) : null;
+  const pageTotal = accruals.data ? feeTotal(accruals.data.items) : null;
 
   return (
     <Page>
@@ -134,7 +134,7 @@ function AccrualsPage() {
               header: 'Rate',
               align: 'end',
               priority: 'low',
-              render: (a) => (a.method === 'Percentage' ? formatPercent(a.rate) : `${formatInr(a.rate)}/unit`),
+              render: (a) => feeRate(a.method, a.rate),
             },
             {
               key: 'share',

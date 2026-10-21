@@ -44,6 +44,7 @@ export function purposeLabel(purpose: string): string {
 
 const AI_PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic Claude',
+  openai: 'OpenAI-compatible server',
   whisper: 'Whisper speech server',
   none: 'Off',
   disabled: 'Off',

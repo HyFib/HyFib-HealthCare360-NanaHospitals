@@ -160,7 +160,7 @@ public sealed class AudioFormatTests
     [InlineData("http://localhost:8000/v1/audio/transcriptions")]
     [InlineData("http://127.0.0.1:8000/v1/audio/transcriptions")]
     public void Https_or_plain_http_to_this_machine_is_accepted(string url) =>
-        SpeechConfig.TryCreateEndpoint(url).ShouldBe(new Uri(url));
+        AiEndpoint.TryCreate(url).ShouldBe(new Uri(url));
 
     private SpeechToTextRouter Router(SpeechSettings? speech, bool aiEnabled = true)
     {

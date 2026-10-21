@@ -2,7 +2,7 @@
 
 Read-only HL7 FHIR R4 API that lets other providers read a patient's record, **subject to the patient's consent**
 (SRS **EHR-05**): Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport
-and DocumentReference under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.5.0), returns JSON only
+and DocumentReference under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only
 and writes nothing.
 
 It also exports discharge summaries, lab reports, consultation notes and prescriptions as **ABDM health records**
@@ -16,7 +16,7 @@ live.
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.Interop` (layer 8; references Patients, Clinical, Diagnostics and Inpatient) |
 | Schema | none. The module owns no tables and reads the other modules' entities through `HospitalDbContext` (no migration) |
 | Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08, **partly met**: ABHA capture and the ABDM document export of consultations, prescriptions, lab reports and discharge summaries are built; verifying an ABHA with ABDM and linking care contexts to it need the ABDM gateway (the hospital's NHA credentials, not live), and imaging reports are not exported yet |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, the validated samples in `Fixtures/Abdm`) and `AbdmGatewayTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example numbers, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, read-only), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts` |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, the validated samples in `Fixtures/Abdm`) `ValidatorSetupTests` (`Abdm/`: the Firely validator set-up, see [Validation](#validation)) and `AbdmGatewayTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example numbers, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, read-only), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate, the download's file and the DSC rule, every downloaded document validated), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts`, `modules/emr/AbdmRecordButton.test.tsx`, `modules/emr/abdmRecords.test.tsx` |
 
 ## Permission and set-up
 
@@ -61,6 +61,8 @@ Every read and search passes the same gate for the patient the data belongs to:
   signed prescriptions (and signed ones cancelled later), signed or amended discharge summaries. Drafts, unverified
   and unreleased work never leave the hospital. Identity proofs and insurance cards are never shared.
 * Deactivated (not merged) patients stay readable by id (`active: false`) but are not returned by Patient searches.
+* ABDM health records pass the same gate, with answers worded for staff
+  ([ABDM health records](#abdm-health-records-ehr-08)).
 
 ## Audit and logging
 
@@ -71,6 +73,11 @@ Every read and search passes the same gate for the patient the data belongs to:
 | Patient search | `phi` / `patient.accessed` | one entry per returned patient, written in one transaction |
 | Patient search that returned nobody | `integration` / `fhir.search` | counts and parameter names |
 | Read or search refused for consent or restriction | `security` / `fhir.access_denied` (Warning) | patient id, type, id, reason |
+| ABDM health record downloaded | `phi` / `abdm.record.exported` | patient id, `DischargeSummary` or `Prescription` and its id, `{ format: fhir-r4-document, profile, document, resources }` (`document` is the bundle's identifier, `resources` its entry count) |
+| ABDM download refused for consent or restriction | `security` / `abdm.export_refused` (Warning) | patient id, `DischargeSummary` or `Prescription` and its id, reason (`consent-required`, `restricted-record`) |
+
+Downloads appear in the patient's record access history like any other PHI access. No part of the document's content is
+written to the audit trail.
 
 Parameter values (identifiers, names, dates of birth) are never stored in the audit trail. Application logs contain no
 identifiers: the only messages are an unexpected error (route pattern and resource type) and an ABHA number that could
@@ -283,20 +290,23 @@ ABHA numbers, end in).
 
 | Method | Path | Permission | Response |
 |---|---|---|---|
-| GET | `/bundles/discharge-summaries/{id}` | `abdm.export` | DischargeSummaryRecord document of a signed or amended discharge summary |
-| GET | `/bundles/lab-reports/{id}` | `abdm.export` | DiagnosticReportRecord document of a released (or amended) lab report |
-| GET | `/bundles/op-consultations/{id}` | `abdm.export` | OPConsultRecord document of a signed out-patient, emergency, telehealth or health check-up consultation (clinical encounter id) |
-| GET | `/bundles/prescriptions/{id}` | `abdm.export` | PrescriptionRecord document of a signed prescription |
+| GET | `/bundles/discharge-summaries/{id}` | `abdm.export` | DischargeSummaryRecord document of a signed or amended discharge summary, as `discharge-summary-{UHID}-{discharge date}-abdm.json` |
+| GET | `/bundles/lab-reports/{id}` | `abdm.export` | DiagnosticReportRecord document of a released (or amended) lab report, as `lab-report-{report number}-abdm.json` |
+| GET | `/bundles/op-consultations/{id}` | `abdm.export` | OPConsultRecord document of a signed out-patient, emergency, telehealth or health check-up consultation (clinical encounter id), as `consultation-{UHID}-{date}-abdm.json` |
+| GET | `/bundles/prescriptions/{id}` | `abdm.export` | PrescriptionRecord document of a signed prescription, as `prescription-{number}-abdm.json` |
 | GET | `/gateway` | `admin.integrations.manage` (no role has it by default: the super administrator) | `AbdmGatewayStatus`: how the gateway is set up, what is missing, `live: false` and what remains |
 
-* Bundles are `application/fhir+json; charset=utf-8`, never cached; `?pretty=true` indents.
+* Bundles are `application/fhir+json; charset=utf-8`, files to save (`Content-Disposition: attachment`, with the names
+  above; dates are the day in IST), never cached; `?pretty=true` indents.
 * The record must be in the caller's facility (404 otherwise, as for a record that does not exist) and of a patient
   who is not deleted (404). A restricted (VIP) record needs `patients.restricted.read` or break-the-glass (403), as on
   screen, and this is checked before anything else about the record is told. A refusal is audited as a security
   warning: `security` / `abdm.export_denied`, "ABDM health record export refused: lab report", details
   `{ api: "abdm", record, reason }`. Then the record must be complete (422 `abdm.not_exportable`: a draft, a cancelled
   prescription, an unreleased report, an unsigned note, an in-patient note, whose diagnoses and prescriptions are in
-  the stay's discharge summary).
+  the stay's discharge summary). A prescription is a copy of the prescription like its printout, so where the facility
+  requires the doctor's DSC and the prescription has no valid one it is refused with the printout's codes: 422
+  `prescription.digital_signature_required`, `…_untrusted` or `…_invalid` ([clinical.md](clinical.md)).
 * A record still kept under a duplicate UHID that was merged into another patient (a lab report: the Diagnostics module
   leaves its records where they are) is exported as the surviving patient's, with that patient's UHID and ABHA, once
   both patients may be opened (a restricted patient on either side needs the permission). A chain of merges is followed
@@ -308,8 +318,11 @@ ABHA numbers, end in).
 * Every export is audited under the document's patient: `phi` / `patient.accessed`, "ABDM health record exported:
   discharge summary", entity `abdm.{Type}` and the record id, details `{ api: "abdm", record, document, version,
   entries }`.
-* The staff app has no export button yet: the API is what the gateway client will use, and what the hospital's staff
-  call for NHA's sandbox testing.
+* **Staff app**, for users with `abdm.export` while the switch is on; a refusal is shown with the server's reason:
+  **Download ABDM record** on a signed or amended discharge summary (patient chart > Admissions > Discharge summary;
+  disabled while it has unsaved changes, hidden while it is being amended) and in the menu of a signed prescription
+  (the patient chart's and the encounter's prescriptions). Lab reports and consultations are exported through the API,
+  which is also what the gateway client will use and what the hospital's staff call for NHA's sandbox testing.
 
 ### The documents
 
@@ -366,6 +379,19 @@ resource has a generated narrative.
 
 ### Validation
 
+**In CI**, every document is validated with Firely's validator (`Firely.Fhir.Validation.R4`, BSD-3-Clause, test
+projects only) against the FHIR R4 core definitions (`Hl7.Fhir.Specification.Data.R4`) and the NRCeS `ndhm.in` 6.5.0
+profiles, copied unchanged into `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests/TestData/ndhm.in-6.5.0` (its
+README says where from). Structure, cardinality, slicing, fixed values, invariants, references and the bindings that
+can be checked offline (MIME types, languages, UCUM, HL7 code systems) are checked; SNOMED CT and LOINC need a
+terminology server, so those checks are skipped and listed (`AbdmProfileValidator`), never passed silently.
+
+* `AbdmDocumentTests`: the four sample documents (consultation, prescription, lab report, discharge summary) validate
+  with no error and no warning.
+* `Abdm/ValidatorSetupTests`: the guide's own discharge summary and prescription examples validate, and fourteen
+  deliberately broken documents fail on the rule they break, so a validator that checks nothing cannot pass.
+* `AbdmExportTests` (IntegrationTests): every document downloaded from the endpoints validates.
+
 The four sample documents built by `AbdmDocumentTests` are kept in
 `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests/Fixtures/Abdm` (a test fails when the code builds anything
 else; `HC360_WRITE_ABDM_FIXTURES=1` writes them again, after which they are validated again). They were checked on
@@ -387,10 +413,10 @@ example documents were validated the same way, as a control.
 | `op-consultation.json` | **0** | 23 | `Bundle-OPConsultNote-example-05`: 5 errors, 4 warnings |
 | `discharge-summary.json` | 3 | 7 | `Bundle-DischargeSummary-example-04`: 8 errors, 14 warnings |
 
-* **Every error is the MIME type of an attachment** (`application/pdf`, `text/plain; charset=utf-8`): its required
-  binding to the MimeType value set can only be checked by a terminology server, and the section entry holding that
-  Binary or DocumentReference then "matches no profile". The IG's own examples fail in exactly the same way
-  offline. Nothing else is an error.
+* **Every error is the MIME type of an attachment** (`application/pdf`, `text/plain; charset=utf-8`): the HL7 validator
+  checks its required binding to the MimeType value set only with a terminology server, and the section entry holding
+  that Binary or DocumentReference then "matches no profile". The IG's own examples fail in exactly the same way
+  offline, and Firely, which checks MIME types offline, finds no error. Nothing else is an error.
 * The warnings are codes that cannot be checked without a terminology server (UCUM units, BCP-47 languages), and the
   visit number's identifier type (v2-0203 `VN`), which is not in the R4 IdentifierType value set (an extensible
   binding, so a warning).
@@ -428,10 +454,15 @@ What remains, in order (also in the status's `remaining`):
   reports are not exported as ABDM documents (the IG's DiagnosticReportImaging), nor are immunisations, wellness and
   invoice records. The FHIR read API's resources keep the ABDM-friendly identifiers (ABHA number, HFR id) but claim no
   NRCeS profiles; the ABDM documents do.
+* Doctors' Healthcare Professionals Registry (HPR) ids are not recorded: ABDM documents name a doctor by medical
+  council registration number and HC360 code until they are.
+* An ABDM download is in the patient's record access log (`patient.accessed`), but the privacy data summary does not
+  list its recipient, as HC360 does not know who receives the file.
 * No `vread`/history, `_include`/`_revinclude`, `_sort`, `_summary`, `_elements`, XML, or bulk export (`$export`);
   clinical searches are per patient.
-* Practitioner, Organization and Location are not served: references carry a display name (and the HFR id for
-  facilities). Binary is not served, so uploaded documents are metadata only.
+* Practitioner, Organization and Location are not served by the FHIR API: references carry a display name (and the
+  HFR id for facilities). ABDM documents carry their doctor and hospital as entries. Binary is not served, so uploaded
+  documents are metadata only.
 * Not exported yet: immunizations, procedures, clinical notes, antibiotic susceptibilities, RPM device readings,
   vital-sign interpretation flags, the primary-diagnosis rank.
 * Offset paging: rows added or changed between two page requests can shift the pages. The `next` links repeat the
