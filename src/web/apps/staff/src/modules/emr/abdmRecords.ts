@@ -8,7 +8,8 @@ import { usePermission } from '@/lib/permissions';
 /**
  * ABDM health records (SRS EHR-08): a signed discharge summary or prescription as a FHIR document in the format of the
  * Ayushman Bharat Digital Mission, offered only while ABDM health records are switched on, to staff with `abdm.export`.
- * The server also requires the patient's consent to share their records, and says so when it is missing.
+ * Like the printed copy, it does not need the patient's record-sharing consent; the server refuses a restricted record
+ * the user may not open, and a prescription the hospital's DSC rule does not let it issue, and says why.
  */
 export function useAbdmRecordsAvailable(): boolean {
   const switchedOn = useFeatureOn('abdm');

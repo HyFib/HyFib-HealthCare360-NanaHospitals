@@ -33,6 +33,9 @@ internal static class FhirTime
     /// <summary>FHIR date text: <c>2026-09-01</c>.</summary>
     public static string Date(DateOnly value) => value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
+    /// <summary>The calendar date of an instant in IST.</summary>
+    public static DateOnly IstDate(DateTimeOffset value) => DateOnly.FromDateTime(value.ToOffset(Ist).DateTime);
+
     /// <summary>IST midnight at the start of a calendar date.</summary>
     public static DateTimeOffset StartOfDay(DateOnly date) => new(date.ToDateTime(TimeOnly.MinValue), Ist);
 }

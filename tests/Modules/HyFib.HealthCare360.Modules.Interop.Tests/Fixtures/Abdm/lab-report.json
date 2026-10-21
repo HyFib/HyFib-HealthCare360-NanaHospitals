@@ -1,0 +1,802 @@
+{
+  "resourceType": "Bundle",
+  "id": "6320928c-eaad-82d4-92f9-f0ac0561f4db",
+  "meta": {
+    "versionId": "1790311800000-3ca85cd3771e3fa7",
+    "lastUpdated": "2026-09-25T10:20:00+05:30",
+    "profile": [
+      "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
+    ],
+    "security": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality",
+        "code": "V",
+        "display": "very restricted"
+      }
+    ]
+  },
+  "identifier": {
+    "system": "urn:ietf:rfc:3986",
+    "value": "urn:uuid:6320928c-eaad-82d4-92f9-f0ac0561f4db"
+  },
+  "type": "document",
+  "timestamp": "2026-09-25T10:20:00+05:30",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:c3c3debc-3b6f-885c-951a-d899de6acea9",
+      "resource": {
+        "resourceType": "Composition",
+        "id": "c3c3debc-3b6f-885c-951a-d899de6acea9",
+        "meta": {
+          "versionId": "1790311800000-3ca85cd3771e3fa7",
+          "lastUpdated": "2026-09-25T10:20:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportRecord"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Laboratory report</p><p>Date: 2026-09-25T10:20:00+05:30</p><p>Laboratory report</p></div>"
+        },
+        "identifier": {
+          "system": "urn:ietf:rfc:3986",
+          "value": "urn:uuid:c3c3debc-3b6f-885c-951a-d899de6acea9"
+        },
+        "status": "final",
+        "type": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "721981007",
+              "display": "Diagnostic studies report"
+            }
+          ],
+          "text": "Laboratory report"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+          "type": "Patient",
+          "display": "Meera Anil Kulkarni"
+        },
+        "encounter": {
+          "reference": "urn:uuid:65c90a44-0f19-890c-8822-79affffc444c",
+          "type": "Encounter",
+          "display": "Out-patient consultation 2026-09-25T08:10:00+05:30"
+        },
+        "date": "2026-09-25T10:20:00+05:30",
+        "author": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "title": "Laboratory report",
+        "custodian": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "display": "Nana Hospitals, Pune"
+        },
+        "section": [
+          {
+            "title": "Laboratory report",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "4241000179101",
+                  "display": "Laboratory report"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Haemoglobin, C-reactive protein (Flagged by the laboratory: Haemoglobin (Low), C-reactive protein (High).)</p><p>Laboratory report</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:6d44ca72-57a7-8e03-b1d5-0a784db640e1",
+                "type": "DiagnosticReport",
+                "display": "Haemoglobin, C-reactive protein (Flagged by the laboratory: Haemoglobin (Low), C-reactive protein (High).)"
+              },
+              {
+                "reference": "urn:uuid:3c002037-231e-8139-a337-6b6d2a125258",
+                "type": "DocumentReference",
+                "display": "Laboratory report"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "4e080a21-3966-8efc-9236-64b034d9a58a",
+        "meta": {
+          "lastUpdated": "2026-09-22T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Meera Anil Kulkarni UHID NH-UH-2600123</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR",
+                  "display": "Medical record number"
+                }
+              ]
+            },
+            "system": "urn:hc360:uhid",
+            "value": "NH-UH-2600123"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-identifier-type-code",
+                  "code": "ABHA",
+                  "display": "Ayushman Bharat Health Account (ABHA) ID"
+                }
+              ],
+              "text": "ABHA number"
+            },
+            "system": "https://healthid.ndhm.gov.in",
+            "value": "91-1234-5678-9010"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "text": "Meera Anil Kulkarni",
+            "family": "Kulkarni",
+            "given": [
+              "Meera",
+              "Anil"
+            ],
+            "prefix": [
+              "Mrs"
+            ]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+919876543210",
+            "use": "mobile",
+            "rank": 1
+          },
+          {
+            "system": "email",
+            "value": "meera@example.org",
+            "use": "home",
+            "rank": 2
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1984-04-12",
+        "address": [
+          {
+            "use": "home",
+            "type": "physical",
+            "text": "12 MG Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "12 MG Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ],
+        "maritalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+              "code": "M",
+              "display": "Married"
+            }
+          ]
+        },
+        "managingOrganization": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:65c90a44-0f19-890c-8822-79affffc444c",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "65c90a44-0f19-890c-8822-79affffc444c",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:10:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Out-patient consultation 2026-09-25T08:10:00+05:30</p></div>"
+        },
+        "identifier": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN",
+                  "display": "Visit number"
+                }
+              ]
+            },
+            "system": "urn:hc360:visit-number",
+            "value": "NHOP2600871"
+          }
+        ],
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "type": [
+          {
+            "text": "Out-patient consultation"
+          }
+        ],
+        "serviceType": {
+          "text": "General Medicine"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "ATND",
+                    "display": "attender"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+              "type": "Practitioner",
+              "display": "Dr. Asha Rao"
+            }
+          }
+        ],
+        "period": {
+          "start": "2026-09-25T08:10:00+05:30",
+          "end": "2026-09-25T09:10:00+05:30"
+        },
+        "reasonCode": [
+          {
+            "text": "Fever for three days"
+          }
+        ],
+        "serviceProvider": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "8878f630-7199-8fcb-8182-a92e8749eb27",
+        "meta": {
+          "lastUpdated": "2022-09-25T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Nana Hospitals, Pune</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "XX",
+                  "display": "Organization identifier"
+                }
+              ]
+            },
+            "system": "urn:hc360:facility",
+            "value": "NHP"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "prov",
+                "display": "Healthcare Provider"
+              }
+            ]
+          }
+        ],
+        "name": "Nana Hospitals, Pune",
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+912026001234",
+            "use": "work"
+          },
+          {
+            "system": "email",
+            "value": "records@nanahospitals.example",
+            "use": "work"
+          }
+        ],
+        "address": [
+          {
+            "use": "work",
+            "type": "physical",
+            "text": "1 Hospital Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "1 Hospital Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:6d44ca72-57a7-8e03-b1d5-0a784db640e1",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "id": "6d44ca72-57a7-8e03-b1d5-0a784db640e1",
+        "meta": {
+          "lastUpdated": "2026-09-25T10:20:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportLab"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Haemoglobin, C-reactive protein (Flagged by the laboratory: Haemoglobin (Low), C-reactive protein (High).)</p></div>"
+        },
+        "identifier": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "ACSN",
+                  "display": "Accession ID"
+                }
+              ]
+            },
+            "system": "urn:hc360:accession-number",
+            "value": "NHLB2600342"
+          }
+        ],
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "394595002",
+                "display": "Pathology"
+              }
+            ],
+            "text": "Laboratory"
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "11502-2",
+              "display": "Laboratory report"
+            }
+          ],
+          "text": "Haemoglobin, C-reactive protein"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:65c90a44-0f19-890c-8822-79affffc444c"
+        },
+        "effectiveDateTime": "2026-09-25T09:15:00+05:30",
+        "issued": "2026-09-25T10:20:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "resultsInterpreter": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "result": [
+          {
+            "reference": "urn:uuid:749ae966-488a-8f72-bc3a-2e7dcf6c63b4"
+          },
+          {
+            "reference": "urn:uuid:914a186e-c890-895c-894c-31ea201afc05"
+          }
+        ],
+        "conclusion": "Flagged by the laboratory: Haemoglobin (Low), C-reactive protein (High)."
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3c002037-231e-8139-a337-6b6d2a125258",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "3c002037-231e-8139-a337-6b6d2a125258",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentReference"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Laboratory report</p></div>"
+        },
+        "status": "current",
+        "docStatus": "final",
+        "type": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "11502-2",
+              "display": "Laboratory report"
+            }
+          ],
+          "text": "Laboratory report"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "date": "2026-09-25T10:20:00+05:30",
+        "author": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "description": "Laboratory report",
+        "content": [
+          {
+            "attachment": {
+              "contentType": "application/pdf",
+              "data": "JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNTk1IDg0Ml0+PmVuZG9iagp0cmFpbGVyPDwvUm9vdCAxIDAgUj4+CiUlRU9GCg==",
+              "size": 193,
+              "title": "Laboratory report",
+              "creation": "2026-09-25T10:20:00+05:30"
+            }
+          }
+        ],
+        "context": {
+          "encounter": [
+            {
+              "reference": "urn:uuid:65c90a44-0f19-890c-8822-79affffc444c"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:749ae966-488a-8f72-bc3a-2e7dcf6c63b4",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "749ae966-488a-8f72-bc3a-2e7dcf6c63b4",
+        "meta": {
+          "lastUpdated": "2026-09-25T09:20:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Haemoglobin: 11.2 g/dL</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory",
+                "display": "Laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "718-7",
+              "display": "Hemoglobin [Mass/volume] in Blood"
+            }
+          ],
+          "text": "Haemoglobin"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:65c90a44-0f19-890c-8822-79affffc444c"
+        },
+        "effectiveDateTime": "2026-09-25T09:15:00+05:30",
+        "issued": "2026-09-25T10:20:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 11.2,
+          "unit": "g/dL",
+          "system": "http://unitsofmeasure.org",
+          "code": "g/dL"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "L",
+                "display": "Low"
+              }
+            ]
+          }
+        ],
+        "referenceRange": [
+          {
+            "low": {
+              "value": 12,
+              "unit": "g/dL",
+              "system": "http://unitsofmeasure.org",
+              "code": "g/dL"
+            },
+            "high": {
+              "value": 15,
+              "unit": "g/dL",
+              "system": "http://unitsofmeasure.org",
+              "code": "g/dL"
+            },
+            "text": "12.0 - 15.0"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:914a186e-c890-895c-894c-31ea201afc05",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "914a186e-c890-895c-894c-31ea201afc05",
+        "meta": {
+          "lastUpdated": "2026-09-25T09:20:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>C-reactive protein: 18 mg/L</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory",
+                "display": "Laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "1988-5",
+              "display": "C reactive protein [Mass/volume] in Serum or Plasma"
+            }
+          ],
+          "text": "C-reactive protein"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:65c90a44-0f19-890c-8822-79affffc444c"
+        },
+        "effectiveDateTime": "2026-09-25T09:15:00+05:30",
+        "issued": "2026-09-25T10:20:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "identifier": {
+              "system": "https://facility.ndhm.gov.in",
+              "value": "IN2710000123"
+            },
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "valueQuantity": {
+          "value": 18,
+          "unit": "mg/L",
+          "system": "http://unitsofmeasure.org",
+          "code": "mg/L"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "H",
+                "display": "High"
+              }
+            ]
+          }
+        ],
+        "referenceRange": [
+          {
+            "high": {
+              "value": 6,
+              "unit": "mg/L",
+              "system": "http://unitsofmeasure.org",
+              "code": "mg/L"
+            },
+            "text": "< 6"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "c5eb9e84-7367-8996-a1d6-35025a050d1b",
+        "meta": {
+          "lastUpdated": "2026-03-25T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dr. Asha Rao</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MD",
+                  "display": "Medical License number"
+                }
+              ]
+            },
+            "system": "urn:hc360:medical-council-registration",
+            "value": "MMC-2009-041234",
+            "assigner": {
+              "display": "Maharashtra Medical Council"
+            }
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "urn:hc360:practitioner",
+            "value": "D0007"
+          }
+        ],
+        "name": [
+          {
+            "text": "Dr. Asha Rao",
+            "family": "Rao",
+            "given": [
+              "Asha"
+            ],
+            "prefix": [
+              "Dr."
+            ]
+          }
+        ],
+        "gender": "female",
+        "qualification": [
+          {
+            "code": {
+              "text": "MBBS, MD (General Medicine)"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -231,7 +231,7 @@ public sealed class RegisterPatientRequestValidator : AbstractValidator<Register
         RuleFor(x => x.Address!.PinCode).PinCode().When(x => !string.IsNullOrWhiteSpace(x.Address?.PinCode));
         RuleFor(x => x.AbhaNumber).AbhaNumber();
         RuleFor(x => x.AadhaarNumber).Must(PatientRules.ValidAadhaar).WithMessage("Enter a valid 12-digit Aadhaar number.");
-        RuleFor(x => x.AbhaAddress).MaximumLength(128);
+        RuleFor(x => x.AbhaAddress).MaximumLength(128).AbhaAddress();
         RuleFor(x => x.GuardianName).MaximumLength(200);
         RuleFor(x => x.PhotoFileId).NotEqual(Guid.Empty).WithMessage("Choose a valid photo.");
         RuleFor(x => x.Notes).SafeText(2000);
@@ -256,6 +256,10 @@ public sealed class UpdatePatientRequestValidator : AbstractValidator<UpdatePati
         RuleFor(x => x.Email).EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x.Address!.PinCode).PinCode().When(x => !string.IsNullOrWhiteSpace(x.Address?.PinCode));
         RuleFor(x => x.AbhaNumber).AbhaNumber();
+
+        // The form sends the stored ABHA address back with every edit, so its format is checked by the service, and only
+        // when it changes: an address recorded before the check existed must not block correcting a phone number.
+        RuleFor(x => x.AbhaAddress).MaximumLength(128);
         RuleFor(x => x.AadhaarNumber).Must(PatientRules.ValidAadhaar).WithMessage("Enter a valid 12-digit Aadhaar number.");
         RuleFor(x => x.PhotoFileId).NotEqual(Guid.Empty).WithMessage("Choose a valid photo.");
 

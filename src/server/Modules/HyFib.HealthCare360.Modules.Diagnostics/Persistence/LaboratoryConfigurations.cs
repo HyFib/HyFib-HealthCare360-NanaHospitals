@@ -27,6 +27,7 @@ internal sealed class LabTestConfiguration : IEntityTypeConfiguration<LabTest>
         b.Property(x => x.ShortName).HasMaxLength(32);
         b.Property(x => x.Method).HasMaxLength(200);
         b.Property(x => x.Loinc).HasMaxLength(16);
+        b.Property(x => x.LoincName).HasMaxLength(255);
         b.Property(x => x.Unit).HasMaxLength(32);
         b.Property(x => x.QcGroup).HasMaxLength(32);
         b.Property(x => x.DeltaThresholdPercent).HasPrecision(7, 2);

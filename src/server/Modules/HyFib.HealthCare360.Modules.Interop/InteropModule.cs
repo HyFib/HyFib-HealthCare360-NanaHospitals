@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Services;
 
@@ -5,10 +6,10 @@ namespace HyFib.HealthCare360.Modules.Interop;
 
 /// <summary>
 /// HL7 FHIR R4 read facade (EHR-05): Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest,
-/// DiagnosticReport and DocumentReference for other providers, subject to the patient's record-sharing consent; and ABDM
-/// health records (EHR-08): signed discharge summaries and prescriptions as NRCeS FHIR document bundles for staff to
-/// download, behind the ABDM feature switch. It reads the Patients, Clinical, Diagnostics and Inpatient modules' data and
-/// owns no tables.
+/// DiagnosticReport and DocumentReference for other providers, subject to the patient's record-sharing consent. ABDM
+/// health records (EHR-08, behind the <c>features.abdm</c> switch): discharge summaries, lab reports, consultation notes
+/// and prescriptions as FHIR documents of the NRCeS implementation guide, and the (not yet live) ABDM gateway client. It
+/// reads the Patients, Clinical, Diagnostics and Inpatient modules' data and owns no tables.
 /// </summary>
 public sealed class InteropModule : IModule
 {
@@ -30,9 +31,13 @@ public sealed class InteropModule : IModule
         services.AddScoped<IFhirResourceProvider, DiagnosticReportProvider>();
         services.AddScoped<IFhirResourceProvider, DocumentReferenceProvider>();
         services.AddScoped<FhirApi>();
-        services.AddScoped<AbdmAuditTrail>();
-        services.AddScoped<AbdmDocumentService>();
         FhirAuthorizationResultHandler.Register(services);
+
+        services.AddScoped<AbdmRecordLoader>();
+        services.AddScoped<AbdmBundleService>();
+        services.AddScoped<AbdmGatewayConfiguration>();
+        services.AddScoped<IAbdmGatewayClient, DisabledAbdmGatewayClient>();
+        services.AddSingleton<IFideliusCipher, UnavailableFideliusCipher>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

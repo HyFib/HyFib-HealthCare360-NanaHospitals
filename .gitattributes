@@ -11,3 +11,4 @@
 *.dll binary
 *.exe binary
 *.gcs binary
+*.pdf binary

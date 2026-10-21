@@ -24,6 +24,12 @@ public sealed class LabTest : AuditableEntity
 
     public string? Loinc { get; set; }
 
+    /// <summary>
+    /// The LOINC long common name of <see cref="Loinc"/>, as loinc.org gives it ("Hemoglobin [Mass/volume] in Blood"):
+    /// health records shared through ABDM name the code with it, and leave the code out without it.
+    /// </summary>
+    public string? LoincName { get; set; }
+
     /// <summary>Billable catalogue entry (<c>org.service_items</c>) charged when the test is ordered.</summary>
     public Guid? ServiceItemId { get; set; }
 

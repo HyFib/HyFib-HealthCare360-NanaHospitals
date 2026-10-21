@@ -286,6 +286,16 @@ and grants nothing.
   audited, and each person has a limited number of images in flight. A study is linked with PACS, or opened in the
   PACS viewer before linking, only when PACS holds exactly one study under its accession number with the patient's
   UHID as patient ID, so a mistyped accession at a modality never shows another patient's images.
+- **ABDM health records** (EHR-08) are off until an administrator turns on `features.abdm`:
+  - A record leaves as an ABDM FHIR document only through `/api/v1/abdm/bundles/*`, for holders of `abdm.export`
+    (HospitalAdmin and MrdOfficer by default): one signed or released record at a time, from the caller's facility,
+    under the restricted-record rules. Every export is audited as an access to the patient's record, and the document
+    is never cached.
+  - Sending it to ABDM needs the patient's ABDM consent and the gateway, which is not live: the registered client sends
+    nothing. NHA's client id and secret are a secret setting (`abdm.gateway.secret`, encrypted), and the gateway's
+    status says only whether they are set. Its base URL must be https without a user name.
+  - Linking, replacing or removing a patient's ABHA number or address is audited (`patient.abha_changed`), with the
+    number masked, including a number a merge of duplicate records links to the surviving one.
 - Only what is needed is stored:
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
     Checking a patient's identity with their Aadhaar fingerprint (INT-BIO) keeps the outcome, the last 4 digits and
@@ -294,7 +304,9 @@ and grants nothing.
     the AUA's certificate, whose key is an encrypted secret. Only enrolled HC360 Desktops can send a check, only with
     the patient's consent, and UIDAI's answer counts only for its own transaction (and with UIDAI's signature once its
     certificate is set). See [integrations.md](../modules/integrations.md#aadhaar-authentication-int-bio-patient-identity).
-  - **ABHA numbers**: encrypted with AES-256-GCM.
+  - **ABHA numbers**: encrypted with AES-256-GCM. Their blind index, like the number, is left out of the audit trail's
+    record of changes. A number must be 14 digits before it is stored; it has no published check digit, so a mistyped
+    number cannot be caught until it is checked with ABDM, which needs the gateway (not live).
   - Uploaded documents: encrypted at rest.
   - **Online payments**: the gateway's settlement data is kept as ids, amounts, the UTR and the payment method only;
     the card network, issuer and type, descriptions and notes are dropped. Webhook events are kept by event id with

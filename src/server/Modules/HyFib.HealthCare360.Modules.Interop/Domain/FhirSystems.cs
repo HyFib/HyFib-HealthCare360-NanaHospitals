@@ -37,10 +37,6 @@ internal static class FhirSystems
     public const string RoleCode = "http://terminology.hl7.org/CodeSystem/v3-RoleCode";
     public const string MedicationRequestCategory = "http://terminology.hl7.org/CodeSystem/medicationrequest-category";
     public const string TimingAbbreviation = "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation";
-    public const string OrganizationType = "http://terminology.hl7.org/CodeSystem/organization-type";
-
-    /// <summary>Identifiers that are URIs themselves, such as <c>urn:uuid:…</c> (document identifiers).</summary>
-    public const string Uri = "urn:ietf:rfc:3986";
 
     // FHIR-defined code systems of coded elements (used when a client searches with a system-qualified token).
     public const string AdministrativeGender = "http://hl7.org/fhir/administrative-gender";
@@ -67,8 +63,6 @@ internal static class FhirSystems
     public const string AccessionNumber = "urn:hc360:accession-number";
     public const string LabTest = "urn:hc360:lab-test";
     public const string Service = "urn:hc360:service";
-    public const string PractitionerCode = "urn:hc360:practitioner";
-    public const string FacilityCode = "urn:hc360:facility";
 
     /// <summary>Machine-readable reasons in <c>OperationOutcome.issue.details</c>.</summary>
     public const string Issue = "urn:hc360:fhir-issue";

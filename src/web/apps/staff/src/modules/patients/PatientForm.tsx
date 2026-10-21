@@ -39,7 +39,14 @@ import {
   type DuplicateCheckRequest,
 } from './api';
 import { PatientPhotoField } from './PatientPhotoField';
-import { INDIAN_STATES, LANGUAGES, patientFormSchema, TITLES, type PatientFormValues } from './validation';
+import {
+  INDIAN_STATES,
+  isValidAbhaNumber,
+  LANGUAGES,
+  patientFormSchema,
+  TITLES,
+  type PatientFormValues,
+} from './validation';
 
 const BLOOD_GROUPS = Object.keys(bloodGroupLabel).filter((g) => g !== 'Unknown') as BloodGroup[];
 
@@ -103,7 +110,8 @@ export interface PatientFormProps {
 
 /**
  * Registration/edit form (SRS FO-01, EHR-01). Keyboard first: Tab moves field to field, Ctrl+S saves. Either the
- * date of birth or the age is captured; identifiers are validated like on the server (ABHA 14 digits, Aadhaar Verhoeff).
+ * date of birth or the age is captured; identifiers are validated like on the server (ABHA number 14 digits, Aadhaar
+ * check digit, ABHA address at @abdm).
  */
 export function PatientForm(props: PatientFormProps) {
   const styles = useStyles();
@@ -316,7 +324,7 @@ export function PatientForm(props: PatientFormProps) {
                 hint={
                   props.identifierHints?.abha
                     ? `On file: ${props.identifierHints.abha}. Leave blank to keep it.`
-                    : '14 digits, e.g. 12-3456-7890-1234'
+                    : '14 digits, as on the ABHA card: 91-1234-5678-9010'
                 }
               />
               <TextField
@@ -324,7 +332,7 @@ export function PatientForm(props: PatientFormProps) {
                 name="abhaAddress"
                 label="ABHA address"
                 autoComplete="off"
-                hint="e.g. name@abdm"
+                hint="e.g. name@abdm (name@sbx on the ABDM sandbox)"
               />
               <TextField
                 control={control}
@@ -423,7 +431,7 @@ function DuplicatePanel({
       lastName: lastName.trim() || null,
       dateOfBirth: dateOfBirth || null,
       phone: phone.replace(/\D/g, '').length >= 10 ? phone : null,
-      abhaNumber: abhaNumber.replace(/\D/g, '').length === 14 ? abhaNumber : null,
+      abhaNumber: isValidAbhaNumber(abhaNumber) ? abhaNumber : null,
       aadhaarNumber: aadhaarNumber.replace(/\D/g, '').length === 12 ? aadhaarNumber : null,
     }),
     500,

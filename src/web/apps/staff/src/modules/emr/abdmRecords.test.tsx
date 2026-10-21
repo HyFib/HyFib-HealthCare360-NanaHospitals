@@ -60,7 +60,7 @@ describe('ABDM health records', () => {
     act(() => result.current.mutate(abdmPrescriptionBundle(PRESCRIPTION_ID)));
 
     await waitFor(() => expect(saveFile).toHaveBeenCalledWith(blob, 'prescription-NHRX260000123-abdm.json'));
-    expect(api.download).toHaveBeenCalledWith(`/api/v1/abdm/prescriptions/${PRESCRIPTION_ID}/bundle`);
+    expect(api.download).toHaveBeenCalledWith(`/api/v1/abdm/bundles/prescriptions/${PRESCRIPTION_ID}`);
     expect(notify.success).toHaveBeenCalledWith('ABDM record downloaded', 'It is in your Downloads folder.');
   });
 

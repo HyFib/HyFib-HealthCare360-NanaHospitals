@@ -1,7 +1,7 @@
 # ABDM profiles used by the tests (ndhm.in 6.5.0)
 
-The tests in `Abdm/` (and `AbdmExportTests` in the integration tests) check every ABDM bundle HC360 makes against the
-profiles of the **FHIR Implementation Guide for ABDM**, published by the National Resource Center for EHR Standards
+The tests (`AbdmDocumentTests`, `Abdm/ValidatorSetupTests`, and `AbdmExportTests` in the integration tests) check every
+ABDM document HC360 makes against the profiles of the **FHIR Implementation Guide for ABDM**, published by the National Resource Center for EHR Standards
 (NRCeS, https://nrces.in/).
 
 | | |
@@ -14,12 +14,16 @@ profiles of the **FHIR Implementation Guide for ABDM**, published by the Nationa
 
 The files are copied from the package unchanged; only the ones the tests need are here.
 
-- `package/StructureDefinition-DocumentBundle.json`, `package/StructureDefinition-DischargeSummaryRecord.json` and
-  `package/StructureDefinition-PrescriptionRecord.json`: the profiles a discharge summary or prescription bundle must
-  meet.
+- `package/StructureDefinition-DocumentBundle.json`, `package/StructureDefinition-DischargeSummaryRecord.json`,
+  `package/StructureDefinition-PrescriptionRecord.json`, `package/StructureDefinition-OPConsultRecord.json` and
+  `package/StructureDefinition-DiagnosticReportRecord.json`: the profiles HC360's discharge summaries, prescriptions,
+  consultation notes and lab reports must meet.
 - The other `package/StructureDefinition-*.json` files: every profile those can point to (a Composition section entry
   or reference may target any of them), plus the profiles those in turn point to. Firely's validator compiles each
   profile a reference may target before it validates, so it refuses to run with any of them missing.
+- `package/StructureDefinition-ObservationVitalSigns.json` and `package/StructureDefinition-ObservationBodyMeasurement.json`:
+  the profiles of a consultation's vital signs and body measurements (added 2026-10-21 from the same package, checked
+  byte for byte against the files already here).
 - `package/ValueSet-ndhm-identifier-type-code.json` and `package/CodeSystem-ndhm-identifier-type-code.json`: the
   identifier types the Patient, Practitioner and Organization profiles bind (extensible), so that binding is checked
   offline rather than skipped.
@@ -32,5 +36,5 @@ from here. SNOMED CT, LOINC and other external terminologies cannot be checked o
 for what the validator skips and how the tests make sure nothing else is skipped.
 
 To move to a newer guide, download the new `ndhm.in` package from the npm registry, replace these files with the same
-files from it (adding any profile the validator then asks for), update this README and `AbdmProfiles.ImplementationGuideVersion`,
+files from it (adding any profile the validator then asks for), update this README and `AbdmProfiles` (`src/server/Modules/HyFib.HealthCare360.Modules.Interop/Abdm/AbdmCodes.cs`),
 and run the Interop module tests and `AbdmExportTests`.

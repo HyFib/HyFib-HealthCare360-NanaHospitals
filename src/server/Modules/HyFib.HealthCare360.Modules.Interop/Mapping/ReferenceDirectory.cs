@@ -9,9 +9,8 @@ internal sealed record FacilityInfo(string Name, string? HfrId);
 /// <summary>
 /// Display names for the people, departments and facilities a page of resources refers to, loaded once per request.
 /// The facade does not serve Practitioner or Organization resources, so these become display references (with the HFR
-/// id for facilities, which ABDM systems recognise); in an ABDM document bundle, those that are entries of the bundle are
-/// referenced by their entry (<see cref="Entries"/>). It also maps admissions to the in-patient visit that represents
-/// them as an Encounter.
+/// id for facilities, which ABDM systems recognise); an ABDM document, which includes them, links them (<see cref="Linked"/>).
+/// It also maps admissions to the in-patient visit that represents them as an Encounter.
 /// </summary>
 internal sealed class ReferenceDirectory
 {
@@ -27,14 +26,25 @@ internal sealed class ReferenceDirectory
     public IReadOnlyDictionary<Guid, Guid> AdmissionVisits { get; init; } = new Dictionary<Guid, Guid>();
 
     /// <summary>
-    /// Practitioners and facilities that are resources of the same document bundle (ABDM), by id → their entry's
-    /// <c>fullUrl</c>: references to them point at the entry. Empty for the read API, which does not serve them.
+    /// Practitioner and Organization references also carry a literal reference (<c>Practitioner/{id}</c>,
+    /// <c>Organization/{id}</c>): set for ABDM documents, which include those resources and resolve every reference.
+    /// The FHIR read API, which does not serve them, leaves it off.
     /// </summary>
-    public IReadOnlyDictionary<Guid, string> Entries { get; init; } = new Dictionary<Guid, string>();
+    public bool Linked { get; init; }
+
+    /// <summary>The same names, with literal Practitioner and Organization references (<see cref="Linked"/>).</summary>
+    public ReferenceDirectory WithLinks() => new()
+    {
+        Practitioners = Practitioners,
+        Departments = Departments,
+        Facilities = Facilities,
+        AdmissionVisits = AdmissionVisits,
+        Linked = true,
+    };
 
     public R4.ResourceReference? Practitioner(Guid? id) =>
         id is { } key && Practitioners.TryGetValue(key, out var name)
-            ? new R4.ResourceReference { Reference = Entries.GetValueOrDefault(key), Type = "Practitioner", Display = name }
+            ? new R4.ResourceReference { Reference = Linked ? $"Practitioner/{FhirIds.Of(key)}" : null, Type = "Practitioner", Display = name }
             : null;
 
     public string? Department(Guid? id) => id is { } key && Departments.TryGetValue(key, out var name) ? name : null;
@@ -48,7 +58,7 @@ internal sealed class ReferenceDirectory
 
         return new R4.ResourceReference
         {
-            Reference = Entries.GetValueOrDefault(key),
+            Reference = Linked ? $"Organization/{FhirIds.Of(key)}" : null,
             Type = "Organization",
             Display = facility.Name,
             Identifier = string.IsNullOrWhiteSpace(facility.HfrId) ? null : new R4.Identifier(FhirSystems.Hfr, facility.HfrId.Trim()),
