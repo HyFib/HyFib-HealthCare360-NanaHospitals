@@ -119,28 +119,45 @@ internal static partial class AbdmDocumentBuilder
     }
 
     /// <summary>
-    /// A printed PDF with its creation and modification dates set to <paramref name="date"/> (in UTC). The PDF is made
-    /// again at every export, and those dates, the time it was made, are all that differs between two PDFs of the same
-    /// page; the rest of the file is left byte for byte as it is (each date keeps its length, so the file's cross-reference
-    /// offsets still hold).
+    /// A printed PDF as the same page always prints. The PDF is made again at every export, and two PDFs of the same page
+    /// differ only in what the browser numbers as it goes: the creation and modification dates, the time it was made,
+    /// which become <paramref name="date"/> (in UTC); and in a tagged PDF the ids of table header cells, named after their
+    /// DOM nodes (<c>(node00000070)</c>) by a counter the browser tab keeps from one page to the next, which are numbered
+    /// again from zero in the same order. The rest of the file is left byte for byte as it is: each date and id keeps its
+    /// length, so the file's cross-reference offsets still hold, and the ids their order, so the structure tree's sorted
+    /// IDTree still holds.
     /// </summary>
     internal static byte[] PdfAsOf(byte[] pdf, DateTimeOffset date)
     {
         // Latin-1 maps every byte to one character and back, so the binary parts of the file come through unchanged.
         var text = Encoding.Latin1.GetString(pdf);
         var utc = date.ToUniversalTime().ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-        var dated = PdfDate().Replace(text, m => m.Groups["key"].Value + utc + m.Groups["zone"].Value switch
+        var printed = PdfDate().Replace(text, m => m.Groups["key"].Value + utc + m.Groups["zone"].Value switch
         {
             "" => string.Empty,
             "Z" => "Z",
             var zone => "+00" + zone[3..4] + "00" + zone[6..],
         });
-        return ReferenceEquals(dated, text) ? pdf : Encoding.Latin1.GetBytes(dated);
+
+        var nodes = PdfNodeId().Matches(printed);
+        if (nodes.Count > 0)
+        {
+            var first = nodes.Min(Node);
+            printed = PdfNodeId().Replace(printed, m => $"(node{(Node(m) - first).ToString("D8", CultureInfo.InvariantCulture)})");
+        }
+
+        return string.Equals(printed, text, StringComparison.Ordinal) ? pdf : Encoding.Latin1.GetBytes(printed);
+
+        static int Node(Match id) => int.Parse(id.Groups["n"].ValueSpan, CultureInfo.InvariantCulture);
     }
 
     /// <summary>A date of the PDF's document information: <c>/CreationDate (D:20261021005544+00'00')</c>.</summary>
     [GeneratedRegex(@"(?<key>/(?:CreationDate|ModDate)\s*\(D:)\d{14}(?<zone>Z|[+-]\d\d'\d\d'?)?(?=\))", RegexOptions.CultureInvariant)]
     private static partial Regex PdfDate();
+
+    /// <summary>The id a tagged PDF gives a table header cell, in its structure element and the cells' headers: <c>(node00000017)</c>.</summary>
+    [GeneratedRegex(@"\(node(?<n>\d{8})\)", RegexOptions.CultureInvariant)]
+    private static partial Regex PdfNodeId();
 
     /// <summary>The printed PDFs the resource carries (a Binary's, or an attachment's), as of the document's date.</summary>
     private static void PrintedAsOf(R4.Resource resource, DateTimeOffset date)

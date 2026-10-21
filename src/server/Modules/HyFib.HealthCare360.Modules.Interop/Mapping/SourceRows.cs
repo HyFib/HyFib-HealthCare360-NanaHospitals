@@ -163,6 +163,8 @@ internal sealed record LabResultRow
     public DateTimeOffset OrderedAt { get; init; }
     public DateTimeOffset? CollectedAt { get; init; }
     public DateTimeOffset? VerifiedAt { get; init; }
+
+    /// <summary>When its test was released; an amendment of the result does not change it.</summary>
     public DateTimeOffset? ReleasedAt { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
@@ -274,7 +276,12 @@ internal sealed record LabReportRow
     /// <summary>Earliest collection of the accession's samples (the clinically relevant time), when collected.</summary>
     public DateTimeOffset? CollectedAt { get; init; }
 
+    /// <summary>When the report was first released (its first tests).</summary>
+    public DateTimeOffset? FirstReleasedAt { get; init; }
+
+    /// <summary>Its latest release or amendment.</summary>
     public DateTimeOffset? ReleasedAt { get; init; }
+
     public IReadOnlyList<Guid> ResultIds { get; init; } = [];
     public IReadOnlyList<string> TestNames { get; init; } = [];
     public DateTimeOffset CreatedAt { get; init; }

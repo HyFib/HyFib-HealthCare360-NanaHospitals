@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Text;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
+using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Interop.Services;
@@ -26,7 +28,14 @@ public sealed class AbdmDocumentVersionTests
         // The note was signed with a prescription and its diagnoses. A month later: an allergy recorded, a diagnosis and
         // vital signs added to the encounter, another prescription signed, the first one cancelled and the fever resolved.
         var data = AbdmTestData.ConsultationRecord();
-        var signed = data with { Lines = [.. data.Lines.Select(l => l with { PrescriptionUpdatedAt = l.SignedAt })] };
+        var signedAt = data.Note.SignedAt!.Value;
+        var signed = data with
+        {
+            // As saved: signing a prescription saves it a moment after its signing time; the fever's notes were edited
+            // before the note was signed.
+            Lines = [.. data.Lines.Select(l => l with { PrescriptionUpdatedAt = l.SignedAt!.Value.AddMilliseconds(740) })],
+            Diagnoses = [data.Diagnoses[0] with { Notes = "High grade", UpdatedAt = signedAt.AddMinutes(-3) }, data.Diagnoses[1]],
+        };
         var since = signed with
         {
             Allergies = [.. signed.Allergies, Allergy("Sulfonamides", Later)],
@@ -83,6 +92,118 @@ public sealed class AbdmDocumentVersionTests
         };
 
         Json(AbdmRecords.DischargeSummary(since)).ShouldBe(Json(AbdmRecords.DischargeSummary(data)));
+    }
+
+    [Fact]
+    public void A_diagnosis_resolved_later_on_the_day_the_note_was_signed_was_active_when_it_was_signed()
+    {
+        // Signed at 08:55 IST. The fever was resolved that afternoon; the cough that morning, before the note was signed.
+        var data = AbdmTestData.ConsultationRecord();
+        var signedAt = data.Note.SignedAt!.Value;
+        var day = FhirTime.IstDate(signedAt);
+        var cough = data.Diagnoses[1] with
+        {
+            Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ae030"),
+            Title = "Cough",
+            Type = DiagnosisType.Final,
+            Status = DiagnosisStatus.Resolved,
+            ResolvedOn = day,
+            UpdatedAt = signedAt.AddMinutes(-5),
+        };
+        var bundle = AbdmDocumentBuilder.Build(AbdmRecords.Consultation(data with
+        {
+            Diagnoses = [data.Diagnoses[0] with { Status = DiagnosisStatus.Resolved, ResolvedOn = day, UpdatedAt = signedAt.AddHours(5) }, cough],
+        }));
+
+        var conditions = bundle.Entry.Select(e => e.Resource).OfType<R4.Condition>().ToDictionary(c => c.Code.Text!, StringComparer.Ordinal);
+        conditions["Fever, unspecified"].ClinicalStatus.Coding[0].Code.ShouldBe("active");
+        conditions["Cough"].ClinicalStatus.Coding[0].Code.ShouldBe("resolved");
+    }
+
+    [Fact]
+    public void A_discharge_summary_keeps_a_lab_report_amended_after_it_was_signed()
+    {
+        // The troponin was corrected three days after the summary was signed: the report is still the stay's, with its
+        // value as it is now (HC360 keeps the old one only in the amendment's text), so the document is a new version.
+        var data = AbdmTestData.DischargeSummaryRecord(pdf: null);
+        var report = data.LabReports[0];
+        var corrected = Later.AddDays(-27);
+        var amended = data with
+        {
+            LabReports = [report with { Status = LabReportStatus.Amended, FirstReleasedAt = report.ReleasedAt, ReleasedAt = corrected, UpdatedAt = corrected }],
+            LabResults = [data.LabResults[0] with { ValueText = "2.1", NumericValue = 2.1m, UpdatedAt = corrected }],
+        };
+
+        var bundle = AbdmDocumentBuilder.Build(AbdmRecords.DischargeSummary(amended));
+        var diagnostic = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().ShouldHaveSingleItem();
+        diagnostic.Status.ShouldBe(R4.DiagnosticReport.DiagnosticReportStatus.Amended);
+        ((R4.Quantity)bundle.Entry.Select(e => e.Resource).OfType<R4.Observation>().Single(o => o.Code.Text == "Troponin I").Value).Value.ShouldBe(2.1m);
+    }
+
+    [Fact]
+    public void A_discharge_summary_holds_a_lab_report_completed_after_it_was_signed_as_it_was_then()
+    {
+        // The troponin was released before the summary was signed and the CK-MB of the same accession after it: as the
+        // summary holds it, the report was partial, with the troponin only, released when the troponin was.
+        var data = AbdmTestData.DischargeSummaryRecord(pdf: null);
+        var report = data.LabReports[0];
+        var troponin = data.LabResults[0];
+        var ckmb = troponin with
+        {
+            Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ae040"),
+            TestCode = "CKMB",
+            TestName = "CK-MB",
+            Loinc = null,
+            LoincName = null,
+            ValueText = "48",
+            NumericValue = 48m,
+            Unit = "U/L",
+            ReferenceText = "< 25",
+            ReleasedAt = Later,
+            VerifiedAt = Later,
+            CreatedAt = Later,
+        };
+        var signed = data with { LabReports = [report with { IsPartial = true, FirstReleasedAt = report.ReleasedAt }] };
+        var completed = data with
+        {
+            LabReports =
+            [
+                report with
+                {
+                    FirstReleasedAt = report.ReleasedAt, ReleasedAt = Later, UpdatedAt = Later,
+                    ResultIds = [troponin.Id, ckmb.Id], TestNames = ["Troponin I", "CK-MB"],
+                },
+            ],
+            LabResults = [troponin, ckmb],
+        };
+
+        Json(AbdmRecords.DischargeSummary(completed)).ShouldBe(Json(AbdmRecords.DischargeSummary(signed)));
+        AbdmDocumentBuilder.Build(AbdmRecords.DischargeSummary(completed)).Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>()
+            .ShouldHaveSingleItem().Status.ShouldBe(R4.DiagnosticReport.DiagnosticReportStatus.Partial);
+    }
+
+    [Fact]
+    public void A_tagged_pdf_printed_again_in_the_same_browser_tab_is_the_same_bytes()
+    {
+        // Chromium printed one page three times (TestData/chromium-pdf): twice in one tab, which numbers the table
+        // headers' ids on from the first PDF, and once in a new tab.
+        var first = ChromiumPdf("render-1.pdf");
+        var sameTab = ChromiumPdf("render-2-same-tab.pdf");
+        var newTab = ChromiumPdf("render-3-new-tab.pdf");
+        sameTab.ShouldNotBe(first);
+
+        var printed = AbdmDocumentBuilder.PdfAsOf(first, TestData.Now);
+        AbdmDocumentBuilder.PdfAsOf(sameTab, TestData.Now).ShouldBe(printed);
+        AbdmDocumentBuilder.PdfAsOf(newTab, TestData.Now).ShouldBe(printed);
+        printed.Length.ShouldBe(first.Length);
+        var text = Encoding.Latin1.GetString(printed);
+        text.ShouldContain("/ID (node00000000)");
+        text.ShouldContain("/Headers [(node00000000)]");
+
+        // So a prescription is one document, whichever of them it carries.
+        var data = AbdmTestData.Prescription(AbdmTestData.Pdf);
+        Json(AbdmRecords.Prescription(data with { Context = data.Context with { Pdf = new AbdmPdf(sameTab) } }))
+            .ShouldBe(Json(AbdmRecords.Prescription(data with { Context = data.Context with { Pdf = new AbdmPdf(first) } })));
     }
 
     [Fact]
@@ -193,6 +314,8 @@ public sealed class AbdmDocumentVersionTests
     }
 
     private static string Json(AbdmDocument document) => FhirJson.Serialize(AbdmDocumentBuilder.Build(document));
+
+    private static byte[] ChromiumPdf(string name) => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "TestData", "chromium-pdf", name));
 
     private static AllergyRow Allergy(string allergen, DateTimeOffset recorded) => new()
     {

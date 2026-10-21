@@ -334,6 +334,10 @@ public sealed class AbdmExportTests(HospitalServer server)
             text.ShouldContain("Drink plenty of fluids and rest.");
             text.ShouldNotContain(PharmacistNotes, Case.Insensitive);
 
+            // Exported again it is the same document, byte for byte: its printed PDF is made again (where this server
+            // makes PDFs, as CI's Windows runner does with Edge) and prints the same.
+            (await ExportAsync(path, PrescriptionRecord, abha, $"prescription-{prescription.PrescriptionNumber}")).GetRawText().ShouldBe(text);
+
             var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
             exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: prescription");
             exportAudit.EntityId.ShouldBe(prescription.Id.ToString("D"));
@@ -368,6 +372,7 @@ public sealed class AbdmExportTests(HospitalServer server)
 
             await ReleaseAsync(crp);
             var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-");
+            (await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-")).GetRawText().ShouldBe(bundle.GetRawText(), "the same report exports as the same document");
             var result = Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem();
             result.GetProperty("resourceType").GetString().ShouldBe("Observation");
             result.GetProperty("valueQuantity").GetProperty("value").GetDecimal().ShouldBe(Crp);
@@ -605,6 +610,21 @@ public sealed class AbdmExportTests(HospitalServer server)
             }
 
             Resources(await ExportAsync(path, DischargeSummaryRecord, abha, $"discharge-summary-{kept.Uhid}-"), "DiagnosticReport").ShouldBeEmpty();
+
+            // A report of the stay first released after the summary was signed is not in it either, so the restricted
+            // duplicate it is kept under does not stop the medical records officer's export.
+            var afterSigning = DateTimeOffset.UtcNow.AddDays(1);
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<LabReport>().IgnoreQueryFilters()
+                    .Where(r => r.Id == crp.ReportId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(r => r.PatientId, duplicate.Id).SetProperty(r => r.FirstReleasedAt, afterSigning)
+                        .SetProperty(r => r.ReleasedAt, afterSigning), Ct);
+            }
+
+            using var exported = await medicalRecords.SendRawAsync(HttpMethod.Get, path);
+            exported.StatusCode.ShouldBe(HttpStatusCode.OK, await exported.Content.ReadAsStringAsync(Ct));
+            Resources(await exported.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct), "DiagnosticReport").ShouldBeEmpty();
         }
         finally
         {

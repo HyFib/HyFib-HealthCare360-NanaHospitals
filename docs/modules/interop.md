@@ -376,20 +376,26 @@ narrative must read safely on its own.
   bytes of a SHA-256 hash of its resources as JSON, the printed PDF included, in hex (`1790306700000-b5fc9c62149f2e9d`
   in the sample prescription). The hash catches what moves no change time forward: an entry that drops out (an allergy
   recorded in error), or a PDF that prints something else (the patient's age on a later day, the DSC signature as it
-  checks out then). A PDF is made again at every export, and two PDFs of the same page differ only in their creation
-  and modification dates, which are set to the document's date (in UTC, each keeping its length, so the file's offsets
-  hold): the same page gives the same bytes. A doctor the record names but the document leaves out (a consultation's
-  referral doctor) does not count. The Bundle's `timestamp` is its version's time, not the export's, as a document is
+  checks out then). A PDF is made again at every export, and two PDFs of the same page differ only in what the browser
+  numbers as it goes: their creation and modification dates, which are set to the document's date (in UTC), and, in a
+  tagged PDF, the ids of table header cells (`(node00000070)`), taken from a counter the browser tab keeps from one PDF
+  to the next, which are numbered again from zero in the same order. Each keeps its length, so the file's offsets hold:
+  the same page gives the same bytes (shown with PDFs Chromium printed twice in one tab, and on CI's Windows runner,
+  where Edge prints the PDFs of `AbdmExportTests`, by exporting a prescription and a lab report twice). A doctor the
+  record names but the document leaves out (a consultation's referral doctor) does not count. The Bundle's `timestamp` is its version's time, not the export's, as a document is
   assembled once per version; its id and `identifier` (`urn:ietf:rfc:3986`, `urn:uuid:…`) change with the version,
   the Composition's id does not. Every list is in an order of its own (time, then id), so the order the database
   returns rows in changes nothing. `meta.security` is v3-Confidentiality V.
 * **As of the record.** A document holds what its record held when it was completed: signed, released, or amended
   for an amended record (`AbdmAsOf`). An allergy, diagnosis, vital sign, prescription or lab report entered later is
-  not in it; a diagnosis resolved since is active, a prescription cancelled since is signed, and a medicine is active
-  or completed as of that day; an entry recorded in error since is left out, as never true. HC360 keeps no history of
-  other changes, which show as they are now and make a new version: an allergy made inactive, a diagnosis confirmed, an
-  edited reaction, an amended lab result, the patient's details, records moved to the patient by a later merge, and the
-  PDF as the hospital prints it today.
+  not in it (a lab report counts from its first release, a result from its test's release); a diagnosis resolved since
+  (on a later day, or that day after the time) is active, a prescription cancelled since is signed, a lab report
+  completed since is partial with the tests released by then, and a medicine is active or completed as of that day; an
+  entry recorded in error since is left out, as never true. These entries carry no `meta.lastUpdated`: their latest
+  change may be after the date, and would make a new version of a document that says the same. HC360 keeps no history
+  of other changes, which show as they are now and make a new version: an allergy made inactive, a diagnosis
+  confirmed, an edited reaction, an amended lab result (its report stays in the summary, amended), the patient's
+  details, records moved to the patient by a later merge, and the PDF as the hospital prints it today.
 * **Status and attestation.** An amended record is an `amended` Composition. A lab report released before all its
   results is `preliminary` (its Composition and its PDF's DocumentReference), as its DiagnosticReport is `partial`.
   The signing doctor is the author and the legal attester. An amended consultation note or discharge summary has two

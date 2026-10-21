@@ -71,6 +71,7 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
             Status = r.Status,
             IsPartial = r.IsPartial,
             OrderedAt = o.OrderedAt,
+            FirstReleasedAt = r.FirstReleasedAt,
             ReleasedAt = r.ReleasedAt,
             CreatedAt = r.CreatedAt,
             UpdatedAt = r.UpdatedAt,

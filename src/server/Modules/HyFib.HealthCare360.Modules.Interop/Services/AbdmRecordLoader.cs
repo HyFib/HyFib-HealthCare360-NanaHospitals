@@ -113,18 +113,23 @@ internal sealed class AbdmRecordLoader(
 
     /// <summary>
     /// The patients under whom records the document would hold are kept, besides the record's own: for a discharge
-    /// summary, those of the stay's lab reports, which the laboratory keeps under the UHID they were made for (a duplicate
-    /// merged since, or wrongly another patient's). Which of them are the same patient, and may be opened, the caller
-    /// decides: the document holds only the records of <see cref="AbdmSource.Duplicates"/>.
+    /// summary, those of the stay's lab reports it holds (released by its date, <see cref="AbdmAsOf"/>), which the
+    /// laboratory keeps under the UHID they were made for (a duplicate merged since, or wrongly another patient's). Which
+    /// of them are the same patient, and may be opened, the caller decides: the document holds only the records of
+    /// <see cref="AbdmSource.Duplicates"/>.
     /// </summary>
     public async Task<IReadOnlyList<Guid>> OtherPatientsAsync(AbdmRecordType type, Guid id, CancellationToken ct)
     {
-        if (type != AbdmRecordType.DischargeSummary || await StayVisitAsync(id, ct) is not { } stayVisit)
+        if (type != AbdmRecordType.DischargeSummary
+            || await db.Set<DischargeSummary>().AsNoTracking().Where(s => s.Id == id)
+                .Select(s => new { s.AmendedAt, s.SignedAt, s.CreatedAt }).FirstOrDefaultAsync(ct) is not { } summary
+            || await StayVisitAsync(id, ct) is not { } stayVisit)
         {
             return [];
         }
 
-        return await StayReports(stayVisit).Select(r => r.PatientId).Distinct().ToListAsync(ct);
+        var asOf = summary.AmendedAt ?? summary.SignedAt ?? summary.CreatedAt;
+        return [.. (await StayReports(stayVisit).ToListAsync(ct)).Where(r => AbdmAsOf.Released(r, asOf)).Select(r => r.PatientId).Distinct()];
     }
 
     public Task<AbdmDocument> LoadAsync(AbdmRecordType type, Guid id, AbdmSource source, CancellationToken ct) => type switch

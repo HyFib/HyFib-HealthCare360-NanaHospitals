@@ -131,19 +131,29 @@ internal static class AbdmFiles
 /// What a record held when it was completed (<c>asOf</c>: the time it was signed, released, or amended for an amended
 /// one), so that exporting it again later gives the same document. The rows are those entered by then (a later allergy,
 /// diagnosis, vital sign, prescription or lab report is not in it), each with the status it had then where HC360 keeps
-/// when that changed: a diagnosis resolved since was active, and a prescription cancelled since was signed (with its
-/// change time as of its signing). An entry recorded in error since is left out, as never true. HC360 keeps no history
-/// of other changes (an allergy made inactive, a diagnosis confirmed, an edited reaction, a lab result amended): those
-/// show as they are now, and give the document a new version.
+/// when that changed: a diagnosis resolved since was active, a prescription cancelled since was signed, and a lab report
+/// completed since was partial, with only the tests released by then. An entry recorded in error since is left out, as
+/// never true. The entries carry no change time (<see cref="AbdmRecords"/>): their latest change may be after the date.
+/// HC360 keeps no history of other changes (an allergy made inactive, a diagnosis confirmed, an edited reaction, a lab
+/// result amended): those show as they are now, and give the document a new version.
 /// </summary>
 internal static class AbdmAsOf
 {
-    public static List<DiagnosisRow> Diagnoses(IEnumerable<DiagnosisRow> rows, DateTimeOffset asOf) =>
-    [
-        .. rows.Where(d => d.CreatedAt <= asOf).Select(d => d.Status == DiagnosisStatus.Resolved && d.ResolvedOn > FhirTime.IstDate(asOf)
-            ? d with { Status = DiagnosisStatus.Active, ResolvedOn = null, UpdatedAt = null }
-            : d),
-    ];
+    /// <summary>
+    /// Diagnoses recorded by then. One resolved since was active then: resolved on a later day, or on that day after it
+    /// (it changed after the time, and resolving it is what changes it).
+    /// </summary>
+    public static List<DiagnosisRow> Diagnoses(IEnumerable<DiagnosisRow> rows, DateTimeOffset asOf)
+    {
+        var day = FhirTime.IstDate(asOf);
+        return
+        [
+            .. rows.Where(d => d.CreatedAt <= asOf).Select(d =>
+                d.Status == DiagnosisStatus.Resolved && (d.ResolvedOn > day || (d.ResolvedOn == day && d.UpdatedAt > asOf))
+                    ? d with { Status = DiagnosisStatus.Active, ResolvedOn = null }
+                    : d),
+        ];
+    }
 
     public static List<AllergyRow> Allergies(IEnumerable<AllergyRow> rows, DateTimeOffset asOf) =>
         [.. rows.Where(a => a.CreatedAt <= asOf && a.Status != AllergyStatus.EnteredInError)];
@@ -155,13 +165,43 @@ internal static class AbdmAsOf
     public static List<PrescriptionItemRow> Lines(IEnumerable<PrescriptionItemRow> rows, DateTimeOffset asOf) =>
     [
         .. rows.Where(l => l.SignedAt <= asOf && (l.Status == PrescriptionStatus.Signed || (l.Status == PrescriptionStatus.Cancelled && l.CancelledAt > asOf)))
-            .Select(l => l.Status == PrescriptionStatus.Cancelled
-                ? l with { Status = PrescriptionStatus.Signed, CancelledAt = null, CancelReason = null, PrescriptionUpdatedAt = l.SignedAt }
-                : l),
+            .Select(l => l.Status == PrescriptionStatus.Cancelled ? l with { Status = PrescriptionStatus.Signed, CancelledAt = null, CancelReason = null } : l),
     ];
 
-    public static List<LabReportRow> Reports(IEnumerable<LabReportRow> rows, DateTimeOffset asOf) =>
-        [.. rows.Where(r => (r.ReleasedAt ?? r.CreatedAt) <= asOf)];
+    /// <summary>Whether the report had been released by then (its first release: a later one, or an amendment, moves only its latest).</summary>
+    public static bool Released(LabReportRow report, DateTimeOffset asOf) => (report.FirstReleasedAt ?? report.ReleasedAt ?? report.CreatedAt) <= asOf;
+
+    /// <summary>
+    /// The lab reports released by then, each with the results of the tests released by then. A report with tests
+    /// released since was partial then, last released with the results it had; one amended since shows its results as
+    /// they are now, and when it was amended.
+    /// </summary>
+    public static (List<LabReportRow> Reports, List<LabResultRow> Results) LabReports(
+        IEnumerable<LabReportRow> reports, IEnumerable<LabResultRow> results, DateTimeOffset asOf)
+    {
+        var released = results.Where(r => (r.ReleasedAt ?? r.CreatedAt) <= asOf).ToDictionary(r => r.Id);
+        var held = new List<LabReportRow>();
+        foreach (var report in reports.Where(r => Released(r, asOf)))
+        {
+            List<LabResultRow> then = [.. report.ResultIds.Select(released.GetValueOrDefault).OfType<LabResultRow>()];
+            if (then.Count == report.ResultIds.Count)
+            {
+                held.Add(report);
+            }
+            else if (then.Count > 0)
+            {
+                held.Add(report with
+                {
+                    ResultIds = [.. then.Select(r => r.Id)],
+                    TestNames = [.. then.Select(r => r.TestName).Distinct(StringComparer.Ordinal)],
+                    IsPartial = true,
+                    ReleasedAt = report.Status == LabReportStatus.Amended ? report.ReleasedAt : then.Max(r => r.ReleasedAt) ?? report.FirstReleasedAt,
+                });
+            }
+        }
+
+        return (held, [.. released.Values]);
+    }
 }
 
 /// <summary>
@@ -274,9 +314,9 @@ internal static class AbdmRecords
         var note = d.Note;
         var date = note.AmendedAt ?? note.SignedAt ?? note.CreatedAt;
         var people = People.Of(d.Context);
-        var conditions = Conditions(AbdmAsOf.Diagnoses(d.Diagnoses, date));
-        var observations = AbdmAsOf.Vitals(d.Vitals, date).OrderBy(v => v.RecordedAt).ThenBy(v => v.Id)
-            .SelectMany(VitalSignObservations.Map).Select(AbdmProfiler.Observation).ToList();
+        var conditions = Undated(Conditions(AbdmAsOf.Diagnoses(d.Diagnoses, date)));
+        var observations = Undated(AbdmAsOf.Vitals(d.Vitals, date).OrderBy(v => v.RecordedAt).ThenBy(v => v.Id)
+            .SelectMany(VitalSignObservations.Map).Select(AbdmProfiler.Observation).ToList());
         var hospital = people.Names.Organization(d.Context.FacilityId)!;
         foreach (var observation in observations)
         {
@@ -284,8 +324,8 @@ internal static class AbdmRecords
             observation.Performer = [R4.BaseExtensions.DeepCopy(hospital)];
         }
 
-        var requests = MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date);
-        var allergies = Allergies(AbdmAsOf.Allergies(d.Allergies, date));
+        var requests = Undated(MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date));
+        var allergies = Undated(Allergies(AbdmAsOf.Allergies(d.Allergies, date)));
         var author = people.Practitioner(note.SignedByPractitionerId ?? note.PractitionerId);
         var amended = note.Status == EncounterStatus.Amended;
         var amender = amended ? people.Find(note.AmendedByPractitionerId) : null;
@@ -349,18 +389,22 @@ internal static class AbdmRecords
         var date = summary.AmendedAt ?? summary.SignedAt ?? summary.CreatedAt;
         var people = People.Of(d.Context);
         var custodian = people.Organization(d.Context.FacilityId);
-        var conditions = Conditions(AbdmAsOf.Diagnoses(d.Diagnoses, date));
-        var requests = MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date);
-        var allergies = Allergies(AbdmAsOf.Allergies(d.Allergies, date));
+        var conditions = Undated(Conditions(AbdmAsOf.Diagnoses(d.Diagnoses, date)));
+        var requests = Undated(MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date));
+        var allergies = Undated(Allergies(AbdmAsOf.Allergies(d.Allergies, date)));
         var reports = new List<R4.DiagnosticReport>();
         var results = new List<R4.Observation>();
-        var labReports = AbdmAsOf.Reports(d.LabReports, date).OrderBy(r => r.ReleasedAt).ThenBy(r => r.Id).ToList();
+        var (heldReports, heldResults) = AbdmAsOf.LabReports(d.LabReports, d.LabResults, date);
+        var labReports = heldReports.OrderBy(r => r.ReleasedAt).ThenBy(r => r.Id).ToList();
         foreach (var row in labReports)
         {
-            var (report, observations) = LabReportWithResults(row, d.LabResults.Where(r => r.LabOrderId == row.LabOrderId).ToList(), people, d.Context.FacilityId);
+            var (report, observations) = LabReportWithResults(row, [.. heldResults.Where(r => r.LabOrderId == row.LabOrderId)], people, d.Context.FacilityId);
             reports.Add(report);
             results.AddRange(observations);
         }
+
+        Undated(reports);
+        Undated(results);
 
         var document = AbdmProfiler.DocumentReference(DocumentReferenceMapper.FromDischargeSummary(summary, people.Names));
         if (d.Context.Pdf is { } pdf)
@@ -469,6 +513,23 @@ internal static class AbdmRecords
         context.Encounter is { } e ? FhirReferences.Encounter(FhirIds.ClinicalEncounter, e.Id)
         : context.Visit is { } v ? FhirReferences.Encounter(FhirIds.Visit, v.Id)
         : null;
+
+    /// <summary>
+    /// Entries held as of the document's date (<see cref="AbdmAsOf"/>) carry no change time: HC360 keeps no history of
+    /// them, and a change after the date (a prescription cancelled, a diagnosis resolved, which the document undoes) would
+    /// otherwise make a new version of a document that says the same. A change that shows in an entry still does, by the
+    /// version's hash.
+    /// </summary>
+    private static List<T> Undated<T>(List<T> entries)
+        where T : R4.Resource
+    {
+        foreach (var meta in entries.Select(e => e.Meta).OfType<R4.Meta>())
+        {
+            meta.LastUpdated = null;
+        }
+
+        return entries;
+    }
 
     // Every list is in an order of its own, the record's id last, so that the document does not depend on the order the
     // database returned its rows in.

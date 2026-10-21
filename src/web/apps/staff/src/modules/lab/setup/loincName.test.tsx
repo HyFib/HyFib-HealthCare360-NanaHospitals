@@ -46,6 +46,27 @@ describe('useLoincNameFollowsCode', () => {
     expect(screen.getByRole('textbox', { name: 'LOINC name' })).toHaveValue(CRP.loincName);
   });
 
+  it('keeps the name when the same code is typed again', async () => {
+    render(<Harness />);
+    const code = screen.getByRole('textbox', { name: 'LOINC code' });
+
+    await userEvent.clear(code);
+    await userEvent.type(code, HAEMOGLOBIN.loinc);
+
+    expect(screen.getByRole('textbox', { name: 'LOINC name' })).toHaveValue(HAEMOGLOBIN.loincName);
+  });
+
+  it('gives the name back when the code is changed back', async () => {
+    render(<Harness />);
+    const code = screen.getByRole('textbox', { name: 'LOINC code' });
+
+    await userEvent.type(code, '1');
+    expect(screen.getByRole('textbox', { name: 'LOINC name' })).toHaveValue('');
+    await userEvent.type(code, '{Backspace}');
+
+    expect(screen.getByRole('textbox', { name: 'LOINC name' })).toHaveValue(HAEMOGLOBIN.loincName);
+  });
+
   it('keeps the name of a test loaded into the form', async () => {
     render(<Harness />);
     expect(screen.getByRole('textbox', { name: 'LOINC name' })).toHaveValue(HAEMOGLOBIN.loincName);
