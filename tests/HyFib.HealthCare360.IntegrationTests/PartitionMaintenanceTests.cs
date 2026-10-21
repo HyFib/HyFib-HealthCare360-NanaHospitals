@@ -20,9 +20,11 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// SRS SCAL-04: the job that keeps the monthly partitions (<see cref="PartitionMaintenance"/>, on the node that runs the
 /// jobs) makes the months ahead of the clock and moves rows that waited in the default partition into their new month
-/// without changing them (the audit trail too, whose chain still verifies). It never drops a month, however old: deleting
-/// is the Privacy module's retention schedule's alone (legal minimums, medical records reviewed, every run audited). The
-/// months used are decades away from the test server's own rows, so nothing other tests wrote is touched.
+/// without changing them (the audit trail too, whose chain still verifies), months gone by included. It never drops a
+/// month, however old: deleting is the Privacy module's retention schedule's alone (legal minimums, medical records
+/// reviewed, every run audited). The months used are decades away from the test server's own rows, so nothing other tests
+/// wrote is touched; a pass may also move rows other tests left in the default partition, so each test looks at its own
+/// months.
 /// </summary>
 public sealed class PartitionMaintenanceTests(HospitalServer server)
 {
@@ -45,10 +47,10 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         var passes = await RunAsync(month.AddDays(20), monthsAhead: 2);
 
         var made = passes.Single(p => p.Table == "platform.notification_logs");
-        made.Created.ShouldBe(["notification_logs_2041_03", "notification_logs_2041_04", "notification_logs_2041_05"]);
-        made.RowsMovedFromDefault.ShouldBe(2);
-        passes.Single(p => p.Table == "audit.audit_events").RowsMovedFromDefault.ShouldBe(1);
-        passes.Single(p => p.Table == "virtualcare.rpm_readings").Created.Count.ShouldBe(3);
+        made.Created.Where(In2041).ShouldBe(["notification_logs_2041_03", "notification_logs_2041_04", "notification_logs_2041_05"]);
+        made.Moved["notification_logs_2041_03"].ShouldBe(2);
+        passes.Single(p => p.Table == "audit.audit_events").Moved["audit_events_2041_03"].ShouldBe(1);
+        passes.Single(p => p.Table == "virtualcare.rpm_readings").Created.Count(In2041).ShouldBe(3);
         foreach (var message in messages)
         {
             (await PartitionOfAsync("platform.notification_logs", message)).ShouldBe("platform.notification_logs_2041_03");
@@ -67,7 +69,49 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         await Should.ThrowAsync<PostgresException>(() => ExecuteAsync($"DELETE FROM audit.audit_events WHERE id = {audit}"));
 
         // Nothing more to do on a second pass.
-        (await RunAsync(month.AddDays(21), monthsAhead: 2)).ShouldAllBe(p => p.Created.Count == 0);
+        (await RunAsync(month.AddDays(21), monthsAhead: 2)).ShouldAllBe(p => !p.Created.Any(In2041));
+    }
+
+    /// <summary>
+    /// Rows the default partition took for a month that went by without a partition of its own (the job did not run for
+    /// months, or a device's clock was behind) move into that month's partition at the next pass, unchanged, and the audit
+    /// chain still verifies. The job used to make only this month and the months ahead, so they stayed in the default
+    /// partition for good.
+    /// </summary>
+    [Fact]
+    public async Task Rows_waiting_in_the_default_partition_for_a_month_gone_by_move_into_that_month()
+    {
+        var february = new DateTime(2047, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+        var message = await MessageAsync(february.AddDays(9));
+        var call = await IntegrationCallAsync(february.AddMonths(1).AddTicks(-10));
+        var audit = await AuditAsync(february.AddDays(1));
+        await SealAsync(audit);
+        (await PartitionOfAsync("platform.notification_logs", message)).ShouldBe("platform.notification_logs_default");
+        (await PartitionOfAsync("integrations.integration_logs", call)).ShouldBe("integrations.integration_logs_default");
+        (await PartitionOfAsync("audit.audit_events", audit)).ShouldBe("audit.audit_events_default");
+        var rowsBefore = (await RowTextAsync("platform.notification_logs", [message]), await RowTextAsync("integrations.integration_logs", [call]),
+            await RowTextAsync("audit.audit_events", [audit]));
+
+        // Seven months on, the job runs again.
+        var passes = await RunAsync(february.AddMonths(7).AddDays(14), monthsAhead: 1);
+
+        passes.Single(p => p.Table == "platform.notification_logs").Moved["notification_logs_2047_02"].ShouldBe(1);
+        passes.Single(p => p.Table == "integrations.integration_logs").Moved["integration_logs_2047_02"].ShouldBe(1);
+        passes.Single(p => p.Table == "audit.audit_events").Moved["audit_events_2047_02"].ShouldBe(1);
+        (await PartitionOfAsync("platform.notification_logs", message)).ShouldBe("platform.notification_logs_2047_02");
+        (await PartitionOfAsync("integrations.integration_logs", call)).ShouldBe("integrations.integration_logs_2047_02");
+        (await PartitionOfAsync("audit.audit_events", audit)).ShouldBe("audit.audit_events_2047_02");
+        (await RowTextAsync("platform.notification_logs", [message]), await RowTextAsync("integrations.integration_logs", [call]),
+            await RowTextAsync("audit.audit_events", [audit])).ShouldBe(rowsBefore);
+
+        // Only the months with rows waiting: none for the months between that had none.
+        passes.Single(p => p.Table == "platform.notification_logs").Created.ShouldNotContain("notification_logs_2047_03");
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<AuditChainService>().VerifyAsync(Ct)).Valid.ShouldBeTrue();
+        }
+
+        await Should.ThrowAsync<PostgresException>(() => ExecuteAsync("TRUNCATE audit.audit_events_2047_02"));
     }
 
     [Fact]
@@ -126,8 +170,9 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         await reading.RollbackAsync(Ct);
 
         // The next pass makes the message log's months.
-        (await RunAsync(month.AddDays(4), monthsAhead: 1)).Single(p => p.Table == "platform.notification_logs").Created
-            .ShouldBe(["notification_logs_2046_05", "notification_logs_2046_06"]);
+        var next = (await RunAsync(month.AddDays(4), monthsAhead: 1)).Single(p => p.Table == "platform.notification_logs");
+        next.Created.ShouldContain("notification_logs_2046_05");
+        next.Created.ShouldContain("notification_logs_2046_06");
     }
 
     /// <summary>
@@ -186,6 +231,8 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
             NullLogger<PartitionMaintenance>.Instance);
         return (await maintenance.RunAsync(Ct)).ShouldNotBeNull("no other node is maintaining the partitions");
     }
+
+    private static bool In2041(string partition) => partition.Contains("_2041_", StringComparison.Ordinal);
 
     /// <summary>Whether a session waits for an ACCESS EXCLUSIVE lock on <paramref name="table"/>.</summary>
     private Task<bool> IsLockWaitedForAsync(string table) => ScalarAsync<bool>(

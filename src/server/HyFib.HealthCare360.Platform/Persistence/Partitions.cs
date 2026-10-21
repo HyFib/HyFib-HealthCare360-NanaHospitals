@@ -58,14 +58,19 @@ public static class PartitionServiceCollectionExtensions
 /// The table was in use: its lock was not granted within <see cref="PartitionMaintenance.LockTimeout"/>, so nothing was done
 /// to it, and the next pass tries again.
 /// </param>
-public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, int RowsMovedFromDefault, bool InUse = false);
+public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, int RowsMovedFromDefault, bool InUse = false)
+{
+    /// <summary>How many rows each partition it made took over from the default partition, for each that took any.</summary>
+    public IReadOnlyDictionary<string, int> Moved { get; init; } = new Dictionary<string, int>();
+}
 
 /// <summary>
 /// Keeps the monthly partitions ahead of time (SCAL-04): each partitioned table has a partition for this month and the
-/// next <see cref="PartitionOptions.MonthsAhead"/>. A month whose rows already went to the default partition (a clock far
-/// ahead, or the job not running for months) gets them moved into its new partition, in the same transaction. Audit
-/// partitions get the append-only trigger against TRUNCATE that a partition does not inherit. One node at a time (an
-/// advisory lock).
+/// next <see cref="PartitionOptions.MonthsAhead"/>. A month whose rows already went to the default partition gets them
+/// moved into its new partition, in the same transaction: a month ahead whose rows came early (a clock far ahead), and a
+/// month gone by without a partition (the job not running for months, a clock behind), as far back as
+/// <see cref="MonthsBack"/>, as the migration that partitioned the tables did. Audit partitions get the append-only
+/// trigger against TRUNCATE that a partition does not inherit. One node at a time (an advisory lock).
 /// <para>
 /// Making a partition locks its table ACCESS EXCLUSIVE, and while a pass waits for that lock every insert into the table
 /// (an audit entry, a reading, a message) waits behind it. So each table has a transaction of its own, which waits at most
@@ -93,6 +98,12 @@ public sealed class PartitionMaintenance(
     /// wait behind it at most that long.
     /// </summary>
     public static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// How far back a month whose rows wait in the default partition gets a partition: fifteen years, as far as the
+    /// migration that partitioned the tables went. Older rows (a device's clock years out) stay in the default partition.
+    /// </summary>
+    public const int MonthsBack = 15 * 12;
 
     /// <summary>
     /// One pass over every partitioned table. Null when another node is doing it now. A table that is not partitioned (its
@@ -161,18 +172,29 @@ public sealed class PartitionMaintenance(
                 return null;
             }
 
-            var created = new List<string>();
-            var moved = 0;
+            // The months gone by whose rows wait in the default partition, then this month and the months ahead.
+            var months = new SortedSet<DateOnly>(await PastMonthsWaitingAsync(table, thisMonth, ct));
             var monthsAhead = Math.Clamp(options.Value.Partitions.MonthsAhead, 1, 24);
             for (var month = thisMonth; month <= thisMonth.AddMonths(monthsAhead); month = month.AddMonths(1))
+            {
+                months.Add(month);
+            }
+
+            var created = new List<string>();
+            var moved = new Dictionary<string, int>();
+            foreach (var month in months)
             {
                 if (await ExistsAsync(table.Schema, table.PartitionFor(month), ct))
                 {
                     continue;
                 }
 
-                moved += await CreateAsync(table, month, ct);
+                var rows = await CreateAsync(table, month, ct);
                 created.Add(table.PartitionFor(month));
+                if (rows > 0)
+                {
+                    moved[table.PartitionFor(month)] = rows;
+                }
             }
 
             await transaction.CommitAsync(ct);
@@ -180,10 +202,10 @@ public sealed class PartitionMaintenance(
             {
                 logger.LogInformation(
                     "Partitions of {Table}: made {Created}; {Moved} rows moved out of the default partition",
-                    table.Name, string.Join(", ", created), moved);
+                    table.Name, string.Join(", ", created), moved.Values.Sum());
             }
 
-            return new PartitionPass(table.Name, created, moved);
+            return new PartitionPass(table.Name, created, moved.Values.Sum()) { Moved = moved };
         }
         catch (Exception ex) when (DatabaseInitializer.IsLockTimeout(ex))
         {
@@ -209,6 +231,26 @@ public sealed class PartitionMaintenance(
                 JOIN pg_namespace n ON n.oid = c.relnamespace
                 WHERE n.nspname = {table.Schema} AND c.relname = {table.Table}) AS "Value"
             """).SingleAsync(ct);
+
+    /// <summary>
+    /// The months before <paramref name="thisMonth"/>, as far back as <see cref="MonthsBack"/>, that rows in the default
+    /// partition belong to: rows that came while their month had no partition.
+    /// </summary>
+    private async Task<List<DateOnly>> PastMonthsWaitingAsync(PartitionedTable table, DateOnly thisMonth, CancellationToken ct)
+    {
+        if (!await ExistsAsync(table.Schema, table.DefaultPartition, ct))
+        {
+            return [];
+        }
+
+        var key = $"\"{table.KeyColumn}\"";
+        var sql = $"""
+            SELECT DISTINCT (date_trunc('month', {key} AT TIME ZONE 'UTC'))::date AS "Value"
+            FROM ONLY "{table.Schema}"."{table.DefaultPartition}"
+            WHERE {key} >= '{Bound(thisMonth.AddMonths(-MonthsBack))}' AND {key} < '{Bound(thisMonth)}'
+            """;
+        return await db.Database.SqlQueryRaw<DateOnly>(sql).ToListAsync(ct);
+    }
 
     private async Task<bool> ExistsAsync(string schema, string relation, CancellationToken ct) =>
         await db.Database.SqlQuery<bool>($"SELECT to_regclass({$"\"{schema}\".\"{relation}\""}) IS NOT NULL AS \"Value\"").SingleAsync(ct);

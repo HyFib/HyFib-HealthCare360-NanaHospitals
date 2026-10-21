@@ -1096,7 +1096,8 @@ The node that runs the jobs adds each table's partitions three months ahead, a m
 hours. Adding one needs its table to itself for a moment: when something holds the table (a backup's pg_dump, a long
 report), the job waits two seconds at most, so writes to the table are not held up, and leaves that table to its next
 run, which is still months ahead. Rows that ever went to the default partition (a device whose clock was months out, or the job not running for
-months) move into their month's partition when it is made. Change how far ahead with
+months) move into their month's partition when it is made: at the job's next run for a month gone by (as far back as
+15 years; older rows stay where they are), and when it comes within the months kept ahead for one still to come. Change how far ahead with
 `HealthCare360:Partitions:MonthsAhead` (1 to 24).
 
 **Partitions are never dropped.** How long each kind of record is kept is set in one place, Privacy › Retention, whose
