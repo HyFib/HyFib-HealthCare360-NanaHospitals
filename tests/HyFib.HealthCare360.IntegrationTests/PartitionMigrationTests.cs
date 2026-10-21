@@ -3,7 +3,9 @@ using System.Globalization;
 using System.Reflection;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Integrations;
+using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -13,6 +15,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -69,6 +73,60 @@ public sealed class PartitionMigrationTests(HospitalServer server)
 
         (await RelationKindsAsync(database.ConnectionString)).ShouldAllBe(k => k == "r");
         (await db.Database.GetAppliedMigrationsAsync(Ct)).ShouldNotContain(target);
+    }
+
+    /// <summary>
+    /// Start-up does not try again an update that gave up waiting for a lock. Npgsql calls the lock timeout transient and
+    /// EF Core wraps it in an InvalidOperationException, so start-up tried twelve times, 15 seconds apart, each time after
+    /// a full backup, while whatever held the table still did. PostgreSQL still starting up is tried again, as before.
+    /// </summary>
+    [Fact]
+    public void A_lock_timeout_stops_start_up_instead_of_being_tried_again()
+    {
+        var lockTimeout = new PostgresException("canceling statement due to lock timeout", "ERROR", "ERROR", PostgresErrorCodes.LockNotAvailable);
+        lockTimeout.IsTransient.ShouldBeTrue("as Npgsql sees it");
+
+        ServerComposition.IsTransientDatabaseError(new InvalidOperationException("Applying the migration failed.", lockTimeout)).ShouldBeFalse();
+        ServerComposition.IsTransientDatabaseError(lockTimeout).ShouldBeFalse();
+        ServerComposition.IsTransientDatabaseError(
+            new PostgresException("the database system is starting up", "FATAL", "FATAL", PostgresErrorCodes.CannotConnectNow)).ShouldBeTrue();
+    }
+
+    /// <summary>
+    /// Start-up on a database whose upgrade cannot lock a table stops with a message that says why and what to do, and an
+    /// update tried again in the same process (start-up tries again when the database goes away during one) takes no
+    /// second backup: each is a full pg_dump of the hospital's database.
+    /// </summary>
+    [Fact]
+    public async Task Start_up_on_a_held_lock_stops_saying_why_and_backs_up_once()
+    {
+        await using var database = await TestDatabase.CreateAsync(Ct);
+        await using (var db = Context(database.ConnectionString))
+        {
+            var target = typeof(PartitionHighVolumeTables).GetCustomAttribute<MigrationAttribute>()!.Id;
+            var migrations = db.Database.GetMigrations().ToList();
+            await db.GetService<IMigrator>().MigrateAsync(migrations[migrations.IndexOf(target) - 1], Ct);
+        }
+
+        await using var other = new NpgsqlConnection(database.ConnectionString);
+        await other.OpenAsync(Ct);
+        await using var reading = await other.BeginTransactionAsync(Ct);
+        await ExecuteAsync(other, "LOCK TABLE audit.audit_events IN ACCESS SHARE MODE");
+        var backups = new CountingBackups();
+        var services = new ServiceCollection();
+        services.AddScoped(_ => Context(database.ConnectionString));
+        services.AddSingleton<IPreMigrationBackup>(backups);
+        await using var provider = services.BuildServiceProvider();
+        var initializer = new DatabaseInitializer(
+            provider.GetRequiredService<IServiceScopeFactory>(), Options.Create(new PlatformOptions()), NullLogger<DatabaseInitializer>.Instance);
+
+        var stopped = await Should.ThrowAsync<DatabaseUpgradeException>(() => initializer.InitializeAsync(Ct));
+        stopped.Message.ShouldBe(DatabaseInitializer.LockedMessage);
+        ServerComposition.IsTransientDatabaseError(stopped).ShouldBeFalse();
+        await Should.ThrowAsync<DatabaseUpgradeException>(() => initializer.InitializeAsync(Ct));
+        await reading.RollbackAsync(Ct);
+
+        backups.Taken.ShouldBe(1, "one backup before the first attempt at the update, none before the second");
     }
 
     [Fact]
@@ -374,4 +432,20 @@ public sealed class PartitionMigrationTests(HospitalServer server)
 
     /// <param name="Partition">The partition it should be in, schema-qualified, as <c>tableoid::regclass</c> shows it.</param>
     private sealed record SeededRow(string Table, string Key, object Id, DateTime At, string Partition);
+
+    /// <summary>Counts the backups start-up takes before an update, and takes none.</summary>
+    private sealed class CountingBackups : IPreMigrationBackup
+    {
+        public int Taken { get; private set; }
+
+        public Task<BackupResult> CreatePreMigrationAsync(IReadOnlyList<string> appliedMigrations, CancellationToken cancellationToken)
+        {
+            Taken++;
+            var now = DateTimeOffset.UtcNow;
+            return Task.FromResult(new BackupResult(
+                BackupKind.PreMigration, now, now, $"hc360-it-{Taken}-premigration.hc360bak", 1, "it", null, now, false, null, "it"));
+        }
+
+        public Task RecordAsync(BackupResult result, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
 }

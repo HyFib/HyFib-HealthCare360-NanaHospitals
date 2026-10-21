@@ -250,6 +250,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddMonthlyPartitions(PartitionedTables.NotificationLogs);
         services.AddMonthlyPartitions(PartitionedTables.IntegrationLogs);
         services.AddScoped<BackupService>();
+        services.AddScoped<IPreMigrationBackup>(sp => sp.GetRequiredService<BackupService>());
         services.AddSingleton<RecoveryKeyStore>();
         services.AddScoped<RecoveryKeyService>();
         services.TryAddSingleton<IPostgresTools, PostgresTools>();

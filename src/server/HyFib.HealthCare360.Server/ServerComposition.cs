@@ -104,7 +104,8 @@ public static class ServerComposition
     /// <summary>
     /// Applies migrations and seeds. PostgreSQL may still be starting when the service boots after a power cut, so
     /// connection problems are retried for up to about 3 minutes. An error PostgreSQL reports about the schema or the data
-    /// (for example a table that already exists) happens again on every attempt, so it stops start-up at once.
+    /// (for example a table that already exists) happens again on every attempt, so it stops start-up at once, as does an
+    /// update that cannot lock a table it changes (<see cref="DatabaseInitializer.LockedMessage"/>).
     /// </summary>
     public static async Task InitializeDatabaseAsync(this WebApplication app, CancellationToken cancellationToken = default)
     {
@@ -130,11 +131,16 @@ public static class ServerComposition
         }
     }
 
-    private static bool IsTransientDatabaseError(Exception ex) => ex switch
+    /// <summary>
+    /// Whether start-up tries again. Npgsql calls a lock timeout (55P03) transient, but at start-up it means something else
+    /// holds a table the update must change: that does not pass in 15 seconds, and each attempt would back up the database
+    /// and hold every write to the table while it waits.
+    /// </summary>
+    internal static bool IsTransientDatabaseError(Exception ex) => !DatabaseInitializer.IsLockTimeout(ex) && (ex switch
     {
         TimeoutException => true,
         NpgsqlException npgsql => npgsql.IsTransient,
         InvalidOperationException { InnerException: NpgsqlException inner } => inner.IsTransient,
         _ => false,
-    };
+    });
 }

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace HyFib.HealthCare360.Platform.Persistence;
 
@@ -31,8 +32,36 @@ public sealed class DatabaseInitializer(
         "against the primary. To fail over to this Server Node, promote its PostgreSQL first, then put the keys back and start HC360 " +
         "as the failover steps say (docs/deployment/DEPLOYMENT.md, \"Failing over to the standby\").";
 
+    /// <summary>
+    /// Why start-up stops when a migration cannot lock a table it changes: it waited for the lock as long as it allows, then
+    /// gave up (SQLSTATE 55P03) and rolled back. Trying again would wait for the lock again, and hold every write to the
+    /// table behind it meanwhile, while whatever holds it is still there.
+    /// </summary>
+    public const string LockedMessage =
+        "The database update stopped because a table it changes is in use: it waited for the table's lock, gave up " +
+        "(\"canceling statement due to lock timeout\") and changed nothing. Something still uses the database, such as " +
+        "another HC360 server left running or a reporting tool with a transaction open. Stop it, then start HC360 again.";
+
     /// <summary>No limit (0) on a migration's statements: see where the migrations are applied.</summary>
     internal const int MigrationCommandTimeout = 0;
+
+    // The backup taken before this process first tried the pending migrations. Start-up tries the update again when the
+    // database goes away during it, and the same update needs no second backup: each is a full pg_dump of the database.
+    private PreMigrationBackup? _backupTaken;
+
+    /// <summary>A migration gave up waiting for a lock (lock_timeout), however EF Core wrapped the error.</summary>
+    public static bool IsLockTimeout(Exception exception)
+    {
+        for (var ex = exception; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is PostgresException { SqlState: PostgresErrorCodes.LockNotAvailable })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -78,25 +107,35 @@ public sealed class DatabaseInitializer(
         var createdBeforeMigrations = applied.Count == 0 && await MigrationBaseline.HasApplicationTablesAsync(db, ct);
         var adoption = createdBeforeMigrations ? await MigrationBaseline.PrepareAsync(db, ct) : null;
 
-        var backups = services.GetRequiredService<BackupService>();
+        var backups = services.GetRequiredService<IPreMigrationBackup>();
         BackupResult? backup = null;
         if ((applied.Count > 0 || createdBeforeMigrations) && options.Value.Backup.BeforeMigrations)
         {
-            logger.LogInformation("Backing up the database before applying {Count} migration(s): {Migrations}", pending.Count, string.Join(", ", pending));
-            try
+            // An earlier attempt at this update (all of what is pending now was pending then) took its backup already.
+            if (_backupTaken is { } taken && pending.All(taken.Pending.Contains))
             {
-                backup = await backups.CreatePreMigrationAsync(applied, ct);
+                backup = taken.Backup;
+                logger.LogInformation("Backup {File} was taken before the first attempt at this update; no other is taken", backup.FileName);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            else
             {
-                throw new DatabaseUpgradeException(
-                    $"The backup before the database update failed, so the database was not changed: {ex.Message} " +
-                    "Fix the cause (pg_dump, disk space) and start HC360 again. To update without a backup, set " +
-                    "HealthCare360:Backup:BeforeMigrations to false (not recommended).",
-                    ex);
-            }
+                logger.LogInformation("Backing up the database before applying {Count} migration(s): {Migrations}", pending.Count, string.Join(", ", pending));
+                try
+                {
+                    backup = await backups.CreatePreMigrationAsync(applied, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    throw new DatabaseUpgradeException(
+                        $"The backup before the database update failed, so the database was not changed: {ex.Message} " +
+                        "Fix the cause (pg_dump, disk space) and start HC360 again. To update without a backup, set " +
+                        "HealthCare360:Backup:BeforeMigrations to false (not recommended).",
+                        ex);
+                }
 
-            logger.LogInformation("Backup {File} taken and verified before the update", backup.FileName);
+                _backupTaken = new PreMigrationBackup(pending.ToHashSet(StringComparer.Ordinal), backup);
+                logger.LogInformation("Backup {File} taken and verified before the update", backup.FileName);
+            }
         }
 
         if (adoption is not null)
@@ -117,6 +156,12 @@ public sealed class DatabaseInitializer(
             {
                 await db.Database.MigrateAsync(ct);
             }
+            catch (Exception ex) when (IsLockTimeout(ex))
+            {
+                // EF Core wraps PostgreSQL's error in an InvalidOperationException that Npgsql calls transient; start-up
+                // must not try again (see LockedMessage).
+                throw new DatabaseUpgradeException(LockedMessage, ex);
+            }
             finally
             {
                 db.Database.SetCommandTimeout(timeout);
@@ -136,6 +181,9 @@ public sealed class DatabaseInitializer(
             }
         }
     }
+
+    /// <param name="Pending">The migrations that were pending when it was taken.</param>
+    private sealed record PreMigrationBackup(IReadOnlySet<string> Pending, BackupResult Backup);
 }
 
 /// <summary>Database objects that EF migrations do not model (idempotent; runs after every migration).</summary>

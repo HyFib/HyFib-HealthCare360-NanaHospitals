@@ -1071,9 +1071,11 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
   can be stopped or added at any time.
 - **Upgrades:** stop every node. Upgrade and start the job node first: it backs up the database, applies the database
   changes and starts. Then upgrade and start the API nodes. An upgrade that partitions large tables (below) may take
-  some minutes on the job node before it is ready. If it stops with "canceling statement due to lock timeout",
-  something still uses those tables (a node left running, or a reporting tool with a transaction open): nothing has
-  changed, so stop it and start the job node again.
+  some minutes on the job node before it is ready. If it stops, its log saying that a table the update changes is in use
+  ("canceling statement due to lock timeout"), something still uses those tables (a node left running, or a reporting
+  tool with a transaction open): nothing has changed. Stop what uses them, then start the job node again. Windows starts
+  the stopped service again within a minute, and each start backs the database up before it tries, so if that will take
+  longer, stop the service meanwhile (`Stop-Service HC360Server`).
 - **Rotating keys** (section 3) works on any node: the others use the new key within ten seconds, and accept tokens
   signed with it at once.
 - **Restoring** a backup (section 8): stop every node, restore on the job node from the shared backup folder (its
