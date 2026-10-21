@@ -819,8 +819,8 @@ acknowledgements are never acknowledged in turn.
   heartbeats reach whichever API node the proxy chose. Each writes its part (`LabGatewayState`) to
   `integrations.lab_gateway_nodes` within seconds of a change and every minute (`LabStatusSharing`), and every server
   shows them together (`LabStatusBoard`): a relay's or its agent's state over the gateway's, the latest of two that say
-  as much, every server's counts. A server's part ends three minutes after it last wrote it, and it removes it as it
-  stops. A single Server Node keeps it in memory only.
+  as much, every server's counts. A server's part ends three minutes after it last wrote it, by the database's clock
+  so that servers whose clocks differ agree on it, and it removes it as it stops. A single Server Node keeps it in memory only.
 
 #### Training analyser (transport `Simulator`)
 

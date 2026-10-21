@@ -12,9 +12,13 @@ namespace HyFib.HealthCare360.Integrations.Laboratory;
 /// Lab setup and the integrations dashboard show the same status whichever server answers. A single Server Node has all
 /// of it in its own memory, and nobody to write it for.
 /// </summary>
-internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry relays, IServiceScopeFactory scopes, TimeProvider time)
+internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry relays, IServiceScopeFactory scopes)
 {
-    /// <summary>How long a server's row counts after it was written: a server writes it again every minute.</summary>
+    /// <summary>
+    /// How long a server's row counts after it was written: a server writes it again every minute. It is measured by the
+    /// database's clock, as the row is written and as it is read, so servers whose clocks differ agree on it: by the
+    /// writer's clock, a row from a server whose clock was minutes behind the reader's had ended before it was written.
+    /// </summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(3);
 
     /// <summary>A row this long past its end belongs to a server that stopped without removing it (a power cut).</summary>
@@ -33,7 +37,6 @@ internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry rel
     {
         var statuses = state.Snapshot();
         var agents = relays.ConnectedAgents();
-        var now = time.GetUtcNow();
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         if (statuses.Count > 0 || agents.Count > 0)
@@ -42,7 +45,7 @@ internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry rel
             var agentJson = JsonSerializer.Serialize(agents, Json);
             await db.Database.ExecuteSqlAsync($"""
                 INSERT INTO integrations.lab_gateway_nodes (node, statuses, relaying_agents, expires_at)
-                VALUES ({Node}, CAST({statusJson} AS jsonb), CAST({agentJson} AS jsonb), {now + Lifetime})
+                VALUES ({Node}, CAST({statusJson} AS jsonb), CAST({agentJson} AS jsonb), now() + {Lifetime})
                 ON CONFLICT (node) DO UPDATE
                 SET statuses = EXCLUDED.statuses, relaying_agents = EXCLUDED.relaying_agents, expires_at = EXCLUDED.expires_at
                 """, cancellationToken);
@@ -52,7 +55,8 @@ internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry rel
             await db.Set<LabGatewayNode>().Where(n => n.Node == Node).ExecuteDeleteAsync(cancellationToken);
         }
 
-        await db.Set<LabGatewayNode>().Where(n => n.ExpiresAt < now - GoneAfter).ExecuteDeleteAsync(cancellationToken);
+        await db.Database.ExecuteSqlAsync(
+            $"DELETE FROM integrations.lab_gateway_nodes WHERE expires_at < now() - {GoneAfter}", cancellationToken);
     }
 
     /// <summary>Removes this server's row, as it stops.</summary>
@@ -69,10 +73,10 @@ internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry rel
     {
         var statuses = state.Snapshot().ToList();
         var agents = relays.ConnectedAgents().ToHashSet();
-        var now = time.GetUtcNow();
         await using var scope = scopes.CreateAsyncScope();
-        var others = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<LabGatewayNode>().AsNoTracking()
-            .Where(n => n.Node != Node && n.ExpiresAt > now)
+        var others = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<LabGatewayNode>()
+            .FromSql($"SELECT * FROM integrations.lab_gateway_nodes WHERE node <> {Node} AND expires_at > now()")
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
         foreach (var other in others)
         {
