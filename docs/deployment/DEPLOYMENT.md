@@ -1046,7 +1046,10 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
    from outside the hospital by its /64, which all the workstations on one subnet share; only addresses in a
    `LocalNetworks` network, the /64s of the node's own addresses, and link-local and unique local (`fd…`) addresses
    count one by one (SECURITY.md, "What counts as one address"). A single Server Node needs it only for workstations
-   on other subnets than its own.
+   on other subnets than its own. An IPv4 client that reaches the nodes through NAT64 (`64:ff9b::` and its IPv4
+   address) counts by that IPv4 address. Counting by the /64 keeps one machine from getting round the limits with a
+   new address for each try; a client holding a /56 or /48 still gets a budget per /64, which is why the limits per
+   account and per number and the portal's proof of work stay on as well.
 4. Put the keys in the shared folder. On the first node, with the settings above in place:
 
    ```powershell

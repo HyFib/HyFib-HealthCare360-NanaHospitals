@@ -437,10 +437,16 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user. With
   several servers (below), the sign-in and OTP limits per address are counted for the hospital, in the database.
   - **What counts as one address** (`ClientAddresses`), for these limits and for the proof of work's failure counts
-    (below): an IPv4 address; an IPv4 address carried in an IPv6 one (IPv4-mapped, 6to4, Teredo) as that IPv4 address;
-    and an IPv6 address from outside the hospital by its /64. A home, a phone on a mobile network or a rented server
-    holds a whole /64 or more (RFC 6177) and can send every request from a new address in it (RFC 8981), which would
-    otherwise sidestep every per-address limit and the extra work asked of a failing address. The hospital's own network
+    (below): an IPv4 address; an IPv4 address carried in an IPv6 one (IPv4-mapped, 6to4, Teredo, and NAT64's well-known
+    prefix `64:ff9b::/96`, RFC 6052, through which IPv4 clients reach a server on IPv6 alone) as that IPv4 address; and
+    an IPv6 address from outside the hospital by its /64. A home, a phone on a mobile network or a rented server holds
+    a whole /64 (RFC 6177) and can send every request from a new address in it (RFC 8981): counting by the /64 stops
+    one host from sidestepping the per-address limits and the extra work asked of a failing address that way. It does
+    not stop a client that holds more, a /56 or a /48, which has 256 or 65,536 /64s and so as many budgets. A coarser
+    key would not do: mobile networks give each subscriber a /64 out of larger prefixes their other subscribers share,
+    so counting by /56 or /48 would put unrelated patients on one budget. Against such a client the per-account and
+    per-number limits (the account lockout, the codes a number may be sent and the tries each code has) and the proof
+    of work remain the defence. The hospital's own network
     counts address by address, as IPv4 does: link-local and unique local addresses, the /64s the server has an address
     in itself (read again every minute), and `HealthCare360:Network:LocalNetworks` for other subnets that reach it over
     internet IPv6 addresses. The workstations on one WiFi share its /64, and do not share one sign-in budget. The

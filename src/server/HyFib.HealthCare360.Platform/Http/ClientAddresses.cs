@@ -11,10 +11,13 @@ namespace HyFib.HealthCare360.Platform.Http;
 /// counts for the hospital (<see cref="ClusterRateLimits"/>), and the portal proof of work's failure counts
 /// (<see cref="Security.AutomationSuspicion"/>). A client that can send from many addresses cheaply counts once:
 /// <list type="bullet">
-/// <item>An IPv4 address as it is, and one an IPv6 address carries (IPv4-mapped, 6to4, Teredo) as that IPv4 address.</item>
+/// <item>An IPv4 address as it is, and one an IPv6 address carries (IPv4-mapped, 6to4, Teredo, and NAT64's well-known
+/// prefix 64:ff9b::/96) as that IPv4 address.</item>
 /// <item>Any other IPv6 address by its /64: a home, a phone on a mobile network or a rented server has at least a /64
 /// (RFC 6177, 3GPP) and can send each request from another address in it (RFC 8981), which would sidestep every limit
-/// and the work the proof of work asks of a failing address.</item>
+/// and the work the proof of work asks of a failing address. A client that holds more, a /56 or a /48, has a budget
+/// for each of its /64s: a coarser key would put the unrelated subscribers a mobile network gives /64s of one larger
+/// prefix on one budget, so the per-account limits and the proof of work stay the defence there.</item>
 /// <item>But an IPv6 address on the hospital's own network one by one, as IPv4 addresses are: link-local, unique local and
 /// loopback addresses, those in a /64 the server has an address in itself, and those in
 /// <see cref="NetworkOptions.LocalNetworks"/>. The workstations on one WiFi share its /64, and must not share one
@@ -26,6 +29,9 @@ public sealed class ClientAddresses
 {
     /// <summary>How long the server's own networks are taken as they were read, before they are read again.</summary>
     private static readonly TimeSpan OwnNetworksFor = TimeSpan.FromMinutes(1);
+
+    /// <summary>NAT64's (and SIIT's) well-known prefix, 64:ff9b::/96 (RFC 6052): the IPv4 address is the last 32 bits.</summary>
+    private static readonly byte[] Nat64WellKnownPrefix = [0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0];
 
     private readonly IPNetwork[] _configured;
     private readonly Func<IEnumerable<IPAddress>> _ownAddresses;
@@ -83,7 +89,11 @@ public sealed class ClientAddresses
             .Select(a => Slash64(new IPAddress(a.GetAddressBytes())))
             .Distinct();
 
-    /// <summary>The IPv4 address an IPv4-mapped, 6to4 (RFC 3056) or Teredo (RFC 4380) address stands for.</summary>
+    /// <summary>
+    /// The IPv4 address an IPv4-mapped, 6to4 (RFC 3056), Teredo (RFC 4380) or NAT64 (RFC 6052, the well-known prefix)
+    /// address stands for. A server on IPv6 alone that IPv4 clients reach through a translator (SIIT, NAT64) sees each at
+    /// 64:ff9b::(its IPv4 address), all of them in one /64, which would otherwise give them all one budget.
+    /// </summary>
     private static IPAddress? CarriedIPv4(IPAddress address)
     {
         if (address.IsIPv4MappedToIPv6)
@@ -96,6 +106,11 @@ public sealed class ClientAddresses
         {
             // The client's own IPv4 address is the last 32 bits, inverted.
             return new IPAddress([(byte)~bytes[12], (byte)~bytes[13], (byte)~bytes[14], (byte)~bytes[15]]);
+        }
+
+        if (bytes.AsSpan(0, 12).SequenceEqual(Nat64WellKnownPrefix))
+        {
+            return new IPAddress(bytes.AsSpan(12, 4));
         }
 
         return bytes[0] == 0x20 && bytes[1] == 0x02 ? new IPAddress(bytes.AsSpan(2, 4)) : null;

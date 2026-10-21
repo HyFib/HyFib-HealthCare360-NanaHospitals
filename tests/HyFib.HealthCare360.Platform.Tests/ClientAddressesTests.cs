@@ -9,8 +9,8 @@ namespace HyFib.HealthCare360.Platform.Tests;
 /// SEC-06: what per-address limits and proof-of-work counts go by. A client holding an IPv6 /64 counts once however many
 /// of its addresses it sends from, an IPv4 address carried in IPv6 counts as that IPv4 address, and the hospital's own
 /// network still counts address by address. The expected keys are those Python's <c>ipaddress</c> module gives
-/// (<c>ipv4_mapped</c>, <c>teredo</c>, <c>sixtofour</c>, <c>ip_network(f"{a}/64", strict=False)</c>), an implementation
-/// of its own.
+/// (<c>ipv4_mapped</c>, <c>teredo</c>, <c>sixtofour</c>, for NAT64 the last 32 bits of an address in
+/// <c>ip_network("64:ff9b::/96")</c>, else <c>ip_network(f"{a}/64", strict=False)</c>), an implementation of its own.
 /// </summary>
 public sealed class ClientAddressesTests
 {
@@ -23,6 +23,10 @@ public sealed class ClientAddressesTests
     [InlineData("2001:db8:1:2:ffff:ffff:ffff:ffff", "2001:db8:1:2::/64")]
     [InlineData("2001:db8:1:3::1", "2001:db8:1:3::/64")]
     [InlineData("2400:cb00:2049:1::a29f:1804", "2400:cb00:2049:1::/64")]
+    [InlineData("64:ff9b::203.0.113.7", "203.0.113.7")]
+    [InlineData("64:ff9b::c000:22d", "192.0.2.45")]
+    [InlineData("64:ff9b::1:c000:22d", "64:ff9b::/64")]
+    [InlineData("64:ff9b:1::c000:22d", "64:ff9b:1::/64")]
     public void An_address_counts_as_the_IPv4_address_it_carries_or_its_IPv6_64(string address, string key) =>
         ClientAddresses.Key(IPAddress.Parse(address), []).ShouldBe(key);
 
@@ -84,6 +88,7 @@ public sealed class ClientAddressesTests
                 IPAddress.Parse("2001:db8:aa:bb::10"), IPAddress.Parse("2001:db8:aa:bb::11"), IPAddress.Parse("192.168.1.10"),
                 IPAddress.Parse("fe80::10%4"), IPAddress.Parse("fd00::10"), IPAddress.Parse("::1"), IPAddress.Parse("::ffff:192.168.1.10"),
                 IPAddress.Parse("2001:0:4136:e378:8000:63bf:3fff:fdd2"), IPAddress.Parse("2002:c0a8:10a::1"),
+                IPAddress.Parse("64:ff9b::c0a8:10a"),
             ])
             .Select(n => n.ToString()).ShouldBe(["2001:db8:aa:bb::/64"]);
 
