@@ -375,7 +375,10 @@ resource has a generated narrative.
   amendment; when the amendment was made by a user who is not a doctor, no one is named as its legal attester. A lab
   report has no attester: the laboratory is its author.
 * **Not coded:** medicines (no SNOMED CT drug codes), allergens, free-text diagnoses, lab tests without a LOINC code
-  and its LOINC name in the test master. They travel as text, which the IG allows.
+  and its LOINC name in the test master. They travel as text, which the IG allows. A LOINC name stays only with the
+  code it names: the test master's form clears it when the code changes, and the server refuses a changed code sent
+  with the old name (400 on `loincName`). None of the seeded tests has one, so out of the box no result is LOINC-coded
+  until the laboratory enters the names from the LOINC table.
 
 ### Validation
 

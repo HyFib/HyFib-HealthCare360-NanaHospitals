@@ -577,6 +577,35 @@ public sealed class AbdmExportTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task A_loinc_name_is_kept_only_with_the_code_it_names()
+    {
+        // A test of its own, copied from CRP: the shared CRP master stays as the other tests expect it.
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var crp = await LabTestAsync(admin, "LAB-CRP");
+        var code = "ABDM-" + Digits(8);
+        var id = (await admin.PostAsync<JsonElement>("/api/v1/lab/tests", LabTestRequest(crp, code, "1988-5", CrpLoincName, version: null)))
+            .GetProperty("id").GetGuid();
+        var test = await admin.GetAsync<LabTestDetail>($"/api/v1/lab/tests/{id}");
+        (test.Loinc, test.LoincName).ShouldBe(("1988-5", CrpLoincName));
+
+        // The code corrected, with the old code's name sent back as it was: refused, as that name is not the new code's.
+        using (var refused = await admin.SendRawAsync(HttpMethod.Put, $"/api/v1/lab/tests/{id}", LabTestRequest(test, code, "30522-7", CrpLoincName, test.Version)))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("loincName");
+        }
+
+        // With the new code's own name it is saved; with no name, the code goes without one.
+        const string highSensitivity = "C reactive protein [Mass/volume] in Serum or Plasma by High sensitivity method";
+        await admin.PutAsync($"/api/v1/lab/tests/{id}", LabTestRequest(test, code, "30522-7", highSensitivity, test.Version));
+        test = await admin.GetAsync<LabTestDetail>($"/api/v1/lab/tests/{id}");
+        (test.Loinc, test.LoincName).ShouldBe(("30522-7", highSensitivity));
+        await admin.PutAsync($"/api/v1/lab/tests/{id}", LabTestRequest(test, code, "1988-5", loincName: null, test.Version));
+        test = await admin.GetAsync<LabTestDetail>($"/api/v1/lab/tests/{id}");
+        (test.Loinc, test.LoincName).ShouldBe(("1988-5", null));
+    }
+
     /// <summary>A consultation without a visit: complaint, assessment and a coded diagnosis; signed or left open.</summary>
     private static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign)
     {
@@ -691,6 +720,18 @@ public sealed class AbdmExportTests(HospitalServer server)
         (await pathologist.PostAsync<VerificationOutcome>("/api/v1/lab/results/verify",
             new VerifyResultsRequest([crp.ResultId], QcOverrideReason: null, CriticalCall: null, Release: true))).ReleasedItemIds.ShouldHaveSingleItem();
     }
+
+    private static async Task<LabTestDetail> LabTestAsync(ApiClient admin, string code)
+    {
+        var listed = (await admin.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={code}")).Items.Single(t => t.Code == code);
+        return await admin.GetAsync<LabTestDetail>($"/api/v1/lab/tests/{listed.Id}");
+    }
+
+    /// <summary>The test as the masters screen saves it, under <paramref name="code"/>: not orderable, so it needs no billable service.</summary>
+    private static SaveLabTestRequest LabTestRequest(LabTestDetail t, string code, string? loinc, string? loincName, uint? version) => new(
+        code, t.Name, t.ShortName, t.Section, t.SpecimenType, t.Container, t.Method, t.TatHours, loinc, loincName, ServiceItemId: null,
+        IsOrderable: false, t.IsPanel, t.ResultType, t.Unit, t.Decimals, t.Options, InstrumentChannelCodes: null, t.QcGroup, t.DeltaThresholdPercent,
+        t.AllowAutoValidation, t.Preparation, t.DrawSeparately, t.Interpretation, t.DefaultReferralLabId, t.DisplayOrder, IsActive: false, version);
 
     /// <summary>Gives the CRP test's LOINC code (1988-5) its LOINC name in the test master, as the hospital administrator.</summary>
     private async Task NameCrpsLoincCodeAsync()

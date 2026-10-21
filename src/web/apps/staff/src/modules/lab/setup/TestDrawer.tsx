@@ -48,6 +48,7 @@ import {
 import { ServiceLookup } from '../common/ServiceLookup';
 import { containerInfo, resultTypeLabel, sectionLabel, specimenLabel } from '../labels';
 import { ComponentsEditor } from './ComponentsEditor';
+import { useLoincNameFollowsCode } from './loincName';
 import { parseList } from './ranges';
 import { RangesEditor } from './RangesEditor';
 
@@ -254,6 +255,7 @@ function TestEditor({
   const [rangesChanged, setRangesChanged] = useState(false);
   const referralLabs = useQuery(labQueries.referralLabs());
   const form = useForm<TestValues>({ resolver: zodResolver(schema), defaultValues: defaults(test) });
+  useLoincNameFollowsCode(form);
   const [resultType, isPanel, isOrderable] = useWatch({
     control: form.control,
     name: ['resultType', 'isPanel', 'isOrderable'],

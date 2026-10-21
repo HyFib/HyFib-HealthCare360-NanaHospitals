@@ -158,6 +158,19 @@ internal static class LabMasterEndpoints
             return Error.Field("defaultReferralLabId", "Choose an active reference laboratory.").ToProblem();
         }
 
+        // A LOINC name is the name LOINC gives its code (ABDM health records carry the code with it). A new code sent with
+        // the old code's name would put that name on the wrong code: the form clears the name when the code changes, and
+        // a request that does not is refused.
+        var loinc = Clean(request.Loinc);
+        var loincName = loinc is null ? null : Clean(request.LoincName);
+        if (id is not null && loinc != test.Loinc && loincName is not null && string.Equals(loincName, test.LoincName, StringComparison.Ordinal))
+        {
+            return Error.Field(
+                "loincName",
+                "The LOINC code changed: enter the name LOINC gives the new code. If the name on file is already the new code's (the code was mistyped), save the code without a name first, then add the name.")
+                .ToProblem();
+        }
+
         test.Code = code;
         test.Name = request.Name.Trim();
         test.ShortName = Clean(request.ShortName);
@@ -166,8 +179,8 @@ internal static class LabMasterEndpoints
         test.Container = request.Container;
         test.Method = Clean(request.Method);
         test.TatHours = request.TatHours;
-        test.Loinc = Clean(request.Loinc);
-        test.LoincName = test.Loinc is null ? null : Clean(request.LoincName);
+        test.Loinc = loinc;
+        test.LoincName = loincName;
         test.ServiceItemId = request.ServiceItemId;
         test.IsOrderable = request.IsOrderable;
         test.IsPanel = request.IsPanel;
