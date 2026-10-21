@@ -372,13 +372,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             var admissionNote = await doctor.GetAsync<EncounterDetail>($"/api/v1/emr/encounters/{note}");
             await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{note}/sign", new SignEncounterRequest(admissionNote.Version));
 
-            var summary = await doctor.PutAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/by-admission/{admission.Id}",
-                new SaveDischargeSummaryRequest(
-                    PatientId: patient.Id, EncounterId: null, PractitionerId: null, AdmittedAt: null, DischargedAt: null,
-                    Diagnoses: "Acute febrile illness, probably viral", DiagnosisCodes: ["R50.9"], PresentingComplaints: "High fever for three days",
-                    CourseInHospital: "The fever settled in two days on paracetamol and oral fluids. CRP was normal.", Procedures: null,
-                    InvestigationsSummary: "CRP 3.2 mg/L", ConditionAtDischarge: "Afebrile and well", Medications: "Paracetamol 500 mg when needed for fever",
-                    Advice: "Drink plenty of fluids", FollowUpDate: null, FollowUpInstructions: "Come back if the fever returns", Version: null));
+            var summary = await SummaryAsync(doctor, patient.Id, admission);
             var path = $"/api/v1/abdm/bundles/discharge-summaries/{summary.Id}";
             await SwitchAsync(enabled: true);
 
@@ -461,7 +455,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task A_lab_report_kept_under_a_merged_duplicate_is_exported_as_the_surviving_patients()
+    public async Task A_lab_report_kept_under_a_merged_duplicate_is_exported_as_the_surviving_patients_once_both_may_be_opened()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var medicalRecords = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
@@ -478,15 +472,103 @@ public sealed class AbdmExportTests(HospitalServer server)
             var crp = await CrpAsync(duplicate, admission);
             await ReleaseAsync(crp);
             await medicalRecords.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+            var path = $"/api/v1/abdm/bundles/lab-reports/{crp.ReportId}";
             await SwitchAsync(enabled: true);
 
-            var bundle = await ExportAsync($"/api/v1/abdm/bundles/lab-reports/{crp.ReportId}", DiagnosticReportRecord, abha, "lab-report-");
+            var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-");
             var patient = Resources(bundle, "Patient").ShouldHaveSingleItem();
             patient.GetProperty("identifier").EnumerateArray().Single(i => i.GetProperty("system").GetString() == "urn:hc360:uhid")
                 .GetProperty("value").GetString().ShouldBe(kept.Uhid);
             Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem()
                 .GetProperty("valueQuantity").GetProperty("value").GetDecimal().ShouldBe(Crp);
             (await AuditAsync(kept.Id, "patient.accessed")).ShouldNotBeNull().EntityId.ShouldBe(crp.ReportId.ToString("D"));
+
+            // Both records are the patient's: the medical records officer, who does not open restricted records, is refused
+            // when either is restricted, and the refusal is on that record's audit trail.
+            foreach (var restricted in new[] { duplicate.Id, kept.Id })
+            {
+                await SetPatientAsync(restricted, vip: true);
+                (await DeniedAsync(medicalRecords, path)).ShouldBe("patient.restricted");
+                (await AuditAsync(restricted, "abdm.export_denied")).ShouldNotBeNull().EntityId.ShouldBe(crp.ReportId.ToString("D"));
+                await SetPatientAsync(restricted, vip: false);
+            }
+
+            // Once the surviving record is deleted the report is not exported. That is checked after the restricted
+            // duplicate, and who may open it is told only that the report is not found, not whose it was.
+            await SetPatientAsync(duplicate.Id, vip: true);
+            await SetPatientAsync(kept.Id, deleted: true);
+            (await DeniedAsync(medicalRecords, path)).ShouldBe("patient.restricted");
+            var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+            using var gone = await admin.SendRawAsync(HttpMethod.Get, path);
+            gone.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+            (await gone.Content.ReadAsStringAsync(Ct)).ShouldSatisfyAllConditions(
+                body => body.ShouldNotContain(duplicate.Id.ToString()),
+                body => body.ShouldNotContain(kept.Id.ToString()));
+        }
+        finally
+        {
+            await SetPatientAsync(kept.Id, deleted: false);
+            await SwitchAsync(enabled: false);
+            await CancelAdmissionAsync(admission);
+        }
+    }
+
+    [Fact]
+    public async Task A_discharge_summary_holds_a_stays_lab_report_kept_under_a_merged_duplicate_only_for_who_may_open_the_duplicate()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var medicalRecords = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var abha = NewAbha();
+        var kept = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+        var duplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
+        var admission = await AdmitAsync(duplicate.Id);
+
+        // From the admission on, the bed is given back whatever happens.
+        try
+        {
+            // The stay began under the duplicate UHID and its CRP was done there. The two records are merged, and the
+            // doctor writes and signs the summary under the surviving one.
+            var crp = await CrpAsync(duplicate, admission);
+            await ReleaseAsync(crp);
+            await medicalRecords.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+            var summary = await SummaryAsync(doctor, kept.Id, admission);
+            await doctor.PostAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/{summary.Id}/sign", new SignDischargeSummaryRequest(summary.Version));
+            var path = $"/api/v1/abdm/bundles/discharge-summaries/{summary.Id}";
+            await SwitchAsync(enabled: true);
+
+            // The CRP was done in the stay, so it is in the summary.
+            var bundle = await ExportAsync(path, DischargeSummaryRecord, abha, $"discharge-summary-{kept.Uhid}-");
+            Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem()
+                .GetProperty("valueQuantity").GetProperty("value").GetDecimal().ShouldBe(Crp);
+
+            // Once the duplicate is restricted, only who may open it exports the summary. The medical records officer is
+            // refused without being told which record it is, and the refusal is on the duplicate's audit trail.
+            await SetPatientAsync(duplicate.Id, vip: true);
+            var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+            using (var refused = await medicalRecords.SendRawAsync(HttpMethod.Get, path))
+            {
+                refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+                var body = await refused.Content.ReadAsStringAsync(Ct);
+                JsonSerializer.Deserialize<JsonElement>(body, ApiClient.Json).GetProperty("code").GetString().ShouldBe("abdm.restricted_duplicate");
+                body.ShouldNotContain(duplicate.Uhid);
+                body.ShouldNotContain(duplicate.Id.ToString());
+            }
+
+            (await AuditAsync(duplicate.Id, "abdm.export_denied")).ShouldNotBeNull().EntityId.ShouldBe(summary.Id.ToString("D"));
+            bundle = await ExportAsync(path, DischargeSummaryRecord, abha, $"discharge-summary-{kept.Uhid}-");
+            Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem();
+
+            // A report of the stay kept under someone else's record, not merged into this one, is not the patient's.
+            var stranger = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<LabReport>().IgnoreQueryFilters()
+                    .Where(r => r.Id == crp.ReportId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(r => r.PatientId, stranger.Id), Ct);
+            }
+
+            Resources(await ExportAsync(path, DischargeSummaryRecord, abha, $"discharge-summary-{kept.Uhid}-"), "DiagnosticReport").ShouldBeEmpty();
         }
         finally
         {
@@ -624,7 +706,43 @@ public sealed class AbdmExportTests(HospitalServer server)
         (await admin.GetAsync<LabTestDetail>($"/api/v1/lab/tests/{t.Id}")).LoincName.ShouldBe(CrpLoincName);
     }
 
-    /// <summary>The hospital administrator, who exports records for ABDM, is told the record cannot be exported yet, and why.</summary>
+    /// <summary>The doctor's discharge summary of the stay, saved and not signed yet.</summary>
+    private static Task<DischargeSummaryDto> SummaryAsync(ApiClient doctor, Guid patientId, AdmissionCreated admission) =>
+        doctor.PutAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/by-admission/{admission.Id}",
+            new SaveDischargeSummaryRequest(
+                PatientId: patientId, EncounterId: null, PractitionerId: null, AdmittedAt: null, DischargedAt: null,
+                Diagnoses: "Acute febrile illness, probably viral", DiagnosisCodes: ["R50.9"], PresentingComplaints: "High fever for three days",
+                CourseInHospital: "The fever settled in two days on paracetamol and oral fluids. CRP was normal.", Procedures: null,
+                InvestigationsSummary: "CRP 3.2 mg/L", ConditionAtDischarge: "Afebrile and well", Medications: "Paracetamol 500 mg when needed for fever",
+                Advice: "Drink plenty of fluids", FollowUpDate: null, FollowUpInstructions: "Come back if the fever returns", Version: null));
+
+    /// <summary>
+    /// Marks a patient's record restricted (VIP) or not, or deleted or not, directly: no screen edits a record once it has
+    /// been merged.
+    /// </summary>
+    private async Task SetPatientAsync(Guid patientId, bool? vip = null, bool? deleted = null)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var patients = scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Patient>().IgnoreQueryFilters().Where(p => p.Id == patientId);
+        if (vip is { } restricted)
+        {
+            await patients.ExecuteUpdateAsync(s => s.SetProperty(p => p.IsVip, restricted), Ct);
+        }
+
+        if (deleted is { } isDeleted)
+        {
+            await patients.ExecuteUpdateAsync(s => s.SetProperty(p => p.IsDeleted, isDeleted), Ct);
+        }
+    }
+
+    /// <summary>The code of an export refused to <paramref name="caller"/> (403).</summary>
+    private static async Task<string?> DeniedAsync(ApiClient caller, string path)
+    {
+        using var refused = await caller.SendRawAsync(HttpMethod.Get, path);
+        refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden, await refused.Content.ReadAsStringAsync(Ct));
+        return (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString();
+    }
+
     /// <summary>The code of a refused export (422).</summary>
     private async Task<string?> RefusedAsync(string path)
     {
@@ -634,6 +752,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         return (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString();
     }
 
+    /// <summary>The hospital administrator, who exports records for ABDM, is told the record cannot be exported yet, and why.</summary>
     private async Task<string?> NotExportableAsync(string path)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);

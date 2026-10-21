@@ -17,7 +17,14 @@ namespace HyFib.HealthCare360.Modules.Interop.Services;
 /// The patient and facility of a record, and why it cannot be exported yet (a draft, an unsigned note), which the caller
 /// may learn only once they may open the patient's record.
 /// </summary>
-internal sealed record AbdmSource(Guid PatientId, Guid FacilityId, string? NotExportable = null);
+internal sealed record AbdmSource(Guid PatientId, Guid FacilityId, string? NotExportable = null)
+{
+    /// <summary>
+    /// The duplicate UHIDs merged into <see cref="PatientId"/> whose records the document may hold, each of which the
+    /// caller may open (<see cref="AbdmBundleService"/>).
+    /// </summary>
+    public IReadOnlyList<Guid> Duplicates { get; init; } = [];
+}
 
 /// <summary>
 /// Reads one record and the rows its ABDM document is made from, with the FHIR read API's queries (so the same rules
@@ -55,7 +62,7 @@ internal sealed class AbdmRecordLoader(
             {
                 var row = await db.Set<Prescription>().AsNoTracking().Where(p => p.Id == id)
                     .Select(p => new { p.PatientId, p.FacilityId, p.Status }).FirstOrDefaultAsync(ct);
-                return row is null ? Error.NotFound(nameof(Prescription), id)
+                return row is null ? NotFound(type, id)
                     : new AbdmSource(row.PatientId, row.FacilityId,
                         row.Status != PrescriptionStatus.Signed ? "Only a signed prescription that has not been cancelled can be exported." : null);
             }
@@ -64,7 +71,7 @@ internal sealed class AbdmRecordLoader(
             {
                 var row = await db.Set<LabReport>().AsNoTracking().Where(r => r.Id == id)
                     .Select(r => new { r.PatientId, r.FacilityId, r.Status }).FirstOrDefaultAsync(ct);
-                return row is null ? Error.NotFound(nameof(LabReport), id)
+                return row is null ? NotFound(type, id)
                     : new AbdmSource(row.PatientId, row.FacilityId,
                         row.Status is not (LabReportStatus.Released or LabReportStatus.Amended) ? "Only a released lab report can be exported." : null);
             }
@@ -73,7 +80,7 @@ internal sealed class AbdmRecordLoader(
             {
                 var row = await db.Set<ClinicalEncounter>().AsNoTracking().Where(e => e.Id == id)
                     .Select(e => new { e.PatientId, e.FacilityId, e.Status, e.Type }).FirstOrDefaultAsync(ct);
-                return row is null ? Error.NotFound("Encounter", id)
+                return row is null ? NotFound(type, id)
                     : new AbdmSource(row.PatientId, row.FacilityId,
                         row.Status == EncounterStatus.InProgress ? "Sign the consultation note before exporting it."
                         : row.Type == EncounterType.InPatient
@@ -85,11 +92,38 @@ internal sealed class AbdmRecordLoader(
             {
                 var row = await db.Set<DischargeSummary>().AsNoTracking().Where(s => s.Id == id)
                     .Select(s => new { s.PatientId, s.FacilityId, s.Status }).FirstOrDefaultAsync(ct);
-                return row is null ? Error.NotFound(nameof(DischargeSummary), id)
+                return row is null ? NotFound(type, id)
                     : new AbdmSource(row.PatientId, row.FacilityId,
                         row.Status == DischargeSummaryStatus.Draft ? "Sign the discharge summary before exporting it." : null);
             }
         }
+    }
+
+    /// <summary>The answer for a record that does not exist, or is not exported because its patient was deleted.</summary>
+    public static Error NotFound(AbdmRecordType type, Guid id) => Error.NotFound(
+        type switch
+        {
+            AbdmRecordType.Prescription => nameof(Prescription),
+            AbdmRecordType.LabReport => nameof(LabReport),
+            AbdmRecordType.OpConsultation => "Encounter",
+            _ => nameof(DischargeSummary),
+        },
+        id);
+
+    /// <summary>
+    /// The patients under whom records the document would hold are kept, besides the record's own: for a discharge
+    /// summary, those of the stay's lab reports, which the laboratory keeps under the UHID they were made for (a duplicate
+    /// merged since, or wrongly another patient's). Which of them are the same patient, and may be opened, the caller
+    /// decides: the document holds only the records of <see cref="AbdmSource.Duplicates"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> OtherPatientsAsync(AbdmRecordType type, Guid id, CancellationToken ct)
+    {
+        if (type != AbdmRecordType.DischargeSummary || await StayVisitAsync(id, ct) is not { } stayVisit)
+        {
+            return [];
+        }
+
+        return await StayReports(stayVisit).Select(r => r.PatientId).Distinct().ToListAsync(ct);
     }
 
     public Task<AbdmDocument> LoadAsync(AbdmRecordType type, Guid id, AbdmSource source, CancellationToken ct) => type switch
@@ -180,7 +214,7 @@ internal sealed class AbdmRecordLoader(
     private async Task<AbdmDocument> DischargeSummaryAsync(Guid id, AbdmSource source, CancellationToken ct)
     {
         var summary = await DocumentReferences.SignedSummaries(s => s.Id == id).FirstAsync(ct);
-        var stayVisitId = await db.Set<Admission>().AsNoTracking().Where(a => a.Id == summary.AdmissionId).Select(a => (Guid?)a.VisitId).FirstOrDefaultAsync(ct);
+        var stayVisitId = await StayVisitAsync(id, ct);
         var encounterIds = await db.Set<ClinicalEncounter>().AsNoTracking().Where(e => e.AdmissionId == summary.AdmissionId).Select(e => e.Id).ToListAsync(ct);
         if (summary.EncounterId is { } summaryEncounter)
         {
@@ -193,9 +227,10 @@ internal sealed class AbdmRecordLoader(
             .ToListAsync(ct);
         var allergies = await Allergies.Allergies(a => a.PatientId == source.PatientId && a.Status != AllergyStatus.EnteredInError).ToListAsync(ct);
 
-        // The stay's lab reports: those ordered in its in-patient visit (under whichever UHID they are kept).
+        // The stay's lab reports: those ordered in its in-patient visit, under the patient's UHID or a duplicate's.
+        Guid[] reportPatients = [source.PatientId, .. source.Duplicates];
         var reports = stayVisitId is { } stayVisit
-            ? await Reports.CompleteAsync(await Reports.LabReports(r => true).Where(r => r.VisitId == stayVisit).ToListAsync(ct), ct)
+            ? await Reports.CompleteAsync(await StayReports(stayVisit).Where(r => reportPatients.Contains(r.PatientId)).ToListAsync(ct), ct)
             : [];
         Guid[] orders = [.. reports.Select(r => r.LabOrderId).Distinct()];
         var results = orders.Length == 0 ? [] : await Observations.ReleasedResults(r => orders.Contains(r.LabOrderId)).ToListAsync(ct);
@@ -211,6 +246,16 @@ internal sealed class AbdmRecordLoader(
             [summary.AdmissionId, .. lines.Select(l => l.AdmissionId)], [], DischargeSummaryPdf, id, ct);
         return AbdmRecords.DischargeSummary(new DischargeSummaryData(context, summary, diagnoses, lines, allergies, reports, results, amender));
     }
+
+    /// <summary>The in-patient visit of a discharge summary's stay.</summary>
+    private Task<Guid?> StayVisitAsync(Guid summaryId, CancellationToken ct) =>
+        (from s in db.Set<DischargeSummary>().AsNoTracking()
+         join a in db.Set<Admission>().AsNoTracking() on s.AdmissionId equals a.Id
+         where s.Id == summaryId
+         select (Guid?)a.VisitId).FirstOrDefaultAsync(ct);
+
+    /// <summary>The released lab reports ordered in a stay's visit, under whichever UHID they are kept.</summary>
+    private IQueryable<LabReportRow> StayReports(Guid stayVisit) => Reports.LabReports(r => true).Where(r => r.VisitId == stayVisit);
 
     /// <summary>The doctor who made the latest of <paramref name="amendments"/> (their users), when that user is a doctor.</summary>
     private async Task<Guid?> AmenderAsync(IQueryable<Guid?> amendments, CancellationToken ct) =>
