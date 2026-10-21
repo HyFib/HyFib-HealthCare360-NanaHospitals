@@ -124,6 +124,13 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
         ];
     }
 
+    /// <summary>
+    /// Whether a server that runs the background jobs (SCAL-05), other than this one, reports; null where the servers do
+    /// not write their parts (without a shared folder, as on a single Server Node), so that it cannot be known.
+    /// </summary>
+    public async Task<bool?> JobsReportedAsync(CancellationToken cancellationToken) =>
+        directories.IsShared ? (await ReadOthersAsync(cancellationToken)).Any(s => s.Reporting && SystemHealthService.RunsJobs(s)) : null;
+
     /// <summary>The id kept in <paramref name="path"/>, or a new one kept there from now on.</summary>
     private static string ReadOrMakeId(string path)
     {

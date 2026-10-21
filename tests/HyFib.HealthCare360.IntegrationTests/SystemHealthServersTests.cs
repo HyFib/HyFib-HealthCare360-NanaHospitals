@@ -199,7 +199,7 @@ public sealed class SystemHealthServersTests(HospitalServer server)
     private static string SharedFolder => Path.Combine(Path.GetTempPath(), "hc360-tests", "it-shared-health");
 
     /// <summary>The data folder of another server of several, of its own, as every server has.</summary>
-    private static DataDirectories NodeFolder() => new(new PlatformOptions
+    internal static DataDirectories NodeFolder() => new(new PlatformOptions
     {
         DataDirectory = Path.Combine(Path.GetTempPath(), "hc360-tests", "it-node-" + Guid.NewGuid().ToString("N")),
         Cluster = { SharedDirectory = SharedFolder },
@@ -215,7 +215,7 @@ public sealed class SystemHealthServersTests(HospitalServer server)
     }
 
     /// <summary>The part the node that runs the jobs writes: a Windows server whose data drive is nearly full.</summary>
-    private static ServerNodeHealth JobNode(string machine, string role = "worker") => new(
+    internal static ServerNodeHealth JobNode(string machine, string role = "worker") => new(
         new ServerInfo(machine, "Microsoft Windows 10.0.20348", "1.0.0", "Production", role, DateTimeOffset.UtcNow.AddDays(-3), 72,
             8, 900_000_000, ".NET 10.0.12"),
         new NetworkInfo(false, null, null, null, [], ["10.0.0.9"], 7360, 7361, false),

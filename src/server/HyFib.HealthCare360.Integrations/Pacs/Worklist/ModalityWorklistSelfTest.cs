@@ -5,6 +5,7 @@ using FellowOakDicom.Network;
 using FellowOakDicom.Network.Client;
 using HyFib.HealthCare360.Integrations.Features.Admin;
 using HyFib.HealthCare360.Integrations.Laboratory;
+using HyFib.HealthCare360.Platform.Networking;
 using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Integrations.Pacs.Worklist;
@@ -14,13 +15,15 @@ namespace HyFib.HealthCare360.Integrations.Pacs.Worklist;
 /// title (the server accepts that only from this machine, and only for echoes). It shows that the server is listening on
 /// its port and answers to its AE title. The worklist is served only where the jobs run (SCAL-05); with several servers
 /// that node answers no requests, so an API node, which has no worklist server and cannot send the echo, says what the
-/// node that runs the jobs shares of its worklist server (<see cref="LabStatusBoard"/>), as the dashboard does.
+/// node that runs the jobs shares of its worklist server (<see cref="LabStatusBoard"/>), as the dashboard does, or that
+/// no such node reports at all (<see cref="ServerNodeBoard"/>).
 /// </summary>
 internal sealed class ModalityWorklistSelfTest(
     IntegrationSettingsReader settings,
     IDicomClientFactory clients,
     ModalityWorklistState state,
     LabStatusBoard shared,
+    ServerNodeBoard servers,
     IOptions<PlatformOptions> platform,
     TimeProvider time,
     ILoggerFactory loggers)
@@ -110,7 +113,10 @@ internal sealed class ModalityWorklistSelfTest(
 
         if (served.FirstOrDefault(s => s.State == "listening") is not { } listening)
         {
-            return Fail("The worklist server has not started yet. It starts within a minute of being turned on, on the server that runs background jobs.");
+            // Without a server that runs the jobs, nothing starts it, within a minute or ever.
+            return Fail(await servers.JobsReportedAsync(cancellationToken) == false
+                ? "The server that runs background jobs is not reporting (Administration › System health), so nothing serves the worklist. Start HC360 on that server."
+                : "The worklist server has not started yet. It starts within a minute of being turned on, on the server that runs background jobs.");
         }
 
         if (!string.Equals(listening.InstrumentCode, listener.AeTitle, StringComparison.OrdinalIgnoreCase) || listening.Port != listener.Port)

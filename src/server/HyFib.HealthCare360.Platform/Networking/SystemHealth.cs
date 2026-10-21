@@ -286,7 +286,8 @@ public sealed class SystemHealthService(
             .ThenBy(s => s.Server.MachineName, StringComparer.OrdinalIgnoreCase),
     ];
 
-    private static bool RunsJobs(ServerNodeHealth server) => !string.Equals(server.Server.Role, "api", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Whether a server runs the background jobs: a <c>worker</c>, or a whole Server Node (<c>all</c>).</summary>
+    internal static bool RunsJobs(ServerNodeHealth server) => !string.Equals(server.Server.Role, "api", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// This server's own part of the report: its machine and the warnings about it, in the three places System health has
