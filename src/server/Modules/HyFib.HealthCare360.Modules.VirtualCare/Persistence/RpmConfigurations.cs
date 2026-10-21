@@ -55,8 +55,9 @@ internal sealed class RpmDeviceConfiguration : IEntityTypeConfiguration<RpmDevic
 
 /// <remarks>
 /// The table is partitioned by month of <see cref="RpmReading.MeasuredAt"/> (SCAL-04, migration
-/// <c>PartitionHighVolumeTables</c>). Its primary key in the database is (id, measured_at), as PostgreSQL requires the
-/// partition key in every unique index; the model keeps <see cref="Entity.Id"/> as the key, which nothing references.
+/// <c>PartitionHighVolumeTables</c>). Its primary key is (id, measured_at), in the database and in the model, as
+/// PostgreSQL requires the partition key in every unique index: an update EF writes then names the reading's month, which
+/// PostgreSQL reads alone. Nothing references a reading by a foreign key (RPM alerts keep its id without one).
 /// </remarks>
 internal sealed class RpmReadingConfiguration : IEntityTypeConfiguration<RpmReading>
 {

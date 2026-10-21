@@ -17,8 +17,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
     /// keys become (id, the time column), the audit trail's chain position is indexed without being unique (the sealer and
     /// the chain-link trigger keep it unique, <c>PlatformSql</c>), and no other table may have a foreign key to these
     /// four: none does (campaign recipients and RPM alerts keep the id of a message or a reading without one), and the
-    /// migration stops if one did. The model keeps <c>Id</c> as the key: EF Core finds rows by it, and the primary key's
-    /// index, which starts with it, answers that in each partition.
+    /// migration stops if one did. The model's keys are (Id, the time) too, so every UPDATE EF Core writes names the row's
+    /// month and PostgreSQL reads that partition alone.
     /// </para>
     /// <para>
     /// EF Core runs a migration in one transaction, so a failure leaves the tables as they were. Every table is locked for
