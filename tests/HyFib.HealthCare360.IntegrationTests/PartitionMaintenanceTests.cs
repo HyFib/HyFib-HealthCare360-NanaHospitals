@@ -270,10 +270,16 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
     }
 
     /// <summary>
-    /// A table whose upkeep fails for another reason than its lock (here a statement that runs past the command timeout,
-    /// as moving a large month's rows could) is logged and left to the next pass, and the tables after it are done all the
-    /// same. Only a lock timeout was caught: anything else ended the pass, so the tables after the one that failed went
-    /// without their months for as long as it failed, and the audit trail comes first.
+    /// A table whose upkeep fails for another reason than its lock (here moving an audit event out of the default partition
+    /// fails) is logged and left to the next pass, and the tables after it are done all the same. Only a lock timeout was
+    /// caught: anything else ended the pass, so the tables after the one that failed went without their months for as long
+    /// as it failed, and the audit trail comes first.
+    /// <para>
+    /// The failure is an error, which neither waits for a lock nor races a timer. It was a wait for the lock past a command
+    /// timeout of one second, a second before the lock timeout, so the test passed only when Npgsql's cancel reached
+    /// PostgreSQL within that second: on a busy machine it sometimes did not, and the pass found the table in use instead.
+    /// Every statement of the pass also had that second, the other tables' too.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task A_table_that_fails_is_left_to_the_next_pass_and_the_tables_after_it_are_done()
@@ -283,23 +289,20 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         var tables = server.Services.GetServices<PartitionedTable>().ToList();
         tables[0].Name.ShouldBe(PartitionedTables.AuditEvents, "the audit trail comes first");
 
-        // Something holds the audit trail, so making its months waits for the lock, past the pass's command timeout (a
-        // second, sooner than the lock timeout).
-        await using var reader = new NpgsqlConnection(database.ConnectionString);
-        await reader.OpenAsync(Ct);
-        await using var reading = await reader.BeginTransactionAsync(Ct);
-        await using (var hold = new NpgsqlCommand("LOCK TABLE audit.audit_events IN ACCESS SHARE MODE", reader, reading))
-        {
-            await hold.ExecuteNonQueryAsync(Ct);
-        }
+        // An audit event of this month waits in the default partition, and a trigger there refuses to let it go: moving it
+        // into its month fails at once.
+        await ExecuteAsync(database.ConnectionString, $"""
+            INSERT INTO audit.audit_events (occurred_at, category, action, severity) VALUES ('{At(now.AddDays(-15))}', 'security', 'it.partition', 'Info');
+            CREATE FUNCTION public.it_refuse_move() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'it: this row stays here'; END $$;
+            CREATE TRIGGER it_refuse_move BEFORE DELETE ON audit.audit_events_default FOR EACH ROW EXECUTE FUNCTION public.it_refuse_move();
+            """);
 
-        var passes = await RunAsync(database.ConnectionString, tables, now, monthsAhead: 1, commandTimeout: 1);
-        await reading.RollbackAsync(Ct);
+        var passes = await RunAsync(database.ConnectionString, tables, now, monthsAhead: 1);
 
         passes.Select(p => p.Table).ShouldBe(tables.Select(t => t.Name), "every table should have its turn");
         var audit = passes[0];
         (audit.Failed, audit.InUse).ShouldBe((true, false));
-        audit.Created.ShouldBeEmpty();
+        audit.Created.ShouldBe(["audit_events_2052_09"], "the month ahead, with no rows to move, is made");
         foreach (var other in passes.Skip(1))
         {
             var table = other.Table.Split('.')[1];
@@ -307,8 +310,11 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
             other.Created.ShouldBe([$"{table}_2052_08", $"{table}_2052_09"], other.Table);
         }
 
-        // The next pass makes the audit trail's months.
-        (await RunAsync(database.ConnectionString, tables, now, monthsAhead: 1))[0].Created.ShouldBe(["audit_events_2052_08", "audit_events_2052_09"]);
+        // Once the event may move, the next pass makes the audit trail's month.
+        await ExecuteAsync(database.ConnectionString, "DROP TRIGGER it_refuse_move ON audit.audit_events_default");
+        var next = (await RunAsync(database.ConnectionString, tables, now, monthsAhead: 1))[0];
+        next.Created.ShouldBe(["audit_events_2052_08"]);
+        next.Moved["audit_events_2052_08"].ShouldBe(1);
     }
 
     /// <summary>
@@ -370,9 +376,9 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
 
     /// <summary>A pass over <paramref name="tables"/> of the database at <paramref name="connectionString"/>, at <paramref name="now"/>.</summary>
     private async Task<IReadOnlyList<PartitionPass>> RunAsync(
-        string connectionString, IEnumerable<PartitionedTable> tables, DateTime now, int monthsAhead, int commandTimeout = 60, TimeSpan? budget = null)
+        string connectionString, IEnumerable<PartitionedTable> tables, DateTime now, int monthsAhead, TimeSpan? budget = null)
     {
-        await using var db = Context(connectionString, commandTimeout);
+        await using var db = Context(connectionString, 60);
         var maintenance = new PartitionMaintenance(
             db,
             tables,
