@@ -8,7 +8,8 @@ namespace HyFib.HealthCare360.Server;
 /// <c>ConnectionStrings:Redis</c>), as seen from this one: <c>/health/ready</c> reports it Degraded, not Unhealthy, when it
 /// cannot be reached. The node still answers the API (a reverse proxy keeps sending it requests), but until Redis is back
 /// no client gets real-time updates, whichever node it is connected to: every event goes through Redis, to the clients of
-/// the node that raised it too, and a real-time connection opened meanwhile is refused (the apps try again).
+/// the node that raised it too, and a real-time connection opened meanwhile is refused (the apps try again). Once it is
+/// back, the screens are told to refetch what they show (<see cref="RealtimeResync"/>).
 /// </summary>
 internal sealed class RedisBackplane(IConfiguration configuration) : IHealthCheck, IAsyncDisposable
 {

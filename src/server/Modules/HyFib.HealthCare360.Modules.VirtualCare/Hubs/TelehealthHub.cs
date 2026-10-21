@@ -195,6 +195,32 @@ public sealed class TelehealthHub(
         await broadcaster.SessionChangedAsync(session, Aborted);
     }
 
+    /// <summary>
+    /// The consultation as joining shows it (its status, the waiting room, recent messages, whether this participant is
+    /// admitted), for a screen that may have missed what the hub sent it though its connection stayed open: with several
+    /// servers, Redis was away (SCAL-02), and the server sent it <c>resync</c>. It puts the connection back in the groups its
+    /// seat belongs in, in case adding it failed meanwhile, and changes nothing else: it is not a new participant.
+    /// </summary>
+    public async Task<TelehealthJoinResult> Refresh(Guid sessionId)
+    {
+        var seat = RequireSeat(sessionId, clinicianOnly: false);
+        var session = await FindAsync(sessionId) ?? throw new HubException("Consultation not found.");
+        var participant = await db.Set<TelehealthParticipant>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == seat.ParticipantId, Aborted)
+            ?? throw new HubException("Join the consultation first.");
+        if (participant.AdmittedAt is not null && participant.LeftAt is null)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, TelehealthGroups.Room(sessionId), Aborted);
+            Remember(sessionId, seat with { Admitted = true });
+        }
+
+        if (seat.Role == TelehealthRole.Clinician)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, TelehealthGroups.Clinicians(sessionId), Aborted);
+        }
+
+        return await JoinResultAsync(session, participant);
+    }
+
     // ------------------------------------------------------------------ signalling (admitted participants only)
 
     public Task SendOffer(Guid sessionId, string sdp) => RelayAsync(sessionId, "offer", sdp, MaxSdpLength);

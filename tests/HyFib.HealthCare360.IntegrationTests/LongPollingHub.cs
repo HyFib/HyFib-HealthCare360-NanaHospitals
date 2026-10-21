@@ -66,6 +66,17 @@ internal sealed class LongPollingHub : IAsyncDisposable
         return completion.TryGetProperty("error", out var error) ? error.GetString() : null;
     }
 
+    /// <summary>Calls hub method <paramref name="target"/>; returns its result, failing the test with its error.</summary>
+    public async Task<JsonElement> InvokeForResultAsync(string target, params object?[] arguments)
+    {
+        var id = (++_invocations).ToString(CultureInfo.InvariantCulture);
+        await SendAsync(JsonSerializer.Serialize(new { type = 1, invocationId = id, target, arguments }, ApiClient.Json));
+        var completion = await ReceiveAsync(message => message.TryGetProperty("type", out var type) && type.GetInt32() == 3
+                                                       && message.GetProperty("invocationId").GetString() == id);
+        completion.TryGetProperty("error", out var error).ShouldBeFalse($"{target} failed: {error}");
+        return completion.GetProperty("result").Clone();
+    }
+
     /// <summary>Closes the connection on the server.</summary>
     public async ValueTask DisposeAsync()
     {

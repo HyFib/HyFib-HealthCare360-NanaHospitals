@@ -50,12 +50,16 @@ The hub accepts anonymous connections (guests have no JWT) and authorises every 
 | `SendChat(sessionId, text)` → `TelehealthMessageDto` | admitted participants | stored and broadcast (max 2 000 chars); the reply shows it to the sender even if the broadcast could not be sent |
 | `ChangeMediaMode(sessionId, audioOnly)` | admitted participants | audio-only fallback, recorded |
 | `ReportQuality(sessionId, ConnectionQualitySample)` | joined participants | worst stats stored (at most every 15 s) |
+| `Refresh(sessionId)` → `TelehealthJoinResult` | joined participants | the consultation as joining shows it, for a screen told to catch up (`resync`); puts the connection back in its seat's groups and changes nothing else |
 | `Leave(sessionId)` / disconnect | anyone | left time recorded; waiting room cleared if empty |
 
 Server → client events: `participantJoined`, `participantLeft`, `waitingRoomChanged`, `waitingRoomLeft`, `admitted`,
 `offer`, `answer`, `iceCandidate` (`{ from, data }`), `chatMessage`, `mediaModeChanged`, `sessionUpdated`,
-`sessionEnded`. `TelehealthJoinResult` = session id, participant id, role, status, admitted, scheduled start,
-practitioner/patient names, ICE servers, waiting list (clinicians) and the last 50 chat messages (admitted).
+`sessionEnded`, and `resync` when events were lost while the connection stayed open (with several servers, Redis was
+away): both consoles then call `Refresh` and show what changed, the doctor's connecting to an admitted patient and the
+patient's going into the call or ending it. `TelehealthJoinResult` = session id, participant id, role, status, admitted,
+scheduled start, practitioner/patient names, ICE servers, waiting list (clinicians) and the last 50 chat messages
+(admitted).
 Presence is stored with connection ids, so with the Redis backplane any API node can admit a patient. A session change
 or chat message is saved before it is pushed; a push that cannot be sent (Redis away, SCAL-02) is logged and the
 request or hub call that saved it still succeeds (REL-03), so nobody sends a chat message twice.

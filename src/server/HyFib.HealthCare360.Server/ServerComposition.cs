@@ -2,8 +2,10 @@ using System.Text.Json.Serialization;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using HyFib.HealthCare360.Platform.Persistence;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.StackExchangeRedis;
 using Npgsql;
 
@@ -40,6 +42,7 @@ public static class ServerComposition
     /// other. A Redis that is down when a node starts, or goes away later, is connected to again in the background: the API
     /// keeps working, but meanwhile no client gets real-time updates on any node (every event goes through Redis, to the
     /// clients of the node that raised it too), and a real-time connection opened meanwhile is refused and tried again.
+    /// Once Redis is back, every screen is told to refetch what it shows (<see cref="RealtimeResync"/>).
     /// </summary>
     internal static Microsoft.AspNetCore.SignalR.ISignalRServerBuilder AddRealtime(IServiceCollection services, IConfiguration configuration)
     {
@@ -60,6 +63,11 @@ public static class ServerComposition
             // The backplane is given its connection only once it is connected: it subscribes to what the nodes share once,
             // so a connection given while Redis was away would leave the node deaf to the others for good.
             services.AddSingleton<RedisBackplaneConnections>();
+
+            // Screens that stayed connected through an outage refetch once Redis is back; every hub's are known.
+            services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton<RealtimeResync>();
+            services.Configure<HubOptions>(options => options.AddFilter<RealtimeResync>());
             services.AddOptions<RedisOptions>().Configure<RedisBackplaneConnections>((redisOptions, connections) =>
                 redisOptions.ConnectionFactory = log => connections.ConnectAsync(redisOptions.Configuration, log));
             services.AddSingleton<RedisBackplane>();

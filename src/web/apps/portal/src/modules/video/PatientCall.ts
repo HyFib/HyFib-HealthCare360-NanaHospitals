@@ -1,4 +1,4 @@
-import { auth, createHubClient, hubErrorMessage, useSession, type HubClient } from '@hc360/core';
+import { auth, createHubClient, hubErrorMessage, RESYNC, useSession, type HubClient } from '@hc360/core';
 import type {
   IceServerDto,
   TelehealthJoinResult,
@@ -352,6 +352,37 @@ export class PatientCall {
     });
   }
 
+  /**
+   * Reads the consultation again after the server said messages were lost though the connection stayed open (`resync`:
+   * with several servers, Redis was away): the doctor may have admitted the patient, ended the consultation or written
+   * meanwhile. It does not join again, which would make this device another participant and cost the doctor a new
+   * connection.
+   */
+  private async catchUp(generation: number): Promise<void> {
+    if (this.state.phase !== 'waiting' && this.state.phase !== 'in-call') {
+      return;
+    }
+    let result: TelehealthJoinResult;
+    try {
+      result = await this.requireHub().invoke<TelehealthJoinResult>('Refresh', this.options.sessionId);
+    } catch {
+      // A reconnect, or the next resync, catches up instead.
+      return;
+    }
+    if (generation !== this.generation) {
+      return;
+    }
+    if (CLOSED.has(result.status)) {
+      this.finish(result.status);
+      return;
+    }
+    this.update({ sessionStatus: result.status, messages: mergeMessages(this.state.messages, result.recentMessages) });
+    // Admitted meanwhile: as when "admitted" arrives, the doctor's console then sends its offer.
+    if (result.admitted && this.state.phase === 'waiting') {
+      this.update({ phase: 'in-call', admitted: true, waitingSince: null, peer: 'connecting' });
+    }
+  }
+
   private subscribeToHub(hub: HubClient, generation: number): (() => void)[] {
     const live = () => generation === this.generation && this.hub === hub;
     return [
@@ -416,6 +447,11 @@ export class PatientCall {
       hub.on<{ status: TelehealthStatus }>('sessionEnded', (message) => {
         if (live()) {
           this.finish(message.status);
+        }
+      }),
+      hub.on(RESYNC, () => {
+        if (live()) {
+          void this.catchUp(generation);
         }
       }),
       hub.onreconnecting(() => {

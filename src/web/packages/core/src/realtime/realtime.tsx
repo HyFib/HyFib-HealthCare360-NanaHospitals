@@ -2,7 +2,7 @@ import { HubConnectionBuilder, HubConnectionState, type HubConnection } from '@m
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { useConnection } from '../connection/connection';
-import { hubLogger } from './hub';
+import { hubLogger, RESYNC } from './hub';
 
 export interface RealtimeEnvelope<T = unknown> {
   topic: string;
@@ -13,11 +13,15 @@ export interface RealtimeEnvelope<T = unknown> {
 
 type Handler = (envelope: RealtimeEnvelope) => void;
 
+/** Refetches the server asks for are spread over this long, so the screens told together do not all refetch at once. */
+const RESYNC_SPREAD_MS = 3_000;
+
 /**
  * One SignalR connection per app (/hubs/events). Reconnects forever with backoff (hospital WiFi drops are
  * normal), re-subscribes topics after reconnecting and asks React Query to refetch everything so screens
  * never show stale queues or bed boards (SRS DED-09). That includes starting again after the connection closed
- * for good, which SignalR does not count as a reconnect.
+ * for good, which SignalR does not count as a reconnect, and the server saying events were lost while the connection
+ * stayed open (`resync`: with several servers, Redis, through which every event passes, was away, SCAL-02).
  */
 export class RealtimeClient {
   private readonly connection: HubConnection;
@@ -27,6 +31,7 @@ export class RealtimeClient {
   private stopped = false;
   /** Events may have been missed: the connection closed, or a start failed, since it was last connected. */
   private missedEvents = false;
+  private resyncTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     url: string,
@@ -45,6 +50,7 @@ export class RealtimeClient {
       .build();
 
     this.connection.on('event', (envelope: RealtimeEnvelope) => this.handlers.forEach((handler) => handler(envelope)));
+    this.connection.on(RESYNC, () => this.resyncSoon());
     this.connection.onreconnecting(() => useConnection.getState().setRealtime('reconnecting'));
     this.connection.onreconnected(async () => {
       useConnection.getState().setRealtime('connected');
@@ -89,6 +95,10 @@ export class RealtimeClient {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    if (this.resyncTimer !== null) {
+      clearTimeout(this.resyncTimer);
+      this.resyncTimer = null;
+    }
     await this.connection.stop();
   }
 
@@ -113,6 +123,22 @@ export class RealtimeClient {
   onEvent(handler: Handler): () => void {
     this.handlers.add(handler);
     return () => this.handlers.delete(handler);
+  }
+
+  /**
+   * The server said events were lost though this connection stayed open (`resync`): refresh as after a reconnect, within a
+   * few seconds at a moment of this screen's own, and once for several said close together (every server says so).
+   */
+  private resyncSoon(): void {
+    if (this.resyncTimer !== null || this.stopped) {
+      return;
+    }
+    this.resyncTimer = setTimeout(() => {
+      this.resyncTimer = null;
+      if (!this.stopped) {
+        this.onReconnected();
+      }
+    }, Math.random() * RESYNC_SPREAD_MS);
   }
 
   /** Starts again in 5 seconds, unless the app stopped the connection (signed out) before or during the wait. */

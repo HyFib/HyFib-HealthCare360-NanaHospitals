@@ -14,12 +14,20 @@ namespace HyFib.HealthCare360.Server;
 /// (<see cref="ConfigurationOptions.AbortOnConnectFail"/> off), and is handed over as soon as it is connected. After that
 /// the connection itself reconnects, and its subscriptions with it, whenever Redis goes away and comes back.
 /// </para>
+/// <para>
+/// Every connection handed over is watched (<see cref="RealtimeResync"/>): once it is back after Redis went away, or when
+/// it is handed over after Redis could not be reached, the screens are told to refetch what they show, since the events
+/// raised meanwhile were lost.
+/// </para>
 /// </summary>
-internal sealed class RedisBackplaneConnections : IAsyncDisposable
+internal sealed class RedisBackplaneConnections(RealtimeResync resync) : IAsyncDisposable
 {
     private readonly SemaphoreSlim _handing = new(1, 1);
     private ConnectionMultiplexer? _waiting;
     private bool _disposed;
+
+    /// <summary>A connection was refused since the last one handed over: events raised meanwhile were lost.</summary>
+    private bool _refused;
 
     /// <summary>
     /// The backplane's connection factory: a connection to <paramref name="configuration"/> that is connected now, which
@@ -36,10 +44,13 @@ internal sealed class RedisBackplaneConnections : IAsyncDisposable
             _waiting = null;
             if (IsReady(connection))
             {
+                resync.Watch(connection, afterOutage: _refused);
+                _refused = false;
                 return connection;
             }
 
             _waiting = connection;
+            _refused = true;
         }
         finally
         {

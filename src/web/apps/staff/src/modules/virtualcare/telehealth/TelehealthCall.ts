@@ -1,4 +1,4 @@
-import { auth, bridge, createHubClient, hubErrorMessage, useSession, type HubClient } from '@hc360/core';
+import { auth, bridge, createHubClient, hubErrorMessage, RESYNC, useSession, type HubClient } from '@hc360/core';
 import {
   telehealthApi,
   type IceServerDto,
@@ -123,6 +123,7 @@ const MEDIA_UNSUPPORTED =
 const QUALITY_SAMPLE_MS = 5_000;
 const QUALITY_REPORT_MS = 15_000;
 const MAX_ICE_RESTARTS = 3;
+const CLOSED: ReadonlySet<TelehealthStatus> = new Set(['Completed', 'Cancelled', 'Missed']);
 
 interface SignalPayload {
   from: string;
@@ -323,6 +324,42 @@ export class TelehealthCall {
     }
   }
 
+  /**
+   * Reads the consultation again after the server said messages were lost though the connection stayed open (`resync`:
+   * with several servers, Redis was away): the waiting room, the status and the chat may have changed meanwhile, and an
+   * admission made then may never have reached this screen. It does not join again, which would make this screen another
+   * participant.
+   */
+  private async catchUp(generation: number): Promise<void> {
+    if (this.state.phase !== 'joined') {
+      return;
+    }
+    let result: TelehealthJoinResult;
+    try {
+      result = await this.requireHub().invoke<TelehealthJoinResult>('Refresh', this.options.sessionId);
+    } catch {
+      // A reconnect, or the next resync, catches up instead.
+      return;
+    }
+    if (generation !== this.generation) {
+      return;
+    }
+    if (CLOSED.has(result.status)) {
+      this.finish(result.status);
+      this.options.onSessionChanged?.();
+      return;
+    }
+    this.update({
+      sessionStatus: result.status,
+      waiting: result.waiting,
+      messages: mergeMessages(this.state.messages, result.recentMessages),
+    });
+    this.options.onSessionChanged?.();
+    if (result.status === 'InProgress' && !this.pc) {
+      await this.reconnectToPatient(generation);
+    }
+  }
+
   /** The doctor (re)joined a running call: connect to the patient who is still in the room. */
   private async reconnectToPatient(generation: number): Promise<void> {
     try {
@@ -414,6 +451,11 @@ export class TelehealthCall {
         if (live()) {
           this.finish(message.status);
           this.options.onSessionChanged?.();
+        }
+      }),
+      hub.on(RESYNC, () => {
+        if (live()) {
+          void this.catchUp(generation);
         }
       }),
       hub.onreconnecting(() => {

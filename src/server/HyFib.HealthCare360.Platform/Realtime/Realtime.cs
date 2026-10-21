@@ -33,7 +33,9 @@ public interface IRealtimePublisher
 /// <remarks>
 /// A real-time event tells screens to refetch; the change it reports is saved already. One that cannot be sent (with
 /// several servers, the Redis backplane is unreachable for a moment, SCAL-02) is logged and dropped, never failing the
-/// request that made the change (REL-03): screens refetch when they reconnect.
+/// request that made the change (REL-03). A screen that stayed connected meanwhile does not reconnect, so once the
+/// backplane is back every server tells its screens to refetch (<c>resync</c>, the server's <c>RealtimeResync</c>), as
+/// screens do when they reconnect.
 /// </remarks>
 internal sealed class SignalRRealtimePublisher(IHubContext<EventsHub> hub, TimeProvider time, ILogger<SignalRRealtimePublisher> logger) : IRealtimePublisher
 {
@@ -61,7 +63,8 @@ internal sealed class SignalRRealtimePublisher(IHubContext<EventsHub> hub, TimeP
 /// Single real-time hub (<c>/hubs/events</c>). Every connection joins its user's group, and a staff session with full
 /// access also its facility's (<see cref="RealtimeTopicAuthorizer.FacilityToJoin"/>). Screens subscribe to extra topics
 /// (queue, bed board, ward…), each checked by <see cref="RealtimeTopicAuthorizer"/>.
-/// SignalR reconnects automatically after WiFi drops and clients refetch on reconnect.
+/// SignalR reconnects automatically after WiFi drops and clients refetch on reconnect, and when the server sends
+/// <c>resync</c>: with several servers, events were lost while the Redis backplane was away, though the connection stayed.
 /// </summary>
 [Authorize]
 public sealed class EventsHub(RealtimeTopicAuthorizer topics) : Hub

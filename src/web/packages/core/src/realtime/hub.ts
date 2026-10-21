@@ -3,6 +3,12 @@ import { HubConnectionBuilder, LogLevel, type HubConnectionState, type ILogger }
 export type HubState = `${HubConnectionState}`;
 
 /**
+ * What a hub sends a screen when events were lost though its connection stayed open: with several servers, Redis, through
+ * which every event passes, was away (SCAL-02). The screen catches up as it does after a reconnect.
+ */
+export const RESYNC = 'resync';
+
+/**
  * A SignalR hub connection for screens with their own hub (telehealth signalling). It wraps the official client, so it
  * gets WebSocket with Server-Sent Events and long-polling fallbacks, keep-alives and automatic reconnection. Listener
  * methods return a function that removes the listener.
