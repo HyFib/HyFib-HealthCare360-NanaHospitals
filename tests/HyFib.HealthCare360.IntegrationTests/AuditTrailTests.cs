@@ -235,7 +235,8 @@ public sealed class AuditTrailTests(HospitalServer server)
 
     /// <summary>
     /// Changes the record as someone who can turn the triggers off would: the database owner, here a superuser, whose
-    /// session runs as a replica for this transaction only, and a replica runs no ordinary trigger.
+    /// session runs as a replica for this transaction only, and a replica runs no ordinary trigger. The time it happened is
+    /// part of the record's key (the trail is partitioned by month of it, SCAL-04), which EF Core never changes: SQL does.
     /// </summary>
     private async Task BehindTheTriggersAsync(long id, Action<AuditEvent> change)
     {
@@ -243,7 +244,15 @@ public sealed class AuditTrailTests(HospitalServer server)
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         await using var transaction = await db.Database.BeginTransactionAsync(Ct);
         await db.Database.ExecuteSqlAsync($"SET LOCAL session_replication_role = replica", Ct);
-        change(await db.Set<AuditEvent>().SingleAsync(e => e.Id == id, Ct));
+        var stored = await db.Set<AuditEvent>().AsNoTracking().SingleAsync(e => e.Id == id, Ct);
+        var occurredAt = stored.OccurredAt;
+        change(stored);
+        if (stored.OccurredAt != occurredAt)
+        {
+            await db.Database.ExecuteSqlAsync($"UPDATE audit.audit_events SET occurred_at = {stored.OccurredAt} WHERE id = {id}", Ct);
+        }
+
+        db.Update(stored);
         await db.SaveChangesAsync(Ct);
         await transaction.CommitAsync(Ct);
     }

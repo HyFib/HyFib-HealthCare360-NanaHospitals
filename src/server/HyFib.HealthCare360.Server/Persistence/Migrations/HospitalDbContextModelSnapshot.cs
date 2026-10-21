@@ -112,6 +112,40 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("whatsapp_inbound_messages", "integrations");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Integrations.Domain.LabGatewayNode", b =>
+                {
+                    b.Property<string>("Node")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("node");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("RelayingAgents")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("relaying_agents");
+
+                    b.Property<string>("Statuses")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("statuses");
+
+                    b.Property<string>("Worklist")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("worklist")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.HasKey("Node")
+                        .HasName("pk_lab_gateway_nodes");
+
+                    b.ToTable("lab_gateway_nodes", "integrations");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Integrations.Domain.LabOrderDownload", b =>
                 {
                     b.Property<Guid>("Id")
@@ -19512,6 +19546,37 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("wards", "inpatient");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.BreakGlassAccess", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset>("GrantedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("granted_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_break_glass_grants");
+
+                    b.HasIndex("PatientId", "UserId", "ExpiresAt")
+                        .HasDatabaseName("ix_break_glass_grants_patient_id_user_id_expires_at");
+
+                    b.ToTable("break_glass_grants", "patients");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.Enquiry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -33828,6 +33893,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset>("MeasuredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("measured_at");
+
                     b.Property<Guid?>("DeviceId")
                         .HasColumnType("uuid")
                         .HasColumnName("device_id");
@@ -33843,10 +33912,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<bool>("IsOutOfRange")
                         .HasColumnType("boolean")
                         .HasColumnName("is_out_of_range");
-
-                    b.Property<DateTimeOffset>("MeasuredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("measured_at");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
@@ -33894,7 +33959,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("value");
 
-                    b.HasKey("Id")
+                    b.HasKey("Id", "MeasuredAt")
                         .HasName("pk_rpm_readings");
 
                     b.HasIndex("FacilityId")
@@ -34307,6 +34372,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
 
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
                     b.Property<string>("Action")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -34360,10 +34429,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("ip_address");
 
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("occurred_at");
-
                     b.Property<Guid?>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
@@ -34397,11 +34462,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("user_name");
 
-                    b.HasKey("Id")
+                    b.HasKey("Id", "OccurredAt")
                         .HasName("pk_audit_events");
 
                     b.HasIndex("ChainIndex")
-                        .IsUnique()
                         .HasDatabaseName("ix_audit_events_chain_index");
 
                     b.HasIndex("Id")
@@ -35394,18 +35458,17 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Integrations.IntegrationLog", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
 
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("correlation_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
 
                     b.Property<string>("Direction")
                         .IsRequired()
@@ -35463,7 +35526,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("success");
 
-                    b.HasKey("Id")
+                    b.HasKey("Id", "CreatedAt")
                         .HasName("pk_integration_logs");
 
                     b.HasIndex("Integration", "CreatedAt")
@@ -35622,6 +35685,28 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("outbox_messages", "platform");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Networking.ServerNode", b =>
+                {
+                    b.Property<string>("Node")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("node");
+
+                    b.Property<string>("Report")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("report");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at");
+
+                    b.HasKey("Node")
+                        .HasName("pk_server_nodes");
+
+                    b.ToTable("server_nodes", "platform");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Networking.WifiSample", b =>
                 {
                     b.Property<Guid>("Id")
@@ -35683,15 +35768,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
                     b.Property<string>("Channel")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("channel");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
 
                     b.Property<DateTimeOffset?>("DeliveredAt")
                         .HasColumnType("timestamp with time zone")
@@ -35736,7 +35821,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("template_key");
 
-                    b.HasKey("Id")
+                    b.HasKey("Id", "CreatedAt")
                         .HasName("pk_notification_logs");
 
                     b.HasIndex("CreatedAt")
@@ -36832,6 +36917,30 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_specialties_is_deleted");
 
                     b.ToTable("specialties", "org");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Persistence.ClusterEntry", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("key");
+
+                    b.Property<long>("Count")
+                        .HasColumnType("bigint")
+                        .HasColumnName("count");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.HasKey("Key")
+                        .HasName("pk_cluster_entries");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_cluster_entries_expires_at");
+
+                    b.ToTable("cluster_entries", "platform");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Settings.SystemSetting", b =>
@@ -38185,6 +38294,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasForeignKey("BedServiceItemId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_wards_service_items_bed_service_item_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.BreakGlassAccess", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_break_glass_grants_patient_patient_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PatientConsent", b =>

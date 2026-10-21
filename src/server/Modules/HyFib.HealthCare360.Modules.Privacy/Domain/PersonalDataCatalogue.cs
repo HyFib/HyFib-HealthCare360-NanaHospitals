@@ -248,7 +248,10 @@ public static class PersonalDataCatalogue
             "Who opened, changed, printed or exported your record, and when.",
             "To keep your record secure and find misuse.",
             "Required for security; kept tamper-evident.", PersonalDataRetention.Audit,
-            [new("audit.audit_events", "Times your record was opened or changed")]),
+            [
+                new("audit.audit_events", "Times your record was opened or changed"),
+                new("patients.break_glass_grants", "Emergency access to your restricted record"),
+            ]),
         new("privacy", "Privacy requests and notices",
             "Your requests about your data, your nominee, and notices we sent you about your data.",
             "To handle your privacy requests and keep you informed.",

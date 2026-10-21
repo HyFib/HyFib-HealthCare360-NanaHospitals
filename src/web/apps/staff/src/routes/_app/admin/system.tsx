@@ -17,12 +17,25 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMemo, useState, type ReactNode } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { usePermission } from '@/lib/permissions';
-import { adminQueries, formatBytes, type SystemHealthReport, type WifiSample } from '@/modules/admin/api';
+import {
+  adminQueries,
+  formatBytes,
+  type ServerNodeHealth,
+  type SystemHealthReport,
+  type WifiSample,
+} from '@/modules/admin/api';
 import { DatabasePassword } from '@/modules/admin/DatabasePassword';
 import { EncryptionKeys } from '@/modules/admin/EncryptionKeys';
 import { encryptionSummary } from '@/modules/admin/diskEncryption';
 import { healthDisplay } from '@/modules/admin/integrationsApi';
-import { expiryTone, integrationsSummary, integrationTone } from '@/modules/admin/systemHealth';
+import {
+  expiryTone,
+  integrationsSummary,
+  integrationTone,
+  lowDiskSpace,
+  runningFor,
+  serverRole,
+} from '@/modules/admin/systemHealth';
 
 export const Route = createFileRoute('/_app/admin/system')({
   component: SystemHealthPage,
@@ -55,7 +68,7 @@ function Row({ label, children, tone }: { label: string; children: ReactNode; to
   );
 }
 
-/** BitLocker on the server's fixed disks, as the last daily check recorded it (SRS SEC-05). */
+/** BitLocker on a server's fixed disks, as the last daily check recorded it (SRS SEC-05). */
 function EncryptionRow({ report }: { report: NonNullable<SystemHealthReport['storage']['encryption']> }) {
   const styles = useStyles();
   const summary = encryptionSummary(report);
@@ -71,7 +84,8 @@ function EncryptionRow({ report }: { report: NonNullable<SystemHealthReport['sto
 
 /**
  * Health of the dedicated WiFi server machine (SRS DED-13, DED-17): link quality, database, disk, backups, certificates,
- * integrations, UPS.
+ * integrations, UPS. With several servers (SCAL-01) it shows every one, the one that runs the background jobs among them,
+ * with when each last reported, instead of the machine of whichever server answered.
  */
 function SystemHealthPage() {
   const styles = useStyles();
@@ -91,11 +105,12 @@ function SystemHealthPage() {
   }
 
   const h = health.data;
+  const servers = h.servers;
   return (
     <Page>
       <PageHeader
         title="System health"
-        subtitle={`${h.server.machineName} · checked ${formatRelative(h.generatedAt)}`}
+        subtitle={`${servers ? `${servers.length} servers` : h.server.machineName} · checked ${formatRelative(h.generatedAt)}`}
         actions={
           <>
             <Button
@@ -115,12 +130,15 @@ function SystemHealthPage() {
         <div className={styles.warnings}>
           {h.warnings.map((w) => (
             <MessageBar
-              key={w.code}
+              key={`${w.code}:${w.server ?? ''}`}
               intent={w.severity === 'critical' ? 'error' : w.severity === 'warning' ? 'warning' : 'info'}
               layout="multiline"
             >
               <MessageBarBody>
-                <MessageBarTitle>{humanize(w.code.replace(/[._]/g, ' '))}</MessageBarTitle>
+                <MessageBarTitle>
+                  {humanize(w.code.replace(/[._]/g, ' '))}
+                  {w.server ? ` · ${w.server}` : ''}
+                </MessageBarTitle>
                 {w.message}
               </MessageBarBody>
             </MessageBar>
@@ -129,7 +147,7 @@ function SystemHealthPage() {
       )}
 
       <Section
-        title="WiFi signal of the server"
+        title={servers ? 'WiFi signal of the server that runs the background jobs' : 'WiFi signal of the server'}
         description="The server should stay above 60% signal. Dips here explain slow screens on the wards."
         actions={
           <Select value={String(hours)} onChange={(_, d) => setHours(Number(d.value))} aria-label="Period">
@@ -155,7 +173,11 @@ function SystemHealthPage() {
       </Section>
 
       <div className={styles.grid}>
-        <NetworkCard h={h} />
+        {servers ? (
+          servers.map((node) => <ServerCard key={`${node.server.machineName}:${node.server.startedAt}`} node={node} />)
+        ) : (
+          <NetworkCard h={h} />
+        )}
         <Section title="Database">
           <div className={styles.rows}>
             <Row label="Status" tone={h.database.reachable ? 'ok' : 'bad'}>
@@ -168,26 +190,19 @@ function SystemHealthPage() {
           </div>
           <DatabasePassword />
         </Section>
-        <Section title="Storage">
-          <div className={styles.rows}>
-            <Row label="Data folder">
-              <span className={styles.mono}>{h.storage.dataDirectory}</span>
-            </Row>
-            <Row
-              label="Free space"
-              tone={
-                h.storage.freeBytes !== null &&
-                h.storage.totalBytes !== null &&
-                h.storage.freeBytes / h.storage.totalBytes < 0.1
-                  ? 'bad'
-                  : undefined
-              }
-            >
-              {formatBytes(h.storage.freeBytes)} of {formatBytes(h.storage.totalBytes)}
-            </Row>
-            {h.storage.encryption && <EncryptionRow report={h.storage.encryption} />}
-          </div>
-        </Section>
+        {!servers && (
+          <Section title="Storage">
+            <div className={styles.rows}>
+              <Row label="Data folder">
+                <span className={styles.mono}>{h.storage.dataDirectory}</span>
+              </Row>
+              <Row label="Free space" tone={lowDiskSpace(h.storage) ? 'bad' : undefined}>
+                {formatBytes(h.storage.freeBytes)} of {formatBytes(h.storage.totalBytes)}
+              </Row>
+              {h.storage.encryption && <EncryptionRow report={h.storage.encryption} />}
+            </div>
+          </Section>
+        )}
         <Section title="Backups">
           <div className={styles.rows}>
             <Row label="Automatic" tone={h.backup.enabled ? 'ok' : 'warn'}>
@@ -225,49 +240,99 @@ function SystemHealthPage() {
             <Row label="CA expires" tone={expiryTone(h.certificate.caExpiresAt)}>
               {h.certificate.caExpiresAt ? formatDateTime(h.certificate.caExpiresAt) : 'Not issued by HC360'}
             </Row>
-            <Row label="Server certificate expires" tone={expiryTone(h.certificate.serverExpiresAt)}>
-              {h.certificate.serverExpiresAt ? formatDateTime(h.certificate.serverExpiresAt) : '—'}
-            </Row>
-            <Row label="Valid for">{h.certificate.subjectAlternativeNames.join(', ')}</Row>
+            {/* Each server of several has a certificate of its own, on its card. */}
+            {!servers && (
+              <>
+                <Row label="Server certificate expires" tone={expiryTone(h.certificate.serverExpiresAt)}>
+                  {h.certificate.serverExpiresAt ? formatDateTime(h.certificate.serverExpiresAt) : '—'}
+                </Row>
+                <Row label="Valid for">{h.certificate.subjectAlternativeNames.join(', ')}</Row>
+              </>
+            )}
           </div>
         </Section>
         <IntegrationsCard h={h} />
         <Section title="Encryption keys">
           <EncryptionKeys />
         </Section>
-        <Section title="Power">
-          <div className={styles.rows}>
-            {h.power.available ? (
-              <>
-                <Row label="Source" tone={h.power.onBattery ? 'bad' : 'ok'}>
-                  {h.power.onBattery ? 'UPS battery' : 'Mains'}
+        {!servers && (
+          <>
+            <Section title="Power">
+              <div className={styles.rows}>
+                {h.power.available ? (
+                  <>
+                    <Row label="Source" tone={h.power.onBattery ? 'bad' : 'ok'}>
+                      {h.power.onBattery ? 'UPS battery' : 'Mains'}
+                    </Row>
+                    <Row label="Battery">{h.power.chargePercent !== null ? `${h.power.chargePercent}%` : '—'}</Row>
+                  </>
+                ) : (
+                  <Row label="UPS">Not detected. Connect the UPS by USB so the server can report power cuts.</Row>
+                )}
+              </div>
+            </Section>
+            <Section title="Server">
+              <div className={styles.rows}>
+                <Row label="Machine">{h.server.machineName}</Row>
+                <Row label="Windows">{h.server.osDescription}</Row>
+                <Row label="HC360 version">{h.server.version}</Row>
+                <Row label="Mode">
+                  {humanize(h.server.environment)} · {h.server.role}
                 </Row>
-                <Row label="Battery">{h.power.chargePercent !== null ? `${h.power.chargePercent}%` : '—'}</Row>
-              </>
-            ) : (
-              <Row label="UPS">Not detected. Connect the UPS by USB so the server can report power cuts.</Row>
-            )}
-          </div>
-        </Section>
-        <Section title="Server">
-          <div className={styles.rows}>
-            <Row label="Machine">{h.server.machineName}</Row>
-            <Row label="Windows">{h.server.osDescription}</Row>
-            <Row label="HC360 version">{h.server.version}</Row>
-            <Row label="Mode">
-              {humanize(h.server.environment)} · {h.server.role}
-            </Row>
-            <Row label="Running for">
-              {h.server.uptimeHours < 48
-                ? `${Math.round(h.server.uptimeHours)} hours`
-                : `${Math.round(h.server.uptimeHours / 24)} days`}
-            </Row>
-            <Row label="Memory used">{formatBytes(h.server.workingSetBytes)}</Row>
-            <Row label="Processors">{h.server.processorCount}</Row>
-          </div>
-        </Section>
+                <Row label="Running for">{runningFor(h.server.uptimeHours)}</Row>
+                <Row label="Memory used">{formatBytes(h.server.workingSetBytes)}</Row>
+                <Row label="Processors">{h.server.processorCount}</Row>
+              </div>
+            </Section>
+          </>
+        )}
       </div>
     </Page>
+  );
+}
+
+/**
+ * One server of several (SCAL-01): what it last reported of its own machine, and when. One that stopped reporting (off,
+ * its service stopped, or the database out of its reach) is shown with the last it said.
+ */
+function ServerCard({ node }: { node: ServerNodeHealth }) {
+  const styles = useStyles();
+  const wifi = node.network.wifi;
+  return (
+    <Section title={node.server.machineName} description={serverRole(node.server.role)}>
+      <div className={styles.rows}>
+        <Row label="Reported" tone={node.reporting ? undefined : 'bad'}>
+          {node.reporting ? formatRelative(node.reportedAt) : `Not since ${formatDateTime(node.reportedAt)}`}
+        </Row>
+        <Row label="HC360 version">{node.server.version}</Row>
+        <Row label="Running for">{runningFor(node.server.uptimeHours)}</Row>
+        <Row label="Memory used">{formatBytes(node.server.workingSetBytes)}</Row>
+        <Row label="Free space" tone={lowDiskSpace(node.storage) ? 'bad' : undefined}>
+          {formatBytes(node.storage.freeBytes)} of {formatBytes(node.storage.totalBytes)}
+        </Row>
+        {node.storage.encryption && <EncryptionRow report={node.storage.encryption} />}
+        {wifi && (
+          <Row label="WiFi" tone={wifi.isConnected ? undefined : 'bad'}>
+            {wifi.isConnected
+              ? `${wifi.ssid ?? 'Connected'}${wifi.detailsAvailable ? ` · ${wifi.signalQuality}%` : ''}`
+              : 'Disconnected'}
+          </Row>
+        )}
+        <Row label="Addresses">
+          <span className={styles.mono}>{node.network.ipAddresses.join(', ')}</span>
+        </Row>
+        {node.power.available && (
+          <Row label="Power" tone={node.power.onBattery ? 'bad' : undefined}>
+            {node.power.onBattery
+              ? `UPS battery${node.power.chargePercent !== null ? ` (${node.power.chargePercent}%)` : ''}`
+              : 'Mains'}
+          </Row>
+        )}
+        <Row label="Certificate expires" tone={expiryTone(node.certificate.serverExpiresAt)}>
+          {node.certificate.serverExpiresAt ? formatDateTime(node.certificate.serverExpiresAt) : '—'}
+        </Row>
+      </div>
+    </Section>
   );
 }
 

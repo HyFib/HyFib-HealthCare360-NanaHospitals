@@ -28,6 +28,7 @@ Each entry records a decision, its context, and the consequences. New decisions 
 **Decision:** PostgreSQL 17 running as a Windows service, using `pg_trgm` for fuzzy search, `xmin` for optimistic concurrency and partitioning for high-volume tables.
 **Consequences:** No licence cost, strong JSON and full-text search, and streaming replication for a warm standby. SQL Server would need Standard edition for databases above 10 GB.
 **Amended (October 2026):** partitioning was decided but not built: the audit, RPM-reading and message tables are plain tables (SCAL-04, see [TRACEABILITY.md](../requirements/TRACEABILITY.md)). PostgreSQL's declarative partitioning remains the plan when their volume calls for it.
+**Amended again (October 2026):** built (SCAL-04, ADR-013): the four tables are declarative range partitions, one per UTC month.
 
 ## ADR-005 — Private hospital CA with certificate pinning on the LAN
 **Status:** Accepted
@@ -83,3 +84,23 @@ labels, 80 mm receipts and internal lists stay in the browser.
 module owns its document templates next to its data. The Server Node needs Edge (present on Windows 10/11 and Server
 2022); without it PDFs are unavailable and printing still works. A PDF costs about a third of a second once the browser
 is running, and the browser takes about 250 MB of memory while it runs; it closes when idle.
+
+## ADR-013 — Several API nodes share state through PostgreSQL and a file share
+**Status:** Accepted (SRS SCAL-01 to SCAL-04)
+**Context:** A larger hospital runs several API nodes behind a reverse proxy, with one node running the jobs. Any node may
+answer any request, so nothing that decides access may live in one node's memory, and the keys that wrap identifiers
+and sign tokens must be the same on every node. Redis is optional (it carries real-time updates only), and the audit
+trail, RPM readings and message logs grow by millions of rows a year.
+**Decision:** Shared state stays in the PostgreSQL every node already uses: sessions, challenges and break-the-glass
+grants are rows; caches kept for speed are expired on every node through `LISTEN/NOTIFY`, and bypassed while a node
+cannot hear them; one-time tokens and attempt counters use a small store with expiry and atomic increment
+(`IClusterStore`, `platform.cluster_entries`). The keys and documents live in a shared folder, and the Data Protection
+ring that wraps the keys there is protected with a certificate every node holds, never in the database. Redis is used
+only as the SignalR backplane: while it is away no screen gets real-time updates, on any node, but no request fails. The busiest
+tables are partitioned by month in the database itself (declarative range partitions), with primary keys that include
+the month and no foreign keys into them.
+**Consequences:** No new infrastructure is needed to be correct with several nodes; a security check never fails open
+because Redis is away. Each cluster-store call is one statement on the database, so it suits sign-in-rate traffic, not
+every request. A copy of the database alone opens no encrypted value. The shared folder and the cluster key
+certificate become things to back up and protect. Partitioned tables cannot be the target of a foreign key, and the
+audit chain position is kept unique by its trigger and the sealer's lock rather than by an index.

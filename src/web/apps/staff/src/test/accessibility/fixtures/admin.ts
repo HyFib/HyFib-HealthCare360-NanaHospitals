@@ -133,6 +133,7 @@ export const SYSTEM_HEALTH: SystemHealthReport = {
     { code: 'integration.failing', severity: 'critical', message: 'ABDM (ABHA) has failed 18 times today.' },
   ],
   generatedAt: hoursAgo(0.01),
+  servers: null,
 };
 
 /** The server's WiFi signal every half hour over the last day, with a dip overnight. */

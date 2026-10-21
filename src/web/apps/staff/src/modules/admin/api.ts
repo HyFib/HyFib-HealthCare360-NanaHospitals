@@ -102,6 +102,11 @@ export interface HealthWarning {
   code: string;
   severity: 'info' | 'warning' | 'critical' | string;
   message: string;
+  /**
+   * With several servers (SCAL-01), the server a warning about one machine is about; null for the hospital's own (the
+   * database, backups, messages, keys), and on a single Server Node.
+   */
+  server?: string | null;
 }
 
 /**
@@ -229,19 +234,38 @@ export interface DatabasePasswordChanged {
   settingsChanged: string[];
 }
 
+export interface ServerInfo {
+  machineName: string;
+  osDescription: string;
+  version: string;
+  environment: string;
+  /** `all` on a single Server Node; with several, `api` for an API node and `worker` for the node that runs the jobs. */
+  role: string;
+  startedAt: string;
+  uptimeHours: number;
+  processorCount: number;
+  workingSetBytes: number;
+  framework: string;
+}
+
+/**
+ * One server of several (SCAL-01): what it reports of its own machine, and when it last did. `reporting` is false once it
+ * has not for three minutes: it stopped without saying so, or cannot reach the database.
+ */
+export interface ServerNodeHealth {
+  server: ServerInfo;
+  network: SystemHealthReport['network'];
+  storage: SystemHealthReport['storage'];
+  certificate: SystemHealthReport['certificate'];
+  power: SystemHealthReport['power'];
+  warnings: HealthWarning[];
+  reportedAt: string;
+  reporting: boolean;
+}
+
 export interface SystemHealthReport {
-  server: {
-    machineName: string;
-    osDescription: string;
-    version: string;
-    environment: string;
-    role: string;
-    startedAt: string;
-    uptimeHours: number;
-    processorCount: number;
-    workingSetBytes: number;
-    framework: string;
-  };
+  /** The server that answered; with several, `servers` has every one. */
+  server: ServerInfo;
   network: {
     wifiSupported: boolean;
     wifi: WifiConnectionInfo | null;
@@ -288,6 +312,11 @@ export interface SystemHealthReport {
   integrations: IntegrationHealthSummary[];
   warnings: HealthWarning[];
   generatedAt: string;
+  /**
+   * Every server when there are several (SCAL-01), the one that runs the background jobs among them and first; null on a
+   * single Server Node.
+   */
+  servers: ServerNodeHealth[] | null;
 }
 
 export interface WifiSample {

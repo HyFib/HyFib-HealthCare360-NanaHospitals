@@ -7,9 +7,9 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
 | | |
 |---|---|
 | Project | `src/server/HyFib.HealthCare360.Integrations` (module key `integrations`, registered by `IntegrationsModule`) |
-| Schema | `integrations`: `simulator_messages`, `simulator_transactions`, `whatsapp_inbound_messages`, `lab_order_downloads` (the integration log itself is the platform's `integration_logs`) |
+| Schema | `integrations`: `simulator_messages`, `simulator_transactions`, `whatsapp_inbound_messages`, `lab_order_downloads`, `lab_gateway_nodes` (each server's analyser and modality worklist server status, with several servers) (the integration log itself is the platform's `integration_logs`) |
 | Requirements | SRS §5: INT-SMS, INT-WA, INT-PG, INT-POS, INT-TALLY, INT-PACS, INT-LAB, INT-BAR, INT-ICD; SEC-10 (PHI in logs) |
-| Tests | `tests/HyFib.HealthCare360.Integrations.Tests`: about 800 tests covering signatures, templates, every provider against a fake HTTP handler, the routers other modules resolve (payment, POS, PACS, ICD), webhook parsers, WhatsApp STOP/START handling, Tally XML, DICOM JSON, QIDO-RS, WADO-RS and STOW-RS against a fake PACS (with the DICOM rewriting of objects sent), the modality worklist server answering fo-dicom's own client on a local port, worklist matching and settings, the HL7/MLLP and ASTM E1381/E1394 sessions over an in-memory socket (host queries, order download, contention, size limits), the lab agent relay over an in-memory WebSocket, PHI masking, labels, validators and DI wiring. `tests/HyFib.HealthCare360.LabAgent.Tests` runs the lab agent against the server's relay end to end (Windows). `tests/HyFib.HealthCare360.IntegrationTests` (`LabAnalyserTests`, `LabConnectionTests`) covers the connection rules, facility scoping, the relay endpoint and the order queue's claims against PostgreSQL, and `CardiologyPacsTests` sends an echo's DICOM files through the whole server to the PACS simulator |
+| Tests | `tests/HyFib.HealthCare360.Integrations.Tests`: about 800 tests covering signatures, templates, every provider against a fake HTTP handler, the routers other modules resolve (payment, POS, PACS, ICD), webhook parsers, WhatsApp STOP/START handling, Tally XML, DICOM JSON, QIDO-RS, WADO-RS and STOW-RS against a fake PACS (with the DICOM rewriting of objects sent), the modality worklist server answering fo-dicom's own client on a local port, worklist matching and settings, the HL7/MLLP and ASTM E1381/E1394 sessions over an in-memory socket (host queries, order download, contention, size limits), the lab agent relay over an in-memory WebSocket, PHI masking, labels, validators and DI wiring. `tests/HyFib.HealthCare360.LabAgent.Tests` runs the lab agent against the server's relay end to end (Windows). `tests/HyFib.HealthCare360.IntegrationTests` (`LabAnalyserTests`, `LabConnectionTests`, `ModalityWorklistStatusTests`) covers the connection rules, facility scoping, the relay endpoint, the order queue's claims and the status each server shares against PostgreSQL, and `CardiologyPacsTests` sends an echo's DICOM files through the whole server to the PACS simulator |
 
 ## How it fits together
 
@@ -656,8 +656,11 @@ them at the console and the images reach PACS under the right study. The server 
   (/24 for IPv4, /64 for IPv6), with the number left out since. Past 1000 networks, refusals are throttled by kind
   alone. So a scan of the hospital network cannot flood either log.
 * **Status and test**: the dashboard shows the listener (state, open associations, answered and refused counts, last
-  error). `POST /api/v1/admin/integrations/mwl/test` sends a C-ECHO from the server to itself; in a split deployment,
-  call it on the node that runs background jobs.
+  error). `POST /api/v1/admin/integrations/mwl/test` sends a C-ECHO from the server to itself. With several servers
+  (SCAL-01) the worklist server runs on the node that runs the jobs, which answers no requests: it shares its status
+  with the analysers' (`LabStatusBoard`, see Laboratory analysers), so the dashboard on an API node shows it, and the
+  test there reports it (the error it failed with, not started yet, or listening as which AE title on which port)
+  instead of an echo, which only that node can send.
 
 ### Laboratory analysers (INT-LAB)
 
@@ -814,7 +817,14 @@ acknowledgements are never acknowledged in turn.
 * Live status per analyser (listening, connected through its agent, waiting for its agent, COM port problem, failed,
   training; connections, accepted and refused counts, last error, orders waiting) appears on the integration dashboard
   and in Lab setup › Analysers. Administration › Integrations › Test reports how many network analysers are listening,
-  serial analysers connected and training analysers ready, and which are not working.
+  serial analysers connected and training analysers ready, and which are not working. With several servers (SCAL-01)
+  each knows a part: the node that runs the jobs listens for the network analysers, and a lab agent's relay and
+  heartbeats reach whichever API node the proxy chose. Each writes its part (`LabGatewayState`, and on the node that
+  runs the jobs its worklist server's, `ModalityWorklistState`) to
+  `integrations.lab_gateway_nodes` within seconds of a change and every minute (`LabStatusSharing`), and every server
+  shows them together (`LabStatusBoard`): a relay's or its agent's state over the gateway's, the latest of two that say
+  as much, every server's counts. A server's part ends three minutes after it last wrote it, by the database's clock
+  so that servers whose clocks differ agree on it, and it removes it as it stops. A single Server Node keeps it in memory only.
 
 #### Training analyser (transport `Simulator`)
 
@@ -1035,7 +1045,7 @@ staff app.
 | Method | Path | Permission | Notes |
 |---|---|---|---|
 | GET | `/api/v1/admin/integrations` | `admin.integrations.manage` | → `IntegrationStatusDto[]`: provider, enabled/configured, health (`healthy`, `degraded`, `failing`, `idle`, `disabled` or `not_configured`), last success/failure, failures in 24 h, lab and modality worklist listener status |
-| POST | `/api/v1/admin/integrations/{name}/test` | `admin.integrations.manage` | `TestIntegrationRequest { to, message, dltTemplateId, templateName, languageCode }` → `IntegrationTestResult`. Sends a real test SMS, WhatsApp or e-mail, creates a ₹1 order, pings Tally, PACS or ICD, echoes the modality worklist server (`mwl`), and checks lab, label and biometric configuration. Audited as `integration.tested`. |
+| POST | `/api/v1/admin/integrations/{name}/test` | `admin.integrations.manage` | `TestIntegrationRequest { to, message, dltTemplateId, templateName, languageCode }` → `IntegrationTestResult`. Sends a real test SMS, WhatsApp or e-mail, creates a ₹1 order, pings Tally, PACS or ICD, echoes the modality worklist server (`mwl`; on an API node of several, reports the status the node that runs the jobs shares of it), and checks lab, label and biometric configuration. Audited as `integration.tested`. |
 | GET | `/api/v1/admin/integrations/logs` | `admin.integrations.manage` | paging + `integration, success, from, to, search` → `PagedResult<IntegrationLogDto>` |
 | GET | `/api/v1/admin/integrations/simulator/messages` | `admin.integrations.manage` | paging + `channel` → simulated SMS, WhatsApp, e-mail and Tally deliveries |
 | GET | `/api/v1/admin/integrations/simulator/transactions` | `admin.integrations.manage` | paging + `kind` → simulated payment orders, links and refunds, POS sales, and punches on training attendance terminals |
@@ -1110,8 +1120,9 @@ Permissions:
     `UnconfiguredAadhaarAuthenticator`, which refuses every check)
   * `ILabelPrinterService` → `LabelPrinterService`, a singleton
   * `IPdfRenderer` → `EdgePdfRenderer`, a singleton (disposed with the host, which closes the browser)
-* **Singletons**: `SimulatorSigningKey`, `IcdTokenCache`, `LabGatewayState`, `LabRelayRegistry` (the live relays), and
-  `ILabMessageProcessor` → `LabMessageProcessor`.
+* **Singletons**: `SimulatorSigningKey`, `IcdTokenCache`, `LabGatewayState`, `LabRelayRegistry` (the live relays),
+  `LabStatusBoard` (every server's status of the analysers, with the hosted service `LabStatusSharing` that writes this
+  server's part on a node of several), and `ILabMessageProcessor` → `LabMessageProcessor`.
 * **Modality worklist** (`AddModalityWorklist`): fo-dicom's services (`AddFellowOakDicom`, with dataset and PDU logging
   off), the singletons `ModalityWorklistState` and `ModalityWorklistGateway`, the scoped `IWorklistFacilities` →
   `WorklistFacilities` and `ModalityWorklistSelfTest`, and the hosted service `ModalityWorklistHostedService`.

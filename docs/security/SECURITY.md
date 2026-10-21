@@ -213,6 +213,7 @@ What they all share:
 - Each secret allows a set number of tries, and tries sent at once are judged one at a time, so the limit holds
   however they arrive. Requests are limited per address as well: 10 a minute for sign-in, codes, PINs and password
   prompts, 5 portal code requests in 15 minutes, 60 a minute for patient links, and an allowance per device for devices.
+  An IPv6 address from outside the hospital counts by its /64 (Rate limits, below).
 - Every pathway but the analyser and modality connections is HTTPS only.
 
 | Pathway | Proof, and its strength | What stops guessing |
@@ -261,7 +262,8 @@ and grants nothing.
   The Patient role cannot be edited, so no staff permission can reach every portal account.
 - **Restricted records** (VIP, staff, high-profile patients):
   - They need an extra permission or **break-the-glass** access.
-  - Break-the-glass requires a written reason, expires, and is flagged for review.
+  - Break-the-glass requires a written reason, expires, and is flagged for review. The grant is a row in the database
+    (`patients.break_glass_grants`), so it holds, and expires, on every server alike.
   - Lists don't name them unless the user may open restricted records. The bed board, the doctor's worklist and the
     ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
     result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
@@ -395,11 +397,16 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     covered every column are still checked against what was hashed then.
   - Database triggers block deletes and truncates, rows inserted pre-sealed, and every update except a complete seal:
     hash, chain position and previous hash together, linked to the sealed entry before it (checked at commit), with
-    nothing else in the row changed.
+    nothing else in the row changed. Each server, as it starts, puts back any of these triggers it finds dropped,
+    turned off or changed, on the log and on each month's partition.
   - Administration › Audit log › *Verify integrity* re-checks the chain, and names the position of the first entry
     changed, moved or removed, even by someone who turned the triggers off. The chain has no key, so someone who also
     sealed every later entry again would not be found (ASVS V16.4.2). It also fails on any seal outside the chain.
     Tests: `AuditTrailTests` (against PostgreSQL) and `AuditSealTests`.
+  - The log is partitioned by month (SCAL-04). Each month's partition refuses TRUNCATE and DELETE as the table does, and
+    the chain-link trigger refuses a seal that takes a chain position another entry has (a unique index would have to
+    include the month). No partition is ever dropped, of the audit log or any other table: records are deleted only by
+    the Privacy retention schedule, row by row, at least as late as the law allows and with every run audited.
 - Records carry who and when on every change, and deletes are soft deletes. Every change to an audited record also
   writes a data audit event with each changed value (from/to); compound values such as addresses, cardiology
   findings and TTI results are recorded part by part. Binary values (a prescription's DSC signature and the bytes it
@@ -440,7 +447,23 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - `nosniff`, a strict referrer policy, and a Permissions-Policy that allows only camera/microphone for video consults.
   - `no-store` on API responses.
   - They apply to every response, including the staff and portal pages and their static assets, not just API calls.
-- Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user.
+- Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user. With
+  several servers (below), the sign-in and OTP limits per address are counted for the hospital, in the database.
+  - **What counts as one address** (`ClientAddresses`), for these limits and for the proof of work's failure counts
+    (below): an IPv4 address; an IPv4 address carried in an IPv6 one (IPv4-mapped, 6to4, Teredo, and NAT64's well-known
+    prefix `64:ff9b::/96`, RFC 6052, through which IPv4 clients reach a server on IPv6 alone) as that IPv4 address; and
+    an IPv6 address from outside the hospital by its /64. A home, a phone on a mobile network or a rented server holds
+    a whole /64 (RFC 6177) and can send every request from a new address in it (RFC 8981): counting by the /64 stops
+    one host from sidestepping the per-address limits and the extra work asked of a failing address that way. It does
+    not stop a client that holds more, a /56 or a /48, which has 256 or 65,536 /64s and so as many budgets. A coarser
+    key would not do: mobile networks give each subscriber a /64 out of larger prefixes their other subscribers share,
+    so counting by /56 or /48 would put unrelated patients on one budget. Against such a client the per-account and
+    per-number limits (the account lockout, the codes a number may be sent and the tries each code has) and the proof
+    of work remain the defence. The hospital's own network
+    counts address by address, as IPv4 does: link-local and unique local addresses, the /64s the server has an address
+    in itself (read again every minute), and `HealthCare360:Network:LocalNetworks` for other subnets that reach it over
+    internet IPv6 addresses. The workstations on one WiFi share its /64, and do not share one sign-in budget. The
+    audit trail, the logs, address allow-lists and the idempotency of anonymous requests keep the client's full address.
 - **Anti-automation on the portal** (SRS SEC-06, ASVS V2.4.1; V11.1.4 in ASVS 4.0). The portal's anonymous requests
   that a script could abuse ask the browser for a proof of work first: asking for a sign-in code (which also signs a
   new number up, and sends an SMS), giving the code, and sending feedback from a QR poster, a kiosk or a personal link.
@@ -460,27 +483,34 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     raises the cost of cheap, high-volume scripting (every request needs a fresh challenge from this server and its own
     work, and a script has to run a solver at all). The rate limits stay the primary control: per address (above), and
     per number for sign-in codes (3 in 15 minutes, 5 tries each).
-  - **Raised for failures.** Every 3 failures from an address, or for a mobile number from any address, ask 2 bits
+  - **Raised for failures.** Every 3 failures from an address (an IPv6 /64 from outside the hospital counting as one,
+    as for the rate limits), or for a mobile number from any address, ask 2 bits
     more (four times the work), up to 18 bits (5 to 13 seconds on a phone). A failure is a refused proof, a rate-limit
     refusal, or a refused request (a wrong or expired code, too many codes, a dead link). A form that fails validation
     (feedback, or a sign-in code asked for a number that is not a mobile number) is answered before the proof is
     checked, so it neither spends its proof nor counts. The count for an address or a
     number lasts until 15 minutes pass without a failure for it (each failure starts the quarter of an hour again), so a
-    quiet quarter of an hour brings it back down and a steady trickle keeps it up. Numbers are kept only as keyed
-    hashes, in memory: an HMAC-SHA256 under a key derived from the anti-automation key, since India has few enough
-    mobile numbers to hash every one, and a plain hash would give the number back.
+    quiet quarter of an hour brings it back down and a steady trickle keeps it up. Addresses and numbers are kept only
+    as keyed hashes: an HMAC-SHA256 under keys derived from the anti-automation key, since every IPv4 address and every
+    one of India's mobile numbers can be hashed in minutes, and a plain hash would give them back. Past 30 failures
+    (the most work any setting can ask for), a server counts at most one a minute for an address or number, so a flood
+    of rate-limit refusals does not become a flood of writes; a count that cannot be stored is logged, does not change
+    the answer, and is tried again a minute later.
     Giving a code names only its challenge: the work asked for it depends on the address, and when the attempt fails
     the server looks the challenge's number up (one lookup by key, on that path only), so wrong and expired codes count
     against the number as well.
-  - **Checking.** Stateless: one HMAC, then the kind of request, the expiry, one hash, and the bits against what the
-    address and number need now, with no database. A good proof is spent: the challenge is remembered until it expires and
-    refused again. On several API servers (SCAL-01) the spent challenges and the failure counts are each server's own,
-    so a proof could be used once on each within its 5 minutes; the rate limits still bound that.
+  - **Checking.** One HMAC, then the kind of request, the expiry, one hash, and the bits against what the address and
+    number need now. A good proof is spent: the challenge is remembered until a minute past its expiry and refused
+    again. A single server keeps the spent challenges, the failure counts and the audit throttle (below) in memory. On
+    several API servers (SCAL-01) they are in the database's cluster store (`platform.cluster_entries`, one statement
+    each): a challenge is spent once for the hospital whichever server it is sent to, failures counted by one server
+    raise the work every server asks for, and a refusal is audited once.
   - **Refusals** get one answer, whatever the reason: 403 `request.check_failed`, "We could not complete this request.
     Please try again." The portal then solves a fresh challenge, for the number when there is one, and tries once more.
     Each refusal is counted in the `hc360.anti_automation.rejected` metric (by kind and reason: missing, malformed,
     tampered, wrong action, expired, too easy, unsolved, replayed), and audited as `security.anti_automation_rejected`
-    at most once per address and reason in 5 minutes, so a flood cannot flood the audit trail.
+    at most once per address and reason in 5 minutes (for the hospital, with several servers), so a flood cannot flood
+    the audit trail.
   - **A too-easy proof is not a failure.** It was solved, for a challenge issued before the work asked of the address or
     number went up. The portal solves its sign-in challenge as the form appears, before the number is typed, so a
     patient whose number failed lately (they mistyped the code, or someone tried their number) meets this on every
@@ -498,6 +528,20 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Unsubscribing does not ask for one: its link is personal, and doing it twice changes nothing. Neither do the
     read-only public pages (the doctor directory, document checks, the privacy notice) or signed-in requests, which the
     per-user limits cover.
+- **Several servers behind a reverse proxy** (optional, SCAL-01; DEPLOYMENT.md section 10):
+  - The client's address is taken from `X-Forwarded-For`, and the scheme from `X-Forwarded-Proto`, only on a request
+    from a proxy the site names (`HealthCare360:Network:KnownProxies` or `KnownNetworks`). Anyone else's headers are
+    ignored, so nobody can claim another address to dodge a rate limit, an address allow-list or the audit trail. With
+    no proxy named, the headers are never read.
+  - Nothing that decides access lives in one server's memory alone: sessions, sign-in challenges, lockouts and
+    break-the-glass grants are in the database, and a permission taken away, a session ended or locked, or a setting
+    changed on one server expires the others' caches at once (PostgreSQL notifications). A server that cannot hear the
+    others does not use those caches.
+  - One-time tokens and attempt counters that must hold whichever server answers use the database's cluster store
+    (`IClusterStore`): a token can be spent once, and every attempt is counted once, across all servers.
+  - The keys are in a shared folder, wrapped by a Data Protection key ring that is protected with a certificate every
+    server holds (key table below), never in the database. A server with keys of its own will not start on a shared
+    folder that has none.
 - Input validation on every request, with parameterised SQL through EF Core only. An endpoint that asks for validation
   never runs without it.
 - Uploaded files are accepted by their content (PDF, PNG, JPEG, WebP, DICOM, SCP-ECG), and their stored name takes the
@@ -561,7 +605,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - A holder of `admin.system.manage` makes a new one from Administration › Backups, after giving their password
     again. It is shown once, to them, as 14 groups of 4 letters and digits whose last group checks the others. Backups
     use it only once they type it back from their copy, so a key nobody wrote down never becomes the one backups need.
-    The server deletes the key it replaces. Showing it and putting it to use are audited, without the key.
+    Until then it waits, wrapped by Data Protection, beside the current key, in the folder the servers share when there
+    are several (SCAL-01), so the confirmation may reach any of them; only the administrator it was shown to can confirm
+    it, within 30 minutes, and it is never used before. The server deletes the key it replaces. Showing it and putting it to use are
+    audited, without the key.
   - Every backup file names its key in a header that each chunk authenticates. The Backups list names each backup's
     key, and the restore tool says which key a backup needs when it is given another.
   - Until the first new key, backups use the original recovery key, derived from the original data key, which any
@@ -600,8 +647,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
     access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
   - *Anti-automation key* (an accepted exception to rotating from System health). It signs only the portal's
-    proof-of-work challenges, which live 5 minutes, and keys the in-memory hashes of the numbers that failed lately; it
-    protects no stored data, so it is rotated by deleting `keys\anti-automation.key` and restarting the server:
+    proof-of-work challenges, which live 5 minutes, and keys the hashes of the addresses and numbers that failed lately;
+    it protects no stored data, so it is rotated by deleting `keys\anti-automation.key` and restarting the server:
     challenges issued before stop working and browsers ask for new ones, and the failures counted so far are forgotten. Rotate it with the sign-in token key when the Server Node may have been exposed (Key policy, below).
 - **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
   says when either is due. Rotate both at once, and change the database password if the server signs in with one, when
@@ -619,8 +666,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Blind-index keys | Derived from each data key | As above | HMAC-SHA256 lookups of ABHA, policy, PAN and bank account numbers (the current data key's), and of Aadhaar numbers (the original key's) | With the data key, indexes computed again in the background; the Aadhaar index stays on the original key (it cannot be rebuilt) |
 | Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
-| Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above), and, through a key derived from it, of the mobile numbers whose failures are counted in memory | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers need the same file |
-| Data Protection key ring | `keys\dataprotection` | Machine DPAPI | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
+| Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above), and, through keys derived from it, of the addresses and mobile numbers whose failures are counted (in memory, or in the database with several servers) | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers share it from the shared folder's `keys` |
+| Data Protection key ring | `keys\dataprotection` | Machine DPAPI; with several servers, the ring in the shared folder is protected with the cluster key certificate (RSA, in each server's Local Computer store), and each server keeps its own DPAPI ring for its LAN certificates | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
+| Cluster key certificate (several servers only) | The Local Computer's Personal store of each server; the PFX and its password offline, in the hospital's password safe | Windows (the private key readable by `NT SERVICE\HC360Server` and Administrators) | The shared Data Protection key ring, hence every key in the shared folder | Not rotated in place; to replace it, copy the documents and restore the latest backup into a new, empty shared folder named with the new certificate (DEPLOYMENT.md section 10, steps 2 to 4) |
 | Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires |
 | Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby or replacement hardware; kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
 | PostgreSQL TLS certificate (warm standby) | `hc360-server.key` in PostgreSQL's data folder, copied to the standby with the database | File permissions: PostgreSQL's service account and Administrators | The replication stream between the Server Nodes | Made by `Enable-HC360Replication.ps1`, valid 10 years; made again when it is within 30 days of expiry (copy the new `hc360-server.crt` to the standby) |

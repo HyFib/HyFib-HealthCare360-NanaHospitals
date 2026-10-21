@@ -7,9 +7,7 @@ using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Internal;
 using NSubstitute;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -109,15 +107,13 @@ public sealed class BreakGlassTests(HospitalServer server)
         var nurse = await (await server.SignInAsync(HospitalServer.Users.Nurse)).GetAsync<AuthUser>("/api/v1/auth/me");
         var clock = new MovableClock(DateTimeOffset.UtcNow);
 
-        // The guard keeps the grant in the memory cache, which expires it by its own clock (MemoryCacheOptions.Clock). On
-        // the server that clock and the TimeProvider are both the system's; here both are the test's.
-        using var cache = new MemoryCache(new MemoryCacheOptions { Clock = new CacheClock(clock) });
+        // The grant is a row (patients.break_glass_grants, SCAL-01) that ends at the time the guard's clock gave it; here the
+        // clock is the test's.
         await using var scope = server.Services.CreateAsyncScope();
         var guard = new PatientAccessGuard(
             scope.ServiceProvider.GetRequiredService<HospitalDbContext>(),
             SignedInAs(nurse),
             scope.ServiceProvider.GetRequiredService<IPermissionService>(),
-            cache,
             Substitute.For<IAuditLogger>(),
             Substitute.For<INotificationService>(),
             clock);
@@ -179,11 +175,5 @@ public sealed class BreakGlassTests(HospitalServer server)
         public DateTimeOffset Now { get; set; } = now;
 
         public override DateTimeOffset GetUtcNow() => Now;
-    }
-
-    /// <summary>The memory cache's clock, kept to the test's clock.</summary>
-    private sealed class CacheClock(TimeProvider time) : ISystemClock
-    {
-        public DateTimeOffset UtcNow => time.GetUtcNow();
     }
 }

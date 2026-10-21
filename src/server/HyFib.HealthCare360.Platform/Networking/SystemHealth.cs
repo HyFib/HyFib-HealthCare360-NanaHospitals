@@ -51,7 +51,12 @@ public sealed record CertificateInfo(string? CaFingerprint, DateTimeOffset? Serv
 
 public sealed record PowerInfo(bool Available, bool? OnBattery, int? ChargePercent, string? Source);
 
-public sealed record HealthWarning(string Code, string Severity, string Message);
+/// <summary>
+/// A warning on System health. With several servers (SCAL-01), <see cref="Server"/> names the server a warning about one
+/// machine is about (its disk, network, certificate, power, the programs it uses); it is null for the hospital's own (the
+/// database, backups, messages, integrations, keys), and on a single Server Node.
+/// </summary>
+public sealed record HealthWarning(string Code, string Severity, string Message, string? Server = null);
 
 /// <summary>
 /// Warnings a module adds to System health about its own set-up, which Platform cannot see (it references no module):
@@ -62,6 +67,28 @@ public interface IHealthWarningSource
     Task<IReadOnlyList<HealthWarning>> WarningsAsync(CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// One server of several (SCAL-01) on System health: what it reports of its own machine (the computer, its network, data
+/// drive, certificate and power) and the warnings about them, and when it last did, by the database's clock. Each writes
+/// it every minute (<see cref="ServerNodeSharing"/>). <see cref="Reporting"/> is false once it has not for
+/// <see cref="ServerNodeBoard.Lifetime"/>: it stopped without saying so, as in a power cut, or cannot reach the database.
+/// </summary>
+public sealed record ServerNodeHealth(
+    ServerInfo Server,
+    NetworkInfo Network,
+    StorageInfo Storage,
+    CertificateInfo Certificate,
+    PowerInfo Power,
+    IReadOnlyList<HealthWarning> Warnings,
+    DateTimeOffset ReportedAt,
+    bool Reporting = true);
+
+/// <summary>
+/// The report. <see cref="Server"/>, <see cref="Network"/>, <see cref="Storage"/>, <see cref="Certificate"/> and
+/// <see cref="Power"/> are those of the server that answered. With several servers (SCAL-01), <see cref="Servers"/> has
+/// every one, the node that runs the jobs among them, and the warnings name the server they are about; it is null on a
+/// single Server Node.
+/// </summary>
 public sealed record SystemHealthReport(
     ServerInfo Server,
     NetworkInfo Network,
@@ -73,7 +100,8 @@ public sealed record SystemHealthReport(
     PowerInfo Power,
     IReadOnlyList<IntegrationHealth> Integrations,
     IReadOnlyList<HealthWarning> Warnings,
-    DateTimeOffset GeneratedAt);
+    DateTimeOffset GeneratedAt,
+    IReadOnlyList<ServerNodeHealth>? Servers = null);
 
 public sealed record SystemInfoDto(
     string Product, string Version, string ServerName, string? FacilityName, string? FacilityCode, string? CaFingerprint, DateTimeOffset ServerTime, int ApiVersion,
@@ -84,7 +112,12 @@ public sealed record SystemFeatures(bool PatientPortal, bool Telehealth);
 
 public sealed record WifiSampleDto(DateTimeOffset At, bool Connected, int SignalQuality, int? RssiDbm, double? ReceiveRateMbps, string? Ssid);
 
-/// <summary>Builds the Server Node health report shown on the administrator dashboard (DED-17).</summary>
+/// <summary>
+/// Builds the Server Node health report shown on the administrator dashboard (DED-17). With several servers (SCAL-01) the
+/// server that answers is always an API node, and a different one from one request to the next behind the reverse proxy:
+/// each server writes what it reports of its own machine every minute (<see cref="ServerNodeBoard"/>), and the report has
+/// every one's, the node that runs the jobs among them.
+/// </summary>
 public sealed class SystemHealthService(
     HospitalDbContext db,
     WifiLinkState wifi,
@@ -97,6 +130,7 @@ public sealed class SystemHealthService(
     IFieldKeyRing dataKeys,
     IIntegrationHealthSource integrationHealth,
     IEnumerable<IHealthWarningSource> moduleWarnings,
+    ServerNodeBoard servers,
     TimeProvider time)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
@@ -112,6 +146,145 @@ public sealed class SystemHealthService(
     public async Task<SystemHealthReport> BuildAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
+        var own = await ReadThisServerAsync(now, ct);
+        var database = await ReadDatabaseAsync(ct);
+        var backup = await ReadBackupAsync(ct);
+
+        var dayAgo = now.AddDays(-1);
+        var outbox = new OutboxInfo(
+            await db.Set<OutboxMessage>().CountAsync(m => m.Status == OutboxStatus.Pending, ct),
+            // When it failed, not when it was queued: a message is retried for up to its lifetime (days) before
+            // it fails.
+            await db.Set<OutboxMessage>()
+                .CountAsync(m => m.Status == OutboxStatus.Failed && (m.ProcessedAt ?? m.CreatedAt) > dayAgo, ct),
+            await db.Set<OutboxMessage>().Where(m => m.Status == OutboxStatus.Pending).OrderBy(m => m.CreatedAt).Select(m => (DateTimeOffset?)m.CreatedAt).FirstOrDefaultAsync(ct));
+
+        var integrations = await integrationHealth.ListAsync(ct);
+
+        // The hospital's own warnings, about what every server shares.
+        var databaseWarnings = new List<HealthWarning>();
+        if (!database.Reachable)
+        {
+            databaseWarnings.Add(new("db.unreachable", "critical", "The database is not reachable."));
+        }
+        else if (await ReadReplicationAsync(ct) is { } replication)
+        {
+            // A warm standby and WAL archiving are optional (SRS DED-20, REL-02): nothing shows until they are set up.
+            databaseWarnings.AddRange(StandbyReplication.Warnings(replication));
+        }
+
+        var backupWarnings = new List<HealthWarning>();
+        if (backup.Enabled && (backup.LastSuccessAt is null || now - backup.LastSuccessAt > TimeSpan.FromHours(36)))
+        {
+            backupWarnings.Add(new("backup.stale", "critical", "No successful backup in the last 36 hours."));
+        }
+
+        var messageWarnings = new List<HealthWarning>();
+        if (outbox.FailedLast24Hours > 0)
+        {
+            messageWarnings.Add(new("outbox.failed", "warning", $"{outbox.FailedLast24Hours} outbound message(s) failed in the last 24 hours."));
+        }
+
+        if (outbox.OldestPendingAt is { } oldest && now - oldest > TimeSpan.FromMinutes(30))
+        {
+            messageWarnings.Add(new("outbox.backlog", "warning", "Outbound messages are queued for more than 30 minutes (internet down?)."));
+        }
+
+        messageWarnings.AddRange(IntegrationWarnings(integrations));
+
+        var keyWarnings = new List<HealthWarning>();
+        if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
+        {
+            keyWarnings.Add(new("keys.signing_due", "info", "The sign-in token key is over a year old. Rotate it under Encryption keys."));
+        }
+
+        if (dataKeys.Keys.Single(k => k.Current).CreatedAt is { } dataSince && now - dataSince > DataKeyPeriod)
+        {
+            keyWarnings.Add(new("keys.data_due", "info", "The data encryption key is over two years old. Rotate it under Encryption keys."));
+        }
+
+        // Backups still use the original recovery key. Until HC360 made separate recovery keys, any holder of the backups
+        // permission could display it; one never displayed is held by nobody.
+        if (!File.Exists(RecoveryKeyStore.PathIn(directories)))
+        {
+            keyWarnings.Add(await RecoveryKeyService.OriginalWasDisplayedAsync(db, ct)
+                ? new("backup.recovery_key_original", "warning",
+                    "Backups still use the original recovery key, which any administrator with the backups permission could display. Make a new one under Backups › Recovery key.")
+                : new("backup.recovery_key_missing", "critical",
+                    "Nobody holds the recovery key for the backups, so they cannot be restored on new hardware. Make one under Backups › Recovery key."));
+        }
+
+        // A single Server Node: its own warnings in the places System health has always shown them.
+        if (!directories.IsShared)
+        {
+            List<HealthWarning> warnings = [.. databaseWarnings, .. own.Machine, .. backupWarnings, .. own.Link, .. messageWarnings, .. own.Services, .. keyWarnings];
+            return new SystemHealthReport(own.Server, own.Network, database, own.Storage, backup, outbox, own.Certificate, own.Power, integrations, warnings, now);
+        }
+
+        // Several servers: every one's, after the hospital's.
+        var everyServer = await EveryServerAsync(own.ToNode(now), ct);
+        List<HealthWarning> all = [.. databaseWarnings, .. backupWarnings, .. messageWarnings, .. keyWarnings, .. ServerWarnings(everyServer)];
+        return new SystemHealthReport(own.Server, own.Network, database, own.Storage, backup, outbox, own.Certificate, own.Power, integrations, all, now, everyServer);
+    }
+
+    /// <summary>What this server reports of itself to the other servers of several (<see cref="ServerNodeSharing"/>).</summary>
+    public async Task<ServerNodeHealth> BuildServerAsync(CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        return (await ReadThisServerAsync(now, ct)).ToNode(now);
+    }
+
+    /// <summary>
+    /// The warnings about every server, each naming it: its own while it reports, and that it has stopped when it has not;
+    /// and, when none of them runs the jobs, that nothing runs them.
+    /// </summary>
+    internal static IReadOnlyList<HealthWarning> ServerWarnings(IReadOnlyList<ServerNodeHealth> servers)
+    {
+        var warnings = new List<HealthWarning>();
+        foreach (var server in servers)
+        {
+            var name = server.Server.MachineName;
+            if (server.Reporting)
+            {
+                warnings.AddRange(server.Warnings.Select(w => w with { Server = name }));
+            }
+            else
+            {
+                warnings.Add(RunsJobs(server)
+                    ? new("server.not_reporting", "critical",
+                        $"{name}, which runs the background jobs, has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities.",
+                        name)
+                    : new("server.not_reporting", "warning",
+                        $"{name} has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. The reverse proxy sends requests to the other servers meanwhile.",
+                        name));
+            }
+        }
+
+        if (!servers.Any(RunsJobs))
+        {
+            warnings.Add(new("server.no_jobs", "critical",
+                "No server that runs the background jobs is reporting: nothing makes the backups, sends messages or listens for analysers and modalities. Start HC360 on the server that runs them."));
+        }
+
+        return warnings;
+    }
+
+    /// <summary>This server and every other one that reports or stopped reporting less than a day ago, the nodes that run the jobs first.</summary>
+    private async Task<IReadOnlyList<ServerNodeHealth>> EveryServerAsync(ServerNodeHealth self, CancellationToken ct) =>
+    [
+        .. (await servers.ReadOthersAsync(ct)).Prepend(self)
+            .OrderBy(s => RunsJobs(s) ? 0 : 1)
+            .ThenBy(s => s.Server.MachineName, StringComparer.OrdinalIgnoreCase),
+    ];
+
+    private static bool RunsJobs(ServerNodeHealth server) => !string.Equals(server.Server.Role, "api", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// This server's own part of the report: its machine and the warnings about it, in the three places System health has
+    /// always given them on a single Server Node (after the database's, after the backups', after the messages').
+    /// </summary>
+    private async Task<ThisServer> ReadThisServerAsync(DateTimeOffset now, CancellationToken ct)
+    {
         var process = Process.GetCurrentProcess();
         var server = new ServerInfo(
             Environment.MachineName,
@@ -130,136 +303,78 @@ public sealed class SystemHealthService(
             LanCertificateManager.CurrentAddresses().Select(a => a.ToString()).ToList(),
             options.Value.HttpsPort, options.Value.PortalHttpsPort, options.Value.Network.EnableMdns);
 
-        var database = await ReadDatabaseAsync(ct);
         var encryption = OperatingSystem.IsWindows() ? DiskEncryption.Load(DiskEncryption.PathIn(directories)) : null;
         var storage = ReadStorage() with { Encryption = encryption };
-        var backup = await ReadBackupAsync(ct);
-
-        var dayAgo = now.AddDays(-1);
-        var outbox = new OutboxInfo(
-            await db.Set<OutboxMessage>().CountAsync(m => m.Status == OutboxStatus.Pending, ct),
-            // When it failed, not when it was queued: a message is retried for up to its lifetime (days) before
-            // it fails.
-            await db.Set<OutboxMessage>()
-                .CountAsync(m => m.Status == OutboxStatus.Failed && (m.ProcessedAt ?? m.CreatedAt) > dayAgo, ct),
-            await db.Set<OutboxMessage>().Where(m => m.Status == OutboxStatus.Pending).OrderBy(m => m.CreatedAt).Select(m => (DateTimeOffset?)m.CreatedAt).FirstOrDefaultAsync(ct));
-
         var certificate = new CertificateInfo(certificates.CaFingerprint, certificates.ServerExpiresAt, certificates.SubjectAlternativeNames,
             certificates.CaExpiresAt);
         var power = ReadPower();
-        var integrations = await integrationHealth.ListAsync(ct);
 
-        var warnings = new List<HealthWarning>();
-        if (!database.Reachable)
-        {
-            warnings.Add(new("db.unreachable", "critical", "The database is not reachable."));
-        }
-        else if (await ReadReplicationAsync(ct) is { } replication)
-        {
-            // A warm standby and WAL archiving are optional (SRS DED-20, REL-02): nothing shows until they are set up.
-            warnings.AddRange(StandbyReplication.Warnings(replication));
-        }
-
+        // The machine: its data drive, and BitLocker, the settings file's secrets and the database watchdog, which exist only
+        // on the Windows Server Node (SRS SEC-05, SEC-07, DED-01).
+        var machine = new List<HealthWarning>();
         if (storage.FreeBytes is { } free && storage.TotalBytes is { } total && total > 0 && free < total / 10)
         {
-            warnings.Add(new("disk.low", "critical", $"Less than 10% disk space free on the data drive ({free / (1024 * 1024 * 1024)} GB)."));
+            machine.Add(new("disk.low", "critical", $"Less than 10% disk space free on the data drive ({free / (1024 * 1024 * 1024)} GB)."));
         }
 
-        // BitLocker, the settings file's secrets and the database watchdog exist only on the Windows Server Node (SRS
-        // SEC-05, SEC-07, DED-01).
         if (OperatingSystem.IsWindows())
         {
-            warnings.AddRange(DiskEncryption.Warnings(encryption, now));
-            warnings.AddRange(DatabaseWatchdog.Warnings(DatabaseWatchdog.Load(DatabaseWatchdog.PathIn(directories)), now));
+            machine.AddRange(DiskEncryption.Warnings(encryption, now));
+            machine.AddRange(DatabaseWatchdog.Warnings(DatabaseWatchdog.Load(DatabaseWatchdog.PathIn(directories)), now));
             if (PlainSecrets() is { Count: > 0 } plain)
             {
-                warnings.Add(new("settings.unprotected", "warning",
+                machine.Add(new("settings.unprotected", "warning",
                     $"The settings file holds {(plain.Count == 1 ? "a secret" : $"{plain.Count} secrets")} in plain text ({string.Join(", ", plain)}). " +
                     "Run Install-HC360Server.ps1 again, or \"HyFib.HealthCare360.Server.exe settings protect\" from an elevated prompt, to protect them with DPAPI."));
             }
         }
 
-        if (backup.Enabled && (backup.LastSuccessAt is null || now - backup.LastSuccessAt > TimeSpan.FromHours(36)))
-        {
-            warnings.Add(new("backup.stale", "critical", "No successful backup in the last 36 hours."));
-        }
-
-        warnings.AddRange(CertificateWarnings(certificate, now));
-
+        // Its link: its certificate, and its WiFi.
+        var link = new List<HealthWarning>(CertificateWarnings(certificate, now));
         if (network.Wifi is { IsConnected: true, DetailsAvailable: false } hidden)
         {
-            warnings.Add(new("wifi.details_hidden", "info", hidden.Note ?? WifiConnectionInfo.LocationPermissionNote));
+            link.Add(new("wifi.details_hidden", "info", hidden.Note ?? WifiConnectionInfo.LocationPermissionNote));
         }
-        else if (network.Wifi is { IsConnected: true } link)
+        else if (network.Wifi is { IsConnected: true } connected)
         {
-            if (link.SignalQuality < options.Value.Network.WifiWeakSignalThreshold)
+            if (connected.SignalQuality < options.Value.Network.WifiWeakSignalThreshold)
             {
-                warnings.Add(new("wifi.weak", "warning", $"WiFi signal is weak ({link.SignalQuality}%)."));
+                link.Add(new("wifi.weak", "warning", $"WiFi signal is weak ({connected.SignalQuality}%)."));
             }
 
-            if (link.IsInsecure)
+            if (connected.IsInsecure)
             {
-                warnings.Add(new("wifi.insecure", "critical", "The Server Node is on an insecure WiFi network."));
+                link.Add(new("wifi.insecure", "critical", "The Server Node is on an insecure WiFi network."));
             }
-            else if (link.UsesSharedPassword)
+            else if (connected.UsesSharedPassword)
             {
-                warnings.Add(new("wifi.shared_password", "warning", "The Server Node is on a WiFi network with a shared password (WPA-Personal). Use WPA2/WPA3-Enterprise."));
+                link.Add(new("wifi.shared_password", "warning", "The Server Node is on a WiFi network with a shared password (WPA-Personal). Use WPA2/WPA3-Enterprise."));
             }
         }
         else if (network.WifiSupported && network.Wifi is { IsConnected: false })
         {
-            warnings.Add(new("wifi.down", "critical", "The Server Node's WiFi is disconnected."));
+            link.Add(new("wifi.down", "critical", "The Server Node's WiFi is disconnected."));
         }
 
-        if (outbox.FailedLast24Hours > 0)
-        {
-            warnings.Add(new("outbox.failed", "warning", $"{outbox.FailedLast24Hours} outbound message(s) failed in the last 24 hours."));
-        }
-
-        if (outbox.OldestPendingAt is { } oldest && now - oldest > TimeSpan.FromMinutes(30))
-        {
-            warnings.Add(new("outbox.backlog", "warning", "Outbound messages are queued for more than 30 minutes (internet down?)."));
-        }
-
-        warnings.AddRange(IntegrationWarnings(integrations));
+        // What runs on it: the modules' own set-up here (such as the DSC trust folder), the PDF browser, and its UPS.
+        var services = new List<HealthWarning>();
         foreach (var source in moduleWarnings)
         {
-            warnings.AddRange(await source.WarningsAsync(ct));
+            services.AddRange(await source.WarningsAsync(ct));
         }
 
         // Reports, prescriptions and bills are printed and sent as server-made documents: say so when that is broken.
         if (pdf.Status is { Available: false } pdfStatus)
         {
-            warnings.Add(new("pdf.unavailable", "warning", $"PDFs can't be made on this server: {pdfStatus.Problem}"));
+            services.Add(new("pdf.unavailable", "warning", $"PDFs can't be made on this server: {pdfStatus.Problem}"));
         }
 
         if (power is { Available: true, OnBattery: true })
         {
-            warnings.Add(new("power.battery", "critical", $"Running on UPS/battery power ({power.ChargePercent}% remaining)."));
+            services.Add(new("power.battery", "critical", $"Running on UPS/battery power ({power.ChargePercent}% remaining)."));
         }
 
-        if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
-        {
-            warnings.Add(new("keys.signing_due", "info", "The sign-in token key is over a year old. Rotate it under Encryption keys."));
-        }
-
-        if (dataKeys.Keys.Single(k => k.Current).CreatedAt is { } dataSince && now - dataSince > DataKeyPeriod)
-        {
-            warnings.Add(new("keys.data_due", "info", "The data encryption key is over two years old. Rotate it under Encryption keys."));
-        }
-
-        // Backups still use the original recovery key. Until HC360 made separate recovery keys, any holder of the backups
-        // permission could display it; one never displayed is held by nobody.
-        if (!File.Exists(RecoveryKeyStore.PathIn(directories)))
-        {
-            warnings.Add(await RecoveryKeyService.OriginalWasDisplayedAsync(db, ct)
-                ? new("backup.recovery_key_original", "warning",
-                    "Backups still use the original recovery key, which any administrator with the backups permission could display. Make a new one under Backups › Recovery key.")
-                : new("backup.recovery_key_missing", "critical",
-                    "Nobody holds the recovery key for the backups, so they cannot be restored on new hardware. Make one under Backups › Recovery key."));
-        }
-
-        return new SystemHealthReport(server, network, database, storage, backup, outbox, certificate, power, integrations, warnings, now);
+        return new ThisServer(server, network, storage, certificate, power, machine, link, services);
     }
 
     /// <summary>
@@ -412,6 +527,20 @@ public sealed class SystemHealthService(
 
         return new PowerInfo(false, null, null, null);
     }
+
+    /// <summary>This server's machine, and the warnings about it in its three places in the report.</summary>
+    private sealed record ThisServer(
+        ServerInfo Server,
+        NetworkInfo Network,
+        StorageInfo Storage,
+        CertificateInfo Certificate,
+        PowerInfo Power,
+        IReadOnlyList<HealthWarning> Machine,
+        IReadOnlyList<HealthWarning> Link,
+        IReadOnlyList<HealthWarning> Services)
+    {
+        public ServerNodeHealth ToNode(DateTimeOffset at) => new(Server, Network, Storage, Certificate, Power, [.. Machine, .. Link, .. Services], at);
+    }
 }
 
 internal static class SystemEndpoints
@@ -459,7 +588,7 @@ internal static class SystemEndpoints
         admin.MapPost("/keys/data/{keyId}/retire", async (string keyId, ReauthenticateRequest request, KeyRotationService keys, CancellationToken ct) =>
                 (await keys.RetireDataKeyAsync(keyId, request, ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage)
-            .RequireRateLimiting(AuthEndpoints.AuthRateLimit);
+            .RequireAddressRateLimit(ClusterRateLimits.SignIn);
         admin.MapPost("/keys/signing/rotate", async (KeyRotationService keys, CancellationToken ct) => (await keys.RotateSigningKeyAsync(ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);
 

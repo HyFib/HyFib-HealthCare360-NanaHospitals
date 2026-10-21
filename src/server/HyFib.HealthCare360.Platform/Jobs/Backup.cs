@@ -86,6 +86,16 @@ public sealed record BackupRunDto(Guid Id, DateTimeOffset StartedAt, DateTimeOff
     long? SizeBytes, string? Sha256, bool SecondaryCopied, string? Error, int FormatVersion, int? DocumentCount, DateTimeOffset? VerifiedAt,
     string? RecoveryKeyId);
 
+/// <summary>The backup start-up takes before it changes the schema (<see cref="Persistence.DatabaseInitializer"/>).</summary>
+internal interface IPreMigrationBackup
+{
+    /// <summary>Takes it, without documents; not yet in the backup history.</summary>
+    Task<BackupResult> CreatePreMigrationAsync(IReadOnlyList<string> appliedMigrations, CancellationToken cancellationToken);
+
+    /// <summary>Adds it to the backup history, once the migrations are applied.</summary>
+    Task RecordAsync(BackupResult result, CancellationToken cancellationToken);
+}
+
 /// <summary>A finished, verified backup file.</summary>
 internal sealed record BackupResult(
     BackupKind Kind,
@@ -118,7 +128,7 @@ internal sealed class BackupService(
     IPostgresTools postgres,
     INotificationService notifications,
     TimeProvider time,
-    ILogger<BackupService> logger)
+    ILogger<BackupService> logger) : IPreMigrationBackup
 {
     public const string FileExtension = ".hc360bak";
     private const string PartialExtension = ".partial";
@@ -447,7 +457,7 @@ internal static class BackupEndpoints
         group.MapPost("/recovery-key", async (ReauthenticateRequest request, RecoveryKeyService keys, CancellationToken ct) =>
                 (await keys.CreateAsync(request, ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage)
-            .RequireRateLimiting(AuthEndpoints.AuthRateLimit);
+            .RequireAddressRateLimit(ClusterRateLimits.SignIn);
         group.MapPost("/recovery-key/{keyId}/confirm", async (string keyId, ConfirmRecoveryKeyRequest request, RecoveryKeyService keys, CancellationToken ct) =>
                 (await keys.ConfirmAsync(keyId, request, ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);

@@ -11,8 +11,17 @@ class FakeConnection {
   readonly invoke = vi.fn(async () => undefined);
   readonly stop = vi.fn(async () => this.close());
   private readonly closed: (() => void)[] = [];
+  private readonly handlers = new Map<string, ((...args: unknown[]) => void)[]>();
 
-  on(): void {}
+  on(name: string, handler: (...args: unknown[]) => void): void {
+    this.handlers.set(name, [...(this.handlers.get(name) ?? []), handler]);
+  }
+
+  /** The server sends `name` to this connection. */
+  receive(name: string, ...args: unknown[]): void {
+    this.handlers.get(name)?.forEach((handler) => handler(...args));
+  }
+
   onreconnecting(): void {}
   onreconnected(): void {}
   onclose(callback: () => void): void {
@@ -88,6 +97,32 @@ describe('RealtimeClient', () => {
 
     expect(connection.start).toHaveBeenCalledTimes(2);
     expect(refreshed).toHaveBeenCalledOnce();
+  });
+
+  it('refreshes once, within seconds, when the server says events were lost though the connection stayed open', async () => {
+    await client.start();
+
+    // With several servers, every one that was cut off from Redis says so once it is back.
+    connection.receive('resync');
+    connection.receive('resync');
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(refreshed).toHaveBeenCalledOnce();
+    expect(connection.start).toHaveBeenCalledOnce();
+
+    connection.receive('resync');
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(refreshed).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not refresh for the server once the app stopped the connection', async () => {
+    await client.start();
+    connection.receive('resync');
+    await client.stop();
+
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(refreshed).not.toHaveBeenCalled();
   });
 
   it('does not refresh when the app stopped the connection itself and starts it again', async () => {

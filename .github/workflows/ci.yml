@@ -48,6 +48,8 @@ jobs:
           Start-Service -InputObject $service
           & (Join-Path $env:PGBIN 'pg_isready.exe') -h localhost -p 5432 -t 60
           if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL did not start.' }
+          # Which PostgreSQL the journeys ran on (the partitioned tables' migration and upkeep among them), in the log.
+          & (Join-Path $env:PGBIN 'postgres.exe') --version
           $user = if ($env:PGUSER) { $env:PGUSER } else { 'postgres' }
           $password = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
           "HC360_TEST_DATABASE=Host=localhost;Port=5432;Username=$user;Password=$password;Database=postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
@@ -58,9 +60,34 @@ jobs:
         shell: pwsh
         run: tests/deploy/Enable-TestWindowsSignIn.ps1
 
-      # A hung run fails in half an hour instead of the runner's six.
+      # A hung run fails in half an hour instead of the runner's six. Each test assembly also writes a JUnit report.
       - name: Test
-        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m
+        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m --report-xunit-junit --results-directory "${{ runner.temp }}/test-results"
+
+      # A failed journey's report is followed by everything the server under test logged meanwhile, tens of thousands of
+      # lines that bury the test's name and message. They are here again, alone, as the job's last lines.
+      - name: List the tests that failed
+        if: failure()
+        shell: python
+        run: |
+          import glob, os, sys, xml.etree.ElementTree as ET
+          sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+          reports = glob.glob(os.path.join(os.environ["RUNNER_TEMP"], "test-results", "**", "*.junit.xml"), recursive=True)
+          failed = 0
+          for report in sorted(reports):
+              for case in ET.parse(report).iter("testcase"):
+                  problem = case.find("failure")
+                  if problem is None:
+                      problem = case.find("error")
+                  if problem is None:
+                      continue
+                  failed += 1
+                  print(f"FAILED {case.get('name')}")
+                  print(f"  {problem.get('message', '')}")
+                  for line in (problem.text or "").splitlines()[:25]:
+                      print(f"    {line}")
+          if not failed:
+              print(f"No failed test in the {len(reports)} test report(s): the run failed before its tests ended, or outside them.")
 
       # The database watchdog (SRS DED-01) against the runner's PostgreSQL service: it kills the database and checks the
       # watchdog starts it again, and that it leaves alone a PostgreSQL someone stopped. Last, after the tests that use it.
@@ -113,6 +140,15 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerServiceRestart.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
           pwsh -NoProfile -File tests/deploy/Test-InstallerServiceRestart.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
+      # A node of several installed with -NoStart must not start, even after a restart, before its settings are in place.
+      - name: Test that the installer leaves HC360 stopped with -NoStart
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerNoStart.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerNoStart.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
       # Windows Update's active hours on the Server Node (SRS DED-15), written to throwaway keys.

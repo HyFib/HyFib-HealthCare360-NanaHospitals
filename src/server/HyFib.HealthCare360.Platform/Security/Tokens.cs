@@ -31,18 +31,31 @@ public sealed record IssuedToken(string Token, DateTimeOffset ExpiresAt);
 /// (<c>jwt-signing.previous.key</c>) still validates for as long as an access token lives, so nobody is signed out.
 /// Refresh tokens are opaque and do not depend on the key.
 /// </para>
+/// <para>
+/// With several nodes the files are in the folder they share (SCAL-01), and a rotation on one node reaches the others: each
+/// reads the key file again when it has changed, looking at most every <see cref="SharedCheckInterval"/>, and at once
+/// (at most once a second) when a token names a key it does not know.
+/// </para>
 /// </summary>
 public sealed class SigningKeyStore
 {
+    /// <summary>How often a node of several looks whether another one rotated the key.</summary>
+    public static readonly TimeSpan SharedCheckInterval = TimeSpan.FromSeconds(10);
+
+    private static readonly TimeSpan UnknownKeyCheckInterval = TimeSpan.FromSeconds(1);
+
     private readonly string _path;
     private readonly string _previousPath;
     private readonly string _retiredPath;
     private readonly IDataProtector _protector;
     private readonly TimeProvider _time;
     private readonly TimeSpan _overlap;
+    private readonly bool _shared;
     private readonly Lock _rotation = new();
     private readonly Lazy<SigningKeys> _initial;
     private SigningKeys? _keys;
+    private long _checkedAt;
+    private long _unknownCheckedAt;
 
     public SigningKeyStore(DataDirectories directories, IDataProtectionProvider dataProtection, IOptions<PlatformOptions> options, TimeProvider time)
     {
@@ -51,13 +64,21 @@ public sealed class SigningKeyStore
         _retiredPath = Path.Combine(directories.Keys, "jwt-signing.previous.retired");
         _protector = dataProtection.CreateProtector("HC360.Jwt.SigningKey.v1");
         _time = time;
+        _shared = directories.IsShared;
 
         // An access token signed just before a rotation stays valid until it expires, give or take the clock skew.
         _overlap = TimeSpan.FromMinutes(options.Value.Security.AccessTokenMinutes) + TimeSpan.FromMinutes(1);
         _initial = new Lazy<SigningKeys>(Load, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
-    private SigningKeys Current => Volatile.Read(ref _keys) ?? _initial.Value;
+    private SigningKeys Current
+    {
+        get
+        {
+            var keys = Volatile.Read(ref _keys) ?? _initial.Value;
+            return _shared && Due(ref _checkedAt, SharedCheckInterval) ? ReloadIfChanged(keys) : keys;
+        }
+    }
 
     /// <summary>The key new access tokens are signed with.</summary>
     public ECDsaSecurityKey Key => Current.Key;
@@ -66,12 +87,32 @@ public sealed class SigningKeyStore
     public DateTimeOffset? KeyCreatedAt => File.Exists(_path) ? new DateTimeOffset(File.GetLastWriteTimeUtc(_path), TimeSpan.Zero) : null;
 
     /// <summary>The keys an access token may be signed with: the current one, and the previous one shortly after a rotation.</summary>
-    public IEnumerable<SecurityKey> ValidationKeys()
+    public IEnumerable<SecurityKey> ValidationKeys() => ValidationKeys(keyId: null);
+
+    /// <summary>
+    /// As <see cref="ValidationKeys()"/>, for a token signed with key <paramref name="keyId"/>. A node of several that does
+    /// not know that key reads the key files again first: another node may have rotated it a moment ago.
+    /// </summary>
+    public IEnumerable<SecurityKey> ValidationKeys(string? keyId)
     {
         var keys = Current;
+        if (_shared && keyId is not null && keyId != keys.Key.KeyId && keyId != keys.Previous?.KeyId && Due(ref _unknownCheckedAt, UnknownKeyCheckInterval))
+        {
+            keys = ReloadIfChanged(keys);
+        }
+
         return keys.Previous is { } previous && keys.RetiredAt is { } retired && _time.GetUtcNow() < retired + _overlap
             ? [keys.Key, previous]
             : [keys.Key];
+    }
+
+    /// <summary>Reads the key files again now when another node changed them (before a rotation here, for one).</summary>
+    public void Refresh()
+    {
+        if (_shared)
+        {
+            ReloadIfChanged(Volatile.Read(ref _keys) ?? _initial.Value);
+        }
     }
 
     /// <summary>
@@ -91,13 +132,14 @@ public sealed class SigningKeyStore
     /// <exception cref="InvalidOperationException">The key was rotated less than an access-token lifetime ago (<see cref="NextRotationAt"/>).</exception>
     public string Rotate()
     {
+        Refresh();
         lock (_rotation)
         {
-            var keys = Current;
+            var keys = Volatile.Read(ref _keys) ?? _initial.Value;
             var now = _time.GetUtcNow();
-            if (NextRotationAt is { } allowedAt)
+            if (keys.RetiredAt is { } retired && now < retired + _overlap)
             {
-                throw new InvalidOperationException($"The signing key was rotated a moment ago; it can be rotated again from {allowedAt:O}.");
+                throw new InvalidOperationException($"The signing key was rotated a moment ago; it can be rotated again from {retired + _overlap:O}.");
             }
 
             // The current key is kept as the previous one before the new one takes its place.
@@ -107,7 +149,10 @@ public sealed class SigningKeyStore
 
             var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             WriteReplacing(_path, _protector.Protect(ecdsa.ExportPkcs8PrivateKey()));
-            var next = new SigningKeys(ToSecurityKey(ecdsa), keys.Key, now);
+
+            // The files as this node just wrote them: rotations take the cluster's key lock (KeyRotationService), so no other
+            // node writes them meanwhile.
+            var next = new SigningKeys(ToSecurityKey(ecdsa), keys.Key, now, Stamp());
             Volatile.Write(ref _keys, next);
             return next.Key.KeyId;
         }
@@ -115,6 +160,9 @@ public sealed class SigningKeyStore
 
     private SigningKeys Load()
     {
+        // Taken first: a rotation another node makes while the files are read shows as a change at the next look. Taken
+        // last, it could match files written after the key was read, and this node would keep the old key for good.
+        var stamp = Stamp();
         var ecdsa = ECDsa.Create();
         if (File.Exists(_path))
         {
@@ -123,10 +171,11 @@ public sealed class SigningKeyStore
         else
         {
             ecdsa.GenerateKey(ECCurve.NamedCurves.nistP256);
-            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            var temp = _path + ".tmp";
-            File.WriteAllBytes(temp, _protector.Protect(ecdsa.ExportPkcs8PrivateKey()));
-            File.Move(temp, _path, overwrite: false);
+            if (!KeyFiles.CreateNew(_path, _protector.Protect(ecdsa.ExportPkcs8PrivateKey())))
+            {
+                // Another node sharing the folder made the key first: use that one.
+                ecdsa.ImportPkcs8PrivateKey(_protector.Unprotect(File.ReadAllBytes(_path)), out _);
+            }
         }
 
         ECDsaSecurityKey? previous = null;
@@ -140,7 +189,44 @@ public sealed class SigningKeyStore
             retiredAt = retired;
         }
 
-        return new SigningKeys(ToSecurityKey(ecdsa), previous, retiredAt);
+        return new SigningKeys(ToSecurityKey(ecdsa), previous, retiredAt, stamp);
+    }
+
+    // A rotation rewrites the key file and the time the previous key was retired: either changing means another node rotated.
+    private (DateTime Key, DateTime Retired) Stamp() => (File.GetLastWriteTimeUtc(_path), File.GetLastWriteTimeUtc(_retiredPath));
+
+    /// <summary>
+    /// The keys as they are now in the shared folder, when another node changed them since they were read. A folder that
+    /// cannot be read at the moment, or a rotation half written, leaves the keys as they were until the next look.
+    /// </summary>
+    private SigningKeys ReloadIfChanged(SigningKeys keys)
+    {
+        lock (_rotation)
+        {
+            var current = Volatile.Read(ref _keys) ?? keys;
+            try
+            {
+                if (!File.Exists(_path) || Stamp() == current.Stamp)
+                {
+                    return current;
+                }
+
+                var reloaded = Load();
+                Volatile.Write(ref _keys, reloaded);
+                return reloaded;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
+            {
+                return current;
+            }
+        }
+    }
+
+    private static bool Due(ref long checkedAt, TimeSpan interval)
+    {
+        var now = Environment.TickCount64;
+        var last = Interlocked.Read(ref checkedAt);
+        return now - last >= (long)interval.TotalMilliseconds && Interlocked.CompareExchange(ref checkedAt, now, last) == last;
     }
 
     private static ECDsaSecurityKey ToSecurityKey(ECDsa ecdsa) =>
@@ -148,12 +234,40 @@ public sealed class SigningKeyStore
 
     private static void WriteReplacing(string path, byte[] content)
     {
-        var temp = path + ".tmp";
+        var temp = KeyFiles.TempPath(path);
         File.WriteAllBytes(temp, content);
         File.Move(temp, path, overwrite: true);
     }
 
-    private sealed record SigningKeys(ECDsaSecurityKey Key, ECDsaSecurityKey? Previous, DateTimeOffset? RetiredAt);
+    private sealed record SigningKeys(ECDsaSecurityKey Key, ECDsaSecurityKey? Previous, DateTimeOffset? RetiredAt, (DateTime Key, DateTime Retired) Stamp);
+}
+
+/// <summary>Writing key files that several nodes may write at the same moment, in the folder they share (SCAL-01).</summary>
+internal static class KeyFiles
+{
+    /// <summary>A temporary name of the writer's own beside <paramref name="path"/>, which no other node writes to.</summary>
+    public static string TempPath(string path) => $"{path}.{Guid.NewGuid():N}.tmp";
+
+    /// <summary>
+    /// Writes a new key file, complete or not at all. False when the file was there already, because another node sharing
+    /// the folder made it first: the caller uses that one.
+    /// </summary>
+    public static bool CreateNew(string path, byte[] content)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temp = TempPath(path);
+        File.WriteAllBytes(temp, content);
+        try
+        {
+            File.Move(temp, path, overwrite: false);
+            return true;
+        }
+        catch (IOException) when (File.Exists(path))
+        {
+            File.Delete(temp);
+            return false;
+        }
+    }
 }
 
 public sealed class TokenService(SigningKeyStore keys, IOptions<PlatformOptions> options, TimeProvider time)

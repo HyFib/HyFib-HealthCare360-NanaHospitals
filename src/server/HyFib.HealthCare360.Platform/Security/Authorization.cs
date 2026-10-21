@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -73,24 +72,40 @@ public interface IPermissionService
 
     ValueTask<bool> HasPermissionAsync(Guid userId, string permission, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Forgets the user's permissions here and on every other server. Call it once the change is saved, as
+    /// <see cref="ISessionValidator.Invalidate"/>.
+    /// </summary>
     void Invalidate(Guid userId);
 
+    /// <summary>Forgets everybody's permissions here and on every other server, once the change is saved.</summary>
     void InvalidateAll();
 }
 
-internal sealed class PermissionService(IMemoryCache cache, IServiceScopeFactory scopeFactory) : IPermissionService
+/// <remarks>
+/// With several servers on the database (SCAL-01) a change on one reaches the others at once through
+/// <see cref="IClusterSignals"/>, and nothing is taken from the cache while this server cannot hear them. A read that was
+/// under way when a change arrived is not kept: it may have read the permissions from before the change.
+/// </remarks>
+internal sealed class PermissionService(IMemoryCache cache, IServiceScopeFactory scopeFactory, IClusterSignals signals) : IPermissionService, IClusterCache
 {
+    public const string SignalTopic = "permissions";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(2);
     private int _generation;
+    private long _changes;
+
+    public string Topic => SignalTopic;
 
     public async ValueTask<IReadOnlySet<string>> GetPermissionsAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        var coherent = signals.IsListening;
         var key = CacheKey(userId);
-        if (cache.TryGetValue(key, out IReadOnlySet<string>? cached) && cached is not null)
+        if (coherent && cache.TryGetValue(key, out IReadOnlySet<string>? cached) && cached is not null)
         {
             return cached;
         }
 
+        var changes = Interlocked.Read(ref _changes);
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
 
@@ -105,7 +120,11 @@ internal sealed class PermissionService(IMemoryCache cache, IServiceScopeFactory
                 .ToHashSet(StringComparer.Ordinal)
             : new HashSet<string>();
 
-        cache.Set(key, permissions, CacheDuration);
+        if (coherent && Interlocked.Read(ref _changes) == changes)
+        {
+            cache.Set(key, permissions, CacheDuration);
+        }
+
         return permissions;
     }
 
@@ -115,9 +134,31 @@ internal sealed class PermissionService(IMemoryCache cache, IServiceScopeFactory
         return granted.Contains(PermissionRegistry.Wildcard) || granted.Contains(permission);
     }
 
-    public void Invalidate(Guid userId) => cache.Remove(CacheKey(userId));
+    public void Invalidate(Guid userId)
+    {
+        Expire(userId.ToString("N"));
+        signals.Publish(SignalTopic, userId.ToString("N"));
+    }
 
-    public void InvalidateAll() => Interlocked.Increment(ref _generation);
+    public void InvalidateAll()
+    {
+        Expire(null);
+        signals.Publish(SignalTopic);
+    }
+
+    /// <summary>Forgets one user's permissions, or everybody's: here, or because another server changed them.</summary>
+    public void Expire(string? argument)
+    {
+        Interlocked.Increment(ref _changes);
+        if (argument is null)
+        {
+            Interlocked.Increment(ref _generation);
+        }
+        else if (Guid.TryParseExact(argument, "N", out var userId))
+        {
+            cache.Remove(CacheKey(userId));
+        }
+    }
 
     private string CacheKey(Guid userId) => $"perm:{Volatile.Read(ref _generation)}:{userId:N}";
 }
@@ -143,27 +184,40 @@ public interface ISessionValidator
 {
     ValueTask<SessionState> GetStateAsync(Guid sessionId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Forgets what this server and every other one cached about the session. Call it once the change to the session is
+    /// saved (committed), never before: another server told sooner may read the session as it was and cache that, and
+    /// nothing tells it again (SCAL-01).
+    /// </summary>
     void Invalidate(Guid sessionId);
 }
 
-internal sealed class SessionValidator(IMemoryCache cache, IServiceScopeFactory scopeFactory, TimeProvider time, IConfiguration configuration)
-    : ISessionValidator
+/// <remarks>
+/// Every change to a session clears what is cached about it (<see cref="Invalidate"/>), here and, through
+/// <see cref="IClusterSignals"/>, on every other server on the database (SCAL-01), so an active session can be kept for a
+/// while. While this server cannot hear the others, an active session is read every time: a session locked or ended on
+/// another server must stop working here at once. An ended session never comes back, so it is always kept.
+/// </remarks>
+internal sealed class SessionValidator(IMemoryCache cache, IServiceScopeFactory scopeFactory, TimeProvider time, IClusterSignals signals)
+    : ISessionValidator, IClusterCache
 {
+    public const string SignalTopic = "session";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);
+    private int _generation;
+    private long _changes;
 
-    // On one server, every change to a session clears what is cached about it (Invalidate), so an active session can be
-    // kept for a while. With several API servers behind the Redis backplane (SCAL-02), a session locked or ended on one
-    // would still be cached as active on the others: there, only an ended session, which never comes back, is kept.
-    private readonly bool _severalServers = !string.IsNullOrEmpty(configuration.GetConnectionString("Redis"));
+    public string Topic => SignalTopic;
 
     public async ValueTask<SessionState> GetStateAsync(Guid sessionId, CancellationToken cancellationToken = default)
     {
-        var key = $"session:{sessionId:N}";
-        if (cache.TryGetValue(key, out SessionState cached))
+        var coherent = signals.IsListening;
+        var key = CacheKey(sessionId);
+        if (cache.TryGetValue(key, out SessionState cached) && (coherent || cached == SessionState.Ended))
         {
             return cached;
         }
 
+        var changes = Interlocked.Read(ref _changes);
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         var now = time.GetUtcNow();
@@ -174,8 +228,9 @@ internal sealed class SessionValidator(IMemoryCache cache, IServiceScopeFactory 
         var state = session is null ? SessionState.Ended : session.LockedAt is null ? SessionState.Active : SessionState.Locked;
 
         // A locked session is read every time, so unlocking it takes effect at once on every server. It makes few
-        // requests: the locked app does not fetch.
-        if (state == SessionState.Ended || (state == SessionState.Active && !_severalServers))
+        // requests: the locked app does not fetch. A read that was under way when a change arrived is not kept: it may
+        // have read the session from before the change.
+        if (state == SessionState.Ended || (state == SessionState.Active && coherent && Interlocked.Read(ref _changes) == changes))
         {
             cache.Set(key, state, CacheDuration);
         }
@@ -183,7 +238,27 @@ internal sealed class SessionValidator(IMemoryCache cache, IServiceScopeFactory 
         return state;
     }
 
-    public void Invalidate(Guid sessionId) => cache.Remove($"session:{sessionId:N}");
+    public void Invalidate(Guid sessionId)
+    {
+        Expire(sessionId.ToString("N"));
+        signals.Publish(SignalTopic, sessionId.ToString("N"));
+    }
+
+    /// <summary>Forgets what is cached about one session, or every session: here, or because another server changed it.</summary>
+    public void Expire(string? argument)
+    {
+        Interlocked.Increment(ref _changes);
+        if (argument is null)
+        {
+            Interlocked.Increment(ref _generation);
+        }
+        else if (Guid.TryParseExact(argument, "N", out var sessionId))
+        {
+            cache.Remove(CacheKey(sessionId));
+        }
+    }
+
+    private string CacheKey(Guid sessionId) => $"session:{Volatile.Read(ref _generation)}:{sessionId:N}";
 }
 
 public static class EndpointAuthorizationExtensions

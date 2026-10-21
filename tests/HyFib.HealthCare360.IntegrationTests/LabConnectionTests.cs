@@ -4,6 +4,8 @@ using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Orders;
+using HyFib.HealthCare360.Integrations.Laboratory.Relay;
+using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Platform.Contracts;
@@ -33,6 +35,87 @@ public sealed class LabConnectionTests(HospitalServer server)
     private static readonly LabSerialPortDto Com5 = new("COM5", 9600, 8, "None", "One", "None", true, true);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    /// <summary>
+    /// With several servers (SCAL-01), Lab setup on an API node shows the status the node that runs the jobs has of a network
+    /// analyser: the listeners run there alone (SCAL-05), and an API node used to show no status for them, as it showed a
+    /// serial analyser's relay only on the server holding it. Each server shares its part through the database.
+    /// </summary>
+    [Fact]
+    public async Task An_API_node_shows_the_status_the_node_that_runs_the_jobs_has_of_an_analyser()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var code = await AddAnalyserAsync(admin);
+        var port = Random.Shared.Next(20_000, 60_000);
+        await admin.PutAsync($"{Connections}/{code}", Tcp(port, await VersionAsync(admin)));
+
+        // The node that runs the jobs listens for the analyser, which is connected and has sent four messages, one refused.
+        await using var jobNode = await SecondNode.StartAsync(server, Ct, services =>
+        {
+            services.AddSingleton<LabGatewayState>();
+            services.AddSingleton<LabRelayRegistry>();
+            services.AddSingleton<ModalityWorklistState>();
+            services.AddSingleton<LabStatusBoard>();
+        });
+        var listening = jobNode.Services.GetRequiredService<LabGatewayState>();
+        listening.Listening(code, LabProtocol.Astm, port);
+        listening.ConnectionOpened(code);
+        for (var message = 0; message < 3; message++)
+        {
+            listening.RecordMessage(code, accepted: true, error: null);
+        }
+
+        listening.RecordMessage(code, accepted: false, error: "it.unknown sample");
+        await jobNode.Services.GetRequiredService<LabStatusBoard>().PublishAsync(Ct);
+
+        // Lab setup, on the test server as an API node of the hospital.
+        var status = (await admin.GetAsync<LabConnectionsDto>(Connections)).Connections.Single(c => c.Code == code).Status.ShouldNotBeNull();
+        status.State.ShouldBe("listening");
+        status.ActiveConnections.ShouldBe(1);
+        status.MessagesAccepted.ShouldBe(3);
+        status.MessagesRefused.ShouldBe(1);
+        status.LastError.ShouldBe("it.unknown sample");
+
+        // Gone with the node.
+        await jobNode.Services.GetRequiredService<LabStatusBoard>().WithdrawAsync(Ct);
+        (await admin.GetAsync<LabConnectionsDto>(Connections)).Connections.Single(c => c.Code == code).Status?.MessagesAccepted.ShouldNotBe(3);
+    }
+
+    /// <summary>
+    /// A server's part of the analysers' status lasts its three minutes by the database's clock alone, so servers whose clocks
+    /// differ agree on it. The node that runs the jobs here has a clock four minutes behind the API node's: the end it gave
+    /// its part was already past by the API node's clock as it wrote it, and Lab setup there showed nothing of it.
+    /// </summary>
+    [Fact]
+    public async Task An_API_node_shows_the_status_of_a_node_whose_clock_is_minutes_behind()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var code = await AddAnalyserAsync(admin);
+        var port = Random.Shared.Next(20_000, 60_000);
+        await admin.PutAsync($"{Connections}/{code}", Tcp(port, await VersionAsync(admin)));
+
+        await using var jobNode = await SecondNode.StartAsync(server, Ct, services =>
+        {
+            services.AddSingleton<TimeProvider>(new MovableClock(DateTimeOffset.UtcNow.AddMinutes(-4)));
+            services.AddSingleton<LabGatewayState>();
+            services.AddSingleton<LabRelayRegistry>();
+            services.AddSingleton<ModalityWorklistState>();
+            services.AddSingleton<LabStatusBoard>();
+        });
+        var listening = jobNode.Services.GetRequiredService<LabGatewayState>();
+        listening.Listening(code, LabProtocol.Astm, port);
+        for (var message = 0; message < 3; message++)
+        {
+            listening.RecordMessage(code, accepted: true, error: null);
+        }
+
+        await jobNode.Services.GetRequiredService<LabStatusBoard>().PublishAsync(Ct);
+
+        var status = (await admin.GetAsync<LabConnectionsDto>(Connections)).Connections.Single(c => c.Code == code).Status;
+        status.ShouldNotBeNull("Lab setup should show the status the node that runs the jobs shares").State.ShouldBe("listening");
+        status.MessagesAccepted.ShouldBe(3, "the counts come from the node that runs the jobs");
+        await jobNode.Services.GetRequiredService<LabStatusBoard>().WithdrawAsync(Ct);
+    }
 
     [Fact]
     public async Task A_connection_is_saved_only_when_its_port_agent_and_analyser_are_valid()

@@ -149,6 +149,10 @@ internal sealed class FieldKeyMover(
 
     public async Task<FieldKeyBacklog> CountAsync(CancellationToken cancellationToken)
     {
+        // The node that runs the jobs may not be the one that rotated the key (SCAL-01): it moves values to the key that is
+        // current now, never back to the one it read before.
+        ring.Refresh();
+
         // Until the first rotation everything is on the one key, so there is nothing to look for.
         if (ring.Keys.Count == 1)
         {
@@ -240,6 +244,7 @@ internal sealed class FieldKeyMover(
     /// <summary>One pass over everything still on an earlier key. A value that cannot be moved is logged and skipped.</summary>
     public async Task<FieldKeyMoveResult> MoveAsync(CancellationToken cancellationToken)
     {
+        ring.Refresh();
         var values = 0;
         var files = 0;
         var failed = 0;

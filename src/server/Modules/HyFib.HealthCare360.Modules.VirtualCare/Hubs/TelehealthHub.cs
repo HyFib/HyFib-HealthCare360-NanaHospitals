@@ -195,6 +195,32 @@ public sealed class TelehealthHub(
         await broadcaster.SessionChangedAsync(session, Aborted);
     }
 
+    /// <summary>
+    /// The consultation as joining shows it (its status, the waiting room, recent messages, whether this participant is
+    /// admitted), for a screen that may have missed what the hub sent it though its connection stayed open: with several
+    /// servers, Redis was away (SCAL-02), and the server sent it <c>resync</c>. It puts the connection back in the groups its
+    /// seat belongs in, in case adding it failed meanwhile, and changes nothing else: it is not a new participant.
+    /// </summary>
+    public async Task<TelehealthJoinResult> Refresh(Guid sessionId)
+    {
+        var seat = RequireSeat(sessionId, clinicianOnly: false);
+        var session = await FindAsync(sessionId) ?? throw new HubException("Consultation not found.");
+        var participant = await db.Set<TelehealthParticipant>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == seat.ParticipantId, Aborted)
+            ?? throw new HubException("Join the consultation first.");
+        if (participant.AdmittedAt is not null && participant.LeftAt is null)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, TelehealthGroups.Room(sessionId), Aborted);
+            Remember(sessionId, seat with { Admitted = true });
+        }
+
+        if (seat.Role == TelehealthRole.Clinician)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, TelehealthGroups.Clinicians(sessionId), Aborted);
+        }
+
+        return await JoinResultAsync(session, participant);
+    }
+
     // ------------------------------------------------------------------ signalling (admitted participants only)
 
     public Task SendOffer(Guid sessionId, string sdp) => RelayAsync(sessionId, "offer", sdp, MaxSdpLength);
@@ -203,7 +229,11 @@ public sealed class TelehealthHub(
 
     public Task SendIceCandidate(Guid sessionId, string candidate) => RelayAsync(sessionId, "iceCandidate", candidate, MaxCandidateLength);
 
-    public async Task SendChat(Guid sessionId, string text)
+    /// <summary>
+    /// Saves a chat message and shows it to the call. Returns it too, so the sender sees it even when it could not be pushed
+    /// (with several servers, while Redis is away).
+    /// </summary>
+    public async Task<TelehealthMessageDto> SendChat(Guid sessionId, string text)
     {
         var seat = await RequireAdmittedAsync(sessionId);
         var created = TelehealthMessage.Create(sessionId, seat.Role, seat.UserId, seat.DisplayName, text, time.GetUtcNow());
@@ -214,7 +244,9 @@ public sealed class TelehealthHub(
 
         db.Add(created.Value);
         await db.SaveChangesAsync(Aborted);
-        await broadcaster.ChatAsync(sessionId, TelehealthMessageDto.From(created.Value), Aborted);
+        var message = TelehealthMessageDto.From(created.Value);
+        await broadcaster.ChatAsync(sessionId, message, Aborted);
+        return message;
     }
 
     /// <summary>Audio-only fallback (TEL-02): tells the other side and records it for the session metadata.</summary>

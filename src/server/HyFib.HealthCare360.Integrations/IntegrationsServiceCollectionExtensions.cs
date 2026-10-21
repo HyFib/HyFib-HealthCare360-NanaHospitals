@@ -142,6 +142,10 @@ internal static class IntegrationsServiceCollectionExtensions
         // Orders sent to analysers unasked, serial analysers relayed by lab agents, and their set-up in Lab setup.
         services.AddScoped<LabOrderQueue>();
         services.AddSingleton<LabRelayRegistry>();
+
+        // With several servers, each one's part of the analysers' status, for the others to read.
+        services.AddSingleton<LabStatusBoard>();
+        services.AddHostedService<LabStatusSharing>();
         services.AddScoped<LabAgentAuthenticator>();
         services.AddScoped<LabConnectionService>();
     }

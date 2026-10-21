@@ -133,7 +133,9 @@ internal sealed class NotificationLogConfiguration : IEntityTypeConfiguration<No
     public void Configure(EntityTypeBuilder<NotificationLog> b)
     {
         b.ToTable("notification_logs", "platform");
-        b.HasKey(x => x.Id);
+
+        // As in the database, which partitions the log by month (SCAL-04): an update then names the row's month.
+        b.HasKey(x => new { x.Id, x.CreatedAt });
         b.Property(x => x.TemplateKey).HasMaxLength(64);
         b.Property(x => x.Recipient).HasMaxLength(64);
         b.Property(x => x.ProviderMessageId).HasMaxLength(128);

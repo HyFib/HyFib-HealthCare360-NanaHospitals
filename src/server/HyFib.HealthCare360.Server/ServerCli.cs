@@ -209,8 +209,7 @@ internal static class ServerCli
     private static async Task<int> RestoreAsync(Dictionary<string, string> options)
     {
         var key = ReadRecoveryKey(options);
-        var platform = new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") };
-        var directories = new DataDirectories(platform);
+        var directories = SiteDirectories(options);
         directories.EnsureCreated();
 
         if (await IsFromNewerVersionAsync(options["in"], key))
@@ -525,11 +524,11 @@ internal static class ServerCli
             return 1;
         }
 
-        var directories = new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") });
+        var directories = SiteDirectories(options);
         ExportedHospitalCa exported;
         try
         {
-            exported = LanCertificateManager.ExportCa(directories, HospitalDataProtection.CreateProvider(directories), password);
+            exported = LanCertificateManager.ExportCa(directories, HospitalDataProtection.CreateNodeProvider(directories), password);
         }
         catch (Exception ex) when (ex is FileNotFoundException or CryptographicException or UnauthorizedAccessException)
         {
@@ -564,11 +563,11 @@ internal static class ServerCli
             return 1;
         }
 
-        var directories = new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") });
+        var directories = SiteDirectories(options);
         ImportedHospitalCa imported;
         try
         {
-            imported = LanCertificateManager.ImportCa(directories, HospitalDataProtection.CreateProvider(directories), File.ReadAllBytes(input), password, DateTimeOffset.UtcNow);
+            imported = LanCertificateManager.ImportCa(directories, HospitalDataProtection.CreateNodeProvider(directories), File.ReadAllBytes(input), password, DateTimeOffset.UtcNow);
         }
         catch (CryptographicException)
         {
@@ -772,7 +771,7 @@ internal static class ServerCli
     /// </summary>
     private static byte[] OriginalRecoveryKey(Dictionary<string, string> options)
     {
-        var directories = new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") });
+        var directories = SiteDirectories(options);
         var path = FieldMasterKey.PathIn(directories);
         byte[]? masterKey;
         try
@@ -845,6 +844,23 @@ internal static class ServerCli
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The server's folders as the service sees them: the data directory (<c>--data-dir</c>, or the default), with the keys
+    /// and documents in the folder several nodes share when the site settings name one (SCAL-01), so a command wraps and
+    /// unwraps keys with the same Data Protection key ring as the service.
+    /// </summary>
+    internal static DataDirectories SiteDirectories(Dictionary<string, string> options)
+    {
+        var local = new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") });
+        var settings = new ConfigurationBuilder()
+            .AddProtectedJsonFile(ProtectedSettings.PathIn(local))
+            .AddEnvironmentVariables("HC360_")
+            .Build();
+        var cluster = new ClusterOptions();
+        settings.GetSection($"{PlatformOptions.SectionName}:Cluster").Bind(cluster);
+        return new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir"), Cluster = cluster });
     }
 
     private sealed class RecoveryKeyException(string message) : Exception(message);

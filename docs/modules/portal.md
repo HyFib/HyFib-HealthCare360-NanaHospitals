@@ -167,7 +167,9 @@ The signalling contract with the staff console (`modules/video/PatientCall.ts`):
   the polite peer. The patient never offers; it answers every offer.
 * Offers and answers carry raw SDP text. ICE candidates carry JSON of `RTCIceCandidateInit`.
 * An offer from a new doctor connection, or after this side joined again, gets a fresh `RTCPeerConnection`.
-* After a hub reconnect the page joins again, and the doctor then sends a fresh offer.
+* After a hub reconnect the page joins again, and the doctor then sends a fresh offer. Told to catch up without
+  reconnecting (`resync`: with several servers, Redis was away), it calls `Refresh` instead: it goes into the call if
+  the doctor admitted the patient meanwhile, ends it if the consultation ended, and shows the messages it missed.
 
 Before joining, a device check covers camera and microphone permission, choice and preview. It explains every failure
 in plain words: permission denied, in use, missing, an insecure page, or an in-app browser. The patient can join

@@ -78,16 +78,27 @@ public interface ISettingsService
 }
 
 /// <summary>
-/// One change token per setting key, which every cached value of the key expires with when the key is saved. Readers who
-/// miss the cache at the same moment all take the same token: the memory cache's GetOrCreate is not atomic, so tokens kept
-/// in it could be replaced by a second reader, and a value cached with the replaced token outlived the next change by up to
-/// a minute.
+/// The change tokens cached setting values depend on: one per setting key, which every cached value of the key expires
+/// with when the key is saved, and one for every key. Readers who miss the cache at the same moment all take the same
+/// token: the memory cache's GetOrCreate is not atomic, so tokens kept in it could be replaced by a second reader, and a
+/// value cached with the replaced token outlived the next change by up to a minute. Another server's change to a key
+/// expires it here too (<see cref="IClusterCache"/>), and starting to hear the other servers again expires every key.
 /// </summary>
-internal sealed class SettingChangeTokens
+internal sealed class SettingChangeTokens : IClusterCache
 {
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _sources = new(StringComparer.Ordinal);
+    public const string SignalTopic = "setting";
 
-    public IChangeToken For(string key) => new CancellationChangeToken(_sources.GetOrAdd(key, _ => new CancellationTokenSource()).Token);
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _sources = new(StringComparer.Ordinal);
+    private CancellationTokenSource _any = new();
+
+    public string Topic => SignalTopic;
+
+    /// <summary>Expires with the next change to <paramref name="key"/>, or to every key.</summary>
+    public IChangeToken For(string key) => new CompositeChangeToken(
+    [
+        new CancellationChangeToken(_sources.GetOrAdd(key, _ => new CancellationTokenSource()).Token),
+        new CancellationChangeToken(Volatile.Read(ref _any).Token),
+    ]);
 
     /// <summary>Expires every cached value of the key. The source is not disposed: a reader may still be taking its token.</summary>
     public void Changed(string key)
@@ -97,39 +108,68 @@ internal sealed class SettingChangeTokens
             source.Cancel();
         }
     }
+
+    /// <summary>Expires every cached value of every key.</summary>
+    public void ChangedAll() => Interlocked.Exchange(ref _any, new CancellationTokenSource()).Cancel();
+
+    public void Expire(string? argument)
+    {
+        if (argument is null)
+        {
+            ChangedAll();
+        }
+        else
+        {
+            Changed(argument);
+        }
+    }
 }
 
 /// <summary>
 /// Values are cached for a minute per key and facility. Every cached value of a key (the hospital-wide one and each
 /// facility's merged one) depends on one change token (<see cref="SettingChangeTokens"/>), so saving the key,
-/// hospital-wide or for a facility, takes effect at once for every facility on this server; other servers see it within
-/// the minute.
+/// hospital-wide or for a facility, takes effect at once for every facility on this server. Other servers on the database
+/// hear of it through <see cref="IClusterSignals"/> and expire it at once too (SCAL-01); while a server cannot hear them,
+/// it reads every value from the database.
 /// </summary>
-internal sealed class SettingsService(HospitalDbContext db, IFieldProtector protector, IMemoryCache cache, SettingChangeTokens changes) : ISettingsService
+internal sealed class SettingsService(
+    HospitalDbContext db, IFieldProtector protector, IMemoryCache cache, SettingChangeTokens changes, IClusterSignals signals) : ISettingsService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
 
+    // Keys changed in a transaction that has not committed yet: read from the database meanwhile, not cached.
+    private HashSet<string>? _uncommitted;
+
     public async Task<T?> GetAsync<T>(string key, Guid? facilityId = null, CancellationToken cancellationToken = default)
     {
-        var json = await cache.GetOrCreateAsync($"setting:{key}:{facilityId}", async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = CacheDuration;
-            // Taken before the read: a change saved while the value is being read expires it at once.
-            entry.AddExpirationToken(changes.For(key));
-            var rows = await db.Set<SystemSetting>().AsNoTracking()
-                .Where(s => s.Key == key && (s.FacilityId == null || s.FacilityId == facilityId))
-                .ToListAsync(cancellationToken);
-            var row = rows.OrderByDescending(s => s.FacilityId != null).FirstOrDefault();
-            if (row is null)
+        var json = signals.IsListening && _uncommitted?.Contains(key) != true
+            ? await cache.GetOrCreateAsync($"setting:{key}:{facilityId}", async entry =>
             {
-                return null;
-            }
+                entry.AbsoluteExpirationRelativeToNow = CacheDuration;
 
-            return row.IsSecret ? protector.Unprotect(JsonSerializer.Deserialize<string>(row.Value)) : row.Value;
-        });
+                // Taken before the read: a change saved while the value is being read, here or on another server, expires it
+                // at once.
+                entry.AddExpirationToken(changes.For(key));
+                return await ReadAsync(key, facilityId, cancellationToken);
+            })
+            : await ReadAsync(key, facilityId, cancellationToken);
 
         return json is null ? default : JsonSerializer.Deserialize<T>(json, JsonOptions);
+    }
+
+    private async Task<string?> ReadAsync(string key, Guid? facilityId, CancellationToken cancellationToken)
+    {
+        var rows = await db.Set<SystemSetting>().AsNoTracking()
+            .Where(s => s.Key == key && (s.FacilityId == null || s.FacilityId == facilityId))
+            .ToListAsync(cancellationToken);
+        var row = rows.OrderByDescending(s => s.FacilityId != null).FirstOrDefault();
+        if (row is null)
+        {
+            return null;
+        }
+
+        return row.IsSecret ? protector.Unprotect(JsonSerializer.Deserialize<string>(row.Value)) : row.Value;
     }
 
     public Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default) =>
@@ -165,14 +205,34 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        changes.Changed(key);
+        Changed(key);
     }
 
     public async Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default)
     {
         var removed = await db.Set<SystemSetting>().Where(s => s.Key == key && s.FacilityId == facilityId).ExecuteDeleteAsync(cancellationToken);
-        changes.Changed(key);
+        Changed(key);
         return removed > 0;
+    }
+
+    /// <summary>
+    /// Expires every cached value of the key, here and on every other server on the database, once the change is
+    /// committed (a setting saved in a caller's transaction too). Expired before, a reader here or on another server could
+    /// read the old value meanwhile and cache it for a minute, with nothing left to expire it.
+    /// </summary>
+    private void Changed(string key)
+    {
+        if (db.Database.CurrentTransaction is not null)
+        {
+            (_uncommitted ??= new HashSet<string>(StringComparer.Ordinal)).Add(key);
+        }
+
+        db.AfterCommit(() =>
+        {
+            _uncommitted?.Remove(key);
+            changes.Changed(key);
+            signals.Publish(SettingChangeTokens.SignalTopic, key);
+        });
     }
 }
 

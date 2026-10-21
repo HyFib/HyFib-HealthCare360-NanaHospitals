@@ -46,7 +46,8 @@ public sealed class RpmAlertJourneyTests(HospitalServer server)
         var noNumber = await NurseAsync(hospitalAdmin, phone: null);
 
         // The doctor enrols the patient in hypertension monitoring, with a tighter systolic limit than the programme's 140.
-        var patient = await RegisterPatientAsync(frontOffice);
+        var firstName = TestPatients.FirstName("Kamala");
+        var patient = await RegisterPatientAsync(frontOffice, firstName);
         var program = (await doctor.GetAsync<List<RpmProgramDto>>("/api/v1/rpm/programs")).Single(p => p.Code == "HTN");
         var enrollmentId = (await doctor.PostAsync<Created>("/api/v1/rpm/enrollments", new EnrollPatientRequest(
             patient.Id, program.Id, [teamNurse, leaver, noNumber], teamNurse, StartDate: null, Goals: "Systolic below 130", Notes: null))).Id;
@@ -66,7 +67,7 @@ public sealed class RpmAlertJourneyTests(HospitalServer server)
         (alert.Severity, alert.Status, alert.Message).ShouldBe((RpmAlertSeverity.Warning, RpmAlertStatus.Open, "Out of range: Systolic BP 136 mmHg"));
 
         // In-app: the clinicians who handle alerts, the doctor among them, are told at once, with a link to the alert.
-        var label = $"Kamala ({patient.Uhid})";
+        var label = $"{firstName} ({patient.Uhid})";
         var bell = (await doctor.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=50")).Items
             .Where(n => n.Link == $"/rpm/enrollments/{enrollmentId}?alert={alert.Id}").ShouldHaveSingleItem();
         (bell.Title, bell.Body, bell.Severity).ShouldBe(($"Remote monitoring alert: {label}", alert.Message, "warning"));
@@ -133,9 +134,9 @@ public sealed class RpmAlertJourneyTests(HospitalServer server)
         FollowUpValidityDays: 0, Languages: null, Bio: null, PhotoFileId: null, SignatureFileId: null, AvailableForOnlineBooking: false,
         AvailableForTelehealth: false, FacilityIds: null, active, version);
 
-    private static Task<PatientCreated> RegisterPatientAsync(ApiClient frontOffice) =>
+    private static Task<PatientCreated> RegisterPatientAsync(ApiClient frontOffice, string firstName) =>
         frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mrs.", FirstName: "Kamala", MiddleName: null, LastName: "Monitor" + Letters(8), Gender: Gender.Female,
+            Title: "Mrs.", FirstName: firstName, MiddleName: null, LastName: "Monitor" + Letters(8), Gender: Gender.Female,
             DateOfBirth: new DateOnly(1960, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,

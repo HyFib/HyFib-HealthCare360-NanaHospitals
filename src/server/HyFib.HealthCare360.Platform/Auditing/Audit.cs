@@ -84,12 +84,21 @@ public sealed class AuditEvent
         || string.Equals(Hash, ComputeHash(previousHash, LegacyCanonicalContent()), StringComparison.Ordinal);
 }
 
+/// <remarks>
+/// The table is partitioned by month of <see cref="AuditEvent.OccurredAt"/> (SCAL-04, migration
+/// <c>PartitionHighVolumeTables</c>). PostgreSQL wants the partition key in every unique index, so the primary key is
+/// (id, occurred_at), in the database and in the model, and the chain position is indexed but not unique:
+/// <see cref="AuditChainService"/> seals under one advisory lock, the chain-link trigger refuses a seal that does not
+/// follow the one before, and verification walks the positions in order, so a repeated position breaks it. With the time
+/// in the key, every UPDATE EF writes names the row's month, which PostgreSQL then reads alone: by the id alone it looks in
+/// every month's partition, and with ten years of them sealing 500 events took 2 seconds instead of 0.1.
+/// </remarks>
 internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEvent>
 {
     public void Configure(EntityTypeBuilder<AuditEvent> b)
     {
         b.ToTable("audit_events", "audit");
-        b.HasKey(x => x.Id);
+        b.HasKey(x => new { x.Id, x.OccurredAt });
         b.Property(x => x.Id).UseIdentityAlwaysColumn();
         b.Property(x => x.Category).HasMaxLength(32);
         b.Property(x => x.Action).HasMaxLength(128);
@@ -107,7 +116,8 @@ internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEv
         b.HasIndex(x => new { x.PatientId, x.OccurredAt });
         b.HasIndex(x => new { x.UserId, x.OccurredAt });
         b.HasIndex(x => new { x.Category, x.OccurredAt });
-        b.HasIndex(x => x.ChainIndex).IsUnique();
+        // Not unique: a unique index on a partitioned table must include the partition key (see the remarks above).
+        b.HasIndex(x => x.ChainIndex);
         b.HasIndex(x => x.Id).HasFilter("hash IS NULL").HasDatabaseName("ix_audit_events_unsealed");
     }
 }

@@ -38,8 +38,8 @@ turns them on.
   the consultation's facility. The Features screen sets the hospital-wide value; `false` saved for one facility under
   Administration > Settings (same key) turns the feature off for that branch alone.
 * **When a change applies.** Settings are cached for a minute, but saving a key expires every cached value of that key
-  on this server at once (hospital-wide and every facility). Other servers behind the Redis backplane see it within a
-  minute. The staff app asks for the switches again when they are five minutes old and the window is next used, and at
+  on this server at once (hospital-wide and every facility), and on every other server on the database through its
+  notifications (SCAL-01), once the change is committed. The staff app asks for the switches again when they are five minutes old and the window is next used, and at
   once when a screen meets a refusal; the portal does the same with `GET /api/v1/system/info`.
 
 ## Server

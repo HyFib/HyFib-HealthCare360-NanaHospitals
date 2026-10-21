@@ -26,8 +26,7 @@ internal sealed class LabConnectionService(
     HospitalDbContext db,
     ISettingsService settings,
     IAuditLogger audit,
-    LabGatewayState state,
-    LabRelayRegistry relays,
+    LabStatusBoard status,
     IOptions<PlatformOptions> platform,
     IServiceProvider services,
     ICurrentUser currentUser,
@@ -45,8 +44,11 @@ internal sealed class LabConnectionService(
         var stored = Parse(row?.Value);
         var gateway = await GatewayAsync(cancellationToken);
         var sink = services.GetService<IInstrumentResultSink>();
-        var statuses = state.Snapshot().ToDictionary(s => s.InstrumentCode, StringComparer.OrdinalIgnoreCase);
-        var connected = relays.ConnectedAgents();
+        // Every server's: the network analysers are listened for on the node that runs the jobs, a relay runs on the server
+        // its agent reached.
+        var live = await status.ReadAsync(cancellationToken);
+        var statuses = live.Statuses.ToDictionary(s => s.InstrumentCode, StringComparer.OrdinalIgnoreCase);
+        var connected = live.RelayingAgents;
         var now = time.GetUtcNow();
         var facility = currentUser.FacilityId;
         var agents = (await db.Set<Device>().AsNoTracking()

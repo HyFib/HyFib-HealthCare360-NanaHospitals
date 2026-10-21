@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Rpm;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 using HyFib.HealthCare360.Modules.VirtualCare.Hubs;
+using HyFib.HealthCare360.Modules.VirtualCare.Persistence;
 using HyFib.HealthCare360.Modules.VirtualCare.Services;
 
 namespace HyFib.HealthCare360.Modules.VirtualCare;
@@ -56,6 +57,9 @@ public sealed class VirtualCareModule : IModule
         services.AddScoped<RpmInsights>();
         services.AddScoped<VirtualCareMonitor>();
         services.AddHostedService<VirtualCareJobs>();
+
+        // One partition per month of measurement (SCAL-04); the platform keeps next months' ready.
+        services.AddMonthlyPartitions(RpmReadingConfiguration.Partitions);
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

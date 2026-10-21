@@ -53,12 +53,22 @@ internal sealed class RpmDeviceConfiguration : IEntityTypeConfiguration<RpmDevic
     }
 }
 
+/// <remarks>
+/// The table is partitioned by month of <see cref="RpmReading.MeasuredAt"/> (SCAL-04, migration
+/// <c>PartitionHighVolumeTables</c>). Its primary key is (id, measured_at), in the database and in the model, as
+/// PostgreSQL requires the partition key in every unique index: an update EF writes then names the reading's month, which
+/// PostgreSQL reads alone. Nothing references a reading by a foreign key (RPM alerts keep its id without one).
+/// </remarks>
 internal sealed class RpmReadingConfiguration : IEntityTypeConfiguration<RpmReading>
 {
+    public static readonly PartitionedTable Partitions = new(VirtualCareSchema.Name, "rpm_readings", "measured_at");
+
     public void Configure(EntityTypeBuilder<RpmReading> b)
     {
         b.ToTable("rpm_readings", VirtualCareSchema.Name);
-        b.HasKey(x => x.Id);
+
+        // As in the database, which partitions the readings by month (SCAL-04): an update then names the row's month.
+        b.HasKey(x => new { x.Id, x.MeasuredAt });
         b.Property(x => x.Unit).HasMaxLength(16);
         b.Property(x => x.TextValue).HasMaxLength(200);
         b.HasOne<RpmEnrollment>().WithMany().HasForeignKey(x => x.EnrollmentId).OnDelete(DeleteBehavior.Restrict);

@@ -199,6 +199,42 @@ public sealed class LabGatewayTests
         _state.Snapshot().ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// With several servers each reports its part of an analyser's status (SCAL-01), and Lab setup shows one: the relay's or
+    /// the agent's over the gateway's, the latest of two that tell as much, with every server's counts.
+    /// </summary>
+    [Fact]
+    public void Several_servers_parts_of_a_status_make_one()
+    {
+        var at = new DateTimeOffset(2026, 10, 21, 9, 0, 0, TimeSpan.Zero);
+        LabListenerStatus Said(string state, int minute, long accepted = 0, string? error = null) =>
+            new("XN550", "Astm", 0, state, state == "connected" ? 1 : 0, accepted, error is null ? 0 : 1, null,
+                error is null ? null : at.AddMinutes(minute), error)
+            {
+                Transport = "serial",
+                ChangedAt = at.AddMinutes(minute),
+            };
+
+        // The node that runs the jobs expects the analyser; the API node its agent reached relays it, and took 3 messages.
+        var merged = LabStatusBoard.Merge([Said("waiting", 5), Said("connected", 1, accepted: 3)]).ShouldHaveSingleItem();
+        merged.State.ShouldBe("connected");
+        merged.ActiveConnections.ShouldBe(1);
+        merged.MessagesAccepted.ShouldBe(3);
+
+        // Its agent's heartbeat, on a third server, says the COM port failed: the latest word.
+        merged = LabStatusBoard.Merge([Said("waiting", 5), Said("connected", 1, accepted: 3), Said("port_error", 2, error: "COM3 is denied.")])
+            .ShouldHaveSingleItem();
+        merged.State.ShouldBe("port_error");
+        merged.LastError.ShouldBe("COM3 is denied.");
+        merged.MessagesAccepted.ShouldBe(3);
+
+        // A server that only heard the agent's heartbeat, before the gateway set the analyser up, has it waiting.
+        var heartbeatOnly = new LabGatewayState(TimeProvider.System);
+        heartbeatOnly.SerialPortReported("XN550", "Lab PC 1", open: true, null);
+        heartbeatOnly.Snapshot().ShouldHaveSingleItem().State.ShouldBe("waiting");
+        LabStatusBoard.Merge([.. heartbeatOnly.Snapshot(), Said("connected", 1)]).ShouldHaveSingleItem().State.ShouldBe("connected");
+    }
+
     [Fact]
     public async Task Refuses_results_when_no_lis_is_registered_so_the_analyser_retransmits()
     {

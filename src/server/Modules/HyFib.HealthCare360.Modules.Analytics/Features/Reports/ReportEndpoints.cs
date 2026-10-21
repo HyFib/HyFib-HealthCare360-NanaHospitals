@@ -251,10 +251,24 @@ internal static class ReportEndpoints
             return scope.Error!.ToProblem();
         }
 
+        if (!LookupKinds.Contains(kind))
+        {
+            return Error.NotFound("Look-up", kind).ToProblem();
+        }
+
         var like = string.IsNullOrWhiteSpace(search) ? null : search.Trim()[..Math.Min(search.Trim().Length, 60)].ToLikePattern();
         var facility = scope.Value.FacilityId;
-        await using var db = contexts.Create(facility);
-        IQueryable<LookupItem>? items = kind.ToLowerInvariant() switch
+
+        // On the replica when there is one; the primary database answers when the replica cannot be reached.
+        var found = await contexts.RunAsync(facility, $"the {kind} look-up", db => Lookup(kind, db, like, facility).Take(200).ToListAsync(ct), ct);
+        return TypedResults.Ok(found.Value);
+    }
+
+    private static readonly HashSet<string> LookupKinds = new(["departments", "practitioners", "payers", "wards", "stores", "theatres"], StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The query for one of the <see cref="LookupKinds"/>.</summary>
+    private static IQueryable<LookupItem> Lookup(string kind, HospitalDbContext db, string? like, Guid? facility) =>
+        kind.ToLowerInvariant() switch
         {
             "departments" => db.Set<Department>().Where(d => d.IsActive && (like == null || EF.Functions.ILike(d.Name, like, QueryExtensions.LikeEscape)))
                 .OrderBy(d => d.DisplayOrder).ThenBy(d => d.Name).Select(d => new LookupItem(d.Id, d.Code, d.Name)),
@@ -270,13 +284,8 @@ internal static class ReportEndpoints
                 .OrderBy(s => s.Name).Select(s => new LookupItem(s.Id, s.Code, s.Name)),
             "theatres" => db.Set<Theatre>().Where(t => t.IsActive && (like == null || EF.Functions.ILike(t.Name, like, QueryExtensions.LikeEscape)))
                 .OrderBy(t => t.DisplayOrder).ThenBy(t => t.Code).Select(t => new LookupItem(t.Id, t.Code, t.Code + " · " + t.Name)),
-            _ => null,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a report look-up."),
         };
-
-        return items is null
-            ? Error.NotFound("Look-up", kind).ToProblem()
-            : TypedResults.Ok(await items.Take(200).ToListAsync(ct));
-    }
 
     private static async Task<IResult> Status(
         ReportingDatabase reporting, ReportingDbContextFactory contexts, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)

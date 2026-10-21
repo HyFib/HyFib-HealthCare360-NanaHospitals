@@ -59,6 +59,10 @@ public sealed class PlatformOptions
 
     public PdfOptions Pdf { get; set; } = new();
 
+    public ClusterOptions Cluster { get; set; } = new();
+
+    public PartitionOptions Partitions { get; set; } = new();
+
     public bool RunsJobs => !string.Equals(Role, "api", StringComparison.OrdinalIgnoreCase);
 
     public bool ServesApi => !string.Equals(Role, "worker", StringComparison.OrdinalIgnoreCase);
@@ -149,6 +153,69 @@ public sealed class NetworkOptions
 
     /// <summary>Extra DNS names to include in the generated server certificate.</summary>
     public string[] AdditionalHostNames { get; set; } = [];
+
+    /// <summary>
+    /// Addresses of the reverse proxies in front of the server (SCAL-01), such as <c>10.0.0.5</c>. A request from one of
+    /// them is taken to come from the client its <c>X-Forwarded-For</c> header names, and over the scheme its
+    /// <c>X-Forwarded-Proto</c> names, so per-address rate limits, the audit trail, device and webhook address checks see
+    /// the real client. Empty (the default): the headers are ignored, so nobody can claim another address by sending them.
+    /// </summary>
+    public string[] KnownProxies { get; set; } = [];
+
+    /// <summary>Networks the reverse proxies are on, in CIDR form (<c>10.0.0.0/29</c>), as for <see cref="KnownProxies"/>.</summary>
+    public string[] KnownNetworks { get; set; } = [];
+
+    /// <summary>
+    /// The hospital's own IPv6 networks with internet (global) addresses, in CIDR form (<c>2001:db8:12::/48</c>), where they
+    /// are not the server's own: per-address limits count each address in them on its own, as on the server's own network,
+    /// instead of by its /64 (<see cref="Http.ClientAddresses"/>). Needed only where workstations on other subnets reach the
+    /// server over such addresses.
+    /// </summary>
+    public string[] LocalNetworks { get; set; } = [];
+
+    public bool BehindReverseProxy => KnownProxies.Length > 0 || KnownNetworks.Length > 0;
+}
+
+/// <summary>
+/// Several HC360 servers on one database (SCAL-01): API nodes behind a reverse proxy and one node that runs the jobs
+/// (<c>--role</c>). Any node may answer any request, so what a request may need from a file is kept in
+/// <see cref="SharedDirectory"/>, the same folder for every node.
+/// </summary>
+public sealed class ClusterOptions
+{
+    /// <summary>
+    /// A folder every node reads and writes, such as a file share (<c>\\hc360-files\hc360</c>): the keys (the data
+    /// encryption keys, the sign-in token key, the backup recovery key and the Data Protection key ring that protects them)
+    /// and the stored documents are kept here instead of under each node's data directory. Empty (the default) on a single
+    /// Server Node.
+    /// </summary>
+    public string? SharedDirectory { get; set; }
+
+    /// <summary>
+    /// Thumbprint of the certificate, with its RSA private key, in the Local Computer's Personal store of every node, that
+    /// protects the Data Protection key ring in <see cref="SharedDirectory"/>: machine DPAPI, which protects it on a single
+    /// node, cannot be read on another machine.
+    /// </summary>
+    public string? KeyCertificateThumbprint { get; set; }
+
+    /// <summary>Or a PFX file holding that certificate and its private key, opened with <see cref="KeyCertificatePassword"/>.</summary>
+    public string? KeyCertificatePath { get; set; }
+
+    public string? KeyCertificatePassword { get; set; }
+
+    public bool IsShared => !string.IsNullOrWhiteSpace(SharedDirectory);
+}
+
+/// <summary>
+/// Monthly partitions of the busiest tables (SCAL-04): the audit trail, remote-monitoring readings, the patient and staff
+/// message log and the integration log. The node that runs the jobs adds each month's partition ahead of time. It never
+/// drops one: what is deleted, and when, is the Privacy module's retention schedule, which keeps each kind of record at
+/// least as long as the law asks, sends medical records for review instead of deleting them, and audits every run.
+/// </summary>
+public sealed class PartitionOptions
+{
+    /// <summary>How many months ahead partitions are made (1–24, default 3). Rows for a later month go to the default one.</summary>
+    public int MonthsAhead { get; set; } = 3;
 }
 
 public sealed class BackupOptions
@@ -208,17 +275,31 @@ public sealed class DataDirectories
 {
     public DataDirectories(PlatformOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        Cluster = options.Cluster;
         Root = ResolveRoot(options.DataDirectory);
+        Shared = Cluster.IsShared ? Path.GetFullPath(Environment.ExpandEnvironmentVariables(Cluster.SharedDirectory!)) : null;
         Config = Path.Combine(Root, "config");
-        Keys = Path.Combine(Root, "keys");
+        Keys = Path.Combine(Shared ?? Root, "keys");
         Certificates = Path.Combine(Root, "certs");
-        Files = Path.Combine(Root, "files");
+        Files = Path.Combine(Shared ?? Root, "files");
         Logs = Path.Combine(Root, "logs");
         Backups = string.IsNullOrWhiteSpace(options.Backup.Directory) ? Path.Combine(Root, "backups") : options.Backup.Directory;
         Temp = Path.Combine(Root, "temp");
     }
 
     public string Root { get; }
+
+    /// <summary>
+    /// The folder every node of several shares (<see cref="ClusterOptions.SharedDirectory"/>), which then holds
+    /// <see cref="Keys"/> and <see cref="Files"/>; null on a single Server Node. Each node keeps its own settings, TLS
+    /// certificates, logs, backups and temporary files under <see cref="Root"/>.
+    /// </summary>
+    public string? Shared { get; }
+
+    public bool IsShared => Shared is not null;
+
+    public ClusterOptions Cluster { get; }
 
     /// <summary>The site's settings (<c>hc360.settings.json</c>) and what the elevated checks record for the server.</summary>
     public string Config { get; }

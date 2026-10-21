@@ -1,4 +1,3 @@
-using System.Threading.RateLimiting;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
@@ -66,6 +65,11 @@ public static class PlatformServiceCollectionExtensions
 
         var directories = new DataDirectories(options);
         directories.EnsureCreated();
+        if (FieldMasterKey.SharedFolderProblem(directories) is { } sharedKeys)
+        {
+            throw new InvalidOperationException("HC360 cannot start: " + sharedKeys);
+        }
+
         services.AddSingleton(directories);
         services.TryAddSingleton(TimeProvider.System);
         services.AddHttpContextAccessor();
@@ -74,13 +78,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddProblemDetails(problems => problems.CustomizeProblemDetails = ProblemLocalization.Localize);
         services.AddExceptionHandler<GlobalExceptionHandler>();
 
+        // In the shared folder, protected with the cluster's certificate, when several nodes share the keys (SCAL-01).
         var dataProtection = services.AddDataProtection()
-            .SetApplicationName(HospitalDataProtection.ApplicationName)
             .PersistKeysToFileSystem(new DirectoryInfo(HospitalDataProtection.KeyRingDirectory(directories)));
-        if (OperatingSystem.IsWindows())
-        {
-            dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
-        }
+        HospitalDataProtection.Configure(dataProtection, directories);
 
         if (certificates is not null)
         {
@@ -133,8 +134,18 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<FieldKeyMoveSignal>();
         services.AddScoped<FieldKeyMover>();
         services.AddScoped<KeyRotationService>();
-        services.AddSingleton<IPermissionService, PermissionService>();
-        services.AddSingleton<ISessionValidator, SessionValidator>();
+        // Several servers on one database (SCAL-01): what one of them changes expires the others' caches at once.
+        services.AddSingleton<ClusterSignals>();
+        services.AddSingleton<IClusterSignals>(sp => sp.GetRequiredService<ClusterSignals>());
+        services.AddHostedService(sp => sp.GetRequiredService<ClusterSignals>());
+        services.AddSingleton<PermissionService>();
+        services.AddSingleton<IPermissionService>(sp => sp.GetRequiredService<PermissionService>());
+        services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<PermissionService>());
+        services.AddSingleton<SettingChangeTokens>();
+        services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<SettingChangeTokens>());
+        services.AddSingleton<SessionValidator>();
+        services.AddSingleton<ISessionValidator>(sp => sp.GetRequiredService<SessionValidator>());
+        services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddScoped<AuthService>();
         services.AddScoped<WebAuthnUnlockService>();
         services.AddScoped<LoadTestAccounts>();
@@ -195,9 +206,10 @@ public static class PlatformServiceCollectionExtensions
                 },
             };
         });
-        // The current key, and the previous one for a few minutes after a rotation (SRS SEC-07).
+        // The current key, and the previous one for a few minutes after a rotation (SRS SEC-07). The token's key id lets a
+        // node of several notice at once that another node rotated the key (SCAL-01).
         services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-            .Configure<SigningKeyStore>((jwt, keys) => jwt.TokenValidationParameters.IssuerSigningKeyResolver = (_, _, _, _) => keys.ValidationKeys());
+            .Configure<SigningKeyStore>((jwt, keys) => jwt.TokenValidationParameters.IssuerSigningKeyResolver = (_, _, keyId, _) => keys.ValidationKeys(keyId));
 
         // Deny by default: a request whose endpoint states no authorization of its own requires a signed-in user. Every
         // endpoint states it (checked by EndpointAuthorizationTests), so this only guards against one that forgets.
@@ -206,50 +218,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
         services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
-        services.AddRateLimiter(limiter =>
-        {
-            limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            limiter.OnRejected = (context, _) =>
-            {
-                AntiAutomationEndpoints.OnRateLimited(context.HttpContext);
-                return ValueTask.CompletedTask;
-            };
-            limiter.AddPolicy(AuthEndpoints.AuthRateLimit, http => RateLimitPartition.GetFixedWindowLimiter(
-                ClientKey(http), _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
-            limiter.AddPolicy(AuthEndpoints.OtpRateLimit, http => RateLimitPartition.GetFixedWindowLimiter(
-                ClientKey(http), _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
-            limiter.AddPolicy(RateLimitPolicies.Public, http => RateLimitPartition.GetFixedWindowLimiter(
-                ClientKey(http), _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
-            limiter.AddPolicy(RateLimitPolicies.Device, http => RateLimitPartition.GetTokenBucketLimiter(
-                RateLimitPolicies.DevicePartition(http, ClientKey(http)),
-                _ => new TokenBucketRateLimiterOptions { TokenLimit = 120, TokensPerPeriod = 60, ReplenishmentPeriod = TimeSpan.FromSeconds(30), QueueLimit = 0 }));
-            limiter.AddPolicy(RateLimitPolicies.DesktopUpdate, http => RateLimitPartition.GetFixedWindowLimiter(
-                RateLimitPolicies.DevicePartition(http, ClientKey(http)),
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
-            limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http => RateLimitPartition.GetTokenBucketLimiter(
-                http.User.FindFirst(HcClaims.UserId)?.Value ?? ClientKey(http),
-                _ => new TokenBucketRateLimiterOptions
-                {
-                    TokenLimit = 400,
-                    TokensPerPeriod = 200,
-                    ReplenishmentPeriod = TimeSpan.FromSeconds(10),
-                    QueueLimit = 0,
-                }));
-        });
+        services.AddHospitalRateLimiter();
 
-        // The portal's proof of work (SRS SEC-06): challenges signed with a key of this server's, spent ones remembered, and
-        // the numbers that failed kept as hashes keyed with it. The key is read (or made) once, for both.
-        services.AddSingleton<IProofOfWorkReplayCache, MemoryProofOfWorkReplayCache>();
-        services.AddSingleton(sp => new AntiAutomationKey(ProofOfWorkKey.LoadOrCreate(directories, sp.GetRequiredService<IDataProtectionProvider>())));
-        services.AddSingleton(sp => new AutomationSuspicion(
-            sp.GetRequiredService<IMemoryCache>(),
-            sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<AntiAutomationKey>().Value));
-        services.AddSingleton(sp => new ProofOfWork(
-            sp.GetRequiredService<AntiAutomationKey>().Value,
-            sp.GetRequiredService<IProofOfWorkReplayCache>(),
-            sp.GetRequiredService<TimeProvider>()));
-        services.AddScoped<AntiAutomation>();
+        // The portal's proof of work (SRS SEC-06), shared by every node of several.
+        services.AddAntiAutomation(directories);
 
         // ---------------- cross-cutting services
         services.AddScoped<IAuditLogger, AuditLogger>();
@@ -267,13 +239,22 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IFileStore, EncryptedFileStore>();
         services.AddScoped<IPrintTemplates, PrintTemplates>();
         services.AddScoped<DocumentAssets>();
-        services.AddSingleton<SettingChangeTokens>();
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IFeatureFlags, FeatureFlags>();
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
         services.AddTransient<CorrelationIdForwardingHandler>();
         services.AddScoped<SystemHealthService>();
+
+        // With several servers, each one's own part of System health, for the API node that answers (SCAL-01).
+        services.AddSingleton<ServerNodeBoard>();
+        services.AddHostedService<ServerNodeSharing>();
+        services.AddSingleton<IClusterStore, ClusterStore>();
+        services.AddScoped<PartitionMaintenance>();
+        services.AddMonthlyPartitions(PartitionedTables.Audit);
+        services.AddMonthlyPartitions(PartitionedTables.NotificationLogs);
+        services.AddMonthlyPartitions(PartitionedTables.IntegrationLogs);
         services.AddScoped<BackupService>();
+        services.AddScoped<IPreMigrationBackup>(sp => sp.GetRequiredService<BackupService>());
         services.AddSingleton<RecoveryKeyStore>();
         services.AddScoped<RecoveryKeyService>();
         services.TryAddSingleton<IPostgresTools, PostgresTools>();
@@ -298,7 +279,11 @@ public static class PlatformServiceCollectionExtensions
             hub.ClientTimeoutInterval = TimeSpan.FromSeconds(45);
         });
 
-        services.AddHealthChecks().AddDbContextCheck<HospitalDbContext>("database", tags: ["ready"]);
+        var health = services.AddHealthChecks().AddDbContextCheck<HospitalDbContext>("database", tags: ["ready"]);
+        if (directories.IsShared)
+        {
+            health.AddCheck("shared-folder", new SharedFolderCheck(directories), tags: ["ready"]);
+        }
 
         // ---------------- modules (their registrations may replace the fallbacks above)
         var catalog = services.AddHospitalModules(configuration, modules);
@@ -320,6 +305,8 @@ public static class PlatformServiceCollectionExtensions
             services.AddHostedService(sp => sp.GetRequiredService<OutboxDispatcher>());
             services.AddHostedService<AuditSealer>();
             services.AddHostedService<IdempotencyCleanupService>();
+            services.AddHostedService<PartitionMaintenanceJob>();
+            services.AddHostedService<ClusterStoreCleanup>();
             services.AddHostedService<WifiMonitor>();
             services.AddHostedService<FieldKeyMoverService>();
 
@@ -401,8 +388,6 @@ public static class PlatformServiceCollectionExtensions
         endpoints.MapHospitalModules();
         return endpoints;
     }
-
-    private static string ClientKey(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
     private static TimeZoneInfo ResolveTimeZone(string id)
     {

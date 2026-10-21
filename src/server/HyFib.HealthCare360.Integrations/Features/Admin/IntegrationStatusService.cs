@@ -7,16 +7,18 @@ namespace HyFib.HealthCare360.Integrations.Features.Admin;
 /// <summary>
 /// Builds the integrations dashboard: configured provider and switch from settings, last success/failure from the
 /// integration log (index on integration + time keeps each lookup cheap), and live listener state for analysers and
-/// the modality worklist server.
+/// the modality worklist server, from every server (<see cref="LabStatusBoard"/>): with several, the listeners and the
+/// worklist server run on the node that runs the jobs, and the dashboard is answered by an API node.
 /// </summary>
 internal sealed class IntegrationStatusService(
-    HospitalDbContext db, IntegrationSettingsReader settings, LabGatewayState lab, ModalityWorklistState worklist, ICurrentUser currentUser, TimeProvider time)
+    HospitalDbContext db, IntegrationSettingsReader settings, LabStatusBoard listening, ICurrentUser currentUser, TimeProvider time)
 {
     public async Task<IReadOnlyList<IntegrationStatusDto>> ListAsync(CancellationToken cancellationToken)
     {
         var since = time.GetUtcNow().AddHours(-24);
         var facility = currentUser.FacilityId;
         var rows = new List<IntegrationStatusDto>();
+        LabStatusView? live = null;
         foreach (var name in IntegrationNames.All)
         {
             var (configured, enabled, provider) = await ReadSwitchAsync(name, cancellationToken);
@@ -26,7 +28,12 @@ internal sealed class IntegrationStatusService(
                 .Select(l => new { l.CreatedAt, l.Error })
                 .FirstOrDefaultAsync(cancellationToken);
             var failures = await logs.CountAsync(l => !l.Success && l.CreatedAt >= since, cancellationToken);
-            var listeners = name == IntegrationNames.Lab ? lab.Snapshot() : name == IntegrationNames.Mwl ? worklist.Snapshot() : null;
+            var listeners = name switch
+            {
+                IntegrationNames.Lab => (live ??= await listening.ReadAsync(cancellationToken)).Statuses,
+                IntegrationNames.Mwl => (live ??= await listening.ReadAsync(cancellationToken)).Worklist,
+                _ => null,
+            };
             var health = Health(configured, enabled, lastSuccess, lastFailure?.CreatedAt, failures, listeners);
             rows.Add(new IntegrationStatusDto(name, IntegrationNames.DisplayName(name), provider, enabled, configured, health,
                 lastSuccess, lastFailure?.CreatedAt, lastFailure?.Error, failures, listeners));

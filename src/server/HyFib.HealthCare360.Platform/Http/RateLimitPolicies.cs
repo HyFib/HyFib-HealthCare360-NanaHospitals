@@ -1,6 +1,11 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.RateLimiting;
+using HyFib.HealthCare360.Platform.Security;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HyFib.HealthCare360.Platform.Http;
 
@@ -28,6 +33,55 @@ public static class RateLimitPolicies
 
     private const string DeviceKeyHeader = "X-Device-Key";
     private const string DeviceSerialHeader = "X-Device-Serial";
+
+    /// <summary>
+    /// The server's rate limiter: sign-in and one-time codes (also counted across every node of several,
+    /// <see cref="ClusterRateLimits"/>), the public and device policies above, and a global limit per user (or address)
+    /// on every request. Each server keeps these counts in its own memory.
+    /// </summary>
+    public static IServiceCollection AddHospitalRateLimiter(this IServiceCollection services)
+    {
+        services.TryAddSingleton<ClientAddresses>();
+        return services.AddRateLimiter(limiter =>
+        {
+            limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            limiter.OnRejected = (context, _) => AntiAutomationEndpoints.OnRateLimitedAsync(context.HttpContext);
+            foreach (var address in new[] { ClusterRateLimits.SignIn, ClusterRateLimits.OneTimeCode })
+            {
+                limiter.AddPolicy(address.Policy, http => RateLimitPartition.GetFixedWindowLimiter(
+                    ClientKey(http), _ => new FixedWindowRateLimiterOptions { PermitLimit = address.PermitLimit, Window = address.Window, QueueLimit = 0 }));
+            }
+
+            limiter.AddPolicy(Public, http => RateLimitPartition.GetFixedWindowLimiter(
+                ClientKey(http), _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            limiter.AddPolicy(Device, http => RateLimitPartition.GetTokenBucketLimiter(
+                DevicePartition(http, ClientKey(http)),
+                _ => new TokenBucketRateLimiterOptions { TokenLimit = 120, TokensPerPeriod = 60, ReplenishmentPeriod = TimeSpan.FromSeconds(30), QueueLimit = 0 }));
+            limiter.AddPolicy(DesktopUpdate, http => RateLimitPartition.GetFixedWindowLimiter(
+                DevicePartition(http, ClientKey(http)),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
+            limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http => RateLimitPartition.GetTokenBucketLimiter(
+                http.User.FindFirst(HcClaims.UserId)?.Value ?? ClientKey(http),
+                _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = 400,
+                    TokensPerPeriod = 200,
+                    ReplenishmentPeriod = TimeSpan.FromSeconds(10),
+                    QueueLimit = 0,
+                }));
+        });
+    }
+
+    /// <summary>
+    /// The address a per-address limit counts the client by: the TCP peer's, or behind a reverse proxy named in the settings
+    /// the client's the proxy forwarded (<see cref="ReverseProxy"/>, SCAL-01), with an IPv6 address from outside the
+    /// hospital taken by its /64 (<see cref="ClientAddresses"/>).
+    /// </summary>
+    public static string ClientKey(HttpContext http)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+        return http.RequestServices.GetRequiredService<ClientAddresses>().Key(http.Connection.RemoteIpAddress);
+    }
 
     /// <summary>Partition for <see cref="Device"/>: a hash of the presented credential, never the raw value.</summary>
     internal static string DevicePartition(HttpContext http, string clientKey)

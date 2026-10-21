@@ -183,7 +183,8 @@ public sealed class PrivacyTests(HospitalServer server)
     {
         var old = DateTimeOffset.UtcNow.AddDays(-400);
         var phone = "+919" + Digits(9);
-        Guid sentOld, sentNew, pendingOld, logOld, challengeOld, sessionOld, tokenOld;
+        var (patient, _) = await RegisterPatientAsync();
+        Guid sentOld, sentNew, pendingOld, logOld, challengeOld, sessionOld, tokenOld, grantOld, grantNow;
         await using (var scope = server.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
@@ -197,11 +198,19 @@ public sealed class PrivacyTests(HospitalServer server)
             var challenge = new AuthChallenge { Kind = AuthChallengeKind.Otp, Phone = phone, CreatedAt = old, ExpiresAt = old.AddMinutes(10) };
             var session = new UserSession { UserId = Guid.CreateVersion7(), CreatedAt = old, LastSeenAt = old, ExpiresAt = old.AddHours(12), RevokedAt = old.AddHours(1) };
             var token = new RefreshToken { SessionId = session.Id, TokenHash = Guid.NewGuid().ToString("N"), CreatedAt = old, ExpiresAt = old.AddDays(1) };
+            // Emergency access that ended long ago, and some that has not ended (the audit trail keeps both openings).
+            var grants = new[]
+            {
+                new BreakGlassAccess { PatientId = patient.Id, UserId = Guid.CreateVersion7(), GrantedAt = old, ExpiresAt = old.AddMinutes(30) },
+                new BreakGlassAccess { PatientId = patient.Id, UserId = Guid.CreateVersion7(), GrantedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30) },
+            };
             db.AddRange(outbox);
             db.AddRange(log, challenge, session, token);
+            db.AddRange(grants);
             await db.SaveChangesAsync(TestContext.Current.CancellationToken);
             (sentOld, sentNew, pendingOld) = (outbox[0].Id, outbox[1].Id, outbox[2].Id);
             (logOld, challengeOld, sessionOld, tokenOld) = (log.Id, challenge.Id, session.Id, token.Id);
+            (grantOld, grantNow) = (grants[0].Id, grants[1].Id);
         }
 
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -226,6 +235,7 @@ public sealed class PrivacyTests(HospitalServer server)
             (await db.Set<AuthChallenge>().AnyAsync(c => c.Id == challengeOld, ct)).ShouldBeFalse();
             (await db.Set<UserSession>().AnyAsync(s => s.Id == sessionOld, ct)).ShouldBeFalse();
             (await db.Set<RefreshToken>().AnyAsync(t => t.Id == tokenOld, ct)).ShouldBeFalse();
+            (await db.Set<BreakGlassAccess>().Where(g => g.Id == grantOld || g.Id == grantNow).Select(g => g.Id).ToListAsync(ct)).ShouldBe([grantNow]);
         }
 
         var runs = await admin.GetAsync<List<RetentionRunDto>>("/api/v1/privacy/retention/runs");

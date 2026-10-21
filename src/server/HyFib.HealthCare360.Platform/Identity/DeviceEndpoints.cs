@@ -207,7 +207,6 @@ internal static class DeviceEndpoints
         {
             session.RevokedAt = now;
             session.RevokedReason = "device_revoked";
-            sessions.Invalidate(session.Id);
         }
 
         audit.Add(new AuditEntry(AuditCategories.Security, "device.revoked", $"Revoked device '{device.Name}'")
@@ -217,6 +216,13 @@ internal static class DeviceEndpoints
             Severity = AuditSeverity.Warning,
         });
         await db.SaveChangesAsync(ct);
+
+        // Only once the sessions' end is saved: a server told sooner could read one as active and keep that (SCAL-01).
+        foreach (var session in active)
+        {
+            sessions.Invalidate(session.Id);
+        }
+
         return TypedResults.NoContent();
     }
 

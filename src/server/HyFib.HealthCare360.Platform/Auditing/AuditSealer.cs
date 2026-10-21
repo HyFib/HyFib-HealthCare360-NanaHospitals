@@ -27,17 +27,23 @@ public sealed class AuditChainService(HospitalDbContext db)
             return 0;
         }
 
-        var last = await db.Set<AuditEvent>()
-            .Where(e => e.ChainIndex != null)
-            .OrderByDescending(e => e.ChainIndex)
-            .Select(e => new { e.ChainIndex, e.Hash })
-            .FirstOrDefaultAsync(cancellationToken);
-
         var pending = await db.Set<AuditEvent>()
             .Where(e => e.Hash == null)
             .OrderBy(e => e.Id)
             .Take(SealBatchSize)
             .ToListAsync(cancellationToken);
+        if (pending.Count == 0)
+        {
+            return 0;
+        }
+
+        // Only with something to seal, which is not every five seconds: the end of the chain may be in any month, so finding
+        // it plans a look into every month's partition (some 40 ms with ten years of them).
+        var last = await db.Set<AuditEvent>()
+            .Where(e => e.ChainIndex != null)
+            .OrderByDescending(e => e.ChainIndex)
+            .Select(e => new { e.ChainIndex, e.Hash })
+            .FirstOrDefaultAsync(cancellationToken);
 
         var index = last?.ChainIndex ?? 0;
         var previous = last?.Hash;

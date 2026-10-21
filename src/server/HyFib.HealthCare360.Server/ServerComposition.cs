@@ -2,8 +2,11 @@ using System.Text.Json.Serialization;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using HyFib.HealthCare360.Platform.Persistence;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR.StackExchangeRedis;
 using Npgsql;
 
 namespace HyFib.HealthCare360.Server;
@@ -30,13 +33,49 @@ public static class ServerComposition
             json.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
         });
 
-        var signalR = builder.Services.AddSignalR()
+        AddRealtime(builder.Services, builder.Configuration);
+    }
+
+    /// <summary>
+    /// SignalR, and with <c>ConnectionStrings:Redis</c> the Redis backplane (SCAL-02): several API nodes, and the node that
+    /// runs the jobs, share real-time groups through Redis, so an event raised on one node reaches clients connected to any
+    /// other. A Redis that is down when a node starts, or goes away later, is connected to again in the background: the API
+    /// keeps working, but meanwhile no client gets real-time updates on any node (every event goes through Redis, to the
+    /// clients of the node that raised it too), and a real-time connection opened meanwhile is refused and tried again.
+    /// Once Redis is back, every screen is told to refetch what it shows (<see cref="RealtimeResync"/>).
+    /// </summary>
+    internal static Microsoft.AspNetCore.SignalR.ISignalRServerBuilder AddRealtime(IServiceCollection services, IConfiguration configuration)
+    {
+        var signalR = services.AddSignalR()
             .AddJsonProtocol(json => json.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-        if (builder.Configuration.GetConnectionString("Redis") is { Length: > 0 } redis)
+        if (configuration.GetConnectionString(RedisBackplane.ConnectionName) is { Length: > 0 } redis)
         {
-            // Scale-out (SCAL-02): several API nodes share real-time groups through Redis.
-            signalR.AddStackExchangeRedis(redis, redisOptions => redisOptions.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal("hc360"));
+            signalR.AddStackExchangeRedis(redis, redisOptions =>
+            {
+                redisOptions.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal(RedisBackplane.ChannelPrefix);
+                redisOptions.Configuration.AbortOnConnectFail = false;
+
+                // While Redis is away, a publish fails at once and is logged (REL-03). The default backlog would hold it, and
+                // the request that raised the event, for the client's whole timeout (5 s), on every write that raises one.
+                redisOptions.Configuration.BacklogPolicy = StackExchange.Redis.BacklogPolicy.FailFast;
+            });
+
+            // The backplane is given its connection only once it is connected: it subscribes to what the nodes share once,
+            // so a connection given while Redis was away would leave the node deaf to the others for good.
+            services.AddSingleton<RedisBackplaneConnections>();
+
+            // Screens that stayed connected through an outage refetch once Redis is back; every hub's are known.
+            services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton<RealtimeResync>();
+            services.Configure<HubOptions>(options => options.AddFilter<RealtimeResync>());
+            services.AddOptions<RedisOptions>().Configure<RedisBackplaneConnections>((redisOptions, connections) =>
+                redisOptions.ConnectionFactory = log => connections.ConnectAsync(redisOptions.Configuration, log));
+            services.AddSingleton<RedisBackplane>();
+            services.AddHealthChecks().AddCheck<RedisBackplane>(
+                "redis-backplane", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded, tags: ["ready"]);
         }
+
+        return signalR;
     }
 
     /// <summary>
@@ -46,9 +85,21 @@ public static class ServerComposition
     public static void UseServerApplication(this WebApplication app)
     {
         app.UseHospitalPlatform();
-        if (app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value.ServesApi)
+        var platform = app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value;
+        if (platform.ServesApi)
         {
             app.MapHospitalPlatform();
+        }
+
+        // A node that does only part of the work (SCAL-05) sends real-time updates to clients connected to another node, or
+        // receives them from it, only through the Redis backplane (SCAL-02): the lab results the worker receives, the bed
+        // board changes an API node makes for the clients of another.
+        if (!string.Equals(platform.Role, "all", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrEmpty(app.Configuration.GetConnectionString(RedisBackplane.ConnectionName)))
+        {
+            app.Logger.LogWarning(
+                "This server runs as '{Role}' without ConnectionStrings:Redis: real-time updates raised on another HC360 server will not reach its clients, nor this server's reach theirs",
+                platform.Role);
         }
 
         app.MapHealthChecks("/health/live", new() { Predicate = _ => false }).AllowAnonymous();
@@ -61,7 +112,8 @@ public static class ServerComposition
     /// <summary>
     /// Applies migrations and seeds. PostgreSQL may still be starting when the service boots after a power cut, so
     /// connection problems are retried for up to about 3 minutes. An error PostgreSQL reports about the schema or the data
-    /// (for example a table that already exists) happens again on every attempt, so it stops start-up at once.
+    /// (for example a table that already exists) happens again on every attempt, so it stops start-up at once, as does an
+    /// update that cannot lock a table it changes (<see cref="DatabaseInitializer.LockedMessage"/>).
     /// </summary>
     public static async Task InitializeDatabaseAsync(this WebApplication app, CancellationToken cancellationToken = default)
     {
@@ -87,11 +139,16 @@ public static class ServerComposition
         }
     }
 
-    private static bool IsTransientDatabaseError(Exception ex) => ex switch
+    /// <summary>
+    /// Whether start-up tries again. Npgsql calls a lock timeout (55P03) transient, but at start-up it means something else
+    /// holds a table the update must change: that does not pass in 15 seconds, and each attempt would back up the database
+    /// and hold every write to the table while it waits.
+    /// </summary>
+    internal static bool IsTransientDatabaseError(Exception ex) => !DatabaseInitializer.IsLockTimeout(ex) && (ex switch
     {
         TimeoutException => true,
         NpgsqlException npgsql => npgsql.IsTransient,
         InvalidOperationException { InnerException: NpgsqlException inner } => inner.IsTransient,
         _ => false,
-    };
+    });
 }

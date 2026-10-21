@@ -224,7 +224,8 @@ have been exposed.
 - **Rotate sign-in key.** New sign-in tokens are signed with a new key. Tokens already issued stay valid until they
   expire, within minutes, so nobody is signed out. It can be rotated again once those have expired.
 
-The keys are on the Server Node: rotate them there, not on a second API server, which cannot share them yet.
+The keys are on the Server Node. With several servers (section 10) they are in the folder the servers share, and any
+of them can rotate them.
 
 ### A new backup recovery key
 
@@ -242,7 +243,9 @@ showed the original key on screen; System health says when backups still use tha
 
 The Backups list names the key that opens each backup. Keep every key until the backups made with it, and their copies
 on a NAS or USB drive, are deleted: 30 days by default. Both steps are recorded in the audit log, without the key.
-HC360 keeps the key protected on the Server Node, to encrypt new backups, and never shows it again.
+HC360 keeps the key protected on the Server Node, to encrypt new backups, and never shows it again. Until it is typed
+back, the new key waits, protected the same way, beside it in the keys folder; with several servers (section 10) that
+is the folder they share, so whichever server the reverse proxy sends the confirmation to finds it.
 
 ## 4. First sign-in and security set-up
 
@@ -581,6 +584,9 @@ same shared folder, as a UNC path such as `\\NAS\HC360-BI`, on every server, and
 1. Tell users: HC360 is unavailable for a few minutes.
 2. Extract the new server package.
 3. Run `.\Install-HC360Server.ps1` again, **without** `-CreateDatabase`.
+
+With several servers behind a reverse proxy, stop them all and upgrade the node that runs the jobs first (section 10,
+"Running several nodes").
 
 The installer stops the service, replaces the program files, keeps configuration and data, and starts the new version.
 Every setting in `hc360.settings.json` stays as it is, including those added by hand (such as
@@ -924,7 +930,201 @@ A planned failover, at a quiet hour, proves the steps and that the people on cal
 5. Make the old primary the new standby (above).
 6. Write down how long each step took and what was unclear, and fix this section.
 
-## 10. Troubleshooting
+## 10. Several servers behind a reverse proxy (optional)
+
+One Server Node serves about 250 concurrent users (section 1). Beyond that, or to keep HC360 answering while one machine
+is serviced, HC360 runs as **several API nodes behind a reverse proxy and one node that runs the background jobs**, all
+on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same program on every machine; the setting
+`HealthCare360:Role` says what each one does.
+
+```
+  Workstations, tablets, the portal ── HTTPS 7360 / 7361 ──► Reverse proxy (IIS ARR, YARP or nginx)
+                                                                 │ sticky for /hubs/, health probe /health/ready
+                                     ┌───────────────────────────┼───────────────────────────┐
+                                     ▼                           ▼                           ▼
+                              API node 1 (api)            API node 2 (api)      …     Job node (worker)
+                                     │  every node: the database, the shared folder, Redis  │ analysers, modalities,
+                                     ▼                                                       │ backups, the outbox
+        PostgreSQL (one primary) ── optional reporting replica (ConnectionStrings:Analytics, SCAL-03)
+        File share \\hc360-files\hc360: the keys and the stored documents
+        Redis: real-time updates between the nodes
+```
+
+**What the nodes share, and what each keeps.**
+
+| | Where |
+|---|---|
+| The database | One PostgreSQL primary, in every node's `ConnectionStrings:Hospital`. Nothing about a user, a sign-in or a request is kept in one node's memory only: sessions, sign-in challenges, one-time codes, emergency access to a restricted record, the attempts counted against the sign-in limits, and the portal's proof of work (challenges spent, failures counted) are all in the database |
+| The keys and the stored documents | The shared folder (`HealthCare360:Cluster:SharedDirectory`). The keys there are protected with a certificate every node holds (`KeyCertificateThumbprint`), because machine DPAPI, which protects them on a single Server Node, opens only on the machine that wrote them. The keys are never in the database: a copy of the database (a backup, the reporting replica) opens no encrypted value without the shared folder too |
+| Real-time updates (queue boards, bed board, critical alerts) | Redis (`ConnectionStrings:Redis`), through which an update raised on any node reaches the screens connected to every node, its own included. While Redis is away no screen gets updates; once it is back, every screen is told to refetch what it shows, and does |
+| Permissions, sessions and settings held in memory for speed | Each node, for a moment. A change on one node expires them on every node at once, through PostgreSQL's LISTEN/NOTIFY on the database they share. A node that stops hearing the others reads them from the database every time until it hears them again |
+| Analyser and modality worklist status (Lab setup › Analysers, Administration › Integrations and its tests) | The database: each node writes its part, the job node's network analysers and worklist server and the relays and heartbeats of the lab agents on the API nodes they reach, within seconds of a change and every minute, and every node shows them together. The worklist's test on an API node reports what the job node says of its worklist server: only the job node can send the worklist server its test echo |
+| System health (Administration › System health, and its summary on the home screen) | The database: each node writes what it reports of its own machine (the computer, its network, data drive, certificate and power, and the warnings about them) every minute, and System health on any node shows every node, the job node first, with when each last reported. A node that has not reported for three minutes is shown as such, and a warning says so: critically for the job node, since nothing makes the backups, sends messages or listens for analysers and modalities while it is away. The database, backups, messages, integrations and keys are the hospital's, and shown once |
+| Backups | One folder every node names in `HealthCare360:Backup:Directory` (a second share, such as `\\hc360-files\hc360-backups`). The job node makes the scheduled ones; **Back up now** runs on the API node that answers it, so it must write to the same folder, and every API node needs PostgreSQL's client tools (`pg_dump`, `Backup:PgDumpPath`) as the job node does |
+| The settings file, the TLS certificate, logs, temporary files | Each node's own data folder |
+
+**You need:**
+- Two or more API nodes and one job node, each as section 1 says, with HC360 installed by
+  `.\Install-HC360Server.ps1 -PostgresHost <the database server> -DatabaseSignIn Password -NoStart` (`-CreateDatabase`
+  on the first only) and, on all but the first, `-HospitalCaFile` with the CA exported from the first (`certificates
+  export-ca`, section 9), so that every node's certificate comes from the one hospital CA. `-NoStart` leaves the service
+  stopped, and not starting with Windows, until step 5: a node started before its settings name its role and the shared
+  folder would run as a whole Server Node (`all`) against the hospital's database, running the background jobs beside
+  the real job node and making data keys of its own that cannot read the hospital's data. The job node also listens for
+  network analysers and modalities: give those its address.
+- PostgreSQL on a machine of its own, reachable from every node, which then signs in with a password (section 3, "How
+  the server signs in to the database"). If the nodes reach it through PgBouncer in transaction pooling, also set
+  `ConnectionStrings:Signals` to PostgreSQL itself: PgBouncer in that mode does not pass on the notifications that keep
+  the nodes' caches in step, and a node that cannot hear them reads everything from the database (it says so in its
+  log).
+- A **file share** for the keys and documents, on a server that is backed up and kept as secure as the Server Node.
+  Give each node's computer account (`HOSPITAL\HC360-API1$`, …) *Modify* on it, and nobody else but Administrators: the
+  service account, `NT SERVICE\HC360Server`, reaches the network as its computer.
+- A **certificate with an RSA private key** for the keys in the shared folder, the same one in the Local Computer's
+  Personal store of every node. For example, on the first node:
+
+  ```powershell
+  $cert = New-SelfSignedCertificate -Subject 'CN=HC360 cluster keys' -KeyAlgorithm RSA -KeyLength 3072 `
+      -KeyExportPolicy Exportable -CertStoreLocation Cert:\LocalMachine\My -NotAfter (Get-Date).AddYears(20)
+  Export-PfxCertificate -Cert $cert -FilePath E:\hc360-cluster-keys.pfx -Password (Read-Host -AsSecureString 'PFX password')
+  $cert.Thumbprint
+  ```
+
+  Import the PFX on every other node (`Import-PfxCertificate -CertStoreLocation Cert:\LocalMachine\My`), and on each
+  node give `NT SERVICE\HC360Server` *Read* on its private key (certlm.msc › the certificate › All Tasks › Manage Private
+  Keys). Keep the PFX and its password in the hospital's password safe, offline, with the backup recovery key: without
+  the certificate no node can open the keys, so give it a long life, as above.
+- **Redis** 6 or later (or Memurai on Windows), reachable only from the nodes, with a password. Without it every node
+  still works, but a screen sees only the updates raised on the node it is connected to. Once it is set, real-time
+  updates go through it alone: while it is away, no screen gets any, whichever node it is connected to, until it is back.
+  Then every node tells the screens connected to it to refetch what they show, and tells the other nodes to tell theirs,
+  so the updates missed meanwhile appear without anyone pressing anything.
+- A **reverse proxy** in front of the API nodes, which:
+  - listens on 7360 and 7361 and forwards each to the **same port** on the API nodes, over HTTPS (it trusts the hospital
+    CA). HC360 tells the staff app from the patient portal by the port a request arrives on, so the two must not be
+    mixed;
+  - presents a certificate for its own name issued by the hospital CA, which HC360 Desktop pins (export the CA from the
+    first node with `certificates export-ca`, as in section 9, and issue the proxy's certificate with it, for example
+    with `New-SelfSignedCertificate -Signer`);
+  - adds the client's address to `X-Forwarded-For` and sets `X-Forwarded-Proto`, and does not pass `X-Forwarded-Host`;
+  - passes WebSockets, with an idle timeout of at least two minutes, and keeps a client on one node for `/hubs/`
+    (session affinity, such as ARR's client affinity or YARP's session affinity): a real-time connection is negotiated
+    by one request and opened by the next, which must reach the same node;
+  - accepts request bodies of 30 MB (documents and images);
+  - asks every node for `/health/ready` every 10 seconds, and takes a node out after three failures. A node answers 503
+    when it cannot reach the database or the shared folder. It answers 200, *Degraded*, when only Redis is away: it
+    still serves the API, though no screen gets real-time updates until Redis is back.
+
+**Setting it up**, from a single Server Node (the steps are the same for a new hospital, without the move):
+
+1. Make a backup (Administration › Backups › **Back up now**), then stop HC360 on the Server Node:
+   `Stop-Service HC360Server`.
+2. Copy the stored documents to the share, which moves nothing yet:
+   `robocopy "$env:ProgramData\HyFib\HealthCare360\files" \\hc360-files\hc360\files /E /COPY:DAT`.
+3. On every node, add to `config\hc360.settings.json` (section 3, "Changing a protected setting", for the connection
+   strings):
+
+   ```json
+   "ConnectionStrings": {
+     "Hospital": "Host=hc360-db;Database=hc360;Username=hc360_app;Password=…",
+     "Redis": "hc360-redis:6379,password=…"
+   },
+   "HealthCare360": {
+     "Role": "api",
+     "Cluster": {
+       "SharedDirectory": "\\\\hc360-files\\hc360",
+       "KeyCertificateThumbprint": "3F9A…"
+     },
+     "Backup": { "Directory": "\\\\hc360-files\\hc360-backups" },
+     "Network": { "KnownProxies": [ "10.0.0.5" ], "EnableMdns": false }
+   }
+   ```
+
+   On the job node, `"Role": "worker"`, and no `KnownProxies` (nothing reaches it through the proxy). `KnownProxies` (or
+   `KnownNetworks`, such as `10.0.0.0/29`) names the proxy's own addresses as the nodes see them: a request from there
+   is taken to come from the client the proxy names, so sign-in limits, the audit trail and webhook and device address
+   checks see the real client. A request from anywhere else that carries the headers is taken as it is: nobody can
+   claim another address by sending them. mDNS is off because workstations connect to the proxy, not to a node.
+   If workstations reach the proxy over internet (global) IPv6 addresses, also list the hospital's IPv6 networks in
+   `LocalNetworks`, such as `"LocalNetworks": [ "2001:db8:12::/48" ]`. Sign-in and code limits count an IPv6 address
+   from outside the hospital by its /64, which all the workstations on one subnet share; only addresses in a
+   `LocalNetworks` network, the /64s of the node's own addresses, and link-local and unique local (`fd…`) addresses
+   count one by one (SECURITY.md, "What counts as one address"). A single Server Node needs it only for workstations
+   on other subnets than its own. An IPv4 client that reaches the nodes through NAT64 (`64:ff9b::` and its IPv4
+   address) counts by that IPv4 address. Counting by the /64 keeps one machine from getting round the limits with a
+   new address for each try; a client holding a /56 or /48 still gets a budget per /64, which is why the limits per
+   account and per number and the portal's proof of work stay on as well.
+4. Put the keys in the shared folder. On the first node, with the settings above in place:
+
+   ```powershell
+   & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup restore --in '<the backup from step 1>'
+   ```
+
+   It asks for the backup's recovery key, puts back any document the share does not have, and installs the backup's
+   data keys in the shared folder, protected with the certificate. It does not touch the database. A node that has keys
+   of its own and finds none in the shared folder refuses to start and says to do this: it would otherwise make new
+   keys there, and nothing encrypted before could be read.
+5. Start the job node first, then the API nodes: on each, `.\Install-HC360Server.ps1` again from the same package,
+   without `-NoStart` or `-CreateDatabase`. It has the service start with Windows, starts it and checks that it is
+   ready. Each node refuses to start, saying why, if the certificate is missing or its private key cannot be read, or if
+   a proxy address is not an address.
+6. Point the workstations at the proxy: HC360 Desktop › Change server…, with the proxy's name, and compare the hospital
+   CA fingerprint as at first set-up (section 5). Point `portal.baseUrl` at the proxy's portal address.
+7. Check: `/health/ready` on each node answers 200; Administration › System health shows every node, the job node first, and no warning; a bed changed on a
+   workstation appears on the bed board of another (connected, through the proxy, to another node).
+
+**Running several nodes.**
+- Run **exactly one** node that runs the jobs (`worker`, or `all` on a single Server Node). An API node runs none, so it
+  can be stopped or added at any time.
+- A node that starts while the others work holds up none of their audit writes. It changes the audit trail's database
+  triggers only if it finds one dropped, turned off or changed, and then waits at most two seconds for the audit trail.
+  If something holds it longer (a long transaction writing to it, or, to put back the chain-link trigger, a report or
+  backup reading it), the node changes nothing and stops, its log saying that an audit trail trigger could not be put
+  back because the audit trail is in use. Let that finish or stop it; Windows starts the service again within a minute.
+- **Upgrades:** stop every node. Upgrade and start the job node first: it backs up the database, applies the database
+  changes and starts. Then upgrade and start the API nodes. An upgrade that partitions large tables (below) may take
+  some minutes on the job node before it is ready. If it stops, its log saying that a table the update changes is in use
+  ("canceling statement due to lock timeout"), something still uses those tables (a node left running, or a reporting
+  tool with a transaction open): nothing has changed. Stop what uses them, then start the job node again. Windows starts
+  the stopped service again within a minute, and each start backs the database up before it tries, so if that will take
+  longer, stop the service meanwhile (`Stop-Service HC360Server`).
+- **Rotating keys** (section 3) works on any node: the others use the new key within ten seconds, and accept tokens
+  signed with it at once.
+- **Restoring** a backup (section 8): stop every node, restore on the job node from the shared backup folder (its
+  settings name the shared folder, so the documents and keys go there), then start the job node and the API nodes.
+- The limits on sign-in and one-time codes per address (10 sign-in attempts a minute, 5 code requests in 15 minutes)
+  are counted for the whole hospital, in the database, whichever node answers. The other limits, on public pages, device
+  requests and requests per user, are each node's own, so with *n* API nodes a client may make up to *n* times as many.
+
+### Monthly partitions of the busiest tables
+
+The audit trail, remote-monitoring readings, the message log (SMS, WhatsApp, e-mail) and the integration log grow
+fastest. Each is split into one partition per calendar month (UTC) of the time a row is about, and a default partition
+for times outside every month that has one (SRS SCAL-04). Queries for a period read only its months. The upgrade that
+brings this in copies each table into its new form in one transaction, after the backup taken before every upgrade: it
+takes a few minutes for a large audit trail, and if anything fails, the tables stay as they were.
+
+The node that runs the jobs adds each table's partitions three months ahead, a minute after it starts and every six
+hours. Adding one needs its table to itself for a moment: when something holds the table (a backup's pg_dump, a long
+report), the job waits two seconds at most, so writes to the table are not held up, and leaves that table to its next
+run, which is still months ahead. Rows that ever went to the default partition (a device whose clock was months out, or the job not running for
+months) move into their month's partition when it is made: at the job's next run for a month gone by (as far back as
+15 years; older rows stay where they are), and when it comes within the months kept ahead for one still to come. Change how far ahead with
+`HealthCare360:Partitions:MonthsAhead` (1 to 24).
+
+Moving a month's rows holds its table until they have moved, and writes to the table wait that long: some seconds for a
+month of a million rows. The job moves one month at a time, so writes wait for one month's rows at most, and spends at
+most a minute on each table each run; the months it has not reached wait for its next run. A month that cannot be made
+for any other reason (an error, or a statement that runs out of time) is logged and tried again at the next run, and the
+job goes on with the other months and tables.
+
+**Partitions are never dropped.** How long each kind of record is kept is set in one place, Privacy › Retention, whose
+clean-up keeps every record for at least what the law asks (a year for the message and integration logs), leaves medical
+records, remote-monitoring readings among them, to the medical records department's review instead of deleting them
+(SRS PRV-02), and records every run in the audit trail. Because the logs are partitioned by the time it deletes by, the
+clean-up reads only the months concerned. The audit trail's partitions refuse TRUNCATE and DELETE like the table itself.
+
+## 11. Troubleshooting
 
 | Symptom | Check |
 |---|---|
@@ -932,6 +1132,7 @@ A planned failover, at a quiet hour, proves the steps and that the people on cal
 | "HC360 now connects to the server at …" (tray) | The server stopped answering at its usual address, and answered at this one. Usually its IP address changed: give the server a fixed address or a DHCP reservation. The desktop log (`%LocalAppData%\HyFib\HC360Desktop\logs`) has both addresses |
 | Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal; Administration › System health shows the server's |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
+| At busy times staff on some workstations are told to wait before signing in again | Do those workstations reach the server over internet (global) IPv6 addresses from another subnet than the server's? Sign-in limits count such an address by its /64, which the whole subnet shares. List the hospital's IPv6 networks in `HealthCare360:Network:LocalNetworks` in `hc360.settings.json` (for example `[ "2001:db8:12::/48" ]`) and restart the `HC360Server` service: addresses there count one by one, as on the server's own subnet |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
 | "HC360 stopped: the server could not be verified" | Something answered for the server with a certificate that is not from the hospital CA; the screen shows its issuer. A proxy or security product that inspects HTTPS: exempt the HC360 server from it. The server was reinstalled with a new CA: re-run setup (Change server…) and compare the fingerprint. Also check the workstation's date and time |
 | Service will not start | `%ProgramData%\HyFib\HealthCare360\logs\`, then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
@@ -964,5 +1165,11 @@ A planned failover, at a quiet hour, proves the steps and that the people on cal
 | `Install-HC360Server.ps1` stops: "This machine's PostgreSQL is a warm standby" | Run it with `-Standby` on the standby. To make the standby the primary, fail over first (section 9) |
 | `Install-HC360Server.ps1` stops: "HC360 was installed here as a warm standby … and has no data encryption key yet" | Put the keys back from the latest backup with `backup restore` (section 9, "Failing over to the standby", step 3), then run the installer again |
 | HC360 does not start, and its log says "The database is a read-only warm standby" | HC360 was started on the standby. Leave its service disabled; to fail over, promote the standby first (section 9) |
+| A node of several does not start: "this server has a data encryption key of its own …, and the shared folder … has none" | The keys are not in the shared folder yet. Put them there with `backup restore` (section 10, "Setting it up", step 4) |
+| A node of several does not start: "… names certificate …, which is not in the Local Computer's Personal store", or "… has no RSA private key this server may use" | Import the cluster key certificate on this node, with its private key, and give `NT SERVICE\HC360Server` *Read* on the key (section 10) |
+| `/health/ready` on a node answers 503 (*Unhealthy*) | The node cannot reach the database, or, with several nodes, the shared folder; its log names the check that failed. For the share: is the file server up, and does the node's computer account still have *Modify* on it? |
+| "… has not reported for more than three minutes" or "No server that runs the background jobs is reporting" (System health, with several nodes) | Is that node on, and its `HC360Server` service running? Its log says why it cannot reach the database, if it cannot. A node stopped on purpose removes itself from System health; one that lost its power is shown as not reporting for a day |
+| A node's log: "Not listening for cache signals from the other servers" | It cannot hear the other nodes' changes, so it reads permissions, sessions and settings from the database every time (slower, still correct). Is PostgreSQL reachable? Behind PgBouncer in transaction pooling, set `ConnectionStrings:Signals` to PostgreSQL itself (section 10) |
+| A screen misses updates made on another workstation | With several nodes: is Redis up? `/health/ready` says *Degraded* when a node cannot reach it, and the node's log says that until it is back no screen gets real-time updates, whichever node it is connected to; everything else works. Once Redis is back, each node tells the screens connected to it, and the other nodes theirs, to refetch what they show, so they catch up by themselves within seconds (the node's log says how many it told); a screen that lost its own connection reconnects and refetches as always |
 
 Log files hold no patient-identifiable data by design. Share them with HyFib support when asked.

@@ -26,13 +26,24 @@ public sealed record LabListenerStatus(
     public string? SerialPort { get; init; }
 
     public DateTimeOffset? ConnectedSince { get; init; }
+
+    /// <summary>When the server that reports it last changed it: with several servers, the latest of two says more.</summary>
+    public DateTimeOffset? ChangedAt { get; init; }
 }
 
-/// <summary>In-memory connection status shared by the gateway and relays (writers) and the admin endpoints (reader).</summary>
+/// <summary>
+/// This server's connection status of the analysers, kept by the gateway and the relays (writers). With several servers
+/// each keeps its own (the network analysers' listeners run on the node that runs the jobs, a relay on the node its agent
+/// reached): <see cref="LabStatusBoard"/> shares it with the others, and is what the admin endpoints read.
+/// </summary>
 internal sealed class LabGatewayState(TimeProvider time)
 {
     private readonly Lock _lock = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private long _version;
+
+    /// <summary>Goes up with every change, so a change can be shared without comparing the statuses.</summary>
+    public long Version => Interlocked.Read(ref _version);
 
     public void Listening(string code, LabProtocol protocol, int port) => Update(code, entry =>
     {
@@ -57,6 +68,7 @@ internal sealed class LabGatewayState(TimeProvider time)
         lock (_lock)
         {
             _entries.Remove(code);
+            _version++;
         }
     }
 
@@ -95,6 +107,7 @@ internal sealed class LabGatewayState(TimeProvider time)
             foreach (var code in _entries.Where(e => e.Value.Transport == transport && !codes.Contains(e.Key, StringComparer.OrdinalIgnoreCase)).Select(e => e.Key).ToList())
             {
                 _entries.Remove(code);
+                _version++;
             }
         }
     }
@@ -122,6 +135,13 @@ internal sealed class LabGatewayState(TimeProvider time)
     {
         entry.Transport = "serial";
         entry.Agent = agent;
+
+        // Heard first from the agent, on a server that neither runs the gateway nor holds the relay: it waits for its relay.
+        if (entry.State == "starting")
+        {
+            entry.State = "waiting";
+        }
+
         if (open)
         {
             if (entry.State == "port_error")
@@ -174,6 +194,7 @@ internal sealed class LabGatewayState(TimeProvider time)
             Agent = entry.Agent,
             SerialPort = entry.SerialPort,
             ConnectedSince = entry.ConnectedSince,
+            ChangedAt = entry.ChangedAt,
         };
 
     private void Update(string code, Action<Entry> change)
@@ -187,6 +208,8 @@ internal sealed class LabGatewayState(TimeProvider time)
             }
 
             change(entry);
+            entry.ChangedAt = time.GetUtcNow();
+            _version++;
         }
     }
 
@@ -205,5 +228,6 @@ internal sealed class LabGatewayState(TimeProvider time)
         public string? Agent { get; set; }
         public string? SerialPort { get; set; }
         public DateTimeOffset? ConnectedSince { get; set; }
+        public DateTimeOffset? ChangedAt { get; set; }
     }
 }

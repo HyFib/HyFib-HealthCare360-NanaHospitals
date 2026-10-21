@@ -56,9 +56,15 @@ and every page view and export is audited per patient (see *Audit*).
   input ever reaches SQL.
 * **Caching**: a run is cached for 60 s per report, facility and canonical inputs (patient-level reports are never
   cached); KPIs for 2 minutes per facility, period and audience.
-* **Read replica** (BI-05): when `ConnectionStrings:Analytics` (or the legacy `ConnectionStrings:Reporting`) is set,
-  reports and KPIs read from it with a 120 s command timeout; on a transient `NpgsqlException` a run falls back to the
-  primary once. Results carry `dataSource` ("Reporting replica" / "Live database"); `/status` reports replica lag.
+* **Read replica** (BI-05, SCAL-03): when `ConnectionStrings:Analytics` (or the legacy `ConnectionStrings:Reporting`)
+  is set, reports, KPIs and the report look-ups (departments, practitioners, payers, wards, stores, theatres) read from
+  it with a 120 s command timeout, all through `ReportingDbContextFactory.RunAsync`. When the replica cannot be reached
+  (refused, down, or no answer to the connection in time) or goes away during the read (a restart), the same read runs
+  once on the primary. A query the replica answers with an error, or one that runs past the 120 s there, is not run
+  again on the primary: the heavy reports the replica is for must not move to the wards' database, so the user sees
+  the error and can try again.
+  Results carry `dataSource` ("Reporting replica" / "Live database", or "Live database (reporting replica unavailable)"
+  after a fallback, which is not cached, so the next run tries the replica again); `/status` reports replica lag.
 
 ## Endpoints
 

@@ -141,7 +141,7 @@ internal static class RadiologyImageLimits
 
     public static RateLimitPartition<string> Partition(HttpContext http) =>
         RateLimitPartition.GetConcurrencyLimiter(
-            http.User.FindFirst(HcClaims.UserId)?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            http.User.FindFirst(HcClaims.UserId)?.Value ?? RateLimitPolicies.ClientKey(http),
             _ => new ConcurrencyLimiterOptions
             {
                 PermitLimit = PermitLimit,

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,6 +10,7 @@ using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace HyFib.HealthCare360.Platform.Jobs;
 
@@ -213,23 +215,34 @@ public sealed record ConfirmRecoveryKeyRequest(string Key);
 
 /// <summary>
 /// The recovery key on the Server Node: <c>keys/backup-recovery.key</c>, wrapped by Data Protection like the other keys;
-/// without that file, backups use the original key. A new key waits in memory only, for the administrator it was shown to,
-/// until they type it back from their copy; then it replaces the file. The key it replaces is not kept: this server never
-/// opens an older backup, and the hospital keeps every key it was shown for as long as backups made with it are kept.
+/// without that file, backups use the original key. A new key waits in <c>keys/backup-recovery.pending</c>, wrapped the
+/// same way under a purpose of its own, with the administrator it was shown to and until when, until they type it back from
+/// their copy; then it replaces the key file. It waits in the keys folder, not in one server's memory, so that with several
+/// servers behind a reverse proxy (SCAL-01) the confirmation may reach any of them; it is never used for a backup before.
+/// The key it replaces is not kept: this server never opens an older backup, and the hospital keeps every key it was shown
+/// for as long as backups made with it are kept. With several servers, <see cref="RecoveryKeyService"/> makes and confirms
+/// keys under the cluster's key lock.
 /// </summary>
 internal sealed class RecoveryKeyStore(DataDirectories directories, IDataProtectionProvider dataProtection, IFieldKeyEscrow escrow, TimeProvider time)
 {
     public const string FileName = "backup-recovery.key";
+
+    /// <summary>The new key waiting to be typed back, beside <see cref="FileName"/>.</summary>
+    public const string PendingFileName = "backup-recovery.pending";
+
     private const string ProtectorPurpose = "HC360.Backup.RecoveryKey.v1";
+    private const string PendingPurpose = "HC360.Backup.RecoveryKey.Pending.v1";
 
     /// <summary>How long a new key waits to be typed back before it is dropped.</summary>
     public static readonly TimeSpan ConfirmWithin = TimeSpan.FromMinutes(30);
 
     private readonly IDataProtector _wrapper = dataProtection.CreateProtector(ProtectorPurpose);
+    private readonly IDataProtector _pendingWrapper = dataProtection.CreateProtector(PendingPurpose);
     private readonly Lock _gate = new();
-    private PendingKey? _pending;
 
     private string FilePath => PathIn(directories);
+
+    private string PendingPath => Path.Combine(directories.Keys, PendingFileName);
 
     /// <summary>True while backups use the original key, derived from the original data key.</summary>
     public bool IsOriginal => !File.Exists(FilePath);
@@ -296,15 +309,29 @@ internal sealed class RecoveryKeyStore(DataDirectories directories, IDataProtect
     /// </summary>
     public NewRecoveryKey Create(Guid userId)
     {
-        var key = BackupRecoveryKey.Create();
-        var pending = new PendingKey(BackupRecoveryKey.Id(key), key, userId, time.GetUtcNow() + ConfirmWithin);
-        lock (_gate)
+        var pending = new PendingKey(BackupRecoveryKey.Create(), userId, time.GetUtcNow() + ConfirmWithin);
+        try
         {
-            Drop();
-            _pending = pending;
-        }
+            lock (_gate)
+            {
+                // Replaces a key made before and not typed back, on whichever server it was made.
+                var content = pending.ToBytes();
+                try
+                {
+                    Write(PendingPath, _pendingWrapper, content);
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(content);
+                }
+            }
 
-        return new NewRecoveryKey(pending.KeyId, BackupRecoveryKey.Format(key), pending.ExpiresAt);
+            return new NewRecoveryKey(pending.KeyId, BackupRecoveryKey.Format(pending.Key), pending.ExpiresAt);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(pending.Key);
+        }
     }
 
     /// <summary>
@@ -315,29 +342,45 @@ internal sealed class RecoveryKeyStore(DataDirectories directories, IDataProtect
     {
         lock (_gate)
         {
-            if (_pending is not { } pending || pending.KeyId != keyId || pending.UserId != userId || time.GetUtcNow() >= pending.ExpiresAt)
+            var pending = ReadPending();
+            try
             {
-                return Error.Rule("backup.recovery_key_not_waiting",
-                    "This recovery key is no longer waiting to be confirmed, so nothing changed. Make a new one.");
-            }
+                if (pending is not null && time.GetUtcNow() >= pending.ExpiresAt)
+                {
+                    File.Delete(PendingPath);
+                }
 
-            if (!BackupRecoveryKey.TryParse(typed, out var key, out var problem))
+                if (pending is null || pending.KeyId != keyId || pending.UserId != userId || time.GetUtcNow() >= pending.ExpiresAt)
+                {
+                    return Error.Rule("backup.recovery_key_not_waiting",
+                        "This recovery key is no longer waiting to be confirmed, so nothing changed. Make a new one.");
+                }
+
+                if (!BackupRecoveryKey.TryParse(typed, out var key, out var problem))
+                {
+                    return Error.Field("key", problem);
+                }
+
+                var matches = CryptographicOperations.FixedTimeEquals(key, pending.Key);
+                CryptographicOperations.ZeroMemory(key);
+                if (!matches)
+                {
+                    return Error.Field("key", "This is not the new key. Go back, check your copy against it, and type it again.");
+                }
+
+                var previous = Current();
+                CryptographicOperations.ZeroMemory(previous.Key);
+                Write(FilePath, _wrapper, pending.Key);
+                File.Delete(PendingPath);
+                return previous.KeyId;
+            }
+            finally
             {
-                return Error.Field("key", problem);
+                if (pending is not null)
+                {
+                    CryptographicOperations.ZeroMemory(pending.Key);
+                }
             }
-
-            var matches = CryptographicOperations.FixedTimeEquals(key, pending.Key);
-            CryptographicOperations.ZeroMemory(key);
-            if (!matches)
-            {
-                return Error.Field("key", "This is not the new key. Go back, check your copy against it, and type it again.");
-            }
-
-            var previous = Current();
-            CryptographicOperations.ZeroMemory(previous.Key);
-            Write(FilePath, _wrapper, pending.Key);
-            Drop();
-            return previous.KeyId;
         }
     }
 
@@ -354,24 +397,63 @@ internal sealed class RecoveryKeyStore(DataDirectories directories, IDataProtect
         }
     }
 
-    private static void Write(string path, IDataProtector wrapper, byte[] key)
+    private static void Write(string path, IDataProtector wrapper, byte[] content)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temp = path + ".tmp";
-        File.WriteAllBytes(temp, wrapper.Protect(key));
+
+        // A name of this writer's own: another server sharing the folder may write the same file.
+        var temp = KeyFiles.TempPath(path);
+        File.WriteAllBytes(temp, wrapper.Protect(content));
         File.Move(temp, path, overwrite: true);
     }
 
-    private void Drop()
+    /// <summary>The key waiting to be typed back; null when none is, or when its file cannot be opened (it is made again).</summary>
+    private PendingKey? ReadPending()
     {
-        if (_pending is { } pending)
+        byte[] content;
+        try
         {
-            CryptographicOperations.ZeroMemory(pending.Key);
-            _pending = null;
+            content = _pendingWrapper.Unprotect(File.ReadAllBytes(PendingPath));
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException or CryptographicException)
+        {
+            return null;
+        }
+
+        try
+        {
+            return PendingKey.From(content);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(content);
         }
     }
 
-    private sealed record PendingKey(string KeyId, byte[] Key, Guid UserId, DateTimeOffset ExpiresAt);
+    /// <summary>A new key, who it was shown to, and until when it may be typed back.</summary>
+    private sealed record PendingKey(byte[] Key, Guid UserId, DateTimeOffset ExpiresAt)
+    {
+        // The user's id, the expiry in UTC ticks, the key.
+        private const int Size = 16 + sizeof(long) + BackupRecoveryKey.Length;
+
+        public string KeyId { get; } = BackupRecoveryKey.Id(Key);
+
+        public byte[] ToBytes()
+        {
+            var content = new byte[Size];
+            UserId.TryWriteBytes(content.AsSpan(0, 16));
+            BinaryPrimitives.WriteInt64LittleEndian(content.AsSpan(16, sizeof(long)), ExpiresAt.UtcTicks);
+            Key.CopyTo(content, 16 + sizeof(long));
+            return content;
+        }
+
+        public static PendingKey? From(byte[] content) => content.Length == Size
+            ? new PendingKey(
+                content[(16 + sizeof(long))..],
+                new Guid(content.AsSpan(0, 16)),
+                new DateTimeOffset(BinaryPrimitives.ReadInt64LittleEndian(content.AsSpan(16, sizeof(long))), TimeSpan.Zero))
+            : null;
+    }
 }
 
 /// <summary>
@@ -420,7 +502,13 @@ internal sealed class RecoveryKeyService(RecoveryKeyStore store, AuthService aut
             return confirmed.Error!;
         }
 
-        var created = store.Create(user.UserId!.Value);
+        NewRecoveryKey created;
+        await using (var keys = await LockKeysAsync(ct))
+        {
+            created = store.Create(user.UserId!.Value);
+            await keys.CommitAsync(CancellationToken.None);
+        }
+
         await audit.WriteAsync(new AuditEntry(AuditCategories.Security, Shown,
             $"A new backup recovery key, {created.KeyId}, was shown; backups use it once it is typed back")
         {
@@ -431,7 +519,13 @@ internal sealed class RecoveryKeyService(RecoveryKeyStore store, AuthService aut
 
     public async Task<Result<RecoveryKeyStatus>> ConfirmAsync(string keyId, ConfirmRecoveryKeyRequest request, CancellationToken ct)
     {
-        var replaced = store.Confirm(keyId, request.Key, user.UserId!.Value);
+        Result<string> replaced;
+        await using (var keys = await LockKeysAsync(ct))
+        {
+            replaced = store.Confirm(keyId, request.Key, user.UserId!.Value);
+            await keys.CommitAsync(CancellationToken.None);
+        }
+
         if (replaced.IsFailure)
         {
             return replaced.Error!;
@@ -443,5 +537,17 @@ internal sealed class RecoveryKeyService(RecoveryKeyStore store, AuthService aut
             Severity = AuditSeverity.Critical,
         }, CancellationToken.None);
         return await StatusAsync(ct);
+    }
+
+    /// <summary>
+    /// Takes the cluster-wide key lock (<see cref="KeyRotationService.ClusterLockKey"/>) until the returned transaction
+    /// ends: with several servers (SCAL-01), a key made on one while another confirms the one before is read and replaced
+    /// one at a time. On a single Server Node it is never contended.
+    /// </summary>
+    private async Task<IDbContextTransaction> LockKeysAsync(CancellationToken ct)
+    {
+        var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({KeyRotationService.ClusterLockKey})", ct);
+        return transaction;
     }
 }

@@ -5,15 +5,19 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Platform.Security;
 
@@ -102,56 +106,118 @@ public sealed record RequiresProofOfWorkMetadata(string Action);
 /// code, a throttled number, a dead link). Every 3 failures ask for 2 more bits (four times the work), up to
 /// <see cref="AntiAutomationSettings.MaxBits"/>. The count is kept until <see cref="Window"/> passes without a failure (each
 /// failure starts the quarter of an hour again), so a quiet quarter of an hour brings it back down and a steady trickle
-/// keeps it up. In memory, per server. Numbers are kept only as an HMAC-SHA256 under a key derived from the server's
-/// anti-automation key (<see cref="ProofOfWorkKey"/>): India has few enough mobile numbers (some 10^9) to hash every one,
-/// so a plain hash would give the number back to whoever saw the memory.
+/// keeps it up.
+/// <para>
+/// The counts are kept in <paramref name="store"/>: on a node of several the cluster store, so failures counted by one
+/// node raise the work every node asks for (SCAL-01), and on a single Server Node its memory
+/// (<see cref="MemoryClusterStore"/>). Addresses and numbers are kept only as an HMAC-SHA256 under keys derived from the
+/// anti-automation key (<see cref="ProofOfWorkKey"/>): every IPv4 address, and every one of India's mobile numbers (some
+/// 10^9), can be hashed in minutes, so a plain hash would give them back to whoever read the store or a backup of it.
+/// </para>
 /// </summary>
-public sealed class AutomationSuspicion(IMemoryCache cache, TimeProvider time, byte[] key)
+public sealed class AutomationSuspicion(IClusterStore store, IMemoryCache cache, TimeProvider time, byte[] key, ILogger<AutomationSuspicion> logger)
 {
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
     public const int FailuresPerStep = 3;
     public const int BitsPerStep = 2;
 
-    private readonly Lock _gate = new();
-    private readonly byte[] _subjectKey = FieldMasterKey.DeriveKey(key, "anti-automation-subject");
+    /// <summary>
+    /// A count this high asks for the most work any settings can ask for (<see cref="AntiAutomationSettings.Ceiling"/> bits
+    /// over none): more failures cannot raise it.
+    /// </summary>
+    public const int SaturatedFailures = FailuresPerStep * ((AntiAutomationSettings.Ceiling + BitsPerStep - 1) / BitsPerStep);
 
-    public void RecordFailure(string? address, string? subject)
+    /// <summary>
+    /// How often a node counts a failure for a count already <see cref="SaturatedFailures"/>: often enough to keep its quiet
+    /// quarter of an hour from running out while the failures go on.
+    /// </summary>
+    public static readonly TimeSpan SaturatedInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>How long one refusal for an address and a reason keeps the next ones out of the audit trail.</summary>
+    public static readonly TimeSpan AuditQuietPeriod = TimeSpan.FromMinutes(5);
+
+    private const string LocalPrefix = "anti-automation:";
+
+    private readonly byte[] _subjectKey = FieldMasterKey.DeriveKey(key, "anti-automation-subject");
+    private readonly byte[] _addressKey = FieldMasterKey.DeriveKey(key, "anti-automation-address");
+
+    /// <summary>
+    /// Counts a failure against the address and the number, whether or not the client is still there: a script that sends
+    /// a bad proof and hangs up at once is counted as one that waits for the answer. Past <see cref="SaturatedFailures"/>,
+    /// this node counts one a minute (<see cref="SaturatedInterval"/>): rate-limit refusals come as fast as a script sends
+    /// them, and on a node of several each failure counted is a statement on the database the wards use. The answer the
+    /// client gets does not hang on the count: a count the store cannot take is logged, and this node tries again for that
+    /// address or number a minute later, so a store that is down is not asked once per refusal.
+    /// </summary>
+    public async Task RecordFailureAsync(string? address, string? subject)
     {
         var now = time.GetUtcNow();
         foreach (var key in Keys(address, subject))
         {
-            lock (_gate)
+            if (cache.TryGetValue(LocalPrefix + key, out DateTimeOffset quietUntil) && now < quietUntil)
             {
-                var counter = Current(key, now) ?? new Counter();
-                counter.Count++;
-                counter.LastFailureAt = now;
-
-                // Kept a quarter of an hour from this failure, not from the first. The cache's own expiry only frees the
-                // memory; the window is judged on this server's TimeProvider (Current).
-                cache.Set(key, counter, Window);
+                continue;
             }
+
+            try
+            {
+                if ((await store.IncrementUntilQuietAsync(key, Window, CancellationToken.None)).Count < SaturatedFailures)
+                {
+                    continue;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Counting a failed request towards the anti-automation check failed; this server tries again in a minute");
+            }
+
+            cache.Set(LocalPrefix + key, now + SaturatedInterval, SaturatedInterval);
         }
     }
 
     /// <summary>The most failures counted for the address or the number.</summary>
-    public int Failures(string? address, string? subject)
+    public async Task<long> FailuresAsync(string? address, string? subject, CancellationToken ct)
     {
-        var now = time.GetUtcNow();
-        lock (_gate)
+        var most = 0L;
+        foreach (var key in Keys(address, subject))
         {
-            return Keys(address, subject).Select(key => Current(key, now)?.Count ?? 0).DefaultIfEmpty(0).Max();
+            most = Math.Max(most, await store.GetCountAsync(key, ct));
         }
+
+        return most;
     }
 
     /// <summary>The bits asked of a client: the base, plus <see cref="BitsPerStep"/> for every <see cref="FailuresPerStep"/> failures, at most <paramref name="maxBits"/>.</summary>
-    public int RequiredBits(int baseBits, int maxBits, string? address, string? subject) =>
-        Math.Max(baseBits, Math.Min(maxBits, baseBits + (BitsPerStep * (Failures(address, subject) / FailuresPerStep))));
+    public async Task<int> RequiredBitsAsync(int baseBits, int maxBits, string? address, string? subject, CancellationToken ct)
+    {
+        // A count far past what can raise the work (a long flood) must not overflow the sum.
+        var steps = (int)Math.Min(await FailuresAsync(address, subject, ct) / FailuresPerStep, AntiAutomationSettings.Ceiling);
+        return Math.Max(baseBits, Math.Min(maxBits, baseBits + (BitsPerStep * steps)));
+    }
+
+    /// <summary>
+    /// Whether a refusal for <paramref name="reason"/> from <paramref name="address"/> is the first in
+    /// <see cref="AuditQuietPeriod"/> on any server: only that one is audited, so a flood of bad proofs cannot flood the
+    /// audit trail. Once this node knows of one, it asks the store no more until the period is over.
+    /// </summary>
+    public async Task<bool> IsFirstRefusalAsync(string? address, string reason, CancellationToken ct)
+    {
+        var key = $"pow:audited:{reason}:" + (string.IsNullOrEmpty(address) ? "-" : AddressHash(address));
+        var now = time.GetUtcNow();
+        if (cache.TryGetValue(LocalPrefix + key, out DateTimeOffset quietUntil) && now < quietUntil)
+        {
+            return false;
+        }
+
+        cache.Set(LocalPrefix + key, now + AuditQuietPeriod, AuditQuietPeriod);
+        return await store.TryAddAsync(key, AuditQuietPeriod, ct);
+    }
 
     private IEnumerable<string> Keys(string? address, string? subject)
     {
         if (!string.IsNullOrEmpty(address))
         {
-            yield return "pow:fail:ip:" + address;
+            yield return "pow:fail:ip:" + AddressHash(address);
         }
 
         if (!string.IsNullOrWhiteSpace(subject))
@@ -160,20 +226,15 @@ public sealed class AutomationSuspicion(IMemoryCache cache, TimeProvider time, b
         }
     }
 
+    /// <summary>What the count for a client address is kept under: the keyed hash of the address.</summary>
+    internal string AddressHash(string address) =>
+        Convert.ToHexString(HMACSHA256.HashData(_addressKey, Encoding.UTF8.GetBytes(address)), 0, 16);
+
     /// <summary>What the count for a mobile number is kept under: the keyed hash of the number, written as HC360 stores numbers.</summary>
     internal string SubjectHash(string subject)
     {
         var normalized = SharedKernel.Phone.Normalize(subject) ?? subject;
         return Convert.ToHexString(HMACSHA256.HashData(_subjectKey, Encoding.UTF8.GetBytes(normalized)), 0, 16);
-    }
-
-    private Counter? Current(string key, DateTimeOffset now) =>
-        cache.TryGetValue(key, out Counter? counter) && now - counter!.LastFailureAt < Window ? counter : null;
-
-    private sealed class Counter
-    {
-        public int Count;
-        public DateTimeOffset LastFailureAt;
     }
 }
 
@@ -181,15 +242,14 @@ public sealed class AutomationSuspicion(IMemoryCache cache, TimeProvider time, b
 /// Issues and checks the proof of work the portal's anonymous endpoints ask for (SRS SEC-06, ASVS V2.4.1). A refused
 /// proof gets one generic answer whatever the reason; the reason is counted
 /// (<c>hc360.anti_automation.rejected</c>) and, unless it is <see cref="ProofOfWorkOutcome.TooEasy"/>
-/// (<see cref="IsFailure"/>), audited, at most once per address and reason in 5 minutes so a flood of bad proofs cannot
-/// flood the audit trail.
+/// (<see cref="IsFailure"/>), audited, at most once per address and reason in 5 minutes on any server
+/// (<see cref="AutomationSuspicion.IsFirstRefusalAsync"/>) so a flood of bad proofs cannot flood the audit trail.
 /// </summary>
 public sealed class AntiAutomation(
     ProofOfWork proofOfWork,
     AutomationSuspicion suspicion,
     ISettingsService settings,
     IAuditLogger audit,
-    IMemoryCache cache,
     TimeProvider time)
 {
     public const string ProofHeader = "X-HC360-Proof";
@@ -198,7 +258,6 @@ public sealed class AntiAutomation(
     /// <summary>Long enough to fill in a form after the browser solved the challenge in the background.</summary>
     public static readonly TimeSpan ChallengeLifetime = TimeSpan.FromMinutes(5);
 
-    private static readonly TimeSpan AuditQuietPeriod = TimeSpan.FromMinutes(5);
     private static readonly Meter Meter = new(MeterName);
     private static readonly Counter<long> Issued = Meter.CreateCounter<long>("hc360.anti_automation.issued", description: "Proof-of-work challenges issued");
     private static readonly Counter<long> Rejected = Meter.CreateCounter<long>("hc360.anti_automation.rejected", description: "Requests refused for a missing or bad proof of work");
@@ -211,7 +270,7 @@ public sealed class AntiAutomation(
             return new AntiAutomationChallenge(false, null, 0, null);
         }
 
-        var bits = suspicion.RequiredBits(config.Bits, config.MaxBits, address, subject);
+        var bits = await suspicion.RequiredBitsAsync(config.Bits, config.MaxBits, address, subject, ct);
         var expiresAt = time.GetUtcNow() + ChallengeLifetime;
         Issued.Add(1, new KeyValuePair<string, object?>("action", action), new KeyValuePair<string, object?>("bits", bits));
         return new AntiAutomationChallenge(true, proofOfWork.Issue(action, bits, expiresAt), bits, expiresAt);
@@ -229,7 +288,8 @@ public sealed class AntiAutomation(
             return ProofOfWorkOutcome.Accepted;
         }
 
-        var outcome = proofOfWork.Verify(proof, action, suspicion.RequiredBits(config.Bits, config.MaxBits, address, subject));
+        var required = await suspicion.RequiredBitsAsync(config.Bits, config.MaxBits, address, subject, ct);
+        var outcome = await proofOfWork.VerifyAsync(proof, action, required, ct);
         if (outcome == ProofOfWorkOutcome.Accepted)
         {
             return outcome;
@@ -242,13 +302,12 @@ public sealed class AntiAutomation(
             return outcome;
         }
 
-        suspicion.RecordFailure(address, subject);
-        if (cache.TryGetValue($"pow:audited:{address}:{reason}", out _))
+        await suspicion.RecordFailureAsync(address, subject);
+        if (!await suspicion.IsFirstRefusalAsync(address, reason, ct))
         {
             return outcome;
         }
 
-        cache.Set($"pow:audited:{address}:{reason}", true, AuditQuietPeriod);
         await audit.WriteAsync(
             new AuditEntry(AuditCategories.Security, "security.anti_automation_rejected", $"Request refused by the anti-automation check ({reason})")
             {
@@ -260,7 +319,7 @@ public sealed class AntiAutomation(
     }
 
     /// <summary>A request with a good proof was refused anyway (a wrong code, a dead link): the next ones need more work.</summary>
-    public void RecordFailure(string? address, string? subject) => suspicion.RecordFailure(address, subject);
+    public Task RecordFailureAsync(string? address, string? subject) => suspicion.RecordFailureAsync(address, subject);
 
     /// <summary>
     /// Whether a refused proof counts against the address and the number. A too-easy one does not, and is not audited: it
@@ -305,6 +364,35 @@ public sealed class AntiAutomation(
         };
 
     private sealed record Config(bool Enabled, int Bits, int MaxBits);
+}
+
+/// <summary>The proof of work's services, as the platform registers them.</summary>
+internal static class AntiAutomationServices
+{
+    /// <summary>
+    /// The portal's proof of work (SRS SEC-06): challenges signed with the anti-automation key, spent ones remembered, and
+    /// the addresses and numbers that failed counted as hashes keyed with it; the key is read (or made) once, for both. What
+    /// it remembers is the hospital's on a node of several (<see cref="DataDirectories.IsShared"/>), in the cluster store
+    /// (SCAL-01): a challenge is spent once whichever node it is sent to, failures counted by one node raise the work every
+    /// node asks for, and a refusal is audited once. A single Server Node keeps it in memory, as it keeps its rate limits.
+    /// </summary>
+    public static IServiceCollection AddAntiAutomation(this IServiceCollection services, DataDirectories directories)
+    {
+        services.AddSingleton<MemoryClusterStore>();
+        services.AddSingleton(sp => new AntiAutomationKey(ProofOfWorkKey.LoadOrCreate(directories, sp.GetRequiredService<IDataProtectionProvider>())));
+        services.AddSingleton(sp => new AutomationSuspicion(
+            Store(sp),
+            sp.GetRequiredService<IMemoryCache>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<AntiAutomationKey>().Value,
+            sp.GetRequiredService<ILogger<AutomationSuspicion>>()));
+        services.AddSingleton(sp => new ProofOfWork(sp.GetRequiredService<AntiAutomationKey>().Value, Store(sp), sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped<AntiAutomation>();
+        return services;
+
+        IClusterStore Store(IServiceProvider sp) =>
+            directories.IsShared ? sp.GetRequiredService<IClusterStore>() : sp.GetRequiredService<MemoryClusterStore>();
+    }
 }
 
 /// <summary>The challenge endpoint, and <see cref="RequireProofOfWork"/> for the endpoints that ask for a solved one.</summary>
@@ -361,14 +449,14 @@ public static class AntiAutomationEndpoints
             var http = context.HttpContext;
             var check = http.RequestServices.GetRequiredService<AntiAutomation>();
             var who = subject?.Invoke(context);
-            var address = http.Connection.RemoteIpAddress?.ToString();
+            var address = CountedAddress(http);
             var outcome = await check.CheckAsync(http.Request.Headers[AntiAutomation.ProofHeader].ToString(), action, who, address, http.RequestAborted);
             if (outcome != ProofOfWorkOutcome.Accepted)
             {
                 // CheckAsync counted it against the address, and against the number when the request names it.
                 if (who is null && subjectOnFailure is not null && AntiAutomation.IsFailure(outcome))
                 {
-                    check.RecordFailure(null, await subjectOnFailure(context, http.RequestAborted));
+                    await check.RecordFailureAsync(null, await subjectOnFailure(context, http.RequestAborted));
                 }
 
                 return Failed();
@@ -377,7 +465,7 @@ public static class AntiAutomationEndpoints
             var result = await next(context);
             if (result is IStatusCodeHttpResult { StatusCode: >= 400 and < 500 })
             {
-                check.RecordFailure(address, who ?? (subjectOnFailure is null ? null : await subjectOnFailure(context, http.RequestAborted)));
+                await check.RecordFailureAsync(address, who ?? (subjectOnFailure is null ? null : await subjectOnFailure(context, http.RequestAborted)));
             }
 
             return result;
@@ -386,11 +474,11 @@ public static class AntiAutomationEndpoints
     }
 
     /// <summary>A rate-limit refusal on an endpoint that asks for a proof raises the work asked of the address.</summary>
-    internal static void OnRateLimited(HttpContext http)
+    internal static async ValueTask OnRateLimitedAsync(HttpContext http)
     {
         if (http.GetEndpoint()?.Metadata.GetMetadata<RequiresProofOfWorkMetadata>() is not null)
         {
-            http.RequestServices.GetRequiredService<AutomationSuspicion>().RecordFailure(http.Connection.RemoteIpAddress?.ToString(), null);
+            await http.RequestServices.GetRequiredService<AutomationSuspicion>().RecordFailureAsync(CountedAddress(http), null);
         }
     }
 
@@ -405,6 +493,10 @@ public static class AntiAutomationEndpoints
             return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["action"] = ["Unknown request."] });
         }
 
-        return TypedResults.Ok(await antiAutomation.IssueAsync(request.Action, request.Subject, http.Connection.RemoteIpAddress?.ToString(), ct));
+        return TypedResults.Ok(await antiAutomation.IssueAsync(request.Action, request.Subject, CountedAddress(http), ct));
     }
+
+    /// <summary>What failures are counted against for the client, as the rate limits count it (an IPv6 /64 as one), if it has an address.</summary>
+    private static string? CountedAddress(HttpContext http) =>
+        http.Connection.RemoteIpAddress is null ? null : RateLimitPolicies.ClientKey(http);
 }
