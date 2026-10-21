@@ -101,7 +101,7 @@ public sealed class DialysisChargeTests(HospitalServer server)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: "Anand", MiddleName: null, LastName: "Dialysis" + Letters(8), Gender: Gender.Male,
+            Title: "Mr.", FirstName: TestPatients.FirstName("Anand"), MiddleName: null, LastName: "Dialysis" + Letters(8), Gender: Gender.Male,
             DateOfBirth: new DateOnly(1965, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,

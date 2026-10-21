@@ -116,7 +116,7 @@ public sealed class DietChargeTests(HospitalServer server)
         var consultantId = (await doctor.GetAsync<AuthUser>("/api/v1/auth/me")).PractitionerId
                            ?? throw new InvalidOperationException("The doctor's account is not linked to a practitioner.");
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: "Gopal", MiddleName: null, LastName: "Diet" + Letters(8), Gender: Gender.Male,
+            Title: "Mr.", FirstName: TestPatients.FirstName("Gopal"), MiddleName: null, LastName: "Diet" + Letters(8), Gender: Gender.Male,
             DateOfBirth: new DateOnly(1955, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,

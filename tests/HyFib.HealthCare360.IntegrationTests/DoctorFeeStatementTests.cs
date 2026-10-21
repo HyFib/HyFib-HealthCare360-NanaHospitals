@@ -160,7 +160,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var surname = Letters(8);
         var created = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mrs.", FirstName: "Meena", MiddleName: null, LastName: surname[0] + surname[1..].ToLowerInvariant(), Gender: Gender.Female,
+            Title: "Mrs.", FirstName: TestPatients.FirstName("Meena"), MiddleName: null, LastName: surname[0] + surname[1..].ToLowerInvariant(), Gender: Gender.Female,
             DateOfBirth: new DateOnly(1965, 1, 1).AddDays(Random.Shared.Next(365 * 10)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
