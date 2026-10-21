@@ -1,8 +1,8 @@
 {
   "resourceType": "Bundle",
-  "id": "e950dd2f-a4aa-8ad8-be2a-7a3f9fe44050",
+  "id": "0e1a3bb0-c0cc-836a-b825-be55bb57f831",
   "meta": {
-    "versionId": "1790306700000-4a8cd5056df24361",
+    "versionId": "1790306700000-a827cfb247a4a737",
     "lastUpdated": "2026-09-25T08:55:00+05:30",
     "profile": [
       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
@@ -17,10 +17,10 @@
   },
   "identifier": {
     "system": "urn:ietf:rfc:3986",
-    "value": "urn:uuid:e950dd2f-a4aa-8ad8-be2a-7a3f9fe44050"
+    "value": "urn:uuid:0e1a3bb0-c0cc-836a-b825-be55bb57f831"
   },
   "type": "document",
-  "timestamp": "2026-09-25T10:30:00+05:30",
+  "timestamp": "2026-09-25T08:55:00+05:30",
   "entry": [
     {
       "fullUrl": "urn:uuid:c5c1e0cf-6fb9-8ad7-ae3b-f75aed00dc26",
@@ -28,7 +28,7 @@
         "resourceType": "Composition",
         "id": "c5c1e0cf-6fb9-8ad7-ae3b-f75aed00dc26",
         "meta": {
-          "versionId": "1790306700000-4a8cd5056df24361",
+          "versionId": "1790306700000-a827cfb247a4a737",
           "lastUpdated": "2026-09-25T08:55:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/OPConsultRecord"
@@ -102,18 +102,18 @@
             },
             "text": {
               "status": "additional",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Chief complaint: Fever for three days</p><p>Diagnoses:</p><p>Fever, unspecified</p><p>Viral fever</p></div>"
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Chief complaint: Fever for three days</p><p>Diagnoses:</p><p>Fever, unspecified (provisional)</p><p>Viral fever (differential)</p></div>"
             },
             "entry": [
               {
                 "reference": "urn:uuid:0bd12240-8b5d-8972-8d79-e8aa46dcb0d6",
                 "type": "Condition",
-                "display": "Fever, unspecified"
+                "display": "Fever, unspecified (provisional)"
               },
               {
                 "reference": "urn:uuid:3ff85df5-841b-8812-8167-d94a351dfb1a",
                 "type": "Condition",
-                "display": "Viral fever"
+                "display": "Viral fever (differential)"
               }
             ]
           },
@@ -204,13 +204,13 @@
             },
             "text": {
               "status": "generated",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>"
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin (high criticality): Hives (severe)</p></div>"
             },
             "entry": [
               {
                 "reference": "urn:uuid:405fb968-3865-88e8-a741-6860778ff04f",
                 "type": "AllergyIntolerance",
-                "display": "Allergy Penicillin"
+                "display": "Allergy Penicillin (high criticality): Hives (severe)"
               }
             ]
           },
@@ -474,9 +474,6 @@
             "value": "IN2710000123"
           },
           "display": "Nana Hospitals, Pune"
-        },
-        "partOf": {
-          "display": "Encounter"
         }
       }
     },
@@ -649,7 +646,7 @@
         },
         "text": {
           "status": "generated",
-          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Fever, unspecified</p></div>"
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Fever, unspecified (provisional)</p></div>"
         },
         "clinicalStatus": {
           "coding": [
@@ -721,7 +718,7 @@
         },
         "text": {
           "status": "generated",
-          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Viral fever</p></div>"
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Viral fever (differential)</p></div>"
         },
         "clinicalStatus": {
           "coding": [
@@ -1326,7 +1323,7 @@
         },
         "text": {
           "status": "generated",
-          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>"
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin (high criticality): Hives (severe)</p></div>"
         },
         "clinicalStatus": {
           "coding": [

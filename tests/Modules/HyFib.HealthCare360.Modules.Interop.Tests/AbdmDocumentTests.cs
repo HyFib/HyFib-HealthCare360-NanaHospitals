@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
+using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Testing.Abdm;
 using R4 = Hl7.Fhir.Model;
 
@@ -18,7 +19,7 @@ namespace HyFib.HealthCare360.Modules.Interop.Tests;
 /// </summary>
 public sealed class AbdmDocumentTests
 {
-    private static R4.Bundle Build(AbdmDocument document) => AbdmDocumentBuilder.Build(document, TestData.Now);
+    private static R4.Bundle Build(AbdmDocument document) => AbdmDocumentBuilder.Build(document);
 
     private static readonly string[] Samples = ["prescription", "op-consultation", "lab-report", "discharge-summary"];
 
@@ -43,7 +44,7 @@ public sealed class AbdmDocumentTests
         bundle.Meta.VersionId.ShouldNotBeNullOrWhiteSpace();
         bundle.Identifier.System.ShouldBe("urn:ietf:rfc:3986");
         bundle.Identifier.Value.ShouldBe($"urn:uuid:{bundle.Id}");
-        bundle.Timestamp.ShouldBe(FhirTime.ToMilliseconds(TestData.Now));
+        bundle.Timestamp.ShouldNotBeNull().ShouldBe(bundle.Meta.LastUpdated.ShouldNotBeNull(), "a version is assembled once: its time, not the export's");
 
         var composition = bundle.Entry[0].Resource.ShouldBeOfType<R4.Composition>();
         composition.Meta.VersionId.ShouldBe(bundle.Meta.VersionId);
@@ -354,13 +355,14 @@ public sealed class AbdmDocumentTests
     [Fact]
     public void A_document_says_what_its_record_said_whenever_it_is_exported()
     {
-        // Three days of paracetamol and five of cetirizine, from the consultation on: exported a month later, when both
-        // courses are over, the prescription still shows the medicines as the doctor signed them, and is the same document.
+        // Three days of paracetamol and five of cetirizine, from the consultation on: exported again when both courses are
+        // over, the prescription still shows the medicines as the doctor signed them, and is the same document, byte for
+        // byte (its timestamp is its version's, not the export's).
         var data = AbdmTestData.Prescription(AbdmTestData.Pdf);
-        var first = AbdmDocumentBuilder.Build(AbdmRecords.Prescription(data), TestData.Now);
-        var later = AbdmDocumentBuilder.Build(AbdmRecords.Prescription(data), TestData.Now.AddMonths(1));
+        var first = FhirJson.Serialize(Build(AbdmRecords.Prescription(data)));
+        var later = Build(AbdmRecords.Prescription(data));
 
-        (later.Id, later.Identifier.Value, later.Meta.VersionId).ShouldBe((first.Id, first.Identifier.Value, first.Meta.VersionId));
+        FhirJson.Serialize(later).ShouldBe(first);
         later.Entry.Select(e => e.Resource).OfType<R4.MedicationRequest>().Select(m => m.Status)
             .ShouldBe([R4.MedicationRequest.MedicationrequestStatus.Active, R4.MedicationRequest.MedicationrequestStatus.Active]);
     }
@@ -368,16 +370,17 @@ public sealed class AbdmDocumentTests
     [Fact]
     public void A_document_that_loses_an_entry_is_a_new_version_though_nothing_in_it_changed_later()
     {
-        // A sulfonamide allergy recorded yesterday; then the penicillin allergy of a year ago is marked as recorded in error.
-        // The latest change in the document is still yesterday's, but a receiver must not keep the copy with penicillin.
+        // A sulfonamide allergy recorded during the stay; then the penicillin allergy of a year ago is marked as recorded in
+        // error. Nothing in the document changed later, but a receiver must not keep the copy with penicillin.
         var data = AbdmTestData.DischargeSummaryRecord(pdf: null);
         var penicillin = data.Allergies[0];
+        var duringTheStay = data.Summary.AdmittedAt!.Value.AddDays(1);
         var sulfonamides = penicillin with
         {
             Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac022"),
             Allergen = "Sulfonamides",
-            RecordedAt = TestData.Now.AddDays(-1),
-            CreatedAt = TestData.Now.AddDays(-1),
+            RecordedAt = duringTheStay,
+            CreatedAt = duringTheStay,
         };
         var before = Build(AbdmRecords.DischargeSummary(data with { Allergies = [penicillin, sulfonamides] }));
         var after = Build(AbdmRecords.DischargeSummary(data with { Allergies = [penicillin with { Status = AllergyStatus.EnteredInError }, sulfonamides] }));
@@ -389,14 +392,6 @@ public sealed class AbdmDocumentTests
         ((R4.Composition)after.Entry[0].Resource).Meta.VersionId.ShouldBe(after.Meta.VersionId);
     }
 
-    [Fact]
-    public void A_documents_version_leaves_out_the_pdf_which_is_made_again_at_every_export()
-    {
-        var data = AbdmTestData.Prescription(AbdmTestData.Pdf);
-        var reprinted = data with { Context = data.Context with { Pdf = new AbdmPdf([.. AbdmTestData.Pdf.Content, .. "% printed again"u8]) } };
-
-        Build(AbdmRecords.Prescription(reprinted)).Meta.VersionId.ShouldBe(Build(AbdmRecords.Prescription(data)).Meta.VersionId);
-    }
 
     [Fact]
     public void A_sections_narrative_reads_whole_with_its_free_text_and_then_its_entries()
@@ -406,13 +401,14 @@ public sealed class AbdmDocumentTests
         // The doctor's own words, then the diagnoses the section lists: more than the entries say, so "additional".
         var complaints = composition.Section[0].Text;
         complaints.Status.ShouldBe(R4.Narrative.NarrativeStatus.Additional);
-        complaints.Div.ShouldContain("<p>Chief complaint: Fever for three days</p><p>Diagnoses:</p><p>Fever, unspecified</p><p>Viral fever</p>");
+        complaints.Div.ShouldContain(
+            "<p>Chief complaint: Fever for three days</p><p>Diagnoses:</p><p>Fever, unspecified (provisional)</p><p>Viral fever (differential)</p>");
         composition.Section[2].Text.Div.ShouldSatisfyAllConditions(
             div => div.ShouldContain("<p>Examination: "), div => div.ShouldContain("<p>Vital signs:</p>"), div => div.ShouldContain("<p>Heart rate: 96 beats/minute</p>"));
 
         // A section of entries alone is generated from them.
         composition.Section[3].Text.Status.ShouldBe(R4.Narrative.NarrativeStatus.Generated);
-        composition.Section[3].Text.Div.ShouldBe("<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>");
+        composition.Section[3].Text.Div.ShouldBe("<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin (high criticality): Hives (severe)</p></div>");
 
         // A prescription: the advice, then the medicines.
         var prescription = ((R4.Composition)Sample("prescription").Entry[0].Resource).Section[0].Text.Div;
@@ -495,6 +491,7 @@ public sealed class AbdmDocumentTests
         var data = AbdmTestData.LabReportRecord(AbdmTestData.Pdf);
         var bundle = Build(AbdmRecords.LabReport(data with
         {
+            Context = data.Context with { DuplicateUhids = new Dictionary<Guid, string> { [duplicate] = "NH-000077" } },
             Report = data.Report with { PatientId = duplicate },
             Results = [.. data.Results.Select(r => r with { PatientId = duplicate })],
         }));
@@ -502,7 +499,141 @@ public sealed class AbdmDocumentTests
         var patient = FullUrl<R4.Patient>(bundle);
         bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().Single().Subject.Reference.ShouldBe(patient);
         bundle.Entry.Select(e => e.Resource).OfType<R4.Observation>().ShouldAllBe(o => o.Subject.Reference == patient);
+
+        // Its printed PDF names the duplicate's UHID, which the patient carries as an old one of theirs.
+        var uhids = bundle.Entry.Select(e => e.Resource).OfType<R4.Patient>().Single().Identifier.Where(i => i.System == FhirSystems.Uhid).ToList();
+        uhids.Select(i => (i.Value, i.Use)).ShouldBe([(TestData.Patient().Uhid, R4.Identifier.IdentifierUse.Usual), ("NH-000077", R4.Identifier.IdentifierUse.Old)]);
+
+        // A duplicate whose records the document does not hold is not named.
+        Build(AbdmRecords.LabReport(data with { Context = data.Context with { DuplicateUhids = new Dictionary<Guid, string> { [duplicate] = "NH-000077" } } }))
+            .Entry.Select(e => e.Resource).OfType<R4.Patient>().Single().Identifier.ShouldNotContain(i => i.Value == "NH-000077");
     }
+
+    [Fact]
+    public void A_diagnosis_or_allergy_reads_with_the_statuses_that_qualify_it()
+    {
+        // In FHIR the statuses change what a Condition or AllergyIntolerance means, so its line says them.
+        var data = AbdmTestData.ConsultationRecord();
+        var diagnosis = data.Diagnoses[0];
+        var allergy = data.Allergies[0];
+        var bundle = Build(AbdmRecords.Consultation(data with
+        {
+            Diagnoses =
+            [
+                diagnosis,
+                diagnosis with { Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ad001"), IsPrimary = false, Title = "Asthma", IcdCode = null, Status = DiagnosisStatus.Chronic, Type = DiagnosisType.Final },
+                diagnosis with { Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ad002"), IsPrimary = false, Title = "Typhoid", IcdCode = null, Status = DiagnosisStatus.Resolved, ResolvedOn = TestData.Today.AddDays(-30) },
+                data.Diagnoses[1],
+            ],
+            Allergies =
+            [
+                allergy,
+                allergy with { Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ad003"), Allergen = "Sulfonamides", Reaction = "Rash", Severity = AllergySeverity.Moderate },
+                allergy with { Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ad004"), Allergen = "Aspirin", Reaction = null, Severity = AllergySeverity.Mild },
+            ],
+        }));
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        composition.Section[0].Text.Div.ShouldContain(
+            "<p>Fever, unspecified (provisional)</p><p>Asthma (chronic)</p><p>Typhoid (provisional, resolved)</p><p>Viral fever (differential)</p>");
+        composition.Section[3].Text.Div.ShouldContain(
+            "<p>Allergy Penicillin (high criticality): Hives (severe)</p><p>Allergy Sulfonamides: Rash (moderate)</p><p>Allergy Aspirin</p>");
+        bundle.Entry.Select(e => e.Resource).OfType<R4.Condition>().Single(c => c.Code.Text == "Viral fever").Text.Div
+            .ShouldBe("<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Viral fever (differential)</p></div>");
+
+        // An allergy no longer active says so.
+        var inactive = Build(AbdmRecords.Consultation(data with { Allergies = [ChangeStatus(allergy, AllergyStatus.Inactive)] }));
+        ((R4.Composition)inactive.Entry[0].Resource).Section[3].Text.Div.ShouldContain("<p>Allergy Penicillin (inactive, high criticality): Hives (severe)</p>");
+    }
+
+    [Fact]
+    public void An_amended_discharge_summarys_text_is_authenticated_by_who_answers_for_the_amendment()
+    {
+        // The DocumentReference carries the amended text: the doctor who amended it authenticates it and wrote it with the
+        // signer; amended by someone who is not a doctor, no one authenticates it, as no one attests the Composition.
+        var data = AbdmTestData.DischargeSummaryRecord(pdf: null);
+        var amended = data with { Summary = data.Summary with { Status = DischargeSummaryStatus.Amended, AmendedAt = TestData.Now.AddHours(-1) } };
+
+        var byDoctor = Build(AbdmRecords.DischargeSummary(amended with { AmendedByPractitionerId = TestData.DoctorId }));
+        var text = byDoctor.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().Single();
+        text.Authenticator.Reference.ShouldBe(FullUrl<R4.Practitioner>(byDoctor, p => p.Name[0].Text == "Dr. Asha Rao"));
+        text.Author.Select(a => a.Reference).ShouldBe([
+            FullUrl<R4.Practitioner>(byDoctor, p => p.Name[0].Text == "Dr. Vikram Shah"),
+            FullUrl<R4.Practitioner>(byDoctor, p => p.Name[0].Text == "Dr. Asha Rao"),
+        ]);
+
+        var byClerk = Build(AbdmRecords.DischargeSummary(amended));
+        var clerks = byClerk.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().Single();
+        clerks.Authenticator.ShouldBeNull();
+        clerks.Author.ShouldHaveSingleItem().Reference.ShouldBe(FullUrl<R4.Practitioner>(byClerk));
+    }
+
+    [Fact]
+    public void A_doctor_named_twice_in_one_resource_is_referenced_both_times()
+    {
+        // The signed summary's signer is its author and its authenticator, one reference object in two places: both point
+        // into the document.
+        var bundle = Sample("discharge-summary");
+        var signer = FullUrl<R4.Practitioner>(bundle);
+        var text = bundle.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().Single();
+
+        text.Author.ShouldHaveSingleItem().Reference.ShouldBe(signer);
+        text.Authenticator.Reference.ShouldBe(signer);
+    }
+
+    [Fact]
+    public void A_reference_outside_the_document_without_a_type_keeps_a_display()
+    {
+        var data = AbdmTestData.LabReportRecord(pdf: null);
+        var document = AbdmRecords.LabReport(data) with
+        {
+            Supporting = [new R4.Observation { Id = "orphan", Status = R4.ObservationStatus.Final, Code = new R4.CodeableConcept { Text = "Note" }, Focus = [new R4.ResourceReference("orphan")] }],
+        };
+
+        Should.NotThrow(() => Build(document));
+    }
+
+    [Fact]
+    public void A_test_sent_to_a_referral_laboratory_is_performed_by_it()
+    {
+        // CRP went out to an accredited laboratory, as the printed report says; haemoglobin was done in-house.
+        var referral = new ReferralLabRow
+        {
+            Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ad010"),
+            Code = "RL-METRO",
+            Name = "Metropolis Healthcare, Pune",
+            Phone = "+912066001234",
+            Address = "Shivajinagar, Pune",
+            AccreditationNumber = "MC-2108",
+            CreatedAt = TestData.Now.AddYears(-1),
+        };
+        var data = AbdmTestData.LabReportRecord(pdf: null);
+        var bundle = Build(AbdmRecords.LabReport(data with
+        {
+            Context = data.Context with { ReferralLabs = [referral] },
+            Results = [data.Results[0], data.Results[1] with { ReferralLabId = referral.Id }],
+        }));
+
+        var results = bundle.Entry.Select(e => e.Resource).OfType<R4.Observation>().ToList();
+        var hospital = FullUrl<R4.Organization>(bundle, o => o.Name == "Nana Hospitals, Pune");
+        var laboratory = FullUrl<R4.Organization>(bundle, o => o.Name == "Metropolis Healthcare, Pune");
+        results[0].Performer.ShouldHaveSingleItem().Reference.ShouldBe(hospital);
+        results[1].Performer.ShouldHaveSingleItem().Reference.ShouldBe(laboratory);
+        var organization = bundle.Entry.Select(e => e.Resource).OfType<R4.Organization>().Single(o => o.Name == "Metropolis Healthcare, Pune");
+        organization.Identifier.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            i => i.System.ShouldBe(AbdmSystems.ReferralLab), i => i.Value.ShouldBe("RL-METRO"));
+
+        // The hospital issues the report and verified the result.
+        var report = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().Single();
+        report.Performer.ShouldHaveSingleItem().Reference.ShouldBe(hospital);
+        var validation = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+        validation.Errors.ShouldBeEmpty(validation.Describe());
+    }
+
+    [Theory]
+    [InlineData("prescription")]
+    [InlineData("op-consultation")]
+    public void A_consultations_encounter_does_not_point_to_a_visit_outside_the_document(string name) =>
+        Sample(name).Entry.Select(e => e.Resource).OfType<R4.Encounter>().Single().PartOf.ShouldBeNull();
 
     [Fact]
     public void Exporting_the_same_record_again_gives_the_same_document()
@@ -600,6 +731,8 @@ public sealed class AbdmDocumentTests
 
         throw new InvalidOperationException("The repository root was not found above the test's folder.");
     }
+
+    private static AllergyRow ChangeStatus(AllergyRow allergy, AllergyStatus status) => allergy with { Status = status };
 
     private static string FullUrl<T>(R4.Bundle bundle, Func<T, bool>? match = null)
         where T : R4.Resource =>

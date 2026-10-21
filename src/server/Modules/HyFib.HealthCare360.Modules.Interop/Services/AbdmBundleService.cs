@@ -30,8 +30,7 @@ internal sealed class AbdmBundleService(
     AbdmRecordLoader records,
     PatientAccessGuard guard,
     HospitalDbContext db,
-    IAuditLogger audit,
-    TimeProvider time)
+    IAuditLogger audit)
 {
     public const string Exported = "patient.accessed";
     public const string Refused = "abdm.export_denied";
@@ -114,7 +113,7 @@ internal sealed class AbdmBundleService(
 
         source = source with { PatientId = survivor, Duplicates = duplicates };
         var document = await records.LoadAsync(type, id, source, ct);
-        var bundle = AbdmDocumentBuilder.Build(document, time.GetUtcNow());
+        var bundle = AbdmDocumentBuilder.Build(document);
         await audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, Exported, $"ABDM health record exported: {Describe(type)}")
         {
             PatientId = source.PatientId,

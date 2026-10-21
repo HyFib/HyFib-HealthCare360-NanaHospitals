@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Diagnoses;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
+using HyFib.HealthCare360.Modules.Clinical.Features.Flags;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Services;
@@ -180,6 +181,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         {
             await SwitchAsync(enabled: true);
 
+            string? version;
             using (var exported = await admin.SendRawAsync(HttpMethod.Get, path))
             {
                 exported.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -196,7 +198,15 @@ public sealed class AbdmExportTests(HospitalServer server)
                 identifiers.Single(i => i.GetProperty("system").GetString() == "https://healthid.ndhm.gov.in").GetProperty("value").GetString()
                     .ShouldBe(Abha.Format(abha));
                 resources.ShouldContain(r => r.GetProperty("resourceType").GetString() == "Condition");
+                version = bundle.GetProperty("meta").GetProperty("versionId").GetString();
             }
+
+            // An allergy recorded after the note was signed is not in it: exported again, it is the same document.
+            await doctor.PostAsync<AllergyDto>($"/api/v1/emr/patients/{patient.Id}/allergies",
+                new RecordAllergyRequest("Sulfonamides", AllergyType.Drug, "Rash", AllergySeverity.Moderate, OnsetDate: null, Notes: null));
+            var again = await ExportAsync(path, "371530004", abha, $"consultation-{patient.Uhid}-");
+            again.GetProperty("meta").GetProperty("versionId").GetString().ShouldBe(version);
+            Resources(again, "AllergyIntolerance").ShouldBeEmpty();
 
             var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
             exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: consultation note");
@@ -499,10 +509,12 @@ public sealed class AbdmExportTests(HospitalServer server)
             var path = $"/api/v1/abdm/bundles/lab-reports/{crp.ReportId}";
             await SwitchAsync(enabled: true);
 
+            // The report is the surviving patient's, who carries the duplicate's UHID (the one its printed copy names) as old.
             var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-");
             var patient = Resources(bundle, "Patient").ShouldHaveSingleItem();
-            patient.GetProperty("identifier").EnumerateArray().Single(i => i.GetProperty("system").GetString() == "urn:hc360:uhid")
-                .GetProperty("value").GetString().ShouldBe(kept.Uhid);
+            patient.GetProperty("identifier").EnumerateArray().Where(i => i.GetProperty("system").GetString() == "urn:hc360:uhid")
+                .Select(i => (i.GetProperty("value").GetString(), i.GetProperty("use").GetString()))
+                .ShouldBe([(kept.Uhid, "usual"), (duplicate.Uhid, "old")]);
             Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem()
                 .GetProperty("valueQuantity").GetProperty("value").GetDecimal().ShouldBe(Crp);
             (await AuditAsync(kept.Id, "patient.accessed")).ShouldNotBeNull().EntityId.ShouldBe(crp.ReportId.ToString("D"));

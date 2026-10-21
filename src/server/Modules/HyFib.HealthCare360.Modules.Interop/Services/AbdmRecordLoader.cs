@@ -4,11 +4,11 @@ using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
-using Microsoft.Extensions.Logging;
 using ClinicalEncounter = HyFib.HealthCare360.Modules.Clinical.Domain.Encounter;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
@@ -29,7 +29,8 @@ internal sealed record AbdmSource(Guid PatientId, Guid FacilityId, string? NotEx
 /// <summary>
 /// Reads one record and the rows its ABDM document is made from, with the FHIR read API's queries (so the same rules
 /// apply: only signed, released and verified data, in the caller's facility), and hands them to
-/// <see cref="AbdmRecords"/>. The PDF the hospital prints is attached when this server can make PDFs.
+/// <see cref="AbdmRecords"/>, which keeps what the record held when it was completed. The PDF the hospital prints is
+/// attached when this server can make PDFs (<see cref="AbdmPdfSource"/>).
 /// </summary>
 internal sealed class AbdmRecordLoader(
     HospitalDbContext db,
@@ -37,8 +38,8 @@ internal sealed class AbdmRecordLoader(
     PatientRecords patients,
     ReferenceDirectoryLoader references,
     IEnumerable<INotificationDocumentSource> documents,
-    PrescriptionFinalCopies finalCopies,
-    ILogger<AbdmRecordLoader> logger)
+    IPdfRenderer renderer,
+    PrescriptionFinalCopies finalCopies)
 {
     // The printed PDFs, made by the modules' document sources (the kinds messages name them by).
     private const string PrescriptionPdf = "clinical.prescription";
@@ -162,6 +163,7 @@ internal sealed class AbdmRecordLoader(
         var results = await Observations.ReleasedResults(r => r.LabOrderId == report.LabOrderId).ToListAsync(ct);
         var (visit, encounter) = await EncounterRowsAsync(null, report.VisitId, null, ct);
         var context = await ContextAsync(source, visit, encounter, [], [], [], LabReportPdf, id, ct);
+        context = context with { ReferralLabs = await ReferralLabsAsync(results, ct) };
         return AbdmRecords.LabReport(new LabReportData(context, report, results));
     }
 
@@ -200,9 +202,10 @@ internal sealed class AbdmRecordLoader(
             };
         }
 
+        // Everything the note may have held; AbdmRecords keeps what it held when it was signed or amended.
         var diagnoses = await Conditions.Diagnoses(d => d.EncounterId == id).ToListAsync(ct);
         var vitals = await Observations.Vitals(v => v.EncounterId == id && !v.IsEnteredInError).ToListAsync(ct);
-        var lines = await Medications.SignedLines(i => true, p => p.EncounterId == id && p.Status == PrescriptionStatus.Signed).ToListAsync(ct);
+        var lines = await Medications.SignedLines(i => true, p => p.EncounterId == id).ToListAsync(ct);
         var allergies = await Allergies.Allergies(a => a.PatientId == source.PatientId && a.Status != AllergyStatus.EnteredInError).ToListAsync(ct);
         var (visit, encounter) = await EncounterRowsAsync(id, null, null, ct);
         var context = await ContextAsync(source, visit, encounter,
@@ -221,9 +224,10 @@ internal sealed class AbdmRecordLoader(
             encounterIds.Add(summaryEncounter);
         }
 
+        // Everything the summary may have held; AbdmRecords keeps what it held when it was signed or amended.
         var diagnoses = await Conditions.Diagnoses(d => d.EncounterId != null && encounterIds.Contains(d.EncounterId.Value)).ToListAsync(ct);
-        var lines = await Medications.SignedLines(i => true, p => p.Status == PrescriptionStatus.Signed
-                && (p.AdmissionId == summary.AdmissionId || (p.EncounterId != null && encounterIds.Contains(p.EncounterId.Value))))
+        var lines = await Medications.SignedLines(i => true,
+                p => p.AdmissionId == summary.AdmissionId || (p.EncounterId != null && encounterIds.Contains(p.EncounterId.Value)))
             .ToListAsync(ct);
         var allergies = await Allergies.Allergies(a => a.PatientId == source.PatientId && a.Status != AllergyStatus.EnteredInError).ToListAsync(ct);
 
@@ -244,7 +248,31 @@ internal sealed class AbdmRecordLoader(
         var context = await ContextAsync(source, visit, encounter,
             [summary.PractitionerId, summary.SignedByPractitionerId, amender, .. lines.Select(l => (Guid?)l.PractitionerId)],
             [summary.AdmissionId, .. lines.Select(l => l.AdmissionId)], [], DischargeSummaryPdf, id, ct);
+        context = context with { ReferralLabs = await ReferralLabsAsync(results, ct) };
         return AbdmRecords.DischargeSummary(new DischargeSummaryData(context, summary, diagnoses, lines, allergies, reports, results, amender));
+    }
+
+    /// <summary>The referral laboratories that performed the results (a laboratory deleted since still did).</summary>
+    private async Task<IReadOnlyList<ReferralLabRow>> ReferralLabsAsync(IEnumerable<LabResultRow> results, CancellationToken ct)
+    {
+        Guid[] ids = [.. results.Select(r => r.ReferralLabId).OfType<Guid>().Distinct()];
+        return ids.Length == 0
+            ? []
+            : await db.Set<ReferralLab>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                .Where(l => ids.Contains(l.Id))
+                .Select(l => new ReferralLabRow
+                {
+                    Id = l.Id,
+                    Code = l.Code,
+                    Name = l.Name,
+                    Phone = l.Phone,
+                    Email = l.Email,
+                    Address = l.Address,
+                    AccreditationNumber = l.AccreditationNumber,
+                    CreatedAt = l.CreatedAt,
+                    UpdatedAt = l.UpdatedAt,
+                })
+                .ToListAsync(ct);
     }
 
     /// <summary>The in-patient visit of a discharge summary's stay.</summary>
@@ -310,39 +338,40 @@ internal sealed class AbdmRecordLoader(
 
         var patient = await patients.FindRowAsync(source.PatientId, ct) ?? throw new InvalidOperationException("The record's patient is missing.");
         ids.Facility(patient.RegisteredFacilityId);
+        Guid[] duplicates = [.. source.Duplicates];
         return new AbdmContext
         {
             Patient = patient,
+            DuplicateUhids = duplicates.Length == 0
+                ? new Dictionary<Guid, string>()
+                : await db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                    .Where(p => duplicates.Contains(p.Id))
+                    .ToDictionaryAsync(p => p.Id, p => p.Uhid, ct),
             Visit = visit,
             Encounter = encounter,
             Names = await references.LoadAsync(ids, ct),
             Practitioners = await references.PractitionersAsync(ids.Practitioners, ct),
             Facilities = await references.FacilitiesAsync(ids.Facilities, ct),
             FacilityId = source.FacilityId,
-            Pdf = pdfKind is null ? null : await PdfAsync(pdfKind, id, ct),
+            Pdf = pdfKind is null ? null : await AbdmPdfSource.CreateAsync(renderer, documents.FirstOrDefault(d => d.Kind == pdfKind), id, ct),
         };
-    }
-
-    /// <summary>The PDF the hospital prints for the record, or null when this server cannot make one now.</summary>
-    private async Task<AbdmPdf?> PdfAsync(string kind, Guid id, CancellationToken ct)
-    {
-        if (documents.FirstOrDefault(d => d.Kind == kind) is not { } source)
-        {
-            return null;
-        }
-
-        try
-        {
-            return await source.CreateAsync(id, ct) is { } file ? new AbdmPdf(file.Content, file.ContentType) : null;
-        }
-        catch (PdfRenderException ex)
-        {
-            logger.LogInformation("ABDM document {Kind} exported without its PDF: {Reason}", kind, ex.Message);
-            return null;
-        }
     }
 
     private T Provider<T>()
         where T : IFhirResourceProvider =>
         providers.OfType<T>().Single();
+}
+
+/// <summary>
+/// The PDF the hospital prints for a record, for its ABDM document. A server that cannot make PDFs (no browser installed)
+/// exports every document without one. One that can and fails now (the browser crashed or took too long) does not leave
+/// it out, which would make a different document of the same record: the <see cref="PdfRenderException"/> goes up, and
+/// the export is answered 503, to be tried again.
+/// </summary>
+internal static class AbdmPdfSource
+{
+    public static async Task<AbdmPdf?> CreateAsync(IPdfRenderer renderer, INotificationDocumentSource? source, Guid id, CancellationToken ct) =>
+        source is null || renderer.Status.Browser is null ? null
+        : await source.CreateAsync(id, ct) is { } file ? new AbdmPdf(file.Content, file.ContentType)
+        : null;
 }

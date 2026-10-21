@@ -116,6 +116,7 @@ internal sealed class ObservationProvider(HospitalDbContext db) : IFhirResourceP
             Remarks = r.Remarks,
             Organism = r.Organism,
             ColonyCount = r.ColonyCount,
+            ReferralLabId = i.ReferralLabId,
             OrderedAt = o.OrderedAt,
             CollectedAt = s.CollectedAt,
             VerifiedAt = r.VerifiedAt,

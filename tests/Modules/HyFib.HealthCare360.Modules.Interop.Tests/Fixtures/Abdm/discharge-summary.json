@@ -1,8 +1,8 @@
 {
   "resourceType": "Bundle",
-  "id": "3caabacc-005f-87cc-a4ad-0845e6a37d13",
+  "id": "1717a29d-e94c-8340-b192-8d7b8629c668",
   "meta": {
-    "versionId": "1790053200000-dcc40b7040096158",
+    "versionId": "1790053200000-41b58a674408c638",
     "lastUpdated": "2026-09-22T10:30:00+05:30",
     "profile": [
       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
@@ -17,10 +17,10 @@
   },
   "identifier": {
     "system": "urn:ietf:rfc:3986",
-    "value": "urn:uuid:3caabacc-005f-87cc-a4ad-0845e6a37d13"
+    "value": "urn:uuid:1717a29d-e94c-8340-b192-8d7b8629c668"
   },
   "type": "document",
-  "timestamp": "2026-09-25T10:30:00+05:30",
+  "timestamp": "2026-09-22T10:30:00+05:30",
   "entry": [
     {
       "fullUrl": "urn:uuid:1d78966a-4639-8c28-aa2c-61c6019f0e70",
@@ -28,7 +28,7 @@
         "resourceType": "Composition",
         "id": "1d78966a-4639-8c28-aa2c-61c6019f0e70",
         "meta": {
-          "versionId": "1790053200000-dcc40b7040096158",
+          "versionId": "1790053200000-41b58a674408c638",
           "lastUpdated": "2026-09-22T10:30:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DischargeSummaryRecord"
@@ -125,13 +125,13 @@
             },
             "text": {
               "status": "generated",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>"
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin (high criticality): Hives (severe)</p></div>"
             },
             "entry": [
               {
                 "reference": "urn:uuid:405fb968-3865-88e8-a741-6860778ff04f",
                 "type": "AllergyIntolerance",
-                "display": "Allergy Penicillin"
+                "display": "Allergy Penicillin (high criticality): Hives (severe)"
               }
             ]
           },
@@ -723,7 +723,7 @@
         },
         "text": {
           "status": "generated",
-          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin</p></div>"
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Allergy Penicillin (high criticality): Hives (severe)</p></div>"
         },
         "clinicalStatus": {
           "coding": [
@@ -975,11 +975,13 @@
         "date": "2026-09-10T08:30:00+05:30",
         "author": [
           {
+            "reference": "urn:uuid:a67f7352-7304-8581-aef6-41a64671558c",
             "type": "Practitioner",
             "display": "Dr. Vikram Shah"
           }
         ],
         "authenticator": {
+          "reference": "urn:uuid:a67f7352-7304-8581-aef6-41a64671558c",
           "type": "Practitioner",
           "display": "Dr. Vikram Shah"
         },

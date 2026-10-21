@@ -47,6 +47,7 @@ internal static class AbdmSystems
 
     // HC360 identifier namespaces used only in the documents.
     public const string Facility = "urn:hc360:facility";
+    public const string ReferralLab = "urn:hc360:referral-lab";
     public const string Practitioner = "urn:hc360:practitioner";
     public const string MedicalRegistration = "urn:hc360:medical-council-registration";
 }

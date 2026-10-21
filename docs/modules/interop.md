@@ -16,7 +16,7 @@ live.
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.Interop` (layer 8; references Patients, Clinical, Diagnostics and Inpatient) |
 | Schema | none. The module owns no tables and reads the other modules' entities through `HospitalDbContext` (no migration) |
 | Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08, **partly met**: ABHA capture and the ABDM document export of consultations, prescriptions, lab reports and discharge summaries are built; verifying an ABHA with ABDM and linking care contexts to it need the ABDM gateway (the hospital's NHA credentials, not live), and imaging reports are not exported yet |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, the validated samples in `Fixtures/Abdm`) `ValidatorSetupTests` (`Abdm/`: the Firely validator set-up, see [Validation](#validation)) and `AbdmGatewayTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example numbers, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, read-only), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate, the download's file and the DSC rule, every downloaded document validated), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts`, `modules/emr/AbdmRecordButton.test.tsx`, `modules/emr/abdmRecords.test.tsx` |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, referral laboratories, the validated samples in `Fixtures/Abdm`), `AbdmDocumentVersionTests` (a document as of its record, its PDF made again, the order of rows, the PDF rule), `ValidatorSetupTests` (`Abdm/`: the Firely validator set-up, see [Validation](#validation)) and `AbdmGatewayTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example ids, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, read-only), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate (a restricted one at either end of the merge, in a discharge summary, the survivor deleted), an ABHA number a merge links, a later allergy left out of a signed note, the LOINC name rule, the download's file and the DSC rule, every downloaded document validated), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts`, `modules/emr/AbdmRecordButton.test.tsx`, `modules/emr/abdmRecords.test.tsx` |
 
 ## Permission and set-up
 
@@ -300,7 +300,8 @@ ABHA numbers, end in).
   above; dates are the day in IST), never cached; `?pretty=true` indents.
 * The record must be in the caller's facility (404 otherwise, as for a record that does not exist) and of a patient
   who is not deleted (404). A restricted (VIP) record needs `patients.restricted.read` or break-the-glass (403), as on
-  screen, and this is checked before anything else about the record is told. A refusal is audited as a security
+  screen, and this is checked before anything else about the record is told, even that its patient was since deleted.
+  A refusal is audited as a security
   warning: `security` / `abdm.export_denied`, "ABDM health record export refused: lab report", details
   `{ api: "abdm", record, reason }`. Then the record must be complete (422 `abdm.not_exportable`: a draft, a cancelled
   prescription, an unreleased report, an unsigned note, an in-patient note, whose diagnoses and prescriptions are in
@@ -308,9 +309,17 @@ ABHA numbers, end in).
   requires the doctor's DSC and the prescription has no valid one it is refused with the printout's codes: 422
   `prescription.digital_signature_required`, `…_untrusted` or `…_invalid` ([clinical.md](clinical.md)).
 * A record still kept under a duplicate UHID that was merged into another patient (a lab report: the Diagnostics module
-  leaves its records where they are) is exported as the surviving patient's, with that patient's UHID and ABHA, once
-  both patients may be opened (a restricted patient on either side needs the permission). A chain of merges is followed
-  to its end; a deleted patient on it, or a loop, is 404.
+  leaves its records where they are) is exported as the surviving patient's, with that patient's UHID and ABHA and the
+  duplicate's UHID as an old one (its printed copy names it), once every patient on the way may be opened (a
+  restricted patient at either end needs the permission). A discharge summary holds the stay's lab reports kept under
+  a duplicate merged into its patient on the same condition: when that duplicate is restricted and the caller may not
+  open it, the export is refused with 403 `abdm.restricted_duplicate`, which does not name the duplicate (breaking the
+  glass for the patient on screen would not open it), and the refusal is audited under the duplicate. A report of the
+  stay kept under anyone else's record is left out. A chain of merges is followed to its end; a deleted patient on it,
+  or a loop, is answered as a record that does not exist (404, naming no patient).
+* The printed PDF is part of the document. A server that cannot make PDFs (no browser) exports every document without
+  it; one that can but fails now (the browser crashed or took too long) answers 503 `pdf.unavailable`, to be tried
+  again, rather than a different document without its PDF.
 * An export is a staff download, like the printed copy, so it does not need the record-sharing consent of the FHIR
   API, and `abdm.export` is for hospital staff only: an integration partner's service user reads records through
   `fhir.read`, where consent applies. Sending a record to ABDM is authorised by the patient's ABDM consent artefact,
@@ -342,32 +351,45 @@ Section and document codes, systems and displays are the ones the IG's profiles 
 A section's narrative reads whole on its own, since it is what the doctor attests: the free text the doctor wrote,
 then one line per entry under a heading ("Diagnoses:", "Vital signs:", "Medicines:", "Lab reports:", "Prescribed
 during the stay:"), with status `additional`; a section without free text has one line per entry, `generated`. Every
-resource has a generated narrative.
+resource has a generated narrative. A diagnosis's line says when it is provisional, differential, chronic or resolved,
+and an allergy's when it is inactive or resolved, its high criticality and its reaction ("Viral fever (differential)",
+"Allergy Penicillin (high criticality): Hives (severe)"): in FHIR those statuses change what the resource means, and a
+narrative must read safely on its own.
 
 | Resource | Profile | What the IG adds to the read API's resource |
 |---|---|---|
-| Patient | `Patient` | ABHA number (`https://healthid.ndhm.gov.in`, `xx-xxxx-xxxx-xxxx`) typed `ABHA` from the IG's identifier types; UHID typed MR. A patient without an ABHA is still exported, with the UHID |
+| Patient | `Patient` | ABHA number (`https://healthid.ndhm.gov.in`, `xx-xxxx-xxxx-xxxx`) typed `ABHA` from the IG's identifier types; UHID typed MR, and the UHIDs of merged duplicates that records in the document are still kept under, `old`. A patient without an ABHA is still exported, with the UHID |
 | Practitioner | `Practitioner` | From the practitioner master: medical-council registration (v2-0203 MD, the council as assigner) and staff code (PRN), name, gender, qualification. No personal phone or e-mail |
-| Organization | `Organization` | From the facility master: HFR id (`https://facility.ndhm.gov.in`, PRN), facility code (XX), type `prov`, work phone, e-mail, address |
-| Encounter | `Encounter` | The visit (with its admission for a stay) or the clinical encounter |
+| Organization | `Organization` | From the facility master: HFR id (`https://facility.ndhm.gov.in`, PRN), facility code (XX), type `prov`, work phone, e-mail, address. For a test sent out, the referral laboratory from the laboratory's master: its code (`urn:hc360:referral-lab`, XX), name, phone, e-mail, address |
+| Encounter | `Encounter` | The visit (with its admission for a stay) or the clinical encounter; a consultation's link to its visit (`partOf`) is left out, as the visit is not in the document |
 | Condition | `Condition` | ICD-10 coding only (free-text diagnoses as text) |
 | AllergyIntolerance | `AllergyIntolerance` | Allergen as text; allergies recorded in error left out |
 | MedicationRequest | `MedicationRequest` | As the read API (medicine as text, dosage with v3-GTSAbbreviation timing codes and their displays) |
-| Observation | `ObservationVitalSigns`, `ObservationBodyMeasurement` (weight, height, BMI) or `Observation` (lab results, pain, GCS) | LOINC (and SNOMED CT) codings only, and only with the code system's own display, which the IG requires: a lab result's LOINC coding needs its LOINC name in the test master, else the test goes by its name as text; performer = the laboratory (results) or the hospital (vital signs) |
+| Observation | `ObservationVitalSigns`, `ObservationBodyMeasurement` (weight, height, BMI) or `Observation` (lab results, pain, GCS) | LOINC (and SNOMED CT) codings only, and only with the code system's own display, which the IG requires: a lab result's LOINC coding needs its LOINC name in the test master, else the test goes by its name as text; performer = the laboratory (results; the referral laboratory for a test sent out to one, as the printed report says) or the hospital (vital signs) |
 | DiagnosticReport | `DiagnosticReportLab` | Category SNOMED CT 394595002 "Pathology"; LOINC 11502-2; performer and results interpreter = the laboratory; conclusion (the IG requires one; the laboratory writes none) = the results the laboratory flagged ("Flagged by the laboratory: Haemoglobin (Low)."), or "See the individual results." when it flagged none: an unflagged result is not a normal one (a qualitative result, or one without a reference range, is never flagged), so nothing is said about the results |
-| DocumentReference, Binary | `DocumentReference`, `Binary` | The printed PDF (made by the same document sources as the download and the messages); when this server cannot make PDFs, the lab report and prescription go without it and the discharge summary carries its text |
+| DocumentReference, Binary | `DocumentReference`, `Binary` | The printed PDF (made by the same document sources as the download and the messages); when this server cannot make PDFs, the lab report and prescription go without it and the discharge summary carries its text. An amended discharge summary's DocumentReference is authenticated by the doctor who amended it, an author with the signer (by no one when it was not a doctor), as its Composition is attested |
 
 * **Ids** are UUIDs derived from HC360's ids (SHA-256, RFC 9562 version 8), so exporting a record again gives the
   same ids and a patient or doctor has one id in every document.
-* **Versions.** `meta.versionId` of the Bundle and Composition is the latest change to anything in the document (Unix
-  milliseconds), a hyphen and the first 8 bytes of a SHA-256 hash of its resources as JSON, in hex
-  (`1790306700000-173f6d813eaf32be` in the sample prescription). The hash catches what moves no change time forward,
-  such as an entry that drops out (an allergy recorded in error); the printed PDF is left out of it, as it is made again
-  at every export. Exporting an unchanged record again gives the same version. The Bundle's id and `identifier`
-  (`urn:ietf:rfc:3986`, `urn:uuid:…`) change with the version, the Composition's id does not. `meta.security` is
-  v3-Confidentiality V.
-* **As of the record.** A document says what its record said whenever it is exported: a medicine is active or
-  completed as of the document's date (the day it was signed, released or amended), not the day of the export.
+* **Versions.** A document exported twice is the same, byte for byte, or a new version. `meta.versionId` of the
+  Bundle and Composition is the latest change to what the document holds (Unix milliseconds), a hyphen and the first 8
+  bytes of a SHA-256 hash of its resources as JSON, the printed PDF included, in hex (`1790306700000-b5fc9c62149f2e9d`
+  in the sample prescription). The hash catches what moves no change time forward: an entry that drops out (an allergy
+  recorded in error), or a PDF that prints something else (the patient's age on a later day, the DSC signature as it
+  checks out then). A PDF is made again at every export, and two PDFs of the same page differ only in their creation
+  and modification dates, which are set to the document's date (in UTC, each keeping its length, so the file's offsets
+  hold): the same page gives the same bytes. A doctor the record names but the document leaves out (a consultation's
+  referral doctor) does not count. The Bundle's `timestamp` is its version's time, not the export's, as a document is
+  assembled once per version; its id and `identifier` (`urn:ietf:rfc:3986`, `urn:uuid:…`) change with the version,
+  the Composition's id does not. Every list is in an order of its own (time, then id), so the order the database
+  returns rows in changes nothing. `meta.security` is v3-Confidentiality V.
+* **As of the record.** A document holds what its record held when it was completed: signed, released, or amended
+  for an amended record (`AbdmAsOf`). An allergy, diagnosis, vital sign, prescription or lab report entered later is
+  not in it; a diagnosis resolved since is active, a prescription cancelled since is signed, and a medicine is active
+  or completed as of that day; an entry recorded in error since is left out, as never true. HC360 keeps no history of
+  other changes, which show as they are now and make a new version: an allergy made inactive, a diagnosis confirmed, an
+  edited reaction, an amended lab result, the patient's details, records moved to the patient by a later merge, and the
+  PDF as the hospital prints it today.
 * **Status and attestation.** An amended record is an `amended` Composition. A lab report released before all its
   results is `preliminary` (its Composition and its PDF's DocumentReference), as its DiagnosticReport is `partial`.
   The signing doctor is the author and the legal attester. An amended consultation note or discharge summary has two
@@ -398,8 +420,8 @@ terminology server, so those checks are skipped and listed (`AbdmProfileValidato
 The four sample documents built by `AbdmDocumentTests` are kept in
 `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests/Fixtures/Abdm` (a test fails when the code builds anything
 else; `HC360_WRITE_ABDM_FIXTURES=1` writes them again, after which they are validated again). They were checked on
-2026-10-16, and again on 2026-10-20 after the review's fixes with the same results, with the official **HL7 FHIR
-validator** (`validator_cli.jar` 7.0.2) against `ndhm.in#6.5.0`:
+2026-10-16, and again after each review's fixes (2026-10-20 and 2026-10-21) with the same results, with the official
+**HL7 FHIR validator** (`validator_cli.jar` 7.0.2) against `ndhm.in#6.5.0`:
 
 ```
 java -jar validator_cli.jar Fixtures/Abdm/*.json -version 4.0.1 -ig ndhm.in#6.5.0 -tx n/a

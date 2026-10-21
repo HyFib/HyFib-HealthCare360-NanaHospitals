@@ -13,18 +13,30 @@ internal sealed record AbdmPdf(byte[] Content, string ContentType = "application
 
 /// <summary>
 /// What every document needs besides its record: the patient, the encounter rows (a clinician's encounter, or a visit
-/// with its admission), the names of the people, departments and facilities the rows refer to, the doctors' and the
-/// facility's master details, the record's facility and the printed PDF when there is one. Nothing depends on the day of
-/// the export: a document says what its record says.
+/// with its admission), the names of the people, departments and facilities the rows refer to, the doctors', the
+/// facility's and the referral laboratories' master details, the record's facility and the printed PDF when there is
+/// one. Nothing depends on the day of the export: a document says what its record said when it was completed
+/// (<see cref="AbdmAsOf"/>).
 /// </summary>
 internal sealed record AbdmContext
 {
     public required PatientRow Patient { get; init; }
+
+    /// <summary>
+    /// The UHIDs of the duplicates merged into the patient whose records the document may hold (a lab report is still
+    /// kept under the UHID it was made for, and its printed PDF names that one), by patient id.
+    /// </summary>
+    public IReadOnlyDictionary<Guid, string> DuplicateUhids { get; init; } = new Dictionary<Guid, string>();
+
     public VisitRow? Visit { get; init; }
     public ClinicalEncounterRow? Encounter { get; init; }
     public required ReferenceDirectory Names { get; init; }
     public IReadOnlyList<PractitionerRow> Practitioners { get; init; } = [];
     public IReadOnlyList<FacilityRow> Facilities { get; init; } = [];
+
+    /// <summary>The referral laboratories that performed tests in the document.</summary>
+    public IReadOnlyList<ReferralLabRow> ReferralLabs { get; init; } = [];
+
     public required Guid FacilityId { get; init; }
     public AbdmPdf? Pdf { get; init; }
 }
@@ -116,11 +128,49 @@ internal static class AbdmFiles
 }
 
 /// <summary>
+/// What a record held when it was completed (<c>asOf</c>: the time it was signed, released, or amended for an amended
+/// one), so that exporting it again later gives the same document. The rows are those entered by then (a later allergy,
+/// diagnosis, vital sign, prescription or lab report is not in it), each with the status it had then where HC360 keeps
+/// when that changed: a diagnosis resolved since was active, and a prescription cancelled since was signed (with its
+/// change time as of its signing). An entry recorded in error since is left out, as never true. HC360 keeps no history
+/// of other changes (an allergy made inactive, a diagnosis confirmed, an edited reaction, a lab result amended): those
+/// show as they are now, and give the document a new version.
+/// </summary>
+internal static class AbdmAsOf
+{
+    public static List<DiagnosisRow> Diagnoses(IEnumerable<DiagnosisRow> rows, DateTimeOffset asOf) =>
+    [
+        .. rows.Where(d => d.CreatedAt <= asOf).Select(d => d.Status == DiagnosisStatus.Resolved && d.ResolvedOn > FhirTime.IstDate(asOf)
+            ? d with { Status = DiagnosisStatus.Active, ResolvedOn = null, UpdatedAt = null }
+            : d),
+    ];
+
+    public static List<AllergyRow> Allergies(IEnumerable<AllergyRow> rows, DateTimeOffset asOf) =>
+        [.. rows.Where(a => a.CreatedAt <= asOf && a.Status != AllergyStatus.EnteredInError)];
+
+    public static List<VitalSignsRow> Vitals(IEnumerable<VitalSignsRow> rows, DateTimeOffset asOf) =>
+        [.. rows.Where(v => v.CreatedAt <= asOf && !v.IsEnteredInError)];
+
+    /// <summary>Lines of prescriptions signed by then and not cancelled by then.</summary>
+    public static List<PrescriptionItemRow> Lines(IEnumerable<PrescriptionItemRow> rows, DateTimeOffset asOf) =>
+    [
+        .. rows.Where(l => l.SignedAt <= asOf && (l.Status == PrescriptionStatus.Signed || (l.Status == PrescriptionStatus.Cancelled && l.CancelledAt > asOf)))
+            .Select(l => l.Status == PrescriptionStatus.Cancelled
+                ? l with { Status = PrescriptionStatus.Signed, CancelledAt = null, CancelReason = null, PrescriptionUpdatedAt = l.SignedAt }
+                : l),
+    ];
+
+    public static List<LabReportRow> Reports(IEnumerable<LabReportRow> rows, DateTimeOffset asOf) =>
+        [.. rows.Where(r => (r.ReleasedAt ?? r.CreatedAt) <= asOf)];
+}
+
+/// <summary>
 /// The contents of each ABDM document type, from the rows of its record (no database: every rule here is unit-tested).
 /// The resources come from the FHIR read API's mappers, with literal Practitioner and Organization references, fitted to
 /// the IG's profiles by <see cref="AbdmProfiler"/>; the sections are the IG's, in its order, with the record's free text
-/// as their narrative. A medicine's status (active, completed) is as of the document's date, the day it was signed,
-/// released or amended, so exporting it again later gives the same document.
+/// as their narrative. The rows are the record's as of the document's date (<see cref="AbdmAsOf"/>), the time it was
+/// signed, released or amended, and a medicine's status (active, completed) is as of that day, so exporting it again
+/// later gives the same document.
 /// </summary>
 internal static class AbdmRecords
 {
@@ -159,7 +209,7 @@ internal static class AbdmRecords
             Status = R4.CompositionStatus.Final,
             Date = date,
             RecordUpdated = FhirElements.Latest(d.CreatedAt, d.UpdatedAt),
-            Patient = Patient(d.Context, people),
+            Patient = Patient(d.Context, people, []),
             Encounter = encounter,
             Author = author,
             Attester = author,
@@ -205,7 +255,7 @@ internal static class AbdmRecords
             Status = status,
             Date = released,
             RecordUpdated = FhirElements.Latest(d.Report.CreatedAt, d.Report.UpdatedAt),
-            Patient = Patient(d.Context, people),
+            Patient = Patient(d.Context, people, [d.Report.PatientId]),
             Encounter = encounter,
             Author = laboratory,
             Custodian = laboratory,
@@ -224,8 +274,8 @@ internal static class AbdmRecords
         var note = d.Note;
         var date = note.AmendedAt ?? note.SignedAt ?? note.CreatedAt;
         var people = People.Of(d.Context);
-        var conditions = Conditions(d.Diagnoses);
-        var observations = d.Vitals.Where(v => !v.IsEnteredInError).OrderBy(v => v.RecordedAt)
+        var conditions = Conditions(AbdmAsOf.Diagnoses(d.Diagnoses, date));
+        var observations = AbdmAsOf.Vitals(d.Vitals, date).OrderBy(v => v.RecordedAt).ThenBy(v => v.Id)
             .SelectMany(VitalSignObservations.Map).Select(AbdmProfiler.Observation).ToList();
         var hospital = people.Names.Organization(d.Context.FacilityId)!;
         foreach (var observation in observations)
@@ -234,8 +284,8 @@ internal static class AbdmRecords
             observation.Performer = [R4.BaseExtensions.DeepCopy(hospital)];
         }
 
-        var requests = MedicationRequests(d.Lines, people, date);
-        var allergies = Allergies(d.Allergies);
+        var requests = MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date);
+        var allergies = Allergies(AbdmAsOf.Allergies(d.Allergies, date));
         var author = people.Practitioner(note.SignedByPractitionerId ?? note.PractitionerId);
         var amended = note.Status == EncounterStatus.Amended;
         var amender = amended ? people.Find(note.AmendedByPractitionerId) : null;
@@ -273,7 +323,7 @@ internal static class AbdmRecords
             Status = amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
             Date = date,
             RecordUpdated = FhirElements.Latest(note.CreatedAt, note.UpdatedAt),
-            Patient = Patient(d.Context, people),
+            Patient = Patient(d.Context, people, []),
             Encounter = encounter,
             Author = author,
             AmendedBy = amender,
@@ -299,12 +349,13 @@ internal static class AbdmRecords
         var date = summary.AmendedAt ?? summary.SignedAt ?? summary.CreatedAt;
         var people = People.Of(d.Context);
         var custodian = people.Organization(d.Context.FacilityId);
-        var conditions = Conditions(d.Diagnoses);
-        var requests = MedicationRequests(d.Lines, people, date);
-        var allergies = Allergies(d.Allergies);
+        var conditions = Conditions(AbdmAsOf.Diagnoses(d.Diagnoses, date));
+        var requests = MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date);
+        var allergies = Allergies(AbdmAsOf.Allergies(d.Allergies, date));
         var reports = new List<R4.DiagnosticReport>();
         var results = new List<R4.Observation>();
-        foreach (var row in d.LabReports.OrderBy(r => r.ReleasedAt))
+        var labReports = AbdmAsOf.Reports(d.LabReports, date).OrderBy(r => r.ReleasedAt).ThenBy(r => r.Id).ToList();
+        foreach (var row in labReports)
         {
             var (report, observations) = LabReportWithResults(row, d.LabResults.Where(r => r.LabOrderId == row.LabOrderId).ToList(), people, d.Context.FacilityId);
             reports.Add(report);
@@ -318,9 +369,20 @@ internal static class AbdmRecords
         }
 
         // A summary signed before signers were recorded may name no doctor: the hospital is then its author.
-        var practitioner = people.Find(summary.SignedByPractitionerId ?? summary.PractitionerId);
+        var signer = summary.SignedByPractitionerId ?? summary.PractitionerId;
+        var practitioner = people.Find(signer);
         var amended = summary.Status == DischargeSummaryStatus.Amended;
         var amender = amended ? people.Find(d.AmendedByPractitionerId) : null;
+        if (amended)
+        {
+            // The amended text is this version's, as the Composition's attestation is: whoever amended it authenticates it
+            // (no one, when that was not a doctor), and a doctor who did is one of its authors.
+            document.Authenticator = amender is null ? null : people.Names.Practitioner(d.AmendedByPractitionerId);
+            if (amender is not null && d.AmendedByPractitionerId != signer)
+            {
+                document.Author.Add(people.Names.Practitioner(d.AmendedByPractitionerId)!);
+            }
+        }
         List<AbdmSection> sections =
         [
             new(AbdmCodes.ChiefComplaints, "Chief complaints and diagnoses", Lines(
@@ -355,7 +417,7 @@ internal static class AbdmRecords
             Status = amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
             Date = date,
             RecordUpdated = FhirElements.Latest(summary.CreatedAt, summary.UpdatedAt),
-            Patient = Patient(d.Context, people),
+            Patient = Patient(d.Context, people, labReports.Select(r => r.PatientId)),
             Encounter = encounter,
             Author = (R4.Resource?)practitioner ?? custodian,
             AmendedBy = amender,
@@ -367,41 +429,86 @@ internal static class AbdmRecords
         };
     }
 
-    private static R4.Patient Patient(AbdmContext context, People people) =>
-        AbdmProfiler.Patient(PatientMapper.Map(context.Patient, people.Names));
+    /// <summary>
+    /// The patient, with the UHIDs of merged duplicates that records in the document are still kept under
+    /// (<paramref name="recordPatients"/>: the patients the records name) as old ones.
+    /// </summary>
+    private static R4.Patient Patient(AbdmContext context, People people, IEnumerable<Guid> recordPatients)
+    {
+        var patient = PatientMapper.Map(context.Patient, people.Names);
+        var former = recordPatients.Select(context.DuplicateUhids.GetValueOrDefault).OfType<string>();
+        foreach (var uhid in former.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+        {
+            var identifier = PatientMapper.Uhid(uhid);
+            identifier.Use = R4.Identifier.IdentifierUse.Old;
+            patient.Identifier.Add(identifier);
+        }
 
-    private static R4.Encounter? Encounter(AbdmContext context, People people) =>
-        context.Encounter is { } e ? AbdmProfiler.Encounter(EncounterMapper.FromClinicalEncounter(e, people.Names))
-        : context.Visit is { } v ? AbdmProfiler.Encounter(EncounterMapper.FromVisit(v, people.Names))
-        : null;
+        return AbdmProfiler.Patient(patient);
+    }
+
+    /// <summary>
+    /// The record's encounter. A consultation's link to the visit it is part of is left out: the visit is not in the
+    /// document, and a link to it could say no more than that it is an encounter.
+    /// </summary>
+    private static R4.Encounter? Encounter(AbdmContext context, People people)
+    {
+        var encounter = context.Encounter is { } e ? EncounterMapper.FromClinicalEncounter(e, people.Names)
+            : context.Visit is { } v ? EncounterMapper.FromVisit(v, people.Names)
+            : null;
+        if (encounter is null)
+        {
+            return null;
+        }
+
+        encounter.PartOf = null;
+        return AbdmProfiler.Encounter(encounter);
+    }
 
     private static R4.ResourceReference? Reference(AbdmContext context) =>
         context.Encounter is { } e ? FhirReferences.Encounter(FhirIds.ClinicalEncounter, e.Id)
         : context.Visit is { } v ? FhirReferences.Encounter(FhirIds.Visit, v.Id)
         : null;
 
+    // Every list is in an order of its own, the record's id last, so that the document does not depend on the order the
+    // database returned its rows in.
     private static List<R4.Condition> Conditions(IReadOnlyList<DiagnosisRow> diagnoses) =>
-        [.. diagnoses.OrderByDescending(d => d.IsPrimary).ThenBy(d => d.RecordedAt).Select(d => AbdmProfiler.Condition(ConditionMapper.Map(d)))];
+    [
+        .. diagnoses.OrderByDescending(d => d.IsPrimary).ThenBy(d => d.RecordedAt).ThenBy(d => d.Id)
+            .Select(d => AbdmProfiler.Condition(ConditionMapper.Map(d))),
+    ];
 
     /// <summary>Allergies, except those recorded in error.</summary>
     private static List<R4.AllergyIntolerance> Allergies(IReadOnlyList<AllergyRow> allergies) =>
-        [.. allergies.Where(a => a.Status != AllergyStatus.EnteredInError).OrderBy(a => a.RecordedAt).Select(a => AbdmProfiler.Allergy(AllergyIntoleranceMapper.Map(a)))];
+    [
+        .. allergies.Where(a => a.Status != AllergyStatus.EnteredInError).OrderBy(a => a.RecordedAt).ThenBy(a => a.Id)
+            .Select(a => AbdmProfiler.Allergy(AllergyIntoleranceMapper.Map(a))),
+    ];
 
     /// <summary>The medicines, each active or completed as of <paramref name="asOf"/> (its day in IST).</summary>
     private static List<R4.MedicationRequest> MedicationRequests(IReadOnlyList<PrescriptionItemRow> lines, People people, DateTimeOffset asOf) =>
-        [.. lines.OrderBy(l => l.SignedAt ?? l.PrescribedAt).ThenBy(l => l.PrescriptionId).ThenBy(l => l.Sequence)
+        [.. lines.OrderBy(l => l.SignedAt ?? l.PrescribedAt).ThenBy(l => l.PrescriptionId).ThenBy(l => l.Sequence).ThenBy(l => l.Id)
             .Select(l => AbdmProfiler.MedicationRequest(MedicationRequestMapper.Map(l, people.Names, FhirTime.IstDate(asOf))))];
 
+    /// <summary>
+    /// A lab report and its results, in the report's order. Who performed each test (the IG's general Observation profile
+    /// asks who did): the referral laboratory it was sent out to, as the printed report says, else the hospital's
+    /// laboratory, which also issues the report and verified every result.
+    /// </summary>
     private static (R4.DiagnosticReport Report, List<R4.Observation> Results) LabReportWithResults(
         LabReportRow row, IReadOnlyList<LabResultRow> results, People people, Guid laboratoryId)
     {
         var laboratory = people.Names.Organization(laboratoryId)!;
-        var listed = row.ResultIds.Select(id => FhirIds.Of(FhirIds.Lab, id)).ToHashSet(StringComparer.Ordinal);
-        var observations = results.Select(r => AbdmProfiler.Observation(LabObservations.Map(r))).Where(o => listed.Contains(o.Id!)).ToList();
-        foreach (var observation in observations)
+        var byId = results.ToDictionary(r => r.Id);
+        var observations = new List<R4.Observation>();
+        foreach (var id in row.ResultIds)
         {
-            // The laboratory performed the test (the IG's general Observation profile asks who did).
-            observation.Performer = [R4.BaseExtensions.DeepCopy(laboratory)];
+            if (byId.TryGetValue(id, out var result))
+            {
+                var observation = AbdmProfiler.Observation(LabObservations.Map(result));
+                observation.Performer = [people.ReferralLab(result.ReferralLabId) ?? R4.BaseExtensions.DeepCopy(laboratory)];
+                observations.Add(observation);
+            }
         }
 
         var report = AbdmProfiler.LabReport(DiagnosticReportMapper.FromLab(row), laboratory, observations);
@@ -451,15 +558,34 @@ internal static class AbdmRecords
 
     private static List<string> Lines(params string?[] lines) => [.. lines.OfType<string>()];
 
-    /// <summary>The document's names (with literal references) and its Practitioner and Organization resources.</summary>
-    private sealed record People(ReferenceDirectory Names, Dictionary<Guid, R4.Practitioner> Practitioners, Dictionary<Guid, R4.Organization> Organizations)
+    /// <summary>
+    /// The document's names (with literal references) and its Practitioner and Organization resources: the facilities'
+    /// and the referral laboratories'.
+    /// </summary>
+    private sealed record People(
+        ReferenceDirectory Names,
+        Dictionary<Guid, R4.Practitioner> Practitioners,
+        Dictionary<Guid, R4.Organization> Organizations,
+        Dictionary<Guid, R4.Organization> ReferralLabs)
     {
-        public IReadOnlyList<R4.Resource> All => [.. Practitioners.Values, .. Organizations.Values];
+        /// <summary>All of them, in order of id.</summary>
+        public IReadOnlyList<R4.Resource> All =>
+        [
+            .. Practitioners.OrderBy(p => p.Key).Select(p => p.Value),
+            .. Organizations.Concat(ReferralLabs).OrderBy(o => o.Key).Select(o => o.Value),
+        ];
 
         public static People Of(AbdmContext context) => new(
             context.Names.WithLinks(),
             context.Practitioners.ToDictionary(p => p.Id, AbdmParticipants.Practitioner),
-            context.Facilities.ToDictionary(f => f.Id, AbdmParticipants.Organization));
+            context.Facilities.ToDictionary(f => f.Id, AbdmParticipants.Organization),
+            context.ReferralLabs.ToDictionary(l => l.Id, AbdmParticipants.ReferralLab));
+
+        /// <summary>A reference to the referral laboratory, when there is one and the document knows it.</summary>
+        public R4.ResourceReference? ReferralLab(Guid? id) =>
+            id is { } lab && ReferralLabs.TryGetValue(lab, out var organization)
+                ? new R4.ResourceReference($"Organization/{organization.Id}") { Type = "Organization", Display = organization.Name }
+                : null;
 
         public R4.Practitioner Practitioner(Guid id) =>
             Practitioners.TryGetValue(id, out var practitioner) ? practitioner : throw new InvalidOperationException("The record's doctor is missing.");

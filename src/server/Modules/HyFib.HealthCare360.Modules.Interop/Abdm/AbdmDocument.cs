@@ -59,7 +59,10 @@ internal sealed record AbdmDocument
     /// <summary>When the record was completed: signed, released or amended.</summary>
     public required DateTimeOffset Date { get; init; }
 
-    /// <summary>The record's own latest change (created, signed, amended, released).</summary>
+    /// <summary>
+    /// The record's own latest change (created, signed, amended, released). With the latest change to the resources in
+    /// the document and a hash of its content it makes the document's version (<see cref="AbdmDocumentBuilder"/>).
+    /// </summary>
     public required DateTimeOffset RecordUpdated { get; init; }
 
     public required R4.Patient Patient { get; init; }
@@ -84,19 +87,9 @@ internal sealed record AbdmDocument
 
     public required IReadOnlyList<AbdmSection> Sections { get; init; }
 
-    /// <summary>Resources referenced from the entries rather than listed in a section (a report's observations, other doctors).</summary>
-    public IReadOnlyList<R4.Resource> Supporting { get; init; } = [];
-
     /// <summary>
-    /// The latest change to anything in the document: the record and every resource in it, the patient, the doctors and
-    /// the facility included. With a hash of the content it makes the document's version (<see cref="AbdmDocumentBuilder"/>).
+    /// Resources referenced from the entries rather than listed in a section (a report's observations, other doctors).
+    /// Those nothing in the document refers to are left out of it.
     /// </summary>
-    public DateTimeOffset LastUpdated =>
-        new R4.Resource?[] { Patient, Encounter, Author, AmendedBy, Attester, Custodian }
-            .Concat(Sections.SelectMany(s => s.Entries))
-            .Concat(Supporting)
-            .Select(r => r?.Meta?.LastUpdated)
-            .OfType<DateTimeOffset>()
-            .Append(RecordUpdated)
-            .Max();
+    public IReadOnlyList<R4.Resource> Supporting { get; init; } = [];
 }

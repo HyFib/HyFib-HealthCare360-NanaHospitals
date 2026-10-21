@@ -156,10 +156,31 @@ internal sealed record LabResultRow
     public string? Remarks { get; init; }
     public string? Organism { get; init; }
     public string? ColonyCount { get; init; }
+
+    /// <summary>The referral laboratory the test was sent out to, which performed it (LIS-08); null when done in-house.</summary>
+    public Guid? ReferralLabId { get; init; }
+
     public DateTimeOffset OrderedAt { get; init; }
     public DateTimeOffset? CollectedAt { get; init; }
     public DateTimeOffset? VerifiedAt { get; init; }
     public DateTimeOffset? ReleasedAt { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+
+/// <summary>Diagnostics module <see cref="ReferralLab"/>: an outside laboratory that performs the tests sent out to it.</summary>
+internal sealed record ReferralLabRow
+{
+    public required Guid Id { get; init; }
+    public string Code { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string? Phone { get; init; }
+    public string? Email { get; init; }
+    public string? Address { get; init; }
+
+    /// <summary>Its NABL accreditation number.</summary>
+    public string? AccreditationNumber { get; init; }
+
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }

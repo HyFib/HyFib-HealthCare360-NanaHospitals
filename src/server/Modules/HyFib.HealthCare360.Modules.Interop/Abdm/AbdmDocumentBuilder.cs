@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
@@ -18,13 +19,14 @@ namespace HyFib.HealthCare360.Modules.Interop.Abdm;
 /// <para>
 /// Ids are derived from HC360's ids (a SHA-256 based UUID, RFC 9562 version 8), so exporting the same record again gives
 /// the same ids, and a patient or doctor keeps one id across documents. The document's version, and with it the Bundle's
-/// id and identifier, is its latest change and a hash of its content (<see cref="Version"/>): it changes whenever the
-/// document does, and only then.
+/// id, identifier and timestamp, is the latest change to what it holds and a hash of its content, the printed PDF
+/// included (<see cref="Version"/>): it changes whenever the document does, and only then, so a document exported twice
+/// is either the same, byte for byte, or a new version.
 /// </para>
 /// </summary>
-internal static class AbdmDocumentBuilder
+internal static partial class AbdmDocumentBuilder
 {
-    public static R4.Bundle Build(AbdmDocument document, DateTimeOffset now)
+    public static R4.Bundle Build(AbdmDocument document)
     {
         var resources = Resources(document);
         var compositionKey = $"Composition/{document.Type}/{FhirIds.Of(document.SourceId)}";
@@ -49,10 +51,16 @@ internal static class AbdmDocumentBuilder
             {
                 domain.Text = AbdmNarrative.Generated([summary]);
             }
+
+            PrintedAsOf(resource, document.Date);
         }
 
-        var version = Version(document.LastUpdated, resources.Prepend(composition));
-        (composition.Meta ??= new R4.Meta()).VersionId = version;
+        // The latest change to what the document holds: a doctor the record names but the document leaves out (the
+        // referral doctor, a summary's writer when another doctor signed it) does not count.
+        var lastUpdated = resources.Select(r => r.Meta?.LastUpdated).OfType<DateTimeOffset>().Append(document.RecordUpdated).Max();
+        composition.Meta!.LastUpdated = FhirTime.ToMilliseconds(lastUpdated);
+        var version = Version(lastUpdated, resources.Prepend(composition));
+        composition.Meta.VersionId = version;
         var bundleId = Uuid($"Bundle/{document.Type}/{FhirIds.Of(document.SourceId)}/{version}");
         var bundle = new R4.Bundle
         {
@@ -60,13 +68,16 @@ internal static class AbdmDocumentBuilder
             Meta = new R4.Meta
             {
                 VersionId = version,
-                LastUpdated = FhirTime.ToMilliseconds(document.LastUpdated),
+                LastUpdated = FhirTime.ToMilliseconds(lastUpdated),
                 Profile = [AbdmProfiles.DocumentBundle],
                 Security = [FhirElements.Coding(AbdmSystems.Confidentiality, "V", "very restricted")],
             },
             Identifier = new R4.Identifier(AbdmSystems.Uri, Urn(bundleId)),
             Type = R4.Bundle.BundleType.Document,
-            Timestamp = FhirTime.ToMilliseconds(now),
+
+            // A document is assembled once per version: its timestamp is the version's, not the export's, as its
+            // identifier is.
+            Timestamp = FhirTime.ToMilliseconds(lastUpdated),
         };
 
         bundle.Entry.Add(new R4.Bundle.EntryComponent { FullUrl = Urn(composition.Id!), Resource = composition });
@@ -92,29 +103,60 @@ internal static class AbdmDocumentBuilder
 
     /// <summary>
     /// The document's version: its latest change in Unix milliseconds, and the first 8 bytes of a SHA-256 hash of its
-    /// resources as JSON. The hash catches what moves no change time forward: an entry that drops out (an allergy recorded
-    /// in error, a diagnosis deleted). The printed PDF is left out of it, as it is made again at every export.
+    /// resources as JSON, the printed PDF included. The hash catches what moves no change time forward: an entry that
+    /// drops out (an allergy recorded in error, a diagnosis deleted), or a PDF that prints something else (the patient's
+    /// age on a later day, the DSC signature as it checks out now).
     /// </summary>
     internal static string Version(DateTimeOffset lastUpdated, IEnumerable<R4.Resource> resources)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (var resource in resources)
         {
-            var content = R4.BaseExtensions.DeepCopy(resource);
-            if (content is R4.Binary binary)
-            {
-                binary.Data = null;
-            }
-
-            foreach (var attachment in Descendants<R4.Attachment>(content))
-            {
-                (attachment.Data, attachment.SizeUnsignedInt, attachment.Hash) = (null, null, null);
-            }
-
-            hash.AppendData(Encoding.UTF8.GetBytes(FhirJson.Serialize(content)));
+            hash.AppendData(Encoding.UTF8.GetBytes(FhirJson.Serialize(resource)));
         }
 
         return $"{lastUpdated.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}-{Convert.ToHexStringLower(hash.GetHashAndReset(), 0, 8)}";
+    }
+
+    /// <summary>
+    /// A printed PDF with its creation and modification dates set to <paramref name="date"/> (in UTC). The PDF is made
+    /// again at every export, and those dates, the time it was made, are all that differs between two PDFs of the same
+    /// page; the rest of the file is left byte for byte as it is (each date keeps its length, so the file's cross-reference
+    /// offsets still hold).
+    /// </summary>
+    internal static byte[] PdfAsOf(byte[] pdf, DateTimeOffset date)
+    {
+        // Latin-1 maps every byte to one character and back, so the binary parts of the file come through unchanged.
+        var text = Encoding.Latin1.GetString(pdf);
+        var utc = date.ToUniversalTime().ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+        var dated = PdfDate().Replace(text, m => m.Groups["key"].Value + utc + m.Groups["zone"].Value switch
+        {
+            "" => string.Empty,
+            "Z" => "Z",
+            var zone => "+00" + zone[3..4] + "00" + zone[6..],
+        });
+        return ReferenceEquals(dated, text) ? pdf : Encoding.Latin1.GetBytes(dated);
+    }
+
+    /// <summary>A date of the PDF's document information: <c>/CreationDate (D:20261021005544+00'00')</c>.</summary>
+    [GeneratedRegex(@"(?<key>/(?:CreationDate|ModDate)\s*\(D:)\d{14}(?<zone>Z|[+-]\d\d'\d\d'?)?(?=\))", RegexOptions.CultureInvariant)]
+    private static partial Regex PdfDate();
+
+    /// <summary>The printed PDFs the resource carries (a Binary's, or an attachment's), as of the document's date.</summary>
+    private static void PrintedAsOf(R4.Resource resource, DateTimeOffset date)
+    {
+        if (resource is R4.Binary { ContentType: "application/pdf", Data: { } data } binary)
+        {
+            binary.Data = PdfAsOf(data, date);
+        }
+
+        foreach (var attachment in Descendants<R4.Attachment>(resource))
+        {
+            if (attachment is { ContentType: "application/pdf", Data: { } bytes })
+            {
+                attachment.Data = PdfAsOf(bytes, date);
+            }
+        }
     }
 
     /// <summary>The resources of the document in order, each once: patient, encounter, people, sections, supporting.</summary>
@@ -154,11 +196,7 @@ internal static class AbdmDocumentBuilder
         var composition = new R4.Composition
         {
             Id = id,
-            Meta = new R4.Meta
-            {
-                LastUpdated = FhirTime.ToMilliseconds(document.LastUpdated),
-                Profile = [document.Profile],
-            },
+            Meta = new R4.Meta { Profile = [document.Profile] },
             Identifier = new R4.Identifier(AbdmSystems.Uri, Urn(id)),
             Status = document.Status,
             Type = document.DocumentType.Concept(document.Title),
@@ -243,7 +281,9 @@ internal static class AbdmDocumentBuilder
     {
         foreach (var reference in References(resource).ToList())
         {
-            if (reference.Reference is not { } target)
+            // A reference object shared by two elements (a summary's signer, its author and authenticator) is met twice:
+            // the second time it already points into the document.
+            if (reference.Reference is not { } target || target.StartsWith("urn:uuid:", StringComparison.Ordinal))
             {
                 continue;
             }
@@ -265,7 +305,8 @@ internal static class AbdmDocumentBuilder
                 reference.Reference = null;
                 if (reference.Display is null && reference.Identifier is null)
                 {
-                    reference.Display = target[..target.IndexOf('/', StringComparison.Ordinal)];
+                    var slash = target.IndexOf('/', StringComparison.Ordinal);
+                    reference.Display = slash > 0 ? target[..slash] : reference.Type ?? "Resource";
                 }
             }
         }
@@ -358,14 +399,70 @@ internal static class AbdmNarrative
         R4.Practitioner p => p.Name.FirstOrDefault()?.Text,
         R4.Organization o => o.Name,
         R4.Encounter e => Join(e.Type.FirstOrDefault()?.Text ?? e.Class?.Display, e.Period?.Start),
-        R4.Condition c => Text(c.Code),
-        R4.AllergyIntolerance a => Join("Allergy", Text(a.Code)),
+        R4.Condition c => Condition(c),
+        R4.AllergyIntolerance a => Allergy(a),
         R4.MedicationRequest m => Join(Text(m.Medication as R4.CodeableConcept) + ":", m.DosageInstruction.FirstOrDefault()?.Text),
         R4.Observation o => Join(Text(o.Code) + ":", Value(o)),
         R4.DiagnosticReport r => Join(Text(r.Code), r.Conclusion is { } conclusion and not AbdmProfiler.SeeTheResults ? $"({conclusion})" : null),
         R4.DocumentReference d => d.Description ?? Text(d.Type),
         _ => null,
     };
+
+    /// <summary>
+    /// "Viral fever (differential)", "Asthma (provisional, resolved)", "Hypertension (chronic)": a diagnosis with what its
+    /// verification and clinical statuses say. In FHIR they change what the resource means, and the narrative must read
+    /// safely on its own, so a line never states as a fact what the record does not.
+    /// </summary>
+    private static string? Condition(R4.Condition condition)
+    {
+        List<string> qualifiers = [];
+        if (condition.VerificationStatus?.Coding.FirstOrDefault()?.Code is { } verification and not "confirmed")
+        {
+            qualifiers.Add(verification);
+        }
+
+        if (condition.ClinicalStatus?.Coding.FirstOrDefault()?.Code is { } clinical and not "active")
+        {
+            qualifiers.Add(clinical);
+        }
+        else if (FhirElements.Clean(condition.ClinicalStatus?.Text) is { } text && !text.Equals("Active", StringComparison.OrdinalIgnoreCase))
+        {
+            qualifiers.Add(text.ToLowerInvariant());
+        }
+
+        return Qualified(Text(condition.Code), qualifiers);
+    }
+
+    /// <summary>
+    /// "Allergy Penicillin (resolved): Rash (moderate)": an allergy with its status when it is not active, a high
+    /// criticality, and the reaction recorded with its severity.
+    /// </summary>
+    private static string? Allergy(R4.AllergyIntolerance allergy)
+    {
+        List<string> qualifiers = [];
+        if (allergy.ClinicalStatus?.Coding.FirstOrDefault()?.Code is { } clinical and not "active")
+        {
+            qualifiers.Add(clinical);
+        }
+
+        if (allergy.Criticality == R4.AllergyIntolerance.AllergyIntoleranceCriticality.High)
+        {
+            qualifiers.Add("high criticality");
+        }
+
+        var line = Qualified(Join("Allergy", Text(allergy.Code)), qualifiers);
+        var manifestations = allergy.Reaction.SelectMany(r => r.Manifestation).Select(Text).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+        if (manifestations.Count == 0)
+        {
+            return line;
+        }
+
+        var severity = allergy.Reaction.Select(r => r.Severity).FirstOrDefault(s => s is not null);
+        return $"{line}: {string.Join(", ", manifestations)}" + (severity is { } s ? $" ({s.ToString().ToLowerInvariant()})" : string.Empty);
+    }
+
+    private static string? Qualified(string? text, List<string> qualifiers) =>
+        text is null || qualifiers.Count == 0 ? text : $"{text} ({string.Join(", ", qualifiers)})";
 
     private static string? Text(R4.CodeableConcept? concept) =>
         FhirElements.Clean(concept?.Text) ?? concept?.Coding.Select(c => c.Display).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d));

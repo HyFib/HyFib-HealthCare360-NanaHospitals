@@ -130,6 +130,41 @@ internal static class AbdmParticipants
 
         return organization;
     }
+
+    /// <summary>A referral laboratory: an outside provider, named by its code in the laboratory's master.</summary>
+    public static R4.Organization ReferralLab(ReferralLabRow l)
+    {
+        var organization = new R4.Organization
+        {
+            Id = FhirIds.Of(l.Id),
+            Meta = FhirElements.Meta(l.CreatedAt, l.UpdatedAt, AbdmProfiles.Organization),
+            Name = l.Name,
+            Type = [FhirElements.Concept(AbdmSystems.OrganizationType, "prov", "Healthcare Provider")],
+        };
+
+        organization.Identifier.Add(new R4.Identifier(AbdmSystems.ReferralLab, FhirElements.Clean(l.Code) ?? FhirIds.Of(l.Id))
+        {
+            Use = R4.Identifier.IdentifierUse.Usual,
+            Type = FhirElements.Concept(FhirSystems.IdentifierType, "XX", "Organization identifier"),
+        });
+
+        if (FhirElements.Clean(l.Phone) is { } phone)
+        {
+            organization.Telecom.Add(new R4.ContactPoint(R4.ContactPoint.ContactPointSystem.Phone, R4.ContactPoint.ContactPointUse.Work, phone));
+        }
+
+        if (FhirElements.Clean(l.Email) is { } email)
+        {
+            organization.Telecom.Add(new R4.ContactPoint(R4.ContactPoint.ContactPointSystem.Email, R4.ContactPoint.ContactPointUse.Work, email));
+        }
+
+        if (FhirElements.Clean(l.Address) is { } text)
+        {
+            organization.Address.Add(new R4.Address { Use = R4.Address.AddressUse.Work, Text = text });
+        }
+
+        return organization;
+    }
 }
 
 /// <summary>

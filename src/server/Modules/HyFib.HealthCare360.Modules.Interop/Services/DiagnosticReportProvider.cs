@@ -150,7 +150,7 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
         var results = await ReleasedResults(orderIds).ToListAsync(ct);
         var collections = await Collections(orderIds).ToListAsync(ct);
         var resultsByOrder = results.GroupBy(r => r.LabOrderId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(r => r.ItemCreatedAt).ThenBy(r => r.DisplayOrder).ToList());
+            .ToDictionary(g => g.Key, g => g.OrderBy(r => r.ItemCreatedAt).ThenBy(r => r.DisplayOrder).ThenBy(r => r.Id).ToList());
         var collectedByOrder = collections.ToDictionary(c => c.LabOrderId, c => c.CollectedAt);
 
         return

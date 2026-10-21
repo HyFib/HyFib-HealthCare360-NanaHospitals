@@ -1,8 +1,8 @@
 {
   "resourceType": "Bundle",
-  "id": "f3758f93-6b71-8fc1-9b0e-81a817faf94b",
+  "id": "23d281ff-1c3a-85cd-afe6-ff9968779e6c",
   "meta": {
-    "versionId": "1790306700000-173f6d813eaf32be",
+    "versionId": "1790306700000-b5fc9c62149f2e9d",
     "lastUpdated": "2026-09-25T08:55:00+05:30",
     "profile": [
       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
@@ -17,10 +17,10 @@
   },
   "identifier": {
     "system": "urn:ietf:rfc:3986",
-    "value": "urn:uuid:f3758f93-6b71-8fc1-9b0e-81a817faf94b"
+    "value": "urn:uuid:23d281ff-1c3a-85cd-afe6-ff9968779e6c"
   },
   "type": "document",
-  "timestamp": "2026-09-25T10:30:00+05:30",
+  "timestamp": "2026-09-25T08:55:00+05:30",
   "entry": [
     {
       "fullUrl": "urn:uuid:3344c50c-fbfe-86c4-986b-3fd4346bc7e4",
@@ -28,7 +28,7 @@
         "resourceType": "Composition",
         "id": "3344c50c-fbfe-86c4-986b-3fd4346bc7e4",
         "meta": {
-          "versionId": "1790306700000-173f6d813eaf32be",
+          "versionId": "1790306700000-b5fc9c62149f2e9d",
           "lastUpdated": "2026-09-25T08:55:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/PrescriptionRecord"
@@ -305,9 +305,6 @@
             "value": "IN2710000123"
           },
           "display": "Nana Hospitals, Pune"
-        },
-        "partOf": {
-          "display": "Encounter"
         }
       }
     },
