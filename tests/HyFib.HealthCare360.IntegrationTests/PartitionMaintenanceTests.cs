@@ -22,7 +22,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// SRS SCAL-04: the job that keeps the monthly partitions (<see cref="PartitionMaintenance"/>, on the node that runs the
 /// jobs) makes the months ahead of the clock and moves rows that waited in the default partition into their new month
 /// without changing them (the audit trail too, whose chain still verifies), months gone by included, a month at a time
-/// and for a while at most each pass. A table in use, or one that fails, is left to the next pass, and the others are done.
+/// and for a while at most each pass, and this month and the months ahead whatever happens to those. A table in use, or one
+/// that fails, is left to the next pass, and the others are done.
 /// It never drops a month, however old: deleting is the Privacy module's retention schedule's alone (legal minimums,
 /// medical records reviewed, every run audited). The months used are decades away from the test server's own rows, so
 /// nothing other tests wrote is touched; a pass may also move rows other tests left in the default partition, so each test
@@ -241,9 +242,9 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
     }
 
     /// <summary>
-    /// A pass spends <see cref="PartitionMaintenance.TableBudget"/> at most on a table: the months it has not reached by then
-    /// wait for the next pass, oldest first. Each pass makes at least one, so a month that alone takes longer does not hold
-    /// up the rest for good.
+    /// A pass spends <see cref="PartitionMaintenance.TableBudget"/> at most on a table's months gone by: those it has not
+    /// reached by then wait for the next pass, oldest first. Each pass makes at least one, so a month that alone takes longer
+    /// does not hold up the rest for good, and it makes this month and the months ahead whatever the time.
     /// </summary>
     [Fact]
     public async Task A_pass_leaves_the_months_its_time_for_a_table_did_not_reach_to_the_next_pass()
@@ -256,17 +257,66 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
                 $"INSERT INTO platform.notification_logs (id, created_at, channel, template_key, status) VALUES ('{Guid.CreateVersion7()}', '{At(at)}', 'Sms', 'it.partition', 'Sent')");
         }
 
-        // No time at all: one month a pass, the months gone by first, then this month and the next.
-        string[] months = ["notification_logs_2048_01", "notification_logs_2048_03", "notification_logs_2048_06", "notification_logs_2048_07"];
-        for (var i = 0; i < months.Length; i++)
+        // No time at all: a month gone by a pass, oldest first, and this month and the next in the first pass all the same.
+        string[][] passes = [["notification_logs_2048_01", "notification_logs_2048_06", "notification_logs_2048_07"], ["notification_logs_2048_03"]];
+        for (var i = 0; i < passes.Length; i++)
         {
             var pass = (await RunAsync(database.ConnectionString, [PartitionedTables.NotificationLogs], now, monthsAhead: 1, budget: TimeSpan.Zero))
                 .ShouldHaveSingleItem();
-            pass.Created.ShouldBe([months[i]], $"pass {i + 1}");
-            pass.Unfinished.ShouldBe(i < months.Length - 1, $"pass {i + 1}: the months after it should wait for the next pass");
+            pass.Created.ShouldBe(passes[i], $"pass {i + 1}");
+            pass.Unfinished.ShouldBe(i < passes.Length - 1, $"pass {i + 1}: the months gone by after it should wait for the next pass");
         }
 
         (await ScalarAsync<long>(database.ConnectionString, "SELECT count(*) FROM ONLY platform.notification_logs_default")).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// A month gone by whose rows run out of time as they move (here a trigger slows the move, which has a second) fails,
+    /// and spends the table's time for the pass, as the command timeout of a minute spends the minute of
+    /// <see cref="PartitionMaintenance.TableBudget"/>. This month and the months ahead are made all the same, so new rows do
+    /// not go to the default partition meanwhile. Nor is that month tried again, holding every insert into the table as
+    /// long at each pass: its rows stay in the default partition, and the next pass goes on with the other months gone by.
+    /// The months were made in order until the table's time was spent, so a month that ran out of time at every pass kept
+    /// the table from any newer month, and held its inserts each time.
+    /// </summary>
+    [Fact]
+    public async Task A_month_gone_by_that_runs_out_of_time_holds_up_no_newer_month_and_is_not_tried_again()
+    {
+        await using var database = await MigratedDatabaseAsync();
+        var now = new DateTime(2049, 6, 10, 0, 0, 0, DateTimeKind.Utc);
+        var january = new DateOnly(2049, 1, 1);
+        foreach (var at in new[] { new DateTime(2049, 1, 5, 0, 0, 0, DateTimeKind.Utc), new DateTime(2049, 3, 5, 0, 0, 0, DateTimeKind.Utc) })
+        {
+            await ExecuteAsync(database.ConnectionString,
+                $"INSERT INTO platform.notification_logs (id, created_at, channel, template_key, status) VALUES ('{Guid.CreateVersion7()}', '{At(at)}', 'Sms', 'it.partition', 'Sent')");
+        }
+
+        // Moving January's message sleeps a minute, and the statement has a second: it runs out of time whenever Npgsql's
+        // cancel arrives within that minute, with no lock to wait for.
+        await ExecuteAsync(database.ConnectionString, $"""
+            CREATE FUNCTION public.it_slow_move() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF OLD.created_at < '{PartitionMaintenance.Bound(january.AddMonths(1))}' THEN PERFORM pg_sleep(60); END IF;
+                RETURN OLD;
+            END $$;
+            CREATE TRIGGER it_slow_move BEFORE DELETE ON platform.notification_logs_default FOR EACH ROW EXECUTE FUNCTION public.it_slow_move();
+            """);
+        var timedOut = new TimedOutPartitionMoves();
+        var oneSecond = new OneSecondToMove(january);
+
+        var first = (await RunAsync(database.ConnectionString, [PartitionedTables.NotificationLogs], now, monthsAhead: 1,
+            budget: TimeSpan.FromSeconds(1), timedOut: timedOut, interceptor: oneSecond)).ShouldHaveSingleItem();
+        (first.Failed, first.Unfinished).ShouldBe((true, true), "January should run out of time, and spend the table's second");
+        first.Created.ShouldBe(["notification_logs_2049_06", "notification_logs_2049_07"], "this month and the next should be made all the same");
+
+        // The next pass leaves January's message in the default partition, untried, and moves March's.
+        var second = (await RunAsync(database.ConnectionString, [PartitionedTables.NotificationLogs], now, monthsAhead: 1,
+            budget: TimeSpan.FromSeconds(1), timedOut: timedOut, interceptor: oneSecond)).ShouldHaveSingleItem();
+        (second.Failed, second.Unfinished).ShouldBe((false, false), "January should not be tried again");
+        second.Created.ShouldBe(["notification_logs_2049_03"]);
+        (await ScalarAsync<string>(database.ConnectionString,
+                "SELECT string_agg(to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'), ', ') FROM ONLY platform.notification_logs_default"))
+            .ShouldBe("2049-01-05", "January's message should be all the default partition holds");
     }
 
     /// <summary>
@@ -368,20 +418,26 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         var maintenance = new PartitionMaintenance(
             scope.ServiceProvider.GetRequiredService<HospitalDbContext>(),
             scope.ServiceProvider.GetServices<PartitionedTable>(),
+            new TimedOutPartitionMoves(),
             Options.Create(options),
             new FixedClock(new DateTimeOffset(now)),
             NullLogger<PartitionMaintenance>.Instance);
         return (await maintenance.RunAsync(Ct)).ShouldNotBeNull("no other node is maintaining the partitions");
     }
 
-    /// <summary>A pass over <paramref name="tables"/> of the database at <paramref name="connectionString"/>, at <paramref name="now"/>.</summary>
+    /// <summary>
+    /// A pass over <paramref name="tables"/> of the database at <paramref name="connectionString"/>, at <paramref name="now"/>.
+    /// Passes given the same <paramref name="timedOut"/> share it, as a server's passes do.
+    /// </summary>
     private async Task<IReadOnlyList<PartitionPass>> RunAsync(
-        string connectionString, IEnumerable<PartitionedTable> tables, DateTime now, int monthsAhead, TimeSpan? budget = null)
+        string connectionString, IEnumerable<PartitionedTable> tables, DateTime now, int monthsAhead, TimeSpan? budget = null,
+        TimedOutPartitionMoves? timedOut = null, IInterceptor? interceptor = null)
     {
-        await using var db = Context(connectionString, 60);
+        await using var db = Context(connectionString, 60, interceptor);
         var maintenance = new PartitionMaintenance(
             db,
             tables,
+            timedOut ?? new TimedOutPartitionMoves(),
             Options.Create(new PlatformOptions { Partitions = { MonthsAhead = monthsAhead } }),
             new FixedClock(new DateTimeOffset(now)),
             NullLogger<PartitionMaintenance>.Instance)
@@ -408,17 +464,23 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         }
     }
 
-    private HospitalDbContext Context(string connectionString, int commandTimeout) => new(
-        new DbContextOptionsBuilder<HospitalDbContext>()
+    private HospitalDbContext Context(string connectionString, int commandTimeout, IInterceptor? interceptor = null)
+    {
+        var options = new DbContextOptionsBuilder<HospitalDbContext>()
             .UseNpgsql(connectionString, npgsql =>
             {
                 npgsql.MigrationsAssembly(typeof(ServerComposition).Assembly.GetName().Name);
                 npgsql.MigrationsHistoryTable(MigrationBaseline.HistoryTable, MigrationBaseline.HistorySchema);
                 npgsql.CommandTimeout(commandTimeout);
             })
-            .UseSnakeCaseNamingConvention()
-            .Options,
-        server.Services.GetRequiredService<ModuleCatalog>());
+            .UseSnakeCaseNamingConvention();
+        if (interceptor is not null)
+        {
+            options.AddInterceptors(interceptor);
+        }
+
+        return new(options.Options, server.Services.GetRequiredService<ModuleCatalog>());
+    }
 
     private static bool In2041(string partition) => partition.Contains("_2041_", StringComparison.Ordinal);
 
@@ -535,6 +597,25 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
 
         private void Record(DbCommand command) =>
             Commands.Add((command.CommandText, [.. command.Parameters.Cast<NpgsqlParameter>().Select(p => p.Clone())]));
+    }
+
+    /// <summary>
+    /// Gives the statement that deletes <paramref name="month"/>'s rows from a default partition, as they move into their
+    /// month, a command timeout of a second; every other statement keeps the pass's.
+    /// </summary>
+    private sealed class OneSecondToMove(DateOnly month) : DbCommandInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.StartsWith("DELETE FROM", StringComparison.Ordinal)
+                && command.CommandText.Contains($">= '{PartitionMaintenance.Bound(month)}'", StringComparison.Ordinal))
+            {
+                command.CommandTimeout = 1;
+            }
+
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider

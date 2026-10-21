@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
 using HyFib.HealthCare360.Platform.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -50,6 +52,9 @@ public static class PartitionServiceCollectionExtensions
     public static IServiceCollection AddMonthlyPartitions(this IServiceCollection services, PartitionedTable table)
     {
         services.AddSingleton(table);
+
+        // What partition upkeep remembers from one pass to the next, once for all the tables.
+        services.TryAddSingleton<TimedOutPartitionMoves>();
         return services;
     }
 }
@@ -65,16 +70,34 @@ public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, 
     public IReadOnlyDictionary<string, int> Moved { get; init; } = new Dictionary<string, int>();
 
     /// <summary>
-    /// Something failed for another reason than the table's lock (a statement that ran out of time, an error): it was
-    /// logged, what it was doing was left to the next pass, and the pass went on, with this table's other months too.
+    /// Something failed for another reason than the table's lock (an error, a statement that ran out of time): it was
+    /// logged, what it was doing was left to the next pass, and the pass went on, with this table's other months too. A
+    /// month gone by whose rows ran out of time as they moved is left until the server starts again
+    /// (<see cref="TimedOutPartitionMoves"/>).
     /// </summary>
     public bool Failed { get; init; }
 
     /// <summary>
-    /// The pass had spent <see cref="PartitionMaintenance.TableBudget"/> on the table, so the months it had not reached
-    /// were left to the next pass.
+    /// The pass had spent <see cref="PartitionMaintenance.TableBudget"/> on the table's months gone by, so those it had not
+    /// reached were left to the next pass. It made this month and the months ahead all the same.
     /// </summary>
     public bool Unfinished { get; init; }
+}
+
+/// <summary>
+/// The months gone by whose rows ran out of time as <see cref="PartitionMaintenance"/> moved them out of the default
+/// partition (past the command timeout, a minute), while the server runs. The move held every insert into the table for
+/// all that time before it was rolled back, and would most likely do so again at every pass: such a month is not tried
+/// again, and its rows stay in the default partition, kept and read as before. A restart forgets these months, so the
+/// first pass after it tries each once more.
+/// </summary>
+public sealed class TimedOutPartitionMoves
+{
+    private readonly ConcurrentDictionary<(string Table, DateOnly Month), bool> _months = new();
+
+    internal bool Contains(PartitionedTable table, DateOnly month) => _months.ContainsKey((table.Name, month));
+
+    internal void Add(PartitionedTable table, DateOnly month) => _months.TryAdd((table.Name, month), true);
 }
 
 /// <summary>
@@ -90,11 +113,15 @@ public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, 
 /// has a transaction of its own, which waits at most <see cref="LockTimeout"/> for its locks: a table something holds for
 /// long (a pg_dump, a report with its transaction open) is left as it is, and the next pass, six hours later and still
 /// months ahead, tries again. An insert waits at most for one month's rows to move, not for a whole backlog of months, and
-/// a pass gives each table at most <see cref="TableBudget"/>, leaving the months it has not reached to the next pass.
+/// a pass gives each table's months gone by at most <see cref="TableBudget"/>, leaving those it has not reached to the next
+/// pass. It makes this month and the months ahead whatever happened to those, and whatever the time: without them every
+/// new row would go to the default partition too.
 /// </para>
 /// <para>
-/// Anything else that fails (a statement that runs out of time, an error) is logged and left to the next pass, and the pass
-/// goes on with the table's other months and the other tables: one table that fails, every pass, holds up no other.
+/// Anything else that fails (an error, a statement that runs out of time) is logged and left to the next pass, and the pass
+/// goes on with the table's other months and the other tables: one table that fails, every pass, holds up no other. A month
+/// gone by whose rows run out of time as they move has held every insert into the table all that time: it is not tried
+/// again while the server runs (<see cref="TimedOutPartitionMoves"/>), and its rows stay in the default partition.
 /// </para>
 /// <para>
 /// It never drops a partition. Old rows are deleted by the Privacy module's retention schedule alone, which keeps each kind
@@ -106,6 +133,7 @@ public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, 
 public sealed class PartitionMaintenance(
     HospitalDbContext db,
     IEnumerable<PartitionedTable> tables,
+    TimedOutPartitionMoves timedOut,
     IOptions<PlatformOptions> options,
     TimeProvider time,
     ILogger<PartitionMaintenance> logger)
@@ -125,8 +153,9 @@ public sealed class PartitionMaintenance(
     public const int MonthsBack = 15 * 12;
 
     /// <summary>
-    /// How long a pass goes on making one table's months (moving their rows out of the default partition) before it leaves
-    /// the rest to the next pass. It makes at least one month of each table, however long that takes.
+    /// How long a pass goes on making one table's months gone by (moving their rows out of the default partition) before it
+    /// leaves the rest to the next pass. It makes at least one of them, however long that takes, and then this month and the
+    /// months ahead whatever the time.
     /// </summary>
     public static readonly TimeSpan DefaultTableBudget = TimeSpan.FromMinutes(1);
 
@@ -201,15 +230,16 @@ public sealed class PartitionMaintenance(
     }
 
     /// <summary>
-    /// One table, a month at a time, each in a transaction of its own, for <see cref="TableBudget"/>. Null when the table is
-    /// not partitioned. Throws only when cancelled: what fails is logged and left to the next pass.
+    /// One table, a month at a time, each in a transaction of its own: its months gone by for <see cref="TableBudget"/>,
+    /// then this month and the months ahead. Null when the table is not partitioned. Throws only when cancelled: what fails
+    /// is logged and left to the next pass.
     /// </summary>
     private async Task<PartitionPass?> MaintainAsync(PartitionedTable table, DateOnly thisMonth, CancellationToken ct)
     {
         var started = time.GetTimestamp();
         var created = new List<string>();
         var moved = new Dictionary<string, int>();
-        var (inUse, failed, unfinished) = (false, false, false);
+        var (inUse, failed, unfinished, stopped) = (false, false, false, false);
         try
         {
             if (!await IsPartitionedAsync(table, ct))
@@ -217,44 +247,32 @@ public sealed class PartitionMaintenance(
                 return null;
             }
 
-            var months = await MonthsToMakeAsync(table, thisMonth, ct);
-            for (var i = 0; i < months.Count && !inUse; i++)
+            var (goneBy, ahead) = await MonthsToMakeAsync(table, thisMonth, ct);
+
+            // Making any month holds the table while PostgreSQL reads the whole default partition (some 0.1 s a million rows
+            // there, measured on PostgreSQL 16), and moving a month gone by out of it holds the table longer still (some 7 s
+            // a million of its rows). So the months gone by come first, oldest first: each one moved leaves the months after
+            // it less to read. One that fails leaves the default partition as it was, so the months after it read as much
+            // in either order.
+            for (var i = 0; i < goneBy.Count && !stopped; i++)
             {
                 if (i > 0 && time.GetElapsedTime(started) >= TableBudget)
                 {
                     unfinished = true;
                     logger.LogInformation(
-                        "Partitions of {Table}: this pass's {Seconds} s for the table are spent; {Count} month(s) wait for the next pass",
-                        table.Name, TableBudget.TotalSeconds, months.Count - i);
+                        "Partitions of {Table}: this pass's {Seconds} s for the table's months gone by are spent; {Count} wait for the next pass",
+                        table.Name, TableBudget.TotalSeconds, goneBy.Count - i);
                     break;
                 }
 
-                var partition = table.PartitionFor(months[i]);
-                try
-                {
-                    var rows = await MakeAsync(table, months[i], ct);
-                    created.Add(partition);
-                    if (rows > 0)
-                    {
-                        moved[partition] = rows;
-                    }
-                }
-                catch (Exception ex) when (DatabaseInitializer.IsLockTimeout(ex))
-                {
-                    inUse = true;
-                    logger.LogWarning(
-                        "Partition {Partition} not made: the table is in use, and its lock was not granted within {Seconds} s. The next pass tries again",
-                        partition, LockTimeout.TotalSeconds);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-                {
-                    failed = true;
-                    logger.LogError(ex, "Partition {Partition} not made; the next pass tries again", partition);
-                    if (!IsConnected)
-                    {
-                        break;
-                    }
-                }
+                await TryMakeAsync(goneBy[i], isGoneBy: true);
+            }
+
+            // Then this month and the months ahead, whatever happened to those and whatever the time: until a month has its
+            // partition, its rows go to the default partition, to be moved later.
+            for (var i = 0; i < ahead.Count && !stopped; i++)
+            {
+                await TryMakeAsync(ahead[i], isGoneBy: false);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -271,32 +289,98 @@ public sealed class PartitionMaintenance(
         }
 
         return new PartitionPass(table.Name, created, moved.Values.Sum(), inUse) { Moved = moved, Failed = failed, Unfinished = unfinished };
+
+        async Task TryMakeAsync(DateOnly month, bool isGoneBy)
+        {
+            var partition = table.PartitionFor(month);
+            try
+            {
+                var rows = await MakeAsync(table, month, ct);
+                created.Add(partition);
+                if (rows > 0)
+                {
+                    moved[partition] = rows;
+                }
+            }
+            catch (Exception ex) when (DatabaseInitializer.IsLockTimeout(ex))
+            {
+                (inUse, stopped) = (true, true);
+                logger.LogWarning(
+                    "Partition {Partition} not made: the table is in use, and its lock was not granted within {Seconds} s. The next pass tries again",
+                    partition, LockTimeout.TotalSeconds);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                failed = true;
+                if (isGoneBy && RanOutOfTime(ex))
+                {
+                    timedOut.Add(table, month);
+                    logger.LogError(
+                        ex,
+                        "Partition {Partition} not made: moving its rows out of the default partition ran out of time, and every insert into {Table} waited for it all that while. Its rows stay in the default partition, kept and read as before, and this server does not try that month again, rather than hold the table as long at every pass. To try again, restart the HC360Server service at a quiet hour",
+                        partition, table.Name);
+                }
+                else
+                {
+                    logger.LogError(ex, "Partition {Partition} not made; the next pass tries again", partition);
+                }
+
+                // A connection that broke took the pass's lock with it.
+                stopped = !IsConnected;
+            }
+        }
     }
 
     /// <summary>
-    /// The months without a partition to make: those gone by whose rows wait in the default partition, oldest first (each
-    /// moved makes the default partition, which every month made after it reads, smaller), then this month and the months
-    /// ahead.
+    /// The months without a partition to make: those gone by whose rows wait in the default partition, oldest first, but
+    /// for those whose rows ran out of time as they moved before (<see cref="TimedOutPartitionMoves"/>); and this month and
+    /// the months ahead.
     /// </summary>
-    private async Task<List<DateOnly>> MonthsToMakeAsync(PartitionedTable table, DateOnly thisMonth, CancellationToken ct)
+    private async Task<(List<DateOnly> GoneBy, List<DateOnly> Ahead)> MonthsToMakeAsync(PartitionedTable table, DateOnly thisMonth, CancellationToken ct)
     {
-        var months = new SortedSet<DateOnly>(await PastMonthsWaitingAsync(table, thisMonth, ct));
-        var monthsAhead = Math.Clamp(options.Value.Partitions.MonthsAhead, 1, 24);
-        for (var month = thisMonth; month <= thisMonth.AddMonths(monthsAhead); month = month.AddMonths(1))
+        var waiting = (await PastMonthsWaitingAsync(table, thisMonth, ct)).Order().ToList();
+        var timedOutBefore = waiting.Where(month => timedOut.Contains(table, month)).ToList();
+        if (timedOutBefore.Count > 0)
         {
-            months.Add(month);
+            logger.LogWarning(
+                "Partitions of {Table}: not trying {Partitions} again, as moving their rows out of the default partition ran out of time before; their rows stay there. To try again, restart the HC360Server service at a quiet hour",
+                table.Name, string.Join(", ", timedOutBefore.Select(table.PartitionFor)));
         }
 
-        var toMake = new List<DateOnly>();
-        foreach (var month in months)
+        var monthsAhead = Math.Clamp(options.Value.Partitions.MonthsAhead, 1, 24);
+        return (await WithoutPartitionAsync(waiting.Except(timedOutBefore)),
+            await WithoutPartitionAsync(Enumerable.Range(0, monthsAhead + 1).Select(thisMonth.AddMonths)));
+
+        async Task<List<DateOnly>> WithoutPartitionAsync(IEnumerable<DateOnly> months)
         {
-            if (!await ExistsAsync(table.Schema, table.PartitionFor(month), ct))
+            var without = new List<DateOnly>();
+            foreach (var month in months)
             {
-                toMake.Add(month);
+                if (!await ExistsAsync(table.Schema, table.PartitionFor(month), ct))
+                {
+                    without.Add(month);
+                }
+            }
+
+            return without;
+        }
+    }
+
+    /// <summary>
+    /// Whether a statement ran out of time: past the command timeout (Npgsql cancels it, or gives up the connection when the
+    /// cancel is not answered), past a statement timeout set on the database, or cancelled from outside.
+    /// </summary>
+    private static bool RanOutOfTime(Exception exception)
+    {
+        for (var ex = exception; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is TimeoutException or PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
+            {
+                return true;
             }
         }
 
-        return toMake;
+        return false;
     }
 
     /// <summary>One month's partition, in a transaction of its own. Returns how many rows it took over from the default partition.</summary>

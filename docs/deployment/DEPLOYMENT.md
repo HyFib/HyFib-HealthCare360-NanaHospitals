@@ -1113,10 +1113,15 @@ months) move into their month's partition when it is made: at the job's next run
 `HealthCare360:Partitions:MonthsAhead` (1 to 24).
 
 Moving a month's rows holds its table until they have moved, and writes to the table wait that long: some seconds for a
-month of a million rows. The job moves one month at a time, so writes wait for one month's rows at most, and spends at
-most a minute on each table each run; the months it has not reached wait for its next run. A month that cannot be made
-for any other reason (an error, or a statement that runs out of time) is logged and tried again at the next run, and the
-job goes on with the other months and tables.
+month of a million rows. The job moves one month at a time, oldest first, so writes wait for one month's rows at most,
+and spends at most a minute on each table's months gone by each run; the months it has not reached wait for its next
+run. It adds this month and the months ahead at every run all the same, so new rows do not join the backlog. A month
+that cannot be made for any other reason (an error, or a statement that runs out of time) is logged and tried again at
+the next run, and the job goes on with the other months and tables. The exception is a month gone by whose rows take
+longer than a minute to move (the server's limit for one database statement): writes to its table wait that minute,
+then the move is undone, and trying again at every run would hold them as long each time. So the job logs an error and
+leaves that month's rows in the default partition, where they are kept and found as before; restart the `HC360Server`
+service at a quiet hour to have it try once more.
 
 **Partitions are never dropped.** How long each kind of record is kept is set in one place, Privacy › Retention, whose
 clean-up keeps every record for at least what the law asks (a year for the message and integration logs), leaves medical
