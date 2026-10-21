@@ -13,8 +13,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261021024536_LabGatewayNodes")]
-    partial class LabGatewayNodes
+    [Migration("20261021043100_PartitionHighVolumeTables")]
+    partial class PartitionHighVolumeTables
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -113,33 +113,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_whatsapp_inbound_messages_from_phone_received_at");
 
                     b.ToTable("whatsapp_inbound_messages", "integrations");
-                });
-
-            modelBuilder.Entity("HyFib.HealthCare360.Integrations.Domain.LabGatewayNode", b =>
-                {
-                    b.Property<string>("Node")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("node");
-
-                    b.Property<DateTimeOffset>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("expires_at");
-
-                    b.Property<string>("RelayingAgents")
-                        .IsRequired()
-                        .HasColumnType("jsonb")
-                        .HasColumnName("relaying_agents");
-
-                    b.Property<string>("Statuses")
-                        .IsRequired()
-                        .HasColumnType("jsonb")
-                        .HasColumnName("statuses");
-
-                    b.HasKey("Node")
-                        .HasName("pk_lab_gateway_nodes");
-
-                    b.ToTable("lab_gateway_nodes", "integrations");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Integrations.Domain.LabOrderDownload", b =>
@@ -13241,6 +13214,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("loinc");
+
+                    b.Property<string>("LoincName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("loinc_name");
 
                     b.Property<string>("Method")
                         .HasMaxLength(200)

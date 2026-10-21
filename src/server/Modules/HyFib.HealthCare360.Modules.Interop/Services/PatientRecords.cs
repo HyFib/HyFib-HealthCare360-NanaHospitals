@@ -26,7 +26,7 @@ internal sealed class PatientRecords(
         return patient is null ? null : (await MapAsync([patient], ct))[0];
     }
 
-    /// <summary>The patient's row, with the ABHA number decrypted, for a document that maps the patient itself (ABDM).</summary>
+    /// <summary>The patient's row as the mappers take it (ABHA number decrypted), for ABDM documents.</summary>
     public async Task<PatientRow?> FindRowAsync(Guid id, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);

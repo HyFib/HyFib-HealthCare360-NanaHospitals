@@ -71,6 +71,7 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
             Status = r.Status,
             IsPartial = r.IsPartial,
             OrderedAt = o.OrderedAt,
+            FirstReleasedAt = r.FirstReleasedAt,
             ReleasedAt = r.ReleasedAt,
             CreatedAt = r.CreatedAt,
             UpdatedAt = r.UpdatedAt,
@@ -132,19 +133,25 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
     private static ResourceLookup Found(List<R4.Resource> resources, RowState state) =>
         resources.Count == 0 ? ResourceLookup.Missing : ResourceLookup.Found(resources[0], state.PatientId);
 
-    private async Task<List<R4.Resource>> LabAsync(Expression<Func<LabReport, bool>> filter, CancellationToken ct)
+    private async Task<List<R4.Resource>> LabAsync(Expression<Func<LabReport, bool>> filter, CancellationToken ct) =>
+        [.. (await CompleteAsync(await LabReports(filter).ToListAsync(ct), ct)).Select(r => (R4.Resource)DiagnosticReportMapper.FromLab(r))];
+
+    /// <summary>
+    /// The reports with what they are mapped from besides their own row: the released results (ids in report order,
+    /// test names) and the first sample collection of each accession.
+    /// </summary>
+    internal async Task<List<LabReportRow>> CompleteAsync(List<LabReportRow> reports, CancellationToken ct)
     {
-        var reports = await LabReports(filter).ToListAsync(ct);
         if (reports.Count == 0)
         {
-            return [];
+            return reports;
         }
 
         Guid[] orderIds = [.. reports.Select(r => r.LabOrderId).Distinct()];
         var results = await ReleasedResults(orderIds).ToListAsync(ct);
         var collections = await Collections(orderIds).ToListAsync(ct);
         var resultsByOrder = results.GroupBy(r => r.LabOrderId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(r => r.ItemCreatedAt).ThenBy(r => r.DisplayOrder).ToList());
+            .ToDictionary(g => g.Key, g => g.OrderBy(r => r.ItemCreatedAt).ThenBy(r => r.DisplayOrder).ThenBy(r => r.Id).ToList());
         var collectedByOrder = collections.ToDictionary(c => c.LabOrderId, c => c.CollectedAt);
 
         return
@@ -152,12 +159,12 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
             .. reports.Select(r =>
             {
                 var released = resultsByOrder.GetValueOrDefault(r.LabOrderId) ?? [];
-                return (R4.Resource)DiagnosticReportMapper.FromLab(r with
+                return r with
                 {
                     ResultIds = [.. released.Select(x => x.Id)],
                     TestNames = [.. released.Select(x => x.TestName).Distinct(StringComparer.Ordinal)],
                     CollectedAt = collectedByOrder.GetValueOrDefault(r.LabOrderId),
-                });
+                };
             }),
         ];
     }

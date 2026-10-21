@@ -158,6 +158,19 @@ internal static class LabMasterEndpoints
             return Error.Field("defaultReferralLabId", "Choose an active reference laboratory.").ToProblem();
         }
 
+        // A LOINC name is the name LOINC gives its code (ABDM health records carry the code with it). A new code sent with
+        // the old code's name would put that name on the wrong code: the form clears the name when the code changes, and
+        // a request that does not is refused.
+        var loinc = Clean(request.Loinc);
+        var loincName = loinc is null ? null : Clean(request.LoincName);
+        if (id is not null && loinc != test.Loinc && loincName is not null && string.Equals(loincName, test.LoincName, StringComparison.Ordinal))
+        {
+            return Error.Field(
+                "loincName",
+                "The LOINC code changed: enter the name LOINC gives the new code. If the name on file is already the new code's (the code was mistyped), save the code without a name first, then add the name.")
+                .ToProblem();
+        }
+
         test.Code = code;
         test.Name = request.Name.Trim();
         test.ShortName = Clean(request.ShortName);
@@ -166,7 +179,8 @@ internal static class LabMasterEndpoints
         test.Container = request.Container;
         test.Method = Clean(request.Method);
         test.TatHours = request.TatHours;
-        test.Loinc = Clean(request.Loinc);
+        test.Loinc = loinc;
+        test.LoincName = loincName;
         test.ServiceItemId = request.ServiceItemId;
         test.IsOrderable = request.IsOrderable;
         test.IsPanel = request.IsPanel;
@@ -323,7 +337,7 @@ internal static class LabMasterEndpoints
         var names = await db.Set<LabTest>().AsNoTracking().Where(x => componentIds.Contains(x.Id))
             .Select(x => new { x.Id, x.Code, x.Name }).ToDictionaryAsync(x => x.Id, ct);
         return new LabTestDetail(
-            t.Id, t.Code, t.Name, t.ShortName, t.Section, t.SpecimenType, t.Container, t.Method, t.TatHours, t.Loinc, t.ServiceItemId, t.IsOrderable,
+            t.Id, t.Code, t.Name, t.ShortName, t.Section, t.SpecimenType, t.Container, t.Method, t.TatHours, t.Loinc, t.LoincName, t.ServiceItemId, t.IsOrderable,
             t.IsPanel, t.ResultType, t.Unit, t.Decimals, t.Options, t.InstrumentChannelCodes, t.QcGroup, t.DeltaThresholdPercent, t.AllowAutoValidation,
             t.Preparation, t.DrawSeparately, t.Interpretation, t.DefaultReferralLabId, t.DisplayOrder, t.IsProvisional, t.IsActive,
             t.Components.OrderBy(c => c.DisplayOrder).Select(c => new LabTestComponentDto(

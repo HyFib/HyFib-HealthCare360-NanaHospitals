@@ -1000,7 +1000,8 @@ export const emrApi = {
 export const dischargeSummaryDocument = (id: string) => `/api/v1/clinical/discharge-summaries/${id}`;
 
 /**
- * A signed discharge summary as an ABDM health record: an NRCeS FHIR document bundle (`application/fhir+json`), while
- * ABDM health records are switched on, for staff with `abdm.export`, of a patient who consented to share their records.
+ * A signed discharge summary as an ABDM health record: an NRCeS FHIR document (`application/fhir+json`, a file to save),
+ * while ABDM health records are switched on, for staff with `abdm.export`. Like the printed copy, it does not need the
+ * patient's record-sharing consent; a restricted record needs the right to open it.
  */
-export const abdmDischargeSummaryBundle = (id: string) => `/api/v1/abdm/discharge-summaries/${id}/bundle`;
+export const abdmDischargeSummaryBundle = (id: string) => `/api/v1/abdm/bundles/discharge-summaries/${id}`;

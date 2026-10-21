@@ -69,12 +69,12 @@ describe('AbdmRecordButton', () => {
     await waitFor(() =>
       expect(saveFile).toHaveBeenCalledWith(blob, 'discharge-summary-NH-000123-2026-09-25-abdm.json'),
     );
-    expect(api.download).toHaveBeenCalledWith(`/api/v1/abdm/discharge-summaries/${SUMMARY_ID}/bundle`);
+    expect(api.download).toHaveBeenCalledWith(`/api/v1/abdm/bundles/discharge-summaries/${SUMMARY_ID}`);
     expect(notify.success).toHaveBeenCalledWith('ABDM record downloaded', 'It is in your Downloads folder.');
   });
 
-  it('says why when the server refuses, for example without the patient’s consent', async () => {
-    const refusal = new Error('The patient has not agreed to share their records with other providers.');
+  it('says why when the server refuses, for example a restricted record', async () => {
+    const refusal = new Error('This is a restricted record.');
     vi.mocked(api.download).mockRejectedValue(refusal);
     renderButton();
 

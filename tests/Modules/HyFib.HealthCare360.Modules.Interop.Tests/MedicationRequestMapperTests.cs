@@ -76,16 +76,17 @@ public sealed class MedicationRequestMapperTests
     }
 
     [Theory]
-    [InlineData(DoseFrequency.OD, "QD", 1)]
-    [InlineData(DoseFrequency.BD, "BID", 2)]
-    [InlineData(DoseFrequency.TDS, "TID", 3)]
-    [InlineData(DoseFrequency.QID, "QID", 4)]
-    [InlineData(DoseFrequency.HS, "BED", 1)]
-    public void Codes_daily_frequencies(DoseFrequency frequency, string code, int perDay)
+    [InlineData(DoseFrequency.OD, "QD", "QD", 1)]
+    [InlineData(DoseFrequency.BD, "BID", "BID", 2)]
+    [InlineData(DoseFrequency.TDS, "TID", "TID", 3)]
+    [InlineData(DoseFrequency.QID, "QID", "QID", 4)]
+    [InlineData(DoseFrequency.HS, "BED", "at bedtime", 1)]
+    public void Codes_daily_frequencies_with_the_terminology_displays(DoseFrequency frequency, string code, string display, int perDay)
     {
         var timing = MedicationRequestMapper.Timing(frequency, 5).ShouldNotBeNull();
 
         timing.Code.Coding[0].Code.ShouldBe(code);
+        timing.Code.Coding[0].Display.ShouldBe(display);
         timing.Repeat.Frequency.ShouldBe(perDay);
         timing.Repeat.PeriodUnit.ShouldBe(R4.Timing.UnitsOfTime.D);
     }
@@ -100,6 +101,7 @@ public sealed class MedicationRequestMapperTests
         var timing = MedicationRequestMapper.Timing(DoseFrequency.Weekly, 28).ShouldNotBeNull();
 
         timing.Code.Coding[0].Code.ShouldBe("WK");
+        timing.Code.Coding[0].Display.ShouldBe("weekly");
         timing.Repeat.PeriodUnit.ShouldBe(R4.Timing.UnitsOfTime.Wk);
     }
 

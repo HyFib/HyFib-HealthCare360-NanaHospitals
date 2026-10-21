@@ -48,6 +48,7 @@ import {
 import { ServiceLookup } from '../common/ServiceLookup';
 import { containerInfo, resultTypeLabel, sectionLabel, specimenLabel } from '../labels';
 import { ComponentsEditor } from './ComponentsEditor';
+import { useLoincNameFollowsCode } from './loincName';
 import { parseList } from './ranges';
 import { RangesEditor } from './RangesEditor';
 
@@ -68,6 +69,7 @@ const schema = z
       .string()
       .trim()
       .refine((v) => !v || /^[0-9]{1,7}-[0-9]$/.test(v), 'Enter a LOINC code such as 718-7.'),
+    loincName: z.string().trim().max(255),
     serviceItemId: z.string().nullable(),
     isOrderable: z.boolean(),
     isPanel: z.boolean(),
@@ -96,6 +98,13 @@ const schema = z
         code: 'custom',
         path: ['options'],
         message: 'List the allowed answers, e.g. Negative, Positive.',
+      });
+    }
+    if (values.loincName && !values.loinc) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['loincName'],
+        message: 'Enter the LOINC code this name belongs to.',
       });
     }
     if (values.isOrderable && !values.serviceItemId) {
@@ -128,6 +137,7 @@ function defaults(test: LabTestDetail | null): TestValues {
     method: test?.method ?? '',
     tatHours: test?.tatHours ?? 24,
     loinc: test?.loinc ?? '',
+    loincName: test?.loincName ?? '',
     serviceItemId: test?.serviceItemId ?? null,
     isOrderable: test?.isOrderable ?? true,
     isPanel: test?.isPanel ?? false,
@@ -161,6 +171,7 @@ function toRequest(values: TestValues, version: number | null): SaveLabTestReque
     method: values.method || null,
     tatHours: values.tatHours ?? 0,
     loinc: values.loinc || null,
+    loincName: (values.loinc && values.loincName) || null,
     serviceItemId: values.serviceItemId,
     isOrderable: values.isOrderable,
     isPanel: values.isPanel,
@@ -244,6 +255,7 @@ function TestEditor({
   const [rangesChanged, setRangesChanged] = useState(false);
   const referralLabs = useQuery(labQueries.referralLabs());
   const form = useForm<TestValues>({ resolver: zodResolver(schema), defaultValues: defaults(test) });
+  useLoincNameFollowsCode(form);
   const [resultType, isPanel, isOrderable] = useWatch({
     control: form.control,
     name: ['resultType', 'isPanel', 'isOrderable'],
@@ -330,6 +342,13 @@ function TestEditor({
                 />
                 <TextField control={form.control} name="method" label="Method" maxLength={200} />
                 <TextField control={form.control} name="loinc" label="LOINC code" maxLength={10} />
+                <TextField
+                  control={form.control}
+                  name="loincName"
+                  label="LOINC name"
+                  maxLength={255}
+                  hint="As loinc.org names the code, e.g. Hemoglobin [Mass/volume] in Blood. ABDM health records carry the code only with it."
+                />
               </FormGrid>
               <FormGrid columns={3}>
                 <SwitchField

@@ -401,6 +401,7 @@ const LAB_TESTS: LabTestDetail[] = RESULTS.map((line) => ({
   method: line.method,
   tatHours: 4,
   loinc: null,
+  loincName: null,
   serviceItemId: null,
   isOrderable: false,
   isPanel: false,

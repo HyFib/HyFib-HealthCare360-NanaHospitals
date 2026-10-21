@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Hl7.Fhir.Serialization;
+using Microsoft.Net.Http.Headers;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Features;
@@ -19,9 +20,10 @@ internal static class FhirJson
 
 /// <summary>
 /// Writes a FHIR resource as <c>application/fhir+json</c>. Responses carry PHI, so they are never stored by caches
-/// (<c>Cache-Control: no-store</c>); only the CapabilityStatement may be revalidated.
+/// (<c>Cache-Control: no-store</c>); only the CapabilityStatement may be revalidated. With a <paramref name="fileName"/>
+/// the resource is a file to save (an ABDM document): <c>Content-Disposition: attachment</c>.
 /// </summary>
-internal sealed class FhirResult(R4.Resource resource, int statusCode, bool pretty = false, string cacheControl = "no-store") : IResult
+internal sealed class FhirResult(R4.Resource resource, int statusCode, bool pretty = false, string cacheControl = "no-store", string? fileName = null) : IResult
 {
     public R4.Resource Resource => resource;
 
@@ -33,6 +35,11 @@ internal sealed class FhirResult(R4.Resource resource, int statusCode, bool pret
         response.StatusCode = statusCode;
         response.ContentType = FhirJson.ContentType;
         response.Headers.CacheControl = cacheControl;
+        if (fileName is not null)
+        {
+            response.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = fileName, FileNameStar = fileName }.ToString();
+        }
+
         await JsonSerializer.SerializeAsync(response.Body, resource, typeof(R4.Resource), FhirJson.Options(pretty), httpContext.RequestAborted);
     }
 }

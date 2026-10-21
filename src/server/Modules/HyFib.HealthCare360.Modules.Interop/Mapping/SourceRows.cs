@@ -142,6 +142,10 @@ internal sealed record LabResultRow
     public string TestCode { get; init; } = string.Empty;
     public string TestName { get; init; } = string.Empty;
     public string? Loinc { get; init; }
+
+    /// <summary>The LOINC name of <see cref="Loinc"/> in the test master (the code's display), when the laboratory gave it.</summary>
+    public string? LoincName { get; init; }
+
     public LabResultType ResultType { get; init; }
     public string? ValueText { get; init; }
     public decimal? NumericValue { get; init; }
@@ -152,10 +156,33 @@ internal sealed record LabResultRow
     public string? Remarks { get; init; }
     public string? Organism { get; init; }
     public string? ColonyCount { get; init; }
+
+    /// <summary>The referral laboratory the test was sent out to, which performed it (LIS-08); null when done in-house.</summary>
+    public Guid? ReferralLabId { get; init; }
+
     public DateTimeOffset OrderedAt { get; init; }
     public DateTimeOffset? CollectedAt { get; init; }
     public DateTimeOffset? VerifiedAt { get; init; }
+
+    /// <summary>When its test was released; an amendment of the result does not change it.</summary>
     public DateTimeOffset? ReleasedAt { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+
+/// <summary>Diagnostics module <see cref="ReferralLab"/>: an outside laboratory that performs the tests sent out to it.</summary>
+internal sealed record ReferralLabRow
+{
+    public required Guid Id { get; init; }
+    public string Code { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string? Phone { get; init; }
+    public string? Email { get; init; }
+    public string? Address { get; init; }
+
+    /// <summary>Its NABL accreditation number.</summary>
+    public string? AccreditationNumber { get; init; }
+
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }
@@ -193,32 +220,6 @@ internal sealed record AllergyRow
     public DateTimeOffset RecordedAt { get; init; }
     public string? Notes { get; init; }
     public string? StatusReason { get; init; }
-    public DateTimeOffset CreatedAt { get; init; }
-    public DateTimeOffset? UpdatedAt { get; init; }
-}
-
-/// <summary>A Clinical e-prescription as a whole (its lines are <see cref="PrescriptionItemRow"/>), for an ABDM prescription record.</summary>
-internal sealed record PrescriptionRow
-{
-    public required Guid Id { get; init; }
-    public required Guid PatientId { get; init; }
-    public Guid FacilityId { get; init; }
-    public string PrescriptionNumber { get; init; } = string.Empty;
-    public Guid? EncounterId { get; init; }
-    public Guid? VisitId { get; init; }
-    public Guid? AdmissionId { get; init; }
-    public Guid PractitionerId { get; init; }
-    public bool IsInpatient { get; init; }
-    public PrescriptionStatus Status { get; init; }
-    public DateTimeOffset PrescribedAt { get; init; }
-    public DateTimeOffset? SignedAt { get; init; }
-
-    /// <summary>General advice printed for the patient (the pharmacist's notes are not shared).</summary>
-    public string? Advice { get; init; }
-
-    /// <summary>The prescription this one refills: signed by whoever issued the refill, not by the prescriber.</summary>
-    public Guid? RefillOfPrescriptionId { get; init; }
-
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }
@@ -275,7 +276,12 @@ internal sealed record LabReportRow
     /// <summary>Earliest collection of the accession's samples (the clinically relevant time), when collected.</summary>
     public DateTimeOffset? CollectedAt { get; init; }
 
+    /// <summary>When the report was first released (its first tests).</summary>
+    public DateTimeOffset? FirstReleasedAt { get; init; }
+
+    /// <summary>Its latest release or amendment.</summary>
     public DateTimeOffset? ReleasedAt { get; init; }
+
     public IReadOnlyList<Guid> ResultIds { get; init; } = [];
     public IReadOnlyList<string> TestNames { get; init; } = [];
     public DateTimeOffset CreatedAt { get; init; }
@@ -380,33 +386,3 @@ internal sealed record DischargeSummaryRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
-/// <summary>Platform <see cref="Practitioner"/> master, as an ABDM document names the doctor (no contact details).</summary>
-internal sealed record PractitionerRow
-{
-    public required Guid Id { get; init; }
-    public string Code { get; init; } = string.Empty;
-    public string? Title { get; init; }
-    public string FirstName { get; init; } = string.Empty;
-    public string? LastName { get; init; }
-    public string DisplayName { get; init; } = string.Empty;
-    public Gender Gender { get; init; }
-    public string? Qualification { get; init; }
-    public string? RegistrationCouncil { get; init; }
-    public string? RegistrationNumber { get; init; }
-    public DateTimeOffset CreatedAt { get; init; }
-    public DateTimeOffset? UpdatedAt { get; init; }
-}
-
-/// <summary>Platform <see cref="Facility"/> master: the hospital as an organisation, with its ABDM Health Facility Registry id.</summary>
-internal sealed record FacilityRow
-{
-    public required Guid Id { get; init; }
-    public string Code { get; init; } = string.Empty;
-    public string Name { get; init; } = string.Empty;
-    public string? HfrId { get; init; }
-    public Address Address { get; init; } = new();
-    public string? Phone { get; init; }
-    public string? Email { get; init; }
-    public DateTimeOffset CreatedAt { get; init; }
-    public DateTimeOffset? UpdatedAt { get; init; }
-}

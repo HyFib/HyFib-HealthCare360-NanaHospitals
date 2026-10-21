@@ -48,6 +48,7 @@ public sealed record LabTestDetail(
     string? Method,
     int TatHours,
     string? Loinc,
+    string? LoincName,
     Guid? ServiceItemId,
     bool IsOrderable,
     bool IsPanel,
@@ -80,6 +81,7 @@ public sealed record SaveLabTestRequest(
     string? Method,
     int TatHours,
     string? Loinc,
+    string? LoincName,
     Guid? ServiceItemId,
     bool IsOrderable,
     bool IsPanel,
@@ -183,6 +185,8 @@ public sealed class SaveLabTestRequestValidator : AbstractValidator<SaveLabTestR
         RuleFor(x => x.Method).SafeText(200);
         RuleFor(x => x.TatHours).InclusiveBetween(0, 24 * 60);
         RuleFor(x => x.Loinc).Matches("^[0-9]{1,7}-[0-9]$").When(x => !string.IsNullOrWhiteSpace(x.Loinc)).WithMessage("Enter a LOINC code such as 718-7.");
+        RuleFor(x => x.LoincName).SafeText(255);
+        RuleFor(x => x.LoincName).Empty().When(x => string.IsNullOrWhiteSpace(x.Loinc)).WithMessage("Enter the LOINC code this name belongs to.");
         RuleFor(x => x.Unit).MaximumLength(32);
         RuleFor(x => x.Decimals).InclusiveBetween(0, 4);
         RuleFor(x => x.Options).NotEmpty().When(x => x.ResultType == LabResultType.Options).WithMessage("List the allowed answers.");

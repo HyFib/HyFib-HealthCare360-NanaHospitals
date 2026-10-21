@@ -93,8 +93,9 @@ public sealed class WebAuthnUnlockTests(HospitalServer server) : IAsyncLifetime
         await SetUpAsync(owner, ownersDevice);
         await SetUpAsync(other, othersDevice);
 
-        // Without a session there is nothing to resume.
-        using (var anonymous = await server.Anonymous().SendRawAsync(HttpMethod.Post, UnlockOptions))
+        // Without a session there is nothing to resume. (From the test's own address: the sign-in limit's per-address
+        // count is shared by every test that signs in, so the shared address may have used its minute.)
+        using (var anonymous = await server.Anonymous(ownAddress: true).SendRawAsync(HttpMethod.Post, UnlockOptions))
         {
             anonymous.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         }

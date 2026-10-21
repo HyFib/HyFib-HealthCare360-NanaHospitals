@@ -1174,11 +1174,10 @@ Permissions:
     they can push over ADMS-compatible firmware or the JSON punch API through their middleware.
   * Real-time events (the terminal reporting each punch on an open connection) are not used: terminals are read on a
     schedule, every few minutes.
-* **ABDM gateway (HIP/HIU, ABHA verification and linking)** is not built: it needs credentials from the National Health
-  Authority and the hospital's ABDM registrations (see [interop.md](interop.md#limitations-and-follow-ups)). What
-  exists is not an adapter: the Interop module exports signed discharge summaries and prescriptions as NRCeS ABDM
-  document bundles for staff to download (EHR-08, behind the `abdm` feature switch), and serves the **HL7 FHIR R4 read
-  facade** (EHR-05, `/fhir/r4`), both documented in [interop.md](interop.md).
+* **ABDM (HIP/HIU)**: the ABDM documents (EHR-08) and the gateway's client interface and settings are in the Interop
+  module, not here; the gateway is not live until the hospital has NHA credentials
+  ([interop.md](interop.md#abdm-gateway-not-live)). The **HL7 FHIR R4 read facade** (EHR-05) is not an adapter either:
+  it is the Interop module (`/fhir/r4`), documented in [interop.md](interop.md).
 * **ICD-10 free-text search online**: the WHO ICD-API does not support it, so the local catalogue answers instead.
 * **DICOM beyond the worklist and DICOMweb reads**:
   * No C-STORE: HC360 sends objects over STOW-RS only, and only cardiology's DICOM device files; modalities send their

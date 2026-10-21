@@ -159,6 +159,7 @@ export interface LabTestDetail {
   method: string | null;
   tatHours: number;
   loinc: string | null;
+  loincName: string | null;
   serviceItemId: string | null;
   isOrderable: boolean;
   isPanel: boolean;
@@ -192,6 +193,7 @@ export interface SaveLabTestRequest {
   method: string | null;
   tatHours: number;
   loinc: string | null;
+  loincName: string | null;
   serviceItemId: string | null;
   isOrderable: boolean;
   isPanel: boolean;

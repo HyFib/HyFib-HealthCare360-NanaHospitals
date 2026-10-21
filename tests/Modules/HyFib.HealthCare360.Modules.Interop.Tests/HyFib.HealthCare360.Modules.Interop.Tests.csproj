@@ -21,5 +21,7 @@
   <ItemGroup>
     <!-- The NRCeS ndhm.in 6.5.0 files the validator reads at run time (TestData/ndhm.in-6.5.0/README.md says where from). -->
     <None Update="TestData\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- PDFs Chromium printed, for the ABDM documents' printed copies (TestData/chromium-pdf/README.md). -->
+    <None Update="TestData\**\*.pdf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

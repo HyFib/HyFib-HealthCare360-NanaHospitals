@@ -68,11 +68,18 @@ public sealed class Patient : AuditableEntity
     public string? PreferredLanguage { get; set; }
     public PatientCategory Category { get; set; }
 
+    /// <summary>The 14-digit ABHA number (digits only), encrypted.</summary>
     [SensitiveData]
     public string? AbhaNumberCipher { get; set; }
 
+    /// <summary>Blind index of the ABHA number, for search and duplicate checks; kept out of the audit trail like the number.</summary>
+    [SensitiveData]
     public string? AbhaNumberIndex { get; set; }
+
+    /// <summary>The number as staff see it: <c>XX-XXXX-XXXX-1234</c>.</summary>
     public string? AbhaNumberMasked { get; set; }
+
+    /// <summary>ABHA address (<c>name@abdm</c>, or <c>@sbx</c> on the sandbox), lower case.</summary>
     public string? AbhaAddress { get; set; }
     public string? AadhaarLast4 { get; set; }
 
