@@ -5,6 +5,8 @@ using FellowOakDicom;
 using FellowOakDicom.Network;
 using FellowOakDicom.Network.Client;
 using HyFib.HealthCare360.Integrations.Common;
+using HyFib.HealthCare360.Integrations.Laboratory;
+using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Integrations.Tests.TestSupport;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -53,6 +55,11 @@ public sealed class ModalityWorklistServerTests : IAsyncDisposable
         services.AddScoped(_ => _audit);
         services.AddScoped(_ => _settings);
         services.AddModalityWorklist();
+
+        // What the worklist's test reads on an API node of several; this server runs the jobs, so it never does.
+        services.AddSingleton<LabGatewayState>();
+        services.AddSingleton<LabRelayRegistry>();
+        services.AddSingleton<LabStatusBoard>();
 
         // Registered after the module, so these win: no database in a unit test.
         services.AddScoped(_ => _facilities);

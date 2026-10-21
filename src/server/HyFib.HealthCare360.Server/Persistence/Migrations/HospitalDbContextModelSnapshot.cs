@@ -133,6 +133,13 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("statuses");
 
+                    b.Property<string>("Worklist")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("worklist")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
                     b.HasKey("Node")
                         .HasName("pk_lab_gateway_nodes");
 

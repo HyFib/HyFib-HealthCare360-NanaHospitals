@@ -1,18 +1,21 @@
 using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
+using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using Microsoft.Extensions.Hosting;
 
 namespace HyFib.HealthCare360.Integrations.Laboratory;
 
 /// <summary>
-/// The analysers' status as every server sees it (SCAL-01). With several servers each knows a part of it: the node that runs
-/// the jobs listens for the network analysers (SCAL-05), and a lab agent's relay and heartbeats reach whichever API node
-/// the proxy sends them to. Each server keeps its part in its <see cref="LabGatewayState"/> and writes it to
+/// The analysers' status, and the modality worklist server's, as every server sees it (SCAL-01). With several servers each
+/// knows a part of it: the node that runs the jobs listens for the network analysers and serves the worklist (SCAL-05),
+/// and a lab agent's relay and heartbeats reach whichever API node the proxy sends them to. Each server keeps its part in
+/// its <see cref="LabGatewayState"/> and <see cref="ModalityWorklistState"/> and writes it to
 /// <c>integrations.lab_gateway_nodes</c> (<see cref="LabStatusSharing"/>), and reads the others' parts with its own, so
-/// Lab setup and the integrations dashboard show the same status whichever server answers. A single Server Node has all
-/// of it in its own memory, and nobody to write it for.
+/// Lab setup, the integrations dashboard and their tests show the same status whichever server answers: with several
+/// servers that is always an API node, where neither the listeners nor the worklist server run. A single Server Node has
+/// all of it in its own memory, and nobody to write it for.
 /// </summary>
-internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry relays, IServiceScopeFactory scopes)
+internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry relays, ModalityWorklistState worklist, IServiceScopeFactory scopes)
 {
     /// <summary>
     /// How long a server's row counts after it was written: a server writes it again every minute. It is measured by the
@@ -29,25 +32,28 @@ internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry rel
     /// <summary>This server's row, for as long as it runs.</summary>
     public string Node { get; } = Guid.NewGuid().ToString("N");
 
-    /// <summary>Changes with every change to this server's part.</summary>
-    public long Version => state.Version;
+    /// <summary>Changes with every change to this server's part (both counts only go up).</summary>
+    public long Version => state.Version + worklist.Version;
 
     /// <summary>Writes this server's part for the others, or removes its row when it has none.</summary>
     public async Task PublishAsync(CancellationToken cancellationToken)
     {
         var statuses = state.Snapshot();
         var agents = relays.ConnectedAgents();
+        var served = worklist.Snapshot();
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-        if (statuses.Count > 0 || agents.Count > 0)
+        if (statuses.Count > 0 || agents.Count > 0 || served.Count > 0)
         {
             var statusJson = JsonSerializer.Serialize(statuses, Json);
             var agentJson = JsonSerializer.Serialize(agents, Json);
+            var worklistJson = JsonSerializer.Serialize(served, Json);
             await db.Database.ExecuteSqlAsync($"""
-                INSERT INTO integrations.lab_gateway_nodes (node, statuses, relaying_agents, expires_at)
-                VALUES ({Node}, CAST({statusJson} AS jsonb), CAST({agentJson} AS jsonb), now() + {Lifetime})
+                INSERT INTO integrations.lab_gateway_nodes (node, statuses, relaying_agents, worklist, expires_at)
+                VALUES ({Node}, CAST({statusJson} AS jsonb), CAST({agentJson} AS jsonb), CAST({worklistJson} AS jsonb), now() + {Lifetime})
                 ON CONFLICT (node) DO UPDATE
-                SET statuses = EXCLUDED.statuses, relaying_agents = EXCLUDED.relaying_agents, expires_at = EXCLUDED.expires_at
+                SET statuses = EXCLUDED.statuses, relaying_agents = EXCLUDED.relaying_agents, worklist = EXCLUDED.worklist,
+                    expires_at = EXCLUDED.expires_at
                 """, cancellationToken);
         }
         else
@@ -68,11 +74,15 @@ internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry rel
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    /// <summary>Every server's status of the analysers, one per analyser, and the lab agents relaying through any server.</summary>
+    /// <summary>
+    /// Every server's status of the analysers, one per analyser, the lab agents relaying through any server, and the
+    /// worklist server's status on the server that serves it.
+    /// </summary>
     public async Task<LabStatusView> ReadAsync(CancellationToken cancellationToken)
     {
         var statuses = state.Snapshot().ToList();
         var agents = relays.ConnectedAgents().ToHashSet();
+        var served = worklist.Snapshot().ToList();
         await using var scope = scopes.CreateAsyncScope();
         var others = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<LabGatewayNode>()
             .FromSql($"SELECT * FROM integrations.lab_gateway_nodes WHERE node <> {Node} AND expires_at > now()")
@@ -82,9 +92,10 @@ internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry rel
         {
             statuses.AddRange(JsonSerializer.Deserialize<List<LabListenerStatus>>(other.Statuses, Json) ?? []);
             agents.UnionWith(JsonSerializer.Deserialize<List<Guid>>(other.RelayingAgents, Json) ?? []);
+            served.AddRange(JsonSerializer.Deserialize<List<LabListenerStatus>>(other.Worklist, Json) ?? []);
         }
 
-        return new LabStatusView(Merge(statuses), agents);
+        return new LabStatusView(Merge(statuses), agents, Merge(served));
     }
 
     /// <summary>
@@ -123,12 +134,16 @@ internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry rel
     };
 }
 
-/// <summary>The analysers' status on every server, and the lab agents relaying an analyser through any of them.</summary>
-internal sealed record LabStatusView(IReadOnlyList<LabListenerStatus> Statuses, IReadOnlySet<Guid> RelayingAgents);
+/// <summary>
+/// The analysers' status on every server, the lab agents relaying an analyser through any of them, and the modality
+/// worklist server's status (by its AE title) on the server that serves it.
+/// </summary>
+internal sealed record LabStatusView(IReadOnlyList<LabListenerStatus> Statuses, IReadOnlySet<Guid> RelayingAgents, IReadOnlyList<LabListenerStatus> Worklist);
 
 /// <summary>
-/// Writes this server's analyser status for the other servers (<see cref="LabStatusBoard"/>) on a node of several: a few
-/// seconds after it changes, and every minute so that it does not expire, and removes it as the server stops.
+/// Writes this server's analyser and worklist server status for the other servers (<see cref="LabStatusBoard"/>) on a node
+/// of several: a few seconds after it changes, and every minute so that it does not expire, and removes it as the server
+/// stops.
 /// </summary>
 internal sealed class LabStatusSharing(LabStatusBoard board, DataDirectories directories, TimeProvider time, ILogger<LabStatusSharing> logger)
     : BackgroundService
@@ -167,7 +182,7 @@ internal sealed class LabStatusSharing(LabStatusBoard board, DataDirectories dir
                     // Said once while it fails, not every five seconds.
                     if (!failing)
                     {
-                        logger.LogWarning(ex, "This server's analyser status could not be shared with the other servers; trying again");
+                        logger.LogWarning(ex, "This server's analyser and worklist status could not be shared with the other servers; trying again");
                     }
 
                     failing = true;

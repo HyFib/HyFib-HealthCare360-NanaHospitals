@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Orders;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
+using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Platform.Contracts;
@@ -53,6 +54,7 @@ public sealed class LabConnectionTests(HospitalServer server)
         {
             services.AddSingleton<LabGatewayState>();
             services.AddSingleton<LabRelayRegistry>();
+            services.AddSingleton<ModalityWorklistState>();
             services.AddSingleton<LabStatusBoard>();
         });
         var listening = jobNode.Services.GetRequiredService<LabGatewayState>();
@@ -97,6 +99,7 @@ public sealed class LabConnectionTests(HospitalServer server)
             services.AddSingleton<TimeProvider>(new MovableClock(DateTimeOffset.UtcNow.AddMinutes(-4)));
             services.AddSingleton<LabGatewayState>();
             services.AddSingleton<LabRelayRegistry>();
+            services.AddSingleton<ModalityWorklistState>();
             services.AddSingleton<LabStatusBoard>();
         });
         var listening = jobNode.Services.GetRequiredService<LabGatewayState>();

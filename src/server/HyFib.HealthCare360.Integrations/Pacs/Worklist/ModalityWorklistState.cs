@@ -3,9 +3,11 @@ using HyFib.HealthCare360.Integrations.Laboratory;
 namespace HyFib.HealthCare360.Integrations.Pacs.Worklist;
 
 /// <summary>
-/// Live status of the worklist server for the integrations dashboard, shared by the server (writer) and the admin
-/// endpoints (reader). It is shown in the same shape as an analyser listener: the AE title, the port, the state, open
-/// associations, queries answered and refused, and the last problem (including settings that could not be used).
+/// Live status of this server's worklist server for the integrations dashboard, kept by the server (writer). It is shown
+/// in the same shape as an analyser listener: the AE title, the port, the state, open associations, queries answered and
+/// refused, and the last problem (including settings that could not be used). The worklist server runs only on the node
+/// that runs the jobs, which answers no requests with several servers: <see cref="Laboratory.LabStatusBoard"/> shares
+/// this status with the others, and is what the admin endpoints read.
 /// </summary>
 internal sealed class ModalityWorklistState(TimeProvider time)
 {
@@ -19,7 +21,12 @@ internal sealed class ModalityWorklistState(TimeProvider time)
     private DateTimeOffset? _lastQueryAt;
     private DateTimeOffset? _lastErrorAt;
     private string? _lastError;
+    private DateTimeOffset? _changedAt;
     private IReadOnlyList<string> _problems = [];
+    private long _version;
+
+    /// <summary>Goes up with every change, so a change can be shared without comparing the statuses.</summary>
+    public long Version => Interlocked.Read(ref _version);
 
     public int Associations
     {
@@ -76,15 +83,27 @@ internal sealed class ModalityWorklistState(TimeProvider time)
     });
 
     /// <summary>Settings entries that could not be used; the first is shown as the last problem.</summary>
-    public void Problems(IReadOnlyList<string> problems) => Update(() =>
+    public void Problems(IReadOnlyList<string> problems)
     {
-        if (problems.Count > 0 && !_problems.SequenceEqual(problems, StringComparer.Ordinal))
+        // Applied every minute: only a change is a change to share.
+        lock (_lock)
         {
-            Error(problems[0] + (problems.Count > 1 ? $" (and {problems.Count - 1} more)" : string.Empty));
+            if (_problems.SequenceEqual(problems, StringComparer.Ordinal))
+            {
+                return;
+            }
         }
 
-        _problems = problems;
-    });
+        Update(() =>
+        {
+            if (problems.Count > 0 && !_problems.SequenceEqual(problems, StringComparer.Ordinal))
+            {
+                Error(problems[0] + (problems.Count > 1 ? $" (and {problems.Count - 1} more)" : string.Empty));
+            }
+
+            _problems = problems;
+        });
+    }
 
     public void Opened() => Update(() => _associations++);
 
@@ -108,7 +127,13 @@ internal sealed class ModalityWorklistState(TimeProvider time)
         {
             return _state is null || _aeTitle is null
                 ? []
-                : [new LabListenerStatus(_aeTitle, "DICOM", _port, _state, _associations, _answered, _refused, _lastQueryAt, _lastErrorAt, _lastError)];
+                :
+                [
+                    new LabListenerStatus(_aeTitle, "DICOM", _port, _state, _associations, _answered, _refused, _lastQueryAt, _lastErrorAt, _lastError)
+                    {
+                        ChangedAt = _changedAt,
+                    },
+                ];
         }
     }
 
@@ -123,6 +148,8 @@ internal sealed class ModalityWorklistState(TimeProvider time)
         lock (_lock)
         {
             change();
+            _changedAt = time.GetUtcNow();
+            _version++;
         }
     }
 }

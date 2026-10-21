@@ -12,5 +12,6 @@ internal sealed class LabGatewayNodeConfiguration : IEntityTypeConfiguration<Lab
         b.Property(x => x.Node).HasMaxLength(64);
         b.Property(x => x.Statuses).HasColumnType("jsonb");
         b.Property(x => x.RelayingAgents).HasColumnType("jsonb");
+        b.Property(x => x.Worklist).HasColumnType("jsonb").HasDefaultValueSql("'[]'::jsonb");
     }
 }

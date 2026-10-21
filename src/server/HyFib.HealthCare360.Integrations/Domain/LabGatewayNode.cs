@@ -1,9 +1,10 @@
 namespace HyFib.HealthCare360.Integrations.Domain;
 
 /// <summary>
-/// One server's live analyser status, shared with the other servers on the database (SCAL-01):
-/// <c>integrations.lab_gateway_nodes</c>, written by <see cref="Laboratory.LabStatusBoard"/>. A server writes its row while
-/// it runs and removes it when it stops; a row past <see cref="ExpiresAt"/> belongs to a server that is gone.
+/// One server's live status of the analysers and of the modality worklist server, shared with the other servers on the
+/// database (SCAL-01): <c>integrations.lab_gateway_nodes</c>, written by <see cref="Laboratory.LabStatusBoard"/>. A server
+/// writes its row while it runs and removes it when it stops; a row past <see cref="ExpiresAt"/> belongs to a server that
+/// is gone.
 /// </summary>
 [NotAudited]
 public sealed class LabGatewayNode
@@ -16,6 +17,12 @@ public sealed class LabGatewayNode
 
     /// <summary>The lab agents relaying an analyser through it, as a JSON list of their device ids.</summary>
     public string RelayingAgents { get; set; } = "[]";
+
+    /// <summary>
+    /// Its modality worklist server's status, as JSON: a list of <see cref="Laboratory.LabListenerStatus"/>, empty but on the
+    /// node that runs the jobs, where the worklist server runs.
+    /// </summary>
+    public string Worklist { get; set; } = "[]";
 
     public DateTimeOffset ExpiresAt { get; set; }
 }
