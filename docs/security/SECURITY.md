@@ -295,7 +295,7 @@ and grants nothing.
     nothing. NHA's client id and secret are a secret setting (`abdm.gateway.secret`, encrypted), and the gateway's
     status says only whether they are set. Its base URL must be https without a user name.
   - Linking, replacing or removing a patient's ABHA number or address is audited (`patient.abha_changed`), with the
-    number masked.
+    number masked, including a number a merge of duplicate records links to the surviving one.
 - Only what is needed is stored:
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
     Checking a patient's identity with their Aadhaar fingerprint (INT-BIO) keeps the outcome, the last 4 digits and

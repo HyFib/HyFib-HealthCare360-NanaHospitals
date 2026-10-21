@@ -269,9 +269,20 @@ public sealed class PatientRegistrationService(
 
         await MovePortalFamilyLinksAsync(source, target, ct);
 
-        target.AbhaNumberCipher ??= source.AbhaNumberCipher;
-        target.AbhaNumberIndex ??= source.AbhaNumberIndex;
-        target.AbhaNumberMasked ??= source.AbhaNumberMasked;
+        // The surviving record takes the duplicate's ABHA number when it has none: a link made by the merge, audited as
+        // every link of a national health ID is.
+        if (target.AbhaNumberCipher is null && source.AbhaNumberCipher is not null)
+        {
+            (target.AbhaNumberCipher, target.AbhaNumberIndex, target.AbhaNumberMasked) = (source.AbhaNumberCipher, source.AbhaNumberIndex, source.AbhaNumberMasked);
+            audit.Add(new AuditEntry(AuditCategories.Data, AbhaChangedAction, $"Merged from {source.Uhid}: ABHA number {source.AbhaNumberMasked} linked")
+            {
+                PatientId = target.Id,
+                EntityType = nameof(Patient),
+                EntityId = target.Id.ToString(),
+                Details = new { number = "linked", numberMasked = source.AbhaNumberMasked, previousNumberMasked = (string?)null, address = (string?)null, mergedFrom = source.Uhid },
+            });
+        }
+
         target.AadhaarLast4 ??= source.AadhaarLast4;
         target.AadhaarIndex ??= source.AadhaarIndex;
         source.MarkMergedInto(target.Id);

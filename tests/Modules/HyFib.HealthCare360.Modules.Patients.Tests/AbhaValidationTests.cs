@@ -18,7 +18,7 @@ public sealed class AbhaValidationTests
     [InlineData(null, null)]
     [InlineData("91-1234-5678-9010", "meera.k@abdm")]
     [InlineData("91123456789010", "meera.k@sbx")]
-    [InlineData("21-1521-3828-3227", null)] // an example patient's number in the ABDM implementation guide
+    [InlineData("22-7225-4829-5255", null)] // the example patient's number in the ABDM implementation guide
     [InlineData("91-1234-5678-9012", null)] // fails a Verhoeff check, which ABHA numbers do not have
     public void Valid_abha_details_are_accepted(string? number, string? address)
     {

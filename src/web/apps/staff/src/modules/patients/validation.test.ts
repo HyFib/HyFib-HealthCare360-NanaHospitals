@@ -109,10 +109,11 @@ describe('ABHA details in the patient form (SRS EHR-08)', () => {
   });
 
   it('does not ask for a check digit, which ABDM does not publish', () => {
-    // The ABHA numbers of the example patients in the NRCeS implementation guide for ABDM (ndhm.in 6.5.0): none ends
-    // in a Verhoeff check digit, and the form must take them.
-    expect(isValidAbhaNumber('21-1521-3828-3227')).toBe(true);
+    // The ABHA number of the example patient in the NRCeS implementation guide for ABDM (ndhm.in 6.5.0), and the HPR
+    // ids of its example doctors, which ABDM issues in the same 14-digit form: none ends in a Verhoeff check digit, and
+    // the form must take such numbers.
     expect(isValidAbhaNumber('22-7225-4829-5255')).toBe(true);
+    expect(isValidAbhaNumber('21-1521-3828-3227')).toBe(true);
     expect(isValidAbhaNumber('25-1531-3528-3228')).toBe(true);
     for (const last of '0123456789') {
       expect(isValidAbhaNumber(`91-1234-5678-901${last}`)).toBe(true);
@@ -148,7 +149,7 @@ describe('ABHA details in the patient form (SRS EHR-08)', () => {
       patientFormSchema.safeParse({ ...valid, abhaNumber: '91-1234-5678-9010', abhaAddress: 'meera.k@abdm' }).success,
     ).toBe(true);
 
-    expect(patientFormSchema.safeParse({ ...valid, abhaNumber: '21-1521-3828-3227' }).success).toBe(true);
+    expect(patientFormSchema.safeParse({ ...valid, abhaNumber: '22-7225-4829-5255' }).success).toBe(true);
 
     const number = patientFormSchema.safeParse({ ...valid, abhaNumber: '91-1234-5678-901' });
     expect(number.success).toBe(false);

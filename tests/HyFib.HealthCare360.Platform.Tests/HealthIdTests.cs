@@ -63,15 +63,16 @@ public sealed class HealthIdTests
     public void An_abha_number_is_14_digits_grouped_or_run_together(string value) => Abha.IsValidNumber(value).ShouldBeTrue();
 
     /// <summary>
-    /// The example patients of the NRCeS "FHIR Implementation Guide for ABDM" (ndhm.in 6.5.0, the package the ABDM
-    /// documents are validated against) carry these ABHA numbers. None ends in a Verhoeff check digit, nor does about 9
-    /// in 10 of any 14 digits, so a check-digit rule would turn away real ABHA cards at the desk.
+    /// The example patient of the NRCeS "FHIR Implementation Guide for ABDM" (ndhm.in 6.5.0, the package the ABDM
+    /// documents are validated against) carries ABHA number 22-7225-4829-5255, and its example doctors the HPR ids
+    /// 21-1521-3828-3227 and 25-1531-3528-3228, which ABDM issues in the same 14-digit form. None ends in a Verhoeff check
+    /// digit, nor does about 9 in 10 of any 14 digits, so a check-digit rule would turn away real ABHA cards at the desk.
     /// </summary>
     [Theory]
-    [InlineData("21-1521-3828-3227")]
-    [InlineData("22-7225-4829-5255")]
-    [InlineData("25-1531-3528-3228")]
-    public void The_abha_numbers_of_the_abdm_guides_examples_are_accepted(string value)
+    [InlineData("22-7225-4829-5255")] // the example patient's ABHA number
+    [InlineData("21-1521-3828-3227")] // an example doctor's HPR id
+    [InlineData("25-1531-3528-3228")] // another example doctor's HPR id
+    public void The_ids_of_the_abdm_guides_examples_are_accepted_as_abha_numbers(string value)
     {
         Verhoeff.IsValid(Abha.Digits(value)).ShouldBeFalse();
         Abha.IsValidNumber(value).ShouldBeTrue();
@@ -134,7 +135,7 @@ public sealed class HealthIdTests
     [Theory]
     [InlineData(null, null, true)]
     [InlineData("91-1234-5678-9010", "meera.k@abdm", true)]
-    [InlineData("21-1521-3828-3227", null, true)]
+    [InlineData("22-7225-4829-5255", null, true)]
     [InlineData("91-1234-5678-901", null, false)]
     [InlineData(null, "meera.k@gmail.com", false)]
     public void The_shared_validation_rules_check_both_identifiers(string? number, string? address, bool valid)

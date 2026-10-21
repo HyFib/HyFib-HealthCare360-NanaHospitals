@@ -96,6 +96,30 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task An_abha_number_a_merge_brings_to_the_surviving_record_is_audited_as_linked()
+    {
+        // The ABHA number was given only under the duplicate UHID; the merge links it to the surviving record.
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var medicalRecords = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var abha = NewAbha();
+        var kept = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null) with { AbhaNumber = null });
+        var duplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+
+        await medicalRecords.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+
+        (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{kept.Id}")).AbhaNumberMasked.ShouldBe("XX-XXXX-XXXX-" + abha[^4..]);
+        var linked = (await AuditAsync(kept.Id, "patient.abha_changed")).ShouldNotBeNull();
+        linked.Summary.ShouldBe($"Merged from {duplicate.Uhid}: ABHA number XX-XXXX-XXXX-{abha[^4..]} linked");
+        linked.Details.ShouldNotBeNull().ShouldNotContain(abha);
+
+        // A surviving record with a number of its own keeps it, and nothing is linked.
+        var other = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
+        var otherDuplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
+        await medicalRecords.PostAsync($"/api/v1/patients/{otherDuplicate.Id}/merge", new MergePatientRequest(other.Id, "Registered twice"));
+        (await AuditAsync(other.Id, "patient.abha_changed")).ShouldNotBeNull().Summary.ShouldStartWith("At registration:");
+    }
+
+    [Fact]
     public async Task A_record_whose_abha_address_predates_the_check_can_still_be_edited_and_a_changed_address_is_checked()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);

@@ -63,8 +63,9 @@ public static class Verhoeff
 /// <summary>
 /// The identifiers of an Ayushman Bharat Health Account (ABDM): the ABHA number, 14 digits written
 /// <c>xx-xxxx-xxxx-xxxx</c>, and the ABHA address, a handle such as <c>meera.k@abdm</c> (<c>@sbx</c> on the ABDM
-/// sandbox). No NHA or ABDM specification gives the ABHA number a check digit (the NRCeS implementation guide's own
-/// example patients carry numbers that fail a Verhoeff check), so only its length and characters are checked here;
+/// sandbox). No NHA or ABDM specification gives the ABHA number a check digit (the NRCeS implementation guide's example
+/// patient carries one that fails a Verhoeff check, as do its example doctors' HPR ids, 14 digits too), so only its length
+/// and characters are checked here;
 /// whether a number belongs to a real account is for ABDM to say when it is verified through the gateway.
 /// </summary>
 public static partial class Abha
