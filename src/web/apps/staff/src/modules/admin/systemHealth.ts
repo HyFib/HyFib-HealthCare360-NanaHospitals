@@ -78,17 +78,22 @@ export function serverRole(role: string): string {
 }
 
 /**
- * The home screen's line for several servers (SCAL-01): all of them reporting, or which have stopped; and when none of
- * them runs the background jobs, that nothing does.
+ * The home screen's line for several servers (SCAL-01): all of them reporting, or which have stopped; when none of them
+ * runs the background jobs, that nothing does; and when more than one that reports runs them, which, as only one should.
  */
 export function serversSummary(servers: ServerNodeHealth[]): { text: string; tone: HealthTone } {
   const silent = servers.filter((node) => !node.reporting).map((node) => node.server.machineName);
   const jobs = servers.some((node) => runsJobs(node.server.role));
+  const running = servers
+    .filter((node) => node.reporting && runsJobs(node.server.role))
+    .map((node) => node.server.machineName);
   const parts = [silent.length === 0 ? `All ${servers.length} reporting` : `${silent.join(', ')} not reporting`];
   if (!jobs) {
     parts.push('none runs the background jobs');
+  } else if (running.length > 1) {
+    parts.push(`${running.join(', ')} each run the background jobs`);
   }
-  return { text: parts.join('; '), tone: silent.length > 0 || !jobs ? 'bad' : 'ok' };
+  return { text: parts.join('; '), tone: silent.length > 0 || !jobs ? 'bad' : running.length > 1 ? 'warn' : 'ok' };
 }
 
 /** Less than a tenth of the data drive is free, as the server warns. */

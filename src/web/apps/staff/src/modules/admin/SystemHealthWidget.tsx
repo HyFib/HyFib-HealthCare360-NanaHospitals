@@ -58,7 +58,11 @@ export function SystemHealthWidget() {
           {servers ? (
             <>
               <Caption1 className={styles.muted}>Servers</Caption1>
-              <Caption1 className={servers.tone === 'bad' ? styles.bad : undefined}>{servers.text}</Caption1>
+              <Caption1
+                className={servers.tone === 'bad' ? styles.bad : servers.tone === 'warn' ? styles.warn : undefined}
+              >
+                {servers.text}
+              </Caption1>
             </>
           ) : (
             <>

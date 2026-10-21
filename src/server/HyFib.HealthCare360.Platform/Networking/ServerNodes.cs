@@ -14,12 +14,13 @@ namespace HyFib.HealthCare360.Platform.Networking;
 /// <summary>
 /// One server's part of System health while there are several (SCAL-01): <c>platform.server_nodes</c>, written by
 /// <see cref="ServerNodeBoard"/>. A server writes its row every minute and removes it as it stops. One that stopped without
-/// removing it (a power cut) keeps its row, which shows that it no longer reports, for a day.
+/// removing it (a power cut) keeps its row, which shows that it no longer reports, until it starts again and writes over
+/// it, or for a day.
 /// </summary>
 [NotAudited]
 public sealed class ServerNode
 {
-    /// <summary>The server's id for as long as it runs.</summary>
+    /// <summary>The server's id, kept in its own data folder (<see cref="ServerNodeBoard.Node"/>).</summary>
     public string Node { get; set; } = string.Empty;
 
     /// <summary>What it reports of itself, as JSON: a <see cref="ServerNodeHealth"/>.</summary>
@@ -48,18 +49,39 @@ internal sealed class ServerNodeConfiguration : IEntityTypeConfiguration<ServerN
 /// and whether that is recent enough to count, are judged by the database's clock alone, so servers whose clocks differ
 /// agree on them. A single Server Node writes and reads nothing: it reports only itself.
 /// </summary>
-public sealed class ServerNodeBoard(IServiceScopeFactory scopes)
+public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories directories)
 {
     /// <summary>A server that has not written its part for this long no longer reports: it writes it every minute.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(3);
+
+    /// <summary>The file in a server's own data folder (<see cref="DataDirectories.Config"/>) that keeps its id.</summary>
+    public const string IdFileName = "server-node-id.txt";
 
     /// <summary>A row this old belongs to a server that stopped without removing it, and is no longer shown.</summary>
     private static readonly TimeSpan GoneAfter = TimeSpan.FromDays(1);
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
-    /// <summary>This server's row, for as long as it runs.</summary>
-    public string Node { get; } = Guid.NewGuid().ToString("N");
+    private readonly Lock _making = new();
+    private string? _node;
+
+    /// <summary>
+    /// This server's row: an id made the first time it is asked for, and kept in the server's own data folder
+    /// (<see cref="IdFileName"/>), so that a server that starts again, after a power cut too, writes over its own row. With
+    /// an id for each run, it showed twice for a day, once as not reporting. Not the machine's name: a machine renamed
+    /// keeps its id, and so its row, and two HC360 servers on one machine, each with a data folder of its own, keep a row
+    /// each.
+    /// </summary>
+    public string Node
+    {
+        get
+        {
+            lock (_making)
+            {
+                return _node ??= ReadOrMakeId(Path.Combine(directories.Config, IdFileName));
+            }
+        }
+    }
 
     /// <summary>Writes this server's part for the others, and removes the rows of servers gone for a day.</summary>
     public async Task PublishAsync(ServerNodeHealth part, CancellationToken cancellationToken)
@@ -100,6 +122,20 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes)
                 ? part with { ReportedAt = row.ReportedAt, Reporting = row.Reporting }
                 : null).OfType<ServerNodeHealth>(),
         ];
+    }
+
+    /// <summary>The id kept in <paramref name="path"/>, or a new one kept there from now on.</summary>
+    private static string ReadOrMakeId(string path)
+    {
+        if (File.Exists(path) && Guid.TryParseExact(File.ReadAllText(path).Trim(), "N", out var kept))
+        {
+            return kept.ToString("N");
+        }
+
+        var made = Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, made + Environment.NewLine);
+        return made;
     }
 
     /// <summary>A row as read, its columns named as the model names them (snake case).</summary>
