@@ -21,7 +21,8 @@ const RESYNC_SPREAD_MS = 3_000;
  * normal), re-subscribes topics after reconnecting and asks React Query to refetch everything so screens
  * never show stale queues or bed boards (SRS DED-09). That includes starting again after the connection closed
  * for good, which SignalR does not count as a reconnect, and the server saying events were lost while the connection
- * stayed open (`resync`: with several servers, Redis, through which every event passes, was away, SCAL-02).
+ * stayed open (`resync`: with several servers, Redis, through which every event passes, was away, SCAL-02), when it
+ * re-subscribes topics first too: one subscribed to meanwhile was not joined.
  */
 export class RealtimeClient {
   private readonly connection: HubConnection;
@@ -126,7 +127,7 @@ export class RealtimeClient {
   }
 
   /**
-   * The server said events were lost though this connection stayed open (`resync`): refresh as after a reconnect, within a
+   * The server said events were lost though this connection stayed open (`resync`): catch up as after a reconnect, within a
    * few seconds at a moment of this screen's own, and once for several said close together (every server says so).
    */
   private resyncSoon(): void {
@@ -135,10 +136,23 @@ export class RealtimeClient {
     }
     this.resyncTimer = setTimeout(() => {
       this.resyncTimer = null;
-      if (!this.stopped) {
-        this.onReconnected();
-      }
+      void this.resync();
     }, Math.random() * RESYNC_SPREAD_MS);
+  }
+
+  /**
+   * Subscribes again, then refreshes. A topic this screen subscribed to while Redis was away was not joined (the server
+   * undoes a subscription that fails, and the screen took no notice): subscribing again first means its events arrive
+   * from then on, and the refresh shows what was missed before.
+   */
+  private async resync(): Promise<void> {
+    if (this.stopped) {
+      return;
+    }
+    await this.resubscribe();
+    if (!this.stopped) {
+      this.onReconnected();
+    }
   }
 
   /** Starts again in 5 seconds, unless the app stopped the connection (signed out) before or during the wait. */

@@ -2,12 +2,16 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 using HyFib.HealthCare360.Modules.VirtualCare.Hubs;
 using HyFib.HealthCare360.Platform.Realtime;
+using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Server;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.SignalR;
@@ -18,6 +22,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 using StackExchange.Redis;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -28,8 +34,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// does not stop a node: it starts, reports the backplane Degraded on <c>/health/ready</c>, and an event it cannot send
 /// is logged without failing the change that raised it (REL-03), telehealth pushes included; a node first used while
 /// Redis was down shares everything with the others once it is back, and screens that stayed connected through an
-/// outage are told to refetch once it is back. The two-node tests need a Redis server: set <see cref="RedisVariable"/>
-/// for one, and have <c>redis-server</c> on the PATH for those that start their own (CI has neither, and skips them).
+/// outage are told to refetch once it is back, and follow what they subscribed to meanwhile once they subscribe again. The
+/// two-node tests need a Redis server: set <see cref="RedisVariable"/> for one, and have <c>redis-server</c> on the PATH
+/// for those that start their own (CI has neither, and skips them).
 /// </summary>
 public sealed class RedisBackplaneTests
 {
@@ -39,6 +46,9 @@ public sealed class RedisBackplaneTests
     private const string HubPath = "/hubs/it-backplane";
 
     private const string OtherHubPath = "/hubs/it-backplane-other";
+
+    /// <summary>The platform's own events hub, which screens subscribe to topics on.</summary>
+    private const string EventsPath = "/hubs/it-events";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -191,6 +201,53 @@ public sealed class RedisBackplaneTests
         }
     }
 
+    /// <summary>
+    /// A screen that opens a ward, a queue or a chart while Redis is away subscribes to its topic, and the subscription fails
+    /// (the apps take no notice). SignalR had counted the connection in the topic's group all the same, so subscribing again
+    /// once Redis was back did nothing: the screen refetched once when told to, then got none of the topic's events for as
+    /// long as it stayed connected, though it looked live. A subscription that fails is now undone, so subscribing again,
+    /// as the apps do when told to refetch, follows the topic.
+    /// </summary>
+    [Fact]
+    public async Task A_topic_subscribed_to_while_Redis_is_away_is_followed_once_the_screen_subscribes_again()
+    {
+        var redisServer = OnPath(OperatingSystem.IsWindows() ? "redis-server.exe" : "redis-server");
+        Assert.SkipWhen(redisServer is null, "Needs redis-server on the PATH, to stop and start a Redis server of its own.");
+        var port = FreePort();
+        var redis = StartRedis(redisServer!, port);
+        try
+        {
+            await using var first = await NodeAsync($"127.0.0.1:{port}");
+            await using var second = await NodeAsync($"127.0.0.1:{port}");
+            await using var screen = await ConnectOnceRedisIsBackAsync(second, EventsPath);
+            await PassOverStartAsync(screen);
+
+            // Redis goes away, and the screen opens a ward meanwhile: subscribing to it fails.
+            redis.Kill(entireProcessTree: true);
+            await redis.WaitForExitAsync(CancellationToken.None);
+            redis.Dispose();
+            var ward = await SubscribeWhileRedisIsAwayAsync(screen);
+            redis = StartRedis(redisServer!, port);
+            (await ReceiveWithinAsync(screen, IsResync, TimeSpan.FromSeconds(60)))
+                .ShouldBeTrue("the screen should be told to refetch once Redis is back");
+
+            // Told to, the screen subscribes again, as the apps do; then the ward changes on the other node.
+            (await screen.InvokeAsync(nameof(EventsHub.Subscribe), ward)).ShouldBeNull();
+            var hub = first.Services.GetRequiredService<IHubContext<EventsHub>>();
+            await OnceConnectedAsync(() => hub.Clients.Group(ward).SendAsync(
+                "event", new RealtimeEnvelope(ward, "bed.changed", null, DateTimeOffset.UtcNow), Ct));
+
+            (await ReceiveWithinAsync(screen, message => IsEvent(message) && message.GetProperty("arguments")[0].GetProperty("topic").GetString() == ward, TimeSpan.FromSeconds(10)))
+                .ShouldBeTrue("the ward the screen opened while Redis was away should send it its events once it subscribed again");
+        }
+        finally
+        {
+            redis.Kill(entireProcessTree: true);
+            await redis.WaitForExitAsync(CancellationToken.None);
+            redis.Dispose();
+        }
+    }
+
     [Fact]
     public async Task A_node_whose_Redis_is_away_starts_reports_it_degraded_and_keeps_its_changes()
     {
@@ -234,7 +291,10 @@ public sealed class RedisBackplaneTests
         await Should.NotThrowAsync(() => telehealth.ChatAsync(Guid.NewGuid(), message, Ct));
     }
 
-    /// <summary>A node with the server's real-time set-up and a hub to join a group on, on the Redis server given.</summary>
+    /// <summary>
+    /// A node with the server's real-time set-up and hubs to join a group on, on the Redis server given: two of the tests'
+    /// own, and the platform's events hub, for a member of staff who may follow every ward.
+    /// </summary>
     private static async Task<WebApplication> NodeAsync(string? redis)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Development });
@@ -242,12 +302,20 @@ public sealed class RedisBackplaneTests
         builder.Logging.ClearProviders();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Redis"] = redis });
         ServerComposition.AddRealtime(builder.Services, builder.Configuration);
+        builder.Services.AddAuthentication(StaffSignIn.Name).AddScheme<AuthenticationSchemeOptions, StaffSignIn>(StaffSignIn.Name, null);
+        builder.Services.AddAuthorization();
+        builder.Services.AddSingleton(Substitute.For<IPermissionService>());
+        builder.Services.AddRealtimeTopic(new RealtimeTopicPolicy("ward", RealtimeTopicScope.Record, [], (_, _, _, _) => Task.FromResult(true)));
+        builder.Services.AddScoped<RealtimeTopicAuthorizer>();
 
         var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
 
         // A poll that waits for nothing ends in 2 seconds, so a message that never comes fails a test in seconds.
         app.MapHub<GroupHub>(HubPath, hub => hub.LongPolling.PollTimeout = TimeSpan.FromSeconds(2));
         app.MapHub<OtherHub>(OtherHubPath, hub => hub.LongPolling.PollTimeout = TimeSpan.FromSeconds(2));
+        app.MapHub<EventsHub>(EventsPath, hub => hub.LongPolling.PollTimeout = TimeSpan.FromSeconds(2));
         await app.StartAsync(Ct);
         return app;
     }
@@ -267,21 +335,44 @@ public sealed class RedisBackplaneTests
         Task.WhenAll(clients.Select(client => ReceiveWithinAsync(client, IsResync, TimeSpan.FromSeconds(3))));
 
     /// <summary>Raises an event on <paramref name="node"/> as soon as its connection to Redis is ready.</summary>
-    private static async Task SendOnceConnectedAsync(WebApplication node, string text)
+    private static Task SendOnceConnectedAsync(WebApplication node, string text) =>
+        OnceConnectedAsync(() => node.Services.GetRequiredService<IHubContext<GroupHub>>().Clients.All.SendAsync("event", text, Ct));
+
+    /// <summary>Sends as soon as the node that sends is connected to Redis.</summary>
+    private static async Task OnceConnectedAsync(Func<Task> send)
     {
-        var hub = node.Services.GetRequiredService<IHubContext<GroupHub>>();
         var until = DateTime.UtcNow.AddSeconds(60);
         while (true)
         {
             try
             {
-                await hub.Clients.All.SendAsync("event", text, Ct);
+                await send();
                 return;
             }
             catch (RedisConnectionException) when (DateTime.UtcNow < until)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(250), Ct);
             }
+        }
+    }
+
+    /// <summary>
+    /// A ward that <paramref name="screen"/> subscribes to and could not, as Redis is away: until the node notices that it
+    /// is, a subscription may still be made, so each try is to a ward of its own.
+    /// </summary>
+    private static async Task<string> SubscribeWhileRedisIsAwayAsync(LongPollingHub screen)
+    {
+        var until = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            var ward = Topics.Ward(Guid.NewGuid());
+            if (await screen.InvokeAsync(nameof(EventsHub.Subscribe), ward) is not null)
+            {
+                return ward;
+            }
+
+            DateTime.UtcNow.ShouldBeLessThan(until, "subscribing should fail while Redis is away");
+            await Task.Delay(TimeSpan.FromMilliseconds(100), Ct);
         }
     }
 
@@ -308,6 +399,8 @@ public sealed class RedisBackplaneTests
     /// <summary>A client of <paramref name="node"/> in a group of its own, as soon as the node can connect one.</summary>
     private static async Task<LongPollingHub> ConnectOnceRedisIsBackAsync(WebApplication node, string path = HubPath)
     {
+        // The tests' hubs join a group by Join, the platform's by Subscribe.
+        var join = path == EventsPath ? nameof(EventsHub.Subscribe) : nameof(GroupHub.Join);
         var until = DateTime.UtcNow.AddSeconds(60);
         while (true)
         {
@@ -315,7 +408,7 @@ public sealed class RedisBackplaneTests
             try
             {
                 client = await LongPollingHub.ConnectAsync(new ApiClient(node.GetTestClient()), path);
-                if (await client.InvokeAsync(nameof(GroupHub.Join), "ward:" + Guid.NewGuid().ToString("N")) is null)
+                if (await client.InvokeAsync(join, Topics.Ward(Guid.NewGuid())) is null)
                 {
                     return client;
                 }
@@ -386,5 +479,23 @@ public sealed class RedisBackplaneTests
     public sealed class OtherHub : Hub
     {
         public Task Join(string group) => Groups.AddToGroupAsync(Context.ConnectionId, group);
+    }
+
+    /// <summary>Every request is a member of staff signed in to a facility, as the events hub needs.</summary>
+    private sealed class StaffSignIn(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    {
+        public const string Name = "it-staff";
+
+        private static readonly ClaimsPrincipal Staff = new(new ClaimsIdentity(
+            [
+                new Claim(HcClaims.UserId, Guid.NewGuid().ToString()),
+                new Claim(HcClaims.UserType, HcClaims.StaffType),
+                new Claim(HcClaims.Facility, Guid.NewGuid().ToString()),
+            ],
+            Name));
+
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync() =>
+            Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(Staff, Name)));
     }
 }

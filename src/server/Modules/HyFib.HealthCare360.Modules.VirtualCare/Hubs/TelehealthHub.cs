@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 using HyFib.HealthCare360.Modules.VirtualCare.Services;
+using HyFib.HealthCare360.Platform.Realtime;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
@@ -83,8 +84,8 @@ public sealed class TelehealthHub(
         db.Add(participant);
         await db.SaveChangesAsync(Aborted);
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, TelehealthGroups.Room(sessionId), Aborted);
-        await Groups.AddToGroupAsync(Context.ConnectionId, TelehealthGroups.Clinicians(sessionId), Aborted);
+        await Groups.JoinAsync(Context.ConnectionId, TelehealthGroups.Room(sessionId), Aborted);
+        await Groups.JoinAsync(Context.ConnectionId, TelehealthGroups.Clinicians(sessionId), Aborted);
         Remember(sessionId, new Seat(participant.Id, TelehealthRole.Clinician, participant.DisplayName, userId, Admitted: true));
         await Clients.OthersInGroup(TelehealthGroups.Room(sessionId)).SendAsync(
             "participantJoined", new { participantId = participant.Id, role = participant.Role, name = participant.DisplayName }, Aborted);
@@ -186,7 +187,7 @@ public sealed class TelehealthHub(
         var room = TelehealthGroups.Room(sessionId);
         foreach (var participant in waiting)
         {
-            await Groups.AddToGroupAsync(participant.ConnectionId, room, Aborted);
+            await Groups.JoinAsync(participant.ConnectionId, room, Aborted);
             await Clients.Client(participant.ConnectionId).SendAsync("admitted", new { sessionId, participantId = participant.Id }, Aborted);
             await Clients.GroupExcept(room, [participant.ConnectionId]).SendAsync(
                 "participantJoined", new { participantId = participant.Id, role = participant.Role, name = participant.DisplayName }, Aborted);
@@ -199,7 +200,8 @@ public sealed class TelehealthHub(
     /// The consultation as joining shows it (its status, the waiting room, recent messages, whether this participant is
     /// admitted), for a screen that may have missed what the hub sent it though its connection stayed open: with several
     /// servers, Redis was away (SCAL-02), and the server sent it <c>resync</c>. It puts the connection back in the groups its
-    /// seat belongs in, in case adding it failed meanwhile, and changes nothing else: it is not a new participant.
+    /// seat belongs in, in case adding it failed meanwhile (every join here is undone when it fails,
+    /// <see cref="RealtimeGroups.JoinAsync"/>, so that this one joins), and changes nothing else: it is not a new participant.
     /// </summary>
     public async Task<TelehealthJoinResult> Refresh(Guid sessionId)
     {
@@ -209,13 +211,13 @@ public sealed class TelehealthHub(
             ?? throw new HubException("Join the consultation first.");
         if (participant.AdmittedAt is not null && participant.LeftAt is null)
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, TelehealthGroups.Room(sessionId), Aborted);
+            await Groups.JoinAsync(Context.ConnectionId, TelehealthGroups.Room(sessionId), Aborted);
             Remember(sessionId, seat with { Admitted = true });
         }
 
         if (seat.Role == TelehealthRole.Clinician)
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, TelehealthGroups.Clinicians(sessionId), Aborted);
+            await Groups.JoinAsync(Context.ConnectionId, TelehealthGroups.Clinicians(sessionId), Aborted);
         }
 
         return await JoinResultAsync(session, participant);
@@ -344,7 +346,7 @@ public sealed class TelehealthHub(
 
         if (readmit)
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, TelehealthGroups.Room(session.Id), Aborted);
+            await Groups.JoinAsync(Context.ConnectionId, TelehealthGroups.Room(session.Id), Aborted);
             await Clients.OthersInGroup(TelehealthGroups.Room(session.Id)).SendAsync(
                 "participantJoined", new { participantId = participant.Id, role, name = displayName }, Aborted);
         }
