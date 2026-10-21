@@ -247,6 +247,7 @@ export const CATEGORY: Readonly<Record<string, CategoryKeys>> = {
  * An unknown table keeps the server's English label.
  */
 export const ITEM_LABEL: Readonly<Record<string, MessageKey>> = {
+  'patients.patient_identity_checks': 'myPrivacy.item.patients.patient_identity_checks',
   'patients.visits': 'myPrivacy.item.patients.visits',
   'scheduling.appointments': 'myPrivacy.item.scheduling.appointments',
   'scheduling.waitlist_entries': 'myPrivacy.item.scheduling.waitlist_entries',

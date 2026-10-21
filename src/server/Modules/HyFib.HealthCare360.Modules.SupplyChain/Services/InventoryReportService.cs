@@ -28,9 +28,9 @@ public sealed class InventoryReportService(HospitalDbContext db, TimeProvider ti
     }
 
     /// <summary>
-    /// Items whose usable stock plus what is already on order is at or below the reorder level. The suggestion
-    /// tops up to the maximum stock (or reorder level + reorder quantity), never less than the reorder quantity,
-    /// so open purchase orders are never ordered twice.
+    /// Items whose usable stock plus what is already on order is at or below the reorder level, topped up to the
+    /// maximum stock, vital items first (<see cref="ReorderCalculator"/>). Stock and orders are the store's, or every
+    /// store's without one.
     /// </summary>
     public async Task<IReadOnlyList<ReorderRow>> ReorderAsync(Guid? storeId, CancellationToken ct)
     {
@@ -57,36 +57,21 @@ public sealed class InventoryReportService(HospitalDbContext db, TimeProvider ti
                 select new { ItemId = g.Key, Pending = g.Sum(l => l.Quantity - l.ReceivedQuantity) })
             .ToDictionaryAsync(x => x.ItemId, x => x.Pending, ct);
 
-        var candidates = items
-            .Select(i =>
-            {
-                var have = available.GetValueOrDefault(i.Id);
-                var ordered = Math.Max(onOrder.GetValueOrDefault(i.Id), 0) * i.PurchaseUnitFactor;
-                return (Item: i, Have: have, Ordered: ordered);
-            })
-            .Where(x => x.Have + x.Ordered <= x.Item.ReorderLevel)
-            .ToList();
+        var suggestions = ReorderCalculator.Rank(items
+            .Select(i => ReorderCalculator.Suggest(i, available.GetValueOrDefault(i.Id), onOrder.GetValueOrDefault(i.Id)))
+            .OfType<ReorderSuggestion>());
 
-        var candidateIds = candidates.Select(c => c.Item.Id).ToList();
+        var candidateIds = suggestions.Select(s => s.Item.Id).ToList();
         var costs = await db.Set<StockBatch>().AsNoTracking()
             .Where(b => candidateIds.Contains(b.ItemId) && (storeId == null || b.StoreId == storeId))
             .Select(b => new { b.ItemId, b.ReceivedOn, b.PurchaseRate })
             .ToListAsync(ct);
         var lastCost = costs.GroupBy(c => c.ItemId).ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.ReceivedOn).First().PurchaseRate);
 
-        return candidates
-            .Select(x =>
-            {
-                var item = x.Item;
-                var target = item.MaximumStock > 0 ? item.MaximumStock : item.ReorderLevel + item.ReorderQuantity;
-                var suggested = Math.Max(item.ReorderQuantity, target - x.Have - x.Ordered);
-                var units = item.PurchaseUnitFactor <= 0 ? suggested : Math.Ceiling(suggested / item.PurchaseUnitFactor);
-                return new ReorderRow(item.Id, item.Code, item.Name, item.Type, item.VedClass, item.BaseUnit, item.PurchaseUnit, item.PurchaseUnitFactor,
-                    x.Have, x.Ordered, item.ReorderLevel, item.ReorderQuantity, item.MaximumStock, suggested, units,
-                    lastCost.TryGetValue(item.Id, out var cost) ? cost : null);
-            })
-            .OrderBy(r => r.VedClass == VedClass.Vital ? 0 : r.VedClass == VedClass.Essential ? 1 : 2)
-            .ThenBy(r => r.ItemName, StringComparer.OrdinalIgnoreCase)
+        return suggestions
+            .Select(s => new ReorderRow(s.Item.Id, s.Item.Code, s.Item.Name, s.Item.Type, s.Item.VedClass, s.Item.BaseUnit, s.Item.PurchaseUnit,
+                s.Item.PurchaseUnitFactor, s.Available, s.OnOrder, s.Item.ReorderLevel, s.Item.ReorderQuantity, s.Item.MaximumStock, s.Quantity,
+                s.PurchaseUnits, lastCost.TryGetValue(s.Item.Id, out var cost) ? cost : null))
             .ToList();
     }
 

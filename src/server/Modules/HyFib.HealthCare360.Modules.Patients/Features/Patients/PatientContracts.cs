@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Patients.Features.Patients;
 
@@ -181,8 +182,7 @@ internal static class PatientRules
             return true;
         }
 
-        var digits = new string(value.Where(char.IsAsciiDigit).ToArray());
-        return digits.Length == 12 && digits[0] is >= '2' and <= '9' && Verhoeff.IsValid(digits);
+        return AadhaarNumber.IsAadhaar(new string(value.Where(char.IsAsciiDigit).ToArray()));
     }
 
     public static DateOnly? ResolveDateOfBirth(DateOnly? dateOfBirth, int? ageYears, int? ageMonths, DateOnly today, out bool estimated)
@@ -203,42 +203,12 @@ internal static class PatientRules
     }
 }
 
-/// <summary>Verhoeff checksum used by Aadhaar numbers.</summary>
-internal static class Verhoeff
-{
-    private static readonly int[,] D =
-    {
-        { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }, { 1, 2, 3, 4, 0, 6, 7, 8, 9, 5 }, { 2, 3, 4, 0, 1, 7, 8, 9, 5, 6 },
-        { 3, 4, 0, 1, 2, 8, 9, 5, 6, 7 }, { 4, 0, 1, 2, 3, 9, 5, 6, 7, 8 }, { 5, 9, 8, 7, 6, 0, 4, 3, 2, 1 },
-        { 6, 5, 9, 8, 7, 1, 0, 4, 3, 2 }, { 7, 6, 5, 9, 8, 2, 1, 0, 4, 3 }, { 8, 7, 6, 5, 9, 3, 2, 1, 0, 4 },
-        { 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 },
-    };
-
-    private static readonly int[,] P =
-    {
-        { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }, { 1, 5, 7, 6, 2, 8, 3, 0, 9, 4 }, { 5, 8, 0, 3, 7, 9, 6, 1, 4, 2 },
-        { 8, 9, 1, 6, 0, 4, 3, 5, 2, 7 }, { 9, 4, 5, 3, 1, 2, 6, 8, 7, 0 }, { 4, 2, 8, 6, 5, 7, 3, 9, 0, 1 },
-        { 2, 7, 9, 3, 8, 0, 6, 4, 1, 5 }, { 7, 0, 4, 6, 9, 1, 3, 2, 5, 8 },
-    };
-
-    public static bool IsValid(string digits)
-    {
-        var check = 0;
-        for (var i = 0; i < digits.Length; i++)
-        {
-            var digit = digits[digits.Length - 1 - i] - '0';
-            check = D[check, P[i % 8, digit]];
-        }
-
-        return check == 0;
-    }
-}
-
 public sealed class RegisterPatientRequestValidator : AbstractValidator<RegisterPatientRequest>
 {
     public RegisterPatientRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        // The hospital's date (IST), a day ahead of UTC's between midnight and 05:30: a baby born then is born today.
+        var today = time.Today();
 
         RuleFor(x => x.FirstName).NotEmpty().WithMessage("First name is required.").MaximumLength(100)
             .Must(PatientRules.ValidName).WithMessage("Use letters, spaces, dots, apostrophes or hyphens.");
@@ -272,7 +242,7 @@ public sealed class UpdatePatientRequestValidator : AbstractValidator<UpdatePati
 {
     public UpdatePatientRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        var today = time.Today();
 
         RuleFor(x => x.FirstName).NotEmpty().MaximumLength(100).Must(PatientRules.ValidName).WithMessage("Use letters, spaces, dots, apostrophes or hyphens.");
         RuleFor(x => x.MiddleName).MaximumLength(100).Must(PatientRules.ValidName);

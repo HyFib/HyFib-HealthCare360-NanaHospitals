@@ -7,7 +7,7 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare` (layer 5, references Patients and Scheduling) |
 | Schema | `virtualcare` — `telehealth_sessions`, `telehealth_participants`, `telehealth_messages`, `rpm_programs`, `rpm_enrollments`, `rpm_devices`, `rpm_readings`, `rpm_thresholds`, `rpm_alerts` |
 | Requirements | TEL-01..06, RPM-01..05 |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions, prescription notice channels); end to end, `TeleconsultationJourneyTests` in `tests/HyFib.HealthCare360.IntegrationTests` |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions, prescription notice channels); end to end, `TeleconsultationJourneyTests` and `RpmAlertJourneyTests` (an alert sent to the care team by SMS and WhatsApp, and a failed send tried again) in `tests/HyFib.HealthCare360.IntegrationTests` |
 
 ## Telehealth
 
@@ -148,9 +148,10 @@ or a FHIR R4 `Observation` / `Bundle` of Observations identified by LOINC (`8480
 components, `8867-4`, `59408-5`/`2708-6`, `2339-0`/`2345-7`/`41653-7`/`15074-8`, `29463-7`, `8310-5`, `8601-7`
 with `valueCodeableConcept`). 422 when the device is not assigned; 400 when nothing could be accepted.
 
-**Alert routing (RPM-03).** New or escalated alerts: SMS/WhatsApp `rpm.alert` to care-team practitioners with a mobile
-number (first name + UHID only), queued in the ingestion transaction; in-app notification to every holder of
-`rpm.alerts.manage` in the facility after commit.
+**Alert routing (RPM-03).** New or escalated alerts: SMS/WhatsApp `rpm.alert` to the active care-team practitioners with
+a mobile number (first name + UHID only), queued in the outbox in the ingestion transaction; in-app notification to every
+holder of `rpm.alerts.manage` in the facility after commit. A send that fails is tried again until it goes, for 6 hours,
+and the alert stays open in the queue meanwhile (`RpmAlertJourneyTests`).
 
 ## Events handled
 

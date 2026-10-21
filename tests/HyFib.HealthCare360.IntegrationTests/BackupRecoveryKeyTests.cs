@@ -71,7 +71,8 @@ public sealed class BackupRecoveryKeyTests(HospitalServer server)
     [Fact]
     public async Task The_hospital_administrator_neither_sees_nor_makes_recovery_keys()
     {
-        var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        // From an address of its own, as above: otherwise the refusal can be a 429 for the run's other sign-ins.
+        var (hospitalAdmin, _) = await server.SignInNewSessionAsync(HospitalServer.Users.HospitalAdmin);
 
         using var status = await hospitalAdmin.SendRawAsync(HttpMethod.Get, KeyPath);
         using var create = await hospitalAdmin.SendRawAsync(HttpMethod.Post, KeyPath, new ReauthenticateRequest(server.Password));

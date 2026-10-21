@@ -104,7 +104,10 @@ The installer:
   *HC360 database watchdog* (see "When PostgreSQL stops" below).
 - Opens the firewall, for Private networks only: HTTPS for the staff app (7360) and the patient portal (7361), and
   mDNS.
-- Keeps the machine and its WiFi adapter from sleeping.
+- Keeps the machine from sleeping or hibernating, its disk from stopping and its WiFi adapter from saving power, on
+  mains and on the UPS's battery: in a power cut Windows switches to its battery settings, just when the UPS is keeping
+  the hospital running. What Windows does when the battery is nearly empty is left as it is, so the server can still
+  shut down cleanly before the UPS runs out, which protects the database.
 - Sets Windows Update's active hours to 06:00–23:00, so updates restart the server only overnight. Choose other hours
   with `-UpdateActiveHoursStart` and `-UpdateActiveHoursEnd` (at most 18 apart, as Windows allows); an upgrade keeps
   the hours set before.
@@ -259,7 +262,8 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
    password works for 72 hours; after that, reset the password to give out a new one.
 5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
-   `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server WiFi drops or a backup fails).
+   `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server's WiFi drops, its signal stays weak for a minute
+   or its network is not secure, or a backup fails).
 6. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a
@@ -411,6 +415,15 @@ enrolled as kiosks or display boards never use it, and HC360 Desktop in kiosk mo
   the speed, data bits, parity and stop bits as they are set on the scanner (most use 9600, 8, none, 1), then try a
   scan there. It is kept in `%ProgramData%\HyFib\HC360Desktop\Workstation\scanner.json`; IT can fix it with a
   `scanner` entry in `policy.json`, for example `"scanner": { "port": "COM3", "baudRate": 9600 }`.
+- **Fingerprint readers for Aadhaar identity checks** (optional, INT-BIO). Install only a UIDAI-certified reader (a
+  registered device: Mantra, Morpho/IDEMIA, Startek, SecuGen…) and its maker's **RD service** for Windows, and keep the
+  RD service's yearly registration current: an expired one stops capturing. The RD service listens on `127.0.0.1`,
+  on a port from 11100 to 11120; HC360 Desktop finds it there by itself, so no setting is needed on the workstation
+  and no firewall port is opened. Check it on the patient profile's **Identity** tab with the training simulator
+  first. Checking with UIDAI needs, in **Administration › Integrations › Aadhaar authentication**, the hospital's AUA
+  licence details and signing certificate and its ASA's address, all from the ASA, and the server must reach the
+  ASA over https (allow its address in the hospital's firewall). Only enrolled HC360 Desktops can check: a browser
+  cannot reach the reader.
 - PACS, the modality worklist, biometric attendance devices, Tally and payment terminals are configured in
   **Administration › Integrations**. See `docs/modules/integrations.md`.
 - Lab analysers, radiology and BI tools such as Power BI: see below.

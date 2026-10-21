@@ -369,7 +369,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mrs.", FirstName: "Meera", MiddleName: null, LastName: "Analyser" + Letters(8), Gender: Gender.Female,
+            Title: "Mrs.", FirstName: TestPatients.FirstName("Meera"), MiddleName: null, LastName: "Analyser" + Letters(8), Gender: Gender.Female,
             DateOfBirth: new DateOnly(1975, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,

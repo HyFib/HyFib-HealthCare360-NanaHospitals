@@ -268,7 +268,7 @@ public sealed class PosSettlementTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var surname = "Card" + new string(Enumerable.Range(0, 8).Select(_ => (char)('a' + Random.Shared.Next(26))).ToArray());
         var registered = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: "Ravi", MiddleName: null, LastName: surname, Gender: Gender.Male,
+            Title: "Mr.", FirstName: TestPatients.FirstName("Ravi"), MiddleName: null, LastName: surname, Gender: Gender.Male,
             DateOfBirth: new DateOnly(1960, 1, 1).AddDays(Random.Shared.Next(365 * 40)), AgeYears: null, AgeMonths: null,
             Phone: "7" + string.Concat(Enumerable.Range(0, 9).Select(_ => Random.Shared.Next(10))), AlternatePhone: null, Email: null, Address: null,
             BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,

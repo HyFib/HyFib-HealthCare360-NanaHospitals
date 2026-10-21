@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -77,13 +78,62 @@ public interface ISettingsService
 }
 
 /// <summary>
-/// Values are cached for a minute per key and facility. Every cached value of a key (the hospital-wide one and each
-/// facility's merged one) depends on one change token, so saving the key, hospital-wide or for a facility, takes effect
-/// at once for every facility on this server. Other servers on the database hear of it through
-/// <see cref="IClusterSignals"/> and expire it at once too (SCAL-01); while a server cannot hear them, it reads every
-/// value from the database.
+/// The change tokens cached setting values depend on: one per setting key, which every cached value of the key expires
+/// with when the key is saved, and one for every key. Readers who miss the cache at the same moment all take the same
+/// token: the memory cache's GetOrCreate is not atomic, so tokens kept in it could be replaced by a second reader, and a
+/// value cached with the replaced token outlived the next change by up to a minute. Another server's change to a key
+/// expires it here too (<see cref="IClusterCache"/>), and starting to hear the other servers again expires every key.
 /// </summary>
-internal sealed class SettingsService(HospitalDbContext db, IFieldProtector protector, IMemoryCache cache, IClusterSignals signals) : ISettingsService
+internal sealed class SettingChangeTokens : IClusterCache
+{
+    public const string SignalTopic = "setting";
+
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _sources = new(StringComparer.Ordinal);
+    private CancellationTokenSource _any = new();
+
+    public string Topic => SignalTopic;
+
+    /// <summary>Expires with the next change to <paramref name="key"/>, or to every key.</summary>
+    public IChangeToken For(string key) => new CompositeChangeToken(
+    [
+        new CancellationChangeToken(_sources.GetOrAdd(key, _ => new CancellationTokenSource()).Token),
+        new CancellationChangeToken(Volatile.Read(ref _any).Token),
+    ]);
+
+    /// <summary>Expires every cached value of the key. The source is not disposed: a reader may still be taking its token.</summary>
+    public void Changed(string key)
+    {
+        if (_sources.TryRemove(key, out var source))
+        {
+            source.Cancel();
+        }
+    }
+
+    /// <summary>Expires every cached value of every key.</summary>
+    public void ChangedAll() => Interlocked.Exchange(ref _any, new CancellationTokenSource()).Cancel();
+
+    public void Expire(string? argument)
+    {
+        if (argument is null)
+        {
+            ChangedAll();
+        }
+        else
+        {
+            Changed(argument);
+        }
+    }
+}
+
+/// <summary>
+/// Values are cached for a minute per key and facility. Every cached value of a key (the hospital-wide one and each
+/// facility's merged one) depends on one change token (<see cref="SettingChangeTokens"/>), so saving the key,
+/// hospital-wide or for a facility, takes effect at once for every facility on this server. Other servers on the database
+/// hear of it through <see cref="IClusterSignals"/> and expire it at once too (SCAL-01); while a server cannot hear them,
+/// it reads every value from the database.
+/// </summary>
+internal sealed class SettingsService(
+    HospitalDbContext db, IFieldProtector protector, IMemoryCache cache, SettingChangeTokens changes, IClusterSignals signals) : ISettingsService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
@@ -97,8 +147,7 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
 
                 // Taken before the read: a change saved while the value is being read, here or on another server, expires it
                 // at once.
-                entry.AddExpirationToken(SettingsCache.ChangeToken(cache, key));
-                entry.AddExpirationToken(SettingsCache.AnyChangeToken(cache));
+                entry.AddExpirationToken(changes.For(key));
                 return await ReadAsync(key, facilityId, cancellationToken);
             })
             : await ReadAsync(key, facilityId, cancellationToken);
@@ -166,50 +215,9 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
     /// <summary>Expires every cached value of the key, here and on every other server on the database.</summary>
     private void Changed(string key)
     {
-        SettingsCache.Expire(cache, key);
-        signals.Publish(SettingsCache.SignalTopic, key);
+        changes.Changed(key);
+        signals.Publish(SettingChangeTokens.SignalTopic, key);
     }
-}
-
-/// <summary>
-/// The change tokens cached setting values depend on: one per key, and one for all of them. Another server's change to a
-/// key expires it here (<see cref="IClusterCache"/>), and starting to hear the other servers again expires them all.
-/// </summary>
-internal sealed class SettingsCache(IMemoryCache cache) : IClusterCache
-{
-    public const string SignalTopic = "setting";
-    private const string AnyKey = "setting-changed:*";
-
-    public string Topic => SignalTopic;
-
-    public void Expire(string? argument) => Expire(cache, argument);
-
-    public static CancellationChangeToken ChangeToken(IMemoryCache cache, string key) => Token(cache, TokenKey(key));
-
-    public static CancellationChangeToken AnyChangeToken(IMemoryCache cache) => Token(cache, AnyKey);
-
-    /// <summary>
-    /// Expires every cached value of <paramref name="key"/>, or of every key when it is null. The source is not disposed: a
-    /// reader may still be taking its token.
-    /// </summary>
-    public static void Expire(IMemoryCache cache, string? key)
-    {
-        var tokenKey = key is null ? AnyKey : TokenKey(key);
-        if (cache.TryGetValue(tokenKey, out CancellationTokenSource? source) && source is not null)
-        {
-            cache.Remove(tokenKey);
-            source.Cancel();
-        }
-    }
-
-    private static string TokenKey(string key) => $"setting-changed:{key}";
-
-    private static CancellationChangeToken Token(IMemoryCache cache, string tokenKey) =>
-        new(cache.GetOrCreate(tokenKey, entry =>
-        {
-            entry.Priority = CacheItemPriority.NeverRemove;
-            return new CancellationTokenSource();
-        })!.Token);
 }
 
 /// <param name="Version">The row's version, to send back with a change (<see cref="SaveSettingRequest.Version"/>).</param>

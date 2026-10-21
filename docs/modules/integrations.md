@@ -16,7 +16,7 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
 * **Platform contracts, one router each.** Other modules depend only on the contracts in
   `Platform/Integrations/IntegrationAbstractions.cs` (`ISmsSender`, `IWhatsAppSender`, `IEmailSender`,
   `IPaymentGateway`, `IPosTerminal`, `IAttendanceTerminalClient`, `IAccountingExporter`, `IPacsClient`, `IIcdLookup`,
-  `ILabelPrinterService`).
+  `ILabelPrinterService`, `IAadhaarAuthenticator`).
   Integrations registers a **router** for each of them. On every call the router reads the facility's settings and
   delegates to the configured provider. Switching provider, or turning an integration off, takes effect within a
   minute (the settings cache) and needs no restart. In the other direction, the listeners here call contracts that
@@ -113,6 +113,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `stowUrl` (STOW-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
 | `integrations.mwl` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `port` (11112), `aeTitle` (`HC360MWL`), `characterSet` (`ISO_IR 100`; `ISO_IR 192` or empty), `maxAssociations` (10, 1–64), `idleTimeoutSeconds` (60, 10–3600), `daysBack` (3, 0–30), `daysAhead` (1, 0–30), `maxResults` (500, 1–1000), `modalities[] { aeTitle, name, allowedIps[], facility, modalities[], enabled }` | none |
 | `integrations.biometric` | `enabled`, `provider` (`zkteco` \| `simulator`), `timeoutSeconds` (30; 5 to 300, for connecting and reading a terminal) | `commKey` (the terminals' COMM Key, 0 to 999999; empty when they have none) |
+| `integrations.aadhaar` | `enabled`, `provider` (`uidai` \| `simulator`), `authUrl` (the ASA's https template with `{ac}`, `{uid0}`, `{uid1}`, `{asalk}`), `auaCode`, `subAuaCode` (the AUA code again when the hospital is the AUA), `environment` (`P` \| `PP` \| `S`), `fingerData` (`FMR,FIR` \| `FMR` \| `FIR`), `fingerCount` (1; 1 or 2), `captureTimeoutSeconds` (15; 5 to 60), `registeredDeviceTid` (`registered`), `timeoutSeconds` (20; 5 to 60), `uidaiCertificate` (PEM; when set, answers must carry UIDAI's signature) | `licenceKey` (AUA), `asaLicenceKey`, `signingCertificate` (the AUA's .pfx, base64), `signingCertificatePassword` |
 | `integrations.labels` | `provider` (`printers`, the default: each workstation's printers \| `simulator`) | none |
 | `integrations.icd` | `enabled`, `provider` (`who` \| `simulator` \| `disabled`), `tokenUrl`, `apiBaseUrl`, `icd11Release` (`2025-01`), `icd10Release` (`2019`), `language` (`en`), `cacheHours` (24) | `clientId`, `clientSecret` |
 | `integrations.lab` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `maxMessageKilobytes` (1024), `idleTimeoutSeconds` (300), `maxConnectionsPerInstrument` (4), `timeZone` | none |
@@ -381,6 +382,65 @@ their own attendance software uses):
 * **Dashboard and test.** The biometric row shows the provider (or `push` while terminals only push), and its health
   from the log: reads, pushes, refused serial numbers and terminals HR was told had gone quiet. The test checks the
   settings; HR reads each terminal with Read now.
+
+### Aadhaar authentication (INT-BIO, patient identity)
+
+Checks that a patient's fingerprint is that of the Aadhaar number they give, through `IAadhaarAuthenticator`
+(`AadhaarAuthRouter`). Staff start it from the patient record (**Identity** tab; the endpoints are in
+[clinical.md](clinical.md#identity-checks-int-bio)). A fingerprint can only be checked this way: a certified reader
+encrypts every capture for UIDAI, so nobody else can match it, HC360 included. The hospital therefore needs an **AUA
+licence** (or a sub-AUA agreement with an AUA) and an **authentication service agency (ASA)**; until it has them, only
+the simulator works.
+
+* **The workstation.** A UIDAI-certified fingerprint reader (a *registered device*, L0 or L1) and its maker's **RD
+  service**, which on Windows is a local HTTP server on `127.0.0.1`, ports 11100 to 11120 (UIDAI RD specification
+  2.0). HC360 Desktop (`fingerprint.status`, `fingerprint.capture`; `FingerprintReader` over
+  `WindowsInterop/Biometrics/RdServiceClient`) finds it with the `RDSERVICE` method, asks `DEVICEINFO`, and sends
+  `CAPTURE` with `PidOptions` built from the setup the server gives the staff app (`GET
+  /api/v1/patients/identity-checks/setup`): `fCount`, `fType` (`0` FMR, `1` FIR, `2` both), `pidVer` 2.0, `env`, the
+  timeout, and never iris, face or `wadh` (no e-KYC). Only `127.0.0.1`, those ports and the paths the service names
+  (absolute, plain characters, no `..`) are ever called, with no proxy, no redirects and a 2 MB limit on answers.
+  One capture at a time; a reader error comes back as `no_reader`, `not_ready`, `busy`, `timeout`, `capture_failed`
+  or `reader_error` with words for staff (RD error codes 700, 710, 720 and 730 included). The capture (`PidData`) is
+  passed on as the device returned it and is never logged or kept, on the workstation or the server.
+* **The request** (`UidaiAuthXml`, Aadhaar Authentication API 2.5): `<Auth uid rc="Y" tid ac sa ver="2.5" txn lk>`
+  with `Uses` (`bio="y"`, `bt` from the capture, everything else `n`), `Meta` from the capture's `DeviceInfo` (`udc`,
+  `rdsId`, `rdsVer`, `dpId`, `dc`, `mi`, `mc`), and the capture's `Skey`, `Data` and `Hmac` unchanged. `udc` is the
+  enrolled workstation's code (`HC360` and the end of its device id), so only HC360 Desktop on an enrolled computer can
+  check. `txn` is `HC360` and a version 7 GUID. The AUA signs the document with its certificate: an enveloped XML
+  signature, RSA with SHA-256, inclusive canonicalisation, carrying the certificate. It is posted as `application/xml`
+  to the ASA's address, where a Virtual ID sends `0` and `0` for the number's first two digits. UIDAI is given
+  `timeoutSeconds`; a POST is never retried.
+* **The answer.** `AuthRes` is believed only when its `txn` is the request's and, once `uidaiCertificate` is set,
+  when it carries exactly one enveloped signature over the whole answer that verifies with that certificate. `ret="y"`
+  is **Verified**. UIDAI's refusals are sorted by error code (`UidaiAuthXml.Refusal`): 300 (the biometric did not
+  match), 330 (biometrics locked by the holder) and 996 to 998 (the number cannot be used) are **Not verified**;
+  capture problems (501, 503, 521, 527) and set-up problems (510, 512, 520, 540, 554, 588, 590) are **Failed** with what
+  to do; any other code is Failed and named. An HTTP error, a timeout, an unreadable or unsigned answer are Failed with
+  "nothing is known about the fingerprint". HC360 keeps the transaction id and UIDAI's `code` (its reference for the
+  check) with the outcome, not the signed answer itself.
+* **What the patient record keeps** (`patients.patient_identity_checks`): outcome, message, the number's last 4
+  digits, whether a Virtual ID was used, the device's provider and model, `txn`, UIDAI's code and error, who checked
+  and when. Never the number, the capture or the request. A check only happens with the patient's consent (the request
+  says so; the server refuses without it), so every row is also the record of that consent. A check UIDAI never saw
+  (not set up, a capture that could not be used) keeps nothing.
+* **Linking the number.** Before asking UIDAI, the number must be the one on the record when the record has one
+  (compared by its blind index; a Virtual ID cannot be compared) and must not be linked to another patient. A verified
+  check of an Aadhaar number links it to a record that had none, as registration would (last 4 digits and blind index).
+* **Log.** Each call is logged as `authenticate` with `uid ****<last 4>`, the biometric type, the device and `udc`, and
+  `ret`, `err` and `code`; the licence keys, the certificate and the capture are never logged.
+* **Simulator.** Stands in for UIDAI in training: a *training capture* (`RdService.TrainingCapture`, made by the staff
+  app's `trainingCapture` when no reader is connected) that stands for a matching finger is Verified and one that does
+  not is Not verified (300); a real capture is Verified without asking anyone. The staff app marks every simulator
+  check as training. `uidai` refuses a training capture.
+* **Test.** The admin test checks the settings, the licence keys and that the signing certificate loads with an RSA
+  private key and is within its dates. Nothing is sent to UIDAI: check a patient's identity to test the whole path.
+* **To confirm with the ASA at onboarding.** These follow Auth API 2.5 and RD 2.0 as published, but could not be
+  checked against a live ASA: the Auth XML namespace (`http://www.uidai.gov.in/authentication/uid-auth-request/2.0`),
+  the `tid` value for registered devices (`registeredDeviceTid`), the address form and where `asalk` goes (`authUrl`),
+  the content type, RSA-SHA256 for the AUA's signature, and that the ASA passes UIDAI's signed `AuthRes` through
+  unchanged (otherwise leave `uidaiCertificate` empty and rely on the TLS connection to the ASA). Run a staging (`S`)
+  licence with a test reader first.
 
 ### Tally Prime (INT-TALLY)
 
@@ -1035,6 +1095,7 @@ Permissions:
   * `IAttendanceTerminalProvider`: zkteco, simulator.
   * `IAccountingProvider`: tally, simulator.
   * `IPacsProvider`: dicomweb, simulator.
+  * `IAadhaarAuthProvider`: uidai (a typed HTTP client, 60 s), simulator.
 * **Platform contracts** (scoped routers):
   * `ISmsSender` → `SmsRouter` (with `ISmsTemplateCatalog` → `SmsTemplateCatalog`)
   * `IWhatsAppSender` → `WhatsAppRouter`
@@ -1045,6 +1106,8 @@ Permissions:
   * `IAccountingExporter` → `AccountingExporterRouter`
   * `IPacsClient` → `PacsClientRouter`
   * `IIcdLookup` → `IcdLookupRouter`
+  * `IAadhaarAuthenticator` → `AadhaarAuthRouter` (Platform's fallback, without this module, is
+    `UnconfiguredAadhaarAuthenticator`, which refuses every check)
   * `ILabelPrinterService` → `LabelPrinterService`, a singleton
   * `IPdfRenderer` → `EdgePdfRenderer`, a singleton (disposed with the host, which closes the browser)
 * **Singletons**: `SimulatorSigningKey`, `IcdTokenCache`, `LabGatewayState`, `LabRelayRegistry` (the live relays), and
@@ -1080,20 +1143,35 @@ Permissions:
 * Attendance terminals are read only at an IP address that HR registered, never at a host name, a loopback, link-local
   (cloud metadata), multicast or broadcast address; the address is checked when it is saved and again before every
   read. Each read has a time limit (`timeoutSeconds`) and a size limit.
+* Aadhaar authentication never keeps or logs the Aadhaar number, the fingerprint capture or the signed request:
+  only the last 4 digits, UIDAI's codes and the transaction id. The AUA's licence keys and signing certificate are
+  secrets; an answer is believed only for its own transaction, and only with UIDAI's signature once its certificate is
+  set. HC360 Desktop talks to fingerprint readers on `127.0.0.1` alone, without a proxy.
 * External ids and paths (Razorpay ids, POS transaction ids, WhatsApp phone-number id and API version, ICD child
   links, PACS viewer templates, DICOM UIDs) are validated before they are used in URLs.
 * Queries order only by timestamps. Enum columns (stored as text) are only compared for equality.
 
 ## Not implemented here
 
+* **Aadhaar fingerprint sign-in for staff** (INT-BIO, "fingerprint login/verification at workstations"): blocked, not
+  built. A fingerprint can only be matched by UIDAI, so signing staff in with one means an Aadhaar authentication for
+  every sign-in, and keeping each staff member's Aadhaar number to send, which UIDAI allows only in an Aadhaar Data
+  Vault (an HSM-backed store) and under the AUA licence. It needs the hospital's AUA licence and ASA, certified readers
+  at every workstation, the vault, and a decision by the hospital's management and security officer that Aadhaar may
+  be used for staff sign-in at all. Until then staff unlock with Windows Hello (UX-11), which needs none of this. The
+  pieces it would use are here: the reader bridge, `IAadhaarAuthenticator`, and the unlock flow's
+  `AuthService.FinishUnlockAsync`.
 * **Biometric attendance**:
   * Pushes are received by HR itself (ZKTeco/eSSL ADMS on `/iclock/*`); only reading terminals lives here.
   * Terminals that speak the protocol over UDP only, and Suprema, Matrix or other makes' own protocols, are not read:
     they can push over ADMS-compatible firmware or the JSON punch API through their middleware.
   * Real-time events (the terminal reporting each punch on an open connection) are not used: terminals are read on a
     schedule, every few minutes.
-* **ABDM (HIP/HIU)** is out of scope for this project. The **HL7 FHIR R4 read facade** (EHR-05) is not an adapter:
-  it is the Interop module (`/fhir/r4`), documented in [interop.md](interop.md).
+* **ABDM gateway (HIP/HIU, ABHA verification and linking)** is not built: it needs credentials from the National Health
+  Authority and the hospital's ABDM registrations (see [interop.md](interop.md#limitations-and-follow-ups)). What
+  exists is not an adapter: the Interop module exports signed discharge summaries and prescriptions as NRCeS ABDM
+  document bundles for staff to download (EHR-08, behind the `abdm` feature switch), and serves the **HL7 FHIR R4 read
+  facade** (EHR-05, `/fhir/r4`), both documented in [interop.md](interop.md).
 * **ICD-10 free-text search online**: the WHO ICD-API does not support it, so the local catalogue answers instead.
 * **DICOM beyond the worklist and DICOMweb reads**:
   * No C-STORE: HC360 sends objects over STOW-RS only, and only cardiology's DICOM device files; modalities send their

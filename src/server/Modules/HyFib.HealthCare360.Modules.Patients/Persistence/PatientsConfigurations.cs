@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Security;
+using Npgsql;
 
 namespace HyFib.HealthCare360.Modules.Patients.Persistence;
 
@@ -10,6 +11,16 @@ internal static class PatientsSchema
 
 internal sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
 {
+    /// <summary>
+    /// One record per Aadhaar number. Registration, editing and identity checks look first; this index refuses the second
+    /// of two desks that link the same number at the same moment. A merged record gives its number up.
+    /// </summary>
+    public const string OneRecordPerAadhaarNumber = "ux_patients_aadhaar_index";
+
+    /// <summary>Whether saving failed because another record took the Aadhaar number first.</summary>
+    public static bool AadhaarNumberTaken(DbUpdateException exception) =>
+        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: OneRecordPerAadhaarNumber };
+
     public void Configure(EntityTypeBuilder<Patient> b)
     {
         b.ToTable("patients", PatientsSchema.Name);
@@ -52,7 +63,8 @@ internal sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
         b.HasIndex(x => x.Uhid).IsUnique();
         b.HasIndex(x => x.Phone);
         b.HasIndex(x => x.AbhaNumberIndex);
-        b.HasIndex(x => x.AadhaarIndex);
+        b.HasIndex(x => x.AadhaarIndex).IsUnique().HasFilter("aadhaar_index IS NOT NULL AND is_deleted = false")
+            .HasDatabaseName(OneRecordPerAadhaarNumber);
         b.HasIndex(x => x.RegisteredAt);
         b.HasIndex(x => new { x.FirstName, x.DateOfBirth });
         // Fuzzy name search (PERF-02): trigram GIN index.

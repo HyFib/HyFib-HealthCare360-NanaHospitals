@@ -104,11 +104,12 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
 
-        // A patient of this test alone: the unique surname and mobile number keep the duplicate check quiet.
+        // A patient of this test alone: a first name no other patient has keeps the duplicate check quiet.
+        var firstName = TestPatients.FirstName("Ravi");
         var surname = "Journey" + RandomLetters(8);
         var phone = "9" + RandomDigits(9);
         var registered = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: "Ravi", MiddleName: null, LastName: surname, Gender: Gender.Male,
+            Title: "Mr.", FirstName: firstName, MiddleName: null, LastName: surname, Gender: Gender.Male,
             DateOfBirth: new DateOnly(1970, 1, 1).AddDays(Random.Shared.Next(365 * 30)), AgeYears: null, AgeMonths: null,
             Phone: phone, AlternatePhone: null, Email: $"ravi.{surname}@example.org", Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
@@ -117,7 +118,7 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
             ConfirmedNotDuplicate: false));
         var record = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{registered.Id}");
         record.Uhid.ShouldBe(registered.Uhid, "Registration allocates the UHID.");
-        record.FullName.ShouldBe($"Ravi {surname}");
+        record.FullName.ShouldBe($"{firstName} {surname}");
 
         // The consultant the doctor account belongs to, and a free slot with them today.
         var doctorAccount = await server.SignInAsync(HospitalServer.Users.Doctor);
@@ -369,10 +370,13 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         var timeline = await doctor.GetAsync<PagedResult<TimelineEntry>>($"/api/v1/emr/patients/{patient.PatientId}/timeline?types=Result");
         var entry = timeline.Items.ShouldHaveSingleItem();
         entry.Id.ShouldBe(reportId);
+        entry.ReportKind.ShouldBe(DiagnosticKind.Laboratory, "The chart opens the result as a lab report.");
         entry.Status.ShouldBe("Awaiting review");
         var order = await doctor.GetAsync<OrderDto>($"/api/v1/clinical/orders/{consultation.OrderId}");
         order.Status.ShouldBe(ClinicalOrderStatus.Completed);
-        order.Items.ShouldHaveSingleItem().Status.ShouldBe(OrderItemStatus.Completed);
+        var line = order.Items.ShouldHaveSingleItem();
+        line.Status.ShouldBe(OrderItemStatus.Completed);
+        line.ResultReference.ShouldBe(reportId.ToString(), "The completed line names its report, which the chart's orders open.");
     }
 
     private async Task ThePatientGetsTheReportAsync(CheckedInPatient patient, Guid reportId)

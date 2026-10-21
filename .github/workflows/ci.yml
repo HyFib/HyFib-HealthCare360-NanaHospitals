@@ -135,6 +135,26 @@ jobs:
           pwsh -NoProfile -File tests/deploy/Test-InstallerUpdateHours.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
+      # The Server Node's power settings (SRS DED-15), awake on mains and on a UPS's battery, with powercfg recorded
+      # rather than run, so the runner's power plan is left alone.
+      - name: Test the installer's power settings for an always-on server
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerPowerSettings.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerPowerSettings.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
+      # The Server Node's Windows Firewall rules (SRS DED-14): HC360's ports and mDNS on Private and Domain networks only,
+      # with the firewall cmdlets recorded rather than run, so the runner's firewall is left alone.
+      - name: Test the installer's Windows Firewall rules
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerFirewall.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerFirewall.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       # What the warm standby scripts write (pg_hba.conf, postgresql.conf, the SCRAM verifier, the TLS certificate). The
       # .NET job runs the scripts themselves against a real primary and standby.
       - name: Test the warm standby scripts (Enable-HC360Replication.ps1, New-HC360Standby.ps1)

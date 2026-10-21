@@ -1,5 +1,5 @@
 import { Button } from '@fluentui/react-components';
-import { PlugDisconnectedRegular, VideoOffRegular } from '@fluentui/react-icons';
+import { CloudOffRegular, PlugDisconnectedRegular, VideoOffRegular } from '@fluentui/react-icons';
 import { EmptyState } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -11,6 +11,7 @@ import { usePermission } from './permissions';
 const OFF_ICON: Record<FeatureKey, typeof VideoOffRegular> = {
   telehealth: VideoOffRegular,
   patientPortal: PlugDisconnectedRegular,
+  abdm: CloudOffRegular,
 };
 
 /**

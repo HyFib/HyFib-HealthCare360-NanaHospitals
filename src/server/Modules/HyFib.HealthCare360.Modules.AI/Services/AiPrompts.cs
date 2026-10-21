@@ -7,7 +7,9 @@ namespace HyFib.HealthCare360.Modules.AI.Services;
 /// <summary>
 /// Prompts and output schemas. System prompts are fixed text (volatile values such as today's date go in the user
 /// message) and every answer is constrained by a JSON schema, so parsing never depends on free text. Schemas use only
-/// the structured-output subset: typed properties, enums, all fields required, no additional properties.
+/// the structured-output subset: typed properties, enums, all fields required, no additional properties, which every
+/// provider accepts. Requests are built from the user's own words: the gateway (<see cref="AiTextServiceRouter"/>)
+/// redacts the whole request, the screen and specialty included, before any provider sees it.
 /// </summary>
 internal static class AiPrompts
 {
@@ -15,18 +17,18 @@ internal static class AiPrompts
     public const string StructureNotePurpose = "clinical.structure-note";
     public const string TranscribePurpose = "voice.transcribe";
 
-    public static AiRequest Command(string redactedCommand, string? route, bool patientOpen, DateOnly today) => new(
+    public static AiRequest Command(string command, string? route, bool patientOpen, DateOnly today) => new(
         CommandPurpose,
         CommandSystem,
         [new AiMessage("user", string.Create(CultureInfo.InvariantCulture,
-            $"Today: {today:yyyy-MM-dd} ({today.DayOfWeek}). Current screen: {route ?? "unknown"}. A patient is open: {(patientOpen ? "yes" : "no")}.\nCommand: {redactedCommand}"))],
+            $"Today: {today:yyyy-MM-dd} ({today.DayOfWeek}). Current screen: {route ?? "unknown"}. A patient is open: {(patientOpen ? "yes" : "no")}.\nCommand: {command}"))],
         MaxTokens: 2048,
         JsonSchema: CommandSchema);
 
-    public static AiRequest StructureNote(string redactedTranscript, string? specialty) => new(
+    public static AiRequest StructureNote(string transcript, string? specialty) => new(
         StructureNotePurpose,
         NoteSystem,
-        [new AiMessage("user", $"Specialty: {(string.IsNullOrWhiteSpace(specialty) ? "general medicine" : specialty.Trim())}\n\nDictation:\n{redactedTranscript}")],
+        [new AiMessage("user", $"Specialty: {(string.IsNullOrWhiteSpace(specialty) ? "general medicine" : specialty.Trim())}\n\nDictation:\n{transcript}")],
         MaxTokens: 16_000,
         JsonSchema: NoteSchema);
 

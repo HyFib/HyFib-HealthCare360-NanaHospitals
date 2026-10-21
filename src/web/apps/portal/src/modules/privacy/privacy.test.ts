@@ -443,6 +443,7 @@ describe('the data summary', () => {
   it('has a label in both languages for every counted source of the catalogue', () => {
     // PersonalDataCatalogue: every source without `Counted: false`.
     const counted = [
+      'patients.patient_identity_checks',
       'patients.visits',
       'scheduling.appointments',
       'scheduling.waitlist_entries',

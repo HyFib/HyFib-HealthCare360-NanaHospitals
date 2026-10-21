@@ -176,6 +176,8 @@ Clinical records it as a procedure on the patient's record (EHR-01). Otherwise t
 | `specialtycare.bloodbank` | `crossmatch:{id}` · `issue:{id}` | BB-CROSSMATCH · BB-WB/PRBC/FFP/PLT/CRYO | cross-match · issue (cancelled if restocked on return) |
 
 Charge failures never block clinical work. The outcome is stored (`chargeStatus`, `chargeError`) and can be retried from the `/charges/retry` endpoints.
+`DialysisChargeTests` (`tests/HyFib.HealthCare360.IntegrationTests`) checks the dialysis charges in Billing end to end: a session on a new dialyzer
+charges the session and the dialyzer, a session reusing it charges the session only, and retrying either session's charges posts nothing twice.
 
 ## Number series
 | Key | Format | Reset |

@@ -55,14 +55,33 @@ public sealed class AuditEvent
     public string? PreviousHash { get; set; }
     public string? Hash { get; set; }
 
-    /// <summary>Canonical text hashed into the chain (stable field order, invariant formatting).</summary>
+    /// <summary>
+    /// Canonical text hashed into the chain (stable field order, invariant formatting): every column but the seal, so a
+    /// changed severity, user name, device, session, address or correlation ID breaks the chain as a changed summary does.
+    /// </summary>
     public string CanonicalContent() => string.Join('\u001f',
+        LegacyCanonicalContent(), Severity, UserName, DeviceId, SessionId, IpAddress, CorrelationId);
+
+    /// <summary>
+    /// What the chain hashed before it covered every column. Records sealed then are still verified against it (see
+    /// <see cref="IsSealedAfter"/>); for them a change to a column it leaves out goes unnoticed.
+    /// </summary>
+    public string LegacyCanonicalContent() => string.Join('\u001f',
         Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
         OccurredAt.UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
         Category, Action, EntityType, EntityId, PatientId, UserId, FacilityId, Summary, Details);
 
     public static string ComputeHash(string? previousHash, string canonicalContent) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes((previousHash ?? "GENESIS") + "\u001e" + canonicalContent)));
+
+    /// <summary>
+    /// Whether <see cref="Hash"/> seals this record, as it is now, after <paramref name="previousHash"/>. A record sealed
+    /// before the chain covered every column matches its legacy content instead. A newer record cannot pass for one: its
+    /// hash would have to change, and that breaks the link from the record after it.
+    /// </summary>
+    public bool IsSealedAfter(string? previousHash) =>
+        string.Equals(Hash, ComputeHash(previousHash, CanonicalContent()), StringComparison.Ordinal)
+        || string.Equals(Hash, ComputeHash(previousHash, LegacyCanonicalContent()), StringComparison.Ordinal);
 }
 
 /// <remarks>

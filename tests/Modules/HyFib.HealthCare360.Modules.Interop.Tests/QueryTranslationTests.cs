@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Clinical;
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics;
 using HyFib.HealthCare360.Modules.Inpatient;
 using HyFib.HealthCare360.Modules.Interop.Services;
@@ -102,6 +103,35 @@ public sealed class QueryTranslationTests : IDisposable
         documents.ShouldContain("'IdProof'");
         documents.ShouldContain("'InsuranceCard'");
         provider.SignedSummaries(s => s.PatientId == TestData.PatientId).ToQueryString().ShouldContain("'Draft'");
+    }
+
+    [Fact]
+    public void Abdm_export_queries_translate()
+    {
+        var service = new AbdmDocumentService(_db, null!, null!, null!, References, null!, null!, TimeProvider.System);
+
+        var summaries = service.Summaries(s => s.Id == TestData.PatientId).ToQueryString();
+        summaries.ShouldContain("clinical");
+        summaries.ShouldNotContain("'Draft'", customMessage: "a draft is found, to say it must be signed first");
+        var prescriptions = service.Prescriptions(p => p.Id == TestData.PatientId).ToQueryString();
+        prescriptions.ShouldContain("advice");
+        prescriptions.ShouldNotContain("'Draft'", customMessage: "a draft is found, to say it must be signed first");
+        service.Practitioners(p => p.Id == TestData.DoctorId).ToQueryString().ShouldContain("registration_number");
+        service.Facilities(f => f.Id == TestData.FacilityId).ToQueryString().ShouldContain("hfr_id");
+        var diagnoses = service.StayDiagnoses(TestData.PatientId, ["J18.9"]).ToQueryString();
+        diagnoses.ShouldContain("admission_id");
+        diagnoses.ShouldContain("'Differential'");
+    }
+
+    [Fact]
+    public void A_prescriptions_lines_translate_whatever_its_status()
+    {
+        var sql = MedicationRequestProvider.LineRows(
+            _db.Set<PrescriptionItem>().Where(i => i.PrescriptionId == TestData.PatientId),
+            _db.Set<Prescription>().Where(p => p.Id == TestData.PatientId)).ToQueryString();
+
+        sql.ShouldContain("prescription_items");
+        sql.ShouldNotContain("'Signed'");
     }
 
     [Fact]

@@ -25,8 +25,9 @@ public sealed record DischargeSummaryContent(
 
 /// <summary>
 /// The discharge summary of one admission (keyed by <see cref="AdmissionId"/>; the admission itself belongs to the
-/// Inpatient module). Signed summaries are shared on the portal and in ABDM bundles, so later changes are
-/// amendments with a reason and the previous text kept.
+/// Inpatient module). Signed summaries are shared with the patient on the portal, and with other providers through
+/// the FHIR API and as ABDM health records that staff download (Interop module, with the patient's record-sharing
+/// consent), so later changes are amendments with a reason and the previous text kept.
 /// </summary>
 public sealed class DischargeSummary : AuditableEntity, IFacilityScoped
 {

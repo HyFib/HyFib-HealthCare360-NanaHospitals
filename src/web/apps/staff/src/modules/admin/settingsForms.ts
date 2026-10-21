@@ -41,6 +41,11 @@ export interface SettingField {
   max?: number;
   /** URLs: internet services must use https. */
   https?: boolean;
+  /**
+   * URLs that must use https: plain http is accepted too when it goes to the HC360 server itself (`localhost`), as the
+   * server allows for AI services, where nothing crosses the network.
+   */
+  localHttp?: boolean;
   /** Lists: whole numbers. */
   numeric?: boolean;
   /** JSON: the expected shape. */
@@ -272,8 +277,11 @@ const ok = (value: unknown): Parsed => ({ ok: true, value });
 const fail = (error: string): Parsed => ({ ok: false, error });
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Why an address cannot be used, or null: absolute http(s), no credentials in it, https for internet services. */
-export function urlProblem(text: string, httpsOnly: boolean): string | null {
+/**
+ * Why an address cannot be used, or null: absolute http(s), no credentials in it, https for internet services. With
+ * `localHttp`, plain http is accepted to the HC360 server itself (see `isLoopbackHost`), as the server allows for AI.
+ */
+export function urlProblem(text: string, httpsOnly: boolean, localHttp = false): string | null {
   let url: URL;
   try {
     url = new URL(text);
@@ -288,10 +296,28 @@ export function urlProblem(text: string, httpsOnly: boolean): string | null {
   if (url.username || url.password) {
     return 'Do not put a user name or password in the address. Use the credentials section.';
   }
-  if (httpsOnly && url.protocol !== 'https:') {
-    return 'Internet services must use a secure https:// address.';
+  if (httpsOnly && url.protocol !== 'https:' && !(localHttp && isLoopbackHost(url.hostname))) {
+    return localHttp
+      ? 'Use a secure https:// address. Plain http:// is only for a server on the HC360 server itself (http://localhost).'
+      : 'Internet services must use a secure https:// address.';
   }
   return null;
+}
+
+/**
+ * A host name that is the computer making the call: `localhost`, `127.x.x.x` or `[::1]`, as the server's loopback
+ * check. The HC360 server makes AI calls, so for it this is the HC360 server itself.
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === 'localhost' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
+}
+
+/** The AI server address goes to the server as it is: it refuses a query or fragment (and a key must not ride in one). */
+export function aiServerAddressProblem(value: unknown): string | null {
+  return typeof value === 'string' && /[?#]/.test(value)
+    ? 'Leave out the part from ? or #: the server needs neither, and keys go in the credentials below.'
+    : null;
 }
 
 /** Parses one form value; `value: undefined` means "not set" (the server default applies). */
@@ -390,7 +416,7 @@ export function parseFieldValue(field: SettingField, raw: FormValue | undefined)
         return fail(`Keep it to ${field.maxLength} characters.`);
       }
       if (field.kind === 'url') {
-        const problem = urlProblem(text, field.https ?? false);
+        const problem = urlProblem(text, field.https ?? false, field.localHttp ?? false);
         if (problem) {
           return fail(problem);
         }
@@ -1748,6 +1774,157 @@ const labelsSpec: SettingsSpec = {
   secrets: [],
 };
 
+const AADHAAR = 'integrations.aadhaar';
+const AADHAAR_SECRET = 'integrations.aadhaar.secret';
+const throughUidai = when(AADHAAR, 'provider', 'uidai');
+const AUA_CODE = { regex: /^[A-Za-z0-9]{1,10}$/, message: 'Up to 10 letters or digits, as the ASA gives it.' };
+
+const aadhaarSpec: SettingsSpec = {
+  id: 'aadhaar',
+  title: 'Aadhaar authentication',
+  intro:
+    'Checks a patient’s identity with their Aadhaar fingerprint (patient record › Identity), under the hospital’s AUA licence through its authentication service agency (ASA), which gives every value below. Each workstation that checks needs HC360 Desktop and a UIDAI-certified fingerprint reader (a registered device) with its RD service. The licence keys and the signing certificate stay on the server.',
+  prefix: AADHAAR,
+  fields: [
+    { key: AADHAAR, path: 'enabled', label: 'Check identities with Aadhaar fingerprints', kind: 'switch' },
+    {
+      key: AADHAAR,
+      path: 'provider',
+      label: 'Provider',
+      kind: 'select',
+      options: [
+        { value: 'uidai', label: 'UIDAI (Aadhaar Auth API 2.5, through the ASA)' },
+        { value: 'simulator', label: 'Simulator (training: nothing goes to UIDAI)' },
+      ],
+      requiredWhen: switchedOn(AADHAAR),
+    },
+    {
+      key: AADHAAR,
+      path: 'authUrl',
+      label: 'ASA address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://asa.example.in/2.5/{ac}/{uid0}/{uid1}/{asalk}',
+      when: throughUidai,
+      requiredWhen: throughUidai,
+      hint: 'As the ASA gives it. {ac}, {uid0}, {uid1} and {asalk} are filled in for each check.',
+    },
+    {
+      key: AADHAAR,
+      path: 'auaCode',
+      label: 'AUA code',
+      kind: 'text',
+      pattern: AUA_CODE,
+      when: throughUidai,
+      requiredWhen: throughUidai,
+    },
+    {
+      key: AADHAAR,
+      path: 'subAuaCode',
+      label: 'Sub-AUA code',
+      kind: 'text',
+      pattern: AUA_CODE,
+      when: throughUidai,
+      requiredWhen: throughUidai,
+      hint: 'The hospital’s own code when it is a sub-AUA; when the hospital is the AUA, its AUA code again.',
+    },
+    {
+      key: AADHAAR,
+      path: 'environment',
+      label: 'UIDAI environment',
+      kind: 'select',
+      defaultValue: 'P',
+      options: [
+        { value: 'P', label: 'Production (P)' },
+        { value: 'PP', label: 'Pre-production (PP)' },
+        { value: 'S', label: 'Staging (S)' },
+      ],
+      hint: 'The one the licence is for: readers encrypt each fingerprint for it.',
+    },
+    {
+      key: AADHAAR,
+      path: 'fingerData',
+      label: 'Fingerprint data',
+      kind: 'select',
+      defaultValue: 'FMR,FIR',
+      options: [
+        { value: 'FMR,FIR', label: 'Minutiae and image (FMR, FIR)' },
+        { value: 'FMR', label: 'Minutiae (FMR)' },
+        { value: 'FIR', label: 'Image (FIR)' },
+      ],
+      group: 'Fingerprint readers',
+      hint: 'Change only if the ASA asks.',
+    },
+    {
+      key: AADHAAR,
+      path: 'fingerCount',
+      label: 'Fingers per check',
+      kind: 'number',
+      defaultNumber: 1,
+      min: 1,
+      max: 2,
+    },
+    {
+      key: AADHAAR,
+      path: 'captureTimeoutSeconds',
+      label: 'The reader waits for a finger (seconds)',
+      kind: 'number',
+      defaultNumber: 15,
+      min: 5,
+      max: 60,
+    },
+    {
+      key: AADHAAR,
+      path: 'registeredDeviceTid',
+      label: 'Registered device code (tid)',
+      kind: 'text',
+      placeholder: 'registered',
+      pattern: { regex: /^[A-Za-z]{1,16}$/, message: 'Use letters only, such as registered.' },
+      when: throughUidai,
+      group: 'Advanced',
+      hint: 'Change only if the ASA asks: UIDAI answers 520 to a value it does not take.',
+    },
+    {
+      key: AADHAAR,
+      path: 'timeoutSeconds',
+      label: 'Give UIDAI up to (seconds)',
+      kind: 'number',
+      defaultNumber: 20,
+      min: 5,
+      max: 60,
+      when: throughUidai,
+    },
+    {
+      key: AADHAAR,
+      path: 'uidaiCertificate',
+      label: 'UIDAI signing certificate (PEM)',
+      kind: 'textarea',
+      when: throughUidai,
+      pattern: {
+        regex: /^-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----\s*$/,
+        message: 'Paste the certificate from -----BEGIN CERTIFICATE----- to -----END CERTIFICATE-----.',
+      },
+      hint: 'From the ASA. Once it is set, an answer UIDAI did not sign with it is refused.',
+    },
+  ],
+  secrets: [
+    { key: AADHAAR_SECRET, prop: 'licenceKey', label: 'AUA licence key' },
+    {
+      key: AADHAAR_SECRET,
+      prop: 'asaLicenceKey',
+      label: 'ASA licence key',
+      hint: 'Goes into the ASA address as {asalk}.',
+    },
+    {
+      key: AADHAAR_SECRET,
+      prop: 'signingCertificate',
+      label: 'AUA signing certificate (.pfx, base64)',
+      hint: 'The certificate HC360 signs each request with, and its private key. In PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("aua.pfx")).',
+    },
+    { key: AADHAAR_SECRET, prop: 'signingCertificatePassword', label: 'Signing certificate password' },
+  ],
+};
+
 /** Integrations with settings. */
 export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>> = {
   sms: smsSpec,
@@ -1762,24 +1939,28 @@ export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>
   labels: labelsSpec,
   icd: icdSpec,
   biometric: biometricSpec,
+  aadhaar: aadhaarSpec,
 };
 
 const SPEECH = 'ai.speech';
 const whisper = when(SPEECH, 'provider', 'whisper');
+const OPENAI = 'ai.openai';
+const anthropic = when('ai.provider', undefined, 'anthropic');
+const openAi = when('ai.provider', undefined, 'openai');
 
 /** AI settings (docs/modules/ai.md): per facility, falling back to all facilities. */
 export const AI_SETTINGS: SettingsSpec = {
   id: 'ai',
   title: 'AI assistant',
   intro:
-    'AI is off until you turn it on. Everyday voice and typed commands work without it; AI only helps with commands the built-in rules do not understand, and with structuring dictated notes.',
+    'AI is off until you turn it on. Everyday voice and typed commands work without it; AI only helps with commands the built-in rules do not understand, and with structuring dictated notes. It uses Anthropic’s cloud service, or an OpenAI-compatible server, which can run inside the hospital.',
   prefix: 'ai.',
   fields: [
     {
       key: 'ai.enabled',
       label: 'Allow AI help',
       kind: 'switch',
-      hint: 'Text is stripped of names, UHIDs and phone numbers before it leaves the hospital.',
+      hint: 'Names, UHIDs and phone numbers are removed from text before it is sent to the AI provider.',
     },
     {
       key: 'ai.provider',
@@ -1788,17 +1969,65 @@ export const AI_SETTINGS: SettingsSpec = {
       defaultValue: 'anthropic',
       options: [
         { value: 'anthropic', label: 'Anthropic Claude' },
+        { value: 'openai', label: 'OpenAI-compatible server (in the hospital, or Azure OpenAI)' },
         { value: 'disabled', label: 'Off' },
       ],
+      hint: 'Anthropic is a cloud service. An OpenAI-compatible server (vLLM, llama.cpp server or Ollama) can run inside the hospital, so that text does not leave it.',
     },
     {
       key: 'ai.model',
       label: 'Model',
       kind: 'text',
       placeholder: 'claude-opus-5-5',
+      when: anthropic,
       pattern: { regex: /^[a-z0-9][a-z0-9.-]{1,63}$/, message: 'Use a model id such as claude-opus-5-5.' },
     },
-    { key: 'ai.timeoutSeconds', label: 'Time limit (seconds)', kind: 'number', defaultNumber: 90, min: 10, max: 300 },
+    {
+      key: 'ai.timeoutSeconds',
+      label: 'Time limit (seconds)',
+      kind: 'number',
+      defaultNumber: 90,
+      min: 10,
+      max: 300,
+      when: anthropic,
+    },
+    {
+      key: OPENAI,
+      path: 'baseUrl',
+      label: 'Server address',
+      kind: 'url',
+      https: true,
+      localHttp: true,
+      placeholder: 'https://llm.hospital.lan/v1',
+      group: 'OpenAI-compatible server',
+      when: openAi,
+      requiredWhen: openAi,
+      check: aiServerAddressProblem,
+      hint: 'The server’s address without /chat/completions, usually ending in /v1; for Azure OpenAI, https://<resource>.openai.azure.com/openai/v1. Notes are clinical text, so it must be https, except http://localhost for a server on the HC360 server itself.',
+    },
+    {
+      key: OPENAI,
+      path: 'model',
+      label: 'Model',
+      kind: 'text',
+      when: openAi,
+      requiredWhen: openAi,
+      pattern: {
+        regex: /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/,
+        message: 'Use the model name as the server lists it: letters, digits and . _ : / -',
+      },
+      hint: 'As the server names it (its /v1/models list); for Azure OpenAI, the deployment name.',
+    },
+    {
+      key: OPENAI,
+      path: 'timeoutSeconds',
+      label: 'Time limit (seconds)',
+      kind: 'number',
+      defaultNumber: 90,
+      min: 10,
+      max: 300,
+      when: openAi,
+    },
     {
       key: SPEECH,
       path: 'provider',
@@ -1818,10 +2047,11 @@ export const AI_SETTINGS: SettingsSpec = {
       label: 'Transcription address',
       kind: 'url',
       https: true,
+      localHttp: true,
       placeholder: 'https://stt.lan:8000/v1/audio/transcriptions',
       when: whisper,
       requiredWhen: whisper,
-      hint: 'An OpenAI-compatible /audio/transcriptions address, for example an on-premises faster-whisper server. Dictation is patient information, so it is sent only over https, and only while AI features are on.',
+      hint: 'An OpenAI-compatible /audio/transcriptions address, for example an on-premises faster-whisper server. Dictation is patient information, so it is sent only over https (or to http://localhost, a server on the HC360 server itself), and only while AI features are on.',
     },
     { key: SPEECH, path: 'model', label: 'Speech model', kind: 'text', placeholder: 'whisper-1', when: whisper },
     {
@@ -1865,6 +2095,12 @@ export const AI_SETTINGS: SettingsSpec = {
   ],
   secrets: [
     { key: 'ai.anthropic.secret', prop: 'apiKey', label: 'Anthropic API key', hint: 'Read only while AI is on.' },
+    {
+      key: 'ai.openai.secret',
+      prop: 'apiKey',
+      label: 'OpenAI-compatible server key',
+      hint: 'Sent as a bearer key, and read only while AI is on. A server in the hospital may need none.',
+    },
     {
       key: 'ai.speech.secret',
       prop: 'apiKey',

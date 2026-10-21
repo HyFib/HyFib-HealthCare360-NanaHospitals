@@ -11,12 +11,14 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 | EHR-01 longitudinal record | Encounters, vitals, allergies, diagnoses/problems, notes, procedures (see *Procedures*), immunisations, orders, prescriptions, discharge summaries; `GET /emr/patients/{id}/timeline` |
 | EHR-02 timeline by type/kind of care/department/date | `GET /emr/patients/{id}/timeline?types=&encounterTypes=&from=&to=&departmentId=` |
 | EHR-03 banner flags | `GET /emr/patients/{id}/summary` (allergies with `allergyStatus`, alerts, problems, current medicines, last vitals + flags) for the chart; `GET /emr/patients/{id}/flags` (allergies and alerts alone, `clinical.flags.read`) for every other clinical screen's banner (see *Banner flags on every clinical screen*); `GET /emr/patients/{id}/allergies/status`, "no known allergies"; real-time `clinical.flags.changed` on `patient:{id}` |
-| EHR-04/06/07 documents, consent, break-the-glass | Patients module (consents: see *Consents (EHR-06)*); every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
+| EHR-04/06/07 documents, consent, break-the-glass | Patients module (documents: see *Patient documents (EHR-04)*; consents: see *Consents (EHR-06)*); every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
+| INT-BIO patient identity verification | Patients module: checking a patient's identity with their Aadhaar fingerprint (see *Identity checks (INT-BIO)*) |
 | EMR-01 worklist | `GET /emr/worklist` (queue, the doctor's appointments, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) and the ward round `GET /inpatient/rounds` (Inpatient module); see *The doctor's worklist (EMR-01)* |
 | EMR-02..07 | Encounters (SOAP, follow-up, referral, sign, amend), templates, vitals, diagnoses (ICD), orders, prescriptions, favourites; voice dictation into a SOAP draft with ICD suggestions (*Dictate with AI*, AI module) |
 | ERX-01..06 | Prescriptions, favourites/templates, safety checks, signing → `PrescriptionSigned`, the printed A5 prescription and its PDF with QR verification, refills/repeat, Schedule H1/X confirmation + register. ERX-04: bilingual (English/Hindi) directions, the prescriber's council registration number, the doctor's own DSC signature from HC360 Desktop (see *Signing with the doctor's DSC*) and the QR code that re-verifies it |
 | MRD-01..06 | ICD-10 / ICD-10-PCS catalogues + ranked search + WHO ICD-API lookup, coding at discharge, chart deficiencies, record requests, retention/archival, morbidity index |
 | MHC-01..05 | Packages (billable service items), bookings, itinerary, doctor summary, consolidated report, corporate batches |
+| IMG-02/03 (the record's part) | Released lab, imaging and cardiology reports open from the chart's timeline and orders, with an imaging study's images and the PACS viewer; see *Results on the patient's record* |
 
 All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` where noted. Updates carry `version`
 (PostgreSQL `xmin`); a stale version returns 409. Dates in query strings are IST calendar dates.
@@ -54,7 +56,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | POST | `/emr/results/{id}/acknowledge` | emr.write | `AcknowledgeResultRequest{note}` → 204 |
 | GET | `/emr/patients/{patientId}/summary` | emr.read | → `PatientClinicalSummary` (patient, `allergiesEverRecorded`, `allergyStatus` (`Recorded`\|`NoKnownAllergies`\|`NotRecorded`), allergies, alerts, activeProblems, currentMedications, lastVitals+flags, recentEncounters(5), resultsAwaitingReview) |
 | GET | `/emr/patients/{patientId}/flags` | flags.read or emr.read | → `PatientFlags{allergyStatus, allergies[AllergySummary], alerts[AlertSummary]}`: the summary's flags alone (same rule, same order: most severe first, alerts in force today). Restricted-record guard (403 `patient.restricted`) and a PHI-access audit entry ("Viewed allergies and alerts") like the chart; 404 for an unknown patient |
-| GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&encounterTypes=OutPatient,InPatient,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result, Procedure). `encounterTypes` (OutPatient, InPatient, Emergency, Telehealth, HealthCheckup) and `departmentId` keep the matching encounters and the entries recorded in one of them; documents and entries recorded outside an encounter then drop out. An unknown name is a 400 on `types` or `encounterTypes` |
+| GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&encounterTypes=OutPatient,InPatient,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result, Procedure). `encounterTypes` (OutPatient, InPatient, Emergency, Telehealth, HealthCheckup) and `departmentId` keep the matching encounters and the entries recorded in one of them; documents and entries recorded outside an encounter then drop out. An unknown name is a 400 on `types` or `encounterTypes`. A `Result`'s `id` is the released report's id in its department and `reportKind` (`Laboratory`, `Radiology`, `Cardiology`; null on other entries) says which (see *Results on the patient's record*) |
 | GET | `/emr/patients/{patientId}/medications` | emr.read | → `CurrentMedication[]` |
 | GET | `/emr/patients/{patientId}/encounters?type&page` | emr.read | → `PagedResult<EncounterListItem>` |
 | POST | `/emr/encounters` | emr.write | `StartEncounterRequest{patientId, visitId?, admissionId?, type?, departmentId?, practitionerId?, templateId?, chiefComplaint?}` → 201 `EncounterDetail` (409 `encounter.already_open` with `encounterId`) |
@@ -101,6 +103,32 @@ in (its admission and visit are copied). A correction changes the fields and lea
 for the audit trail but off the timeline. Operations completed in the theatre arrive on their own (`Source`
 `OperationTheatre`, see *Events*). The chart's *Procedures* tab lists, records, corrects and voids them.
 
+#### Results on the patient's record (IMG-02, IMG-03)
+
+A lab, imaging or cardiology report is on the chart once Diagnostics releases it (`DiagnosticReportReleased`, see
+*Events*): as a *Result* on the timeline, which names the report and its department (`id`, `reportKind`), and on its
+order line, which the release completes with the report's id as `resultReference`. Clinical keeps only that id and
+kind (`ResultReview`): it may not read Diagnostics' tables. The chart opens the report in a dialog (`ResultDialog`, the
+worklist's result review without the note and *Acknowledge*) through the department's own endpoints, so their
+permissions, released-only rule, restricted-record guard and PHI audit apply as on the department's screens:
+
+| Report | The chart asks | It shows | Permission |
+|---|---|---|---|
+| Lab | `GET /lab/reports/{id}` | The results with their flags and reference ranges; Print and Download PDF of the printed report (`…/document`, `…/pdf`); *Full report* opens the lab report screen | `lab.orders.read` |
+| Imaging | `GET /radiology/reports/{id}` for the study, then `GET /radiology/studies/{studyId}` and `…/report` | The signed report as the study screen shows it, with Print and Download PDF; once the study is linked with PACS (`pacsLinkedAt`), its series, thumbnails and image viewer (`…/images`) and *Open in PACS viewer* (`…/viewer`); *Open study* opens the study screen | Report: `radiology.studies.read` or `radiology.reports.write` (both endpoints allow them). Images and viewer: `radiology.images.view` |
+| Cardiology | `GET /cardiology/reports/{id}` for the study, then `GET /cardiology/studies/{studyId}` | The signed report with Print and Download PDF; *Open in PACS viewer* once the PACS holds the study's DICOM files; *Open study* opens the study screen | `cardiology.studies.read` (or `cardiology.studies.manage`, `cardiology.reports.verify`) |
+
+* The timeline opens a result's report only for staff who may open that department's reports; for anyone else a result
+  leads to the *Orders* tab, as before. A completed order line, on the chart's *Orders* tab and in the consultation,
+  offers *View report* on the same terms. Images and the PACS viewer are offered only for a study linked with PACS, and
+  only to staff who may see images (not nurses, by default).
+* Restricted (VIP) records: the chart opens only through the restricted-record guard, and each department endpoint
+  checks it again, so no report, study or image is shown without access; the dialog then says the record is restricted.
+  The report-to-study look-ups return ids and the report's status only.
+* The departments read in the signed-in facility, as on their screens: a result released at another of the hospital's
+  facilities is on the timeline, which spans every facility, but its report opens there only; the dialog says so.
+* The doctor's worklist shows the same report in its result review, with the note and *Acknowledge*.
+
 ### Clinical orders and e-prescribing (`/clinical`)
 
 | Method | Path | Permission | Request → Response |
@@ -137,6 +165,12 @@ for the audit trail but off the timeline. Operations completed in the theatre ar
 | GET | `/clinical/discharge-summaries/{id}/print` | emr.read | → `DischargeSummaryPrint` |
 | GET | `/clinical/discharge-summaries/{id}/document` | emr.read | → `PrintableDocumentDto` (`pageSize: "A4"`): the printed discharge summary. Same rules as `/print`: drafts print too, marked "DRAFT — not signed"; restricted-record guard; audit "Printed discharge summary" |
 | GET | `/clinical/discharge-summaries/{id}/pdf` | emr.read | → `application/pdf` attachment `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`, the same document. Same rules; audit "Downloaded discharge summary as a PDF"; 503 `pdf.unavailable` |
+
+A signed or amended summary, and a signed prescription, also download as ABDM health records (NRCeS FHIR document
+bundles) from the Interop module: `GET /abdm/discharge-summaries/{id}/bundle` and `GET /abdm/prescriptions/{id}/bundle`,
+permission `abdm.export`, while ABDM health records are switched on and the patient has consented to share their
+records. A cancelled prescription is not exported, and a prescription is exported only under the DSC rule of its
+printout ([interop.md](interop.md#abdm-health-records-ehr-08)).
 
 Public (anonymous, rate limit policy `public`): `GET /public/prescriptions/verify/{token}` → `PrescriptionVerification{found, status: Valid|Cancelled, doctor, qualification, registrationNumber, facility, issuedOn, itemCount, prescriptionNumber, digitalSignature?: {state: Valid|Invalid|Untrusted, signerName, certificateSerialNumber, certificateIssuer, signedAt, contentHash, chainTrusted, message}, signaturePath}` — no patient data; the DSC signature, and its chain to the DSC trust folder's roots, are verified again for each answer. `GET /public/prescriptions/verify/{token}/signature.p7s` → the .p7s (404 without a DSC signature).
 
@@ -504,8 +538,10 @@ bill or issues a credit note, then the booking can be cancelled). The component 
 ## The doctor's worklist (EMR-01)
 
 *My worklist* (`/emr`) is the doctor's home screen. The filters (date, department, doctor) apply to every list, and
-the side panel keeps results to review, unsigned encounters and notes, draft prescriptions and chart deficiencies. The
-main panel has three tabs, kept in the address (`?view=appointments`, `?view=rounds`):
+the side panel keeps results to review, unsigned encounters and notes, draft prescriptions and chart deficiencies. A
+result to review opens the report itself, with an imaging study's images and the PACS viewer (see *Results on the
+patient's record*), a note and *Acknowledge*. The main panel has three tabs, kept in the address (`?view=appointments`,
+`?view=rounds`):
 
 * **Queue**: today's tokens for the department, as before. F2 calls the next patient.
 * **Appointments**: the day's bookings in slot order, with a count of those still to come, arrived, seen and absent.
@@ -557,6 +593,61 @@ on the patient profile and in the chart's **Consents** tab.
   `patient.restricted`), and every listing is in the audit trail ("Viewed consents"). Withdrawals from the portal
   (the patient), WhatsApp STOP replies (no user) and opt-out links go through the same `PatientConsent.Revoke`.
 
+## Patient documents (EHR-04)
+
+Scans, outside reports, referral letters and signed forms attached to the record are the Patients module's
+`PatientDocument` records, each with its type, the date on the document and where it came from. The file itself is
+uploaded first to the file store (`POST /api/v1/files`), which keeps it encrypted at rest. Staff attach them on the
+patient profile's **Documents** tab, and open them there and on the chart's.
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/patients/{patientId}/documents` | patients.documents | → `PatientDocumentDto[]{id, fileId, type, title, documentDate, source, notes, createdAt, fileName, contentType, sizeBytes}`, newest first; audit "Listed documents" |
+| POST | `/patients/{patientId}/documents` | patients.documents | `AttachDocumentRequest{fileId, type, title, documentDate?, source?, notes?}` → 201 `{id}`. `type`: IdProof, InsuranceCard, ExternalReport, ReferralLetter, Consent, Prescription, DischargeSummary, Imaging, Photo, Other. `title` (required) and `source` (such as the outside lab or hospital) up to 200 characters, `notes` up to 1,000, none with control characters; `documentDate` not after today in the hospital (IST). 400 on `fileId` for a file not uploaded; 422 `document.other_patient` for a file uploaded for another patient |
+| DELETE | `/patients/documents/{documentId}` | patients.documents | → 204. The document leaves the list; the encrypted file is kept |
+
+* **Access**: listing, attaching and removing follow the record's restricted-record rules (403 `patient.restricted`
+  until break-the-glass, or with `patients.restricted.read`), and a patient who does not exist is a 404
+  (`patient.not_found`). Each document attached or removed is in the audit trail as a data change
+  (`PatientDocument.create`, `PatientDocument.delete`), with the patient, who and when.
+
+## Identity checks (INT-BIO)
+
+The front desk can check that a patient is the holder of the Aadhaar number they give, with their fingerprint: the
+Patients module's `PatientIdentityCheck` records (`/api/v1/patients/{id}/identity-checks`), on the patient profile's
+**Identity** tab. UIDAI answers through the hospital's AUA (`IAadhaarAuthenticator`; the protocol, the settings and the
+simulator are in [integrations.md](integrations.md#aadhaar-authentication-int-bio-patient-identity)). It is off until
+an administrator sets up `integrations.aadhaar`.
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/patients/identity-checks/setup` | `patients.identity.verify` | `AadhaarCaptureSetup {provider, problem, environment, fingerDataType, fingerCount, timeoutSeconds, training}`: what the workstation's reader is asked for, or why checks are not available |
+| GET | `/patients/{id}/identity-checks` | `patients.read` | The last 50 checks, newest first (`IdentityCheckDto`). Restricted-record rules apply (403 `patient.restricted`), and every listing is in the audit trail ("Viewed identity checks") |
+| POST | `/patients/{id}/identity-checks` | `patients.identity.verify` | `VerifyIdentityRequest {aadhaarNumber, pidData, consent}` → `IdentityCheckDto`. See below |
+
+`patients.identity.verify` ("Check a patient's identity with their Aadhaar fingerprint (UIDAI)") is given to
+FrontOffice and HospitalAdmin.
+
+* **The request.** `aadhaarNumber` is the 12-digit Aadhaar number or 16-digit Virtual ID as the patient gives it
+  (spaces and dashes allowed; an Aadhaar number must pass the Verhoeff check). `pidData` is the capture HC360 Desktop's
+  fingerprint reader returned, encrypted for UIDAI (at most 2 MB). `consent` must be true: the patient agreed after
+  being told what the check is for and that they may show another identity document instead (400 otherwise).
+* **Refused before UIDAI is asked**: a merged record (422 `patient.merged`: check the surviving one); another Aadhaar
+  number than the one on the record (422 `patient.aadhaar_mismatch`, naming its last 4 digits); a number linked to
+  another patient (409 `patient.aadhaar_in_use`, naming the UHID). When UIDAI could not be asked (not set up, a capture
+  that could not be used, a training capture sent to `uidai`), the answer is 422 `patient.identity_check_failed` with
+  the reason, and nothing is kept.
+* **Kept.** Every check UIDAI (or the simulator) answered: `outcome` (`Verified`, `NotVerified`, `Failed`), the
+  message, the number's last 4 digits, `usedVirtualId`, the provider, UIDAI's error code, HC360's transaction id,
+  UIDAI's response code, the reader's provider and model, who checked and when. Never the number or the capture. The
+  check is audited (`patient.identity_checked`, a warning when the fingerprint did not match).
+* **Linked.** A verified Aadhaar number is then linked to a record that had none (`linkedAadhaar`: last 4 digits and
+  blind index, as at registration; audited as `patient.aadhaar_linked`). The database keeps one record per Aadhaar
+  number (`ux_patients_aadhaar_index`). If another desk linked the number to another record while UIDAI answered, the
+  check is still kept but the number is not linked, and the answer is 409 `patient.aadhaar_in_use`, naming that UHID.
+  Registration and editing give the same answer when they lose such a race.
+* **Merging** records moves their identity checks to the surviving record.
+
 ## Prescribing safety (ERX-02/06)
 
 Checks run in `Domain/Safety` (pure, unit-tested) against the prescription, the patient's current medicines (signed
@@ -601,7 +692,7 @@ Handled (same transaction):
 | `PatientsMerged` (Patients) | re-points every clinical row (all facilities, including soft-deleted) to the surviving patient; keeps at most one "no known allergies" statement, and none when an active allergy exists. A DSC-signed prescription stays Valid: its signed bytes keep the duplicate's record, which the check follows to the survivor (*Signing with the doctor's DSC*) |
 | `PatientAdmitted` | opens the MRD chart of the admission |
 | `PatientDischarged` | sets chart discharge time and due date (+7 days), queues ICD coding (Pending), stamps the discharge summary |
-| `DiagnosticReportReleased` | completes the order line and adds/re-opens a "result to review" for the ordering doctor |
+| `DiagnosticReportReleased` | completes the order line, with the report's id as its `resultReference`, and adds/re-opens a "result to review" for the ordering doctor, which is the report's *Result* on the timeline: one per report, however many of its tests are released, together (one announcement per test in the same save) or one after another. A critical result the doctor has not acknowledged keeps the review critical, whatever is released with it or after it |
 | `SurgeryCompleted` (SpecialtyCare) | `SurgeryCompletedHandler` records the operation as a `ProcedureRecord` (source `OperationTheatre`, performed at knife to skin, the surgeon as performer, the booking's side), once per booking (unique `surgery_booking_id`), in the latest encounter of the admission (or visit) that began before it ended. The booking's code is kept only when the procedure catalogue has it, since theatres often book with the hospital's tariff code |
 
 Real-time (ids only): `clinical.order.placed` / `clinical.order.changed` (facility), `pharmacy.prescription.signed` /

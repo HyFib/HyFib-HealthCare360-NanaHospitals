@@ -56,6 +56,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.CssdTechnician] = SystemRoles.CssdTechnician,
         [Users.CardiologyTechnician] = SystemRoles.CardiologyTechnician,
         [Users.SecondDoctor] = SystemRoles.Doctor,
+        [Users.Accountant] = SystemRoles.Accountant,
     };
 
     // A test-only password for the staff accounts, new for every run.
@@ -574,6 +575,12 @@ public sealed class HospitalServer : IAsyncLifetime
         /// <see cref="Doctor"/>'s. Created on first use.
         /// </summary>
         public const string SecondDoctor = "doctor2";
+
+        /// <summary>
+        /// Keeps the accounts: prepares doctor payouts, which someone else (the hospital administrator) approves. Created on
+        /// first use.
+        /// </summary>
+        public const string Accountant = "accountant";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

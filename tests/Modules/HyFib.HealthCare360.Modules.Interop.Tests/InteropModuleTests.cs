@@ -24,13 +24,25 @@ public sealed class InteropModuleTests
     [Fact]
     public void Declares_fhir_read_for_hospital_administrators_only()
     {
-        var permission = new InteropModule().Permissions.ShouldHaveSingleItem();
+        var permission = new InteropModule().Permissions.Single(p => p.Name == InteropPermissions.FhirRead);
 
-        permission.Name.ShouldBe(InteropPermissions.FhirRead);
         permission.Name.ShouldBe("fhir.read");
         permission.DefaultRoles.ShouldBe([SystemRoles.HospitalAdmin]);
         permission.Group.ShouldNotBeNullOrWhiteSpace();
         permission.Description.ShouldContain("consent");
+    }
+
+    [Fact]
+    public void Declares_abdm_export_for_administrators_and_medical_records()
+    {
+        var permission = new InteropModule().Permissions.Single(p => p.Name == InteropPermissions.AbdmExport);
+
+        permission.Name.ShouldBe("abdm.export");
+        permission.DefaultRoles.ShouldBe([SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]);
+        permission.Group.ShouldBe("Interoperability");
+        permission.Description.ShouldContain("consent");
+        permission.Description.ShouldContain("audited");
+        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport]);
     }
 
     [Fact]
@@ -53,6 +65,8 @@ public sealed class InteropModuleTests
     [InlineData(typeof(PatientSharingService))]
     [InlineData(typeof(FhirAuditTrail))]
     [InlineData(typeof(ReferenceDirectoryLoader))]
+    [InlineData(typeof(AbdmDocumentService))]
+    [InlineData(typeof(AbdmAuditTrail))]
     public void Registers_its_services_once(Type service) => Services().Count(d => d.ServiceType == service).ShouldBe(1);
 
     [Fact]

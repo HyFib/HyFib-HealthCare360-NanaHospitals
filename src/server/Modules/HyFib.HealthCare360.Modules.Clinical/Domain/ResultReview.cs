@@ -29,13 +29,14 @@ public sealed class ResultReview : AuditableEntity, IFacilityScoped
     public bool IsReviewed => ReviewedAt is not null;
 
     /// <summary>
-    /// A corrected/amended report was released again: it needs a fresh review even if the earlier version was
-    /// acknowledged, otherwise a changed (possibly critical) result could go unseen.
+    /// A corrected/amended report was released again, or more of its tests were: it needs a fresh review even if the
+    /// earlier version was acknowledged, otherwise a changed (possibly critical) result could go unseen. A critical
+    /// result not yet acknowledged keeps the review critical, whatever is released with it or after it.
     /// </summary>
     public void Reopen(string title, bool hasCriticalFindings, DateTimeOffset releasedAt)
     {
         Title = title;
-        HasCriticalFindings = hasCriticalFindings;
+        HasCriticalFindings = hasCriticalFindings || (HasCriticalFindings && !IsReviewed);
         ReleasedAt = releasedAt;
         ReviewedAt = null;
         ReviewedByUserId = null;

@@ -54,8 +54,11 @@ internal sealed class EncounterProvider(HospitalDbContext db, ReferenceDirectory
         return await MapAsync(visits, encounters, ct);
     }
 
-    internal IQueryable<VisitRow> Visits(Expression<Func<Visit, bool>> filter) =>
-        db.Set<Visit>().AsNoTracking().Where(filter).Select(v => new VisitRow
+    internal IQueryable<VisitRow> Visits(Expression<Func<Visit, bool>> filter) => VisitRows(db.Set<Visit>().AsNoTracking().Where(filter));
+
+    /// <summary>Visits as rows (also the stay of an ABDM discharge summary).</summary>
+    internal static IQueryable<VisitRow> VisitRows(IQueryable<Visit> visits) =>
+        visits.Select(v => new VisitRow
         {
             Id = v.Id,
             PatientId = v.PatientId,
@@ -92,7 +95,11 @@ internal sealed class EncounterProvider(HospitalDbContext db, ReferenceDirectory
         });
 
     internal IQueryable<VisitAdmission> Admissions(Guid[] visitIds) =>
-        db.Set<Admission>().AsNoTracking().Where(a => visitIds.Contains(a.VisitId)).Select(a => new VisitAdmission(a.VisitId, new AdmissionRow
+        AdmissionRows(db.Set<Admission>().AsNoTracking().Where(a => visitIds.Contains(a.VisitId)));
+
+    /// <summary>Admissions as rows, with the visit each is anchored to.</summary>
+    internal static IQueryable<VisitAdmission> AdmissionRows(IQueryable<Admission> admissions) =>
+        admissions.Select(a => new VisitAdmission(a.VisitId, new AdmissionRow
         {
             Id = a.Id,
             AdmissionNumber = a.AdmissionNumber,

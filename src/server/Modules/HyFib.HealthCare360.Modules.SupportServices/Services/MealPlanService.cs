@@ -36,6 +36,9 @@ public sealed class MealPlanService(
         await db.SaveChangesAsync(ct);
 
         var charges = date <= IndiaClock.LocalDate(now) ? await PostDietChargesAsync(date, diets, ct) : 0;
+
+        // The charge poster only stages the charges in this unit of work: they reach the IP bill when saved.
+        await db.SaveChangesAsync(ct);
         var planned = await db.Set<PlannedMeal>().CountAsync(m => m.PlanDate == date && m.Status != MealDeliveryStatus.Cancelled, ct);
         return new MealPlanResult(date, changes.ToAdd.Count, changes.ToCancel.Count, planned, charges);
     }
@@ -214,12 +217,14 @@ public sealed class MealPlanService(
                 continue;
             }
 
+            // Every order of the admission started by the date, whatever its end date: superseding an order ends it the day
+            // before the new one starts, but the day of the change may already be charged under it.
             var admissionIds = facilityDiets.Select(d => d.AdmissionId).Distinct().ToList();
             var billable = await (
                     from o in db.Set<DietOrder>().AsNoTracking()
                     join a in db.Set<Admission>() on o.AdmissionId equals a.Id
                     join t in db.Set<DietType>() on o.DietTypeId equals t.Id
-                    where admissionIds.Contains(o.AdmissionId) && o.StartDate <= date && (o.EndDate == null || o.EndDate >= date)
+                    where admissionIds.Contains(o.AdmissionId) && o.StartDate <= date
                     select new { o.Id, o.AdmissionId, o.PatientId, a.VisitId, t.Name, t.ChargeServiceItemId })
                 .ToListAsync(ct);
 

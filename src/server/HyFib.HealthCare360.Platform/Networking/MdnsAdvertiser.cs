@@ -1,8 +1,10 @@
+using System.Net;
 using System.Net.NetworkInformation;
 using System.Reflection;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.WindowsInterop.Discovery;
 using Makaretu.Dns;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,8 +16,9 @@ namespace HyFib.HealthCare360.Platform.Networking;
 
 /// <summary>
 /// Advertises the Server Node on the hospital WiFi via mDNS/DNS-SD (<c>_hc360._tcp.local</c>, DED-02) so HC360
-/// Desktop finds it without anyone typing IP addresses. TXT records: version, facility code, CA fingerprint.
-/// Re-announces periodically and whenever the network address changes (WiFi reconnect / DHCP renewal).
+/// Desktop finds it without anyone typing IP addresses. TXT records (<see cref="ServerAdvertisement"/>): version, facility
+/// code, CA fingerprint, host name and path. Re-announces periodically and whenever the network address changes (WiFi
+/// reconnect / DHCP renewal).
 /// </summary>
 internal sealed class MdnsAdvertiser(
     IOptions<PlatformOptions> options,
@@ -38,17 +41,7 @@ internal sealed class MdnsAdvertiser(
         {
             using var multicast = new MulticastService();
             using var discovery = new ServiceDiscovery(multicast);
-            var profile = new ServiceProfile(
-                new DomainName($"HC360-{Environment.MachineName}"),
-                new DomainName(settings.Network.MdnsServiceType),
-                (ushort)settings.HttpsPort,
-                null,
-                false);
-            profile.AddProperty("ver", version.Split('+')[0]);
-            profile.AddProperty("fac", facilityCode);
-            profile.AddProperty("fp", certificates.CaFingerprint ?? string.Empty);
-            profile.AddProperty("host", Environment.MachineName);
-            profile.AddProperty("path", "/");
+            var profile = Profile(settings.Network, settings.HttpsPort, Environment.MachineName, version, facilityCode, certificates.CaFingerprint);
 
             multicast.Start();
             discovery.Advertise(profile);
@@ -95,6 +88,34 @@ internal sealed class MdnsAdvertiser(
         {
             logger.LogWarning(ex, "mDNS advertisement is unavailable; workstations must enter the server address manually");
         }
+    }
+
+    /// <summary>
+    /// What the server advertises: the instance "HC360-" and the machine name, of the configured service type, on the staff
+    /// app's HTTPS port, with the TXT record HC360 Desktop reads (<see cref="ServerAdvertisement"/>). Without
+    /// <paramref name="addresses"/>, the machine's current addresses.
+    /// </summary>
+    internal static ServiceProfile Profile(
+        NetworkOptions network,
+        int httpsPort,
+        string machineName,
+        string version,
+        string facilityCode,
+        string? caFingerprint,
+        IEnumerable<IPAddress>? addresses = null)
+    {
+        var profile = new ServiceProfile(
+            new DomainName(ServerAdvertisement.InstanceName(machineName)),
+            new DomainName(network.MdnsServiceType),
+            (ushort)httpsPort,
+            addresses,
+            false);
+        foreach (var (key, value) in ServerAdvertisement.Properties(version, facilityCode, caFingerprint, machineName))
+        {
+            profile.AddProperty(key, value);
+        }
+
+        return profile;
     }
 
     private async Task<string?> FacilityCodeAsync(CancellationToken ct)

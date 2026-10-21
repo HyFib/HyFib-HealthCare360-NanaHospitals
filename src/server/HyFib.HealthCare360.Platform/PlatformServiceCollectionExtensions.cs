@@ -141,7 +141,8 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<PermissionService>();
         services.AddSingleton<IPermissionService>(sp => sp.GetRequiredService<PermissionService>());
         services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<PermissionService>());
-        services.AddSingleton<IClusterCache, SettingsCache>();
+        services.AddSingleton<SettingChangeTokens>();
+        services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<SettingChangeTokens>());
         services.AddSingleton<SessionValidator>();
         services.AddSingleton<ISessionValidator>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<SessionValidator>());
@@ -289,6 +290,8 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddScoped<IEmailSender>(sp => sp.GetRequiredService<UnconfiguredChannelSender>());
         services.TryAddSingleton<IPdfRenderer, UnavailablePdfRenderer>();
         services.TryAddScoped<IIntegrationHealthSource, NoIntegrationHealthSource>();
+        services.TryAddScoped<IAadhaarAuthenticator, UnconfiguredAadhaarAuthenticator>();
+        services.TryAddScoped<IPatientRecordAccess, NoPatientRecordAccess>();
 
         // ---------------- background work
         if (options.RunsJobs)

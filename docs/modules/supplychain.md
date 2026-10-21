@@ -7,7 +7,9 @@ contracts, preventive maintenance, breakdown tickets, calibration, depreciation,
 SRS **INV-01..08**, **AST-01..06**.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.SupplyChain`. Schema `supplychain`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupplyChain.Tests` (104 unit and EF-model tests, no database needed).
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupplyChain.Tests` (144 unit and EF-model tests, no database needed),
+and the end-to-end `PharmacyStockReportTests` in `tests/HyFib.HealthCare360.IntegrationTests` (PH-04: a pharmacy
+store's stock, reorder, near-expiry and expired reports on goods received with chosen batches and expiry dates).
 
 India conventions: amounts in INR. Purchase GST is exclusive and split CGST + SGST within a state, or IGST when
 the vendor's GSTIN state differs from the facility's. MRP is GST-inclusive. HSN codes are 6-digit headings. Dates
@@ -71,9 +73,9 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/summary?storeId` | `inventory.stock.read` | → `InventorySummary` (store dashboard) |
-| GET | `/near-expiry?storeId&days` | `inventory.stock.read` | → `ExpiryReport` (default 90 days, 1–730) |
-| GET | `/expired?storeId` | `inventory.stock.read` | → `ExpiryReport` |
-| GET | `/reorder?storeId` | `inventory.stock.read` or `purchase.manage` | → `ReorderRow[]` (VED rank first; suggested purchase quantity net of open orders) |
+| GET | `/near-expiry?storeId&days` | `inventory.stock.read` | → `ExpiryReport`: batches holding stock that expire from today to the `days`-th day (default 90, 1–730), soonest first, with days to expiry and value at cost and at MRP |
+| GET | `/expired?storeId` | `inventory.stock.read` | → `ExpiryReport`: batches holding stock whose expiry day has passed (a batch is usable on its expiry day) |
+| GET | `/reorder?storeId` | `inventory.stock.read` or `purchase.manage` | → `ReorderRow[]`: every active item with a reorder level whose usable stock (unreserved, in batches neither blocked nor expired) plus what is still to come on approved, sent or part-received orders is at or under that level. The suggestion tops up to the maximum stock (with no maximum, to the reorder level plus the reorder quantity), never less than the reorder quantity, net of what is on order, in purchase units rounded up; vital items first, then essential, then desirable, each by name (`ReorderCalculator`, unit-tested) |
 | GET | `/valuation?storeId` | `inventory.stock.read` | → `ValuationReport` (at cost and at MRP, by store and item type) |
 | GET | `/analysis?from&to&storeId` | `inventory.stock.read` or `purchase.manage` | → `InventoryAnalysis`: ABC (70/90 cumulative value), FSN (issue frequency), VED and the ABC-VED matrix (I: AV, AE, AD, BV, CV; II: BE, CE, BD; III: CD). Default is the last 12 months, max 3 years |
 
@@ -115,7 +117,7 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | POST · PUT | `/vendors` · `/vendors/{id}` | `purchase.manage` | `SaveVendorRequest` (code, name, gstin, pan (must match GSTIN), drugLicenseNumber, drugLicenseValidUntil, contact, address, paymentTermsDays, rating, notes, isActive, version) → 201 `{id}` · 204 |
 | GET | `/requisitions?page&status&storeId` · `/requisitions/{id}` | any of `purchase.manage`, `purchase.approve`, `purchase.grn.receive` | → paged `RequisitionListItem` · `RequisitionDetail` |
 | POST | `/requisitions` | `purchase.manage` | `CreateRequisitionRequest` (storeId, requiredBy, remarks, lines[itemId, quantity, remarks]) → 201 `DocumentCreated` |
-| POST | `/requisitions/from-reorder?storeId` | `purchase.manage` | → 201 `DocumentCreated` (from the reorder report, ≤ 300 lines) |
+| POST | `/requisitions/from-reorder?storeId` | `purchase.manage` | → 201 `DocumentCreated` (from the reorder report: its first 300 items, most critical first, each for the suggested purchase units and at least one) |
 | POST | `/requisitions/{id}/approve` · `/reject` | `purchase.approve` | — · `InventoryReasonRequest` → 204 |
 | POST | `/requisitions/{id}/cancel` | `purchase.manage` | `InventoryReasonRequest` → 204 |
 | GET | `/orders?page&status&vendorId&storeId&from&to` · `/orders/{id}` | as requisitions | → paged `PurchaseOrderListItem` · `PurchaseOrderDetail` (CGST/SGST or IGST per line) |
@@ -172,7 +174,7 @@ printer the server writes the tag (`asset-tags`); otherwise the tag page prints.
 | GET | `/tickets?page&status&priority&assetId&openOnly` · `/tickets/{id}` | Asset readers | → paged `TicketListItem` · `TicketDetail` |
 | POST | `/tickets` | Asset readers (ward staff report breakdowns) | `ReportBreakdownRequest` (assetId, issue, priority?, assetDown) → 201 `DocumentCreated`; priority defaults from asset criticality; `assetDown` puts the asset under maintenance and alerts biomedical engineering |
 | POST | `/tickets/{id}/assign` · `/start` · `/resolve` · `/close` · `/reopen` | `assets.maintenance` | `AssignTicketRequest` · — · `ResolveTicketRequest` (resolution, rootCause, cost, downtimeMinutes) · — · — → 204 |
-| GET · POST | `/{assetId}/calibrations` | Asset readers · `assets.maintenance` | → `CalibrationDto[]` · `RecordCalibrationRequest` (calibratedOn, agency, certificateNumber, certificateFileId, nextDueDate, outcome, remarks) → 201 |
+| GET · POST | `/{assetId}/calibrations` | Asset readers · `assets.maintenance` | → `CalibrationDto[]` · `RecordCalibrationRequest` (calibratedOn, agency, certificateNumber, certificateFileId, nextDueDate, outcome, remarks) → 201; only the latest certificate counts (`Asset.RecordCalibration`, unit-tested): it sets the asset's next calibration date, and a failed one puts the asset under maintenance. An older certificate entered later changes neither |
 
 ## Stock rules (INV-04)
 

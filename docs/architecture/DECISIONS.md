@@ -27,6 +27,8 @@ Each entry records a decision, its context, and the consequences. New decisions 
 **Context:** A reliable RDBMS is needed with no per-core licence cost on a single Windows machine, and it must scale to millions of records.
 **Decision:** PostgreSQL 17 running as a Windows service, using `pg_trgm` for fuzzy search, `xmin` for optimistic concurrency and partitioning for high-volume tables.
 **Consequences:** No licence cost, strong JSON and full-text search, and streaming replication for a warm standby. SQL Server would need Standard edition for databases above 10 GB.
+**Amended (October 2026):** partitioning was decided but not built: the audit, RPM-reading and message tables are plain tables (SCAL-04, see [TRACEABILITY.md](../requirements/TRACEABILITY.md)). PostgreSQL's declarative partitioning remains the plan when their volume calls for it.
+**Amended again (October 2026):** built (SCAL-04, ADR-013): the four tables are declarative range partitions, one per UTC month.
 
 ## ADR-005 — Private hospital CA with certificate pinning on the LAN
 **Status:** Accepted

@@ -3,7 +3,7 @@
  * the type and kind-of-care filters, grouping by IST calendar day and where a click on an entry should take the doctor.
  */
 
-import type { EncounterType } from './api';
+import type { DiagnosticKind, EncounterType } from './api';
 
 export type TimelineEntryType =
   | 'Encounter'
@@ -68,6 +68,7 @@ export const timelineEncounterTypeLabel: Record<EncounterType, string> = {
 
 export interface TimelineEntry {
   type: TimelineEntryType;
+  /** For a result, the released report's id in its department (not an imaging or cardiology study's). */
   id: string;
   occurredAt: string;
   title: string;
@@ -75,6 +76,8 @@ export interface TimelineEntry {
   status: string | null;
   encounterId: string | null;
   isCritical: boolean;
+  /** The department of a result's report; null for every other type of entry. */
+  reportKind: DiagnosticKind | null;
 }
 
 /** Tabs of the patient chart (kept in the URL as `?tab=`). */
@@ -233,7 +236,11 @@ export function prettyTitle(entry: Pick<TimelineEntry, 'type' | 'title'>): strin
 
 export type TimelineTarget = { kind: 'encounter'; encounterId: string } | { kind: 'tab'; tab: ChartTab };
 
-/** Where a click on a timeline entry leads: the encounter it belongs to, or the matching chart tab. */
+/**
+ * Where a click on a timeline entry leads: the encounter it belongs to, or the matching chart tab. A result opens its
+ * report instead (see `timelineResult` in results.ts), unless the user may not open that department's reports: then it
+ * leads to the orders.
+ */
 export function timelineTarget(entry: Pick<TimelineEntry, 'type' | 'id' | 'encounterId'>): TimelineTarget {
   if (entry.type === 'Encounter') {
     return { kind: 'encounter', encounterId: entry.id };

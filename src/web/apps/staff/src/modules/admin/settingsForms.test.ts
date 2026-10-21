@@ -9,7 +9,9 @@ import {
   fieldId,
   INTEGRATION_SETTINGS,
   isFeatureSettingKey,
+  isFieldVisible,
   isIpAddress,
+  isLoopbackHost,
   isValidSettingKey,
   parseFieldValue,
   replaceFlagId,
@@ -20,6 +22,7 @@ import {
   urlProblem,
   validateSettings,
   viewerLinkProblem,
+  type FormValues,
   type SettingRow,
   type SettingsSpec,
 } from './settingsForms';
@@ -308,6 +311,115 @@ describe('setting names', () => {
   });
 });
 
+describe('AI settings', () => {
+  const provider = id('ai.provider');
+  const baseUrl = id('ai.openai', 'baseUrl');
+  const model = id('ai.openai', 'model');
+  const field = (key: string, path?: string) =>
+    AI_SETTINGS.fields.find((item) => item.key === key && item.path === path)!;
+  const visible = (values: FormValues) =>
+    AI_SETTINGS.fields.filter((item) => isFieldVisible(item, values)).map(fieldId);
+  const withServer = { ...toFormValues(AI_SETTINGS, {}), [provider]: 'openai' };
+
+  it('offers Anthropic, the default, an OpenAI-compatible server or off, as the server does', () => {
+    expect(field('ai.provider').options?.map((option) => option.value)).toEqual(['anthropic', 'openai', 'disabled']);
+    expect(toFormValues(AI_SETTINGS, {})[provider]).toBe('anthropic');
+    expect(toFormValues(AI_SETTINGS, { 'ai.provider': 'OpenAI' })[provider]).toBe('openai');
+  });
+
+  it('shows only the chosen provider’s settings', () => {
+    const anthropic = visible(toFormValues(AI_SETTINGS, {}));
+    expect(anthropic).toEqual(expect.arrayContaining([id('ai.model'), id('ai.timeoutSeconds')]));
+    expect(anthropic).not.toContain(baseUrl);
+
+    const server = visible(withServer);
+    expect(server).toEqual(expect.arrayContaining([baseUrl, model, id('ai.openai', 'timeoutSeconds')]));
+    expect(server).not.toContain(id('ai.model'));
+    expect(server).not.toContain(id('ai.timeoutSeconds'));
+  });
+
+  it('needs the server’s address and model once it is chosen', () => {
+    const errors = validateSettings(AI_SETTINGS, withServer);
+    expect(errors[baseUrl]).toBe('Fill this in.');
+    expect(errors[model]).toBe('Fill this in.');
+    expect(
+      validateSettings(AI_SETTINGS, {
+        ...withServer,
+        [baseUrl]: 'https://llm.hospital.lan/v1',
+        [model]: 'local-model',
+      }),
+    ).toEqual({});
+  });
+
+  it.each([
+    'https://llm.hospital.lan/v1',
+    'https://res.openai.azure.com/openai/v1',
+    'http://localhost:8000/v1',
+    'http://127.0.0.1:11434/v1',
+    'http://[::1]:8080/v1',
+  ])('accepts the server address %s, as the server does', (address) => {
+    expect(parseFieldValue(field('ai.openai', 'baseUrl'), address)).toEqual({ ok: true, value: address });
+  });
+
+  it.each([
+    ['http://llm.hospital.lan/v1', 'https://'],
+    ['http://192.168.1.20:8000/v1', 'http://localhost'],
+    ['https://user:secret@llm.hospital.lan/v1', 'user name or password'],
+    ['https://llm.hospital.lan/v1?api-key=secret', '? or #'],
+    ['https://llm.hospital.lan/v1#models', '? or #'],
+    ['llm.hospital.lan/v1', 'https://'],
+  ])('refuses the server address %s, as the server does', (address, problem) => {
+    expect(parseFieldValue(field('ai.openai', 'baseUrl'), address)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(problem),
+    });
+  });
+
+  it.each(['local-model', 'Org/Model-7B-Instruct', 'model:8b', 'ward_notes.v2'])(
+    'accepts the model name %s',
+    (name) => {
+      expect(parseFieldValue(field('ai.openai', 'model'), ` ${name} `)).toEqual({ ok: true, value: name });
+    },
+  );
+
+  it.each(['two words', '-leading-dash', 'a'.repeat(129)])('refuses the model name %j', (name) => {
+    expect(parseFieldValue(field('ai.openai', 'model'), name)).toMatchObject({ ok: false });
+  });
+
+  it('saves the server as one ai.openai setting, and its key as a secret of its own', () => {
+    const values = {
+      ...withServer,
+      [id('ai.enabled')]: true,
+      [baseUrl]: 'http://localhost:8000/v1',
+      [model]: 'local-model',
+      [id('ai.openai', 'timeoutSeconds')]: 240,
+      [replaceFlagId('ai.openai.secret')]: true,
+      [secretFieldId({ key: 'ai.openai.secret', prop: 'apiKey' })]: ' server-key ',
+    };
+    expect(buildSettingChanges(AI_SETTINGS, values, {})).toEqual([
+      { key: 'ai.enabled', value: true },
+      { key: 'ai.provider', value: 'openai' },
+      { key: 'ai.openai', value: { baseUrl: 'http://localhost:8000/v1', model: 'local-model', timeoutSeconds: 240 } },
+    ]);
+    expect(buildSecretChanges(AI_SETTINGS, values)).toEqual([
+      { key: 'ai.openai.secret', value: { apiKey: 'server-key' } },
+    ]);
+  });
+
+  it('allows plain http only to the computer that makes the call', () => {
+    expect(['localhost', 'LOCALHOST', '127.0.0.1', '127.10.20.30', '[::1]'].every(isLoopbackHost)).toBe(true);
+    expect(['localhost.example.com', '10.0.0.5', '1270.0.0.1', 'llm.hospital.lan'].some(isLoopbackHost)).toBe(false);
+    expect(urlProblem('http://localhost:8000/v1', true)).toContain('https');
+    expect(urlProblem('http://localhost:8000/v1', true, true)).toBeNull();
+  });
+
+  it('lets the speech server run on the HC360 server itself too', () => {
+    const url = field('ai.speech', 'url');
+    expect(parseFieldValue(url, 'http://localhost:8000/v1/audio/transcriptions')).toMatchObject({ ok: true });
+    expect(parseFieldValue(url, 'http://stt.lan:8000/v1/audio/transcriptions')).toMatchObject({ ok: false });
+  });
+});
+
 describe('modality worklist and PACS settings', () => {
   const mwl = INTEGRATION_SETTINGS.mwl as SettingsSpec;
   const ct = { aeTitle: 'CT1', name: 'CT scanner', allowedIps: ['10.0.5.31'], facility: 'NH', modalities: ['CT'] };
@@ -368,5 +480,76 @@ describe('modality worklist and PACS settings', () => {
       ok: true,
       value: 'http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs',
     });
+  });
+});
+
+describe('Aadhaar authentication settings', () => {
+  const aadhaar = INTEGRATION_SETTINGS.aadhaar as SettingsSpec;
+  const uidai = (patch: Record<string, string>) => ({
+    ...toFormValues(aadhaar, {}),
+    [id('integrations.aadhaar', 'enabled')]: true,
+    [id('integrations.aadhaar', 'provider')]: 'uidai',
+    ...Object.fromEntries(Object.entries(patch).map(([path, value]) => [id('integrations.aadhaar', path), value])),
+  });
+
+  it('is off until turned on, and keeps the licence keys and the signing certificate secret', () => {
+    expect(toFormValues(aadhaar, {})[id('integrations.aadhaar', 'enabled')]).toBe(false);
+    expect(aadhaar.secrets.map((secret) => secret.prop)).toEqual([
+      'licenceKey',
+      'asaLicenceKey',
+      'signingCertificate',
+      'signingCertificatePassword',
+    ]);
+    expect(aadhaar.secrets.every((secret) => secret.key === 'integrations.aadhaar.secret')).toBe(true);
+  });
+
+  it('wants the ASA’s https address and both AUA codes for UIDAI, as the server does', () => {
+    const problems = validateSettings(aadhaar, uidai({}));
+    expect(problems[id('integrations.aadhaar', 'authUrl')]).toBeDefined();
+    expect(problems[id('integrations.aadhaar', 'auaCode')]).toBeDefined();
+    expect(problems[id('integrations.aadhaar', 'subAuaCode')]).toBeDefined();
+
+    const plain = validateSettings(
+      aadhaar,
+      uidai({
+        authUrl: 'http://asa.example.in/2.5/{ac}/{uid0}/{uid1}/{asalk}',
+        auaCode: 'HC00 01',
+        subAuaCode: 'NANA01',
+      }),
+    );
+    expect(plain[id('integrations.aadhaar', 'authUrl')]).toBeDefined();
+    expect(plain[id('integrations.aadhaar', 'auaCode')]).toBe('Up to 10 letters or digits, as the ASA gives it.');
+
+    const ready = validateSettings(
+      aadhaar,
+      uidai({
+        authUrl: 'https://asa.example.in/2.5/{ac}/{uid0}/{uid1}/{asalk}',
+        auaCode: 'HC0000001',
+        subAuaCode: 'NANA01',
+      }),
+    );
+    expect(ready).toEqual({});
+  });
+
+  it('asks the readers only for what UIDAI takes', () => {
+    const environment = aadhaar.fields.find((field) => field.path === 'environment')!;
+    expect(environment.options?.map((option) => option.value)).toEqual(['P', 'PP', 'S']);
+    const data = aadhaar.fields.find((field) => field.path === 'fingerData')!;
+    expect(data.options?.map((option) => option.value)).toEqual(['FMR,FIR', 'FMR', 'FIR']);
+    const fingers = aadhaar.fields.find((field) => field.path === 'fingerCount')!;
+    expect(parseFieldValue(fingers, '3').ok).toBe(false);
+    const wait = aadhaar.fields.find((field) => field.path === 'captureTimeoutSeconds')!;
+    expect(parseFieldValue(wait, '90').ok).toBe(false);
+    const tid = aadhaar.fields.find((field) => field.path === 'registeredDeviceTid')!;
+    expect(parseFieldValue(tid, 'registered').ok).toBe(true);
+    expect(parseFieldValue(tid, 'reg-1').ok).toBe(false);
+  });
+
+  it('takes UIDAI’s certificate only as a whole PEM certificate', () => {
+    const certificate = aadhaar.fields.find((field) => field.path === 'uidaiCertificate')!;
+    expect(parseFieldValue(certificate, '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n').ok).toBe(
+      true,
+    );
+    expect(parseFieldValue(certificate, 'MIIB').ok).toBe(false);
   });
 });

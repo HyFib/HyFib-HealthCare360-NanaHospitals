@@ -31,6 +31,7 @@ import {
   CheckmarkRegular,
   DeleteRegular,
   DismissRegular,
+  DocumentTextRegular,
   MoreHorizontalRegular,
   SendRegular,
   StarRegular,
@@ -77,6 +78,8 @@ import {
   type OrderPriority,
   type ServiceItemDto,
 } from './ordersApi';
+import { orderLineResult, useResultReaders, type ReleasedResult } from './results';
+import { ResultDialog } from './ResultReviewDialog';
 import { ServicePicker } from './ServicePicker';
 import { ReasonDialog } from './ui';
 
@@ -501,7 +504,32 @@ type PendingAction =
   | { kind: 'cancel-item'; item: OrderItemDto }
   | { kind: 'complete-item'; item: OrderItemDto };
 
-/** Orders with their lines' progress; ordering doctors can cancel pending lines or complete bedside procedures. */
+/** "View report" on a lab, imaging or cardiology line whose report is released, for staff who may open it. */
+function ReportButton({ item, onOpen }: { item: OrderItemDto; onOpen: (result: ReleasedResult) => void }) {
+  // Closing the report returns focus to the button.
+  const restoreFocusTarget = useRestoreFocusTarget();
+  const readers = useResultReaders();
+  const released = orderLineResult(item);
+  if (!released || !readers[released.kind]) {
+    return null;
+  }
+  return (
+    <Button
+      size="small"
+      icon={<DocumentTextRegular />}
+      aria-label={`View report of ${item.serviceName}`}
+      onClick={() => onOpen(released)}
+      {...restoreFocusTarget}
+    >
+      View report
+    </Button>
+  );
+}
+
+/**
+ * Orders with their lines' progress; ordering doctors can cancel pending lines or complete bedside procedures. A lab,
+ * imaging or cardiology line whose report is released opens the report (IMG-03).
+ */
 export function OrdersList({
   patientId,
   encounterId,
@@ -519,6 +547,7 @@ export function OrdersList({
   const canPlace = usePermission('clinical.orders.place');
   const [page, setPage] = useState(1);
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [result, setResult] = useState<ReleasedResult | null>(null);
   const orders = useQuery(orderQueries.list(patientId, { encounterId, status, page }));
   useLiveOrders(patientId);
 
@@ -607,6 +636,7 @@ export function OrdersList({
                     tone={lineTone(item.status)}
                     label={item.status === 'Ordered' ? 'Pending' : humanize(item.status)}
                   />
+                  <ReportButton item={item} onOpen={setResult} />
                   {canPlace && (item.status === 'Ordered' || item.status === 'InProgress') && (
                     <Menu>
                       <MenuTrigger disableButtonEnhancement>
@@ -677,6 +707,7 @@ export function OrdersList({
         onConfirm={(reason) => pending && act.mutate({ action: pending, reason })}
         onCancel={() => setPending(null)}
       />
+      <ResultDialog result={result} onClose={() => setResult(null)} />
     </div>
   );
 }

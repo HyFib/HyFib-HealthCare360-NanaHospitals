@@ -367,8 +367,8 @@ public sealed class InpatientJourneyTests(HospitalServer server)
     {
         var surname = UniqueLetters(8);
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: "Ravi", MiddleName: null, LastName: char.ToUpperInvariant(surname[0]) + surname[1..], Gender: Gender.Male,
-            DateOfBirth: null, AgeYears: 52, AgeMonths: null, Phone: "9" + UniqueDigits(9), AlternatePhone: null, Email: null, Address: null,
+            Title: "Mr.", FirstName: TestPatients.FirstName("Ravi"), MiddleName: null, LastName: char.ToUpperInvariant(surname[0]) + surname[1..],
+            Gender: Gender.Male, DateOfBirth: null, AgeYears: 52, AgeMonths: null, Phone: "9" + UniqueDigits(9), AlternatePhone: null, Email: null, Address: null,
             BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
             EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null, Category: null, AbhaNumber: null,
             AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null, ConfirmedNotDuplicate: false));

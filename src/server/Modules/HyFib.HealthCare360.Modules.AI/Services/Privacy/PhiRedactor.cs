@@ -10,9 +10,13 @@ internal sealed record RedactionContext(IReadOnlyList<string> Names, IReadOnlyLi
 }
 
 /// <summary>Redacted text, the placeholder → original map (kept in memory only) and counts per category.</summary>
-internal sealed partial class RedactionResult(string text, IReadOnlyDictionary<string, string> placeholders, IReadOnlyDictionary<string, int> counts)
+internal sealed partial class RedactionResult(IReadOnlyList<string> texts, IReadOnlyDictionary<string, string> placeholders, IReadOnlyDictionary<string, int> counts)
 {
-    public string Text { get; } = text;
+    /// <summary>The redacted text (the first, when several were redacted together).</summary>
+    public string Text => Texts.Count > 0 ? Texts[0] : string.Empty;
+
+    /// <summary>Each redacted text, in the order given.</summary>
+    public IReadOnlyList<string> Texts { get; } = texts;
 
     public IReadOnlyDictionary<string, string> Placeholders { get; } = placeholders;
 
@@ -32,7 +36,8 @@ internal sealed partial class RedactionResult(string text, IReadOnlyDictionary<s
 }
 
 /// <summary>
-/// Removes direct identifiers before text leaves the hospital for an AI provider (SEC-12, ADR-011): e-mail and ABHA
+/// Removes direct identifiers before text is sent to an AI provider, in the cloud or in the hospital (SEC-12, ADR-011),
+/// through <see cref="RedactedAiRequest"/>: e-mail and ABHA
 /// addresses, UHIDs (keyword-introduced and in the <c>{FAC}{YY}{SEQ}</c> format), ABHA/Aadhaar-like 14- and 12-digit
 /// groups, Indian mobile and landline numbers, other long digit runs, the context patient's known identifiers and the
 /// names of the patient, guardian and emergency contact. Each distinct value gets a stable placeholder
@@ -48,14 +53,27 @@ internal static partial class PhiRedactor
         "mr", "mrs", "ms", "miss", "dr", "shri", "sri", "smt", "kumari", "master", "baby", "late", "sr", "jr",
     };
 
-    public static RedactionResult Redact(string text, RedactionContext? context = null)
+    public static RedactionResult Redact(string text, RedactionContext? context = null) => Redact([text], context);
+
+    /// <summary>
+    /// Redacts texts that are sent together, such as a request's system prompt and messages, with one set of
+    /// placeholders: <c>[NAME_1]</c> stands for the same value in each, and the counts cover them all.
+    /// </summary>
+    public static RedactionResult Redact(IReadOnlyList<string> texts, RedactionContext? context = null)
     {
         var state = new State();
+        var identifiers = (context?.Identifiers ?? []).Select(i => i.Trim()).Where(i => i.Length >= 4).Distinct().OrderByDescending(i => i.Length).ToList();
+        var names = NameVariants(context?.Names ?? []);
+        return new RedactionResult([.. texts.Select(text => RedactOne(text, identifiers, names, state))], state.Map, state.Counts);
+    }
+
+    private static string RedactOne(string text, IReadOnlyList<string> identifiers, IReadOnlyList<string> names, State state)
+    {
         var result = text;
         result = Email().Replace(result, m => state.Placeholder("EMAIL", m.Value));
         result = AbhaAddress().Replace(result, m => state.Placeholder("ABHA", m.Value));
 
-        foreach (var identifier in (context?.Identifiers ?? []).Select(i => i.Trim()).Where(i => i.Length >= 4).Distinct().OrderByDescending(i => i.Length))
+        foreach (var identifier in identifiers)
         {
             result = Regex.Replace(result, $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(identifier)}(?![\p{{L}}\p{{N}}])",
                 m => state.Placeholder("ID", m.Value), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, Timeout);
@@ -69,13 +87,13 @@ internal static partial class PhiRedactor
         result = Landline().Replace(result, m => state.Placeholder("PHONE", m.Value));
         result = LongNumber().Replace(result, m => state.Placeholder("ID", m.Value));
 
-        foreach (var name in NameVariants(context?.Names ?? []))
+        foreach (var name in names)
         {
             var pattern = $@"(?<![\p{{L}}\p{{N}}]){string.Join(@"\s+", name.Split(' ').Select(Regex.Escape))}(?![\p{{L}}\p{{N}}])";
             result = Regex.Replace(result, pattern, m => state.Placeholder("NAME", m.Value), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, Timeout);
         }
 
-        return new RedactionResult(result, state.Map, state.Counts);
+        return result;
     }
 
     /// <summary>Full names first (longest first), then their individual words, skipping honorifics and single letters.</summary>

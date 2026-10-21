@@ -17,7 +17,7 @@ export interface AiStatusDto {
   serverSpeechToText: boolean;
   speechProvider: string;
   speechReason: string | null;
-  /** How long an AI call may take on the server (`ai.timeoutSeconds`, retries included). */
+  /** How long an AI call may take on the server: the chosen provider's time limit (retries included). */
   timeoutSeconds: number;
 }
 
@@ -106,7 +106,7 @@ export function transcribeAudio(
 /** How much longer than the server the screen waits, so the server's own answer (a draft, or "took too long") arrives. */
 const SERVER_MARGIN_MS = 30_000;
 
-/** The server's `ai.timeoutSeconds` when the status is not known yet. */
+/** The server's default AI time limit, when the status is not known yet. */
 const DEFAULT_AI_TIMEOUT_SECONDS = 90;
 
 /** How long to wait for a draft: the server's deadline for the AI call, plus a margin. */

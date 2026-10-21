@@ -46,7 +46,10 @@ public static class PersonalDataCatalogue
             "Your name, date of birth, contact details, address, emergency contact, and your ABHA and Aadhaar details (Aadhaar only the last 4 digits).",
             "To identify you and keep all your records together.",
             "Needed to care for you; hospitals must keep patient records by law.", PersonalDataRetention.MedicalRecords,
-            [new("patients.patients", "Duplicate registrations merged into yours", Counted: false, Column: "merged_into_patient_id")]),
+            [
+                new("patients.patients", "Duplicate registrations merged into yours", Counted: false, Column: "merged_into_patient_id"),
+                new("patients.patient_identity_checks", "Identity checks with your Aadhaar fingerprint"),
+            ]),
         new("visits", "Visits and appointments",
             "When you came, which department and doctor you saw, your appointments and your place in the queue.",
             "To book and run your visits.",

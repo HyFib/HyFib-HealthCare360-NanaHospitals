@@ -5,7 +5,8 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services.Handlers;
 
 /// <summary>
 /// A lab/imaging/cardiology report was released: complete the ordered line and put the report on the ordering doctor's
-/// "results to review" list (EMR-01). A re-released (amended) report re-opens the review so a changed result is seen.
+/// "results to review" list (EMR-01). A re-released (amended) report re-opens the review so a changed result is seen. A
+/// report has one review, however many of its tests are released, together or one after another.
 /// </summary>
 internal sealed class DiagnosticReportReleasedHandler(HospitalDbContext db) : IDomainEventHandler<DiagnosticReportReleased>
 {
@@ -20,8 +21,11 @@ internal sealed class DiagnosticReportReleasedHandler(HospitalDbContext db) : ID
             order?.UpdateItemStatus(itemId, OrderItemStatus.Completed, domainEvent.ReleasedAt, domainEvent.ReportId.ToString());
         }
 
-        var review = await db.Set<ResultReview>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
-            .FirstOrDefaultAsync(r => r.ReportId == domainEvent.ReportId, cancellationToken);
+        // The tests of a lab report released together are announced one by one in the same save: the review added for the
+        // first of them is not in the database yet.
+        var review = db.Set<ResultReview>().Local.FirstOrDefault(r => r.ReportId == domainEvent.ReportId)
+                     ?? await db.Set<ResultReview>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                         .FirstOrDefaultAsync(r => r.ReportId == domainEvent.ReportId, cancellationToken);
         if (review is not null)
         {
             review.Reopen(domainEvent.Title, domainEvent.HasCriticalFindings, domainEvent.ReleasedAt);
