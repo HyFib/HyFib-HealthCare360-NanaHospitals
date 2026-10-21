@@ -244,6 +244,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
         services.AddTransient<CorrelationIdForwardingHandler>();
         services.AddScoped<SystemHealthService>();
+
+        // With several servers, each one's own part of System health, for the API node that answers (SCAL-01).
+        services.AddSingleton<ServerNodeBoard>();
+        services.AddHostedService<ServerNodeSharing>();
         services.AddSingleton<IClusterStore, ClusterStore>();
         services.AddScoped<PartitionMaintenance>();
         services.AddMonthlyPartitions(PartitionedTables.Audit);

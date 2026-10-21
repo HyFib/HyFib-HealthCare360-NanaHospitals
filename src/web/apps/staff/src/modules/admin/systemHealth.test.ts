@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { IntegrationHealthSummary } from './api';
-import { expiryTone, integrationsSummary, integrationTone } from './systemHealth';
+import type { IntegrationHealthSummary, ServerNodeHealth } from './api';
+import {
+  expiryTone,
+  integrationsSummary,
+  integrationTone,
+  lowDiskSpace,
+  runningFor,
+  runsJobs,
+  serverRole,
+  serversSummary,
+} from './systemHealth';
 
 function row(name: string, health: string, enabled = true, configured = true): IntegrationHealthSummary {
   return {
@@ -67,5 +76,78 @@ describe('integrationTone', () => {
     expect(integrationTone(row('sms', 'healthy'))).toBe('ok');
     expect(integrationTone(row('sms', 'idle'))).toBeUndefined();
     expect(integrationTone(row('sms', 'failing', false))).toBeUndefined();
+  });
+});
+
+function server(machineName: string, role: string, reporting = true): ServerNodeHealth {
+  return {
+    server: {
+      machineName,
+      osDescription: 'Microsoft Windows 10.0.20348',
+      version: '1.4.0',
+      environment: 'Production',
+      role,
+      startedAt: '2026-10-20T04:00:00Z',
+      uptimeHours: 26,
+      processorCount: 8,
+      workingSetBytes: 1,
+      framework: '.NET 10.0.12',
+    },
+    network: {
+      wifiSupported: false,
+      wifi: null,
+      connectedSince: null,
+      lastDisconnectAt: null,
+      recentEvents: [],
+      ipAddresses: [],
+      httpsPort: 7360,
+      portalHttpsPort: 7361,
+      mdnsEnabled: false,
+    },
+    storage: { dataDirectory: 'C:\\data', freeBytes: 1, totalBytes: 2, encryption: null },
+    certificate: { caFingerprint: null, serverExpiresAt: null, subjectAlternativeNames: [], caExpiresAt: null },
+    power: { available: false, onBattery: null, chargePercent: null, source: null },
+    warnings: [],
+    reportedAt: '2026-10-21T05:59:00Z',
+    reporting,
+  };
+}
+
+describe('serversSummary', () => {
+  it('is green while every server reports, the one that runs the jobs among them', () => {
+    expect(serversSummary([server('JOBS', 'worker'), server('API1', 'api'), server('API2', 'api')])).toEqual({
+      text: 'All 3 reporting',
+      tone: 'ok',
+    });
+  });
+
+  it('names the servers that no longer report', () => {
+    expect(
+      serversSummary([server('JOBS', 'worker', false), server('API1', 'api'), server('API2', 'api', false)]),
+    ).toEqual({ text: 'JOBS, API2 not reporting', tone: 'bad' });
+  });
+
+  it('says so when none of them runs the background jobs', () => {
+    expect(serversSummary([server('API1', 'api'), server('API2', 'api')])).toEqual({
+      text: 'All 2 reporting; none runs the background jobs',
+      tone: 'bad',
+    });
+  });
+});
+
+describe('servers', () => {
+  it('names what each server is for', () => {
+    expect(serverRole('api')).toBe('API node');
+    expect(serverRole('worker')).toBe('Runs the background jobs');
+    expect(serverRole('all')).toBe('API and background jobs');
+    expect([runsJobs('api'), runsJobs('worker'), runsJobs('All')]).toEqual([false, true, true]);
+  });
+
+  it('says how long a server has run, and when its data drive is nearly full', () => {
+    expect(runningFor(47.6)).toBe('48 hours');
+    expect(runningFor(72)).toBe('3 days');
+    expect(lowDiskSpace({ dataDirectory: 'D:', freeBytes: 9, totalBytes: 100, encryption: null })).toBe(true);
+    expect(lowDiskSpace({ dataDirectory: 'D:', freeBytes: 10, totalBytes: 100, encryption: null })).toBe(false);
+    expect(lowDiskSpace({ dataDirectory: 'D:', freeBytes: null, totalBytes: 100, encryption: null })).toBe(false);
   });
 });

@@ -35685,6 +35685,28 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("outbox_messages", "platform");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Networking.ServerNode", b =>
+                {
+                    b.Property<string>("Node")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("node");
+
+                    b.Property<string>("Report")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("report");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at");
+
+                    b.HasKey("Node")
+                        .HasName("pk_server_nodes");
+
+                    b.ToTable("server_nodes", "platform");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Networking.WifiSample", b =>
                 {
                     b.Property<Guid>("Id")

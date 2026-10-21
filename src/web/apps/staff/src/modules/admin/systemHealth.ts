@@ -1,4 +1,4 @@
-import type { IntegrationHealthSummary } from './api';
+import type { IntegrationHealthSummary, ServerNodeHealth, SystemHealthReport } from './api';
 
 export type HealthTone = 'ok' | 'warn' | 'bad';
 
@@ -58,4 +58,50 @@ export function integrationsSummary(rows: IntegrationHealthSummary[]): { text: s
     text: parts.join(', '),
     tone: failing > 0 ? 'bad' : degraded > 0 ? 'warn' : on.length > 0 ? 'ok' : undefined,
   };
+}
+
+/** Whether a server runs the background jobs (backups, messages, the analysers' and modalities' listeners). */
+export function runsJobs(role: string): boolean {
+  return role.toLowerCase() !== 'api';
+}
+
+/** What one server of several is for, as System health names it. */
+export function serverRole(role: string): string {
+  switch (role.toLowerCase()) {
+    case 'api':
+      return 'API node';
+    case 'worker':
+      return 'Runs the background jobs';
+    default:
+      return 'API and background jobs';
+  }
+}
+
+/**
+ * The home screen's line for several servers (SCAL-01): all of them reporting, or which have stopped; and when none of
+ * them runs the background jobs, that nothing does.
+ */
+export function serversSummary(servers: ServerNodeHealth[]): { text: string; tone: HealthTone } {
+  const silent = servers.filter((node) => !node.reporting).map((node) => node.server.machineName);
+  const jobs = servers.some((node) => runsJobs(node.server.role));
+  const parts = [silent.length === 0 ? `All ${servers.length} reporting` : `${silent.join(', ')} not reporting`];
+  if (!jobs) {
+    parts.push('none runs the background jobs');
+  }
+  return { text: parts.join('; '), tone: silent.length > 0 || !jobs ? 'bad' : 'ok' };
+}
+
+/** Less than a tenth of the data drive is free, as the server warns. */
+export function lowDiskSpace(storage: SystemHealthReport['storage']): boolean {
+  return (
+    storage.freeBytes !== null &&
+    storage.totalBytes !== null &&
+    storage.totalBytes > 0 &&
+    storage.freeBytes / storage.totalBytes < 0.1
+  );
+}
+
+/** How long a server has been running, in hours for two days and in days after. */
+export function runningFor(uptimeHours: number): string {
+  return uptimeHours < 48 ? `${Math.round(uptimeHours)} hours` : `${Math.round(uptimeHours / 24)} days`;
 }
