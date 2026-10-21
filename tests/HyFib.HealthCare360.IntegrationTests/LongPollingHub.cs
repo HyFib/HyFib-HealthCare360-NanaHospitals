@@ -22,11 +22,15 @@ internal sealed class LongPollingHub : IAsyncDisposable
     private readonly string _connection;
     private int _invocations;
 
-    private LongPollingHub(HttpClient http, string connection)
+    private LongPollingHub(HttpClient http, string connection, string connectionId)
     {
         _http = http;
         _connection = connection;
+        ConnectionId = connectionId;
     }
+
+    /// <summary>The connection's id on the server, as a hub method's <c>Context.ConnectionId</c>.</summary>
+    public string ConnectionId { get; }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -35,8 +39,10 @@ internal sealed class LongPollingHub : IAsyncDisposable
     {
         using var negotiate = await client.Http.PostAsync($"{path}/negotiate?negotiateVersion=1", content: null, Ct);
         negotiate.StatusCode.ShouldBe(HttpStatusCode.OK, $"{path} should accept the connection.");
-        var token = (await negotiate.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("connectionToken").GetString().ShouldNotBeNull();
-        var hub = new LongPollingHub(client.Http, $"{path}?id={Uri.EscapeDataString(token)}");
+        var negotiated = await negotiate.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        var token = negotiated.GetProperty("connectionToken").GetString().ShouldNotBeNull();
+        var id = negotiated.GetProperty("connectionId").GetString().ShouldNotBeNull();
+        var hub = new LongPollingHub(client.Http, $"{path}?id={Uri.EscapeDataString(token)}", id);
 
         // The first poll finishes opening the connection and returns at once, without data.
         using (var opened = await client.Http.GetAsync(hub._connection, Ct))

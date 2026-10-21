@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
 using Microsoft.Extensions.Options;
 using HyFib.HealthCare360.Platform.Persistence;
+using Microsoft.AspNetCore.SignalR.StackExchangeRedis;
 using Npgsql;
 
 namespace HyFib.HealthCare360.Server;
@@ -54,6 +55,12 @@ public static class ServerComposition
                 // the request that raised the event, for the client's whole timeout (5 s), on every write that raises one.
                 redisOptions.Configuration.BacklogPolicy = StackExchange.Redis.BacklogPolicy.FailFast;
             });
+
+            // The backplane is given its connection only once it is connected: it subscribes to what the nodes share once,
+            // so a connection given while Redis was away would leave the node deaf to the others for good.
+            services.AddSingleton<RedisBackplaneConnections>();
+            services.AddOptions<RedisOptions>().Configure<RedisBackplaneConnections>((redisOptions, connections) =>
+                redisOptions.ConnectionFactory = log => connections.ConnectAsync(redisOptions.Configuration, log));
             services.AddSingleton<RedisBackplane>();
             services.AddHealthChecks().AddCheck<RedisBackplane>(
                 "redis-backplane", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded, tags: ["ready"]);
