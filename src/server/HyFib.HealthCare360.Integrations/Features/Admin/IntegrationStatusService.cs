@@ -10,7 +10,7 @@ namespace HyFib.HealthCare360.Integrations.Features.Admin;
 /// the modality worklist server.
 /// </summary>
 internal sealed class IntegrationStatusService(
-    HospitalDbContext db, IntegrationSettingsReader settings, LabGatewayState lab, ModalityWorklistState worklist, ICurrentUser currentUser, TimeProvider time)
+    HospitalDbContext db, IntegrationSettingsReader settings, LabStatusBoard lab, ModalityWorklistState worklist, ICurrentUser currentUser, TimeProvider time)
 {
     public async Task<IReadOnlyList<IntegrationStatusDto>> ListAsync(CancellationToken cancellationToken)
     {
@@ -26,7 +26,7 @@ internal sealed class IntegrationStatusService(
                 .Select(l => new { l.CreatedAt, l.Error })
                 .FirstOrDefaultAsync(cancellationToken);
             var failures = await logs.CountAsync(l => !l.Success && l.CreatedAt >= since, cancellationToken);
-            var listeners = name == IntegrationNames.Lab ? lab.Snapshot() : name == IntegrationNames.Mwl ? worklist.Snapshot() : null;
+            var listeners = name == IntegrationNames.Lab ? (await lab.ReadAsync(cancellationToken)).Statuses : name == IntegrationNames.Mwl ? worklist.Snapshot() : null;
             var health = Health(configured, enabled, lastSuccess, lastFailure?.CreatedAt, failures, listeners);
             rows.Add(new IntegrationStatusDto(name, IntegrationNames.DisplayName(name), provider, enabled, configured, health,
                 lastSuccess, lastFailure?.CreatedAt, lastFailure?.Error, failures, listeners));

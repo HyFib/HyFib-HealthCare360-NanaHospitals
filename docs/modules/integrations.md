@@ -7,7 +7,7 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
 | | |
 |---|---|
 | Project | `src/server/HyFib.HealthCare360.Integrations` (module key `integrations`, registered by `IntegrationsModule`) |
-| Schema | `integrations`: `simulator_messages`, `simulator_transactions`, `whatsapp_inbound_messages`, `lab_order_downloads` (the integration log itself is the platform's `integration_logs`) |
+| Schema | `integrations`: `simulator_messages`, `simulator_transactions`, `whatsapp_inbound_messages`, `lab_order_downloads`, `lab_gateway_nodes` (each server's analyser status, with several servers) (the integration log itself is the platform's `integration_logs`) |
 | Requirements | SRS §5: INT-SMS, INT-WA, INT-PG, INT-POS, INT-TALLY, INT-PACS, INT-LAB, INT-BAR, INT-ICD; SEC-10 (PHI in logs) |
 | Tests | `tests/HyFib.HealthCare360.Integrations.Tests`: about 800 tests covering signatures, templates, every provider against a fake HTTP handler, the routers other modules resolve (payment, POS, PACS, ICD), webhook parsers, WhatsApp STOP/START handling, Tally XML, DICOM JSON, QIDO-RS, WADO-RS and STOW-RS against a fake PACS (with the DICOM rewriting of objects sent), the modality worklist server answering fo-dicom's own client on a local port, worklist matching and settings, the HL7/MLLP and ASTM E1381/E1394 sessions over an in-memory socket (host queries, order download, contention, size limits), the lab agent relay over an in-memory WebSocket, PHI masking, labels, validators and DI wiring. `tests/HyFib.HealthCare360.LabAgent.Tests` runs the lab agent against the server's relay end to end (Windows). `tests/HyFib.HealthCare360.IntegrationTests` (`LabAnalyserTests`, `LabConnectionTests`) covers the connection rules, facility scoping, the relay endpoint and the order queue's claims against PostgreSQL, and `CardiologyPacsTests` sends an echo's DICOM files through the whole server to the PACS simulator |
 
@@ -814,7 +814,13 @@ acknowledgements are never acknowledged in turn.
 * Live status per analyser (listening, connected through its agent, waiting for its agent, COM port problem, failed,
   training; connections, accepted and refused counts, last error, orders waiting) appears on the integration dashboard
   and in Lab setup › Analysers. Administration › Integrations › Test reports how many network analysers are listening,
-  serial analysers connected and training analysers ready, and which are not working.
+  serial analysers connected and training analysers ready, and which are not working. With several servers (SCAL-01)
+  each knows a part: the node that runs the jobs listens for the network analysers, and a lab agent's relay and
+  heartbeats reach whichever API node the proxy chose. Each writes its part (`LabGatewayState`) to
+  `integrations.lab_gateway_nodes` within seconds of a change and every minute (`LabStatusSharing`), and every server
+  shows them together (`LabStatusBoard`): a relay's or its agent's state over the gateway's, the latest of two that say
+  as much, every server's counts. A server's part ends three minutes after it last wrote it, and it removes it as it
+  stops. A single Server Node keeps it in memory only.
 
 #### Training analyser (transport `Simulator`)
 
@@ -1110,8 +1116,9 @@ Permissions:
     `UnconfiguredAadhaarAuthenticator`, which refuses every check)
   * `ILabelPrinterService` → `LabelPrinterService`, a singleton
   * `IPdfRenderer` → `EdgePdfRenderer`, a singleton (disposed with the host, which closes the browser)
-* **Singletons**: `SimulatorSigningKey`, `IcdTokenCache`, `LabGatewayState`, `LabRelayRegistry` (the live relays), and
-  `ILabMessageProcessor` → `LabMessageProcessor`.
+* **Singletons**: `SimulatorSigningKey`, `IcdTokenCache`, `LabGatewayState`, `LabRelayRegistry` (the live relays),
+  `LabStatusBoard` (every server's status of the analysers, with the hosted service `LabStatusSharing` that writes this
+  server's part on a node of several), and `ILabMessageProcessor` → `LabMessageProcessor`.
 * **Modality worklist** (`AddModalityWorklist`): fo-dicom's services (`AddFellowOakDicom`, with dataset and PDU logging
   off), the singletons `ModalityWorklistState` and `ModalityWorklistGateway`, the scoped `IWorklistFacilities` →
   `WorklistFacilities` and `ModalityWorklistSelfTest`, and the hosted service `ModalityWorklistHostedService`.

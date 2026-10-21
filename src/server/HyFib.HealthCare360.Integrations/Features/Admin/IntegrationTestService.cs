@@ -31,7 +31,7 @@ internal sealed class IntegrationTestService(
     ILabelPrinterService labels,
     LabelJobs labelJobs,
     IntegrationSettingsReader settings,
-    LabGatewayState lab,
+    LabStatusBoard lab,
     IAuditLogger audit,
     TimeProvider time)
 {
@@ -53,7 +53,7 @@ internal sealed class IntegrationTestService(
                 : new IntegrationTestResult(false, "The PACS did not answer. See the integration log for details."),
             IntegrationNames.Mwl => await worklist.RunAsync(cancellationToken),
             IntegrationNames.Icd => await IcdAsync(cancellationToken),
-            IntegrationNames.Lab => Lab(),
+            IntegrationNames.Lab => await LabAsync(cancellationToken),
             IntegrationNames.Labels => await LabelsAsync(cancellationToken),
             IntegrationNames.Biometric => await BiometricAsync(cancellationToken),
             IntegrationNames.Aadhaar => await AadhaarAsync(cancellationToken),
@@ -254,9 +254,9 @@ internal sealed class IntegrationTestService(
             : new IntegrationTestResult(false, "No results. Check that online ICD lookup is enabled with the WHO ICD-API or the simulator.");
     }
 
-    private IntegrationTestResult Lab()
+    private async Task<IntegrationTestResult> LabAsync(CancellationToken cancellationToken)
     {
-        var analysers = lab.Snapshot();
+        var analysers = (await lab.ReadAsync(cancellationToken)).Statuses;
         if (analysers.Count == 0)
         {
             return new IntegrationTestResult(false,

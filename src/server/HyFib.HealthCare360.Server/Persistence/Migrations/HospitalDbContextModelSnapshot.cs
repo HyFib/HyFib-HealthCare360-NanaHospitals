@@ -112,6 +112,33 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("whatsapp_inbound_messages", "integrations");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Integrations.Domain.LabGatewayNode", b =>
+                {
+                    b.Property<string>("Node")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("node");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("RelayingAgents")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("relaying_agents");
+
+                    b.Property<string>("Statuses")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("statuses");
+
+                    b.HasKey("Node")
+                        .HasName("pk_lab_gateway_nodes");
+
+                    b.ToTable("lab_gateway_nodes", "integrations");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Integrations.Domain.LabOrderDownload", b =>
                 {
                     b.Property<Guid>("Id")
