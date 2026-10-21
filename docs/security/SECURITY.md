@@ -397,7 +397,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     covered every column are still checked against what was hashed then.
   - Database triggers block deletes and truncates, rows inserted pre-sealed, and every update except a complete seal:
     hash, chain position and previous hash together, linked to the sealed entry before it (checked at commit), with
-    nothing else in the row changed.
+    nothing else in the row changed. Each server, as it starts, puts back any of these triggers it finds dropped,
+    turned off or changed, on the log and on each month's partition.
   - Administration › Audit log › *Verify integrity* re-checks the chain, and names the position of the first entry
     changed, moved or removed, even by someone who turned the triggers off. The chain has no key, so someone who also
     sealed every later entry again would not be found (ASVS V16.4.2). It also fails on any seal outside the chain.

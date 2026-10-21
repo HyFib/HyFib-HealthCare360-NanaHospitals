@@ -1073,6 +1073,11 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 **Running several nodes.**
 - Run **exactly one** node that runs the jobs (`worker`, or `all` on a single Server Node). An API node runs none, so it
   can be stopped or added at any time.
+- A node that starts while the others work holds up none of their audit writes. It changes the audit trail's database
+  triggers only if it finds one dropped, turned off or changed, and then waits at most two seconds for the audit trail.
+  If something holds it longer (a long transaction writing to it, or, to put back the chain-link trigger, a report or
+  backup reading it), the node changes nothing and stops, its log saying that an audit trail trigger could not be put
+  back because the audit trail is in use. Let that finish or stop it; Windows starts the service again within a minute.
 - **Upgrades:** stop every node. Upgrade and start the job node first: it backs up the database, applies the database
   changes and starts. Then upgrade and start the API nodes. An upgrade that partitions large tables (below) may take
   some minutes on the job node before it is ready. If it stops, its log saying that a table the update changes is in use
