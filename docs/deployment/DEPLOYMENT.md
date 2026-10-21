@@ -956,7 +956,7 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 |---|---|
 | The database | One PostgreSQL primary, in every node's `ConnectionStrings:Hospital`. Nothing about a user, a sign-in or a request is kept in one node's memory only: sessions, sign-in challenges, one-time codes, emergency access to a restricted record, the attempts counted against the sign-in limits, and the portal's proof of work (challenges spent, failures counted) are all in the database |
 | The keys and the stored documents | The shared folder (`HealthCare360:Cluster:SharedDirectory`). The keys there are protected with a certificate every node holds (`KeyCertificateThumbprint`), because machine DPAPI, which protects them on a single Server Node, opens only on the machine that wrote them. The keys are never in the database: a copy of the database (a backup, the reporting replica) opens no encrypted value without the shared folder too |
-| Real-time updates (queue boards, bed board, critical alerts) | Redis (`ConnectionStrings:Redis`), through which an update raised on any node reaches the screens connected to every other |
+| Real-time updates (queue boards, bed board, critical alerts) | Redis (`ConnectionStrings:Redis`), through which an update raised on any node reaches the screens connected to every node, its own included. While Redis is away no screen gets updates |
 | Permissions, sessions and settings held in memory for speed | Each node, for a moment. A change on one node expires them on every node at once, through PostgreSQL's LISTEN/NOTIFY on the database they share. A node that stops hearing the others reads them from the database every time until it hears them again |
 | Backups | One folder every node names in `HealthCare360:Backup:Directory` (a second share, such as `\\hc360-files\hc360-backups`). The job node makes the scheduled ones; **Back up now** runs on the API node that answers it, so it must write to the same folder, and every API node needs PostgreSQL's client tools (`pg_dump`, `Backup:PgDumpPath`) as the job node does |
 | The settings file, the TLS certificate, logs, temporary files | Each node's own data folder |
@@ -993,7 +993,8 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
   Keys). Keep the PFX and its password in the hospital's password safe, offline, with the backup recovery key: without
   the certificate no node can open the keys, so give it a long life, as above.
 - **Redis** 6 or later (or Memurai on Windows), reachable only from the nodes, with a password. Without it every node
-  still works, but a screen sees only the updates raised on the node it is connected to.
+  still works, but a screen sees only the updates raised on the node it is connected to. Once it is set, real-time
+  updates go through it alone: while it is away, no screen gets any, whichever node it is connected to, until it is back.
 - A **reverse proxy** in front of the API nodes, which:
   - listens on 7360 and 7361 and forwards each to the **same port** on the API nodes, over HTTPS (it trusts the hospital
     CA). HC360 tells the staff app from the patient portal by the port a request arrives on, so the two must not be
@@ -1008,7 +1009,7 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
   - accepts request bodies of 30 MB (documents and images);
   - asks every node for `/health/ready` every 10 seconds, and takes a node out after three failures. A node answers 503
     when it cannot reach the database or the shared folder. It answers 200, *Degraded*, when only Redis is away: it
-    still serves the API.
+    still serves the API, though no screen gets real-time updates until Redis is back.
 
 **Setting it up**, from a single Server Node (the steps are the same for a new hospital, without the move):
 
@@ -1145,6 +1146,6 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | A node of several does not start: "… names certificate …, which is not in the Local Computer's Personal store", or "… has no RSA private key this server may use" | Import the cluster key certificate on this node, with its private key, and give `NT SERVICE\HC360Server` *Read* on the key (section 10) |
 | `/health/ready` on a node answers 503 (*Unhealthy*) | The node cannot reach the database, or, with several nodes, the shared folder; its log names the check that failed. For the share: is the file server up, and does the node's computer account still have *Modify* on it? |
 | A node's log: "Not listening for cache signals from the other servers" | It cannot hear the other nodes' changes, so it reads permissions, sessions and settings from the database every time (slower, still correct). Is PostgreSQL reachable? Behind PgBouncer in transaction pooling, set `ConnectionStrings:Signals` to PostgreSQL itself (section 10) |
-| A screen misses updates made on another workstation | With several nodes: is Redis up? `/health/ready` says *Degraded* when a node cannot reach it. Screens catch up when they reconnect or refresh |
+| A screen misses updates made on another workstation | With several nodes: is Redis up? `/health/ready` says *Degraded* when a node cannot reach it, and the node's log says that until it is back no screen gets real-time updates, whichever node it is connected to; everything else works. Screens keep reconnecting by themselves and catch up once Redis is back |
 
 Log files hold no patient-identifiable data by design. Share them with HyFib support when asked.

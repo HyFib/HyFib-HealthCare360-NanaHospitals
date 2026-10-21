@@ -6,8 +6,9 @@ namespace HyFib.HealthCare360.Server;
 /// <summary>
 /// The Redis server SignalR shares real-time groups through when there are several HC360 servers (SCAL-02,
 /// <c>ConnectionStrings:Redis</c>), as seen from this one: <c>/health/ready</c> reports it Degraded, not Unhealthy, when it
-/// cannot be reached. The node still answers the API (a reverse proxy keeps sending it requests), but real-time updates
-/// reach only the clients connected to the node that raised them until Redis is back.
+/// cannot be reached. The node still answers the API (a reverse proxy keeps sending it requests), but until Redis is back
+/// no client gets real-time updates, whichever node it is connected to: every event goes through Redis, to the clients of
+/// the node that raised it too, and a real-time connection opened meanwhile is refused (the apps try again).
 /// </summary>
 internal sealed class RedisBackplane(IConfiguration configuration) : IHealthCheck, IAsyncDisposable
 {
@@ -15,6 +16,11 @@ internal sealed class RedisBackplane(IConfiguration configuration) : IHealthChec
 
     /// <summary>Every channel HC360 uses starts with it, so a Redis server shared with other software is not confused.</summary>
     public const string ChannelPrefix = "hc360";
+
+    /// <summary>What <c>/health/ready</c> says of Redis while it cannot be reached (in the log of every check).</summary>
+    public const string UnreachableMessage =
+        "The Redis backplane cannot be reached: until it is back, no screen gets real-time updates, whichever server it is " +
+        "connected to, and screens that connect meanwhile are refused and try again. Requests are answered as usual.";
 
     private readonly SemaphoreSlim _connecting = new(1, 1);
     private ConnectionMultiplexer? _redis;
@@ -26,8 +32,7 @@ internal sealed class RedisBackplane(IConfiguration configuration) : IHealthChec
             var redis = await ConnectAsync();
             if (!redis.IsConnected)
             {
-                return new HealthCheckResult(context.Registration.FailureStatus,
-                    "The Redis backplane cannot be reached: real-time updates reach only the clients of the server that raised them.");
+                return new HealthCheckResult(context.Registration.FailureStatus, UnreachableMessage);
             }
 
             var latency = await redis.GetDatabase().PingAsync();
@@ -35,7 +40,7 @@ internal sealed class RedisBackplane(IConfiguration configuration) : IHealthChec
         }
         catch (Exception ex) when (ex is RedisException or TimeoutException)
         {
-            return new HealthCheckResult(context.Registration.FailureStatus, "The Redis backplane does not answer.", ex);
+            return new HealthCheckResult(context.Registration.FailureStatus, UnreachableMessage, ex);
         }
     }
 

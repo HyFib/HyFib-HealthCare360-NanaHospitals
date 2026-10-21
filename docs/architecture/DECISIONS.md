@@ -96,7 +96,7 @@ grants are rows; caches kept for speed are expired on every node through `LISTEN
 cannot hear them; one-time tokens and attempt counters use a small store with expiry and atomic increment
 (`IClusterStore`, `platform.cluster_entries`). The keys and documents live in a shared folder, and the Data Protection
 ring that wraps the keys there is protected with a certificate every node holds, never in the database. Redis is used
-only as the SignalR backplane, and its absence degrades real-time updates without failing a request. The busiest
+only as the SignalR backplane: while it is away no screen gets real-time updates, on any node, but no request fails. The busiest
 tables are partitioned by month in the database itself (declarative range partitions), with primary keys that include
 the month and no foreign keys into them.
 **Consequences:** No new infrastructure is needed to be correct with several nodes; a security check never fails open

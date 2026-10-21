@@ -38,7 +38,8 @@ public static class ServerComposition
     /// SignalR, and with <c>ConnectionStrings:Redis</c> the Redis backplane (SCAL-02): several API nodes, and the node that
     /// runs the jobs, share real-time groups through Redis, so an event raised on one node reaches clients connected to any
     /// other. A Redis that is down when a node starts, or goes away later, is connected to again in the background: the API
-    /// keeps working, and real-time updates reach only the clients of the node that raised them meanwhile.
+    /// keeps working, but meanwhile no client gets real-time updates on any node (every event goes through Redis, to the
+    /// clients of the node that raised it too), and a real-time connection opened meanwhile is refused and tried again.
     /// </summary>
     internal static Microsoft.AspNetCore.SignalR.ISignalRServerBuilder AddRealtime(IServiceCollection services, IConfiguration configuration)
     {

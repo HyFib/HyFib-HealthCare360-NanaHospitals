@@ -114,6 +114,24 @@ public sealed class RedisBackplaneTests
         var report = await node.Services.GetRequiredService<HealthCheckService>().CheckHealthAsync(Ct);
         report.Entries["redis-backplane"].Status.ShouldBe(HealthStatus.Degraded);
 
+        // What the check says, in the log of every probe, is what happens: every event goes through Redis, to the clients of
+        // the node that raised it too, so none gets any, and a screen that connects meanwhile is refused.
+        report.Entries["redis-backplane"].Description.ShouldBe(
+            "The Redis backplane cannot be reached: until it is back, no screen gets real-time updates, whichever server it is " +
+            "connected to, and screens that connect meanwhile are refused and try again. Requests are answered as usual.");
+        var refused = false;
+        try
+        {
+            await using var screen = await LongPollingHub.ConnectAsync(new ApiClient(node.GetTestClient()), HubPath);
+            await screen.InvokeAsync(nameof(GroupHub.Join), "ward");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            refused = true;
+        }
+
+        refused.ShouldBeTrue("a screen that connects while Redis is away is refused");
+
         // The platform's publisher, as every module raises events: it logs what it cannot send and returns.
         var publisher = new SignalRRealtimePublisher(
             node.Services.GetRequiredService<IHubContext<EventsHub>>(), TimeProvider.System, NullLogger<SignalRRealtimePublisher>.Instance);
