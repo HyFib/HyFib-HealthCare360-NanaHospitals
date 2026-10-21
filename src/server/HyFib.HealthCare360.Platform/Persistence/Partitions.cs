@@ -54,7 +54,11 @@ public static class PartitionServiceCollectionExtensions
 }
 
 /// <summary>What one maintenance pass did to one table.</summary>
-public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, int RowsMovedFromDefault);
+/// <param name="InUse">
+/// The table was in use: its lock was not granted within <see cref="PartitionMaintenance.LockTimeout"/>, so nothing was done
+/// to it, and the next pass tries again.
+/// </param>
+public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, int RowsMovedFromDefault, bool InUse = false);
 
 /// <summary>
 /// Keeps the monthly partitions ahead of time (SCAL-04): each partitioned table has a partition for this month and the
@@ -62,6 +66,12 @@ public sealed record PartitionPass(string Table, IReadOnlyList<string> Created, 
 /// ahead, or the job not running for months) gets them moved into its new partition, in the same transaction. Audit
 /// partitions get the append-only trigger against TRUNCATE that a partition does not inherit. One node at a time (an
 /// advisory lock).
+/// <para>
+/// Making a partition locks its table ACCESS EXCLUSIVE, and while a pass waits for that lock every insert into the table
+/// (an audit entry, a reading, a message) waits behind it. So each table has a transaction of its own, which waits at most
+/// <see cref="LockTimeout"/> for its locks: a table something holds for long (a pg_dump, a report with its transaction
+/// open) is left as it is, and the next pass, six hours later and still months ahead, tries again.
+/// </para>
 /// <para>
 /// It never drops a partition. Old rows are deleted by the Privacy module's retention schedule alone, which keeps each kind
 /// of record for at least its legal minimum (a year for the message and integration logs under the DPDP Rules), sends
@@ -79,31 +89,82 @@ public sealed class PartitionMaintenance(
     internal const long LockKey = 4_247_363;
 
     /// <summary>
+    /// How long a pass waits for each lock on a table before it leaves the table to the next pass: inserts into the table
+    /// wait behind it at most that long.
+    /// </summary>
+    public static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// One pass over every partitioned table. Null when another node is doing it now. A table that is not partitioned (its
-    /// migration not applied) is skipped.
+    /// migration not applied) is skipped; one that is in use is left to the next pass (<see cref="PartitionPass.InUse"/>).
     /// </summary>
     public async Task<IReadOnlyList<PartitionPass>?> RunAsync(CancellationToken ct)
     {
-        var settings = options.Value.Partitions;
         var known = tables.DistinctBy(t => t.Name).ToList();
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        if (!await db.Database.SqlQuery<bool>($"SELECT pg_try_advisory_xact_lock({LockKey}) AS \"Value\"").SingleAsync(ct))
-        {
-            return null;
-        }
 
-        var thisMonth = MonthOf(time.GetUtcNow());
-        var passes = new List<PartitionPass>();
-        foreach (var table in known)
+        // One connection for the whole pass, which holds the advisory lock between the tables' transactions.
+        await db.Database.OpenConnectionAsync(ct);
+        try
         {
+            if (!await db.Database.SqlQuery<bool>($"SELECT pg_try_advisory_lock({LockKey}) AS \"Value\"").SingleAsync(ct))
+            {
+                return null;
+            }
+
+            try
+            {
+                var thisMonth = MonthOf(time.GetUtcNow());
+                var passes = new List<PartitionPass>();
+                foreach (var table in known)
+                {
+                    if (await MaintainAsync(table, thisMonth, ct) is { } pass)
+                    {
+                        passes.Add(pass);
+                    }
+                }
+
+                return passes;
+            }
+            finally
+            {
+                await UnlockAsync();
+            }
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    // A connection that broke took the lock with it.
+    private async Task UnlockAsync()
+    {
+        try
+        {
+            await db.Database.SqlQuery<bool>($"SELECT pg_advisory_unlock({LockKey}) AS \"Value\"").SingleAsync(CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException)
+        {
+            logger.LogDebug(ex, "The partition maintenance lock was not released; it went with its connection");
+        }
+    }
+
+    /// <summary>One table, in a transaction of its own. Null when the table is not partitioned.</summary>
+    private async Task<PartitionPass?> MaintainAsync(PartitionedTable table, DateOnly thisMonth, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            await ExecuteAsync(string.Create(CultureInfo.InvariantCulture, $"SET LOCAL lock_timeout = '{LockTimeout.TotalMilliseconds:0}ms'"), ct);
             if (!await IsPartitionedAsync(table, ct))
             {
-                continue;
+                return null;
             }
 
             var created = new List<string>();
             var moved = 0;
-            for (var month = thisMonth; month <= thisMonth.AddMonths(Math.Clamp(settings.MonthsAhead, 1, 24)); month = month.AddMonths(1))
+            var monthsAhead = Math.Clamp(options.Value.Partitions.MonthsAhead, 1, 24);
+            for (var month = thisMonth; month <= thisMonth.AddMonths(monthsAhead); month = month.AddMonths(1))
             {
                 if (await ExistsAsync(table.Schema, table.PartitionFor(month), ct))
                 {
@@ -114,18 +175,24 @@ public sealed class PartitionMaintenance(
                 created.Add(table.PartitionFor(month));
             }
 
-            passes.Add(new PartitionPass(table.Name, created, moved));
-        }
+            await transaction.CommitAsync(ct);
+            if (created.Count > 0)
+            {
+                logger.LogInformation(
+                    "Partitions of {Table}: made {Created}; {Moved} rows moved out of the default partition",
+                    table.Name, string.Join(", ", created), moved);
+            }
 
-        await transaction.CommitAsync(ct);
-        foreach (var pass in passes.Where(p => p.Created.Count > 0))
+            return new PartitionPass(table.Name, created, moved);
+        }
+        catch (Exception ex) when (DatabaseInitializer.IsLockTimeout(ex))
         {
-            logger.LogInformation(
-                "Partitions of {Table}: made {Created}; {Moved} rows moved out of the default partition",
-                pass.Table, string.Join(", ", pass.Created), pass.RowsMovedFromDefault);
+            await transaction.RollbackAsync(CancellationToken.None);
+            logger.LogWarning(
+                "Partitions of {Table} not made: the table is in use, and its lock was not granted within {Seconds} s. The next pass tries again",
+                table.Name, LockTimeout.TotalSeconds);
+            return new PartitionPass(table.Name, [], 0, InUse: true);
         }
-
-        return passes;
     }
 
     /// <summary>The first day of the UTC month <paramref name="at"/> is in.</summary>

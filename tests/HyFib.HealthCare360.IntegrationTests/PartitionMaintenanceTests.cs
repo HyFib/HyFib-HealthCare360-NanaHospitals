@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -33,6 +34,10 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         var month = new DateTime(2041, 3, 1, 0, 0, 0, DateTimeKind.Utc);
         var messages = new[] { await MessageAsync(month.AddDays(3)), await MessageAsync(month.AddMonths(1).AddTicks(-10)) };
         var audit = await AuditAsync(month.AddDays(9));
+
+        // Sealed first: the server's sealer, every few seconds, would otherwise seal it while the test looks, and the move
+        // must keep a seal anyway.
+        await SealAsync(audit);
         (await PartitionOfAsync("platform.notification_logs", messages[0])).ShouldBe("platform.notification_logs_default");
         (await PartitionOfAsync("audit.audit_events", audit)).ShouldBe("audit.audit_events_default");
         var rowsBefore = (await RowTextAsync("platform.notification_logs", messages), await RowTextAsync("audit.audit_events", [audit]));
@@ -55,9 +60,7 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         // The moved audit row is still in the chain, and its new month is as append-only as the rest.
         await using (var scope = server.Services.CreateAsyncScope())
         {
-            var chain = scope.ServiceProvider.GetRequiredService<AuditChainService>();
-            await chain.SealPendingAsync(Ct);
-            (await chain.VerifyAsync(Ct)).Valid.ShouldBeTrue();
+            (await scope.ServiceProvider.GetRequiredService<AuditChainService>().VerifyAsync(Ct)).Valid.ShouldBeTrue();
         }
 
         await Should.ThrowAsync<PostgresException>(() => ExecuteAsync("TRUNCATE audit.audit_events_2041_03"));
@@ -84,6 +87,47 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         (await PartitionOfAsync("platform.notification_logs", message)).ShouldBe("platform.notification_logs_2003_02");
         (await PartitionOfAsync("integrations.integration_logs", call)).ShouldBe("integrations.integration_logs_2003_02");
         (await PartitionOfAsync("audit.audit_events", audit)).ShouldBe("audit.audit_events_2003_02");
+    }
+
+    /// <summary>
+    /// A table something holds (a pg_dump, a report with its transaction open) is left to the next pass once its lock is
+    /// not granted within <see cref="PartitionMaintenance.LockTimeout"/>, and an insert into it waits at most that long. The
+    /// pass used to wait for the lock up to its command timeout (a minute), every insert into the table queued behind it,
+    /// with the four tables in one transaction.
+    /// </summary>
+    [Fact]
+    public async Task A_table_in_use_is_left_to_the_next_pass_and_inserts_into_it_wait_only_a_moment()
+    {
+        var month = new DateTime(2046, 5, 1, 0, 0, 0, DateTimeKind.Utc);
+        await using var reader = await OpenAsync();
+        await using var reading = await reader.BeginTransactionAsync(Ct);
+        await using (var hold = new NpgsqlCommand("LOCK TABLE platform.notification_logs IN ACCESS SHARE MODE", reader, reading))
+        {
+            await hold.ExecuteNonQueryAsync(Ct);
+        }
+
+        var took = Stopwatch.StartNew();
+        var running = RunAsync(month.AddDays(3), monthsAhead: 1);
+
+        // A message logged while the pass waits for the message log's lock waits behind the pass.
+        (await SecondNode.EventuallyAsync(() => IsLockWaitedForAsync("platform.notification_logs"), TimeSpan.FromSeconds(30), Ct))
+            .ShouldBeTrue("the pass should ask for the message log's lock");
+        var logging = Stopwatch.StartNew();
+        await MessageAsync(DateTime.UtcNow);
+        logging.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(10), "a message logged meanwhile should wait no longer than the pass's lock timeout");
+
+        var passes = await running;
+        took.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(20));
+        var messages = passes.Single(p => p.Table == "platform.notification_logs");
+        messages.InUse.ShouldBeTrue();
+        messages.Created.ShouldBeEmpty();
+        passes.Single(p => p.Table == "audit.audit_events").Created.ShouldContain("audit_events_2046_05");
+        passes.Single(p => p.Table == "integrations.integration_logs").Created.ShouldContain("integration_logs_2046_05", "the tables after it are done all the same");
+        await reading.RollbackAsync(Ct);
+
+        // The next pass makes the message log's months.
+        (await RunAsync(month.AddDays(4), monthsAhead: 1)).Single(p => p.Table == "platform.notification_logs").Created
+            .ShouldBe(["notification_logs_2046_05", "notification_logs_2046_06"]);
     }
 
     /// <summary>
@@ -142,6 +186,22 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
             NullLogger<PartitionMaintenance>.Instance);
         return (await maintenance.RunAsync(Ct)).ShouldNotBeNull("no other node is maintaining the partitions");
     }
+
+    /// <summary>Whether a session waits for an ACCESS EXCLUSIVE lock on <paramref name="table"/>.</summary>
+    private Task<bool> IsLockWaitedForAsync(string table) => ScalarAsync<bool>(
+        $"SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted AND mode = 'AccessExclusiveLock' AND relation = '{table}'::regclass)");
+
+    /// <summary>Seals the audit chain up to <paramref name="audit"/>, here or by the server's own sealer.</summary>
+    private async Task SealAsync(long audit) =>
+        (await SecondNode.EventuallyAsync(async () =>
+        {
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<AuditChainService>().SealPendingAsync(Ct);
+            }
+
+            return await ScalarAsync<bool>($"SELECT hash IS NOT NULL FROM audit.audit_events WHERE id = {audit}");
+        }, TimeSpan.FromSeconds(30), Ct)).ShouldBeTrue("the audit event should be sealed");
 
     private static string At(DateTime at) => at.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture) + "+00";
 

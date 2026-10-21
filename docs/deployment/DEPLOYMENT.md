@@ -1093,7 +1093,9 @@ brings this in copies each table into its new form in one transaction, after the
 takes a few minutes for a large audit trail, and if anything fails, the tables stay as they were.
 
 The node that runs the jobs adds each table's partitions three months ahead, a minute after it starts and every six
-hours. Rows that ever went to the default partition (a device whose clock was months out, or the job not running for
+hours. Adding one needs its table to itself for a moment: when something holds the table (a backup's pg_dump, a long
+report), the job waits two seconds at most, so writes to the table are not held up, and leaves that table to its next
+run, which is still months ahead. Rows that ever went to the default partition (a device whose clock was months out, or the job not running for
 months) move into their month's partition when it is made. Change how far ahead with
 `HealthCare360:Partitions:MonthsAhead` (1 to 24).
 
