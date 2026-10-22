@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,6 +72,38 @@ public sealed class ModalityWorklistStatusTests(HospitalServer server)
         }
     }
 
+    /// <summary>
+    /// With no server that runs the jobs reporting at all (off, or its service stopped), the worklist's test on an API node
+    /// said the worklist server "has not started yet. It starts within a minute", which it never would. It says that the
+    /// server that runs background jobs is not reporting; once that server reports, but its worklist server has not
+    /// started yet, it says so as before.
+    /// </summary>
+    [Fact]
+    public async Task An_API_node_says_when_no_server_that_runs_the_jobs_reports()
+    {
+        await using var apiNode = await ApiNodeAsync(Random.Shared.Next(20_000, 60_000));
+
+        var none = await TestOnApiNodeAsync(apiNode);
+        none.Success.ShouldBeFalse();
+        none.Message.ShouldBe(
+            "The server that runs background jobs is not reporting (Administration › System health), so nothing serves the worklist. Start HC360 on that server.");
+
+        // It starts, and reports, before its worklist server listens.
+        var jobs = new ServerNodeBoard(server.Services.GetRequiredService<IServiceScopeFactory>(), SystemHealthServersTests.NodeFolder());
+        try
+        {
+            await jobs.PublishAsync(SystemHealthServersTests.JobNode("IT-JOBS-" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()), Ct);
+            var starting = await TestOnApiNodeAsync(apiNode);
+            starting.Success.ShouldBeFalse();
+            starting.Message.ShouldBe(
+                "The worklist server has not started yet. It starts within a minute of being turned on, on the server that runs background jobs.");
+        }
+        finally
+        {
+            await jobs.WithdrawAsync(Ct);
+        }
+    }
+
     private static async Task<List<JsonElement>> ListenersAsync(ApiClient admin)
     {
         var integrations = await admin.GetAsync<JsonElement>("/api/v1/admin/integrations");
@@ -80,7 +113,7 @@ public sealed class ModalityWorklistStatusTests(HospitalServer server)
 
     /// <summary>
     /// An API node of the hospital (role <c>api</c>): the worklist set up and turned on, its own worklist server never
-    /// started, and the worklist's test as the platform registers it.
+    /// started, the worklist's test as the platform registers it, and the servers' parts of System health it reads.
     /// </summary>
     private Task<SecondNode> ApiNodeAsync(int port)
     {
@@ -96,6 +129,8 @@ public sealed class ModalityWorklistStatusTests(HospitalServer server)
             services.AddSingleton<LabGatewayState>();
             services.AddSingleton<LabRelayRegistry>();
             services.AddSingleton<LabStatusBoard>();
+            services.AddSingleton(SystemHealthServersTests.NodeFolder());
+            services.AddSingleton<ServerNodeBoard>();
             services.AddModalityWorklist();
         });
     }

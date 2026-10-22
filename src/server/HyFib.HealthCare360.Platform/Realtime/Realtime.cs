@@ -60,11 +60,49 @@ internal sealed class SignalRRealtimePublisher(IHubContext<EventsHub> hub, TimeP
 }
 
 /// <summary>
+/// Joining a SignalR group so that a join that failed can be made again (SCAL-02). With several servers, the first of a
+/// server's connections to join a group subscribes that server to the group's channel in Redis, and while Redis is away
+/// that fails. SignalR has counted the connection in the group by then, on this server, and takes every later join as
+/// done: the screen would get none of the group's events for as long as it stayed connected, though it looked live, and
+/// subscribing again once Redis was back, as the apps do when told to catch up (<c>resync</c>), changed nothing.
+/// </summary>
+public static class RealtimeGroups
+{
+    /// <summary>
+    /// Adds <paramref name="connectionId"/> to <paramref name="groupName"/>, and when that fails, takes it out again before
+    /// passing the failure on, so that joining again joins. Taking it out needs no Redis: the group's channel was never
+    /// subscribed to. A join that timed out waiting for another server to acknowledge it is left as it is.
+    /// </summary>
+    public static async Task JoinAsync(this IGroupManager groups, string connectionId, string groupName, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        try
+        {
+            await groups.AddToGroupAsync(connectionId, groupName, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            try
+            {
+                await groups.RemoveFromGroupAsync(connectionId, groupName, CancellationToken.None);
+            }
+            catch (Exception undo) when (undo is not OutOfMemoryException)
+            {
+                // Only a connection on another server, reached through Redis, is not taken out: the join did not reach it.
+            }
+
+            throw;
+        }
+    }
+}
+
+/// <summary>
 /// Single real-time hub (<c>/hubs/events</c>). Every connection joins its user's group, and a staff session with full
 /// access also its facility's (<see cref="RealtimeTopicAuthorizer.FacilityToJoin"/>). Screens subscribe to extra topics
 /// (queue, bed board, ward…), each checked by <see cref="RealtimeTopicAuthorizer"/>.
-/// SignalR reconnects automatically after WiFi drops and clients refetch on reconnect, and when the server sends
-/// <c>resync</c>: with several servers, events were lost while the Redis backplane was away, though the connection stayed.
+/// SignalR reconnects automatically after WiFi drops and clients subscribe again and refetch on reconnect, and when the
+/// server sends <c>resync</c>: with several servers, events were lost while the Redis backplane was away, though the
+/// connection stayed, and a topic subscribed to meanwhile was not joined (<see cref="RealtimeGroups"/>).
 /// </summary>
 [Authorize]
 public sealed class EventsHub(RealtimeTopicAuthorizer topics) : Hub
@@ -85,11 +123,15 @@ public sealed class EventsHub(RealtimeTopicAuthorizer topics) : Hub
         await base.OnConnectedAsync();
     }
 
+    /// <summary>
+    /// Follows <paramref name="topic"/>, if the caller may. A subscription that fails (with several servers, Redis is away)
+    /// is undone, so the apps' subscribing again once told to catch up (<c>resync</c>) follows the topic from then on.
+    /// </summary>
     public async Task Subscribe(string topic)
     {
         var allowed = await topics.AuthorizeAsync(Context.User, topic, Context.ConnectionAborted)
             ?? throw new HubException("Subscription not allowed.");
-        await Groups.AddToGroupAsync(Context.ConnectionId, allowed);
+        await Groups.JoinAsync(Context.ConnectionId, allowed);
     }
 
     public Task Unsubscribe(string topic) => Groups.RemoveFromGroupAsync(Context.ConnectionId, topic);

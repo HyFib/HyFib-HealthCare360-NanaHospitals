@@ -131,4 +131,15 @@ describe('SystemHealthWidget', () => {
 
     expect(await screen.findByText('All 2 reporting')).toBeInTheDocument();
   });
+
+  it('says which servers run the background jobs when more than one does', async () => {
+    readHealth.mockResolvedValue(
+      report([node('HC360-JOBS', 'worker'), node('HC360-API1', 'all'), node('HC360-API2', 'api')]),
+    );
+    renderWidget();
+
+    expect(
+      await screen.findByText('All 3 reporting; HC360-JOBS, HC360-API1 each run the background jobs'),
+    ).toBeInTheDocument();
+  });
 });

@@ -236,7 +236,7 @@ public sealed class SystemHealthService(
 
     /// <summary>
     /// The warnings about every server, each naming it: its own while it reports, and that it has stopped when it has not;
-    /// and, when none of them runs the jobs, that nothing runs them.
+    /// when none of them runs the jobs, that nothing runs them; and when more than one that reports does, that one should.
     /// </summary>
     internal static IReadOnlyList<HealthWarning> ServerWarnings(IReadOnlyList<ServerNodeHealth> servers)
     {
@@ -266,6 +266,15 @@ public sealed class SystemHealthService(
                 "No server that runs the background jobs is reporting: nothing makes the backups, sends messages or listens for analysers and modalities. Start HC360 on the server that runs them."));
         }
 
+        // Exactly one should (DEPLOYMENT.md section 10); an API node whose settings miss "Role": "api" runs them as "all".
+        // Nothing shares the nightly backup out between them, so each makes it: a warning, as nothing is lost meanwhile.
+        var running = servers.Where(s => s.Reporting && RunsJobs(s)).Select(s => s.Server.MachineName).ToArray();
+        if (running.Length > 1)
+        {
+            warnings.Add(new("server.several_jobs", "warning",
+                $"{string.Join(", ", running[..^1])} and {running[^1]} {(running.Length == 2 ? "both" : "all")} run the background jobs, and only one server should: each makes the nightly backup, and listens for analysers and modalities. Give all but one of them \"Role\": \"api\" in hc360.settings.json, and restart their HC360Server service."));
+        }
+
         return warnings;
     }
 
@@ -277,7 +286,8 @@ public sealed class SystemHealthService(
             .ThenBy(s => s.Server.MachineName, StringComparer.OrdinalIgnoreCase),
     ];
 
-    private static bool RunsJobs(ServerNodeHealth server) => !string.Equals(server.Server.Role, "api", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Whether a server runs the background jobs: a <c>worker</c>, or a whole Server Node (<c>all</c>).</summary>
+    internal static bool RunsJobs(ServerNodeHealth server) => !string.Equals(server.Server.Role, "api", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// This server's own part of the report: its machine and the warnings about it, in the three places System health has

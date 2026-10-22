@@ -115,6 +115,37 @@ describe('RealtimeClient', () => {
     expect(refreshed).toHaveBeenCalledTimes(2);
   });
 
+  it('subscribes again, and then refreshes, when the server says events were lost', async () => {
+    await client.start();
+
+    // The screen opened a ward while Redis was away: subscribing failed, and the screen took no notice.
+    connection.invoke.mockRejectedValueOnce(
+      new Error("An unexpected error occurred invoking 'Subscribe' on the server."),
+    );
+    client.subscribe('ward:4b1a0c2e-6d1f-4c7e-9a51-2f0e8d3b7c10');
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Once Redis is back the server says so. The ward is subscribed to again before anything is refetched, so its events
+    // arrive from then on and the refetch shows what was missed before.
+    let subscribed = (): void => undefined;
+    connection.invoke.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          subscribed = () => resolve(undefined);
+        }),
+    );
+    connection.receive('resync');
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(connection.invoke).toHaveBeenCalledTimes(2);
+    expect(connection.invoke).toHaveBeenLastCalledWith('Subscribe', 'ward:4b1a0c2e-6d1f-4c7e-9a51-2f0e8d3b7c10');
+    expect(refreshed).not.toHaveBeenCalled();
+
+    subscribed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(refreshed).toHaveBeenCalledOnce();
+  });
+
   it('does not refresh for the server once the app stopped the connection', async () => {
     await client.start();
     connection.receive('resync');

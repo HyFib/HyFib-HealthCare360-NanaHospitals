@@ -133,6 +133,17 @@ describe('serversSummary', () => {
       tone: 'bad',
     });
   });
+
+  it('names the servers that run the background jobs when more than one does, as only one should', () => {
+    // An API node whose settings miss "Role": "api" runs them as "all".
+    expect(serversSummary([server('JOBS', 'worker'), server('API1', 'all'), server('API2', 'api')])).toEqual({
+      text: 'All 3 reporting; JOBS, API1 each run the background jobs',
+      tone: 'warn',
+    });
+    // One that no longer reports runs nothing.
+    const stopped = [server('JOBS', 'worker', false), server('JOBS2', 'worker'), server('API1', 'api')];
+    expect(serversSummary(stopped)).toEqual({ text: 'JOBS not reporting', tone: 'bad' });
+  });
 });
 
 describe('servers', () => {

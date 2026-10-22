@@ -660,7 +660,8 @@ them at the console and the images reach PACS under the right study. The server 
   (SCAL-01) the worklist server runs on the node that runs the jobs, which answers no requests: it shares its status
   with the analysers' (`LabStatusBoard`, see Laboratory analysers), so the dashboard on an API node shows it, and the
   test there reports it (the error it failed with, not started yet, or listening as which AE title on which port)
-  instead of an echo, which only that node can send.
+  instead of an echo, which only that node can send. When no node that runs the jobs reports at all (System health
+  knows), the test says so, rather than that the worklist server starts within a minute.
 
 ### Laboratory analysers (INT-LAB)
 

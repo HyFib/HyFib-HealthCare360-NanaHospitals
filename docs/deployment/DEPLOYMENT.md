@@ -956,10 +956,10 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 |---|---|
 | The database | One PostgreSQL primary, in every node's `ConnectionStrings:Hospital`. Nothing about a user, a sign-in or a request is kept in one node's memory only: sessions, sign-in challenges, one-time codes, emergency access to a restricted record, the attempts counted against the sign-in limits, and the portal's proof of work (challenges spent, failures counted) are all in the database |
 | The keys and the stored documents | The shared folder (`HealthCare360:Cluster:SharedDirectory`). The keys there are protected with a certificate every node holds (`KeyCertificateThumbprint`), because machine DPAPI, which protects them on a single Server Node, opens only on the machine that wrote them. The keys are never in the database: a copy of the database (a backup, the reporting replica) opens no encrypted value without the shared folder too |
-| Real-time updates (queue boards, bed board, critical alerts) | Redis (`ConnectionStrings:Redis`), through which an update raised on any node reaches the screens connected to every node, its own included. While Redis is away no screen gets updates; once it is back, every screen is told to refetch what it shows, and does |
+| Real-time updates (queue boards, bed board, critical alerts) | Redis (`ConnectionStrings:Redis`), through which an update raised on any node reaches the screens connected to every node, its own included. While Redis is away no screen gets updates; once it is back, every screen is told to catch up, and does: it subscribes again to what it opened meanwhile, and refetches what it shows |
 | Permissions, sessions and settings held in memory for speed | Each node, for a moment. A change on one node expires them on every node at once, through PostgreSQL's LISTEN/NOTIFY on the database they share. A node that stops hearing the others reads them from the database every time until it hears them again |
-| Analyser and modality worklist status (Lab setup › Analysers, Administration › Integrations and its tests) | The database: each node writes its part, the job node's network analysers and worklist server and the relays and heartbeats of the lab agents on the API nodes they reach, within seconds of a change and every minute, and every node shows them together. The worklist's test on an API node reports what the job node says of its worklist server: only the job node can send the worklist server its test echo |
-| System health (Administration › System health, and its summary on the home screen) | The database: each node writes what it reports of its own machine (the computer, its network, data drive, certificate and power, and the warnings about them) every minute, and System health on any node shows every node, the job node first, with when each last reported. A node that has not reported for three minutes is shown as such, and a warning says so: critically for the job node, since nothing makes the backups, sends messages or listens for analysers and modalities while it is away. The database, backups, messages, integrations and keys are the hospital's, and shown once |
+| Analyser and modality worklist status (Lab setup › Analysers, Administration › Integrations and its tests) | The database: each node writes its part, the job node's network analysers and worklist server and the relays and heartbeats of the lab agents on the API nodes they reach, within seconds of a change and every minute, and every node shows them together. The worklist's test on an API node reports what the job node says of its worklist server, or that the job node is not reporting: only the job node can send the worklist server its test echo |
+| System health (Administration › System health, and its summary on the home screen) | The database: each node writes what it reports of its own machine (the computer, its network, data drive, certificate and power, and the warnings about them) every minute, and System health on any node shows every node, the job node first, with when each last reported. A node that has not reported for three minutes is shown as such, and a warning says so: critically for the job node, since nothing makes the backups, sends messages or listens for analysers and modalities while it is away. A node is known by an id kept in its own data folder (`config\server-node-id.txt`) for its machine, so one that starts again, after a power cut too, takes its own place again, and a machine cloned from a node's is a node of its own; another warning says when more than one node runs the background jobs. The database, backups, messages, integrations and keys are the hospital's, and shown once |
 | Backups | One folder every node names in `HealthCare360:Backup:Directory` (a second share, such as `\\hc360-files\hc360-backups`). The job node makes the scheduled ones; **Back up now** runs on the API node that answers it, so it must write to the same folder, and every API node needs PostgreSQL's client tools (`pg_dump`, `Backup:PgDumpPath`) as the job node does |
 | The settings file, the TLS certificate, logs, temporary files | Each node's own data folder |
 
@@ -997,8 +997,9 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 - **Redis** 6 or later (or Memurai on Windows), reachable only from the nodes, with a password. Without it every node
   still works, but a screen sees only the updates raised on the node it is connected to. Once it is set, real-time
   updates go through it alone: while it is away, no screen gets any, whichever node it is connected to, until it is back.
-  Then every node tells the screens connected to it to refetch what they show, and tells the other nodes to tell theirs,
-  so the updates missed meanwhile appear without anyone pressing anything.
+  Then every node tells the screens connected to it to catch up, and tells the other nodes to tell theirs: each screen
+  subscribes again to what it opened meanwhile and refetches what it shows, so the updates missed meanwhile appear, and
+  the later ones arrive, without anyone pressing anything.
 - A **reverse proxy** in front of the API nodes, which:
   - listens on 7360 and 7361 and forwards each to the **same port** on the API nodes, over HTTPS (it trusts the hospital
     CA). HC360 tells the staff app from the patient portal by the port a request arrives on, so the two must not be
@@ -1075,7 +1076,8 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 
 **Running several nodes.**
 - Run **exactly one** node that runs the jobs (`worker`, or `all` on a single Server Node). An API node runs none, so it
-  can be stopped or added at any time.
+  can be stopped or added at any time. System health warns when more than one runs them: a node whose settings miss
+  `"Role": "api"` runs as `all`.
 - A node that starts while the others work holds up none of their audit writes. It changes the audit trail's database
   triggers only if it finds one dropped, turned off or changed, and then waits at most two seconds for the audit trail.
   If something holds it longer (a long transaction writing to it, or, to put back the chain-link trigger, a report or
@@ -1113,10 +1115,15 @@ months) move into their month's partition when it is made: at the job's next run
 `HealthCare360:Partitions:MonthsAhead` (1 to 24).
 
 Moving a month's rows holds its table until they have moved, and writes to the table wait that long: some seconds for a
-month of a million rows. The job moves one month at a time, so writes wait for one month's rows at most, and spends at
-most a minute on each table each run; the months it has not reached wait for its next run. A month that cannot be made
-for any other reason (an error, or a statement that runs out of time) is logged and tried again at the next run, and the
-job goes on with the other months and tables.
+month of a million rows. The job moves one month at a time, oldest first, so writes wait for one month's rows at most,
+and spends at most a minute on each table's months gone by each run; the months it has not reached wait for its next
+run. It adds this month and the months ahead at every run all the same, so new rows do not join the backlog. A month
+that cannot be made for any other reason (an error, or a statement that runs out of time) is logged and tried again at
+the next run, and the job goes on with the other months and tables. The exception is a month gone by whose rows take
+longer than a minute to move (the server's limit for one database statement): writes to its table wait that minute,
+then the move is undone, and trying again at every run would hold them as long each time. So the job logs an error and
+leaves that month's rows in the default partition, where they are kept and found as before; restart the `HC360Server`
+service at a quiet hour to have it try once more.
 
 **Partitions are never dropped.** How long each kind of record is kept is set in one place, Privacy › Retention, whose
 clean-up keeps every record for at least what the law asks (a year for the message and integration logs), leaves medical
@@ -1168,8 +1175,9 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | A node of several does not start: "this server has a data encryption key of its own …, and the shared folder … has none" | The keys are not in the shared folder yet. Put them there with `backup restore` (section 10, "Setting it up", step 4) |
 | A node of several does not start: "… names certificate …, which is not in the Local Computer's Personal store", or "… has no RSA private key this server may use" | Import the cluster key certificate on this node, with its private key, and give `NT SERVICE\HC360Server` *Read* on the key (section 10) |
 | `/health/ready` on a node answers 503 (*Unhealthy*) | The node cannot reach the database, or, with several nodes, the shared folder; its log names the check that failed. For the share: is the file server up, and does the node's computer account still have *Modify* on it? |
-| "… has not reported for more than three minutes" or "No server that runs the background jobs is reporting" (System health, with several nodes) | Is that node on, and its `HC360Server` service running? Its log says why it cannot reach the database, if it cannot. A node stopped on purpose removes itself from System health; one that lost its power is shown as not reporting for a day |
+| "… has not reported for more than three minutes" or "No server that runs the background jobs is reporting" (System health, with several nodes) | Is that node on, and its `HC360Server` service running? Its log says why it cannot reach the database, if it cannot. A node stopped on purpose removes itself from System health; one that lost its power is shown as not reporting until it is back, or for a day. A node set up again with a new data folder, or renamed, is a new node: the old one is shown as not reporting for that day |
+| "… both run the background jobs, and only one server should" (System health, with several nodes) | A node meant as an API node runs as `all`: its `hc360.settings.json` misses `"Role": "api"` (section 10, step 3). Add it and restart its `HC360Server` service. Until then each of them makes the nightly backup and listens for analysers and modalities |
 | A node's log: "Not listening for cache signals from the other servers" | It cannot hear the other nodes' changes, so it reads permissions, sessions and settings from the database every time (slower, still correct). Is PostgreSQL reachable? Behind PgBouncer in transaction pooling, set `ConnectionStrings:Signals` to PostgreSQL itself (section 10) |
-| A screen misses updates made on another workstation | With several nodes: is Redis up? `/health/ready` says *Degraded* when a node cannot reach it, and the node's log says that until it is back no screen gets real-time updates, whichever node it is connected to; everything else works. Once Redis is back, each node tells the screens connected to it, and the other nodes theirs, to refetch what they show, so they catch up by themselves within seconds (the node's log says how many it told); a screen that lost its own connection reconnects and refetches as always |
+| A screen misses updates made on another workstation | With several nodes: is Redis up? `/health/ready` says *Degraded* when a node cannot reach it, and the node's log says that until it is back no screen gets real-time updates, whichever node it is connected to; everything else works. Once Redis is back, each node tells the screens connected to it, and the other nodes theirs, to catch up: within seconds each subscribes again to what it opened meanwhile and refetches what it shows, by itself (the node's log says how many it told); a screen that lost its own connection reconnects and refetches as always |
 
 Log files hold no patient-identifiable data by design. Share them with HyFib support when asked.
