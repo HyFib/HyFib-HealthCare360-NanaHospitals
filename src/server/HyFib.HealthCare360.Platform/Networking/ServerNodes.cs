@@ -54,7 +54,10 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
     /// <summary>A server that has not written its part for this long no longer reports: it writes it every minute.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(3);
 
-    /// <summary>The file in a server's own data folder (<see cref="DataDirectories.Config"/>) that keeps its id.</summary>
+    /// <summary>
+    /// The file in a server's own data folder (<see cref="DataDirectories.Config"/>) that keeps its id: the id on the first
+    /// line, and on the second the name of the machine it was made on.
+    /// </summary>
     public const string IdFileName = "server-node-id.txt";
 
     /// <summary>A row this old belongs to a server that stopped without removing it, and is no longer shown.</summary>
@@ -67,10 +70,11 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
 
     /// <summary>
     /// This server's row: an id made the first time it is asked for, and kept in the server's own data folder
-    /// (<see cref="IdFileName"/>), so that a server that starts again, after a power cut too, writes over its own row. With
-    /// an id for each run, it showed twice for a day, once as not reporting. Not the machine's name: a machine renamed
-    /// keeps its id, and so its row, and two HC360 servers on one machine, each with a data folder of its own, keep a row
-    /// each.
+    /// (<see cref="IdFileName"/>) for its machine, so that a server that starts again, after a power cut too, writes over its
+    /// own row. With an id for each run, it showed twice for a day, once as not reporting. A data folder copied to another
+    /// machine, as when a machine is cloned after HC360 ran on it, makes an id of its own there: with one id, the two
+    /// servers wrote one row, and each took the other's part for its own and left it out. Two HC360 servers on one machine,
+    /// each with a data folder of its own, keep a row each; a machine renamed starts a new one.
     /// </summary>
     public string Node
     {
@@ -78,7 +82,7 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
         {
             lock (_making)
             {
-                return _node ??= ReadOrMakeId(Path.Combine(directories.Config, IdFileName));
+                return _node ??= ReadOrMakeId(Path.Combine(directories.Config, IdFileName), Environment.MachineName);
             }
         }
     }
@@ -131,17 +135,20 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
     public async Task<bool?> JobsReportedAsync(CancellationToken cancellationToken) =>
         directories.IsShared ? (await ReadOthersAsync(cancellationToken)).Any(s => s.Reporting && SystemHealthService.RunsJobs(s)) : null;
 
-    /// <summary>The id kept in <paramref name="path"/>, or a new one kept there from now on.</summary>
-    private static string ReadOrMakeId(string path)
+    /// <summary>The id kept in <paramref name="path"/> for <paramref name="machine"/>, or a new one kept there for it from now on.</summary>
+    private static string ReadOrMakeId(string path, string machine)
     {
-        if (File.Exists(path) && Guid.TryParseExact(File.ReadAllText(path).Trim(), "N", out var kept))
+        if (File.Exists(path)
+            && File.ReadAllLines(path) is [var id, var madeOn, ..]
+            && string.Equals(madeOn.Trim(), machine, StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParseExact(id.Trim(), "N", out var kept))
         {
             return kept.ToString("N");
         }
 
         var made = Guid.NewGuid().ToString("N");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, made + Environment.NewLine);
+        File.WriteAllLines(path, [made, machine]);
         return made;
     }
 
