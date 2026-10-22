@@ -185,9 +185,9 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 | GET | `/{id}/package-status` | readers | → `PackageStatus` |
 | PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204; 400 `packageId` for a package for out-patient visits only |
 | POST | `/{id}/interim-bills` | `billing.ip.manage` | `CreateInterimBillRequest(upTo?)` → 201 `BillDetail`: the services not billed yet up to the end of `upTo` (today when empty). Self-pay, non-package stays only; 422 `billing.interim_insured`, `billing.interim_package`, `billing.ip_account_inactive`, `billing.nothing_to_bill` ([Interim bills](#interim-bills-ipb-05)) |
-| POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services) |
-| POST | `/{id}/settle` | `billing.ip.manage` | → `SettlementResult` (advance adjusted oldest bill first; unused advance becomes a refund request) |
-| GET | `/{id}/clearance` | readers | → `ClearanceDto` |
+| POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services); 422 `billing.billed_on_interim_bills` when interim bills took every service, `billing.nothing_to_bill` when none was charged |
+| POST | `/{id}/settle` | `billing.ip.manage` | → `SettlementResult` (advance adjusted oldest bill first; unused advance becomes a refund request). After the final bill; with nothing for a final bill (`finalBillId` null), once the discharge has been initiated: 422 `billing.discharge_not_initiated` before, `billing.final_bill_missing` while services wait for a final bill |
+| GET | `/{id}/clearance` | readers | → `ClearanceDto` (`billedOnInterimBills`: interim bills took every service, so no final bill is needed) |
 | POST | `/{id}/discharge-approval` | `billing.discounts.approve` | `ApproveDischargeWithDuesRequest(reason)` → 204 |
 
 IP account statuses: `Open`, `DischargeInitiated`, `Discharged`, `Closed`, `Cancelled` (admission cancelled; no new
@@ -214,6 +214,13 @@ A self-paying patient's long stay can be billed in parts, so the family pays as 
   * A package absorbs the services it includes, up to its caps, from the lines of the final bill (`PackageCalculator`). A
     service billed earlier on an interim bill would be charged in full, outside the package, and the package price would
     still be charged at discharge. Taken off its package, a self-paying stay can be billed in parts again.
+* **A stay the interim bills took in full** (for example one raised on the discharge day for everything up to today,
+  with nothing charged after it) needs no final bill: it would hold nothing, and an empty bill cannot be finalized, so
+  initiating the discharge drafts none and tells the billing desk to settle the advance. Preparing one answers 422
+  `billing.billed_on_interim_bills`. The clearance waits only for the patient's share of the interim bills
+  (`ClearanceDto.billedOnInterimBills`), and the account is settled once the discharge has been initiated (before that,
+  more services may come: 422 `billing.discharge_not_initiated`): the advance pays what is still due on the interim
+  bills, and what is left of it becomes a refund request, with no final bill (`SettlementResult.finalBillId` null).
 
 `InterimBillTests` (in `tests/HyFib.HealthCare360.IntegrationTests`) proves these rules end to end.
 
@@ -799,12 +806,6 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
 (foreign key to `packages`, restrict) and `packages.used_for` (text; packages that existed before are `InPatient`).
 
 ## Not covered yet
-* **A stay billed entirely on interim bills.** When interim bills have taken every service (for example one raised on
-  the discharge day for everything up to today, with nothing charged after it), the final bill has nothing to hold and
-  an empty bill cannot be finalized: preparing it answers `billing.nothing_to_bill`, the discharge clearance waits for
-  a final bill ("The final bill has not been prepared."), and the account cannot be settled. Until this is decided,
-  raise the last interim bill before the discharge day's services are charged; if it has happened, management can
-  approve the discharge with dues (nothing is outstanding) and the unused advance is refunded with a refund request.
 * **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
   bill.
 * **An admission's package is not checked against its tariff plan.** OP bills take only packages for their tariff plan

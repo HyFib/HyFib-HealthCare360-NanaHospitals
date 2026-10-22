@@ -127,7 +127,11 @@ public sealed record RunningBill(
 
 public sealed record CreateInterimBillRequest(DateOnly? UpTo);
 
-public sealed record SettlementResult(Guid FinalBillId, decimal AdvanceAdjusted, decimal RemainingDue, Guid? RefundId, decimal RefundRequested);
+/// <summary>
+/// A final settlement: the final bill it followed (none for a stay whose interim bills took every service, or with no
+/// services), the advance adjusted against the open bills, what is still due, and the refund requested of what is left.
+/// </summary>
+public sealed record SettlementResult(Guid? FinalBillId, decimal AdvanceAdjusted, decimal RemainingDue, Guid? RefundId, decimal RefundRequested);
 
 public sealed record ApproveDischargeWithDuesRequest(string Reason);
 
@@ -140,7 +144,8 @@ public sealed record ClearanceDto(
     bool HasFinalBill,
     decimal PatientDue,
     decimal DepositBalance,
-    bool DischargeWithDuesApproved);
+    bool DischargeWithDuesApproved,
+    bool BilledOnInterimBills);
 
 public sealed class UpdateIpAccountRequestValidator : AbstractValidator<UpdateIpAccountRequest>
 {

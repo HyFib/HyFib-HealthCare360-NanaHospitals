@@ -153,7 +153,8 @@ export interface RunningBill {
 }
 
 export interface SettlementResult {
-  finalBillId: string;
+  /** None for a stay whose interim bills took every service (or with no services): it has no final bill. */
+  finalBillId: string | null;
   advanceAdjusted: number;
   remainingDue: number;
   refundId: string | null;
@@ -170,6 +171,8 @@ export interface ClearanceDto {
   patientDue: number;
   depositBalance: number;
   dischargeWithDuesApproved: boolean;
+  /** Every service is on a finalized interim bill: a final bill would hold nothing, so none is needed. */
+  billedOnInterimBills: boolean;
 }
 
 export interface IpAccountFilters {

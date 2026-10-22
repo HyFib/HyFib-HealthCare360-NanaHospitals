@@ -731,10 +731,17 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
               >
                 <Amount value={c.unbilledAmount} />
               </SummaryRow>
-              <SummaryRow label="Final bill">
+              <SummaryRow
+                label="Final bill"
+                hint={c.billedOnInterimBills ? 'Every service is on an interim bill' : undefined}
+              >
                 {c.hasFinalBill ? (
                   <Badge appearance="tint" color="success">
                     Finalised
+                  </Badge>
+                ) : c.billedOnInterimBills ? (
+                  <Badge appearance="tint" color="informative">
+                    Not needed
                   </Badge>
                 ) : (
                   <Badge appearance="tint" color="warning">
@@ -775,15 +782,21 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
                 Interim bill
               </Button>
             )}
+            {!c?.billedOnInterimBills && (
+              <Button
+                appearance="primary"
+                icon={finalBill.isPending ? <Spinner size="tiny" aria-hidden /> : <DocumentCheckmarkRegular />}
+                onClick={() => finalBill.mutate()}
+                disabled={finalBill.isPending}
+              >
+                {c?.hasFinalBill ? 'Bill late services' : 'Prepare final bill'}
+              </Button>
+            )}
             <Button
-              appearance="primary"
-              icon={finalBill.isPending ? <Spinner size="tiny" aria-hidden /> : <DocumentCheckmarkRegular />}
-              onClick={() => finalBill.mutate()}
-              disabled={finalBill.isPending}
+              icon={<HandshakeRegular />}
+              onClick={() => setDialog('settle')}
+              disabled={!(c?.hasFinalBill || (c?.billedOnInterimBills && account.status !== 'Open'))}
             >
-              {c?.hasFinalBill ? 'Bill late services' : 'Prepare final bill'}
-            </Button>
-            <Button icon={<HandshakeRegular />} onClick={() => setDialog('settle')} disabled={!c?.hasFinalBill}>
               Settle with the advance
             </Button>
             {canApproveDues && c && !c.cleared && !c.dischargeWithDuesApproved && (
@@ -809,14 +822,16 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
               : ''}
           </MessageBarBody>
           <div className={styles.row}>
-            <Button
-              icon={<DoorArrowRightRegular />}
-              onClick={() =>
-                void navigate({ to: '/billing/bills/$billId', params: { billId: settlement.finalBillId } })
-              }
-            >
-              Open the final bill
-            </Button>
+            {settlement.finalBillId && (
+              <Button
+                icon={<DoorArrowRightRegular />}
+                onClick={() =>
+                  void navigate({ to: '/billing/bills/$billId', params: { billId: settlement.finalBillId! } })
+                }
+              >
+                Open the final bill
+              </Button>
+            )}
             {settlement.refundId && (
               <Button
                 icon={<ArrowUndoRegular />}
