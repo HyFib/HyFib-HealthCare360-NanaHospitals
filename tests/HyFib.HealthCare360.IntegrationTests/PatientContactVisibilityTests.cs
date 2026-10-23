@@ -89,7 +89,10 @@ public sealed class PatientContactVisibilityTests(HospitalServer server)
         (await sighted.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).ShouldBe(full);
         await sighted.PutAsync($"/api/v1/patients/{patient.Id}", edit with
         {
-            Phone = full.Phone, AlternatePhone = full.AlternatePhone, Email = full.Email, Address = full.Address,
+            Phone = full.Phone,
+            AlternatePhone = full.AlternatePhone,
+            Email = full.Email,
+            Address = full.Address,
             EmergencyContactPhone = full.EmergencyContactPhone,
         });
         (await sighted.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).Notes.ShouldBe("Called about the bill");
