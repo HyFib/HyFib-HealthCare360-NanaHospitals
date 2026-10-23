@@ -436,7 +436,7 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | GET / PUT | `/mrd/codings/{id}` | mrd.coding | `SaveCodingRequest{entries[{kind, code, isPrimary}], notes, version}` (catalogue codes only; categories with subdivisions rejected) |
 | POST | `/mrd/codings/{id}/verify` | mrd.coding | `VerifyCodingRequest{version}` (a different coder must verify); insurance claims then take the coding (MB-03) |
 | GET | `/mrd/codings/{id}/suggestions` | mrd.coding | → `CodingSuggestion[]` |
-| GET | `/mrd/reports/morbidity?from&to&groupBy=code|block|chapter&source=clinical|coded` | mrd.records | → `MorbidityReport` (episodes, patients, sex and age bands; ≤ 1 year) |
+| GET | `/mrd/reports/morbidity?from&to&groupBy=code|block|chapter&source=clinical|coded` | mrd.records | → `MorbidityReport` (episodes, patients, sex and age bands at the end of the period, most episodes first; ≤ 1 year). `coded`: the facility's codings a second coder verified, by the day the episode ended, every diagnosis line counted and procedures left out (`MorbidityIndexTests`) |
 | GET / POST | `/mrd/records` | mrd.records | list (`status`, `overdue`, `retentionDue`, `assignedPractitionerId`, `search`) / `CreateMedicalRecordRequest` |
 | GET | `/mrd/records/{id}` | mrd.records | → `MedicalRecordDto` with deficiencies |
 | POST | `/mrd/records/{id}/deficiencies` | mrd.records | `AddDeficiencyRequest{type, description, assignedPractitionerId, dueDate}` |
