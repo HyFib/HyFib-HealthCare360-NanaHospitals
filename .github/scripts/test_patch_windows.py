@@ -7,10 +7,12 @@ import contextlib
 import datetime as dt
 import io
 import json
+import os
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import patch_windows as pw
 
@@ -19,9 +21,10 @@ TODAY = "2026-10-23"
 
 
 def run(*args):
-    """Runs the check as CI does; returns its exit code and what it printed."""
+    """Runs the check; returns its exit code and what it printed, as plain lines even when the tests run on GitHub Actions
+    (where the check writes annotations instead)."""
     out = io.StringIO()
-    with contextlib.redirect_stdout(out):
+    with mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "false"}), contextlib.redirect_stdout(out):
         code = pw.main(["--suppressions", str(FIXTURES / "suppress.props"), "--today", TODAY, *args])
     return code, out.getvalue()
 
