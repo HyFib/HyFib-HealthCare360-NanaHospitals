@@ -686,7 +686,7 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
     },
   });
   const approveDues = useMutation({
-    mutationFn: (reason: string) => ipApi.approveDischargeWithDues(account.id, reason),
+    mutationFn: (reason: string) => ipApi.approveDischargeWithDues(account.id, reason, account.version),
     onSuccess: () => {
       setDialog(null);
       notify.warning(

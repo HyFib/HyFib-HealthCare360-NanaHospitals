@@ -593,7 +593,7 @@ public sealed class IpBillingService(
         return new SettlementResult(finalBill?.Id, adjusted, remainingDue, refund?.Id, refund?.Amount ?? 0m);
     }
 
-    public async Task<Result> ApproveDischargeWithDuesAsync(Guid id, string reason, CancellationToken ct)
+    public async Task<Result> ApproveDischargeWithDuesAsync(Guid id, string reason, uint version, CancellationToken ct)
     {
         var account = await db.Set<IpAccount>().FirstOrDefaultAsync(a => a.Id == id, ct);
         if (account is null)
@@ -606,6 +606,9 @@ public sealed class IpBillingService(
             return BillingDb.SignInRequired;
         }
 
+        // Made on the account as the approver read it: a discharge revoked since withdrew any approval, and one made from
+        // the screen as it was then is refused (409) rather than carried, unseen, to the next discharge.
+        db.SetExpectedVersion(account, version);
         var approved = account.ApproveDischargeWithDues(approverId, reason, time.GetUtcNow());
         if (approved.IsFailure)
         {

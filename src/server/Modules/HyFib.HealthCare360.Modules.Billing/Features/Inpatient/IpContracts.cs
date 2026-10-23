@@ -150,7 +150,11 @@ public sealed class CreateInterimBillRequestValidator : AbstractValidator<Create
 /// </summary>
 public sealed record SettlementResult(Guid? FinalBillId, decimal AdvanceAdjusted, decimal RemainingDue, Guid? RefundId, decimal RefundRequested);
 
-public sealed record ApproveDischargeWithDuesRequest(string Reason);
+/// <summary>
+/// Management's approval to discharge with dues, made on the account as it was read (<see cref="Version"/>): a discharge
+/// revoked since then withdrew any approval, and an approval from the screen as it was then is refused (REL-04).
+/// </summary>
+public sealed record ApproveDischargeWithDuesRequest(string Reason, uint Version);
 
 public sealed record ClearanceDto(
     bool Cleared,
@@ -179,5 +183,9 @@ public sealed class UpdateIpAccountRequestValidator : AbstractValidator<UpdateIp
 
 public sealed class ApproveDischargeWithDuesRequestValidator : AbstractValidator<ApproveDischargeWithDuesRequest>
 {
-    public ApproveDischargeWithDuesRequestValidator() => RuleFor(x => x.Reason).Reason();
+    public ApproveDischargeWithDuesRequestValidator()
+    {
+        RuleFor(x => x.Reason).Reason();
+        RuleFor(x => x.Version).SeenVersion();
+    }
 }

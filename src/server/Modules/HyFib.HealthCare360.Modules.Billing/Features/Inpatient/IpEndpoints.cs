@@ -122,7 +122,7 @@ internal static class IpEndpoints
     private static async Task<IResult> Clearance(Guid id, IpBillingService ip, CancellationToken ct) => (await ip.ClearanceAsync(id, ct)).ToOk();
 
     private static async Task<IResult> ApproveDischargeWithDues(Guid id, ApproveDischargeWithDuesRequest request, IpBillingService ip, CancellationToken ct) =>
-        (await ip.ApproveDischargeWithDuesAsync(id, request.Reason, ct)).ToNoContent();
+        (await ip.ApproveDischargeWithDuesAsync(id, request.Reason, request.Version, ct)).ToNoContent();
 
     private static async Task<IResult> CreatedBillAsync(Result<Guid> created, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
         created.IsSuccess

@@ -215,7 +215,8 @@ public sealed class InterimBillTests(HospitalServer server)
 
         // Management approves discharging him with dues: the family will pay after the weekend.
         var management = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        await management.PostAsync(Path(account, "discharge-approval"), new ApproveDischargeWithDuesRequest("Family to pay after the weekend"));
+        var seen = await management.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}");
+        await management.PostAsync(Path(account, "discharge-approval"), new ApproveDischargeWithDuesRequest("Family to pay after the weekend", seen.Version));
 
         // Nurse: initiates the discharge. No midnight has passed since the bed day, so nothing more is charged, and no final
         // bill is drafted: it would hold nothing, and an empty bill cannot be finalized. The desk is told to finalize the
@@ -232,10 +233,21 @@ public sealed class InterimBillTests(HospitalServer server)
         // settled (and the advance not refunded) while he is still in a bed, and the approval to discharge him with dues is
         // withdrawn: it was for that discharge, and his dues grow with the stay. When the fever is gone, his discharge
         // begins again.
+        var beforeRevoke = await management.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}");
         await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/revoke",
             new RevokeDischargeRequest("Fever spike on the evening round"));
         var reopened = await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}");
         (reopened.Status, reopened.DischargeWithDuesApproved, reopened.DischargeApprovalReason).ShouldBe((IpAccountStatus.Open, false, (string?)null));
+
+        // Management, on a screen opened before the revocation, approves again: the account has changed since, and the
+        // approval is refused rather than carried to the next discharge, when the dues will be larger.
+        using (var stale = await management.SendRawAsync(HttpMethod.Post, Path(account, "discharge-approval"),
+                   new ApproveDischargeWithDuesRequest("Family to pay after the weekend", beforeRevoke.Version)))
+        {
+            stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
+
+        (await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}")).DischargeWithDuesApproved.ShouldBeFalse();
         (await NoticesAsync(billing, account, "Discharge revoked — the stay goes on")).ShouldHaveSingleItem()
             .ShouldContain("The approval to discharge with dues is withdrawn: the next discharge needs a new one.");
         (await management.GetAsync<PagedResult<AuditEventDto>>(
