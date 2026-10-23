@@ -294,6 +294,36 @@ export interface RecentEncounter {
   diagnoses: string[];
 }
 
+/**
+ * The patient's encounter before an encounter (EMR-07), as the server picks it: the latest earlier one, at any facility.
+ * Medicines are those of its signed prescriptions; the vitals are the last recorded in it, flagged for the age then.
+ */
+export interface PreviousVisitSummary {
+  encounterId: string;
+  type: EncounterType;
+  status: EncounterStatus;
+  startedAt: string;
+  practitionerName: string | null;
+  departmentName: string | null;
+  chiefComplaint: string | null;
+  diagnoses: string[];
+  assessment: string | null;
+  plan: string | null;
+  followUpDate: string | null;
+  followUpAdvice: string | null;
+  medicines: PreviousVisitMedicine[];
+  vitals: VitalsSnapshot | null;
+}
+
+export interface PreviousVisitMedicine {
+  drugName: string;
+  strength: string | null;
+  dose: string;
+  frequency: string;
+  durationDays: number;
+  instructions: string | null;
+}
+
 export interface PatientClinicalSummary {
   patient: PatientSummary;
   allergiesEverRecorded: boolean;
@@ -760,6 +790,7 @@ export const emrKeys = {
     ['emr', 'patient', patientId, 'immunizations', includeErrors] as const,
   admissions: (patientId: string) => ['emr', 'patient', patientId, 'admissions'] as const,
   encounter: (id: string) => ['emr', 'encounter', id] as const,
+  previousVisit: (encounterId: string) => ['emr', 'encounter', encounterId, 'previous'] as const,
   templates: (specialtyCode: string | null) => ['emr', 'templates', specialtyCode ?? 'all'] as const,
   template: (id: string) => ['emr', 'template', id] as const,
   favourites: (kind: FavouriteKind) => ['emr', 'favourites', kind] as const,
@@ -885,6 +916,15 @@ export const emrQueries = {
     queryOptions({
       queryKey: emrKeys.encounter(id),
       queryFn: ({ signal }) => api.get<EncounterDetail>(`/api/v1/emr/encounters/${id}`, { signal }),
+    }),
+  /** The patient's encounter before this one; `previous` is null for a first encounter. */
+  previousVisit: (encounterId: string) =>
+    queryOptions({
+      queryKey: emrKeys.previousVisit(encounterId),
+      queryFn: ({ signal }) =>
+        api.get<{ previous: PreviousVisitSummary | null }>(`/api/v1/emr/encounters/${encounterId}/previous`, {
+          signal,
+        }),
     }),
   templates: (specialtyCode: string | null = null) =>
     queryOptions({

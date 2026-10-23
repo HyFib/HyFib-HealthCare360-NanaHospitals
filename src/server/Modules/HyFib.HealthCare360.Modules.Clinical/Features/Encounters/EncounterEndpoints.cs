@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Clinical.Features.Emr;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
@@ -12,6 +13,7 @@ internal static class EncounterEndpoints
 
         group.MapPost("/", Start).RequirePermission(ClinicalPermissions.EmrWrite).WithValidation<StartEncounterRequest>();
         group.MapGet("/{id:guid}", Get).RequirePermission(ClinicalPermissions.EmrRead);
+        group.MapGet("/{id:guid}/previous", Previous).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapPut("/{id:guid}", Update).RequirePermission(ClinicalPermissions.EmrWrite).WithValidation<UpdateEncounterRequest>();
         group.MapPost("/{id:guid}/sign", Sign).RequirePermission(ClinicalPermissions.EncountersSign);
         group.MapPost("/{id:guid}/amend", Amend).RequirePermission(ClinicalPermissions.EncountersSign).WithValidation<AmendEncounterRequest>();
@@ -32,6 +34,22 @@ internal static class EncounterEndpoints
 
         var opened = await access.OpenAsync(encounter.PatientId, "Viewed encounter", ct);
         return opened.IsFailure ? opened.Error!.ToProblem() : (await encounters.DetailAsync(encounter, ct)).ToOk();
+    }
+
+    /// <summary>The patient's encounter before this one, for the workspace's previous visit summary (EMR-07).</summary>
+    private static async Task<IResult> Previous(Guid id, HospitalDbContext db, ClinicalAccess access, PatientRecordQueries records, CancellationToken ct)
+    {
+        var encounter = await db.Set<Encounter>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (encounter is null)
+        {
+            return Error.NotFound(nameof(Encounter), id).ToProblem();
+        }
+
+        var opened = await access.OpenAsync(encounter.PatientId, "Viewed previous visit", ct);
+        return opened.IsFailure
+            ? opened.Error!.ToProblem()
+            : TypedResults.Ok(new PreviousVisitResponse(await records.PreviousVisitAsync(encounter, ct)));
     }
 
     private static async Task<IResult> Update(Guid id, UpdateEncounterRequest request, EncounterService encounters, CancellationToken ct) =>

@@ -59,6 +59,32 @@ public sealed record RecentEncounter(
     IReadOnlyList<string> Diagnoses);
 
 /// <summary>
+/// The patient's encounter before an encounter (EMR-07), as the doctor reads it at the next consultation: when and with
+/// whom, what was found and decided, the medicines of its signed prescriptions, and the last vitals recorded in it.
+/// </summary>
+public sealed record PreviousVisitSummary(
+    Guid EncounterId,
+    EncounterType Type,
+    EncounterStatus Status,
+    DateTimeOffset StartedAt,
+    string? PractitionerName,
+    string? DepartmentName,
+    string? ChiefComplaint,
+    IReadOnlyList<string> Diagnoses,
+    string? Assessment,
+    string? Plan,
+    DateOnly? FollowUpDate,
+    string? FollowUpAdvice,
+    IReadOnlyList<PreviousVisitMedicine> Medicines,
+    VitalsSnapshot? Vitals);
+
+/// <summary>A medicine of a signed prescription of the previous visit, as prescribed.</summary>
+public sealed record PreviousVisitMedicine(string DrugName, string? Strength, string Dose, string Frequency, int DurationDays, string? Instructions);
+
+/// <summary><see cref="Previous"/> is null when the encounter is the patient's first.</summary>
+public sealed record PreviousVisitResponse(PreviousVisitSummary? Previous);
+
+/// <summary>
 /// Everything the persistent EMR banner and summary panel need in one call (EHR-03, UX-04): allergies (with
 /// "never recorded" distinguished from "none active"), current critical/infection-control alerts, active problems,
 /// current medications, the last vitals with their flags and the last five encounters. <see cref="AllergyStatus"/> is
