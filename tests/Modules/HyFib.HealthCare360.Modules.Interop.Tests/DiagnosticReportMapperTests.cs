@@ -104,6 +104,15 @@ public sealed class DiagnosticReportMapperTests
     }
 
     [Fact]
+    public void A_radiology_reports_text_names_the_modality_and_body_part_as_the_printed_report_does()
+    {
+        var text = Text(DiagnosticReportMapper.FromRadiology(ChestXray() with { BodyPart = "Chest" }).PresentedForm[0]);
+
+        text.ShouldStartWith("X-ray chest PA view\nModality: X-ray\nBody part: Chest\nTechnique: PA view\n");
+        Text(DiagnosticReportMapper.FromRadiology(ChestXray() with { Modality = Modality.MR }).PresentedForm[0]).ShouldContain("Modality: MRI");
+    }
+
+    [Fact]
     public void Addenda_make_a_radiology_report_appended_and_appear_in_the_text()
     {
         var report = DiagnosticReportMapper.FromRadiology(ChestXray() with
@@ -114,6 +123,25 @@ public sealed class DiagnosticReportMapperTests
         report.Status.ShouldBe(R4.DiagnosticReport.DiagnosticReportStatus.Appended);
         Text(report.PresentedForm[0]).ShouldContain("Small left pleural effusion noted on review.");
         Text(report.PresentedForm[0]).ShouldContain("reason: Second read");
+    }
+
+    [Fact]
+    public void An_addendum_is_part_of_the_conclusion_as_it_may_correct_the_impression()
+    {
+        // A reader may see only the conclusion: one that left out an addendum could still say "normal" after a later read
+        // found an effusion.
+        var report = DiagnosticReportMapper.FromRadiology(ChestXray() with
+        {
+            Addenda =
+            [
+                new RadiologyAddendumRow("Rib fracture excluded on the oblique view.", null, TestData.Now.AddHours(2)),
+                new RadiologyAddendumRow("Small left pleural effusion noted on review.", "Second read", TestData.Now.AddHours(1)),
+            ],
+        });
+
+        report.Conclusion.ShouldBe(
+            "Normal chest radiograph. Addendum 2026-09-25T11:30:00+05:30: Small left pleural effusion noted on review. "
+            + "Addendum 2026-09-25T12:30:00+05:30: Rib fracture excluded on the oblique view.");
     }
 
     [Fact]

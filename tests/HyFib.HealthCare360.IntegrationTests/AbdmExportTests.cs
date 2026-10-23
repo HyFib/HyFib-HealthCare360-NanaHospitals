@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Flags;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Services;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
@@ -40,7 +41,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// ABDM health records over the real API (SRS EHR-08): a patient registered with an ABHA number and address; a signed
-/// consultation, a signed prescription, a released lab report and a signed discharge summary exported as ABDM documents,
+/// consultation, a signed prescription, a released lab report, a released radiology report and a signed discharge
+/// summary exported as ABDM documents,
 /// each refused while it is still a draft, downloaded as a named file that validates against the NRCeS profiles (Firely,
 /// <see cref="AbdmProfileValidator"/>), without the patient's record-sharing consent (a staff copy, like the printout);
 /// a prescription only where the hospital's DSC rule lets it issue one; and who may do it. The ABDM switch is
@@ -63,6 +65,9 @@ public sealed class AbdmExportTests(HospitalServer server)
 
     /// <summary>A prescription's notes for the pharmacist and nurse: not printed for the patient, and not shared.</summary>
     private const string PharmacistNotes = "Check the patient's allergy card before dispensing";
+
+    /// <summary>The impression of the chest X-ray the radiology tests report.</summary>
+    private const string XrayImpression = "No active lung lesion.";
 
     private static readonly JsonSerializerOptions Fhir = new JsonSerializerOptions().ForFhir(R4.ModelInfo.ModelInspector);
 
@@ -259,28 +264,40 @@ public sealed class AbdmExportTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null) with { IsVip = true });
         await doctor.PostAsync($"/api/v1/patients/{patient.Id}/break-glass", new BreakGlassRequest("Seen in casualty, needs the history"));
-        var path = $"/api/v1/abdm/bundles/op-consultations/{await ConsultAsync(doctor, patient.Id, sign: false)}";
+        var consultation = await ConsultAsync(doctor, patient.Id, sign: false);
+
+        // A chest X-ray of the same record, whose report is signed off but not released yet.
+        var facilityId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+        var xray = await ChestXrayAsync(facilityId, patient.Id);
+        await RadiologyAsync(xray, (report, study, now) => SignOff(report, study, null, now));
 
         try
         {
             await SwitchAsync(enabled: true);
-
-            // The medical records officer exports records but does not open restricted ones: they learn nothing about the
-            // note, not even that it is unsigned.
-            using (var refused = await medicalRecords.SendRawAsync(HttpMethod.Get, path))
+            (string Path, Guid Id)[] records =
+            [
+                ($"/api/v1/abdm/bundles/op-consultations/{consultation}", consultation),
+                ($"/api/v1/abdm/bundles/radiology-reports/{xray}", xray),
+            ];
+            foreach (var (path, id) in records)
             {
-                refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
-                (await refused.Content.ReadAsStringAsync(Ct)).ShouldNotContain("abdm.not_exportable");
+                // The medical records officer exports records but does not open restricted ones: they learn nothing about
+                // the record, not even that it is unsigned or unreleased.
+                using (var refused = await medicalRecords.SendRawAsync(HttpMethod.Get, path))
+                {
+                    refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden, path);
+                    (await refused.Content.ReadAsStringAsync(Ct)).ShouldNotContain("abdm.not_exportable");
+                }
+
+                // The refusal is a security event, as the FHIR API's are.
+                var refusal = (await AuditAsync(patient.Id, "abdm.export_denied")).ShouldNotBeNull();
+                (refusal.Category, refusal.Severity, refusal.EntityId).ShouldBe((AuditCategories.Security, AuditSeverity.Warning, id.ToString("D")));
+
+                // Someone who may open the record is told why it cannot be exported yet.
+                using var notYet = await admin.SendRawAsync(HttpMethod.Get, path);
+                notYet.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, path);
+                (await notYet.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("abdm.not_exportable");
             }
-
-            // The refusal is a security event, as the FHIR API's are.
-            var refusal = (await AuditAsync(patient.Id, "abdm.export_denied")).ShouldNotBeNull();
-            (refusal.Category, refusal.Severity).ShouldBe((AuditCategories.Security, AuditSeverity.Warning));
-
-            // Someone who may open the record is told why it cannot be exported yet.
-            using var draft = await admin.SendRawAsync(HttpMethod.Get, path);
-            draft.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
-            (await draft.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("abdm.not_exportable");
         }
         finally
         {
@@ -392,6 +409,84 @@ public sealed class AbdmExportTests(HospitalServer server)
         {
             await SwitchAsync(enabled: false);
             await CancelAdmissionAsync(admission);
+        }
+    }
+
+    [Fact]
+    public async Task A_radiology_report_is_exported_as_an_imaging_report_with_its_study_once_released_and_again_with_an_addendum()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var abha = NewAbha();
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+
+        // A chest X-ray whose images PACS linked. One doctor writes the report and another signs it off: radiologists are
+        // users linked to the practitioner master, as these two are.
+        var reporter = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var signer = await server.SignInAsync(HospitalServer.Users.SecondDoctor);
+        var reporterUser = (await reporter.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("id").GetGuid();
+        var signerMe = await signer.GetAsync<JsonElement>("/api/v1/auth/me");
+        var signerUser = signerMe.GetProperty("id").GetGuid();
+        var xray = await ChestXrayAsync(signerMe.GetProperty("facilityId").GetGuid(), patient.Id);
+        var path = $"/api/v1/abdm/bundles/radiology-reports/{xray}";
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+
+            // A draft, a report waiting for sign-off and a report signed off but not released are not exported.
+            await NotExportableAsync(path);
+            await RadiologyAsync(xray, (report, study, now) => Submit(report, study, reporterUser, now));
+            await NotExportableAsync(path);
+            await RadiologyAsync(xray, (report, study, now) => SignOff(report, study, signerUser, now));
+            (await NotExportableAsync(path)).ShouldBe("Only a released radiology report can be exported.");
+
+            // Released, it is exported, though the patient has not given the FHIR API's record-sharing consent: a staff copy
+            // does not need it. The same report exports as the same document.
+            await RadiologyAsync(xray, (report, study, now) => report.Release(study, signerUser, now));
+            var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "radiology-report-NHRDA");
+            (await ExportAsync(path, DiagnosticReportRecord, abha, "radiology-report-NHRDA")).GetRawText().ShouldBe(bundle.GetRawText());
+            Composition(bundle).GetProperty("section").EnumerateArray().ShouldHaveSingleItem()
+                .GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe("4201000179104");
+
+            var diagnostic = Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem();
+            diagnostic.GetProperty("meta").GetProperty("profile")[0].GetString().ShouldBe("https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportImaging");
+            var code = diagnostic.GetProperty("code").GetProperty("coding").EnumerateArray().ShouldHaveSingleItem();
+            (code.GetProperty("system").GetString(), code.GetProperty("code").GetString()).ShouldBe(("http://loinc.org", "18748-4"));
+            diagnostic.GetProperty("conclusion").GetString().ShouldBe(XrayImpression);
+
+            // Who wrote it and who signed it off interpret it; the one who signed it off attests the document.
+            var interpreters = diagnostic.GetProperty("resultsInterpreter").EnumerateArray().Select(r => r.GetProperty("reference").GetString()).ToList();
+            interpreters.Count.ShouldBe(2);
+            interpreters.Select(r => Entry(bundle, r!).GetProperty("resourceType").GetString()).ShouldBe(["Practitioner", "Practitioner"]);
+            Composition(bundle).GetProperty("attester").EnumerateArray().ShouldHaveSingleItem().GetProperty("party").GetProperty("reference").GetString()
+                .ShouldBe(interpreters[1]);
+
+            // The study: its accession number, the images PACS holds, and the modality as the worklist sent it.
+            var imaging = Resources(bundle, "ImagingStudy").ShouldHaveSingleItem();
+            imaging.GetProperty("identifier").EnumerateArray().ShouldContain(i => i.GetProperty("value").GetString()!.StartsWith("NHRDA", StringComparison.Ordinal));
+            imaging.GetProperty("numberOfInstances").GetInt32().ShouldBe(2);
+            imaging.GetProperty("modality")[0].GetProperty("code").GetString().ShouldBe("CR");
+            ShouldCarryThePrintedCopy(Attachments(bundle));
+
+            var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
+            exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: radiology report");
+            exportAudit.EntityId.ShouldBe(xray.ToString("D"));
+
+            // An addendum after the release is a new version of the document: amended, with the addendum in the report and
+            // in its conclusion, and attested by the doctor who added it.
+            await RadiologyAsync(xray, (report, study, now) => report.AddAddendum(study, "Small left pleural effusion on review.", "Second read", false, reporterUser, now));
+            var amended = await ExportAsync(path, DiagnosticReportRecord, abha, "radiology-report-NHRDA");
+            amended.GetProperty("meta").GetProperty("versionId").GetString().ShouldNotBe(bundle.GetProperty("meta").GetProperty("versionId").GetString());
+            Composition(amended).GetProperty("status").GetString().ShouldBe("amended");
+            var appended = Resources(amended, "DiagnosticReport").ShouldHaveSingleItem();
+            appended.GetProperty("status").GetString().ShouldBe("appended");
+            appended.GetProperty("conclusion").GetString().ShouldNotBeNull().ShouldContain("Small left pleural effusion on review.");
+            Composition(amended).GetProperty("attester").EnumerateArray().ShouldHaveSingleItem().GetProperty("party").GetProperty("reference").GetString()
+                .ShouldBe(appended.GetProperty("resultsInterpreter")[0].GetProperty("reference").GetString());
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
         }
     }
 
@@ -774,6 +869,67 @@ public sealed class AbdmExportTests(HospitalServer server)
         return new LabWork(order.ReportId.ShouldNotBeNull(), line.ResultId);
     }
 
+    /// <summary>
+    /// A chest X-ray of the patient, acquired an hour ago with its images linked from PACS, and the radiologist's report
+    /// saved as a draft (its id). The radiology screens' steps are taken through the domain's own rules, as
+    /// ChartResultTests does, so these tests do not depend on the radiology API's request shapes.
+    /// </summary>
+    private async Task<Guid> ChestXrayAsync(Guid facilityId, Guid patientId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        var study = new ImagingStudy
+        {
+            FacilityId = facilityId,
+            PatientId = patientId,
+            AccessionNumber = "NHRDA" + Digits(7),
+            ServiceCode = "RAD-XR-CHEST",
+            StudyName = "X-ray chest PA",
+            Modality = Modality.XR,
+            BodyPart = "Chest",
+            Priority = OrderPriority.Routine,
+            OrderedAt = now.AddHours(-2),
+            Status = ImagingStudyStatus.Ordered,
+            StudyInstanceUid = DicomConventions.NewUid(),
+        };
+        study.Start(null, now.AddHours(-1)).IsSuccess.ShouldBeTrue();
+        study.Acquire(new AcquisitionDetails(ContrastUsed: false, null, null, null, null), null, now.AddMinutes(-55)).IsSuccess.ShouldBeTrue();
+        study.LinkPacs(study.StudyInstanceUid, seriesCount: 1, instanceCount: 2, now.AddMinutes(-50)).IsSuccess.ShouldBeTrue();
+        var report = new RadiologyReport { FacilityId = facilityId, ImagingStudyId = study.Id, PatientId = patientId };
+        report.Save(new RadiologyReportContent(null, "PA view", "Cough for two weeks", null, "Both lung fields are clear. Heart size is normal.",
+            XrayImpression, IsCriticalFinding: false, CriticalFindingNote: null)).IsSuccess.ShouldBeTrue();
+        db.AddRange(study, report);
+        await db.SaveChangesAsync(Ct);
+        return report.Id;
+    }
+
+    /// <summary>One step of the radiology workflow on the saved report and its study: submit, sign off, release, addendum.</summary>
+    private async Task RadiologyAsync(Guid reportId, Func<RadiologyReport, ImagingStudy, DateTimeOffset, Result> step)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var report = await db.Set<RadiologyReport>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(r => r.Addenda)
+            .SingleAsync(r => r.Id == reportId, Ct);
+        var study = await db.Set<ImagingStudy>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).SingleAsync(s => s.Id == report.ImagingStudyId, Ct);
+        step(report, study, DateTimeOffset.UtcNow).IsSuccess.ShouldBeTrue();
+        await db.SaveChangesAsync(Ct);
+    }
+
+    /// <summary>The radiologist submits the report for sign-off.</summary>
+    private static Result Submit(RadiologyReport report, ImagingStudy study, Guid? by, DateTimeOffset now)
+    {
+        study.MarkReported(now);
+        return report.Submit(by, now);
+    }
+
+    /// <summary>The radiologist signs the report off, which does not release it.</summary>
+    private static Result SignOff(RadiologyReport report, ImagingStudy study, Guid? by, DateTimeOffset now)
+    {
+        study.MarkVerified(now);
+        return report.Verify(by, now);
+    }
+
     /// <summary>The pathologist verifies the result and releases the report in one step.</summary>
     private async Task ReleaseAsync(LabWork crp)
     {
@@ -908,6 +1064,10 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     private static JsonElement Composition(JsonElement bundle) => bundle.GetProperty("entry")[0].GetProperty("resource");
+
+    /// <summary>The resource of the entry a reference in the document points to.</summary>
+    private static JsonElement Entry(JsonElement bundle, string fullUrl) =>
+        bundle.GetProperty("entry").EnumerateArray().Single(e => e.GetProperty("fullUrl").GetString() == fullUrl).GetProperty("resource");
 
     /// <summary>The document's resources of one type, in document order.</summary>
     private static List<JsonElement> Resources(JsonElement bundle, string type) =>

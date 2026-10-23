@@ -28,6 +28,8 @@ internal static class AbdmProfiles
     public const string ObservationVitalSigns = Base + "ObservationVitalSigns";
     public const string ObservationBodyMeasurement = Base + "ObservationBodyMeasurement";
     public const string DiagnosticReportLab = Base + "DiagnosticReportLab";
+    public const string DiagnosticReportImaging = Base + "DiagnosticReportImaging";
+    public const string ImagingStudy = Base + "ImagingStudy";
     public const string DocumentReference = Base + "DocumentReference";
     public const string Binary = Base + "Binary";
 }
@@ -45,6 +47,15 @@ internal static class AbdmSystems
     /// <summary>RFC 3986 URIs, for the document's <c>urn:uuid:</c> identifiers.</summary>
     public const string Uri = "urn:ietf:rfc:3986";
 
+    /// <summary>DICOM's own codes (DCM), for an imaging study's acquisition modality.</summary>
+    public const string Dicom = "http://dicom.nema.org/resources/ontology/DCM";
+
+    /// <summary>DICOM unique ids, as FHIR identifies a study by its study instance UID (<c>urn:oid:2.25.…</c>).</summary>
+    public const string DicomUid = "urn:dicom:uid";
+
+    /// <summary>FHIR's extension saying why an element the profile requires has no value.</summary>
+    public const string DataAbsentReason = "http://hl7.org/fhir/StructureDefinition/data-absent-reason";
+
     // HC360 identifier namespaces used only in the documents.
     public const string Facility = "urn:hc360:facility";
     public const string ReferralLab = "urn:hc360:referral-lab";
@@ -54,14 +65,23 @@ internal static class AbdmSystems
 
 /// <summary>
 /// The SNOMED CT codes the IG fixes for each document type and section (the profiles fix code, system and display, so
-/// these are copied from them verbatim), and the LOINC codes of the extra narrative sections HC360 appends where the
-/// IG's open slicing allows it.
+/// these are copied from them verbatim), the codes HC360 chose where a profile fixes only the system (each says why),
+/// and the LOINC codes of the extra narrative sections HC360 appends where the IG's open slicing allows it.
 /// </summary>
 internal static class AbdmCodes
 {
     public static readonly AbdmCode DischargeSummary = Snomed("373942005", "Discharge summary");
     public static readonly AbdmCode DiagnosticStudiesReport = Snomed("721981007", "Diagnostic studies report");
     public static readonly AbdmCode LaboratoryReport = Snomed("4241000179101", "Laboratory report");
+
+    /// <summary>
+    /// The section of a radiology report. DiagnosticReportRecord fixes only the section code's system, and the IG's own
+    /// imaging examples use 4261000179100 "Computed tomography imaging report"; this is its parent, which the IG's value set
+    /// of diagnostic report types takes as the root of all imaging reports, so it fits every modality (as "Laboratory
+    /// report" fits every laboratory section).
+    /// </summary>
+    public static readonly AbdmCode ImagingReport = Snomed("4201000179104", "Imaging report");
+
     public static readonly AbdmCode ConsultationReport = Snomed("371530004", "Clinical consultation report");
     public static readonly AbdmCode PrescriptionRecord = Snomed("440545006", "Prescription record");
 
@@ -83,8 +103,13 @@ internal static class AbdmCodes
     public static readonly AbdmCode HospitalCourse = new(FhirSystems.Loinc, "8648-8", "Hospital course Narrative");
     public static readonly AbdmCode AssessmentAndPlan = new(FhirSystems.Loinc, "51847-2", "Evaluation + Plan note");
 
-    /// <summary>Diagnostic service section of a laboratory report (the IG fixes SNOMED CT as the category's system).</summary>
+    // The IG fixes SNOMED CT as a report category's system, not its code.
+
+    /// <summary>Diagnostic service section of a laboratory report.</summary>
     public static readonly AbdmCode PathologyService = Snomed("394595002", "Pathology");
+
+    /// <summary>Diagnostic service section of a radiology report, the radiology department as Pathology is the laboratory.</summary>
+    public static readonly AbdmCode RadiologyService = Snomed("394914008", "Radiology");
 
     private static AbdmCode Snomed(string code, string display) => new(FhirSystems.Snomed, code, display);
 }

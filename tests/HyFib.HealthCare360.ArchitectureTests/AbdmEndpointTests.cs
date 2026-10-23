@@ -23,7 +23,7 @@ public sealed class AbdmEndpointTests
     ]);
 
     [Fact]
-    public void The_abdm_api_is_four_document_exports_and_the_gateway_status_all_read_only()
+    public void The_abdm_api_is_five_document_exports_and_the_gateway_status_all_read_only()
     {
         Endpoints.Value.Select(Route).Order().ShouldBe(
         [
@@ -31,6 +31,7 @@ public sealed class AbdmEndpointTests
             "/api/v1/abdm/bundles/lab-reports/{id:guid}",
             "/api/v1/abdm/bundles/op-consultations/{id:guid}",
             "/api/v1/abdm/bundles/prescriptions/{id:guid}",
+            "/api/v1/abdm/bundles/radiology-reports/{id:guid}",
             "/api/v1/abdm/gateway",
         ]);
         Endpoints.Value.ShouldAllBe(e => e.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods.SequenceEqual(new[] { "GET" }));

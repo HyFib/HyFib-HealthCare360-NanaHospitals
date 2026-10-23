@@ -99,6 +99,7 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
         {
             Id = r.Id,
             PatientId = r.PatientId,
+            ImagingStudyId = s.Id,
             VisitId = s.VisitId,
             AccessionNumber = s.AccessionNumber,
             ServiceCode = s.ServiceCode,
@@ -106,7 +107,14 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
             Modality = s.Modality,
             BodyPart = s.BodyPart,
             OrderedAt = s.OrderedAt,
+            StartedAt = s.StartedAt,
             AcquiredAt = s.AcquiredAt,
+            StudyInstanceUid = s.PacsLinkedAt != null ? s.StudyInstanceUid : null,
+            SeriesCount = s.SeriesCount,
+            InstanceCount = s.InstanceCount,
+            ReportedBy = r.ReportedBy,
+            VerifiedBy = r.VerifiedBy,
+            VerifiedAt = r.VerifiedAt,
             ReleasedAt = r.ReleasedAt,
             Technique = r.Technique,
             ClinicalHistory = r.ClinicalHistory,
@@ -120,6 +128,12 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
 
     internal IQueryable<RadiologyAddendum> Addenda(Guid[] reportIds) =>
         db.Set<RadiologyAddendum>().AsNoTracking().Where(a => reportIds.Contains(a.RadiologyReportId));
+
+    /// <summary>The reports' addenda by report, in the order they were added, each with the user who added it.</summary>
+    internal async Task<Dictionary<Guid, List<RadiologyAddendumRow>>> AddendumRowsAsync(Guid[] reportIds, CancellationToken ct) =>
+        (await Addenda(reportIds).ToListAsync(ct))
+            .GroupBy(a => a.RadiologyReportId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(a => a.AddedAt).ThenBy(a => a.Id).Select(a => new RadiologyAddendumRow(a.Text, a.Reason, a.AddedAt, a.AddedBy)).ToList());
 
     /// <summary>Released cardiology reports (the measurements are complex properties, so whole rows are loaded).</summary>
     internal IQueryable<CardiologyReport> CardiologyReports(Expression<Func<CardiologyReport, bool>> filter) =>
@@ -177,9 +191,7 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
             return [];
         }
 
-        var addenda = await Addenda([.. reports.Select(r => r.Id)]).ToListAsync(ct);
-        var byReport = addenda.GroupBy(a => a.RadiologyReportId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(a => a.AddedAt).Select(a => new RadiologyAddendumRow(a.Text, a.Reason, a.AddedAt)).ToList());
+        var byReport = await AddendumRowsAsync([.. reports.Select(r => r.Id)], ct);
         return [.. reports.Select(r => (R4.Resource)DiagnosticReportMapper.FromRadiology(r with { Addenda = byReport.GetValueOrDefault(r.Id) ?? [] }))];
     }
 

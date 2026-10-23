@@ -170,8 +170,8 @@ internal static class AbdmParticipants
 /// <summary>
 /// Brings the FHIR read API's resources in line with the IG's profiles: the profile in <c>meta.profile</c>, the ABHA
 /// number typed with the IG's ABHA identifier type, observation and report codings limited to the code systems the IG
-/// allows (LOINC and SNOMED CT, each with a display), a SNOMED CT service section and an interpreter on laboratory
-/// reports. Nothing clinical is added or changed.
+/// allows (LOINC and SNOMED CT, each with a display), a SNOMED CT service section and an interpreter on laboratory and
+/// imaging reports. Nothing clinical is added or changed.
 /// </summary>
 internal static class AbdmProfiler
 {
@@ -181,6 +181,9 @@ internal static class AbdmProfiler
     /// is never flagged), so it says nothing about the results themselves.
     /// </summary>
     public const string SeeTheResults = "See the individual results.";
+
+    /// <summary>What a radiology report's one <c>media</c> entry says, as it carries no key image (<see cref="ImagingReport"/>).</summary>
+    public const string NoKeyImages = "No key images are attached: the images of the study are kept in the hospital's PACS.";
 
     /// <summary>Vital signs the IG's ObservationVitalSigns profile names.</summary>
     private static readonly HashSet<string> VitalSignCodes = ["85354-9", "8867-4", "59408-5", "2708-6", "8310-5", "9279-1"];
@@ -259,6 +262,31 @@ internal static class AbdmProfiler
         report.Performer = [Copy(laboratory)];
         report.ResultsInterpreter = [Copy(laboratory)];
         report.Conclusion ??= LabConclusion(results);
+        return report;
+    }
+
+    /// <summary>
+    /// A radiology report: the IG's DiagnosticReportImaging profile wants a SNOMED CT service section, LOINC codings only,
+    /// who interpreted the study (<paramref name="interpreters"/>: the radiologists, else the hospital, which performed the
+    /// study and issues the report), the study (<paramref name="study"/>), a conclusion and at least one key image
+    /// (<c>media</c>). HC360 keeps no key images: the images stay in the hospital's PACS, which the imaging study names, and
+    /// no one marks key images among them. So the one media entry says there is none, with the reason FHIR gives a
+    /// required element the source system cannot fill (data-absent-reason <c>unsupported</c>), rather than carrying
+    /// something that is not a key image of the study.
+    /// </summary>
+    public static R4.DiagnosticReport ImagingReport(
+        R4.DiagnosticReport report, R4.ResourceReference hospital, IReadOnlyList<R4.ResourceReference> interpreters, R4.ResourceReference study)
+    {
+        report.Meta = Profile(report.Meta, AbdmProfiles.DiagnosticReportImaging);
+        report.Category = [AbdmCodes.RadiologyService.Concept("Radiology")];
+        Codings(report.Code, [FhirSystems.Loinc]);
+        report.Performer = [Copy(hospital)];
+        report.ResultsInterpreter = interpreters.Count > 0 ? [.. interpreters.Select(Copy)] : [Copy(hospital)];
+        report.ImagingStudy = [Copy(study)];
+        // A reference to nothing still says what it stands for (the HL7 validator warns on one without a display).
+        var noImage = new R4.ResourceReference { Display = "No key image" };
+        noImage.Extension.Add(new R4.Extension(AbdmSystems.DataAbsentReason, new R4.Code("unsupported")));
+        report.Media = [new R4.DiagnosticReport.MediaComponent { Comment = NoKeyImages, Link = noImage }];
         return report;
     }
 
