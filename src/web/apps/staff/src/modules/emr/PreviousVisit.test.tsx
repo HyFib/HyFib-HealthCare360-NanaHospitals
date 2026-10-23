@@ -2,27 +2,33 @@ import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { ApiError, formatDateOnly, formatDateTime } from '@hc360/core';
 import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { api } from '@/lib/api';
-import type { PreviousVisitSummary } from './api';
+import type { PreviousVisitResponse, PreviousVisitSummary } from './api';
 import { PreviousVisit } from './PreviousVisit';
 
 // The server, which picks the previous visit, is outside the test; what the panel shows and offers is what is tested.
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn() } }));
 
-// Fluent's MessageBar (the error state) measures itself; jsdom has no ResizeObserver.
-beforeAll(() => {
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-});
+/** A diabetes review, signed: when, by whom and its diagnoses, with nothing else recorded. */
+const REVIEW: PreviousVisitSummary = {
+  encounterId: 'e05',
+  type: 'OutPatient',
+  status: 'Signed',
+  startedAt: '2026-08-31T05:10:00Z',
+  practitionerName: 'Dr. Anil Rao',
+  departmentName: 'General medicine',
+  chiefComplaint: 'Diabetes review',
+  diagnoses: ['E11.9 Type 2 diabetes mellitus without complications', 'I10 Essential (primary) hypertension'],
+  assessment: null,
+  plan: null,
+  followUpDate: null,
+  followUpAdvice: null,
+  medicines: [],
+  vitals: null,
+};
 
 /** A fever seen and treated a week ago, by a doctor of General Medicine. */
 function feverVisit(patch: Partial<PreviousVisitSummary> = {}): PreviousVisitSummary {
@@ -69,34 +75,67 @@ function feverVisit(patch: Partial<PreviousVisitSummary> = {}): PreviousVisitSum
   };
 }
 
-function renderPanel(onOpen = vi.fn()) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+beforeAll(() => {
+  // Fluent's MessageBar (the error state) measures itself; jsdom has no ResizeObserver.
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
+
+afterEach(() => {
+  vi.mocked(api.get).mockReset();
+});
+
+function show(answer: PreviousVisitResponse | Error, onOpen = vi.fn()) {
+  vi.mocked(api.get).mockImplementation(() =>
+    answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer),
+  );
   render(
-    <QueryClientProvider client={client}>
-      <FluentProvider theme={webLightTheme}>
-        <PreviousVisit encounterId="encounter-1" onOpen={onOpen} />
-      </FluentProvider>
-    </QueryClientProvider>,
+    <FluentProvider theme={webLightTheme}>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <PreviousVisit patientId="p1" encounterId="e09" onOpen={onOpen} />
+      </QueryClientProvider>
+    </FluentProvider>,
   );
   return onOpen;
 }
 
 describe('PreviousVisit', () => {
-  beforeEach(() => {
-    vi.mocked(api.get).mockReset();
+  it("shows the server's previous visit of this encounter: when, by whom, and its diagnoses", async () => {
+    show({ previous: REVIEW });
+
+    const visit = await screen.findByRole('button', { name: /Diabetes|E11\.9/ });
+    expect(api.get).toHaveBeenCalledWith('/api/v1/emr/encounters/e09/previous-visit', expect.anything());
+    expect(screen.getByRole('heading', { name: 'Previous visit' })).toBeInTheDocument();
+    expect(visit).toHaveTextContent(formatDateTime(REVIEW.startedAt));
+    expect(visit).toHaveTextContent('Signed');
+    expect(visit).toHaveTextContent('Out-patient (OP) · General medicine · Dr. Anil Rao');
+    expect(visit).toHaveTextContent(
+      'E11.9 Type 2 diabetes mellitus without complications; I10 Essential (primary) hypertension',
+    );
   });
 
-  it('shows what was found, decided, prescribed and measured at the visit before, and opens it', async () => {
-    vi.mocked(api.get).mockResolvedValue({ previous: feverVisit() });
-    const onOpen = renderPanel();
+  it('shows the complaint of a visit without diagnoses, and an amended note as amended', async () => {
+    show({ previous: { ...REVIEW, status: 'Amended', diagnoses: [] } });
 
-    expect(
-      await screen.findByRole('heading', { name: `Previous visit · ${formatDateTime('2026-10-16T04:30:00Z')}` }),
-    ).toBeInTheDocument();
-    expect(api.get).toHaveBeenCalledWith('/api/v1/emr/encounters/encounter-1/previous', expect.anything());
-    expect(screen.getByText('Out-patient (OP) · General Medicine · Dr. Anil Rao')).toBeInTheDocument();
+    const visit = await screen.findByRole('button', { name: /Diabetes review/ });
+    expect(visit).toHaveTextContent('Amended');
+    expect(visit).not.toHaveTextContent('E11.9');
+    // The glance shows the complaint already, so it is not repeated below.
+    expect(screen.queryByText('Complaint')).not.toBeInTheDocument();
+  });
+
+  it('shows what was decided, prescribed and measured at the visit below its glance', async () => {
+    show({ previous: feverVisit() });
+
+    const visit = await screen.findByRole('button', { name: /R50\.9/ });
+    expect(visit).toHaveTextContent('R50.9 Fever, unspecified');
     expect(screen.getByText('Fever for three days')).toBeInTheDocument();
-    expect(screen.getByText('R50.9 Fever, unspecified')).toBeInTheDocument();
     expect(screen.getByText('Acute febrile illness, probably viral.')).toBeInTheDocument();
     expect(screen.getByText('Paracetamol, fluids and rest.')).toBeInTheDocument();
     expect(
@@ -104,35 +143,20 @@ describe('PreviousVisit', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Paracetamol 500 mg Tablet · 1 tablet · TDS · 5 days · After food')).toBeInTheDocument();
     expect(screen.getByText('126/82 mmHg')).toBeInTheDocument();
-    expect(screen.queryByText('Not signed')).not.toBeInTheDocument();
     await expectNoAxeViolations();
-
-    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
-    expect(onOpen).toHaveBeenCalledWith('encounter-0');
   });
 
-  it('says when the note of the visit before is not signed yet', async () => {
-    vi.mocked(api.get).mockResolvedValue({
-      previous: feverVisit({
-        status: 'InProgress',
-        medicines: [],
-        vitals: null,
-        followUpDate: null,
-        followUpAdvice: null,
-      }),
-    });
-    renderPanel();
+  it('says when nothing was prescribed, and leaves out a follow-up and vitals that were not recorded', async () => {
+    show({ previous: feverVisit({ medicines: [], vitals: null, followUpDate: null, followUpAdvice: null }) });
 
-    expect(await screen.findByText('Not signed')).toBeInTheDocument();
-    expect(screen.getByText('The note of that visit is not signed yet and may still change.')).toBeInTheDocument();
-    expect(screen.getByText('None prescribed')).toBeInTheDocument();
+    expect(await screen.findByText('None prescribed')).toBeInTheDocument();
     expect(screen.queryByText('Follow-up')).not.toBeInTheDocument();
     expect(screen.queryByText('Vitals')).not.toBeInTheDocument();
   });
 
   it('names each medicine with its strength once, and its course', async () => {
     const paracetamol = feverVisit().medicines[0]!;
-    vi.mocked(api.get).mockResolvedValue({
+    show({
       previous: feverVisit({
         medicines: [
           { ...paracetamol, drugName: 'Dolo', strength: '650 mg', durationDays: 1, instructions: null },
@@ -140,28 +164,37 @@ describe('PreviousVisit', () => {
         ],
       }),
     });
-    renderPanel();
 
     expect(await screen.findByText('Dolo 650 mg · 1 tablet · TDS · 1 day')).toBeInTheDocument();
     expect(screen.getByText('ORS sachet · 1 sachet · SOS · 5 days · After food')).toBeInTheDocument();
   });
 
-  it("says so on a patient's first encounter", async () => {
-    vi.mocked(api.get).mockResolvedValue({ previous: null });
-    renderPanel();
+  it('opens the previous visit from the mouse and the keyboard', async () => {
+    const onOpen = show({ previous: REVIEW });
 
-    expect(await screen.findByText("This is the patient's first encounter on record.")).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
+    const visit = await screen.findByRole('button', { name: /Diabetes|E11\.9/ });
+    await userEvent.click(visit);
+    expect(onOpen).toHaveBeenLastCalledWith('e05');
+
+    onOpen.mockClear();
+    visit.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(onOpen).toHaveBeenCalledWith('e05');
   });
 
-  it('offers to try again when the previous visit cannot be loaded', async () => {
-    vi.mocked(api.get)
-      .mockRejectedValueOnce(new ApiError({ status: 503, title: 'Server unavailable', detail: 'Try again shortly.' }))
-      .mockResolvedValue({ previous: null });
-    renderPanel();
+  it('says so when no visit was signed before this one', async () => {
+    show({ previous: null });
+
+    expect(await screen.findByText('No signed visit before this one.')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('explains a failure and loads again on retry', async () => {
+    show(new ApiError({ status: 503, title: 'Service unavailable', code: 'server.unavailable' }));
 
     expect(await screen.findByText('Could not load the previous visit')).toBeInTheDocument();
+    vi.mocked(api.get).mockResolvedValue({ previous: REVIEW });
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByText("This is the patient's first encounter on record.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Diabetes|E11\.9/ })).toBeInTheDocument());
   });
 });

@@ -71,10 +71,10 @@ import { NoteComposer, NotesList } from '@/modules/emr/NotesPanel';
 import { OrderComposer, OrdersList } from '@/modules/emr/OrdersPanel';
 import { orderQueries } from '@/modules/emr/ordersApi';
 import { PrescriptionEditor } from '@/modules/emr/PrescriptionEditor';
+import { PreviousVisit } from '@/modules/emr/PreviousVisit';
 import { templateMedicineDefaults } from '@/modules/emr/prescriptionForm';
 import { prescriptionDocument, prescriptionQueries } from '@/modules/emr/prescriptionsApi';
 import { PrescriptionsList } from '@/modules/emr/PrescriptionsList';
-import { PreviousVisit } from '@/modules/emr/PreviousVisit';
 import { printEncounterSummary } from '@/modules/emr/print';
 import { useEncounterNote, type EncounterNote } from '@/modules/emr/useEncounterNote';
 import { EncounterVitalsList, VitalsForm } from '@/modules/emr/VitalsPanel';
@@ -195,11 +195,11 @@ function jumpTo(id: SectionId, focus = 'input, textarea, select, button') {
 }
 
 /**
- * The encounter workspace (EMR-02..07): the previous visit's summary, complaint and history with templates, vitals
- * with live flags, examination, ICD-coded diagnoses, orders, the e-prescription with safety checks, notes, follow-up
- * and referral. Alt+1…8 jumps between sections; Ctrl+S saves the note; signing locks it and later changes are
- * amendments with a reason. "Dictate with AI" (AIV-04..06) drafts the SOAP note from speech or typed text for the
- * doctor to check and insert.
+ * The encounter workspace (EMR-02..07): the previous visit for reference, complaint and history with templates, vitals
+ * with live flags, examination, ICD-coded diagnoses, orders, the e-prescription with safety checks, notes, follow-up and
+ * referral. Alt+1…8 jumps between sections; Ctrl+S saves the note; signing locks it and later changes are amendments
+ * with a reason. "Dictate with AI" (AIV-04..06) drafts the SOAP note from speech or typed text for the doctor to check
+ * and insert.
  */
 function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
   const styles = useStyles();
@@ -490,6 +490,7 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
       <div className={styles.layout}>
         <div className={styles.main}>
           <PreviousVisit
+            patientId={patientId}
             encounterId={encounter.id}
             onOpen={(id) => void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId: id } })}
           />

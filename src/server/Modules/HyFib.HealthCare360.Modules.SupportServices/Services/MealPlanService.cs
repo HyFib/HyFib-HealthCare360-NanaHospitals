@@ -124,31 +124,15 @@ public sealed class MealPlanService(
             .ToList();
     }
 
-    /// <summary>Kitchen production list: meals per round and diet, split by food preference, with allergy and restriction notes.</summary>
+    /// <summary>Kitchen production list (<see cref="KitchenProduction"/>) of the facility's meals planned for the date.</summary>
     public async Task<ProductionSummary> ProductionAsync(DateOnly date, CancellationToken ct)
     {
-        var meals = await db.Set<PlannedMeal>().AsNoTracking()
-            .Where(m => m.PlanDate == date && m.Status != MealDeliveryStatus.Cancelled)
-            .Select(m => new { m.Slot, m.DietCode, m.DietName, m.Preference, m.Restrictions, m.AllergyNotes, m.BedLabel })
-            .ToListAsync(ct);
-        var lines = meals
-            .GroupBy(m => new { m.Slot, m.DietCode })
-            .Select(g => new ProductionLine(
-                g.Key.Slot,
-                MealSlots.ServiceTime(g.Key.Slot),
-                g.Key.DietCode,
-                g.First().DietName,
-                g.Count(m => m.Preference == FoodPreference.Vegetarian),
-                g.Count(m => m.Preference == FoodPreference.NonVegetarian),
-                g.Count(m => m.Preference == FoodPreference.Eggetarian),
-                g.Count(m => m.Preference == FoodPreference.Jain),
-                g.Count(),
-                g.Where(m => m.Restrictions.Count > 0 || !string.IsNullOrWhiteSpace(m.AllergyNotes))
-                    .Select(m => $"{m.BedLabel ?? "No bed"}: {string.Join(", ", m.Restrictions)}{(string.IsNullOrWhiteSpace(m.AllergyNotes) ? string.Empty : $" (allergy: {m.AllergyNotes})")}")
-                    .ToList()))
-            .OrderBy(l => l.Slot).ThenBy(l => l.DietCode, StringComparer.Ordinal)
+        var meals = await db.Set<PlannedMeal>().AsNoTracking().Where(m => m.PlanDate == date).ToListAsync(ct);
+        var lines = KitchenProduction.Count(meals)
+            .Select(l => new ProductionLine(l.Slot, MealSlots.ServiceTime(l.Slot), l.DietCode, l.DietName, l.Vegetarian, l.NonVegetarian, l.Eggetarian,
+                l.Jain, l.Total, l.SpecialNotes))
             .ToList();
-        return new ProductionSummary(date, meals.Count, lines);
+        return new ProductionSummary(date, lines.Sum(l => l.Total), lines);
     }
 
     internal async Task<List<PlannedMealDto>> MealDtosAsync(IQueryable<PlannedMeal> meals, CancellationToken ct)

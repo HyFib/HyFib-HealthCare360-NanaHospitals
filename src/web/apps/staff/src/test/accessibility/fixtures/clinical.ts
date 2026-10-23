@@ -7,6 +7,7 @@ import type {
   EncounterDetail,
   FavouriteDto,
   PatientClinicalSummary,
+  PreviousVisitResponse,
   PreviousVisitSummary,
   TemplateDto,
   TemplateListItem,
@@ -1168,7 +1169,9 @@ export const CLINICAL_ANSWERS: FakeAnswers = {
   'GET /api/v1/emr/worklist': WORKLIST,
   'GET /api/v1/inpatient/rounds': ROUND,
   [`GET /api/v1/emr/encounters/${ENCOUNTER_ID}`]: ENCOUNTER,
-  [`GET /api/v1/emr/encounters/${ENCOUNTER_ID}/previous`]: { previous: PREVIOUS_VISIT },
+  [`GET /api/v1/emr/encounters/${ENCOUNTER_ID}/previous-visit`]: {
+    previous: PREVIOUS_VISIT,
+  } satisfies PreviousVisitResponse,
   [`GET ${patientPath}/summary`]: SUMMARY,
   [`GET ${patientPath}/vitals`]: paged(VITALS),
   [`GET ${patientPath}/diagnoses`]: DIAGNOSES,

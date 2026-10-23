@@ -60,6 +60,9 @@ describe('doctor screens', SCREEN_TESTS, () => {
     openScreen(`/emr/encounters/${ENCOUNTER_ID}`);
     expect(await screen.findByText('Allergies: Penicillin (anaphylaxis), Sulfonamides', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('Payer: Self-pay', {}, SLOW)).toBeInTheDocument();
+    expect(
+      await screen.findByText('E11.9 Type 2 diabetes mellitus without complications', {}, SLOW),
+    ).toBeInTheDocument();
     expect(await screen.findByText('Dictate with AI', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('Type 2 diabetes, fair control on metformin.', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('Template investigations (2)', {}, SLOW)).toBeInTheDocument();

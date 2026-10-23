@@ -59,8 +59,9 @@ public sealed record RecentEncounter(
     IReadOnlyList<string> Diagnoses);
 
 /// <summary>
-/// The patient's encounter before an encounter (EMR-07), as the doctor reads it at the next consultation: when and with
-/// whom, what was found and decided, the medicines of its signed prescriptions, and the last vitals recorded in it.
+/// The patient's previous visit (EMR-02..07), as the doctor reads it at the next consultation: their latest signed
+/// encounter before this one (see <c>PatientRecordQueries.PreviousVisitAsync</c>), when and with whom, what was found and
+/// decided, the medicines of its signed prescriptions, and the last vitals recorded in it.
 /// </summary>
 public sealed record PreviousVisitSummary(
     Guid EncounterId,
@@ -81,7 +82,10 @@ public sealed record PreviousVisitSummary(
 /// <summary>A medicine of a signed prescription of the previous visit, as prescribed.</summary>
 public sealed record PreviousVisitMedicine(string DrugName, string? Strength, string Dose, string Frequency, int DurationDays, string? Instructions);
 
-/// <summary><see cref="Previous"/> is null when the encounter is the patient's first.</summary>
+/// <summary>
+/// An encounter's previous visit, for the encounter workspace: <see cref="Previous"/> is null when the patient has no
+/// signed encounter before it.
+/// </summary>
 public sealed record PreviousVisitResponse(PreviousVisitSummary? Previous);
 
 /// <summary>
