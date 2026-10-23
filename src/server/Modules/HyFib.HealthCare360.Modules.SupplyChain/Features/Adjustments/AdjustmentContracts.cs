@@ -54,7 +54,16 @@ public sealed record StartCountRequest(Guid StoreId, ItemType? ItemType, Guid? C
 
 public sealed record CountEntry(Guid LineId, decimal CountedQuantity, string? Remarks);
 
-public sealed record RecordCountsRequest(IReadOnlyList<CountEntry> Lines);
+/// <summary>Counted lines, with the version of the count sheet they were counted on (REL-04).</summary>
+public sealed record RecordCountsRequest(IReadOnlyList<CountEntry> Lines, uint Version);
+
+/// <param name="Version">The version of the count sheet as it was last read (REL-04): 409 when counts were saved since.</param>
+public sealed record SubmitCountRequest(uint Version);
+
+public sealed class SubmitCountRequestValidator : AbstractValidator<SubmitCountRequest>
+{
+    public SubmitCountRequestValidator() => RuleFor(x => x.Version).SeenVersion();
+}
 
 public sealed record CountListItem(
     Guid Id,

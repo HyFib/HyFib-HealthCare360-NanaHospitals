@@ -1,4 +1,4 @@
-import { Button, Field, Input, Switch } from '@fluentui/react-components';
+import { Button, Field, Input, MessageBar, MessageBarBody, MessageBarTitle, Switch } from '@fluentui/react-components';
 import { isApiError } from '@hc360/core';
 import { applyServerErrors, ErrorState, FormGrid, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -35,6 +35,20 @@ function EditPatientPage() {
     return (
       <Page maxWidth={900}>
         <ErrorState error={patient.error} onRetry={() => void patient.refetch()} />
+      </Page>
+    );
+  }
+  // The details came masked: saving them back would replace the real ones, and the server refuses it (SRS PRV-03).
+  if (patient.data.contactsMasked) {
+    return (
+      <Page maxWidth={900}>
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>You cannot edit this patient&apos;s details</MessageBarTitle>
+            Editing shows the phone numbers, email and address in full, which are for the staff who contact or bill
+            patients. Ask the front desk to make the change.
+          </MessageBarBody>
+        </MessageBar>
       </Page>
     );
   }

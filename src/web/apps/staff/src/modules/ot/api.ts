@@ -625,8 +625,9 @@ export const otApi = {
   postpone: (id: string, reason: string) => api.post<void>(`/api/v1/ot/bookings/${id}/postpone`, { reason }),
   cancel: (id: string, reason: string) => api.post<void>(`/api/v1/ot/bookings/${id}/cancel`, { reason }),
   receive: (id: string) => api.post<void>(`/api/v1/ot/bookings/${id}/receive`),
-  recordPreOp: (id: string, items: ChecklistInput[]) =>
-    api.put<void>(`/api/v1/ot/bookings/${id}/pre-op-checklist`, { items }),
+  /** `version`: the booking the ticks were made on; a checklist changed meanwhile is not written over (REL-04). */
+  recordPreOp: (id: string, items: ChecklistInput[], version: number) =>
+    api.put<void>(`/api/v1/ot/bookings/${id}/pre-op-checklist`, { items, version }),
   confirmSafety: (id: string, phase: SafetyPhase, items: ChecklistInput[]) =>
     api.post<void>(`/api/v1/ot/bookings/${id}/safety-checklist/${phasePath[phase]}`, { items }),
   start: (id: string) => api.post<void>(`/api/v1/ot/bookings/${id}/start`),

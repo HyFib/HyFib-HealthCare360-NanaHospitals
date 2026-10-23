@@ -78,6 +78,7 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
         RuleFor(x => x.Email).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x.Phone).PhoneNumber();
         RuleFor(x => x.RoleIds).NotEmpty().WithMessage("Assign at least one role.");
+        RuleFor(x => x.TemporaryPassword).MaximumLength(PasswordPolicy.MaxLength).WithMessage(IdentityRules.PasswordTooLongMessage);
     }
 }
 
@@ -122,7 +123,7 @@ internal static class AccessAdminEndpoints
         roles.MapGet("/", ListRoles).RequirePermission(PlatformPermissions.UsersRead);
         roles.MapGet("/{id:guid}", GetRole).RequirePermission(PlatformPermissions.UsersRead);
         roles.MapPost("/", CreateRole).RequirePermission(PlatformPermissions.RolesManage).WithValidation<SaveRoleRequest>();
-        roles.MapPut("/{id:guid}", UpdateRole).RequirePermission(PlatformPermissions.RolesManage).WithValidation<SaveRoleRequest>();
+        roles.MapPut("/{id:guid}", UpdateRole).RequirePermission(PlatformPermissions.RolesManage).WithValidation<SaveRoleRequest>().RequireVersion();
         roles.MapDelete("/{id:guid}", DeleteRole).RequirePermission(PlatformPermissions.RolesManage);
 
         app.MapGet("/api/v1/admin/permissions", (PermissionRegistry registry) =>

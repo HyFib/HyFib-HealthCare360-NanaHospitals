@@ -12,7 +12,7 @@ internal static class RadiologyMasterEndpoints
         templates.MapPost("/", (SaveReportTemplateRequest r, HospitalDbContext db, CancellationToken ct) => SaveTemplate(null, r, db, ct))
             .RequirePermission(DiagnosticsPermissions.RadiologyReportsVerify).WithValidation<SaveReportTemplateRequest>();
         templates.MapPut("/{id:guid}", (Guid id, SaveReportTemplateRequest r, HospitalDbContext db, CancellationToken ct) => SaveTemplate(id, r, db, ct))
-            .RequirePermission(DiagnosticsPermissions.RadiologyReportsVerify).WithValidation<SaveReportTemplateRequest>();
+            .RequirePermission(DiagnosticsPermissions.RadiologyReportsVerify).WithValidation<SaveReportTemplateRequest>().RequireVersion();
 
         var procedures = app.MapGroup("/api/v1/radiology/procedures").WithTags("Radiology masters");
         procedures.MapGet("/", ListProcedures)
@@ -20,7 +20,7 @@ internal static class RadiologyMasterEndpoints
         procedures.MapPost("/", (SaveImagingProcedureRequest r, HospitalDbContext db, CancellationToken ct) => SaveProcedure(null, r, db, ct))
             .RequireAnyPermission(DiagnosticsPermissions.RadiologyReportsVerify, PlatformPermissions.MastersManage).WithValidation<SaveImagingProcedureRequest>();
         procedures.MapPut("/{id:guid}", (Guid id, SaveImagingProcedureRequest r, HospitalDbContext db, CancellationToken ct) => SaveProcedure(id, r, db, ct))
-            .RequireAnyPermission(DiagnosticsPermissions.RadiologyReportsVerify, PlatformPermissions.MastersManage).WithValidation<SaveImagingProcedureRequest>();
+            .RequireAnyPermission(DiagnosticsPermissions.RadiologyReportsVerify, PlatformPermissions.MastersManage).WithValidation<SaveImagingProcedureRequest>().RequireVersion();
     }
 
     /// <summary>Templates for a modality; those matching the body part come first, then generic ones.</summary>

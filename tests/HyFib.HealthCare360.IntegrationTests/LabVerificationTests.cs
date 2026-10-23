@@ -232,7 +232,7 @@ public sealed class LabVerificationTests(HospitalServer server)
     }
 
     private static Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
-        admin.PutAsync("/api/v1/admin/settings/lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
+        admin.SaveSettingAsync("lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
 
     private async Task<PatientCreated> RegisterPatientAsync()
     {

@@ -117,6 +117,8 @@ function RiskForm({ risk, onClose }: { risk: RiskDetail | null; onClose: () => v
       status: risk?.status ?? 'Open',
     },
   });
+  // The version the form was filled from, not a newer one read since (REL-04).
+  const [loadedVersion] = useState(risk?.version ?? null);
   const [likelihood, impact, rl, ri] = useWatch({
     control: form.control,
     name: ['likelihood', 'impact', 'residualLikelihood', 'residualImpact'],
@@ -140,7 +142,7 @@ function RiskForm({ risk, onClose }: { risk: RiskDetail | null; onClose: () => v
       ownerUserId: v.owner?.id ?? null,
       reviewDate: v.reviewDate,
       status: v.status,
-      version: risk?.version ?? null,
+      version: loadedVersion,
     };
     try {
       if (risk) {

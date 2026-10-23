@@ -83,7 +83,7 @@ public sealed class SimulatorTests(HospitalServer server)
     }
 
     private static Task SaveAsync(ApiClient admin, string key, string json) =>
-        admin.PutAsync($"/api/v1/admin/settings/{key}", new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
+        admin.SaveSettingAsync(key, new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));
 }

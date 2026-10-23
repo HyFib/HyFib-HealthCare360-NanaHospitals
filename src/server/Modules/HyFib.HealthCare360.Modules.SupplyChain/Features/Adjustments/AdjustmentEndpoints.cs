@@ -38,9 +38,9 @@ internal static class AdjustmentEndpoints
         counts.MapPut("/{id:guid}/lines", async (Guid id, RecordCountsRequest r, AdjustmentService service, CancellationToken ct) =>
                 (await service.RecordCountsAsync(id, r, ct)).ToNoContent())
             .RequirePermission(SupplyChainPermissions.Counts).WithValidation<RecordCountsRequest>();
-        counts.MapPost("/{id:guid}/submit", async (Guid id, AdjustmentService service, CancellationToken ct) =>
-                (await service.SubmitCountAsync(id, ct)).ToHttpResult(adjustmentId => TypedResults.Ok(new { adjustmentId })))
-            .RequirePermission(SupplyChainPermissions.Counts);
+        counts.MapPost("/{id:guid}/submit", async (Guid id, SubmitCountRequest r, AdjustmentService service, CancellationToken ct) =>
+                (await service.SubmitCountAsync(id, r.Version, ct)).ToHttpResult(adjustmentId => TypedResults.Ok(new { adjustmentId })))
+            .RequirePermission(SupplyChainPermissions.Counts).WithValidation<SubmitCountRequest>();
         counts.MapPost("/{id:guid}/cancel", async (Guid id, AdjustmentService service, CancellationToken ct) =>
                 (await service.CancelCountAsync(id, ct)).ToNoContent())
             .RequirePermission(SupplyChainPermissions.Counts);

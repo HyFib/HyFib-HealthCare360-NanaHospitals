@@ -2,9 +2,10 @@ name: Load test
 
 # How the server performs at the SRS 7.3 targets, with the load test in tools/HyFib.HealthCare360.LoadTest
 # (docs/testing/LOAD-TESTS.md). GitHub's runners are shared machines, nothing like a hospital's Server Node, and the
-# load test runs on the same one as the server and PostgreSQL: the figures here are only reported, in the run's
-# summary. The job fails when requests fail or the load test itself breaks. The figures that decide go-live come from
-# a run against a test Server Node on the hospital's hardware.
+# load test runs on the same one as the server and PostgreSQL: the timings here are only reported, in the run's summary.
+# The size of a list's largest page (PERF-05) is the same on any machine, so it is held to its 100 KB here. The job also
+# fails when requests fail or the load test itself breaks. The timings that decide go-live come from a run against a
+# test Server Node on the hospital's hardware.
 on:
   workflow_dispatch:
     inputs:
@@ -37,7 +38,7 @@ concurrency:
 
 jobs:
   load:
-    name: Load test (figures reported, not enforced)
+    name: Load test (page sizes enforced, timings reported)
     runs-on: windows-latest
     timeout-minutes: 75
     env:
@@ -120,11 +121,11 @@ jobs:
             & 'tools/HyFib.HealthCare360.LoadTest/bin/Release/net10.0/HyFib.HealthCare360.LoadTest.exe' run `
               --server https://localhost:7360/ --ca $ca `
               --accounts $accounts --test-server `
-              --users $env:USERS --ramp 1m --duration "$($env:MINUTES)m" --targets report --report $report
+              --users $env:USERS --ramp 1m --duration "$($env:MINUTES)m" --targets payloads --report $report
             $code = $LASTEXITCODE
             if (Test-Path $report) {
               Get-Content $report | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-              "_$env:PATIENTS synthetic patients; GitHub runner: figures for comparison between runs, not the hospital's targets._" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+              "_$env:PATIENTS synthetic patients; GitHub runner: timings for comparison between runs, not the hospital's targets; page sizes held to 100 KB._" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
             }
             if ($code -ne 0) { throw "The load test failed (exit code $code)." }
           }

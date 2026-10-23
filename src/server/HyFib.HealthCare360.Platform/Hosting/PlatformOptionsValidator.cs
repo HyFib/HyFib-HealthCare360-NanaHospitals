@@ -51,6 +51,7 @@ public sealed class PlatformOptionsValidator(IHostEnvironment environment) : IVa
         problems.AddRange(Http.ReverseProxy.Problems(options.Network));
         problems.AddRange(Http.ClientAddresses.Problems(options.Network));
         problems.AddRange(PartitionProblems(options.Partitions));
+        problems.AddRange(options.RateLimits.Problems());
         return problems;
     }
 

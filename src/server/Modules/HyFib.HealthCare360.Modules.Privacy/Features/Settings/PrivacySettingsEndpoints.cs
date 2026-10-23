@@ -9,7 +9,10 @@ public sealed record PublicPrivacyInfo(string Hospital, PrivacyContact Contact, 
 /// <summary>The settings as saved, and the contact as published (with the hospital's own details filling any gap).</summary>
 public sealed record PrivacySettingsView(PrivacySettingsDto Settings, PrivacyContact Published);
 
-public sealed record SavePrivacySettingsRequest(string? Title, string? Name, string? Email, string? Phone, string? Address, int ResponseDays);
+/// <param name="Version">The version of the contact as loaded (REL-04); none until it is first saved.</param>
+/// <param name="ResponseDaysVersion">The version of the response period as loaded; none until it is first saved.</param>
+public sealed record SavePrivacySettingsRequest(
+    string? Title, string? Name, string? Email, string? Phone, string? Address, int ResponseDays, uint? Version = null, uint? ResponseDaysVersion = null);
 
 public sealed class SavePrivacySettingsRequestValidator : AbstractValidator<SavePrivacySettingsRequest>
 {
@@ -39,10 +42,10 @@ internal static class PrivacySettingsEndpoints
         group.MapPut("/", async (SavePrivacySettingsRequest r, PrivacySettings privacy, CancellationToken ct) =>
             {
                 await privacy.SaveAsync(new PrivacySettingsDto(new PrivacyContact(r.Title ?? PrivacySettings.DefaultTitle, r.Name, r.Email, r.Phone, r.Address),
-                    r.ResponseDays), ct);
+                    r.ResponseDays, r.Version, r.ResponseDaysVersion), ct);
                 return TypedResults.NoContent();
             })
-            .WithValidation<SavePrivacySettingsRequest>();
+            .WithValidation<SavePrivacySettingsRequest>().FirstSaveCreates();
 
         // Public: the privacy notice names the grievance officer for everyone, signed in or not.
         app.MapGet("/api/v1/public/privacy", async (PrivacySettings privacy, HospitalDbContext db, CancellationToken ct) =>

@@ -80,6 +80,7 @@ export function toTemplate(values: PrintTemplateForm, item: PrintTemplateItem): 
   };
 }
 
+/** `item` is the template as the form was filled from it, not as the list was read since: its versions are sent. */
 export function toSaveRequest(values: PrintTemplateForm, item: PrintTemplateItem): SavePrintTemplateRequest {
   const forThisFacility = values.scope === 'facility';
   // The version of the template this one replaces, so a save over someone else's newer one is refused (REL-04).

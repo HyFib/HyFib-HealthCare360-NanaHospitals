@@ -42,7 +42,8 @@ public sealed record ComponentPlan(BloodComponentType Type, int? VolumeMl, strin
 
 public sealed record SeparateComponentsRequest(IReadOnlyList<ComponentPlan> Components);
 
-public sealed record RecordLabResultsRequest(BloodGroup BloodGroup, TtiResult Hiv, TtiResult HbsAg, TtiResult Hcv, TtiResult Syphilis, TtiResult Malaria)
+public sealed record RecordLabResultsRequest(
+    BloodGroup BloodGroup, TtiResult Hiv, TtiResult HbsAg, TtiResult Hcv, TtiResult Syphilis, TtiResult Malaria, uint Version)
 {
     public TtiPanel ToPanel() => new() { Hiv = Hiv, HbsAg = HbsAg, Hcv = Hcv, Syphilis = Syphilis, Malaria = Malaria };
 }

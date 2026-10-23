@@ -27,6 +27,7 @@ import {
   useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { gstStateName } from '@/modules/inventory/gst';
@@ -128,7 +129,8 @@ export function VendorDrawer({
   onClose: () => void;
 }) {
   const existing = useQuery({ ...purchaseQueries.vendor(vendorId ?? ''), enabled: vendorId !== null, staleTime: 0 });
-  if (vendorId && !existing.data) {
+  // Filled from the vendor as read now, not from an older copy kept from before (REL-04).
+  if (vendorId && (!existing.isFetchedAfterMount || !existing.data)) {
     return (
       <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
         <DrawerBody>
@@ -164,6 +166,8 @@ function VendorForm({
     defaultValues: toValues(vendor),
     mode: 'onTouched',
   });
+  // The version the form was filled from, not a newer one read since (REL-04).
+  const [loadedVersion] = useState(vendor?.version ?? null);
   const [gstin, validUntil] = useWatch({ control: form.control, name: ['gstin', 'drugLicenseValidUntil'] });
   const readOnly = !canManage;
   const state = GSTIN.test((gstin ?? '').toUpperCase()) ? gstStateName(gstin) : null;
@@ -194,7 +198,7 @@ function VendorForm({
         rating: v.rating,
         notes: v.notes || null,
         isActive: v.isActive,
-        version: vendor?.version ?? null,
+        version: loadedVersion,
       }),
     onSuccess: () => {
       notify.success(vendor ? 'Vendor saved' : 'Vendor added');

@@ -7,14 +7,15 @@ using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Platform.Http;
 
 /// <summary>
-/// A per-address limit that must hold for the hospital, not for each server: <paramref name="PermitLimit"/> requests per
-/// client address in a fixed <paramref name="Window"/>.
+/// A per-address limit that must hold for the hospital, not for each server: the requests per client address in a fixed
+/// window that <paramref name="Of"/> picks from the settings (<see cref="RateLimitOptions"/>).
 /// </summary>
-public sealed record AddressRateLimit(string Policy, int PermitLimit, TimeSpan Window);
+public sealed record AddressRateLimit(string Policy, Func<RateLimitOptions, FixedWindowLimit> Of);
 
 /// <summary>
 /// The per-address limits on sign-in and one-time codes (SEC-06), which ASP.NET Core's rate limiter keeps in each
@@ -26,11 +27,11 @@ public sealed record AddressRateLimit(string Policy, int PermitLimit, TimeSpan W
 /// </summary>
 public static class ClusterRateLimits
 {
-    /// <summary>Sign-in, a second factor, a one-time code, a token refresh, unlocking: 10 a minute per address.</summary>
-    public static readonly AddressRateLimit SignIn = new("auth", 10, TimeSpan.FromMinutes(1));
+    /// <summary>Sign-in, a second factor, a one-time code, a token refresh, unlocking: by default 10 a minute per address.</summary>
+    public static readonly AddressRateLimit SignIn = new("auth", limits => limits.SignIn);
 
-    /// <summary>Asking for a one-time code: 5 in 15 minutes per address.</summary>
-    public static readonly AddressRateLimit OneTimeCode = new("otp", 5, TimeSpan.FromMinutes(15));
+    /// <summary>Asking for a one-time code: by default 5 in 15 minutes per address.</summary>
+    public static readonly AddressRateLimit OneTimeCode = new("otp", limits => limits.OneTimeCode);
 
     /// <summary>
     /// Limits the endpoint per address with ASP.NET Core's rate limiter (<paramref name="limit"/>'s policy) and, on a node
@@ -73,8 +74,9 @@ internal sealed class ClusterRateLimitFilter(AddressRateLimit limit) : IEndpoint
         }
 
         var store = http.RequestServices.GetRequiredService<IClusterStore>();
-        var count = await store.IncrementAsync(ClusterRateLimits.Key(limit, http), limit.Window, http.RequestAborted);
-        if (count.Count <= limit.PermitLimit)
+        var configured = limit.Of(http.RequestServices.GetRequiredService<IOptions<PlatformOptions>>().Value.RateLimits);
+        var count = await store.IncrementAsync(ClusterRateLimits.Key(limit, http), configured.Window, http.RequestAborted);
+        if (count.Count <= configured.PermitLimit)
         {
             return await next(context);
         }

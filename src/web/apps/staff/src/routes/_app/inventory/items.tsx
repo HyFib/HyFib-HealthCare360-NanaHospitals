@@ -402,6 +402,8 @@ function ItemEditor({
     defaultValues: toForm(item),
     mode: 'onTouched',
   });
+  // The version the form was filled from, not a newer one read since (REL-04).
+  const [loadedVersion] = useState(item?.version ?? null);
   const [schedule, isControlled, type, baseUnit, purchaseUnit] = useWatch({
     control: form.control,
     name: ['schedule', 'isControlled', 'type', 'baseUnit', 'purchaseUnit'],
@@ -436,7 +438,7 @@ function ItemEditor({
         manufacturer: values.manufacturer || null,
         barcode: values.barcode || null,
         isActive: values.isActive,
-        version: item?.version ?? null,
+        version: loadedVersion,
       };
       return inventoryApi.saveItem(item?.id ?? null, body);
     },

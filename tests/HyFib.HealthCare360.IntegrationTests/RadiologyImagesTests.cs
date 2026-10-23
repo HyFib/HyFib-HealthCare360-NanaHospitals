@@ -178,10 +178,10 @@ public sealed class RadiologyImagesTests(HospitalServer server)
     {
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={PacsKey}"))
             .FirstOrDefault(s => s.Key == PacsKey && s.FacilityId is null)?.Value;
-        await admin.PutAsync($"/api/v1/admin/settings/{PacsKey}", new SaveSettingRequest(
+        await admin.SaveSettingAsync(PacsKey, new SaveSettingRequest(
             new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["viewerUrlTemplate"] = "https://pacs.example.org/viewer?acc={accession}" },
             null, false, null));
-        return new Restore(() => admin.PutAsync($"/api/v1/admin/settings/{PacsKey}",
+        return new Restore(() => admin.SaveSettingAsync(PacsKey,
             new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }
 

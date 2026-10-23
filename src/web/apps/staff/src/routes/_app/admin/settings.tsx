@@ -51,6 +51,8 @@ const KNOWN: Record<string, string> = {
     'Minutes of inactivity before a workstation locks (10 if not set, 0 turns it off). The server keeps the lock.',
   'ui.biometricUnlock':
     "Whether staff may unlock their locked screen with the device's Windows Hello, fingerprint or face (off if not set, true turns it on, for the hospital or one facility). Only where each staff member has their own Windows login: on a shared Windows login, whoever can unlock it with Windows Hello could unlock a colleague's screen. The PIN and the password always work.",
+  'security.administrationRequiresDesktop':
+    'Whether administration (users and roles, settings, devices, backups, integrations, the audit log) works only in HC360 Desktop on a computer IT has enrolled (on if not set; false lets any browser signed in as an administrator do it too). For the whole hospital.',
   'security.maxSessionsPerUser':
     'How many sessions one staff account may have at once (3 if not set, 0 for no limit). Signing in once more signs out the one used least recently.',
   'alerts.oncallPhone':
@@ -212,6 +214,8 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
         facilityId: setting?.facilityId ?? null,
         secret,
         description: description.trim() || null,
+        // The value as shown (none when adding): one saved meanwhile is not overwritten (REL-04).
+        version: setting?.version,
       }),
     onSuccess: () => {
       notify.success('Setting saved');

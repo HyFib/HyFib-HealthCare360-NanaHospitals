@@ -14,7 +14,7 @@ internal static class CredentialEndpoints
         group.MapGet("/credentials", List).RequireAnyPermission(HRPermissions.CredentialsManage, HRPermissions.EmployeesRead);
         group.MapGet("/employees/{employeeId:guid}/credentials", ForEmployee).RequireAnyPermission(HRPermissions.CredentialsManage, HRPermissions.EmployeesRead);
         group.MapPost("/employees/{employeeId:guid}/credentials", Create).RequirePermission(HRPermissions.CredentialsManage).WithValidation<SaveCredentialRequest>();
-        group.MapPut("/credentials/{id:guid}", Update).RequirePermission(HRPermissions.CredentialsManage).WithValidation<SaveCredentialRequest>();
+        group.MapPut("/credentials/{id:guid}", Update).RequirePermission(HRPermissions.CredentialsManage).WithValidation<SaveCredentialRequest>().RequireVersion();
         group.MapDelete("/credentials/{id:guid}", Delete).RequirePermission(HRPermissions.CredentialsManage);
     }
 

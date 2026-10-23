@@ -31,7 +31,11 @@ public sealed record PortalFeedbackItem(
 
 /// <summary>Communication choices (PP-06): campaigns and offers, and service messages such as reminders and feedback links.</summary>
 /// <param name="WhatsApp">Get messages on WhatsApp on the patient's number; null leaves it as it is.</param>
-public sealed record CommunicationPreferencesRequest(Guid PatientId, bool Marketing, bool Updates, bool? WhatsApp = null);
+/// <summary>
+/// The choices the patient just made; a choice left out (null) stays as it is. Each switch saves at once and sends only
+/// itself, so a page showing an older state never undoes a choice made meanwhile on another device (REL-04).
+/// </summary>
+public sealed record CommunicationPreferencesRequest(Guid PatientId, bool? Marketing = null, bool? Updates = null, bool? WhatsApp = null);
 
 public sealed class PortalFeedbackRequestValidator : AbstractValidator<PortalFeedbackRequest>
 {

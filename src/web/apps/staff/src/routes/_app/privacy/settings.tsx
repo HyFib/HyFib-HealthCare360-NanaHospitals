@@ -1,7 +1,7 @@
 import { Button, Caption1, makeStyles, Spinner, Text, tokens } from '@fluentui/react-components';
 import { SaveRegular, SettingsRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatPhone, normalizePhone } from '@hc360/core';
+import { formatPhone, isApiError, normalizePhone } from '@hc360/core';
 import {
   applyServerErrors,
   ErrorState,
@@ -18,6 +18,7 @@ import {
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Detail, DetailGrid } from '@/modules/hr/shared/DetailGrid';
@@ -108,6 +109,21 @@ function SettingsForm({ view }: { view: PrivacySettingsView }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: toValues(view) });
+  // The settings as the form was filled, then as this user saved them: their versions go with the save. They are read
+  // again in the background, and versions read so must never be sent with these values (REL-04).
+  const [loaded, setLoaded] = useState(view.settings);
+
+  /** The save answers with nothing: the form is filled again from the settings read after it, versions included. */
+  const refill = async () => {
+    try {
+      const fresh = await queryClient.fetchQuery({ ...privacyQueries.settings(), staleTime: 0 });
+      setLoaded(fresh.settings);
+      form.reset(toValues(fresh));
+    } catch {
+      // Not read: the form keeps the versions it had, so its next save is refused rather than saved over a change.
+    }
+  };
+
   const save = useMutation({
     mutationFn: (v: Values) =>
       privacyApi.saveSettings({
@@ -117,15 +133,22 @@ function SettingsForm({ view }: { view: PrivacySettingsView }) {
         phone: v.phone.trim() ? (normalizePhone(v.phone) ?? v.phone.trim()) : null,
         address: v.address.trim() || null,
         responseDays: v.responseDays ?? 30,
+        version: loaded.version,
+        responseDaysVersion: loaded.responseDaysVersion,
       }),
-    onSuccess: (_, v) => {
+    onSuccess: async (_, v) => {
       notify.success('Privacy settings saved', 'New requests are given the new reply-by period.');
       form.reset(v);
+      await refill();
       void queryClient.invalidateQueries({ queryKey: privacyKeys.settings });
     },
     onError: (error) => {
       if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not save the settings');
+        if (isApiError(error) && error.code === 'concurrency') {
+          // Read again for the page, which fills the form afresh when opened again; the form keeps refusing until then.
+          void queryClient.invalidateQueries({ queryKey: privacyKeys.settings });
+        }
       }
     },
   });

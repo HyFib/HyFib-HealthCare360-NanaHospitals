@@ -41,6 +41,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { followIfUnchanged, useBaseVersion } from '@/lib/baseVersion';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import {
@@ -174,6 +175,44 @@ function toValues(record: AnaesthesiaRecordDto | null, booking: SurgeryDetail): 
 
 const orNull = (value: string) => (value.trim() ? value.trim() : null);
 
+/** What the record form edits: vitals are charted below it and saved on their own. */
+const FORM_FIELDS = [
+  'asaGrade',
+  'asaEmergency',
+  'technique',
+  'airway',
+  'airwayNotes',
+  'anaesthesiaStartAt',
+  'anaesthesiaEndAt',
+  'drugs',
+  'fluids',
+  'estimatedBloodLossMl',
+  'urineOutputMl',
+  'complications',
+  'recoveryNotes',
+] as const satisfies readonly (keyof AnaesthesiaRecordDto)[];
+
+type FormFields = Pick<AnaesthesiaRecordDto, (typeof FORM_FIELDS)[number]>;
+
+/** The record as the first vitals create it, before anyone saved the form: what a form opened without one is based on. */
+function blankRecord(booking: SurgeryDetail): FormFields {
+  return {
+    asaGrade: null,
+    asaEmergency: false,
+    technique: booking.anaesthesiaType,
+    airway: 'None',
+    airwayNotes: null,
+    anaesthesiaStartAt: null,
+    anaesthesiaEndAt: null,
+    drugs: [],
+    fluids: [],
+    estimatedBloodLossMl: null,
+    urineOutputMl: null,
+    complications: null,
+    recoveryNotes: null,
+  };
+}
+
 /**
  * Anaesthesia record (OT-04): ASA grade, technique and airway, drugs and fluids, blood loss, recovery, and the
  * intra-operative vitals chart. Signing locks the record (medico-legal); the ASA grade is needed to sign.
@@ -183,6 +222,8 @@ export function AnaesthesiaPanel({ booking }: { booking: SurgeryDetail }) {
   const record = useQuery(otQueries.anaesthesia(booking.id));
   const canRecord = usePermission('ot.anaesthesia.record');
   const gate = anaesthesiaGate(booking);
+  // The record as the vitals this user added below returned it: they change it too, and the first ones create it.
+  const [vitalsAdded, setVitalsAdded] = useState<AnaesthesiaRecordDto | null>(null);
 
   if (record.isLoading) {
     return <LoadingState label="Loading the anaesthesia record…" />;
@@ -204,7 +245,7 @@ export function AnaesthesiaPanel({ booking }: { booking: SurgeryDetail }) {
       {data?.signedAt ? (
         <SignedRecord record={data} />
       ) : editable ? (
-        <RecordForm booking={booking} record={data} />
+        <RecordForm booking={booking} record={data} vitalsAdded={vitalsAdded} />
       ) : (
         <Section title="Anaesthesia record">
           <Text className={styles.muted}>
@@ -214,12 +255,20 @@ export function AnaesthesiaPanel({ booking }: { booking: SurgeryDetail }) {
           {data && <RecordSummary record={data} />}
         </Section>
       )}
-      <VitalsSection booking={booking} record={data} canRecord={editable} />
+      <VitalsSection booking={booking} record={data} canRecord={editable} onAdded={setVitalsAdded} />
     </div>
   );
 }
 
-function RecordForm({ booking, record }: { booking: SurgeryDetail; record: AnaesthesiaRecordDto | null }) {
+function RecordForm({
+  booking,
+  record,
+  vitalsAdded,
+}: {
+  booking: SurgeryDetail;
+  record: AnaesthesiaRecordDto | null;
+  vitalsAdded: AnaesthesiaRecordDto | null;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -229,11 +278,18 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
   const drugs = useFieldArray({ control: form.control, name: 'drugs' });
   const fluids = useFieldArray({ control: form.control, name: 'fluids' });
   const [asaGrade] = useWatch({ control: form.control, name: ['asaGrade'] });
+  // The record as the form was filled, then as this anaesthetist saved it: what the form's values are based on.
+  const [base, setBase] = useState<FormFields | null>(record);
+  // Its version goes with every save. The record is read again in the background, and a version read so must never be
+  // sent (REL-04). Vitals added below change the record too: the form follows them while the record they return still
+  // holds the form's fields as they were based.
+  const [version, setVersion] = useBaseVersion(record?.version ?? null, vitalsAdded, (returned) =>
+    followIfUnchanged(base ?? blankRecord(booking), returned, FORM_FIELDS),
+  );
 
   const save = useMutation({
-    mutationFn: ({ values, sign }: { values: RecordValues; sign: boolean }) => {
-      const latest = queryClient.getQueryData<AnaesthesiaRecordDto | null>(otKeys.anaesthesia(booking.id)) ?? record;
-      return otApi.saveAnaesthesia(booking.id, {
+    mutationFn: ({ values, sign }: { values: RecordValues; sign: boolean }) =>
+      otApi.saveAnaesthesia(booking.id, {
         asaGrade: values.asaGrade,
         asaEmergency: values.asaEmergency,
         technique: values.technique,
@@ -253,10 +309,11 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
         complications: orNull(values.complications),
         recoveryNotes: orNull(values.recoveryNotes),
         sign,
-        version: latest?.version ?? null,
-      });
-    },
+        version,
+      }),
     onSuccess: (saved, { sign }) => {
+      setBase(saved);
+      setVersion(saved.version);
       queryClient.setQueryData(otKeys.anaesthesia(booking.id), saved);
       draft.clear();
       setConfirmSign(false);
@@ -271,9 +328,14 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
   const submit = (sign: boolean) => form.handleSubmit((values) => save.mutate({ values, sign }))();
   useHotkey('mod+s', () => void submit(false), { allowInInputs: true, enabled: !save.isPending });
 
+  // After a conflict: the record as saved now fills the form, and what was typed waits as a draft to restore once it
+  // has been read.
   const reload = async () => {
-    const latest = await queryClient.fetchQuery(otQueries.anaesthesia(booking.id));
+    draft.keep();
+    const latest = await queryClient.fetchQuery({ ...otQueries.anaesthesia(booking.id), staleTime: 0 });
     form.reset(toValues(latest, booking));
+    setBase(latest);
+    setVersion(latest?.version ?? null);
     save.reset();
   };
 
@@ -559,10 +621,12 @@ function VitalsSection({
   booking,
   record,
   canRecord,
+  onAdded,
 }: {
   booking: SurgeryDetail;
   record: AnaesthesiaRecordDto | null;
   canRecord: boolean;
+  onAdded: (record: AnaesthesiaRecordDto) => void;
 }) {
   const styles = useStyles();
   const notify = useNotify();
@@ -577,6 +641,7 @@ function VitalsSection({
     },
     onSuccess: (saved) => {
       queryClient.setQueryData(otKeys.anaesthesia(booking.id), saved);
+      onAdded(saved);
       form.reset(emptyVitals());
       notify.success('Vitals added');
     },

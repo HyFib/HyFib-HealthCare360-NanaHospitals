@@ -3,8 +3,9 @@ import { FormRegular } from '@fluentui/react-icons';
 import { ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { feedbackQueries } from '@/modules/feedback/api';
+import { feedbackQueries, type FeedbackFormDto } from '@/modules/feedback/api';
 import { FeedbackFormEditor } from '@/modules/feedback/FeedbackFormEditor';
 import { FormQrPanel } from '@/modules/feedback/FormQrPanel';
 import { FEEDBACK_PERMISSIONS as F, FORM_VIEWERS, formTypeLabel } from '@/modules/feedback/labels';
@@ -25,6 +26,8 @@ function FormPage() {
   const canManage = usePermission(F.manage);
   // No silent refetch: the version in hand is what the manager's edits are based on.
   const form = useQuery({ ...feedbackQueries.form(formId), refetchOnWindowFocus: false });
+  // The form as this manager's new QR code returned it: that changes its version too (REL-04).
+  const [rotated, setRotated] = useState<FeedbackFormDto | null>(null);
 
   const crumbs = [
     { label: 'Feedback analytics', onClick: () => void navigate({ to: '/feedback' }) },
@@ -63,12 +66,16 @@ function FormPage() {
         form={f}
         canManage={canManage}
         onSaved={() => undefined}
+        ownChange={rotated}
         aside={
           <Section title="QR code" description="For posters at the exit, waiting areas and the feedback kiosk">
             <FormQrPanel
               form={f}
               canManage={canManage}
-              onRotated={(updated) => queryClient.setQueryData(feedbackQueries.form(formId).queryKey, updated)}
+              onRotated={(updated) => {
+                setRotated(updated);
+                queryClient.setQueryData(feedbackQueries.form(formId).queryKey, updated);
+              }}
             />
           </Section>
         }

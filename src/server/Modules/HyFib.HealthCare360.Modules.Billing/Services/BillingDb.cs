@@ -22,17 +22,6 @@ internal static class BillingDb
     /// </summary>
     public static async Task<OwnedTransaction> BeginOwnedTransactionAsync(this HospitalDbContext db, CancellationToken ct) =>
         new(db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null);
-
-    /// <summary>
-    /// Applies the client's last-seen version and forces the root row to be written, so a concurrent change is detected
-    /// even when a request only touches child rows (bill lines, deductions, inclusions).
-    /// </summary>
-    public static void GuardVersion<T>(this HospitalDbContext db, T entity, uint expectedVersion)
-        where T : AuditableEntity
-    {
-        db.SetExpectedVersion(entity, expectedVersion);
-        db.Entry(entity).Property(nameof(IAuditable.UpdatedAt)).IsModified = true;
-    }
 }
 
 /// <summary>A transaction that is committed/disposed only by the code that started it.</summary>

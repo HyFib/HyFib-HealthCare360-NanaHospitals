@@ -187,7 +187,21 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     password list. It is audited as critical.
   - **Credential changes:** changing the password, or turning two-step verification on or off, signs out the
     account's other sessions. Setting up two-step verification asks for the password first.
-- Selected roles can be limited to **enrolled devices**:
+- **Administration needs an enrolled device** (SRS SEC-08). The administrative permissions (`admin.*` and all-access:
+  users and roles, settings, devices, backups, integrations, the audit log, the server's own credentials) work only in
+  HC360 Desktop on a computer IT enrolled. A browser keeps everything else its user holds:
+  - The server refuses the request (403 `auth.device_required`, saying where administration works) when only an
+    administrative permission allows it and the session was not signed in with an enrolled desktop's credential. Any
+    other permission the endpoint takes is enough anywhere. The app is given the permissions the session can use, so it
+    shows no administration there, and says where it is.
+  - Revoking a desktop ends its sessions at once; its credential then signs in as a browser does, without administration.
+  - While no workstation or tablet is enrolled (a new installation, or one whose desktops are kiosks and queue displays
+    only), a browser may still list the devices and make an enrolment code, and nothing else, so the first workstation
+    can be enrolled.
+  - The `security.administrationRequiresDesktop` setting (Administration › Settings, for the whole hospital) turns it
+    off; without it, `HealthCare360:Security:AdministrationRequiresDesktop` in the server's settings file decides, on by
+    default. Turned off, an administrator's password alone opens administration from any computer on the network.
+- Selected roles can also be limited to **enrolled devices** for signing in at all:
   - Each HC360 Desktop has a device secret, protected with Windows DPAPI. It gets it by enrolling with a code an
     administrator makes, which is good for one device and for 30 minutes unless the administrator chose otherwise.
   - Administrators can revoke a device at any time.
@@ -218,7 +232,7 @@ What they all share:
 
 | Pathway | Proof, and its strength | What stops guessing |
 |---|---|---|
-| **Staff sign-in** (staff app, HC360 Desktop) | Username and password: at least 12 characters, none from breach lists. The SuperAdmin, HospitalAdmin, Accountant and HrManager roles, and anyone holding an administrative permission, also give a 6-digit authenticator code (TOTP): two factors (NIST AAL2) for them, one (AAL1) for other staff. A role can be limited to enrolled HC360 Desktops; none is by default | The account locks after 5 wrong passwords or codes in a row, for 15 minutes, doubling up to 24 hours |
+| **Staff sign-in** (staff app, HC360 Desktop) | Username and password: at least 12 characters, none from breach lists. The SuperAdmin, HospitalAdmin, Accountant and HrManager roles, and anyone holding an administrative permission, also give a 6-digit authenticator code (TOTP): two factors (NIST AAL2) for them, one (AAL1) for other staff. Administration works only in HC360 Desktop on an enrolled computer. A role can be limited to enrolled HC360 Desktops for every sign-in; none is by default | The account locks after 5 wrong passwords or codes in a row, for 15 minutes, doubling up to 24 hours |
 | **Renewing a session** | The refresh cookie: 256 random bits, replaced on every use, sent with the `X-HC360-Client` header. A spent one presented again, past a minute's grace for a lost response, ends the session. Sessions end 12 hours after sign-in, or after 2 hours unused (portal: 20 minutes) | Too large to guess |
 | **Lock screen** | The PIN (4 to 6 digits, not all the same or in sequence), the password, or, where the hospital turned it on, a device set up for it: a WebAuthn signature of a one-time challenge by the device's Windows Hello or fingerprint reader, which verifies the person first. It opens only the session it locked | 5 wrong ones (PINs, passwords and refused device answers together) end the session |
 | **Password prompts** before sensitive actions | The password again, from a signed-in staff member | Wrong ones count toward the account lock |
@@ -315,6 +329,17 @@ and grants nothing.
     the gateway's ids, never the body, which carries the patient's contact and card or bank details.
 - Masking:
   - Lists show masked phone numbers.
+  - **Contact details by role** (SRS PRV-03, minimum necessary): a patient's phone numbers, email, street address and PIN
+    code, and the emergency contact's phone reach in full only roles holding `patients.contact.read`, those who contact
+    or bill patients (front office, doctors, nurses, billing, cashier, insurance desk, CRM, medical records and
+    administrators by default; Administration › Roles changes it). Everyone else gets them masked, on the patient's
+    record and wherever another screen shows the patient's banner: the last four digits of a number, the first letter of
+    an email, the town and state of an address. Editing a patient's details needs the permission too, so masked details
+    are never saved back. `PatientContactVisibilityTests` calls every GET the API maps with one patient's ids, as a role
+    holding every other permission, and fails if any answer carries a detail in full. Kept whole for their purpose: the
+    FHIR API and ABDM exports (sharing the record, with the patient's consent), the privacy officer's data-principal
+    requests (answering them gives the patient their own data), the controlled-drug register (the law asks for the
+    address), and the audit trail (it must show what was changed; reading it is administration).
   - Every server log line is masked as it is written, exception text included: phone, Aadhaar and ABHA numbers keep only
     their last digits, e-mail and ABHA addresses only their domain, and tokens and passwords are removed.
   - Provider error text is masked the same way before it is stored, and integration logs strip PHI and secrets from
@@ -417,9 +442,12 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - The AI endpoints' answers (dictation transcripts, SOAP drafts, interpreted commands) are never stored
     (`.WithoutStoredResponse()`). The key still stops a retry from running again, so there is no second AI call or
     quota charge. The retry gets 409 `idempotency.answer_not_kept`, and the user asks again.
-- Optimistic concurrency: a record changed by someone else is never silently overwritten. Edits send the version
-  (`xmin`) they loaded and get 409 when it has moved on; settings, print templates and feature switches do too
-  (REL-04). A change sent without a version, as older clients send it, still saves.
+- Optimistic concurrency: a record changed by someone else is never silently overwritten (REL-04). Every edit (PUT,
+  PATCH) sends the version (`xmin`) of the record as it was loaded and gets 409 when it has moved on. An edit that
+  leaves the version out is refused too: 400 where the record is edited, 409 where the first save creates it (a
+  setting, a report, a nominee) and one exists. The few edits that guard another way (number formats, the analyser
+  list, roster cells, a patient's consent switches) are named, with how, in the architecture test that fails the build
+  for any edit without a version. The screens send the version their form was filled from, not one fetched since.
 
 ### Application hardening
 - **Separate addresses** (ASVS V3.5.4). The staff app, the patient portal and the API reference each have an origin of
@@ -448,7 +476,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - `no-store` on API responses.
   - They apply to every response, including the staff and portal pages and their static assets, not just API calls.
 - Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user. With
-  several servers (below), the sign-in and OTP limits per address are counted for the hospital, in the database.
+  several servers (below), the sign-in and OTP limits per address are counted for the hospital, in the database. The
+  limits are settings (`HealthCare360:RateLimits`, DEPLOYMENT.md), checked at start-up: none can be zero.
   - **What counts as one address** (`ClientAddresses`), for these limits and for the proof of work's failure counts
     (below): an IPv4 address; an IPv4 address carried in an IPv6 one (IPv4-mapped, 6to4, Teredo, and NAT64's well-known
     prefix `64:ff9b::/96`, RFC 6052, through which IPv4 clients reach a server on IPv6 alone) as that IPv4 address; and

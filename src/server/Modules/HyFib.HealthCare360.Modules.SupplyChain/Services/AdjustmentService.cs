@@ -209,6 +209,7 @@ public sealed class AdjustmentService(HospitalDbContext db, INumberSeries number
             return Error.NotFound(nameof(PhysicalStockCount), id);
         }
 
+        db.GuardVersion(count, request.Version);
         foreach (var entry in request.Lines)
         {
             var recorded = count.RecordCount(entry.LineId, entry.CountedQuantity, entry.Remarks);
@@ -223,13 +224,16 @@ public sealed class AdjustmentService(HospitalDbContext db, INumberSeries number
     }
 
     /// <summary>Freezes variances against current book stock and raises one adjustment for approval (if anything differs).</summary>
-    public async Task<Result<Guid?>> SubmitCountAsync(Guid id, CancellationToken ct)
+    public async Task<Result<Guid?>> SubmitCountAsync(Guid id, uint version, CancellationToken ct)
     {
         var count = await db.Set<PhysicalStockCount>().Include(c => c.Lines).FirstOrDefaultAsync(c => c.Id == id, ct);
         if (count is null)
         {
             return Error.NotFound(nameof(PhysicalStockCount), id);
         }
+
+        // The variances are posted from the counts as they were read: counts saved by someone else since are refused.
+        db.SetExpectedVersion(count, version);
 
         var batchIds = count.Lines.Select(l => l.BatchId).ToList();
         var batches = await db.Set<StockBatch>().AsNoTracking().Where(b => batchIds.Contains(b.Id)).ToDictionaryAsync(b => b.Id, ct);

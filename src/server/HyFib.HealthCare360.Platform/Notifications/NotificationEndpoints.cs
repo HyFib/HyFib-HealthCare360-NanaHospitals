@@ -100,7 +100,7 @@ internal static partial class NotificationEndpoints
             .RequirePermission(PlatformPermissions.NotificationTemplatesManage).WithValidation<SaveNotificationTemplateRequest>();
 
         admin.MapPut("/notification-templates/{id:guid}", (Guid id, SaveNotificationTemplateRequest r, HospitalDbContext db, CancellationToken ct) => SaveTemplate(id, r, db, ct))
-            .RequirePermission(PlatformPermissions.NotificationTemplatesManage).WithValidation<SaveNotificationTemplateRequest>();
+            .RequirePermission(PlatformPermissions.NotificationTemplatesManage).WithValidation<SaveNotificationTemplateRequest>().RequireVersion();
 
         admin.MapGet("/notification-logs", async ([AsParameters] PageQuery query, NotificationChannel? channel, NotificationStatus? status, HospitalDbContext db, CancellationToken ct) =>
             {

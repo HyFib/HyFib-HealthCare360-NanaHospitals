@@ -2,7 +2,8 @@ using HyFib.HealthCare360.Modules.Privacy.Services;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Features.Retention;
 
-public sealed record UpdateRetentionRequest(int Value);
+/// <param name="Version">The version of the period as loaded (REL-04); none while it is the default.</param>
+public sealed record UpdateRetentionRequest(int Value, uint? Version = null);
 
 public sealed class UpdateRetentionRequestValidator : AbstractValidator<UpdateRetentionRequest>
 {
@@ -18,8 +19,8 @@ internal static class RetentionEndpoints
 
         group.MapGet("/", async (RetentionService retention, CancellationToken ct) => TypedResults.Ok(await retention.RulesAsync(ct)));
         group.MapPut("/{key}", async (string key, UpdateRetentionRequest r, RetentionService retention, CancellationToken ct) =>
-                (await retention.UpdateAsync(key, r.Value, ct)).ToNoContent())
-            .WithValidation<UpdateRetentionRequest>();
+                (await retention.UpdateAsync(key, r.Value, r.Version, ct)).ToNoContent())
+            .WithValidation<UpdateRetentionRequest>().FirstSaveCreates();
         group.MapGet("/runs", async (int? take, RetentionService retention, CancellationToken ct) =>
             TypedResults.Ok(await retention.RunsAsync(take ?? 20, ct)));
         group.MapGet("/preview", async (RetentionService retention, CancellationToken ct) => TypedResults.Ok(await retention.PreviewAsync(ct)));

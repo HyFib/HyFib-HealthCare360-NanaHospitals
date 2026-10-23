@@ -32,6 +32,12 @@ describe('nominee form', () => {
     );
   });
 
+  it('replaces the nominee shown, at the version shown (REL-04)', () => {
+    const values = { name: 'Meena Rao', relationship: 'Sister', phone: '9876543210', email: '' };
+    expect(toSaveNominee(values, 7).version).toBe(7);
+    expect(toSaveNominee(values).version).toBeUndefined();
+  });
+
   it('starts from the nominee on record when replacing', () => {
     expect(
       nomineeDefaults({
@@ -41,6 +47,7 @@ describe('nominee form', () => {
         email: null,
         recordedVia: 'Portal',
         updatedAt: '2026-09-01T05:00:00Z',
+        version: 7,
       }),
     ).toEqual({ name: 'Meena Rao', relationship: 'Sister', phone: '+91 98765 43210', email: '' });
   });

@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Security.Authentication;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -7,12 +6,8 @@ using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Server;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.StaticFiles;
-using Npgsql;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Trace;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
@@ -52,30 +47,18 @@ directories.EnsureCreated();
 
 builder.Services.AddWindowsService(options => options.ServiceName = "HyFib HealthCare360");
 
-// Every sink writes through RedactingFormatter: phone, Aadhaar and ABHA numbers, e-mail addresses and secrets are masked
-// in the finished line, including exception text.
+// Every sink masks phone, Aadhaar and ABHA numbers, e-mail addresses and secrets, including exception text; the file is
+// structured, one JSON event per line (HospitalLogging).
 builder.Services.AddSerilog((services, logger) =>
 {
     logger.ReadFrom.Configuration(builder.Configuration)
         .ReadFrom.Services(services)
         .Enrich.FromLogContext()
         .Enrich.WithProperty("Application", "HC360.Server")
-        .WriteTo.Console(
-            new RedactingFormatter("[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"),
-            restrictedToMinimumLevel: builder.Environment.IsDevelopment() ? LogEventLevel.Debug : LogEventLevel.Information)
-        .WriteTo.File(
-            new RedactingFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {CorrelationId} {Message:lj}{NewLine}{Exception}"),
-            Path.Combine(directories.Logs, "hc360-server-.log"),
-            rollingInterval: RollingInterval.Day,
-            retainedFileCountLimit: 60,
-            fileSizeLimitBytes: 100 * 1024 * 1024,
-            rollOnFileSizeLimit: true);
-
-    if (OperatingSystem.IsWindows() && !builder.Environment.IsDevelopment())
-    {
-        logger.WriteTo.EventLog(
-            new RedactingFormatter("{Message:lj}{NewLine}{Exception}"), "HyFib HealthCare360", manageEventSource: false, restrictedToMinimumLevel: LogEventLevel.Error);
-    }
+        .WriteToHospitalSinks(
+            directories.Logs,
+            builder.Environment.IsDevelopment(),
+            OperatingSystem.IsWindows() && !builder.Environment.IsDevelopment() ? HospitalLogging.EventLog : null);
 });
 
 // TLS for the hospital LAN/WiFi: generated hospital CA + server certificate (or an admin-supplied PFX).
@@ -125,15 +108,7 @@ builder.Services.AddHttpsRedirection(redirection => redirection.HttpsPort = plat
 
 builder.AddServerApplication(certificates);
 
-builder.Services.AddResponseCompression(compression =>
-{
-    compression.EnableForHttps = true;
-    compression.Providers.Add<BrotliCompressionProvider>();
-    compression.Providers.Add<GzipCompressionProvider>();
-    compression.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["application/problem+json", "application/fhir+json", "image/svg+xml"]);
-});
-builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
-builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+builder.Services.AddHospitalCompression();
 
 // A year, and every name under the server's own (there are none by default, so nothing else on the LAN is affected).
 builder.Services.AddHsts(hsts =>
@@ -154,24 +129,7 @@ builder.Services.AddOpenApi(openApi =>
     });
 });
 
-if (builder.Configuration["OpenTelemetry:OtlpEndpoint"] is { Length: > 0 } otlp)
-{
-    builder.Services.AddOpenTelemetry()
-        .WithTracing(tracing => tracing
-            .AddAspNetCoreInstrumentation(aspNet => aspNet.EnrichWithHttpResponse = static (activity, response) =>
-            {
-                // Patient link tokens travel in the path: those requests export their route template instead.
-                var path = LoggedPath.Of(response.HttpContext);
-                if (!string.Equals(path, response.HttpContext.Request.Path.Value, StringComparison.Ordinal))
-                {
-                    activity.SetTag("url.path", path);
-                }
-            })
-            .AddHttpClientInstrumentation()
-            .AddNpgsql()
-            .AddOtlpExporter(o => o.Endpoint = new Uri(otlp)))
-        .WithMetrics(metrics => metrics.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddMeter("Npgsql").AddMeter(AntiAutomation.MeterName).AddOtlpExporter(o => o.Endpoint = new Uri(otlp)));
-}
+builder.Services.AddHospitalTelemetry(builder.Configuration);
 
 var app = builder.Build();
 

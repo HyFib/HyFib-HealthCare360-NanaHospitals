@@ -91,7 +91,7 @@ internal static class PaymentEndpoints
         }
 
         var result = await rows.Include(r => r.Payments).OrderByDescending(r => r.ReceivedAt).ToPagedResultAsync(page, ct);
-        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.PatientId), today, ct);
+        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.PatientId), today, fullContacts: false, ct);
         return TypedResults.Ok(result.Map(r =>
         {
             var patient = patients.GetValueOrDefault(r.PatientId);
@@ -154,7 +154,7 @@ internal static class PaymentEndpoints
         }
 
         var result = await rows.OrderByDescending(r => r.RequestedAt).ToPagedResultAsync(page, ct);
-        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.PatientId), BillingTime.Today(time), ct);
+        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.PatientId), BillingTime.Today(time), fullContacts: false, ct);
         return TypedResults.Ok(result.Map(r => ToDto(r, patients.GetValueOrDefault(r.PatientId))));
     }
 
@@ -166,7 +166,7 @@ internal static class PaymentEndpoints
             return Error.NotFound(nameof(Refund), id).ToProblem();
         }
 
-        var patients = await PatientQueries.SummariesAsync(db, [refund.PatientId], BillingTime.Today(time), ct);
+        var patients = await PatientQueries.SummariesAsync(db, [refund.PatientId], BillingTime.Today(time), fullContacts: false, ct);
         return TypedResults.Ok(ToDto(refund, patients.GetValueOrDefault(refund.PatientId)));
     }
 
@@ -198,7 +198,7 @@ internal static class PaymentEndpoints
 
     private static async Task<ReceiptDto> ToDtoAsync(HospitalDbContext db, Receipt r, TimeProvider time, CancellationToken ct)
     {
-        var patient = (await PatientQueries.SummariesAsync(db, [r.PatientId], BillingTime.Today(time), ct)).GetValueOrDefault(r.PatientId);
+        var patient = (await PatientQueries.SummariesAsync(db, [r.PatientId], BillingTime.Today(time), fullContacts: false, ct)).GetValueOrDefault(r.PatientId);
         var billNumber = r.BillId is { } billId ? await db.Set<Bill>().Where(b => b.Id == billId).Select(b => b.BillNumber).FirstOrDefaultAsync(ct) : null;
         return new ReceiptDto(
             r.Id, r.ReceiptNumber, r.Purpose, r.PatientId, patient?.Uhid, patient?.FullName, r.BillId, billNumber, r.IpAccountId, r.Amount, r.Source,

@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Appointments;
 
@@ -61,7 +62,8 @@ public static class AppointmentQueries
         return appointments;
     }
 
-    public static async Task<AppointmentDetail?> DetailAsync(HospitalDbContext db, Guid id, DateOnly today, CancellationToken ct)
+    /// <summary>An appointment, the patient's phone in full or masked as the caller may see it (SRS PRV-03).</summary>
+    public static async Task<AppointmentDetail?> DetailAsync(HospitalDbContext db, Guid id, DateOnly today, bool fullContacts, CancellationToken ct)
     {
         var row = await (
                 from a in db.Set<Appointment>().AsNoTracking()
@@ -92,7 +94,7 @@ public static class AppointmentQueries
         var history = await HistoryAsync(db, x, ct);
         return new AppointmentDetail(
             x.Id, x.Number, x.FacilityId, x.PatientId, row.Uhid, row.FullName, row.Gender, row.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
-            row.Phone, x.PractitionerId, row.PractitionerName ?? "Doctor", x.DepartmentId, row.DepartmentName, x.ScheduleId, x.StartsAt, x.EndsAt,
+            PatientContacts.Phone(row.Phone, fullContacts), x.PractitionerId, row.PractitionerName ?? "Doctor", x.DepartmentId, row.DepartmentName, x.ScheduleId, x.StartsAt, x.EndsAt,
             x.SeatNumber, x.Status, x.Channel, x.VisitType, x.IsTelehealth, x.Room, x.Reason, x.Notes, x.BookedAt, x.ConfirmedAt, x.FeeAmount,
             x.PaymentStatus, x.PaymentProvider, x.GatewayOrderId, x.GatewayPaymentId, x.AmountPaid, x.PaidAt, x.VisitId, x.CheckedInAt,
             x.CompletedAt, x.NoShowAt, x.CancelReasonCode, x.CancelReason, x.CancelledBy, x.CancelledAt, x.RescheduledFromId, x.RescheduledToId,

@@ -600,14 +600,14 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await admin.PutAsync($"/api/v1/admin/settings/{key}", new SaveSettingRequest(
+        await admin.SaveSettingAsync(key, new SaveSettingRequest(
             new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["simulatorSettlementDays"] = 0 }, null, false, null));
-        await admin.PutAsync($"/api/v1/admin/settings/{secretKey}", new SaveSettingRequest(
+        await admin.SaveSettingAsync(secretKey, new SaveSettingRequest(
             new JsonObject { ["simulatorSecret"] = SimulatorSecret }, null, true, null));
         return new Restore(async () =>
         {
-            await admin.PutAsync($"/api/v1/admin/settings/{key}", new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
-            await admin.PutAsync($"/api/v1/admin/settings/{secretKey}", new SaveSettingRequest(new JsonObject(), null, true, null));
+            await admin.SaveSettingAsync(key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
+            await admin.SaveSettingAsync(secretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
         });
     }
 

@@ -18,6 +18,12 @@ public sealed record SaveCampaignRequest(string Name, CampaignChannel Channel, s
 
 public sealed record ScheduleCampaignRequest(DateTimeOffset ScheduledAt);
 
+/// <summary>A time is given; that it is still to come is checked as the campaign is scheduled, against the server's clock.</summary>
+public sealed class ScheduleCampaignRequestValidator : AbstractValidator<ScheduleCampaignRequest>
+{
+    public ScheduleCampaignRequestValidator() => RuleFor(x => x.ScheduledAt).NotEmpty().WithMessage("Choose when to send it.");
+}
+
 public sealed record CancelCampaignRequest(string Reason);
 
 public sealed record AudienceSampleItem(string Uhid, string MaskedName, string? Age, string? City);

@@ -7,7 +7,10 @@ import {
   coverage,
   diffRoster,
   entryIdsByCell,
+  noteCell,
   paint,
+  replacedEntries,
+  rosterChanges,
   sameItems,
   type CellItem,
 } from './roster';
@@ -37,6 +40,7 @@ function entry(
     endTime: null,
     isWeekOff: shiftId === null,
     notes: null,
+    version: Number(id) * 100,
   };
 }
 
@@ -51,6 +55,57 @@ describe('roster cells', () => {
     expect(cells[cellKey('a', '2026-09-21')]?.map((c) => c.shiftId)).toEqual(['mor', 'eve']);
     expect(cells[cellKey('b', '2026-09-21')]?.[0]?.isWeekOff).toBe(true);
     expect(entryIdsByCell(entries)[cellKey('a', '2026-09-21')]).toEqual(['2', '1']);
+  });
+
+  it('sends the entries a save replaces, with the versions the grid showed (REL-04)', () => {
+    const entries = [
+      entry('2', 'a', '2026-09-21', 'eve', '14:00:00'),
+      entry('1', 'a', '2026-09-21', 'mor', '07:00:00'),
+      entry('3', 'b', '2026-09-21', null, null),
+      entry('4', 'a', '2026-09-22', 'mor', '07:00:00'),
+    ];
+    expect(replacedEntries(entries, [cellKey('a', '2026-09-21')])).toEqual([
+      { id: '2', version: 200 },
+      { id: '1', version: 100 },
+    ]);
+    expect(replacedEntries(entries, [])).toEqual([]);
+  });
+
+  it('saves on the entries as the planner first saw each cell, not as the roster was read since (REL-04)', () => {
+    const monday = cellKey('a', '2026-09-21');
+    const tuesday = cellKey('a', '2026-09-22');
+    const before = [entry('1', 'a', '2026-09-21', 'mor', '07:00:00'), entry('4', 'a', '2026-09-22', 'mor', '07:00:00')];
+    // The planner paints Monday evening and clears Tuesday…
+    let seen = noteCell({}, before, monday);
+    seen = noteCell(seen, before, tuesday);
+    const draft = { [monday]: [EVE], [tuesday]: [] };
+    // …and the roster is read again: someone else changed Monday meanwhile (entry 5 replaced entry 1).
+    const after = [entry('5', 'a', '2026-09-21', null, null), before[1]!];
+    seen = noteCell(noteCell(seen, after, monday), after, tuesday);
+
+    const changes = rosterChanges(seen, draft);
+
+    expect(changes.changedKeys).toEqual([monday, tuesday]);
+    expect(changes.assignments).toEqual([
+      { employeeId: 'a', date: '2026-09-21', shiftId: 'eve', isWeekOff: false, notes: null },
+    ]);
+    // Monday replaces what the planner saw, entry 1 at version 100, which the server refuses: entry 5 is there now.
+    expect(changes.replacing).toEqual([
+      { id: '1', version: 100 },
+      { id: '4', version: 400 },
+    ]);
+    expect(changes.deleteIds).toEqual(['4']);
+  });
+
+  it('sees no change in a cell painted back to what the planner first saw there', () => {
+    const monday = cellKey('a', '2026-09-21');
+    const seen = noteCell({}, [entry('1', 'a', '2026-09-21', 'mor', '07:00:00')], monday);
+
+    const changes = rosterChanges(seen, { [monday]: [MOR] });
+
+    expect(changes.changedKeys).toEqual([]);
+    expect(changes.replacing).toEqual([]);
+    expect(changes.deleteIds).toEqual([]);
   });
 
   it('compares duties regardless of order', () => {

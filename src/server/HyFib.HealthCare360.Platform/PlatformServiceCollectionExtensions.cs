@@ -217,6 +217,8 @@ public static class PlatformServiceCollectionExtensions
             authorization.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
         services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.AddSingleton<IAdministrationDesktops, AdministrationDesktops>();
+        DesktopRequiredResultHandler.Register(services);
 
         services.AddHospitalRateLimiter();
 

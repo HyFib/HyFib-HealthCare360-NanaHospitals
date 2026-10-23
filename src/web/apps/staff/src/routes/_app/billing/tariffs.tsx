@@ -424,6 +424,8 @@ function PriceDialog({
         price: parsed.ok ? parsed.rupees : 0,
         effectiveFrom: from,
         effectiveTo: to || null,
+        // A new start date makes a new price; the shown one is changed only when its own date is kept.
+        version: price && price.effectiveFrom === from ? price.version : undefined,
       }),
     onSuccess: (result) => {
       notify.success(result.created ? 'Price added' : 'Price updated', service?.name);

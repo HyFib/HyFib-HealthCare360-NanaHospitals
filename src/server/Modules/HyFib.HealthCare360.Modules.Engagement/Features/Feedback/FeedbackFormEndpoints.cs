@@ -16,7 +16,7 @@ internal static class FeedbackFormEndpoints
         group.MapGet("/", List).RequireAnyPermission(EngagementPermissions.FeedbackRead, EngagementPermissions.FeedbackManage);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(EngagementPermissions.FeedbackRead, EngagementPermissions.FeedbackManage);
         group.MapPost("/", Create).RequirePermission(EngagementPermissions.FeedbackManage).WithValidation<SaveFeedbackFormRequest>();
-        group.MapPut("/{id:guid}", Update).RequirePermission(EngagementPermissions.FeedbackManage).WithValidation<SaveFeedbackFormRequest>();
+        group.MapPut("/{id:guid}", Update).RequirePermission(EngagementPermissions.FeedbackManage).WithValidation<SaveFeedbackFormRequest>().RequireVersion();
         group.MapPost("/{id:guid}/rotate-token", RotateToken).RequirePermission(EngagementPermissions.FeedbackManage);
     }
 

@@ -41,9 +41,9 @@ public sealed class LoadTestAccounts(HospitalDbContext db, PasswordHashing hashi
             return Error.Field("count", $"Give a number of accounts from 1 to {MaxAccounts}.");
         }
 
-        if (password.Length < MinPasswordLength)
+        if (password.Length is < MinPasswordLength or > PasswordPolicy.MaxLength)
         {
-            return Error.Field("password", $"Give the accounts a password of at least {MinPasswordLength} characters.");
+            return Error.Field("password", $"Give the accounts a password of {MinPasswordLength} to {PasswordPolicy.MaxLength} characters.");
         }
 
         var role = await db.Set<Role>().FirstOrDefaultAsync(r => r.Name == SystemRoles.FrontOffice, cancellationToken);

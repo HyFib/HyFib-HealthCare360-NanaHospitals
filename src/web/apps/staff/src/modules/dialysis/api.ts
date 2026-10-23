@@ -204,6 +204,7 @@ export interface DialysisSessionListItem {
   startedAt: string | null;
   endedAt: string | null;
   chargeStatus: ChargeStatus;
+  version: number;
 }
 
 export interface DialysisSessionDetail {
@@ -394,8 +395,9 @@ export const dialysisApi = {
   discardDialyzer: (id: string, reason: string) =>
     api.post<void>(`/api/v1/dialysis/dialyzers/${id}/discard`, { reason }),
   schedule: (request: ScheduleDialysisRequest) => api.post<{ id: string }>('/api/v1/dialysis/sessions', request),
-  assignMachine: (sessionId: string, machineId: string) =>
-    api.put<void>(`/api/v1/dialysis/sessions/${sessionId}/machine`, { machineId }),
+  /** `version`: the session as the nurse saw it; a session changed meanwhile is not overwritten (REL-04). */
+  assignMachine: (sessionId: string, machineId: string, version: number) =>
+    api.put<void>(`/api/v1/dialysis/sessions/${sessionId}/machine`, { machineId, version }),
   preAssessment: (sessionId: string, request: PreDialysisRequest) =>
     api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/pre-assessment`, request),
   start: (sessionId: string, request: StartDialysisRequest) =>

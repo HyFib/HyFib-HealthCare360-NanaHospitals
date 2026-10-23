@@ -23,7 +23,7 @@ internal static class BiometricDeviceEndpoints
         group.MapGet("/", List).RequirePermission(HRPermissions.AttendanceManage);
         group.MapGet("/reading", Reading).RequirePermission(HRPermissions.AttendanceManage);
         group.MapPost("/", Register).RequirePermission(HRPermissions.AttendanceManage).WithValidation<SaveBiometricDeviceRequest>();
-        group.MapPut("/{id:guid}", Update).RequirePermission(HRPermissions.AttendanceManage).WithValidation<SaveBiometricDeviceRequest>();
+        group.MapPut("/{id:guid}", Update).RequirePermission(HRPermissions.AttendanceManage).WithValidation<SaveBiometricDeviceRequest>().RequireVersion();
         group.MapPost("/{id:guid}/rotate-key", RotateKey).RequirePermission(HRPermissions.AttendanceManage);
         group.MapPost("/{id:guid}/read", Read).RequirePermission(HRPermissions.AttendanceManage);
         group.MapPost("/{id:guid}/set-clock", SetClock).RequirePermission(HRPermissions.AttendanceManage);

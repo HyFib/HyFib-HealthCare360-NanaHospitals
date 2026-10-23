@@ -24,7 +24,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, DismissRegular } from '@fluentui/react-icons';
-import { humanize } from '@hc360/core';
+import { humanize, isApiError } from '@hc360/core';
 import {
   CloseRequestScope,
   ConfirmDialog,
@@ -154,6 +154,9 @@ function RoleForm({
   const [name, setName] = useState(role?.name ?? '');
   const [description, setDescription] = useState(role?.description ?? '');
   const [selected, setSelected] = useState<Set<string>>(() => new Set(role?.permissions ?? []));
+  // The role as the form was filled: it is read again in the background, and a newer version must not be sent with
+  // these choices (REL-04). Opening the role again fills it afresh.
+  const [loadedVersion] = useState(role?.version ?? null);
   const [filter, setFilter] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const isWildcard = selected.has('*');
@@ -198,7 +201,7 @@ function RoleForm({
         name: name.trim(),
         description: description.trim() || null,
         permissions: [...selected],
-        version: role?.version ?? null,
+        version: loadedVersion,
       };
       return role ? api.put(`/api/v1/admin/roles/${role.id}`, body) : api.post('/api/v1/admin/roles', body);
     },
@@ -207,7 +210,13 @@ function RoleForm({
       invalidate();
       onClose();
     },
-    onError: (error) => notify.error(error, 'Could not save the role'),
+    onError: (error) => {
+      notify.error(error, 'Could not save the role');
+      if (isApiError(error) && error.code === 'concurrency') {
+        // Someone else saved the role meanwhile: opened again, it shows their version.
+        invalidate();
+      }
+    },
   });
 
   const remove = useMutation({

@@ -43,6 +43,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { useBaseVersion } from '@/lib/baseVersion';
 import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
@@ -241,6 +242,9 @@ function ReportForm({
   const [release, setRelease] = useState(true);
   const [calling, setCalling] = useState(false);
   const isCritical = useWatch({ control: form.control, name: 'isCriticalFinding' });
+  // The report as the form was filled, then as this user saved it: its version goes with every save. The report is
+  // read again in the background, and a version read so must never be sent with these values (REL-04).
+  const [version, setVersion] = useState(report?.version ?? null);
   const latest = () => queryClient.getQueryData<RadiologyReportDto | null>(reportKey) ?? report;
 
   const invalidate = () => {
@@ -249,11 +253,25 @@ function ReportForm({
 
   /** Saves the typed report (always, so the server has exactly what is on screen) and returns it. */
   const persist = async (values: ReportValues) => {
-    const saved = await radiologyApi.saveReport(study.id, toRequest(values, latest()?.version ?? null));
+    const saved = await radiologyApi.saveReport(study.id, toRequest(values, version));
+    setVersion(saved.version);
     queryClient.setQueryData(reportKey, saved);
     form.reset(values);
     draft.clear();
     return saved;
+  };
+
+  /** The report as saved now fills the form; what was typed waits as a draft, to restore once theirs has been read. */
+  const reload = async () => {
+    draft.keep();
+    try {
+      const fresh = await queryClient.fetchQuery({ ...radiologyQueries.report(study.id), staleTime: 0 });
+      form.reset(toValues(fresh, study));
+      setVersion(fresh?.version ?? null);
+      setTemplateId(fresh?.templateId ?? '');
+    } catch {
+      // The server was not reached: the form keeps what was typed, and its save is refused until the report is read.
+    }
   };
 
   const handleError = (error: unknown, fallback: string) => {
@@ -262,7 +280,7 @@ function ReportForm({
         'The report was changed by someone else',
         'It has been reloaded. Check it and make your changes again.',
       );
-      void queryClient.invalidateQueries({ queryKey: reportKey });
+      void reload();
       return;
     }
     if (!applyServerErrors(error, form.setError)) {
@@ -277,11 +295,11 @@ function ReportForm({
   });
 
   const submit = useMutation({
-    mutationFn: async (values: ReportValues) => {
-      await persist(values);
-      return radiologyApi.submitReport(study.id);
-    },
-    onSuccess: () => {
+    // Submitted on the version its own save returned: a change made after it is refused, not sent for sign-off unread.
+    mutationFn: async (values: ReportValues) => radiologyApi.submitReport(study.id, (await persist(values)).version),
+    onSuccess: (submitted) => {
+      // Submitting changes the report too; the form stays open for the radiologist who signs it.
+      setVersion(submitted.version);
       notify.success('Report submitted for sign-off');
       invalidate();
     },
@@ -290,10 +308,10 @@ function ReportForm({
 
   const sign = useMutation({
     mutationFn: async ({ values, call }: { values: ReportValues; call: CriticalCallDetails | null }) => {
-      if (form.formState.isDirty || !latest()) {
-        await persist(values);
-      }
-      return radiologyApi.verifyReport(study.id, call, release);
+      // Signed on the version the form holds, or on the one its own save returned when there was something to save. A
+      // change someone else saved since is refused and the report reloaded, rather than signed unread (REL-04).
+      const signing = form.formState.isDirty || version === null ? (await persist(values)).version : version;
+      return radiologyApi.verifyReport(study.id, call, signing, release);
     },
     onSuccess: (signed) => {
       setCalling(false);
@@ -530,9 +548,11 @@ function SignedReport({
   const [addendum, setAddendum] = useState(false);
   const [calling, setCalling] = useState(false);
   const unsigned = report.status === 'Draft' || report.status === 'Reported';
+  // The report as this view first showed it: signing it is refused once someone else changed it since (REL-04).
+  const [version, setVersion] = useBaseVersion(report.version);
 
   const sign = useMutation({
-    mutationFn: (call: CriticalCallDetails | null) => radiologyApi.verifyReport(study.id, call, true),
+    mutationFn: (call: CriticalCallDetails | null) => radiologyApi.verifyReport(study.id, call, version, true),
     onSuccess: () => {
       setCalling(false);
       notify.success('Report signed and released', 'The doctor and the patient are informed.');
@@ -544,6 +564,14 @@ function SignedReport({
         return;
       }
       setCalling(false);
+      if (isApiError(error) && error.isConflict) {
+        notify.warning('The report was changed by someone else', 'It has been reloaded. Check it, then sign it again.');
+        void queryClient
+          .fetchQuery({ ...radiologyQueries.report(study.id), staleTime: 0 })
+          .then((fresh) => fresh && setVersion(fresh.version))
+          .catch(() => undefined);
+        return;
+      }
       notify.error(error, 'Could not sign the report');
     },
   });

@@ -265,6 +265,7 @@ function SessionView({ session: s }: { session: DialysisSessionDetail }) {
             scheduledDate: s.scheduledDate,
             shift: s.shift,
             machineId: s.machineId,
+            version: s.version,
           }}
           onClose={() => setAssigning(false)}
         />

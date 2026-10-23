@@ -15,7 +15,7 @@ internal static class EncounterEndpoints
         group.MapGet("/{id:guid}", Get).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapGet("/{id:guid}/previous-visit", PreviousVisit).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapPut("/{id:guid}", Update).RequirePermission(ClinicalPermissions.EmrWrite).WithValidation<UpdateEncounterRequest>();
-        group.MapPost("/{id:guid}/sign", Sign).RequirePermission(ClinicalPermissions.EncountersSign);
+        group.MapPost("/{id:guid}/sign", Sign).RequirePermission(ClinicalPermissions.EncountersSign).WithValidation<SignEncounterRequest>();
         group.MapPost("/{id:guid}/amend", Amend).RequirePermission(ClinicalPermissions.EncountersSign).WithValidation<AmendEncounterRequest>();
     }
 

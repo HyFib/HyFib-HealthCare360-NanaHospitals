@@ -56,9 +56,9 @@ public sealed class DialysisService(
             profile = new DialysisPatientProfile { FacilityId = facilityId, PatientId = patientId, EnrolledOn = time.Today() };
             db.Add(profile);
         }
-        else if (request.Version is { } version)
+        else
         {
-            db.SetExpectedVersion(profile, version);
+            db.SetExpectedVersion(profile, request.Version);
         }
 
         profile.DryWeightKg = request.DryWeightKg;
@@ -189,13 +189,15 @@ public sealed class DialysisService(
         return session.Id;
     }
 
-    public async Task<Result> AssignMachineAsync(Guid sessionId, Guid machineId, CancellationToken ct)
+    public async Task<Result> AssignMachineAsync(Guid sessionId, Guid machineId, uint version, CancellationToken ct)
     {
         var session = await db.Set<DialysisSession>().FirstOrDefaultAsync(s => s.Id == sessionId, ct);
         if (session is null)
         {
             return Error.NotFound(nameof(DialysisSession), sessionId);
         }
+
+        db.SetExpectedVersion(session, version);
 
         var profile = await ActiveProfileAsync(session.PatientId, ct);
         if (profile.IsFailure)

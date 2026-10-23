@@ -244,7 +244,7 @@ public sealed class CardiologyPacsTests(HospitalServer server)
     }
 
     private static Task SetPacsAsync(ApiClient admin, JsonNode value) =>
-        admin.PutAsync($"/api/v1/admin/settings/{PacsKey}", new SaveSettingRequest(value, null, false, null));
+        admin.SaveSettingAsync(PacsKey, new SaveSettingRequest(value, null, false, null));
 
     /// <summary>
     /// Turns on the PACS simulator with a viewer link by study UID and accession number for the rest of the test, then

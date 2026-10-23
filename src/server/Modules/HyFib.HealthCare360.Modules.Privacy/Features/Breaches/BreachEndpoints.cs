@@ -19,7 +19,7 @@ internal static class BreachEndpoints
             .WithValidation<SaveBreachRequest>();
         group.MapPut("/{id:guid}", async (Guid id, SaveBreachRequest r, BreachService breaches, CancellationToken ct) =>
                 (await breaches.UpdateAsync(id, r, ct)).ToNoContent())
-            .WithValidation<SaveBreachRequest>();
+            .WithValidation<SaveBreachRequest>().RequireVersion();
         group.MapPost("/{id:guid}/board-informed", async (Guid id, BoardInformedRequest r, BreachService breaches, CancellationToken ct) =>
                 (await breaches.RecordBoardInformedAsync(id, r, ct)).ToNoContent())
             .WithValidation<BoardInformedRequest>();

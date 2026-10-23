@@ -20,7 +20,7 @@ internal static class AssetEndpoints
             .RequirePermission(SupplyChainPermissions.AssetsManage).WithValidation<SaveAssetRequest>();
         group.MapPut("/{id:guid}", async (Guid id, SaveAssetRequest r, AssetService assets, CancellationToken ct) =>
                 (await assets.UpdateAsync(id, r, ct)).ToNoContent())
-            .RequirePermission(SupplyChainPermissions.AssetsManage).WithValidation<SaveAssetRequest>();
+            .RequirePermission(SupplyChainPermissions.AssetsManage).WithValidation<SaveAssetRequest>().RequireVersion();
         group.MapPost("/{id:guid}/operational", async (Guid id, SetAssetOperationalRequest r, AssetService assets, CancellationToken ct) =>
                 (await assets.SetOperationalAsync(id, r.InUse, ct)).ToNoContent())
             .RequireAnyPermission(SupplyChainPermissions.AssetsManage, SupplyChainPermissions.AssetsMaintenance);
@@ -31,7 +31,7 @@ internal static class AssetEndpoints
             .RequirePermission(SupplyChainPermissions.AssetsManage).WithValidation<SaveAssetContractRequest>();
         group.MapPut("/{id:guid}/contracts/{contractId:guid}", async (Guid id, Guid contractId, SaveAssetContractRequest r, AssetService assets, CancellationToken ct) =>
                 (await assets.SaveContractAsync(id, contractId, r, ct)).ToHttpResult(_ => TypedResults.NoContent()))
-            .RequirePermission(SupplyChainPermissions.AssetsManage).WithValidation<SaveAssetContractRequest>();
+            .RequirePermission(SupplyChainPermissions.AssetsManage).WithValidation<SaveAssetContractRequest>().RequireVersion();
 
         group.MapGet("/{id:guid}/depreciation", async (Guid id, DateOnly? asOf, AssetService assets, CancellationToken ct) =>
                 (await assets.DepreciationAsync(id, asOf, ct)).ToOk())

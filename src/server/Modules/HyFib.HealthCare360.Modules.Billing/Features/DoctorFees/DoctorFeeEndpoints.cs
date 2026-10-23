@@ -11,7 +11,7 @@ internal static class DoctorFeeEndpoints
         var rules = app.MapGroup("/api/v1/doctor-fees/rules").WithTags("Doctor fees");
         rules.MapGet("/", ListRules).RequireAnyPermission(BillingPermissions.ShareRulesManage, BillingPermissions.PayoutsManage);
         rules.MapPost("/", CreateRule).RequirePermission(BillingPermissions.ShareRulesManage).WithValidation<SaveShareRuleRequest>();
-        rules.MapPut("/{id:guid}", UpdateRule).RequirePermission(BillingPermissions.ShareRulesManage).WithValidation<SaveShareRuleRequest>();
+        rules.MapPut("/{id:guid}", UpdateRule).RequirePermission(BillingPermissions.ShareRulesManage).WithValidation<SaveShareRuleRequest>().RequireVersion();
         rules.MapDelete("/{id:guid}", DeleteRule).RequirePermission(BillingPermissions.ShareRulesManage);
 
         var payouts = app.MapGroup("/api/v1/doctor-fees").WithTags("Doctor fees");
@@ -19,7 +19,7 @@ internal static class DoctorFeeEndpoints
         payouts.MapGet("/payouts", ListPayouts).RequirePermission(BillingPermissions.PayoutsManage);
         payouts.MapGet("/payouts/{id:guid}", GetPayout).RequirePermission(BillingPermissions.PayoutsManage);
         payouts.MapPost("/payouts", CreatePayout).RequirePermission(BillingPermissions.PayoutsManage).WithValidation<CreatePayoutRequest>();
-        payouts.MapPost("/payouts/{id:guid}/approve", ApprovePayout).RequirePermission(BillingPermissions.PayoutsManage);
+        payouts.MapPost("/payouts/{id:guid}/approve", ApprovePayout).RequirePermission(BillingPermissions.PayoutsManage).WithValidation<PayoutVersionRequest>();
         payouts.MapPost("/payouts/{id:guid}/pay", PayPayout).RequirePermission(BillingPermissions.PayoutsManage).WithValidation<PayPayoutRequest>();
         payouts.MapDelete("/payouts/{id:guid}", DiscardPayout).RequirePermission(BillingPermissions.PayoutsManage);
         payouts.MapGet("/statements", Statement).RequirePermission(BillingPermissions.PayoutsManage);

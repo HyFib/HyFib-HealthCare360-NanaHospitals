@@ -177,11 +177,13 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
   const draft = useFormDraft(form, `ot-operation-note-${booking.id}`);
   const specimens = useFieldArray({ control: form.control, name: 'specimens' });
   const [postOpOrders] = useWatch({ control: form.control, name: ['postOpOrders'] });
+  // The note as the form was filled, then as this surgeon saved it: its version goes with every save. The note is read
+  // again in the background, and a version read so must never be sent with these values (REL-04).
+  const [version, setVersion] = useState(note?.version ?? null);
 
   const save = useMutation({
-    mutationFn: ({ values, sign }: { values: NoteValues; sign: boolean }) => {
-      const latest = queryClient.getQueryData<OperationNoteDto | null>(otKeys.operationNote(booking.id)) ?? note;
-      return otApi.saveOperationNote(booking.id, {
+    mutationFn: ({ values, sign }: { values: NoteValues; sign: boolean }) =>
+      otApi.saveOperationNote(booking.id, {
         preOperativeDiagnosis: orNull(values.preOperativeDiagnosis),
         postOperativeDiagnosis: orNull(values.postOperativeDiagnosis),
         procedurePerformed: values.procedurePerformed,
@@ -197,10 +199,10 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
         complications: orNull(values.complications),
         postOpOrders: orNull(values.postOpOrders),
         sign,
-        version: latest?.version ?? null,
-      });
-    },
+        version,
+      }),
     onSuccess: (saved, { sign }) => {
+      setVersion(saved.version);
       queryClient.setQueryData(otKeys.operationNote(booking.id), saved);
       draft.clear();
       setConfirmSign(false);
@@ -215,9 +217,13 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
   const submit = (sign: boolean) => form.handleSubmit((values) => save.mutate({ values, sign }))();
   useHotkey('mod+s', () => void submit(false), { allowInInputs: true, enabled: !save.isPending });
 
+  // After a conflict: the note as saved now fills the form, and what was typed waits as a draft to restore once it has
+  // been read.
   const reload = async () => {
-    const latest = await queryClient.fetchQuery(otQueries.operationNote(booking.id));
+    draft.keep();
+    const latest = await queryClient.fetchQuery({ ...otQueries.operationNote(booking.id), staleTime: 0 });
     form.reset(toValues(latest, booking));
+    setVersion(latest?.version ?? null);
     save.reset();
   };
 

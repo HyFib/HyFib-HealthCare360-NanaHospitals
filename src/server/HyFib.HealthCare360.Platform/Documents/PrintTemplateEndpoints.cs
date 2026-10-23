@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Organization;
@@ -42,6 +43,12 @@ public sealed record PrintTemplateList(Guid? FacilityId, string? FacilityName, i
 /// </param>
 public sealed record SavePrintTemplateRequest(PrintTemplate? Template, bool ForThisFacility, uint? Version = null);
 
+/// <summary>A template is sent; its rules depend on the kind of document (<see cref="PrintTemplateRules.Problems"/>), named by the route.</summary>
+public sealed class SavePrintTemplateRequestValidator : AbstractValidator<SavePrintTemplateRequest>
+{
+    public SavePrintTemplateRequestValidator() => RuleFor(r => r.Template).NotNull().WithMessage("Send the template.");
+}
+
 /// <summary>
 /// What the staff app prints its own documents with (80 mm bills and receipts, pharmacy, canteen and store slips): the
 /// signed-in user's facility's letterhead, as the server's documents print it, and how each kind of document is printed
@@ -83,7 +90,7 @@ internal static class PrintTemplateEndpoints
         var group = app.MapGroup("/api/v1/admin/print-templates").WithTags("Administration").RequirePermission(PlatformPermissions.PrintManage);
 
         group.MapGet("/", List);
-        group.MapPut("/{key}", Save);
+        group.MapPut("/{key}", Save).WithValidation<SavePrintTemplateRequest>().FirstSaveCreates();
         group.MapDelete("/{key}/facility", UseHospitalWide);
 
         app.MapGet("/api/v1/print/letterhead", Letterhead).WithTags("Documents").RequireAuthorization();
@@ -152,11 +159,7 @@ internal static class PrintTemplateEndpoints
             return Error.NotFound("Print template", key).ToProblem();
         }
 
-        if (request.Template is not { } template)
-        {
-            return Error.Field("template", "Send the template.").ToProblem();
-        }
-
+        var template = request.Template!;
         var problems = PrintTemplateRules.Problems(definition, template);
         if (problems.Count > 0)
         {

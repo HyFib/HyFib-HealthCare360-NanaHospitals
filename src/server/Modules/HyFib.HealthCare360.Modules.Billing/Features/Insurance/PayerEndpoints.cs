@@ -20,7 +20,7 @@ internal static class PayerEndpoints
         payers.MapGet("/", ListPayers).RequireAnyPermission(PayerReaders);
         payers.MapGet("/{id:guid}", GetPayer).RequireAnyPermission(PayerReaders);
         payers.MapPost("/", CreatePayer).RequirePermission(BillingPermissions.PayersManage).WithValidation<SavePayerRequest>();
-        payers.MapPut("/{id:guid}", UpdatePayer).RequirePermission(BillingPermissions.PayersManage).WithValidation<SavePayerRequest>();
+        payers.MapPut("/{id:guid}", UpdatePayer).RequirePermission(BillingPermissions.PayersManage).WithValidation<SavePayerRequest>().RequireVersion();
 
         var nonPayables = app.MapGroup("/api/v1/insurance/non-payable-items").WithTags("Insurance - Payers");
         nonPayables.MapGet("/", ListNonPayables).RequireAnyPermission(BillingPermissions.PayersManage, BillingPermissions.ClaimsManage, BillingPermissions.IpManage);
@@ -33,7 +33,7 @@ internal static class PayerEndpoints
         policies.MapGet("/search", SearchPolicies).RequireAnyPermission(BillingPermissions.PoliciesManage, BillingPermissions.ClaimsManage);
         policies.MapGet("/{id:guid}/policy-number", RevealPolicyNumber).RequireAnyPermission(BillingPermissions.PoliciesManage, BillingPermissions.PreAuthManage, BillingPermissions.ClaimsManage);
         policies.MapPost("/", CreatePolicy).RequirePermission(BillingPermissions.PoliciesManage).WithValidation<SavePolicyRequest>();
-        policies.MapPut("/{id:guid}", UpdatePolicy).RequirePermission(BillingPermissions.PoliciesManage).WithValidation<SavePolicyRequest>();
+        policies.MapPut("/{id:guid}", UpdatePolicy).RequirePermission(BillingPermissions.PoliciesManage).WithValidation<SavePolicyRequest>().RequireVersion();
         policies.MapPost("/{id:guid}/verify", VerifyPolicy).RequirePermission(BillingPermissions.PoliciesManage).WithValidation<VerifyPolicyRequest>();
     }
 

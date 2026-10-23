@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.MedicalRecords;
 
@@ -62,6 +63,13 @@ public sealed record CreateRecordRequestRequest(
     string? Details);
 
 public sealed record IssueRecordRequest(DateOnly? DueBackOn);
+
+/// <summary>A chart issued is due back today or later; left empty, a week from today.</summary>
+public sealed class IssueRecordRequestValidator : AbstractValidator<IssueRecordRequest>
+{
+    public IssueRecordRequestValidator(TimeProvider time) =>
+        RuleFor(x => x.DueBackOn).GreaterThanOrEqualTo(_ => time.Today()).WithMessage("Choose today or a later day for its return.");
+}
 
 public sealed record CancelRecordRequest(string Reason);
 

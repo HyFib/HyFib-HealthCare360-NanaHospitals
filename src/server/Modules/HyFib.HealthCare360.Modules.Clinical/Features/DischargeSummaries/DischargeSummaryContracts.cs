@@ -56,6 +56,11 @@ public sealed record AmendDischargeSummaryRequest(
 
 public sealed record SignDischargeSummaryRequest(uint Version);
 
+public sealed class SignDischargeSummaryRequestValidator : AbstractValidator<SignDischargeSummaryRequest>
+{
+    public SignDischargeSummaryRequestValidator() => RuleFor(x => x.Version).SeenVersion();
+}
+
 public sealed record DischargeSummaryDto(
     Guid Id,
     Guid AdmissionId,

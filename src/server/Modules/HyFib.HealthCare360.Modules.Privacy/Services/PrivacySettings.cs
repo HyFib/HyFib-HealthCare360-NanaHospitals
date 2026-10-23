@@ -11,8 +11,11 @@ namespace HyFib.HealthCare360.Modules.Privacy.Services;
 /// </summary>
 public sealed record PrivacyContact(string Title, string? Name, string? Email, string? Phone, string? Address);
 
-/// <summary>The privacy settings: the contact, and the published period for answering requests (at most 90 days).</summary>
-public sealed record PrivacySettingsDto(PrivacyContact Contact, int ResponseDays);
+/// <summary>
+/// The privacy settings: the contact, and the published period for answering requests (at most 90 days). Each is a
+/// setting of its own, with its version (REL-04): none until it is first saved.
+/// </summary>
+public sealed record PrivacySettingsDto(PrivacyContact Contact, int ResponseDays, uint? Version = null, uint? ResponseDaysVersion = null);
 
 /// <summary>Reads and saves the privacy settings. Values are read leniently, so a malformed setting falls back to the default.</summary>
 public sealed class PrivacySettings(ISettingsService settings, HospitalDbContext db)
@@ -26,7 +29,8 @@ public sealed class PrivacySettings(ISettingsService settings, HospitalDbContext
     {
         var contact = await settings.GetAsync<JsonElement?>(ContactSetting, null, ct);
         var days = await settings.GetAsync<JsonElement?>(ResponseDaysSetting, null, ct);
-        return new PrivacySettingsDto(ReadContact(contact), ReadDays(days));
+        return new PrivacySettingsDto(
+            ReadContact(contact), ReadDays(days), await SettingVersions.OfAsync(db, ContactSetting, null, ct), await SettingVersions.OfAsync(db, ResponseDaysSetting, null, ct));
     }
 
     public async Task<int> ResponseDaysAsync(CancellationToken ct) => ReadDays(await settings.GetAsync<JsonElement?>(ResponseDaysSetting, null, ct));
@@ -54,12 +58,16 @@ public sealed class PrivacySettings(ISettingsService settings, HospitalDbContext
         };
     }
 
+    /// <summary>Saves both, or neither if either changed since <paramref name="value"/> was loaded (409).</summary>
     public async Task SaveAsync(PrivacySettingsDto value, CancellationToken ct)
     {
         var contact = value.Contact;
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await settings.SetAsync(ContactSetting, new PrivacyContact(
-            Clean(contact.Title) ?? DefaultTitle, Clean(contact.Name), Clean(contact.Email), Phone.Normalize(contact.Phone), Clean(contact.Address)), null, false, ct);
-        await settings.SetAsync(ResponseDaysSetting, Math.Clamp(value.ResponseDays, 1, DataRequest.MaxResponseDays), null, false, ct);
+            Clean(contact.Title) ?? DefaultTitle, Clean(contact.Name), Clean(contact.Email), Phone.Normalize(contact.Phone), Clean(contact.Address)), null, false,
+            value.Version, ct);
+        await settings.SetAsync(ResponseDaysSetting, Math.Clamp(value.ResponseDays, 1, DataRequest.MaxResponseDays), null, false, value.ResponseDaysVersion, ct);
+        await transaction.CommitAsync(ct);
     }
 
     /// <summary>One line naming whom to contact, for messages: "Grievance Officer, privacy@hospital.in".</summary>

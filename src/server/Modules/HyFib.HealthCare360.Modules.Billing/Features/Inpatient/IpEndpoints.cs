@@ -19,8 +19,8 @@ internal static class IpEndpoints
         group.MapPut("/{id:guid}", Update).RequirePermission(BillingPermissions.IpManage).WithValidation<UpdateIpAccountRequest>();
         group.MapGet("/{id:guid}/running-bill", RunningBill).RequireAnyPermission(Readers);
         group.MapGet("/{id:guid}/package-status", PackageStatus).RequireAnyPermission(Readers);
-        group.MapPut("/{id:guid}/package", AssignPackage).RequirePermission(BillingPermissions.IpManage);
-        group.MapPost("/{id:guid}/interim-bills", CreateInterimBill).RequirePermission(BillingPermissions.IpManage);
+        group.MapPut("/{id:guid}/package", AssignPackage).RequirePermission(BillingPermissions.IpManage).WithValidation<AssignPackageRequest>();
+        group.MapPost("/{id:guid}/interim-bills", CreateInterimBill).RequirePermission(BillingPermissions.IpManage).WithValidation<CreateInterimBillRequest>();
         group.MapPost("/{id:guid}/final-bill", PrepareFinalBill).RequirePermission(BillingPermissions.IpManage);
         group.MapPost("/{id:guid}/settle", Settle).RequirePermission(BillingPermissions.IpManage);
         group.MapGet("/{id:guid}/clearance", Clearance).RequireAnyPermission(Readers);
@@ -62,7 +62,7 @@ internal static class IpEndpoints
                 PayerName = db.Set<Payer>().Where(p => p.Id == a.PayerId).Select(p => p.Name).FirstOrDefault(),
             })
             .ToPagedResultAsync(page, ct);
-        var summaries = await PatientQueries.SummariesAsync(db, result.Items.Select(a => a.PatientId), BillingTime.Today(time), ct);
+        var summaries = await PatientQueries.SummariesAsync(db, result.Items.Select(a => a.PatientId), BillingTime.Today(time), fullContacts: false, ct);
         return TypedResults.Ok(result.Map(a =>
         {
             var patient = summaries.GetValueOrDefault(a.PatientId);

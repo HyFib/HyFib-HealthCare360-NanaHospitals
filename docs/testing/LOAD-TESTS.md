@@ -55,7 +55,8 @@ server — the load test registers patients.
 
 The report lists each step's p50, p95, p99 and slowest time against its target, the lists' sizes, and the failed
 requests by status. Exit code 0 means every target was met, 1 that one was missed or more than 1% of requests failed.
-`--targets report` reports a missed target without failing.
+`--targets report` reports a missed target without failing. `--targets payloads` fails a run whose lists are over 100 KB
+(PERF-05) and only reports the timings: a page's size is the same on any machine.
 
 Run the load test on a different machine from the server, or the load test's own work slows the server down. One
 workstation is enough for 75 users. Remove the test server's data afterwards: synthetic patients are not meant to be
@@ -67,9 +68,11 @@ kept.
 demonstration data, as in production, adds synthetic patients and eight load test accounts, and runs the load test. It runs every Monday (100,000 patients, 75 users,
 5 minutes), by hand (Actions › Load test › Run workflow, with the numbers to use), and on a pull request that changes
 the load test (20,000 patients, 2 minutes). The runner is a shared machine that also runs the server and the database,
-so its figures only compare runs with each other: the targets are reported in the run's summary, not enforced. The run
-fails when requests fail.
+so its timings only compare runs with each other: they are reported in the run's summary, not enforced. The lists'
+sizes are enforced (`--targets payloads`): a list whose largest page is over 100 KB as sent fails the run, as do failed
+requests.
 
 `tests/HyFib.HealthCare360.IntegrationTests/LoadTestTests.cs` checks on every pull request that each step of the load
 test works against the whole server, for a load test account and the front office, and that a short run has no failed
-request.
+request. With 200 synthetic patients the patient list's largest page is full, and it must be sent compressed under
+100 KB; the other lists are held to the size their rows would take on a full page.

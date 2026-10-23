@@ -214,6 +214,7 @@ public sealed class DiscountService(
             db.Add(limit);
         }
 
+        db.SetExpectedVersion(limit, request.Version);
         limit.MaxPercent = request.MaxPercent;
         limit.MaxAmount = request.MaxAmount;
         limit.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();

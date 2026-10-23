@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
@@ -97,6 +98,16 @@ public sealed record AntiAutomationChallenge(bool Required, string? Challenge, i
 
 /// <summary>A challenge for <paramref name="Action"/>; <paramref name="Subject"/> is the mobile number a code is asked for, when known.</summary>
 public sealed record AntiAutomationChallengeRequest(string Action, string? Subject);
+
+/// <summary>An action that asks for a proof, and a subject no longer than a mobile number written out in full.</summary>
+public sealed class AntiAutomationChallengeRequestValidator : AbstractValidator<AntiAutomationChallengeRequest>
+{
+    public AntiAutomationChallengeRequestValidator()
+    {
+        RuleFor(r => r.Action).Must(action => action is not null && AntiAutomationActions.All.Contains(action)).WithMessage("Unknown request.");
+        RuleFor(r => r.Subject).MaximumLength(32).WithMessage("Unknown request.");
+    }
+}
 
 /// <summary>Endpoint metadata: the endpoint needs a solved challenge for <see cref="Action"/> (<see cref="AntiAutomationEndpoints.RequireProofOfWork"/>).</summary>
 public sealed record RequiresProofOfWorkMetadata(string Action);
@@ -413,7 +424,8 @@ public static class AntiAutomationEndpoints
         app.MapPost("/api/v1/public/challenge", IssueAsync)
             .WithTags("Public")
             .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Public);
+            .RequireRateLimiting(RateLimitPolicies.Public)
+            .WithValidation<AntiAutomationChallengeRequest>();
     }
 
     /// <summary>
@@ -482,19 +494,12 @@ public static class AntiAutomationEndpoints
         }
     }
 
-    private static async Task<Results<Ok<AntiAutomationChallenge>, ValidationProblem>> IssueAsync(
+    private static async Task<Ok<AntiAutomationChallenge>> IssueAsync(
         AntiAutomationChallengeRequest request,
         AntiAutomation antiAutomation,
         HttpContext http,
-        CancellationToken ct)
-    {
-        if (request.Action is null || !AntiAutomationActions.All.Contains(request.Action) || request.Subject is { Length: > 32 })
-        {
-            return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["action"] = ["Unknown request."] });
-        }
-
-        return TypedResults.Ok(await antiAutomation.IssueAsync(request.Action, request.Subject, CountedAddress(http), ct));
-    }
+        CancellationToken ct) =>
+        TypedResults.Ok(await antiAutomation.IssueAsync(request.Action, request.Subject, CountedAddress(http), ct));
 
     /// <summary>What failures are counted against for the client, as the rate limits count it (an IPv6 /64 as one), if it has an address.</summary>
     private static string? CountedAddress(HttpContext http) =>

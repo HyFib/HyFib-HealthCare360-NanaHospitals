@@ -18,7 +18,7 @@ internal static class LeadEndpoints
                 (await leads.CreateAsync(r, ct)).ToCreated(l => $"/api/v1/crm/leads/{l.Id}"))
             .WithValidation<SaveLeadRequest>();
         group.MapPut("/{id:guid}", async (Guid id, SaveLeadRequest r, LeadService leads, CancellationToken ct) => (await leads.UpdateAsync(id, r, ct)).ToNoContent())
-            .WithValidation<SaveLeadRequest>();
+            .WithValidation<SaveLeadRequest>().RequireVersion();
         group.MapPost("/{id:guid}/activities", async (Guid id, AddLeadActivityRequest r, LeadService leads, CancellationToken ct) =>
                 (await leads.AddActivityAsync(id, r, ct)).ToCreated(activityId => $"/api/v1/crm/leads/{id}"))
             .WithValidation<AddLeadActivityRequest>();

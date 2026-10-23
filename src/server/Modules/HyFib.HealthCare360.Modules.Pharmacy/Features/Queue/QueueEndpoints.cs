@@ -96,7 +96,14 @@ internal static class QueueEndpoints
 
     /// <summary>Opens a prescription for dispensing, with the chosen store's stock per line (PHI read is audited).</summary>
     private static async Task<IResult> Get(
-        Guid id, Guid? storeId, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+        Guid id,
+        Guid? storeId,
+        HospitalDbContext db,
+        PatientAccessGuard guard,
+        PatientContactAccess contacts,
+        IAuditLogger audit,
+        TimeProvider time,
+        CancellationToken ct)
     {
         var entry = await db.Set<PharmacyQueueEntry>().AsNoTracking().Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id, ct);
         if (entry is null)
@@ -112,7 +119,7 @@ internal static class QueueEndpoints
 
         await audit.PatientRecordAccessedAsync(entry.PatientId, $"Opened prescription {entry.PrescriptionNumber} in pharmacy", ct);
         var today = time.Today();
-        var summaries = await PatientQueries.SummariesAsync(db, [entry.PatientId], today, ct);
+        var summaries = await PatientQueries.SummariesAsync(db, [entry.PatientId], today, await contacts.FullAsync(ct), ct);
         if (!summaries.TryGetValue(entry.PatientId, out var patient))
         {
             return Error.NotFound(nameof(Patient), entry.PatientId).ToProblem();

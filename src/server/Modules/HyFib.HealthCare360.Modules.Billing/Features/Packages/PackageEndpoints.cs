@@ -18,7 +18,7 @@ internal static class PackageEndpoints
         group.MapGet("/", List).RequireAnyPermission(Readers);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(Readers);
         group.MapPost("/", Create).RequirePermission(BillingPermissions.TariffsManage).WithValidation<SavePackageRequest>();
-        group.MapPut("/{id:guid}", Update).RequirePermission(BillingPermissions.TariffsManage).WithValidation<SavePackageRequest>();
+        group.MapPut("/{id:guid}", Update).RequirePermission(BillingPermissions.TariffsManage).WithValidation<SavePackageRequest>().RequireVersion();
     }
 
     private static async Task<IResult> List(bool? includeInactive, HospitalDbContext db, CancellationToken ct)

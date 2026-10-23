@@ -612,7 +612,8 @@ internal static class SystemEndpoints
         admin.MapPost("/keys/data/{keyId}/retire", async (string keyId, ReauthenticateRequest request, KeyRotationService keys, CancellationToken ct) =>
                 (await keys.RetireDataKeyAsync(keyId, request, ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage)
-            .RequireAddressRateLimit(ClusterRateLimits.SignIn);
+            .RequireAddressRateLimit(ClusterRateLimits.SignIn)
+            .WithValidation<ReauthenticateRequest>();
         admin.MapPost("/keys/signing/rotate", async (KeyRotationService keys, CancellationToken ct) => (await keys.RotateSigningKeyAsync(ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);
 

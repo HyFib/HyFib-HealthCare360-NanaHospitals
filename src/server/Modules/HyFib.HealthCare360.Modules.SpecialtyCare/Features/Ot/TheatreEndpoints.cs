@@ -18,7 +18,7 @@ internal static class TheatreEndpoints
         group.MapPost("/theatres", (SaveTheatreRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveTheatre(null, r, db, u, ct))
             .RequirePermission(SpecialtyCarePermissions.OtTheatresManage).WithValidation<SaveTheatreRequest>();
         group.MapPut("/theatres/{id:guid}", (Guid id, SaveTheatreRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveTheatre(id, r, db, u, ct))
-            .RequirePermission(SpecialtyCarePermissions.OtTheatresManage).WithValidation<SaveTheatreRequest>();
+            .RequirePermission(SpecialtyCarePermissions.OtTheatresManage).WithValidation<SaveTheatreRequest>().RequireVersion();
 
         group.MapGet("/calendar", Calendar).RequirePermission(SpecialtyCarePermissions.OtRead);
         group.MapGet("/utilisation", Utilisation).RequirePermission(SpecialtyCarePermissions.OtReports);

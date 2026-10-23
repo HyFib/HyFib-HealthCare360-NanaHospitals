@@ -103,6 +103,11 @@ export interface PatientDetail {
   notes: string | null;
   isActive: boolean;
   version: number;
+  /**
+   * The phone numbers, email, street address and emergency contact's phone came masked: this role does not contact or bill
+   * patients (`patients.contact.read`, SRS PRV-03), and so does not edit their details either.
+   */
+  contactsMasked?: boolean;
 }
 
 export interface PatientSummary {

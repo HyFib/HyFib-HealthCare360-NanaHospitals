@@ -255,6 +255,7 @@ export interface RosterEntryDto {
   endTime: string | null;
   isWeekOff: boolean;
   notes: string | null;
+  version: number;
 }
 
 export interface RosterAssignmentInput {
@@ -265,10 +266,18 @@ export interface RosterAssignmentInput {
   notes: string | null;
 }
 
+/** A roster entry as the planner saw it, with its version (REL-04). */
+export interface RosterEntryVersion {
+  id: string;
+  version: number;
+}
+
 export interface SaveRosterRequest {
   assignments: RosterAssignmentInput[];
   replaceExisting: boolean;
   acknowledgeWarnings: boolean;
+  /** The entries the grid showed in the cells it changes: one changed or added there since is not overwritten. */
+  replacing?: RosterEntryVersion[];
 }
 
 export interface CopyRosterWeekRequest {
@@ -597,6 +606,8 @@ export interface ProfessionalTaxScheduleDto {
   frequency: ProfessionalTaxFrequency;
   deductionMonths: number[];
   bands: ProfessionalTaxBandDto[];
+  /** The version of the slabs, which are saved together. */
+  version: number;
 }
 
 export interface SaveProfessionalTaxRequest {
@@ -604,6 +615,8 @@ export interface SaveProfessionalTaxRequest {
   frequency: ProfessionalTaxFrequency;
   deductionMonths: number[];
   bands: ProfessionalTaxBandDto[];
+  /** The slabs as they were shown; none for a state that has none. Slabs changed meanwhile are not replaced (REL-04). */
+  version?: number;
 }
 
 export interface SalaryStructureLineInput {

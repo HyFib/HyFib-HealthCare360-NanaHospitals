@@ -16,7 +16,7 @@ internal static class DiscountEndpoints
 
         var limits = app.MapGroup("/api/v1/billing/discount-limits").WithTags("Billing - Discounts");
         limits.MapGet("/", ListLimits).RequirePermission(BillingPermissions.DiscountsApprove);
-        limits.MapPut("/", SaveLimit).RequirePermission(BillingPermissions.DiscountsApprove).WithValidation<SaveDiscountLimitRequest>();
+        limits.MapPut("/", SaveLimit).RequirePermission(BillingPermissions.DiscountsApprove).WithValidation<SaveDiscountLimitRequest>().FirstSaveCreates();
         limits.MapDelete("/{id:guid}", DeleteLimit).RequirePermission(BillingPermissions.DiscountsApprove);
         limits.MapGet("/me", MyAuthority).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
     }
@@ -30,7 +30,7 @@ internal static class DiscountEndpoints
                 join b in db.Set<Bill>() on a.BillId equals b.Id
                 select new { Approval = a, b.BillNumber })
             .ToPagedResultAsync(page, ct);
-        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.Approval.PatientId), BillingTime.Today(time), ct);
+        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.Approval.PatientId), BillingTime.Today(time), fullContacts: false, ct);
         return TypedResults.Ok(result.Map(r =>
         {
             var patient = patients.GetValueOrDefault(r.Approval.PatientId);

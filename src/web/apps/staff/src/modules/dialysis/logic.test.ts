@@ -90,6 +90,7 @@ function session(id: string, shift: DialysisShift, status: DialysisSessionStatus
     startedAt: null,
     endedAt: null,
     chargeStatus: 'NotDue',
+    version: 1,
   };
 }
 

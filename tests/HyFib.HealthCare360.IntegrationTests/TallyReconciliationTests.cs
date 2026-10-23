@@ -21,7 +21,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 public sealed class TallyReconciliationTests(HospitalServer server)
 {
     private const string Base = "/api/v1/billing/tally";
-    private const string TallySetting = "/api/v1/admin/settings/integrations.tally";
+    private const string TallySetting = "integrations.tally";
     private static readonly DateOnly Day = new(2025, 1, 15);
 
     private static string Date => Day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
@@ -32,7 +32,7 @@ public sealed class TallyReconciliationTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId ?? throw new InvalidOperationException("The administrator has no facility.");
         var receiptNumber = await AddReceiptAsync(facilityId);
-        await admin.PutAsync(TallySetting, new SaveSettingRequest(JsonNode.Parse("""{"enabled":false}"""), null, false, null));
+        await admin.SaveSettingAsync(TallySetting, new SaveSettingRequest(JsonNode.Parse("""{"enabled":false}"""), null, false, null));
         try
         {
             var before = await admin.GetAsync<TallyDayVouchersDto>($"{Base}/days/{Date}/vouchers");
@@ -62,7 +62,7 @@ public sealed class TallyReconciliationTests(HospitalServer server)
             afterImport.Lines.Single(l => l.Group == "Money received" && l.Item == "Cash").ShouldSatisfyAllConditions(l => l.Records.ShouldBe(500m), l => l.DayBook.ShouldBe(500m));
 
             // With the simulator as Tally the day posts, Tally confirms the voucher, and reading it back finds it as sent.
-            await admin.PutAsync(TallySetting, new SaveSettingRequest(
+            await admin.SaveSettingAsync(TallySetting, new SaveSettingRequest(
                 JsonNode.Parse($$"""{"enabled":true,"provider":"simulator","companyName":"IT {{Guid.NewGuid():N}}"}"""), null, false, null));
             var posted = await PostAsync(admin);
             posted.ShouldSatisfyAllConditions(
@@ -85,7 +85,7 @@ public sealed class TallyReconciliationTests(HospitalServer server)
         }
         finally
         {
-            await admin.PutAsync(TallySetting, new SaveSettingRequest(JsonNode.Parse("""{"enabled":false}"""), null, false, null));
+            await admin.SaveSettingAsync(TallySetting, new SaveSettingRequest(JsonNode.Parse("""{"enabled":false}"""), null, false, null));
         }
     }
 
@@ -100,8 +100,9 @@ public sealed class TallyReconciliationTests(HospitalServer server)
         refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
 
         await admin.PutAsync($"{Base}/ledgers", current with { RoundOff = "Rounding Off" });
-        (await admin.GetAsync<TallyLedgerMap>($"{Base}/ledgers")).RoundOff.ShouldBe("Rounding Off");
-        await admin.PutAsync($"{Base}/ledgers", current);
+        var changed = await admin.GetAsync<TallyLedgerMap>($"{Base}/ledgers");
+        changed.RoundOff.ShouldBe("Rounding Off");
+        await admin.PutAsync($"{Base}/ledgers", current with { Version = changed.Version });
     }
 
     /// <summary>Queues the day and waits for the outbox to post it.</summary>

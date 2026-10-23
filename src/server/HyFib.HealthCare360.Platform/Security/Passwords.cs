@@ -11,7 +11,9 @@ namespace HyFib.HealthCare360.Platform.Security;
 /// </summary>
 public sealed class PasswordPolicy(IOptions<PlatformOptions> options)
 {
-    private const int MaxLength = 128;
+    /// <summary>The longest password that can be set, and so the longest one worth checking at sign-in.</summary>
+    public const int MaxLength = 128;
+
     private const int MinContextWordLength = 4;
     private static readonly Lazy<HashSet<string>> CommonPasswords = new(LoadCommonPasswords);
 

@@ -29,7 +29,7 @@ internal static class CodeCatalogueEndpoints
             .RequirePermission(ClinicalPermissions.MrdCoding).WithValidation<SaveIcdCodeRequest>();
         group.MapPut("/icd-codes/{id:guid}", (Guid id, SaveIcdCodeRequest r, HospitalDbContext db, IcdClassificationProvider c, IAuditLogger a, CancellationToken ct) =>
                 SaveIcd(id, r, db, c, a, ct))
-            .RequirePermission(ClinicalPermissions.MrdCoding).WithValidation<SaveIcdCodeRequest>();
+            .RequirePermission(ClinicalPermissions.MrdCoding).WithValidation<SaveIcdCodeRequest>().RequireVersion();
 
         group.MapGet("/procedure-codes", SearchProcedures)
             .RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.MrdCoding, ClinicalPermissions.CatalogueImport);
@@ -37,7 +37,7 @@ internal static class CodeCatalogueEndpoints
             .RequirePermission(ClinicalPermissions.MrdCoding).WithValidation<SaveProcedureCodeRequest>();
         group.MapPut("/procedure-codes/{id:guid}", (Guid id, SaveProcedureCodeRequest r, HospitalDbContext db, IAuditLogger a, CancellationToken ct) =>
                 SaveProcedure(id, r, db, a, ct))
-            .RequirePermission(ClinicalPermissions.MrdCoding).WithValidation<SaveProcedureCodeRequest>();
+            .RequirePermission(ClinicalPermissions.MrdCoding).WithValidation<SaveProcedureCodeRequest>().RequireVersion();
     }
 
     /// <summary>
@@ -98,7 +98,7 @@ internal static class CodeCatalogueEndpoints
         if (string.IsNullOrWhiteSpace(search))
         {
             return TypedResults.Ok(await codes.OrderBy(c => c.Category).ThenBy(c => c.Title).Take(take)
-                .Select(c => new ProcedureCodeDto(c.Id, c.Code, c.Title, c.System, c.Category, c.Keywords, c.Source, c.IsActive)).ToListAsync(ct));
+                .Select(c => new ProcedureCodeDto(c.Id, c.Code, c.Title, c.System, c.Category, c.Keywords, c.Source, c.IsActive, c.Version)).ToListAsync(ct));
         }
 
         var q = Bounded(search);
@@ -138,7 +138,7 @@ internal static class CodeCatalogueEndpoints
             .Take(CandidateLimit)
             .ToListAsync(ct);
         var ranked = IcdSearchRanker.Rank(rows, c => new CodeCandidate(c.Code, c.Title, c.Keywords, true), q, take);
-        return TypedResults.Ok(ranked.Select(c => new ProcedureCodeDto(c.Id, c.Code, c.Title, c.System, c.Category, c.Keywords, c.Source, c.IsActive)).ToList());
+        return TypedResults.Ok(ranked.Select(c => new ProcedureCodeDto(c.Id, c.Code, c.Title, c.System, c.Category, c.Keywords, c.Source, c.IsActive, c.Version)).ToList());
     }
 
     /// <summary>
@@ -233,6 +233,10 @@ internal static class CodeCatalogueEndpoints
             }
 
             entry = found;
+            if (request.Version is { } version)
+            {
+                db.SetExpectedVersion(entry, version);
+            }
         }
         else
         {
@@ -294,6 +298,10 @@ internal static class CodeCatalogueEndpoints
             }
 
             entry = found;
+            if (request.Version is { } version)
+            {
+                db.SetExpectedVersion(entry, version);
+            }
         }
         else
         {
@@ -321,7 +329,7 @@ internal static class CodeCatalogueEndpoints
         entry.RefreshSearchText();
         AuditEdit(audit, nameof(ProcedureCode), entry.Id, before, Snapshot(entry));
         await db.SaveChangesAsync(ct);
-        var dto = new ProcedureCodeDto(entry.Id, entry.Code, entry.Title, entry.System, entry.Category, entry.Keywords, entry.Source, entry.IsActive);
+        var dto = new ProcedureCodeDto(entry.Id, entry.Code, entry.Title, entry.System, entry.Category, entry.Keywords, entry.Source, entry.IsActive, entry.Version);
         return id is null ? TypedResults.Created($"/api/v1/mrd/procedure-codes/{entry.Id}", dto) : TypedResults.Ok(dto);
     }
 
@@ -473,5 +481,5 @@ internal static class CodeCatalogueEndpoints
 
     private static IcdCodeDto ToDto(IcdCode c, IcdClassificationSet set) => new(
         c.Id, c.Code, c.Title, c.Release, c.Chapter, c.Block, c.Release == CodeReleases.Icd10 ? set.BlockOf(c.Code)?.Title : null, c.IsBillable, c.Usage, c.Keywords,
-        c.IncludedTerms, c.Source, c.IsActive);
+        c.IncludedTerms, c.Source, c.IsActive, c.Version);
 }

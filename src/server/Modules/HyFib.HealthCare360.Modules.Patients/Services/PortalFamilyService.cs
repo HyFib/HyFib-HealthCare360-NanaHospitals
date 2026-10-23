@@ -18,6 +18,7 @@ public sealed class PortalFamilyService(
     HospitalDbContext db,
     PortalPatientScope scope,
     PatientAccessGuard guard,
+    PatientContactAccess contacts,
     INotificationService notifications,
     IAuditLogger audit,
     ICurrentUser currentUser,
@@ -50,10 +51,12 @@ public sealed class PortalFamilyService(
         var names = await db.Set<User>().AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
         await audit.PatientRecordAccessedAsync(patientId, "Viewed who can see the record in the patient portal", ct);
 
-        return new PatientPortalAccessDto(ownPhone, links
+        // The patient's number and their family's, in full only for those who contact or bill patients (SRS PRV-03).
+        var full = await contacts.FullAsync(ct);
+        return new PatientPortalAccessDto(PatientContacts.Phone(ownPhone, full), links
             .Select(l => new PortalFamilyLinkDto(
-                l.Id, l.AccountPhone, l.Relation, l.Source, l.LinkedAt, DisplayNameOf(l.LinkedByUserId), l.ConsentGivenBy, l.CodeSentTo, l.RevokedAt,
-                DisplayNameOf(l.RevokedByUserId), l.RevokedReason, l.IsActive))
+                l.Id, PatientContacts.Phone(l.AccountPhone, full)!, l.Relation, l.Source, l.LinkedAt, DisplayNameOf(l.LinkedByUserId), l.ConsentGivenBy,
+                PatientContacts.Phone(l.CodeSentTo, full), l.RevokedAt, DisplayNameOf(l.RevokedByUserId), l.RevokedReason, l.IsActive))
             .ToList());
 
         string? DisplayNameOf(Guid? userId) => userId is { } id ? names.GetValueOrDefault(id) : null;

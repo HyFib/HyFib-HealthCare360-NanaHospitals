@@ -18,11 +18,11 @@ internal static class MasterEndpoints
         group.MapGet("/wards", ListWards).RequireAnyPermission(ReadPermissions);
         group.MapGet("/wards/{id:guid}", GetWard).RequireAnyPermission(ReadPermissions);
         group.MapPost("/wards", CreateWard).RequirePermission(InpatientPermissions.MastersManage).WithValidation<SaveWardRequest>();
-        group.MapPut("/wards/{id:guid}", UpdateWard).RequirePermission(InpatientPermissions.MastersManage).WithValidation<SaveWardRequest>();
+        group.MapPut("/wards/{id:guid}", UpdateWard).RequirePermission(InpatientPermissions.MastersManage).WithValidation<SaveWardRequest>().RequireVersion();
 
         group.MapGet("/wards/{wardId:guid}/rooms", ListRooms).RequireAnyPermission(ReadPermissions);
         group.MapPost("/rooms", CreateRoom).RequirePermission(InpatientPermissions.MastersManage).WithValidation<SaveRoomRequest>();
-        group.MapPut("/rooms/{id:guid}", UpdateRoom).RequirePermission(InpatientPermissions.MastersManage).WithValidation<SaveRoomRequest>();
+        group.MapPut("/rooms/{id:guid}", UpdateRoom).RequirePermission(InpatientPermissions.MastersManage).WithValidation<SaveRoomRequest>().RequireVersion();
     }
 
     private static async Task<IResult> ListWards(bool? includeInactive, WardType? type, HospitalDbContext db, CancellationToken ct)

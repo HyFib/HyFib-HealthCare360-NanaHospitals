@@ -271,6 +271,8 @@ export interface SaveNomineeRequest {
   relationship: string;
   phone: string | null;
   email: string | null;
+  /** The nominee as shown; none when the patient had none. One named meanwhile is not replaced unseen (REL-04). */
+  version?: number;
 }
 
 export interface NomineeDto {
@@ -280,6 +282,7 @@ export interface NomineeDto {
   email: string | null;
   recordedVia: DataRequestChannel;
   updatedAt: string;
+  version: number;
 }
 
 // ------------------------------------------------------------------ breaches
@@ -425,6 +428,8 @@ export interface RetentionRuleDto {
   editable: boolean;
   lastRemoved: number | null;
   lastRunAt: string | null;
+  /** The saved period's version; null while the default applies. */
+  version: number | null;
 }
 
 export interface RetentionRunResult {
@@ -465,7 +470,8 @@ export interface RetentionReview {
 // ------------------------------------------------------------------ settings
 
 export interface PrivacySettingsView {
-  settings: { contact: PrivacyContact; responseDays: number };
+  /** Each with its version (null until first saved), sent back with a change (REL-04). */
+  settings: { contact: PrivacyContact; responseDays: number; version: number | null; responseDaysVersion: number | null };
   /** What patients see: the saved contact with the hospital's own details filling any gap. */
   published: PrivacyContact;
 }
@@ -477,6 +483,9 @@ export interface SavePrivacySettingsRequest {
   phone: string | null;
   address: string | null;
   responseDays: number;
+  /** As loaded: settings changed meanwhile are not overwritten (REL-04). */
+  version: number | null;
+  responseDaysVersion: number | null;
 }
 
 // ------------------------------------------------------------------ queries
@@ -684,8 +693,9 @@ export const privacyApi = {
   removeAffected: (id: string, patientId: string) => api.delete<void>(`${BASE}/breaches/${id}/affected/${patientId}`),
   notify: (id: string) => api.post<NotifyAffectedResult>(`${BASE}/breaches/${id}/notify`),
 
-  updateRetention: (key: string, value: number) =>
-    api.put<void>(`${BASE}/retention/${encodeURIComponent(key)}`, { value }),
+  /** `version`: the period as shown (null while the default applies); one changed meanwhile is not overwritten. */
+  updateRetention: (key: string, value: number, version: number | null) =>
+    api.put<void>(`${BASE}/retention/${encodeURIComponent(key)}`, { value, version }),
   runRetention: () => api.post<void>(`${BASE}/retention/run`),
 
   saveSettings: (request: SavePrivacySettingsRequest) => api.put<void>(`${BASE}/settings`, request),

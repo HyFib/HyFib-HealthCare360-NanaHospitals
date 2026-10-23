@@ -56,7 +56,7 @@ try
         await File.WriteAllTextAsync(jsonPath, JsonSerializer.Serialize(result, new JsonSerializerOptions(Operations.Json) { WriteIndented = true }));
     }
 
-    return result.FewFailures && (result.TargetsMet || options.Targets == TargetMode.Report) ? 0 : 1;
+    return result.Passed(options.Targets) ? 0 : 1;
 }
 catch (LoadTestException ex)
 {

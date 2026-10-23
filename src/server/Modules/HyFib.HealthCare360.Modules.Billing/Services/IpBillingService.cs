@@ -136,15 +136,30 @@ public sealed class IpBillingService(
             return;
         }
 
-        account.ReopenAfterRevokedDischarge();
+        var approval = new { account.DischargeApprovedBy, account.DischargeApprovalReason, account.DischargeApprovedAt };
+        var withdrawn = account.ReopenAfterRevokedDischarge();
+        if (withdrawn)
+        {
+            audit.Add(new AuditEntry(AuditCategories.Data, "billing.discharge_with_dues.withdrawn",
+                $"Discharge with dues approval withdrawn for admission {account.AdmissionNumber}: the discharge was revoked")
+            {
+                PatientId = account.PatientId,
+                EntityType = nameof(IpAccount),
+                EntityId = account.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+                Details = approval,
+            });
+        }
+
         var finalBill = await HasFinalizedFinalBillAsync(account.AdmissionId, ct)
             ? "The final bill is finalized already, so services from now on go on a supplementary bill."
             : "A final bill already drafted stays a draft until the next discharge.";
+        var dues = withdrawn ? " The approval to discharge with dues is withdrawn: the next discharge needs a new one." : string.Empty;
         await notifications.NotifyPermissionHoldersAsync(
             BillingPermissions.IpManage,
             account.FacilityId,
             "Discharge revoked — the stay goes on",
-            $"Admission {account.AdmissionNumber}: the discharge was revoked, so the account is settled once the discharge begins again. {finalBill}",
+            $"Admission {account.AdmissionNumber}: the discharge was revoked, so the account is settled once the discharge begins again. {finalBill}{dues}",
             $"/billing/ip-accounts/{account.Id}",
             "billing",
             "info",
@@ -195,7 +210,7 @@ public sealed class IpBillingService(
             return Error.NotFound(nameof(IpAccount), id);
         }
 
-        var patient = (await PatientQueries.SummariesAsync(db, [a.PatientId], BillingTime.Today(time), ct)).GetValueOrDefault(a.PatientId);
+        var patient = (await PatientQueries.SummariesAsync(db, [a.PatientId], BillingTime.Today(time), fullContacts: false, ct)).GetValueOrDefault(a.PatientId);
         var payerName = a.PayerId is { } payerId ? await db.Set<Payer>().Where(p => p.Id == payerId).Select(p => p.Name).FirstOrDefaultAsync(ct) : null;
         var planName = a.TariffPlanId is { } planId ? await db.Set<TariffPlan>().Where(p => p.Id == planId).Select(p => p.Name).FirstOrDefaultAsync(ct) : null;
         var doctor = a.AttendingPractitionerId is { } doctorId

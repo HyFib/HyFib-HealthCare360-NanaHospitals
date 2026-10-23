@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Services;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
 
@@ -68,6 +69,15 @@ public sealed record UpdateIpAccountRequest(
 
 public sealed record AssignPackageRequest(Guid? PackageId, uint Version);
 
+public sealed class AssignPackageRequestValidator : AbstractValidator<AssignPackageRequest>
+{
+    public AssignPackageRequestValidator()
+    {
+        RuleFor(x => x.PackageId).OptionalId();
+        RuleFor(x => x.Version).SeenVersion();
+    }
+}
+
 public sealed record RunningBillCategory(ServiceCategory Category, int Items, decimal Gross, decimal Discount, decimal Tax, decimal Net);
 
 public sealed record RunningBillDay(DateOnly Date, int Items, decimal Net);
@@ -126,6 +136,13 @@ public sealed record RunningBill(
     decimal ReturnsNet);
 
 public sealed record CreateInterimBillRequest(DateOnly? UpTo);
+
+/// <summary>An interim bill covers services already given: up to today at the latest (the hospital's day).</summary>
+public sealed class CreateInterimBillRequestValidator : AbstractValidator<CreateInterimBillRequest>
+{
+    public CreateInterimBillRequestValidator(TimeProvider time) =>
+        RuleFor(x => x.UpTo).LessThanOrEqualTo(_ => BillingTime.Today(time)).WithMessage("Bill up to today or an earlier day.");
+}
 
 /// <summary>
 /// A final settlement: the final bill it followed (none for a stay whose interim bills took every service, or with no

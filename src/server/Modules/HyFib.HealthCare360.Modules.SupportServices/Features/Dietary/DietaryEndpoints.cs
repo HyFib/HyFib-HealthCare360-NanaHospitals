@@ -14,7 +14,7 @@ internal static class DietaryEndpoints
         group.MapGet("/diet-types", ListDietTypes)
             .RequireAnyPermission(SupportServicesPermissions.DietOrdersRead, SupportServicesPermissions.DietOrdersManage, SupportServicesPermissions.DietMasters);
         group.MapPost("/diet-types", CreateDietType).RequirePermission(SupportServicesPermissions.DietMasters).WithValidation<SaveDietTypeRequest>();
-        group.MapPut("/diet-types/{id:guid}", UpdateDietType).RequirePermission(SupportServicesPermissions.DietMasters).WithValidation<SaveDietTypeRequest>();
+        group.MapPut("/diet-types/{id:guid}", UpdateDietType).RequirePermission(SupportServicesPermissions.DietMasters).WithValidation<SaveDietTypeRequest>().RequireVersion();
 
         group.MapGet("/orders", ListOrders).RequirePermission(SupportServicesPermissions.DietOrdersRead);
         group.MapGet("/orders/{id:guid}", async (Guid id, DietOrderService orders, CancellationToken ct) => (await orders.GetAsync(id, ct)).ToOk())

@@ -19,7 +19,7 @@ internal static class CodingEndpoints
         group.MapPost("/codings", Create).RequirePermission(ClinicalPermissions.MrdCoding).WithValidation<CreateCodingRequest>();
         group.MapGet("/codings/{id:guid}", Get).RequirePermission(ClinicalPermissions.MrdCoding);
         group.MapPut("/codings/{id:guid}", Save).RequirePermission(ClinicalPermissions.MrdCoding).WithValidation<SaveCodingRequest>();
-        group.MapPost("/codings/{id:guid}/verify", Verify).RequirePermission(ClinicalPermissions.MrdCoding);
+        group.MapPost("/codings/{id:guid}/verify", Verify).RequirePermission(ClinicalPermissions.MrdCoding).WithValidation<VerifyCodingRequest>();
         group.MapGet("/codings/{id:guid}/suggestions", Suggestions).RequirePermission(ClinicalPermissions.MrdCoding);
         group.MapGet("/reports/morbidity", Morbidity).RequirePermission(ClinicalPermissions.MrdRecords);
     }

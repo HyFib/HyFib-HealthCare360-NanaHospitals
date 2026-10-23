@@ -40,7 +40,8 @@ public sealed record SaveIndicatorRequest(
     uint? Version);
 
 /// <summary>Records (or corrects) the value for the period containing <see cref="PeriodStart"/>.</summary>
-public sealed record RecordIndicatorValueRequest(DateOnly PeriodStart, decimal Numerator, decimal Denominator, string? Notes);
+/// <param name="Version">The version of the period's value as loaded (REL-04); none when the period has none.</param>
+public sealed record RecordIndicatorValueRequest(DateOnly PeriodStart, decimal Numerator, decimal Denominator, string? Notes, uint? Version = null);
 
 public sealed record IndicatorValueDto(
     Guid Id,
@@ -50,7 +51,8 @@ public sealed record IndicatorValueDto(
     decimal Denominator,
     decimal Value,
     bool? MeetsTarget,
-    string? Notes);
+    string? Notes,
+    uint Version);
 
 public sealed record IndicatorTrendDto(
     Guid IndicatorId,

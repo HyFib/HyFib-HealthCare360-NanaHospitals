@@ -39,6 +39,7 @@ export interface ProcedureDto {
   status: ProcedureStatus;
   statusReason: string | null;
   statusChangedAt: string | null;
+  version: number;
 }
 
 export interface ProcedureFields {
@@ -59,6 +60,8 @@ export interface RecordProcedureRequest extends ProcedureFields {
 
 export interface CorrectProcedureRequest extends ProcedureFields {
   reason: string;
+  /** The record as it was shown: one corrected meanwhile is not corrected again over it (REL-04). */
+  version: number;
 }
 
 /** What the form edits: the time as an IST `datetime-local` value, every text as a string ('' for none). */

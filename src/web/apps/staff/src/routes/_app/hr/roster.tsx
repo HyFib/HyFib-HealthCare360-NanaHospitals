@@ -49,14 +49,14 @@ import {
   cellsFromEntries,
   conflictsByCell,
   coverage,
-  diffRoster,
-  entryIdsByCell,
   mergeCells,
+  noteCell,
   paint,
-  sameItems,
+  rosterChanges,
   type Brush,
   type CellItem,
   type Cells,
+  type SeenCells,
 } from '@/modules/hr/roster';
 import { addDays, datesBetween, dayHeader, formatTimeOfDay, isIsoDate, startOfWeek } from '@/modules/hr/shared/dates';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
@@ -246,6 +246,8 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
   const roster = useQuery(hrQueries.roster(week, weekEnd, departmentId));
   const staff = useQuery({ ...hrQueries.employees({ departmentId, sort: 'name' }, 200), enabled: canListStaff });
   const [draft, setDraft] = useState<Cells>({});
+  // Each changed cell's saved entries as the planner first saw them: the roster read again does not move them (REL-04).
+  const [seen, setSeen] = useState<SeenCells>({});
   const [brush, setBrush] = useState<Brush | null>(null);
   const [conflicts, setConflicts] = useState<RosterConflictDto[]>([]);
   const [warnings, setWarnings] = useState<RosterConflictDto[] | null>(null);
@@ -254,9 +256,9 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
   const navigation = useArrowNavigationGroup({ axis: 'grid' });
 
   const saved = useMemo(() => cellsFromEntries(roster.data ?? []), [roster.data]);
-  const savedIds = useMemo(() => entryIdsByCell(roster.data ?? []), [roster.data]);
   const cells = useMemo(() => mergeCells(saved, draft), [saved, draft]);
-  const diff = useMemo(() => diffRoster(saved, draft), [saved, draft]);
+  const diff = useMemo(() => rosterChanges(seen, draft), [seen, draft]);
+  const changedKeys = useMemo(() => new Set(diff.changedKeys), [diff]);
   const dirty = diff.changedKeys.length > 0;
   const byCell = useMemo(() => conflictsByCell(conflicts), [conflicts]);
   const activeShifts = useMemo(() => (shifts.data ?? []).filter((s) => s.isActive), [shifts.data]);
@@ -295,6 +297,7 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
       return;
     }
     const next = paint(cells[key] ?? [], currentBrush, event.shiftKey);
+    setSeen((prev) => noteCell(prev, roster.data ?? [], key));
     setDraft((prev) => ({ ...prev, [key]: next }));
   };
 
@@ -330,14 +333,16 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
           assignments: diff.assignments,
           replaceExisting: true,
           acknowledgeWarnings,
+          replacing: diff.replacing,
         });
         saved = result.saved;
       }
-      const toDelete = diff.clearedKeys.flatMap((key) => savedIds[key] ?? []);
+      const toDelete = diff.deleteIds;
       for (const id of toDelete) {
         await hrApi.deleteRosterEntry(id);
       }
       setDraft({});
+      setSeen({});
       setConflicts([]);
       setWarnings(null);
       notify.success(
@@ -346,7 +351,14 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
       );
       void queryClient.invalidateQueries({ queryKey: hrKeys.roster });
     } catch (error) {
-      if (isApiError(error) && error.code === 'roster.warnings' && Array.isArray(error.data)) {
+      if (isApiError(error) && error.code === 'concurrency') {
+        // Someone else changed a cell this planner changed: the roster is shown as it is now, to plan on again.
+        setDraft({});
+        setSeen({});
+        setConflicts([]);
+        setWarnings(null);
+        notify.warning('The roster changed meanwhile', 'It has been reloaded. Check it and make your changes again.');
+      } else if (isApiError(error) && error.code === 'roster.warnings' && Array.isArray(error.data)) {
         setWarnings(error.data as RosterConflictDto[]);
       } else if (isApiError(error) && error.code === 'roster.conflicts' && Array.isArray(error.data)) {
         setConflicts(error.data as RosterConflictDto[]);
@@ -424,6 +436,7 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
               disabled={!dirty || busy !== null}
               onClick={() => {
                 setDraft({});
+                setSeen({});
                 setConflicts([]);
               }}
             >
@@ -505,7 +518,7 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
                     {dates.map((date) => {
                       const key = cellKey(person.id, date);
                       const items = cells[key] ?? [];
-                      const changed = key in draft && !sameItems(saved[key] ?? [], items);
+                      const changed = changedKeys.has(key);
                       const cellConflicts = byCell[key] ?? [];
                       const severity = cellConflicts.some((c) => c.severity === 'Error')
                         ? 'error'

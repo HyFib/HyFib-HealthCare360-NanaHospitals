@@ -5,7 +5,8 @@ using ItemType = HyFib.HealthCare360.Modules.SupplyChain.Domain.ItemType;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
 
-public sealed record RecordChecklistRequest(IReadOnlyList<ChecklistInput> Items);
+/// <param name="Version">The version of the booking as loaded: required when the pre-op checklist is changed (REL-04).</param>
+public sealed record RecordChecklistRequest(IReadOnlyList<ChecklistInput> Items, uint? Version = null);
 
 public sealed record AnaesthesiaRecordDto(
     Guid Id,

@@ -187,6 +187,11 @@ export interface TallyLedgerMap {
   pharmacy: TallyCounterLedgers;
   canteen: TallyCounterLedgers;
   salesLedgerPerGstRate: boolean;
+  /**
+   * The version of the facility's saved names; absent while the facility uses the hospital-wide ones. Sent back with a
+   * change, so names saved meanwhile by someone else are not overwritten (REL-04).
+   */
+  version?: number;
 }
 
 const BASE = '/api/v1/billing/tally';

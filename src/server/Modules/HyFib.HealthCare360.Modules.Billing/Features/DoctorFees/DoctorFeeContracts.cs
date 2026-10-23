@@ -90,6 +90,11 @@ public sealed record PayoutDto(
 
 public sealed record PayoutVersionRequest(uint Version);
 
+public sealed class PayoutVersionRequestValidator : AbstractValidator<PayoutVersionRequest>
+{
+    public PayoutVersionRequestValidator() => RuleFor(x => x.Version).SeenVersion();
+}
+
 public sealed record PayPayoutRequest(PaymentMode Mode, string? Reference, uint Version);
 
 /// <summary>Doctor fee statement (DFA-04) for a period.</summary>

@@ -16,6 +16,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Organization;
@@ -212,6 +213,10 @@ public sealed class InterimBillTests(HospitalServer server)
         var interim = await billing.PostAsync<BillDetail>(Path(account, "interim-bills"), new CreateInterimBillRequest(null));
         interim.Lines.Select(l => l.ChargeId).Order().ToArray().ShouldBe(charges.Select(c => c.Id).Order().ToArray());
 
+        // Management approves discharging him with dues: the family will pay after the weekend.
+        var management = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        await management.PostAsync(Path(account, "discharge-approval"), new ApproveDischargeWithDuesRequest("Family to pay after the weekend"));
+
         // Nurse: initiates the discharge. No midnight has passed since the bed day, so nothing more is charged, and no final
         // bill is drafted: it would hold nothing, and an empty bill cannot be finalized. The desk is told to finalize the
         // draft interim bill first, and the account is not settled until it is.
@@ -224,10 +229,18 @@ public sealed class InterimBillTests(HospitalServer server)
         await RefusedAsync(billing, Path(account, "final-bill"), "billing.billed_on_interim_bills");
 
         // A fever on the evening round keeps him: the discharge is revoked. The account is open again, so it is not
-        // settled (and the advance not refunded) while he is still in a bed. When the fever is gone, his discharge begins again.
+        // settled (and the advance not refunded) while he is still in a bed, and the approval to discharge him with dues is
+        // withdrawn: it was for that discharge, and his dues grow with the stay. When the fever is gone, his discharge
+        // begins again.
         await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/revoke",
             new RevokeDischargeRequest("Fever spike on the evening round"));
-        (await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}")).Status.ShouldBe(IpAccountStatus.Open);
+        var reopened = await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}");
+        (reopened.Status, reopened.DischargeWithDuesApproved, reopened.DischargeApprovalReason).ShouldBe((IpAccountStatus.Open, false, (string?)null));
+        (await NoticesAsync(billing, account, "Discharge revoked — the stay goes on")).ShouldHaveSingleItem()
+            .ShouldContain("The approval to discharge with dues is withdrawn: the next discharge needs a new one.");
+        (await management.GetAsync<PagedResult<AuditEventDto>>(
+                $"/api/v1/admin/audit?patientId={account.PatientId}&action=billing.discharge_with_dues.withdrawn")).Items
+            .ShouldHaveSingleItem().EntityId.ShouldBe(account.Id.ToString());
         await RefusedAsync(billing, Path(account, "settle"), "billing.discharge_not_initiated");
         await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/initiate",
             new InitiateDischargeRequest(today, "Afebrile overnight"));

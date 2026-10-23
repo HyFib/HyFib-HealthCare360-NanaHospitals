@@ -137,7 +137,7 @@ internal static class SelfServiceEndpoints
                     orderby r.Date, s != null ? s.StartTime : TimeOnly.MinValue
                     select new RosterEntryDto(r.Id, r.EmployeeId, e.EmployeeCode, e.FullName, r.Date, r.ShiftId, s != null ? s.Code : null,
                         s != null ? s.Name : null, s != null ? s.Color : null, s != null ? (TimeOnly?)s.StartTime : null, s != null ? (TimeOnly?)s.EndTime : null,
-                        r.IsWeekOff, r.Notes))
+                        r.IsWeekOff, r.Notes, r.Version))
                 .ToListAsync(ct);
             return TypedResults.Ok(rows);
         });

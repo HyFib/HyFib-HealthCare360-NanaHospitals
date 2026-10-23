@@ -93,6 +93,17 @@ public static class CommonRules
         rule.Must(value => string.IsNullOrWhiteSpace(value) || SharedKernel.Abha.IsValidAddress(value))
             .WithMessage(AbhaAddressMessage);
 
+    /// <summary>
+    /// The version of the record an action was taken on (REL-04): an action that does not say which version it saw is
+    /// refused as <see cref="ConcurrencyExtensions.RequireVersion"/> refuses an edit. Postgres never gives a row version 0.
+    /// </summary>
+    public static IRuleBuilderOptions<T, uint> SeenVersion<T>(this IRuleBuilder<T, uint> rule) =>
+        rule.NotEmpty().WithMessage(ConcurrencyExtensions.VersionMissing);
+
+    /// <summary>An optional reference to a record: when given, it names one (an empty id never does).</summary>
+    public static IRuleBuilderOptions<T, Guid?> OptionalId<T>(this IRuleBuilder<T, Guid?> rule) =>
+        rule.NotEqual(Guid.Empty).WithMessage("Choose one from the list, or leave it empty.");
+
     public static IRuleBuilderOptions<T, string?> SafeText<T>(this IRuleBuilder<T, string?> rule, int maxLength) =>
         rule.MaximumLength(maxLength).Must(value => value is null || !value.Any(c => char.IsControl(c) && c is not '\n' and not '\r' and not '\t'))
             .WithMessage("Contains characters that are not allowed.");

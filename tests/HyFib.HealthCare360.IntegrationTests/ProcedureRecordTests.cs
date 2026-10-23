@@ -45,13 +45,20 @@ public sealed class ProcedureRecordTests(HospitalServer server)
 
         var corrected = await doctor.PutAsync<ProcedureDto>($"/api/v1/emr/procedures/{recorded.Id}", new CorrectProcedureRequest(
             performedAt, null, "Incision and drainage of abscess", null, "Dr. Rao (visiting)", ProcedureSide.Right, "Axilla", "Pus drained", null,
-            "Wrong procedure picked"));
+            "Wrong procedure picked", recorded.Version));
         corrected.Code.ShouldBeNull();
         corrected.Display.ShouldBe("Incision and drainage of abscess");
         corrected.PerformerPractitionerId.ShouldBeNull();
         corrected.PerformerName.ShouldBe("Dr. Rao (visiting)");
         corrected.Status.ShouldBe(ProcedureStatus.Amended);
         corrected.StatusReason.ShouldBe("Wrong procedure picked");
+
+        // A second correction made to the record as it was before the first is refused, not saved over it (REL-04).
+        using (var stale = await doctor.SendRawAsync(HttpMethod.Put, $"/api/v1/emr/procedures/{recorded.Id}", new CorrectProcedureRequest(
+                   performedAt, null, "Something else", null, null, ProcedureSide.NotApplicable, null, null, null, "Crossed edit", recorded.Version)))
+        {
+            stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
 
         var timeline = await doctor.GetAsync<PagedResult<TimelineEntry>>($"/api/v1/emr/patients/{patientId}/timeline?types=Procedure");
         var entry = timeline.Items.ShouldHaveSingleItem();
@@ -66,8 +73,9 @@ public sealed class ProcedureRecordTests(HospitalServer server)
         (await doctor.GetAsync<PagedResult<TimelineEntry>>($"/api/v1/emr/patients/{patientId}/timeline?types=Procedure")).Items
             .ShouldBeEmpty("A record entered in error leaves the timeline.");
 
+        var erred = (await doctor.GetAsync<List<ProcedureDto>>(path + "?includeEnteredInError=true")).Single();
         using (var again = await doctor.SendRawAsync(HttpMethod.Put, $"/api/v1/emr/procedures/{recorded.Id}", new CorrectProcedureRequest(
-                   performedAt, null, "Something else", null, null, ProcedureSide.NotApplicable, null, null, null, "Second thoughts")))
+                   performedAt, null, "Something else", null, null, ProcedureSide.NotApplicable, null, null, null, "Second thoughts", erred.Version)))
         {
             again.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, "A record entered in error cannot be corrected back.");
         }

@@ -16,9 +16,9 @@ internal static class DischargeSummaryEndpoints
 
         group.MapGet("/by-admission/{admissionId:guid}", GetByAdmission).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapPut("/by-admission/{admissionId:guid}", Save).RequirePermission(ClinicalPermissions.DischargeSummaryWrite)
-            .WithValidation<SaveDischargeSummaryRequest>();
+            .WithValidation<SaveDischargeSummaryRequest>().FirstSaveCreates();
         group.MapGet("/by-admission/{admissionId:guid}/prefill", Prefill).RequirePermission(ClinicalPermissions.DischargeSummaryWrite);
-        group.MapPost("/{id:guid}/sign", Sign).RequirePermission(ClinicalPermissions.DischargeSummaryWrite);
+        group.MapPost("/{id:guid}/sign", Sign).RequirePermission(ClinicalPermissions.DischargeSummaryWrite).WithValidation<SignDischargeSummaryRequest>();
         group.MapPost("/{id:guid}/amend", Amend).RequirePermission(ClinicalPermissions.DischargeSummaryWrite).WithValidation<AmendDischargeSummaryRequest>();
         group.MapGet("/{id:guid}/print", Print).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapGet("/{id:guid}/document", Document).RequirePermission(ClinicalPermissions.EmrRead);

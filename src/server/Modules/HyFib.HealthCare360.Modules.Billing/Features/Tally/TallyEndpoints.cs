@@ -23,7 +23,7 @@ internal static class TallyEndpoints
         group.MapPost("/days/{date}/check", Check).RequirePermission(BillingPermissions.TallyExport);
         group.MapPost("/days/{date}/imported", MarkImported).RequirePermission(BillingPermissions.TallyExport);
         group.MapGet("/ledgers", Ledgers).RequireAnyPermission(BillingPermissions.TallyExport, BillingPermissions.TallyConfigure);
-        group.MapPut("/ledgers", SaveLedgers).RequirePermission(BillingPermissions.TallyConfigure).WithValidation<TallyLedgerMap>();
+        group.MapPut("/ledgers", SaveLedgers).RequirePermission(BillingPermissions.TallyConfigure).WithValidation<TallyLedgerMap>().FirstSaveCreates();
     }
 
     private static async Task<IResult> List(DateOnly? from, DateOnly? to, HospitalDbContext db, ICurrentUser currentUser, TimeProvider time, CancellationToken ct)
@@ -133,7 +133,7 @@ internal static class TallyEndpoints
     }
 
     /// <summary>The ledger names in effect for the facility, built-in names filled in.</summary>
-    private static async Task<IResult> Ledgers(TallyService tally, ICurrentUser currentUser, CancellationToken ct)
+    private static async Task<IResult> Ledgers(TallyService tally, HospitalDbContext db, ICurrentUser currentUser, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
         {
@@ -145,6 +145,7 @@ internal static class TallyEndpoints
         {
             Pharmacy = map.CounterLedgers(TallyCounters.Pharmacy),
             Canteen = map.CounterLedgers(TallyCounters.Canteen),
+            Version = await SettingVersions.OfAsync(db, TallyService.LedgerSetting, facilityId, ct),
         });
     }
 
@@ -156,7 +157,7 @@ internal static class TallyEndpoints
             return BillingDb.FacilityRequired.ToProblem();
         }
 
-        await settings.SetAsync(TallyService.LedgerSetting, TallyLedgerMaps.Normalize(request), facilityId, cancellationToken: ct);
+        await settings.SetAsync(TallyService.LedgerSetting, TallyLedgerMaps.Normalize(request) with { Version = null }, facilityId, false, request.Version, ct);
         await audit.WriteAsync(new AuditEntry(AuditCategories.Admin, "billing.tally.ledgers", "Changed the Tally ledger names")
         {
             EntityType = "Setting",

@@ -8,6 +8,11 @@ public sealed record EditNoteRequest(ClinicalNoteType Type, string? Title, strin
 
 public sealed record SignNoteRequest(uint Version);
 
+public sealed class SignNoteRequestValidator : AbstractValidator<SignNoteRequest>
+{
+    public SignNoteRequestValidator() => RuleFor(x => x.Version).SeenVersion();
+}
+
 public sealed record AddendumRequest(string Body);
 
 public sealed record ClinicalNoteDto(

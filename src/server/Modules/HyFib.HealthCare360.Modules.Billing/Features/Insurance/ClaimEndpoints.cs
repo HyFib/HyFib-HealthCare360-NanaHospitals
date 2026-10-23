@@ -55,7 +55,7 @@ internal static class ClaimEndpoints
                 join p in db.Set<Payer>() on c.PayerId equals p.Id
                 select new { Claim = c, b.BillNumber, PayerName = p.Name })
             .ToPagedResultAsync(page, ct);
-        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.Claim.PatientId), BillingTime.Today(time), ct);
+        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.Claim.PatientId), BillingTime.Today(time), fullContacts: false, ct);
         return TypedResults.Ok(result.Map(r =>
         {
             var c = r.Claim;
@@ -81,7 +81,7 @@ internal static class ClaimEndpoints
             return access.Error!.ToProblem();
         }
 
-        var patient = (await PatientQueries.SummariesAsync(db, [c.PatientId], BillingTime.Today(time), ct)).GetValueOrDefault(c.PatientId);
+        var patient = (await PatientQueries.SummariesAsync(db, [c.PatientId], BillingTime.Today(time), fullContacts: false, ct)).GetValueOrDefault(c.PatientId);
         var bill = await db.Set<Bill>().Where(b => b.Id == c.BillId).Select(b => new { b.BillNumber, b.AdmissionId, b.VisitId }).FirstOrDefaultAsync(ct);
         var payerName = await db.Set<Payer>().Where(p => p.Id == c.PayerId).Select(p => p.Name).FirstOrDefaultAsync(ct);
         var verified = await claims.VerifiedCodingAsync(c.PatientId, bill?.AdmissionId, bill?.VisitId, ct);

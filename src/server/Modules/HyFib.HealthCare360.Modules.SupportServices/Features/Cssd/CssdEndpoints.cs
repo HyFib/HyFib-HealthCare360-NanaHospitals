@@ -15,7 +15,7 @@ internal static class CssdEndpoints
         group.MapGet("/sets", ListSets).RequireAnyPermission(SupportServicesPermissions.CssdRead, SupportServicesPermissions.CssdRequests);
         group.MapGet("/sets/{id:guid}", GetSet).RequireAnyPermission(SupportServicesPermissions.CssdRead, SupportServicesPermissions.CssdRequests);
         group.MapPost("/sets", CreateSet).RequirePermission(SupportServicesPermissions.CssdMasters).WithValidation<SaveInstrumentSetRequest>();
-        group.MapPut("/sets/{id:guid}", UpdateSet).RequirePermission(SupportServicesPermissions.CssdMasters).WithValidation<SaveInstrumentSetRequest>();
+        group.MapPut("/sets/{id:guid}", UpdateSet).RequirePermission(SupportServicesPermissions.CssdMasters).WithValidation<SaveInstrumentSetRequest>().RequireVersion();
 
         group.MapGet("/requests", ListRequests).RequireAnyPermission(SupportServicesPermissions.CssdRead, SupportServicesPermissions.CssdRequests);
         group.MapPost("/requests", async (CreateCssdRequestRequest r, CssdService cssd, CancellationToken ct) =>

@@ -60,6 +60,12 @@ public sealed record AmendEncounterRequest(
 
 public sealed record SignEncounterRequest(uint Version);
 
+/// <summary>A doctor signs the encounter as they read it: its version says which.</summary>
+public sealed class SignEncounterRequestValidator : AbstractValidator<SignEncounterRequest>
+{
+    public SignEncounterRequestValidator() => RuleFor(x => x.Version).SeenVersion();
+}
+
 public sealed record EncounterListItem(
     Guid Id,
     Guid PatientId,

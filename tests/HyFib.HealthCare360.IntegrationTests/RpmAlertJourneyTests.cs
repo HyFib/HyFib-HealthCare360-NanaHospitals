@@ -235,7 +235,7 @@ public sealed class RpmAlertJourneyTests(HospitalServer server)
         {
             foreach (var key in Keys)
             {
-                await admin.PutAsync($"/api/v1/admin/settings/{key}", new SaveSettingRequest(value(key), null, false, null));
+                await admin.SaveSettingAsync(key, new SaveSettingRequest(value(key), null, false, null));
             }
         }
     }

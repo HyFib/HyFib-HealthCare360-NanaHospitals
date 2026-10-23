@@ -23,7 +23,7 @@ internal static class BillQueries
 
     public static async Task<IReadOnlyList<BillListItem>> ToListItemsAsync(HospitalDbContext db, IReadOnlyList<BillRow> rows, TimeProvider time, CancellationToken ct)
     {
-        var patients = await PatientQueries.SummariesAsync(db, rows.Select(r => r.PatientId), BillingTime.Today(time), ct);
+        var patients = await PatientQueries.SummariesAsync(db, rows.Select(r => r.PatientId), BillingTime.Today(time), fullContacts: false, ct);
         var payerIds = rows.Where(r => r.PayerId is not null).Select(r => r.PayerId!.Value).Distinct().ToList();
         var payers = await db.Set<Payer>().Where(p => payerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
         return rows.Select(r =>
@@ -44,7 +44,7 @@ internal static class BillQueries
             return null;
         }
 
-        var patient = (await PatientQueries.SummariesAsync(db, [bill.PatientId], BillingTime.Today(time), ct)).GetValueOrDefault(bill.PatientId);
+        var patient = (await PatientQueries.SummariesAsync(db, [bill.PatientId], BillingTime.Today(time), fullContacts: false, ct)).GetValueOrDefault(bill.PatientId);
         var payerName = bill.PayerId is { } payerId ? await db.Set<Payer>().Where(p => p.Id == payerId).Select(p => p.Name).FirstOrDefaultAsync(ct) : null;
         var planName = bill.TariffPlanId is { } planId ? await db.Set<TariffPlan>().Where(p => p.Id == planId).Select(p => p.Name).FirstOrDefaultAsync(ct) : null;
         var practitionerIds = bill.Lines.Where(l => l.PractitionerId is not null).Select(l => l.PractitionerId!.Value).Distinct().ToList();

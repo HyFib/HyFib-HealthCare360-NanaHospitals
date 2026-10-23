@@ -1,4 +1,10 @@
-import type { DatabasePasswordStatus, EncryptionKeysStatus, SystemHealthReport, WifiSample } from '@/modules/admin/api';
+import type {
+  DatabasePasswordStatus,
+  DeviceDto,
+  EncryptionKeysStatus,
+  SystemHealthReport,
+  WifiSample,
+} from '@/modules/admin/api';
 import type { FakeAnswers } from '../../fakeApi';
 
 // System health of the server machine with canned data: a link that dipped overnight, a backup that failed once,
@@ -187,4 +193,50 @@ export const SYSTEM_HEALTH_ANSWERS: FakeAnswers = {
   'GET /api/v1/admin/system/wifi-samples': WIFI_SAMPLES,
   'GET /api/v1/admin/system/database-password': DATABASE_PASSWORD,
   'GET /api/v1/admin/system/keys': ENCRYPTION_KEYS,
+};
+
+// The devices page of a hospital enrolling its first workstation: a queue display and a lab PC, no workstation yet.
+
+export const DEVICES: DeviceDto[] = [
+  {
+    id: '0192a000-0000-7000-8000-0000000000e1',
+    name: 'OPD queue display',
+    machineName: 'OPD-TV-01',
+    kind: 'DisplayBoard',
+    osVersion: 'Windows 11 IoT Enterprise',
+    appVersion: '1.0.0',
+    enrolledAt: hoursAgo(240),
+    lastSeenAt: hoursAgo(0.1),
+    lastIpAddress: '192.168.10.40',
+    lastWifiSsid: 'NANA-CLINICAL',
+    lastWifiSignal: 81,
+    isRevoked: false,
+    facilityId: null,
+    departmentId: null,
+    location: 'OPD waiting hall',
+    version: 4,
+  },
+  {
+    id: '0192a000-0000-7000-8000-0000000000e2',
+    name: 'Haematology PC',
+    machineName: 'LAB-PC-02',
+    kind: 'LabAgent',
+    osVersion: 'Windows 10 Pro',
+    appVersion: '1.0.0',
+    enrolledAt: hoursAgo(200),
+    lastSeenAt: hoursAgo(0.2),
+    lastIpAddress: '192.168.10.52',
+    lastWifiSsid: null,
+    lastWifiSignal: null,
+    isRevoked: false,
+    facilityId: null,
+    departmentId: null,
+    location: 'Laboratory',
+    version: 2,
+  },
+];
+
+export const DEVICES_ANSWERS: FakeAnswers = {
+  'GET /api/v1/admin/devices': DEVICES,
+  'GET /api/v1/admin/devices/desktop-update': { offeredVersion: null, releasedAt: null, problem: null },
 };

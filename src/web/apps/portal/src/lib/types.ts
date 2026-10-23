@@ -991,11 +991,14 @@ export interface CommunicationPreferences {
   whatsAppEditable: boolean;
 }
 
+/**
+ * The choice the patient just made; a choice left out stays as it is, so a page showing an older state never undoes a
+ * choice made meanwhile on another device (REL-04).
+ */
 export interface CommunicationPreferencesRequest {
   patientId: string;
-  marketing: boolean;
-  updates: boolean;
-  /** Left out to keep the WhatsApp choice as it is. */
+  marketing?: boolean;
+  updates?: boolean;
   whatsApp?: boolean;
 }
 
@@ -1243,6 +1246,7 @@ export interface NomineeDto {
   email: string | null;
   recordedVia: DataRequestChannel;
   updatedAt: string;
+  version: number;
 }
 
 /** GET /api/v1/portal/privacy/nominee → `{ nominee }`. */
@@ -1256,6 +1260,8 @@ export interface PortalNomineeRequest {
   relationship: string;
   phone: string | null;
   email: string | null;
+  /** The nominee as shown; none when there was none. One named meanwhile (at the desk) is not replaced unseen (REL-04). */
+  version?: number;
 }
 
 /**

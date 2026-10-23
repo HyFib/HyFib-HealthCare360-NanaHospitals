@@ -150,7 +150,8 @@ internal static class SaleEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
+    private static async Task<IResult> Get(
+        Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, CancellationToken ct)
     {
         var sale = await db.Set<PharmacySale>().AsNoTracking().Include(s => s.Items).Include(s => s.Payments).FirstOrDefaultAsync(s => s.Id == id, ct);
         if (sale is null)
@@ -174,7 +175,8 @@ internal static class SaleEndpoints
         var storeName = await db.Set<Store>().Where(s => s.Id == sale.StoreId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? string.Empty;
         var soldBy = await db.Set<User>().Where(u => u.Id == sale.SoldByUserId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct);
         return TypedResults.Ok(new PharmacySaleDetail(
-            sale.Id, sale.InvoiceNumber, sale.Type, sale.StoreId, storeName, sale.PatientId, uhid, sale.CustomerName, sale.CustomerPhone,
+            sale.Id, sale.InvoiceNumber, sale.Type, sale.StoreId, storeName, sale.PatientId, uhid, sale.CustomerName,
+            PatientContacts.Phone(sale.CustomerPhone, await contacts.FullAsync(ct)),
             sale.PrescriptionNumber, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.SoldAt, soldBy, sale.CounsellingNotes,
             sale.DiscountPercent, sale.GrossAmount, sale.DiscountAmount, sale.TaxableAmount, sale.CgstAmount, sale.SgstAmount, sale.RoundOff,
             sale.NetAmount, sale.PaidAmount, sale.DueAmount, sale.ReturnedAmount, sale.RefundedAmount, sale.Status, sale.CancelReason,

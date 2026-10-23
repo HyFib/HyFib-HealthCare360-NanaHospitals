@@ -52,6 +52,20 @@ public sealed class PlatformOptionsValidatorTests
         PlatformOptionsValidator.Problems(new PlatformOptions { Role = role }).ShouldHaveSingleItem().ShouldContain("HealthCare360:Role");
 
     [Fact]
+    public void A_rate_limit_that_would_refuse_everything_or_never_reset_is_refused()
+    {
+        var options = new PlatformOptions();
+        options.RateLimits.SignIn.PermitLimit = 0;
+        options.RateLimits.PerUser.ReplenishmentPeriod = TimeSpan.Zero;
+
+        var problems = PlatformOptionsValidator.Problems(options);
+
+        problems.Count.ShouldBe(2);
+        problems.ShouldContain(p => p.StartsWith("HealthCare360:RateLimits:SignIn ", StringComparison.Ordinal));
+        problems.ShouldContain(p => p.StartsWith("HealthCare360:RateLimits:PerUser ", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void The_options_fail_validation_when_the_server_reads_them()
     {
         using var services = Services(Environments.Production, accessTokenMinutes: 60);

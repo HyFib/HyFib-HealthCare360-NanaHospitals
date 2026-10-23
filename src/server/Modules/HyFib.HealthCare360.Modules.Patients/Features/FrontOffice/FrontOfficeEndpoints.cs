@@ -137,7 +137,7 @@ internal static class FrontOfficeEndpoints
         office.MapPost("/enquiries", (SaveEnquiryRequest r, HospitalDbContext db, ICurrentUser u, TimeProvider t, CancellationToken ct) => SaveEnquiry(null, r, db, u, t, ct))
             .RequirePermission(PatientsPermissions.Enquiries).WithValidation<SaveEnquiryRequest>();
         office.MapPut("/enquiries/{id:guid}", (Guid id, SaveEnquiryRequest r, HospitalDbContext db, ICurrentUser u, TimeProvider t, CancellationToken ct) => SaveEnquiry(id, r, db, u, t, ct))
-            .RequirePermission(PatientsPermissions.Enquiries).WithValidation<SaveEnquiryRequest>();
+            .RequirePermission(PatientsPermissions.Enquiries).WithValidation<SaveEnquiryRequest>().RequireVersion();
 
         office.MapGet("/visitor-passes", ListVisitorPasses).RequirePermission(PatientsPermissions.Visitors);
         office.MapPost("/visitor-passes", IssueVisitorPass).RequirePermission(PatientsPermissions.Visitors).WithValidation<IssueVisitorPassRequest>();

@@ -135,6 +135,7 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
         maxPercent: parsedPercent.ok ? parsedPercent.percent : 0,
         maxAmount: parsedCap?.ok ? parsedCap.rupees : null,
         notes: notes.trim() || null,
+        version: limit?.version,
       }),
     onSuccess: () => {
       notify.success('Discount limit saved', user?.displayName);

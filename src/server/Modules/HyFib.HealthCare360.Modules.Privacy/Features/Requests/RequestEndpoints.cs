@@ -31,7 +31,8 @@ internal static class RequestEndpoints
             .WithValidation<VerifyIdentityRequest>();
         group.MapPost("/requests/{id:guid}/assign", async (Guid id, AssignDataRequestRequest r, DataRequestService requests, CancellationToken ct) =>
                 (await requests.AssignAsync(id, r.UserId, ct)).ToNoContent())
-            .RequirePermission(PrivacyPermissions.RequestsManage);
+            .RequirePermission(PrivacyPermissions.RequestsManage)
+            .WithValidation<AssignDataRequestRequest>();
         group.MapPost("/requests/{id:guid}/notes", async (Guid id, DataRequestNoteRequest r, DataRequestService requests, CancellationToken ct) =>
                 (await requests.AddNoteAsync(id, r.Text, ct)).ToNoContent())
             .RequirePermission(PrivacyPermissions.RequestsManage)
@@ -50,7 +51,8 @@ internal static class RequestEndpoints
 
         group.MapGet("/patients/{patientId:guid}/nominee", GetNominee)
             .RequireAnyPermission(PrivacyPermissions.RequestsLog, PrivacyPermissions.RequestsRead);
-        group.MapPut("/patients/{patientId:guid}/nominee", SaveNominee).RequirePermission(PrivacyPermissions.RequestsLog).WithValidation<SaveNomineeRequest>();
+        group.MapPut("/patients/{patientId:guid}/nominee", SaveNominee).RequirePermission(PrivacyPermissions.RequestsLog).WithValidation<SaveNomineeRequest>()
+            .FirstSaveCreates();
         group.MapDelete("/patients/{patientId:guid}/nominee", RemoveNominee).RequirePermission(PrivacyPermissions.RequestsLog);
     }
 

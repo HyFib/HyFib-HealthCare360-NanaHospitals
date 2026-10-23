@@ -15,7 +15,7 @@ internal static class LeaveEndpoints
         group.MapPost("/leave/types", (SaveLeaveTypeRequest r, HospitalDbContext db, CancellationToken ct) => SaveType(null, r, db, ct))
             .RequirePermission(HRPermissions.EmployeesManage).WithValidation<SaveLeaveTypeRequest>();
         group.MapPut("/leave/types/{id:guid}", (Guid id, SaveLeaveTypeRequest r, HospitalDbContext db, CancellationToken ct) => SaveType(id, r, db, ct))
-            .RequirePermission(HRPermissions.EmployeesManage).WithValidation<SaveLeaveTypeRequest>();
+            .RequirePermission(HRPermissions.EmployeesManage).WithValidation<SaveLeaveTypeRequest>().RequireVersion();
 
         group.MapGet("/holidays", ListHolidays).RequireAnyPermission(HRPermissions.Self, HRPermissions.AttendanceManage, HRPermissions.LeaveApprove);
         group.MapPost("/holidays", AddHoliday).RequirePermission(HRPermissions.AttendanceManage).WithValidation<SaveHolidayRequest>();

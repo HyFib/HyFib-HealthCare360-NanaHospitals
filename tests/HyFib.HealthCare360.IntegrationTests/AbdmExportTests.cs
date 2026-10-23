@@ -955,7 +955,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     private async Task SwitchAsync(bool enabled)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        (await admin.PutAsync<FeatureDto>($"/api/v1/admin/features/{FeatureKeys.Abdm}", new SetFeatureRequest(enabled))).Enabled.ShouldBe(enabled);
+        (await admin.SetFeatureAsync(FeatureKeys.Abdm, new SetFeatureRequest(enabled))).Enabled.ShouldBe(enabled);
     }
 
     private async Task<AuditEvent?> AuditAsync(Guid patientId, string action)

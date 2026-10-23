@@ -43,7 +43,11 @@ public sealed class PermissionPolicyProvider(IOptions<AuthorizationOptions> opti
     }
 }
 
-public sealed class PermissionAuthorizationHandler(IPermissionService permissions) : AuthorizationHandler<PermissionRequirement>
+/// <remarks>
+/// A request that only an administrative permission allows must come from an enrolled HC360 Desktop
+/// (<see cref="AdministrationOnDesktop"/>, SRS SEC-08); any other permission the requirement names is enough anywhere.
+/// </remarks>
+public sealed class PermissionAuthorizationHandler(IPermissionService permissions, IAdministrationDesktops desktops) : AuthorizationHandler<PermissionRequirement>
 {
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
     {
@@ -55,10 +59,22 @@ public sealed class PermissionAuthorizationHandler(IPermissionService permission
         }
 
         var granted = await permissions.GetPermissionsAsync(userId);
-        if (granted.Contains(PermissionRegistry.Wildcard) || requirement.AnyOf.Any(granted.Contains))
+        var held = granted.Contains(PermissionRegistry.Wildcard) ? requirement.AnyOf : requirement.AnyOf.Where(granted.Contains).ToList();
+        if (held.Count == 0)
+        {
+            return;
+        }
+
+        if (held.Any(p => !PlatformPermissions.IsAdministrative(p))
+            || AdministrationOnDesktop.OnDesktop(context.User)
+            || !await desktops.RequiredAsync()
+            || (FirstDesktopEnrolment.Marks(context.Resource) && !await desktops.EnrolledAsync()))
         {
             context.Succeed(requirement);
+            return;
         }
+
+        context.Fail(new DesktopRequired(this));
     }
 }
 

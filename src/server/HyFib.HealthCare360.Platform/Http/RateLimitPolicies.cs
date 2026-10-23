@@ -1,11 +1,14 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Platform.Http;
 
@@ -15,19 +18,20 @@ namespace HyFib.HealthCare360.Platform.Http;
 /// </summary>
 public static class RateLimitPolicies
 {
-    /// <summary>Links, QR codes, webhooks and workstation enrolment: 60 requests a minute per client address.</summary>
+    /// <summary>Links, QR codes, webhooks and workstation enrolment: 60 requests a minute per client address by default.</summary>
     public const string Public = "public";
 
     /// <summary>
     /// Machines that present their own credential (home RPM gateways with <c>X-Device-Key</c>, biometric terminals with
-    /// their key or serial number): 120 requests a minute per credential, so many homes behind one mobile-network
-    /// address do not share a budget. Requests without a credential fall back to the client address.
+    /// their key or serial number): by default 120 requests a minute per credential, so many homes behind one
+    /// mobile-network address do not share a budget. Requests without a credential fall back to the client address.
     /// </summary>
     public const string Device = "device";
 
     /// <summary>
-    /// HC360 Desktop's self-update (SRS DED-18): 30 requests in 15 minutes per device credential (<c>X-Device-Key</c>),
-    /// enough to check for a package and download it in a few pieces, not to pull the package over and over.
+    /// HC360 Desktop's self-update (SRS DED-18): by default 30 requests in 15 minutes per device credential
+    /// (<c>X-Device-Key</c>), enough to check for a package and download it in a few pieces, not to pull the package over
+    /// and over.
     /// </summary>
     public const string DesktopUpdate = "desktop-update";
 
@@ -37,39 +41,51 @@ public static class RateLimitPolicies
     /// <summary>
     /// The server's rate limiter: sign-in and one-time codes (also counted across every node of several,
     /// <see cref="ClusterRateLimits"/>), the public and device policies above, and a global limit per user (or address)
-    /// on every request. Each server keeps these counts in its own memory.
+    /// on every request, each as <see cref="RateLimitOptions"/> sets it. Each server keeps these counts in its own memory.
     /// </summary>
     public static IServiceCollection AddHospitalRateLimiter(this IServiceCollection services)
     {
         services.TryAddSingleton<ClientAddresses>();
-        return services.AddRateLimiter(limiter =>
+        services.AddRateLimiter(limiter =>
         {
             limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             limiter.OnRejected = (context, _) => AntiAutomationEndpoints.OnRateLimitedAsync(context.HttpContext);
+        });
+        services.AddOptions<RateLimiterOptions>().Configure<IOptions<PlatformOptions>>((limiter, platform) =>
+        {
+            var limits = platform.Value.RateLimits;
             foreach (var address in new[] { ClusterRateLimits.SignIn, ClusterRateLimits.OneTimeCode })
             {
-                limiter.AddPolicy(address.Policy, http => RateLimitPartition.GetFixedWindowLimiter(
-                    ClientKey(http), _ => new FixedWindowRateLimiterOptions { PermitLimit = address.PermitLimit, Window = address.Window, QueueLimit = 0 }));
+                var limit = address.Of(limits);
+                limiter.AddPolicy(address.Policy, http => RateLimitPartition.GetFixedWindowLimiter(ClientKey(http), _ => FixedWindow(limit)));
             }
 
-            limiter.AddPolicy(Public, http => RateLimitPartition.GetFixedWindowLimiter(
-                ClientKey(http), _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
-            limiter.AddPolicy(Device, http => RateLimitPartition.GetTokenBucketLimiter(
-                DevicePartition(http, ClientKey(http)),
-                _ => new TokenBucketRateLimiterOptions { TokenLimit = 120, TokensPerPeriod = 60, ReplenishmentPeriod = TimeSpan.FromSeconds(30), QueueLimit = 0 }));
+            limiter.AddPolicy(Public, http => RateLimitPartition.GetFixedWindowLimiter(ClientKey(http), _ => FixedWindow(limits.Public)));
+            limiter.AddPolicy(Device, http => RateLimitPartition.GetTokenBucketLimiter(DevicePartition(http, ClientKey(http)), _ => TokenBucket(limits.Device)));
             limiter.AddPolicy(DesktopUpdate, http => RateLimitPartition.GetFixedWindowLimiter(
-                DevicePartition(http, ClientKey(http)),
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
+                DevicePartition(http, ClientKey(http)), _ => FixedWindow(limits.DesktopUpdate)));
             limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http => RateLimitPartition.GetTokenBucketLimiter(
-                http.User.FindFirst(HcClaims.UserId)?.Value ?? ClientKey(http),
-                _ => new TokenBucketRateLimiterOptions
-                {
-                    TokenLimit = 400,
-                    TokensPerPeriod = 200,
-                    ReplenishmentPeriod = TimeSpan.FromSeconds(10),
-                    QueueLimit = 0,
-                }));
+                http.User.FindFirst(HcClaims.UserId)?.Value ?? ClientKey(http), _ => TokenBucket(limits.PerUser)));
         });
+        return services;
+    }
+
+    public static FixedWindowRateLimiterOptions FixedWindow(FixedWindowLimit limit)
+    {
+        ArgumentNullException.ThrowIfNull(limit);
+        return new FixedWindowRateLimiterOptions { PermitLimit = limit.PermitLimit, Window = limit.Window, QueueLimit = 0 };
+    }
+
+    public static TokenBucketRateLimiterOptions TokenBucket(TokenBucketLimit limit)
+    {
+        ArgumentNullException.ThrowIfNull(limit);
+        return new TokenBucketRateLimiterOptions
+        {
+            TokenLimit = limit.TokenLimit,
+            TokensPerPeriod = limit.TokensPerPeriod,
+            ReplenishmentPeriod = limit.ReplenishmentPeriod,
+            QueueLimit = 0,
+        };
     }
 
     /// <summary>

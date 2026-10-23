@@ -1,5 +1,5 @@
 import { draftStorageKey, useSession } from '@hc360/core';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FieldValues, UseFormReturn } from 'react-hook-form';
 
 interface SavedDraft<T> {
@@ -42,6 +42,11 @@ export function useFormDraft<T extends FieldValues>(
   const userId = useSession((s) => s.user?.id);
   const storageKey = key && userId ? draftStorageKey(userId, key) : null;
   const [saved, setSaved] = useState<SavedDraft<T> | null>(() => read<T>(storageKey));
+  // A draft on offer stays stored until it is restored or discarded, even while the form shows what it was filled with.
+  const offered = useRef(saved !== null);
+  useEffect(() => {
+    offered.current = saved !== null;
+  }, [saved]);
 
   useEffect(() => {
     if (!form || !storageKey) {
@@ -61,7 +66,9 @@ export function useFormDraft<T extends FieldValues>(
         // Back at the saved state (for example after a save reset the form to what the server holds): nothing to keep,
         // so saved content never comes back later as a "draft".
         if (JSON.stringify(values) === JSON.stringify(form.formState.defaultValues ?? {})) {
-          localStorage.removeItem(storageKey);
+          if (!offered.current) {
+            localStorage.removeItem(storageKey);
+          }
           return;
         }
         localStorage.setItem(storageKey, JSON.stringify({ value: values, savedAt: Date.now() }));
@@ -89,5 +96,27 @@ export function useFormDraft<T extends FieldValues>(
 
   const clear = useCallback(() => remove(storageKey), [storageKey]);
 
-  return { saved, restore, discard, clear };
+  /**
+   * Keeps what the form holds now as the draft, stored and offered at once. Call it before the form is filled again
+   * from the server after a conflict (REL-04): the newer record is shown, and what was typed can be put back on it.
+   */
+  const keep = useCallback(() => {
+    if (!form || !storageKey) {
+      return;
+    }
+    const values = form.getValues();
+    if (JSON.stringify(values) === JSON.stringify(form.formState.defaultValues ?? {})) {
+      return;
+    }
+    const raw = JSON.stringify({ value: values, savedAt: Date.now() });
+    try {
+      localStorage.setItem(storageKey, raw);
+    } catch {
+      // Storage unavailable: the draft is still offered until the form is closed.
+    }
+    offered.current = true;
+    setSaved(JSON.parse(raw) as SavedDraft<T>);
+  }, [form, storageKey]);
+
+  return { saved, restore, discard, clear, keep };
 }

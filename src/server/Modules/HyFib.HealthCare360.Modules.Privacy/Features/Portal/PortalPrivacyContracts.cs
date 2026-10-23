@@ -64,7 +64,7 @@ public sealed record PortalDataRequestCreate(
 
 public sealed record PortalRequestCreated(Guid Id, string RequestNumber, DateTimeOffset DueAt);
 
-public sealed record PortalNomineeRequest(Guid PatientId, string Name, string Relationship, string? Phone, string? Email);
+public sealed record PortalNomineeRequest(Guid PatientId, string Name, string Relationship, string? Phone, string? Email, uint? Version = null);
 
 public sealed class PortalDataRequestCreateValidator : AbstractValidator<PortalDataRequestCreate>
 {

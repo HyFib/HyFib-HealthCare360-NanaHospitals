@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button, Field, Input, makeStyles, Spinner, tokens } from '@fluentui/react-components';
+import { isApiError } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -66,6 +67,9 @@ export function NomineeSheet({
   const [error, setError] = useState<string | null>(null);
   const schema = useMemo(() => nomineeSchema(t), [t]);
   const form = useForm<NomineeFormValues>({ resolver: zodResolver(schema), defaultValues: nomineeFormValues(nominee) });
+  // The nominee as the form was filled: the page reads it again in the background, and a nominee named meanwhile (at
+  // the hospital, say) must not be replaced unseen (REL-04). The page fills the form afresh when it changes.
+  const [loadedVersion] = useState(nominee?.version);
   const busy = form.formState.isSubmitting;
 
   const close = () => {
@@ -79,11 +83,18 @@ export function NomineeSheet({
   const submit = form.handleSubmit(async (values) => {
     setError(null);
     try {
-      await privacyApi.saveNominee(buildNomineeRequest(values, patientId));
+      await privacyApi.saveNominee(buildNomineeRequest(values, patientId, loadedVersion));
       toast.success(t('myPrivacy.nominee.saved'));
       void queryClient.invalidateQueries({ queryKey: privacyQueries.all(patientId) });
       close();
     } catch (err) {
+      if (isApiError(err) && err.code === 'concurrency') {
+        // Changed a moment ago: back to the page, which shows the nominee on record now.
+        toast.warning(t('errors.conflict'));
+        close();
+        void queryClient.invalidateQueries({ queryKey: privacyQueries.all(patientId) });
+        return;
+      }
       const mapped = mapServerErrors(err, (field) => (isNomineeField(field) ? field : null));
       if (!mapped) {
         setError(describeError(err, t, 'errors.saveTitle').message);

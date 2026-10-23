@@ -33,6 +33,11 @@ public sealed class OtClinicalService(
             return Error.NotFound(nameof(SurgeryBooking), bookingId);
         }
 
+        if (request.Version is { } version)
+        {
+            db.SetExpectedVersion(booking, version);
+        }
+
         var result = booking.RecordPreOp(request.Items, currentUser.Stamp(time.GetUtcNow()));
         return await SaveAsync(booking, result, ct);
     }
@@ -64,10 +69,7 @@ public sealed class OtClinicalService(
             return editable.Error!;
         }
 
-        if (request.Version is { } version && db.Entry(record).State != EntityState.Added)
-        {
-            db.SetExpectedVersion(record, version);
-        }
+        db.SetExpectedVersion(record, request.Version);
 
         record.AsaGrade = request.AsaGrade;
         record.AsaEmergency = request.AsaEmergency;
@@ -142,10 +144,7 @@ public sealed class OtClinicalService(
                 return editable.Error!;
             }
 
-            if (request.Version is { } version)
-            {
-                db.SetExpectedVersion(note, version);
-            }
+            db.SetExpectedVersion(note, request.Version);
         }
 
         note.PreOperativeDiagnosis = Clean(request.PreOperativeDiagnosis) ?? booking.Diagnosis;

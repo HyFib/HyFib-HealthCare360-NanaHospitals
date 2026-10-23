@@ -12,6 +12,7 @@ import {
   type OptionItem,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import { useDepartments } from '@/lib/lookups';
 import {
@@ -51,7 +52,8 @@ export function PractitionerEditorDrawer({
   onClose: () => void;
 }) {
   const existing = useQuery({ ...mastersQueries.practitioner(practitionerId ?? ''), enabled: practitionerId !== null });
-  if (practitionerId !== null && !existing.data) {
+  // Filled from the record as read now, not from an older copy kept from before (REL-04).
+  if (practitionerId !== null && (!existing.isFetchedAfterMount || !existing.data)) {
     return <LoadingDrawer error={existing.error} what="record" size="large" onClose={onClose} />;
   }
   return <PractitionerEditor practitioner={existing.data ?? null} onClose={onClose} />;
@@ -68,9 +70,11 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
     defaultValues: toPractitionerForm(practitioner),
     mode: 'onTouched',
   });
+  // The version the form was filled from, not a newer one read since (REL-04).
+  const [loadedVersion] = useState(practitioner?.version ?? null);
   const save = useMutation({
     mutationFn: (values: PractitionerForm) =>
-      mastersApi.savePractitioner(practitioner?.id ?? null, toPractitionerRequest(values, practitioner)),
+      mastersApi.savePractitioner(practitioner?.id ?? null, toPractitionerRequest(values, practitioner, loadedVersion)),
     onSuccess: () => {
       notify.success(
         practitioner ? 'Saved' : 'Added',

@@ -503,7 +503,12 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
         />
       )}
       {moving && (
-        <RescheduleDialog sessionId={moving.id} scheduledAt={moving.scheduledAt} onClose={() => setMoving(null)} />
+        <RescheduleDialog
+          sessionId={moving.id}
+          scheduledAt={moving.scheduledAt}
+          version={moving.version}
+          onClose={() => setMoving(null)}
+        />
       )}
       <ReasonDialog
         open={dialog === 'complete'}

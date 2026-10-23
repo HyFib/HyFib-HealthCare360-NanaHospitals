@@ -38,6 +38,7 @@ import { WEEKDAYS } from '@/modules/ot/shared/types';
 import {
   dialysisApi,
   dialysisKeys,
+  dialysisQueries,
   DIALYSIS_SHIFTS,
   REUSE_POLICIES,
   SERO_STATUSES,
@@ -133,6 +134,9 @@ export function ProfileForm({
   const notify = useNotify();
   const queryClient = useQueryClient();
   const form = useForm<ProfileValues>({ resolver: zodResolver(profileSchema), defaultValues: toValues(profile) });
+  // The profile as the form was filled, then as this user saved it: its version goes with the save. The page reads it
+  // again in the background, and a version read so must never be sent with these values (REL-04).
+  const [loaded, setLoaded] = useState(profile);
   const [seroStatus, reusePolicy, maxDialyzerUses, seroTestedOn] = useWatch({
     control: form.control,
     name: ['seroStatus', 'reusePolicy', 'maxDialyzerUses', 'seroTestedOn'],
@@ -143,8 +147,19 @@ export function ProfileForm({
       : undefined,
   );
   const effective = effectiveMaxUses(reusePolicy, seroStatus, maxDialyzerUses ?? 1);
-  const seroChanged = profile !== null && profile.seroStatus !== seroStatus;
+  const seroChanged = loaded !== null && loaded.seroStatus !== seroStatus;
   const rescreenDue = seroTestedOn ? isRescreeningDue(seroTestedOn, todayIso()) : false;
+
+  /** The profile as saved now fills the form: after this user's save, and on Reload after someone else's. */
+  const refill = async () => {
+    try {
+      const fresh = await queryClient.fetchQuery({ ...dialysisQueries.profile(patientId), staleTime: 0 });
+      setLoaded(fresh);
+      form.reset(toValues(fresh));
+    } catch {
+      // Not read: the form keeps the version it had, so its next save is refused rather than saved over a change.
+    }
+  };
 
   const save = useMutation({
     mutationFn: (v: ProfileValues) =>
@@ -164,12 +179,14 @@ export function ProfileForm({
         primaryDiagnosis: v.primaryDiagnosis || null,
         anticoagulationNotes: v.anticoagulationNotes || null,
         isActive: v.isActive,
-        version: profile?.version ?? null,
+        version: loaded?.version ?? null,
       }),
-    onSuccess: (_, values) => {
+    onSuccess: async (_, values) => {
       // What the form shows is saved now: leaving does not ask (SRS UX-08).
       form.reset(values);
-      notify.success(profile ? 'Dialysis profile saved' : 'Patient enrolled in the dialysis unit');
+      notify.success(loaded ? 'Dialysis profile saved' : 'Patient enrolled in the dialysis unit');
+      // The save answers with the id only: the form is filled again from the profile read after it, version included.
+      await refill();
       void queryClient.invalidateQueries({ queryKey: dialysisKeys.all });
       onSaved?.();
     },
@@ -342,7 +359,7 @@ export function ProfileForm({
         </FormGrid>
       </Section>
 
-      <ActionError error={save.error} />
+      <ActionError error={save.error} onReload={() => void refill().then(() => save.reset())} />
       <div className={styles.footer}>
         <Button
           type="submit"

@@ -14,12 +14,12 @@ internal static class RosterEndpoints
         group.MapPost("/shifts", (SaveShiftRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveShift(null, r, db, u, ct))
             .RequirePermission(HRPermissions.RosterManage).WithValidation<SaveShiftRequest>();
         group.MapPut("/shifts/{id:guid}", (Guid id, SaveShiftRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveShift(id, r, db, u, ct))
-            .RequirePermission(HRPermissions.RosterManage).WithValidation<SaveShiftRequest>();
+            .RequirePermission(HRPermissions.RosterManage).WithValidation<SaveShiftRequest>().RequireVersion();
 
         group.MapGet("/roster", GetRoster).RequireAnyPermission(HRPermissions.RosterManage, HRPermissions.AttendanceManage);
         group.MapPost("/roster/check", async (SaveRosterRequest r, RosterService roster, CancellationToken ct) => TypedResults.Ok(await roster.CheckAsync(r, ct)))
             .RequirePermission(HRPermissions.RosterManage).WithValidation<SaveRosterRequest>();
-        group.MapPut("/roster", async (SaveRosterRequest r, RosterService roster, CancellationToken ct) => (await roster.SaveAsync(r, ct)).ToOk())
+        group.MapPut("/roster", async (SaveRosterRequest r, RosterService roster, CancellationToken ct) => (await roster.SaveAsync(r, checkVersions: true, ct)).ToOk())
             .RequirePermission(HRPermissions.RosterManage).WithValidation<SaveRosterRequest>();
         group.MapPost("/roster/copy-week", async (CopyRosterWeekRequest r, RosterService roster, CancellationToken ct) => (await roster.CopyWeekAsync(r, ct)).ToOk())
             .RequirePermission(HRPermissions.RosterManage).WithValidation<CopyRosterWeekRequest>();
@@ -110,7 +110,8 @@ internal static class RosterEndpoints
                 orderby e.FullName, r.Date, s != null ? s.StartTime : TimeOnly.MinValue
                 select new RosterEntryDto(
                     r.Id, r.EmployeeId, e.EmployeeCode, e.FullName, r.Date, r.ShiftId, s != null ? s.Code : null, s != null ? s.Name : null,
-                    s != null ? s.Color : null, s != null ? (TimeOnly?)s.StartTime : null, s != null ? (TimeOnly?)s.EndTime : null, r.IsWeekOff, r.Notes))
+                    s != null ? s.Color : null, s != null ? (TimeOnly?)s.StartTime : null, s != null ? (TimeOnly?)s.EndTime : null, r.IsWeekOff, r.Notes,
+                    r.Version))
             .ToListAsync(ct);
         return TypedResults.Ok(rows);
     }

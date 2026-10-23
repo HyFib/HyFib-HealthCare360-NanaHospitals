@@ -130,6 +130,8 @@ function Body({
         numerator: num,
         denominator: den,
         notes: notes.trim() || null,
+        // The value shown is changed only for its own period; another period has its own value, if any.
+        version: value && value.periodStart === periodStart ? value.version : undefined,
       });
       notify.success(
         `${saved.periodLabel} recorded`,

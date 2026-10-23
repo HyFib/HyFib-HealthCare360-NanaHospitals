@@ -41,7 +41,7 @@ internal static class IncidentEndpoints
             .RequirePermission(QualityPermissions.IncidentsManage).WithValidation<TransitionIncidentRequest>();
         group.MapPost("/{id:guid}/assign", async (Guid id, AssignIncidentRequest r, IncidentService incidents, CancellationToken ct) =>
                 (await incidents.AssignAsync(id, r, ct)).ToNoContent())
-            .RequirePermission(QualityPermissions.IncidentsManage);
+            .RequirePermission(QualityPermissions.IncidentsManage).WithValidation<AssignIncidentRequest>();
     }
 
     /// <summary>The caller's own named reports (anonymous reports are, by design, not traceable to anyone).</summary>

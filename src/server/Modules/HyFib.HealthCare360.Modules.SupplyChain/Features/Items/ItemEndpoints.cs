@@ -24,7 +24,7 @@ internal static class ItemEndpoints
         group.MapPost("/categories", (SaveItemCategoryRequest r, HospitalDbContext db, CancellationToken ct) => SaveCategory(null, r, db, ct))
             .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveItemCategoryRequest>();
         group.MapPut("/categories/{id:guid}", (Guid id, SaveItemCategoryRequest r, HospitalDbContext db, CancellationToken ct) => SaveCategory(id, r, db, ct))
-            .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveItemCategoryRequest>();
+            .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveItemCategoryRequest>().RequireVersion();
 
         group.MapGet("/items", Search).RequireAnyPermission(SupplyChainPermissions.CatalogReaders);
         group.MapGet("/items/lookup", Lookup).RequireAnyPermission(SupplyChainPermissions.CatalogReaders);
@@ -33,7 +33,7 @@ internal static class ItemEndpoints
         group.MapPost("/items", (SaveItemRequest r, HospitalDbContext db, CancellationToken ct) => SaveItem(null, r, db, ct))
             .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveItemRequest>();
         group.MapPut("/items/{id:guid}", (Guid id, SaveItemRequest r, HospitalDbContext db, CancellationToken ct) => SaveItem(id, r, db, ct))
-            .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveItemRequest>();
+            .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveItemRequest>().RequireVersion();
     }
 
     // ------------------------------------------------------------------ categories

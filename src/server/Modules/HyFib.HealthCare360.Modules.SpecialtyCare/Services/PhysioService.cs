@@ -156,10 +156,7 @@ public sealed class PhysioService(
         }
         else
         {
-            if (request.Version is { } version)
-            {
-                db.SetExpectedVersion(plan, version);
-            }
+            db.SetExpectedVersion(plan, request.Version);
 
             plan.Revision++;
         }
@@ -221,8 +218,12 @@ public sealed class PhysioService(
         return created.Select(s => s.Id).ToList();
     }
 
-    public Task<Result> RescheduleAsync(Guid sessionId, DateTimeOffset scheduledAt, CancellationToken ct) =>
-        ChangeSessionAsync(sessionId, s => Task.FromResult(s.Reschedule(scheduledAt)), ct);
+    public Task<Result> RescheduleAsync(Guid sessionId, DateTimeOffset scheduledAt, uint version, CancellationToken ct) =>
+        ChangeSessionAsync(sessionId, s =>
+        {
+            db.SetExpectedVersion(s, version);
+            return Task.FromResult(s.Reschedule(scheduledAt));
+        }, ct);
 
     public Task<Result> CloseSessionAsync(Guid sessionId, ClosePhysioSessionRequest request, CancellationToken ct) =>
         ChangeSessionAsync(sessionId, s => Task.FromResult(s.Close(request.Missed ? PhysioSessionStatus.Missed : PhysioSessionStatus.Cancelled, request.Reason)), ct);

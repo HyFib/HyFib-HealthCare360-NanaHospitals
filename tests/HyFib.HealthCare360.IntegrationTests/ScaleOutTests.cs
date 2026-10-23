@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
@@ -366,12 +367,38 @@ public sealed class ScaleOutTests(HospitalServer server)
         }
 
         // Each node has seen six attempts, under its own limit of ten; together they have seen twelve.
-        answers.Take(ClusterRateLimits.SignIn.PermitLimit).ShouldAllBe(a => a.Status == HttpStatusCode.OK);
-        answers.Skip(ClusterRateLimits.SignIn.PermitLimit).ShouldAllBe(a => a.Status == HttpStatusCode.TooManyRequests);
+        answers.Take(SignInLimit).ShouldAllBe(a => a.Status == HttpStatusCode.OK);
+        answers.Skip(SignInLimit).ShouldAllBe(a => a.Status == HttpStatusCode.TooManyRequests);
         int.Parse(answers[^1].RetryAfter.ShouldNotBeNull(), System.Globalization.CultureInfo.InvariantCulture).ShouldBeInRange(1, 60);
 
         // Another address has a budget of its own.
         (await SignInAsync(first, NewAddress())).Status.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task The_sign_in_limit_is_the_one_in_the_settings(bool severalNodes)
+    {
+        // SRS MNT-04: the limit is configuration, as the settings file gives it. Three attempts a minute: the fourth is
+        // refused, by each node's own limiter on a single node and by the hospital's count on several.
+        var settings = new Dictionary<string, string?>
+        {
+            [$"{RateLimitOptions.SectionName}:SignIn:PermitLimit"] = "3",
+            [$"{RateLimitOptions.SectionName}:SignIn:Window"] = "00:01:00",
+        };
+        await using var first = await AddressLimitedNodeAsync(severalNodes, settings: settings);
+        await using var second = await AddressLimitedNodeAsync(severalNodes, settings: settings);
+        WebApplication[] nodes = severalNodes ? [first, second] : [first];
+        var address = NewAddress();
+
+        var answers = new List<HttpStatusCode>();
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            answers.Add((await SignInAsync(nodes[attempt % nodes.Length], address)).Status);
+        }
+
+        answers.ShouldBe([HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.TooManyRequests, HttpStatusCode.TooManyRequests]);
     }
 
     [Theory]
@@ -386,14 +413,14 @@ public sealed class ScaleOutTests(HospitalServer server)
         var network = NewIPv6Network();
 
         var answers = new List<HttpStatusCode>();
-        for (var attempt = 0; attempt < ClusterRateLimits.SignIn.PermitLimit + 2; attempt++)
+        for (var attempt = 0; attempt < SignInLimit + 2; attempt++)
         {
             answers.Add((await SignInAsync(nodes[attempt % nodes.Length], AddressIn(network))).Status);
         }
 
         // A script holding a /64, as any home, phone or rented server does, gains nothing by a new address for every try.
-        answers.Take(ClusterRateLimits.SignIn.PermitLimit).ShouldAllBe(a => a == HttpStatusCode.OK);
-        answers.Skip(ClusterRateLimits.SignIn.PermitLimit).ShouldAllBe(a => a == HttpStatusCode.TooManyRequests);
+        answers.Take(SignInLimit).ShouldAllBe(a => a == HttpStatusCode.OK);
+        answers.Skip(SignInLimit).ShouldAllBe(a => a == HttpStatusCode.TooManyRequests);
         (await SignInAsync(first, AddressIn(NewIPv6Network()))).Status.ShouldBe(HttpStatusCode.OK, "another /64 has a budget of its own");
     }
 
@@ -404,14 +431,14 @@ public sealed class ScaleOutTests(HospitalServer server)
         await using var node = await AddressLimitedNodeAsync(severalNodes: true, localNetworks: [network + "::/64"]);
 
         // A ward's workstations at the start of a shift.
-        for (var attempt = 0; attempt < ClusterRateLimits.SignIn.PermitLimit + 2; attempt++)
+        for (var attempt = 0; attempt < SignInLimit + 2; attempt++)
         {
             (await SignInAsync(node, AddressIn(network))).Status.ShouldBe(HttpStatusCode.OK);
         }
 
         var workstation = AddressIn(network);
         var answers = new List<HttpStatusCode>();
-        for (var attempt = 0; attempt < ClusterRateLimits.SignIn.PermitLimit + 1; attempt++)
+        for (var attempt = 0; attempt < SignInLimit + 1; attempt++)
         {
             answers.Add((await SignInAsync(node, workstation)).Status);
         }
@@ -501,9 +528,10 @@ public sealed class ScaleOutTests(HospitalServer server)
     /// <summary>
     /// A node with the server's rate limiter and one endpoint limited as sign-in is, sharing the test server's database.
     /// With <paramref name="severalNodes"/> it is one of several (it has a shared folder, <see cref="DataDirectories.IsShared"/>);
-    /// <paramref name="localNetworks"/> are the hospital's own IPv6 networks (<see cref="NetworkOptions.LocalNetworks"/>).
+    /// <paramref name="localNetworks"/> are the hospital's own IPv6 networks (<see cref="NetworkOptions.LocalNetworks"/>);
+    /// <paramref name="settings"/>, the settings file's keys (the limits, <see cref="RateLimitOptions"/>).
     /// </summary>
-    private async Task<WebApplication> AddressLimitedNodeAsync(bool severalNodes, string[]? localNetworks = null)
+    private async Task<WebApplication> AddressLimitedNodeAsync(bool severalNodes, string[]? localNetworks = null, Dictionary<string, string?>? settings = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Development });
         builder.WebHost.UseTestServer();
@@ -519,6 +547,8 @@ public sealed class ScaleOutTests(HospitalServer server)
 
         // Every node has the hospital's data key (in the shared folder), which the counts' keys are hashed with.
         builder.Services.AddSingleton(server.Services.GetRequiredService<IFieldProtector>());
+        builder.Configuration.AddInMemoryCollection(settings ?? []);
+        builder.Services.Configure<PlatformOptions>(builder.Configuration.GetSection(PlatformOptions.SectionName));
         builder.Services.Configure<PlatformOptions>(options => options.Network.LocalNetworks = localNetworks ?? []);
         builder.Services.AddHospitalRateLimiter();
 
@@ -533,6 +563,9 @@ public sealed class ScaleOutTests(HospitalServer server)
         await app.StartAsync(Ct);
         return app;
     }
+
+    /// <summary>Sign-ins allowed a minute per address when the settings do not say otherwise.</summary>
+    private static int SignInLimit => new RateLimitOptions().SignIn.PermitLimit;
 
     private static async Task<(HttpStatusCode Status, string? RetryAfter)> SignInAsync(WebApplication node, string address)
     {
@@ -588,10 +621,10 @@ public sealed class ScaleOutTests(HospitalServer server)
     }
 
     /// <summary>
-    /// A node with the server's rate limiter and proof of work, made as the platform makes them, its challenge endpoint, and
-    /// an endpoint that asks for a proof for a mobile number as the portal's code request does, on the test server's
-    /// database. With <paramref name="shared"/> it is one of the nodes sharing that folder, whose keys folder holds the
-    /// anti-automation key; <paramref name="keyRing"/> stands in for their shared Data Protection key ring.
+    /// A node with the server's rate limiter, proof of work and request validators, made as the platform makes them, its
+    /// challenge endpoint, and an endpoint that asks for a proof for a mobile number as the portal's code request does, on
+    /// the test server's database. With <paramref name="shared"/> it is one of the nodes sharing that folder, whose keys
+    /// folder holds the anti-automation key; <paramref name="keyRing"/> stands in for their shared Data Protection key ring.
     /// </summary>
     private async Task<WebApplication> ProofOfWorkNodeAsync(string? shared, IDataProtectionProvider keyRing, RecordingAudit audit)
     {
@@ -609,6 +642,7 @@ public sealed class ScaleOutTests(HospitalServer server)
         builder.Services.AddSingleton<IAuditLogger>(audit);
         builder.Services.AddHospitalRateLimiter();
         builder.Services.AddAntiAutomation(directories);
+        builder.Services.AddValidatorsFromAssemblyContaining<AntiAutomationChallengeRequest>(ServiceLifetime.Scoped, includeInternalTypes: true);
 
         var app = builder.Build();
         app.Use((context, next) =>

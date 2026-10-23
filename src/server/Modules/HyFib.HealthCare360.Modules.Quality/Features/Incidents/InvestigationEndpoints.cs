@@ -14,7 +14,7 @@ internal static class InvestigationEndpoints
         group.MapGet("/", Get);
         group.MapPut("/", async (Guid id, SaveInvestigationRequest r, IncidentService incidents, CancellationToken ct) =>
                 (await incidents.SaveInvestigationAsync(id, r, ct)).ToOk())
-            .WithValidation<SaveInvestigationRequest>();
+            .WithValidation<SaveInvestigationRequest>().FirstSaveCreates();
         group.MapPost("/complete", async (Guid id, IncidentService incidents, CancellationToken ct) =>
             (await incidents.CompleteInvestigationAsync(id, ct)).ToNoContent());
         group.MapPost("/reopen", async (Guid id, IncidentService incidents, CancellationToken ct) =>

@@ -44,7 +44,8 @@ public sealed record CorrectProcedureRequest(
     string? BodySite,
     string? Outcome,
     string? Notes,
-    string Reason) : IProcedureFields;
+    string Reason,
+    uint Version) : IProcedureFields;
 
 /// <summary>A recorded procedure; <see cref="PerformerName"/> is the performing practitioner's name, or the name recorded for one from elsewhere.</summary>
 public sealed record ProcedureDto(
@@ -65,7 +66,8 @@ public sealed record ProcedureDto(
     ProcedureSource Source,
     ProcedureStatus Status,
     string? StatusReason,
-    DateTimeOffset? StatusChangedAt);
+    DateTimeOffset? StatusChangedAt,
+    uint Version);
 
 /// <summary>The rules a new record and a correction share.</summary>
 internal sealed class ProcedureFieldsValidator : AbstractValidator<IProcedureFields>

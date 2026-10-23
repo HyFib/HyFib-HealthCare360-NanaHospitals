@@ -15,6 +15,12 @@ public static class PatientsPermissions
     public const string Register = "patients.register";
     public const string Merge = "patients.merge";
     public const string ReadRestricted = "patients.restricted.read";
+
+    /// <summary>
+    /// See patients' phone numbers, email, street address and emergency contact's phone in full (SRS PRV-03); without it they
+    /// are masked. Those who contact or bill patients hold it, and editing a patient's details needs it.
+    /// </summary>
+    public const string ContactRead = "patients.contact.read";
     public const string BreakGlass = "patients.break_glass";
     public const string Consents = "patients.consents";
     public const string Documents = "patients.documents";
@@ -39,6 +45,11 @@ public static class PatientsPermissions
         new(Register, "Patients", "Register patients and edit demographics", [.. Desk, SystemRoles.Nurse, SystemRoles.Billing, SystemRoles.InsuranceDesk]),
         new(Merge, "Patients", "Merge duplicate patient records", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
         new(ReadRestricted, "Patients", "Open restricted (VIP/confidential) records without break-the-glass", [SystemRoles.HospitalAdmin]),
+        new(ContactRead, "Patients", "See patients' phone numbers, email and address in full (others see them masked); needed to edit a patient",
+        [
+            .. Desk, .. Clinical, SystemRoles.Billing, SystemRoles.Cashier, SystemRoles.InsuranceDesk, SystemRoles.CrmExecutive,
+            SystemRoles.MrdOfficer,
+        ]),
         new(BreakGlass, "Patients", "Emergency access to restricted records (audited)", Clinical),
         new(Consents, "Patients", "Capture and revoke patient consents", [.. Desk, .. Clinical]),
         new(Documents, "Patients", "Attach and view patient documents", [.. Desk, .. Clinical, SystemRoles.MrdOfficer, SystemRoles.InsuranceDesk]),
@@ -69,6 +80,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<PatientRegistrationService>();
         services.AddScoped<Seed.LoadTestPatients>();
         services.AddScoped<PatientAccessGuard>();
+        services.AddScoped<PatientContactAccess>();
         services.AddScoped<IPatientRecordAccess>(sp => sp.GetRequiredService<PatientAccessGuard>());
         services.AddScoped<VisitService>();
         services.AddScoped<PortalPatientScope>();

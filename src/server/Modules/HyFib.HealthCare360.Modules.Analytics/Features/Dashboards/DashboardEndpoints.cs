@@ -12,7 +12,7 @@ internal static class DashboardEndpoints
         group.MapGet("/", List).RequireAnyPermission(AnalyticsPermissions.AnyRead);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(AnalyticsPermissions.AnyRead);
         group.MapPost("/", Create).RequirePermission(AnalyticsPermissions.DashboardsManage).WithValidation<SaveDashboardRequest>();
-        group.MapPut("/{id:guid}", Update).RequirePermission(AnalyticsPermissions.DashboardsManage).WithValidation<SaveDashboardRequest>();
+        group.MapPut("/{id:guid}", Update).RequirePermission(AnalyticsPermissions.DashboardsManage).WithValidation<SaveDashboardRequest>().RequireVersion();
         group.MapPost("/{id:guid}/copy", Copy).RequirePermission(AnalyticsPermissions.DashboardsManage);
         group.MapDelete("/{id:guid}", Delete).RequirePermission(AnalyticsPermissions.DashboardsManage);
     }

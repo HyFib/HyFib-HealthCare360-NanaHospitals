@@ -17,7 +17,7 @@ internal static class DialysisSetupEndpoints
         group.MapPost("/machines", (SaveDialysisMachineRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveMachine(null, r, db, u, ct))
             .RequirePermission(SpecialtyCarePermissions.DialysisMachines).WithValidation<SaveDialysisMachineRequest>();
         group.MapPut("/machines/{id:guid}", (Guid id, SaveDialysisMachineRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveMachine(id, r, db, u, ct))
-            .RequirePermission(SpecialtyCarePermissions.DialysisMachines).WithValidation<SaveDialysisMachineRequest>();
+            .RequirePermission(SpecialtyCarePermissions.DialysisMachines).WithValidation<SaveDialysisMachineRequest>().RequireVersion();
         group.MapPost("/machines/{id:guid}/disinfection", async (Guid id, RecordDisinfectionRequest r, DialysisService s, CancellationToken ct) =>
                 (await s.RecordDisinfectionAsync(id, r.Method, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.DialysisSessions).WithValidation<RecordDisinfectionRequest>();
@@ -26,7 +26,7 @@ internal static class DialysisSetupEndpoints
         group.MapGet("/patients/{patientId:guid}", GetProfile).RequirePermission(SpecialtyCarePermissions.DialysisRead);
         group.MapPut("/patients/{patientId:guid}", async (Guid patientId, SaveDialysisProfileRequest r, DialysisService s, CancellationToken ct) =>
                 (await s.SaveProfileAsync(patientId, r, ct)).ToHttpResult(id => TypedResults.Ok(new { id })))
-            .RequirePermission(SpecialtyCarePermissions.DialysisPatients).WithValidation<SaveDialysisProfileRequest>();
+            .RequirePermission(SpecialtyCarePermissions.DialysisPatients).WithValidation<SaveDialysisProfileRequest>().FirstSaveCreates();
 
         group.MapGet("/patients/{patientId:guid}/dialyzers", ListDialyzers).RequirePermission(SpecialtyCarePermissions.DialysisRead);
         group.MapPost("/patients/{patientId:guid}/dialyzers", async (Guid patientId, RegisterDialyzerRequest r, DialysisService s, CancellationToken ct) =>

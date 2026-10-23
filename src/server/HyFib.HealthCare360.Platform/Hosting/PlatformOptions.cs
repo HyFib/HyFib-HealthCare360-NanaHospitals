@@ -63,6 +63,8 @@ public sealed class PlatformOptions
 
     public PartitionOptions Partitions { get; set; } = new();
 
+    public RateLimitOptions RateLimits { get; set; } = new();
+
     public bool RunsJobs => !string.Equals(Role, "api", StringComparison.OrdinalIgnoreCase);
 
     public bool ServesApi => !string.Equals(Role, "worker", StringComparison.OrdinalIgnoreCase);
@@ -125,6 +127,12 @@ public sealed class SecurityOptions
 
     /// <summary>Roles that may sign in only from enrolled HC360 Desktop devices.</summary>
     public string[] EnrolledDeviceRequiredRoles { get; set; } = [];
+
+    /// <summary>
+    /// Administration works only in HC360 Desktop on an enrolled computer (<see cref="Security.AdministrationOnDesktop"/>,
+    /// SRS SEC-08). The <c>security.administrationRequiresDesktop</c> setting, under Administration › Settings, overrides it.
+    /// </summary>
+    public bool AdministrationRequiresDesktop { get; set; } = true;
 
     public int MaxPinAttempts { get; set; } = 5;
 }

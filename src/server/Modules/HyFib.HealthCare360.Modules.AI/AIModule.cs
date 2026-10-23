@@ -8,10 +8,12 @@ using HyFib.HealthCare360.Modules.AI.Services.Claude;
 using HyFib.HealthCare360.Modules.AI.Services.Clinical;
 using HyFib.HealthCare360.Modules.AI.Services.OpenAi;
 using HyFib.HealthCare360.Modules.AI.Services.Speech;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Integrations;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Modules.AI;
 
@@ -98,7 +100,16 @@ public sealed class AIModule : IModule
         services.AddScoped<AssistantCommandService>();
         services.AddScoped<ClinicalNoteStructurer>();
 
-        services.Configure<RateLimiterOptions>(options => options.AddPolicy(AiRateLimits.Policy, AiRateLimits.Partition));
+        services.AddOptions<SlidingWindowLimit>(AiRateLimits.Policy)
+            .Configure(AiRateLimits.Defaults)
+            .Bind(configuration.GetSection(AiRateLimits.SectionName))
+            .Validate(AiRateLimits.IsValid, $"{AiRateLimits.SectionName} needs a PermitLimit and SegmentsPerWindow of 1 or more and a Window longer than zero.")
+            .ValidateOnStart();
+        services.AddOptions<RateLimiterOptions>().Configure<IOptionsMonitor<SlidingWindowLimit>>((options, limits) =>
+        {
+            var limit = limits.Get(AiRateLimits.Policy);
+            options.AddPolicy(AiRateLimits.Policy, http => AiRateLimits.Partition(http, limit));
+        });
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

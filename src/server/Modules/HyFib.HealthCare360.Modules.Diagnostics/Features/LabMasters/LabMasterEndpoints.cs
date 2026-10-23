@@ -27,7 +27,7 @@ internal static class LabMasterEndpoints
         tests.MapPost("/", (SaveLabTestRequest request, HospitalDbContext db, CancellationToken ct) => SaveTest(null, request, db, ct))
             .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabTestRequest>();
         tests.MapPut("/{id:guid}", (Guid id, SaveLabTestRequest request, HospitalDbContext db, CancellationToken ct) => SaveTest(id, request, db, ct))
-            .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabTestRequest>();
+            .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabTestRequest>().RequireVersion();
         tests.MapPut("/{id:guid}/components", SetComponents).RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SetComponentsRequest>();
         tests.MapPut("/{id:guid}/ranges", SetRanges).RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SetRangesRequest>();
 
@@ -36,7 +36,7 @@ internal static class LabMasterEndpoints
         instruments.MapPost("/", (SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, CancellationToken ct) => SaveInstrument(null, request, db, user, ct))
             .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabInstrumentRequest>();
         instruments.MapPut("/{id:guid}", (Guid id, SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, CancellationToken ct) => SaveInstrument(id, request, db, user, ct))
-            .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabInstrumentRequest>();
+            .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabInstrumentRequest>().RequireVersion();
 
         var referralLabs = app.MapGroup("/api/v1/lab/referral-labs").WithTags("Laboratory masters");
         referralLabs.MapGet("/", ListReferralLabs)
@@ -44,7 +44,7 @@ internal static class LabMasterEndpoints
         referralLabs.MapPost("/", (SaveReferralLabRequest request, HospitalDbContext db, CancellationToken ct) => SaveReferralLab(null, request, db, ct))
             .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveReferralLabRequest>();
         referralLabs.MapPut("/{id:guid}", (Guid id, SaveReferralLabRequest request, HospitalDbContext db, CancellationToken ct) => SaveReferralLab(id, request, db, ct))
-            .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveReferralLabRequest>();
+            .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveReferralLabRequest>().RequireVersion();
     }
 
     // ------------------------------------------------------------------ tests

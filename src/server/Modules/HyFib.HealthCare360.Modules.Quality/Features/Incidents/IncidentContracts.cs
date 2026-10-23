@@ -90,6 +90,11 @@ public sealed record TransitionIncidentRequest(IncidentStatus Status, string? No
 
 public sealed record AssignIncidentRequest(Guid UserId);
 
+public sealed class AssignIncidentRequestValidator : AbstractValidator<AssignIncidentRequest>
+{
+    public AssignIncidentRequestValidator() => RuleFor(x => x.UserId).NotEmpty().WithMessage("Choose who investigates it.");
+}
+
 public sealed record RcaFactorInput(ContributingFactorCategory Category, string Description, bool IsRootCause);
 
 public sealed record SaveInvestigationRequest(
@@ -99,7 +104,8 @@ public sealed record SaveInvestigationRequest(
     IReadOnlyList<RcaFactorInput>? Factors,
     string? Findings,
     string? Recommendations,
-    IReadOnlyList<Guid>? InvestigatorUserIds);
+    IReadOnlyList<Guid>? InvestigatorUserIds,
+    uint? Version = null);
 
 public sealed record RcaFactorDto(Guid Id, ContributingFactorCategory Category, string Description, bool IsRootCause);
 

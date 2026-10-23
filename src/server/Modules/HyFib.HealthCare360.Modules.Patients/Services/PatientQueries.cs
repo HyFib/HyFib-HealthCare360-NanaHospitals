@@ -53,8 +53,12 @@ public static class PatientQueries
         return patients;
     }
 
-    /// <summary>Summaries for a set of patients (age is computed in memory).</summary>
-    public static async Task<Dictionary<Guid, PatientSummary>> SummariesAsync(HospitalDbContext db, IEnumerable<Guid> ids, DateOnly today, CancellationToken ct)
+    /// <summary>
+    /// Summaries for a set of patients (age is computed in memory), their phone numbers in full or masked as the caller may see
+    /// them (<see cref="PatientContactAccess"/>, SRS PRV-03).
+    /// </summary>
+    public static async Task<Dictionary<Guid, PatientSummary>> SummariesAsync(
+        HospitalDbContext db, IEnumerable<Guid> ids, DateOnly today, bool fullContacts, CancellationToken ct)
     {
         var idList = ids.Distinct().ToList();
         var rows = await db.Set<Patient>().AsNoTracking()
@@ -64,7 +68,7 @@ public static class PatientQueries
 
         return rows.ToDictionary(p => p.Id, p => new PatientSummary(
             p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, p.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
-            p.Phone, p.BloodGroup, p.Category, p.IsVip, p.IsDeceased, p.PhotoFileId));
+            PatientContacts.Phone(p.Phone, fullContacts), p.BloodGroup, p.Category, p.IsVip, p.IsDeceased, p.PhotoFileId));
     }
 
     public static DateOnly Today(this TimeProvider time) => DateOnly.FromDateTime(IndiaTime(time).DateTime);

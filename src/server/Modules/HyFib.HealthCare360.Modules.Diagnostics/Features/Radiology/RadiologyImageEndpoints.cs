@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Integrations;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
@@ -12,8 +13,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 /// and the PACS viewer link. Images are patient data: every call needs <see cref="DiagnosticsPermissions.RadiologyImages"/>,
 /// passes the restricted-record guard and is audited (<see cref="StudyImageService.AuditAsync"/>). Images reach the
 /// browser only as JPEG or PNG within a size limit, and API responses are never cached (<c>Cache-Control: no-store</c>).
-/// Thumbnails and images are fetched from PACS and held in memory while they are sent, so each person has at most
-/// <see cref="RadiologyImageLimits.PermitLimit"/> in flight (<see cref="RadiologyImageLimits"/>).
+/// Thumbnails and images are fetched from PACS and held in memory while they are sent, so each person has only a few in
+/// flight (<see cref="RadiologyImageLimits"/>).
 /// </summary>
 internal static class RadiologyImageEndpoints
 {
@@ -129,23 +130,31 @@ internal static class RadiologyImageEndpoints
 }
 
 /// <summary>
-/// The rate-limiting policy of the image endpoints: per signed-in person, at most <see cref="PermitLimit"/> thumbnails
-/// or images fetched from PACS at once; the next <see cref="QueueLimit"/> wait their turn (a viewer opening a study
-/// asks for every series' thumbnail together), and beyond that the answer is 429 Too Many Requests.
+/// The rate-limiting policy of the image endpoints: per signed-in person, by default at most 6 thumbnails or images
+/// fetched from PACS at once; the next 32 wait their turn (a viewer opening a study asks for every series' thumbnail
+/// together), and beyond that the answer is 429 Too Many Requests. Set in <see cref="SectionName"/> (SRS MNT-04).
 /// </summary>
 internal static class RadiologyImageLimits
 {
     public const string Policy = "radiology-images";
-    public const int PermitLimit = 6;
-    public const int QueueLimit = 32;
 
-    public static RateLimitPartition<string> Partition(HttpContext http) =>
+    public const string SectionName = RateLimitOptions.SectionName + ":RadiologyImages";
+
+    public static void Defaults(ConcurrencyLimit limit)
+    {
+        limit.PermitLimit = 6;
+        limit.QueueLimit = 32;
+    }
+
+    public static bool IsValid(ConcurrencyLimit limit) => limit.PermitLimit > 0 && limit.QueueLimit >= 0;
+
+    public static RateLimitPartition<string> Partition(HttpContext http, ConcurrencyLimit limit) =>
         RateLimitPartition.GetConcurrencyLimiter(
             http.User.FindFirst(HcClaims.UserId)?.Value ?? RateLimitPolicies.ClientKey(http),
             _ => new ConcurrencyLimiterOptions
             {
-                PermitLimit = PermitLimit,
-                QueueLimit = QueueLimit,
+                PermitLimit = limit.PermitLimit,
+                QueueLimit = limit.QueueLimit,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             });
 }

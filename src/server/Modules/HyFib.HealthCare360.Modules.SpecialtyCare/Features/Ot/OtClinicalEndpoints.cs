@@ -16,14 +16,14 @@ internal static class OtClinicalEndpoints
 
         group.MapPut("/pre-op-checklist", async (Guid id, RecordChecklistRequest r, OtClinicalService s, CancellationToken ct) =>
                 (await s.RecordPreOpAsync(id, r, ct)).ToNoContent())
-            .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<RecordChecklistRequest>();
+            .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<RecordChecklistRequest>().RequireVersion();
         group.MapPost("/safety-checklist/{phase}", ConfirmSafety)
             .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<RecordChecklistRequest>();
 
         group.MapGet("/anaesthesia", GetAnaesthesia).RequirePermission(SpecialtyCarePermissions.OtRead);
         group.MapPut("/anaesthesia", async (Guid id, SaveAnaesthesiaRecordRequest r, OtClinicalService s, CancellationToken ct) =>
                 (await s.SaveAnaesthesiaAsync(id, r, ct)).ToOk())
-            .RequirePermission(SpecialtyCarePermissions.OtAnaesthesia).WithValidation<SaveAnaesthesiaRecordRequest>();
+            .RequirePermission(SpecialtyCarePermissions.OtAnaesthesia).WithValidation<SaveAnaesthesiaRecordRequest>().FirstSaveCreates();
         group.MapPost("/anaesthesia/vitals", async (Guid id, AddAnaesthesiaVitalsRequest r, OtClinicalService s, CancellationToken ct) =>
                 (await s.AddVitalsAsync(id, r, ct)).ToOk())
             .RequirePermission(SpecialtyCarePermissions.OtAnaesthesia).WithValidation<AddAnaesthesiaVitalsRequest>();
@@ -31,7 +31,7 @@ internal static class OtClinicalEndpoints
         group.MapGet("/operation-note", GetOperationNote).RequirePermission(SpecialtyCarePermissions.OtRead);
         group.MapPut("/operation-note", async (Guid id, SaveOperationNoteRequest r, OtClinicalService s, CancellationToken ct) =>
                 (await s.SaveOperationNoteAsync(id, r, ct)).ToOk())
-            .RequirePermission(SpecialtyCarePermissions.OtSurgery).WithValidation<SaveOperationNoteRequest>();
+            .RequirePermission(SpecialtyCarePermissions.OtSurgery).WithValidation<SaveOperationNoteRequest>().FirstSaveCreates();
 
         group.MapGet("/materials", ListMaterials).RequirePermission(SpecialtyCarePermissions.OtRead);
         group.MapPost("/materials", async (Guid id, AddSurgeryMaterialRequest r, OtClinicalService s, CancellationToken ct) =>

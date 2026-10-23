@@ -16,14 +16,14 @@ internal static class TemplateEndpoints
         templates.MapPost("/", (SaveTemplateRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveTemplate(null, r, db, u, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveTemplateRequest>();
         templates.MapPut("/{id:guid}", (Guid id, SaveTemplateRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveTemplate(id, r, db, u, ct))
-            .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveTemplateRequest>();
+            .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveTemplateRequest>().RequireVersion();
 
         var orderSets = app.MapGroup("/api/v1/clinical/order-sets").WithTags("Clinical Orders");
         orderSets.MapGet("/", ListOrderSets).RequirePermission(ClinicalPermissions.EmrRead);
         orderSets.MapPost("/", (SaveOrderSetRequest r, HospitalDbContext db, CancellationToken ct) => SaveOrderSet(null, r, db, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveOrderSetRequest>();
         orderSets.MapPut("/{id:guid}", (Guid id, SaveOrderSetRequest r, HospitalDbContext db, CancellationToken ct) => SaveOrderSet(id, r, db, ct))
-            .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveOrderSetRequest>();
+            .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveOrderSetRequest>().RequireVersion();
 
         var favourites = app.MapGroup("/api/v1/emr/favourites").WithTags("EMR");
         favourites.MapGet("/", ListFavourites).RequirePermission(ClinicalPermissions.EmrRead);

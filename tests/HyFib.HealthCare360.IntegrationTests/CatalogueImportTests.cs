@@ -157,8 +157,22 @@ public sealed class CatalogueImportTests(HospitalServer server)
 
         // MRD switches one imported code off, and rewords a starter code.
         await SaveAsync(mrd, (await SearchAsync(admin, switchedOff)).First(), isActive: false);
-        var reworded = await SaveAsync(mrd, (await SearchAsync(admin, edited)).First(), title: "Local wording");
+        var before = (await SearchAsync(admin, edited)).First();
+        var reworded = await SaveAsync(mrd, before, title: "Local wording");
         reworded.Source.ShouldBe(CodeSource.Manual, "a hand edit makes it the hospital's own code");
+
+        // REL-04: a second coder still looking at the code as it was is refused, not saved over the first one's wording.
+        using (var stale = await mrd.SendRawAsync(HttpMethod.Put, $"/api/v1/mrd/icd-codes/{before.Id}", new SaveIcdCodeRequest(
+                   before.Code, "Other wording", before.Release, before.IsBillable, before.Keywords, FromOnlineLookup: false, before.IsActive, before.Version)))
+        {
+            stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
+
+        using (var unversioned = await mrd.SendRawAsync(HttpMethod.Put, $"/api/v1/mrd/icd-codes/{before.Id}", new SaveIcdCodeRequest(
+                   before.Code, "Other wording", before.Release, before.IsBillable, before.Keywords, FromOnlineLookup: false, before.IsActive)))
+        {
+            unversioned.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
         (await CodeAsync(switchedOff)).Source.ShouldBe(CodeSource.Import, "switching a code off is not an edit");
 
         // A file without the two fillers withdraws only the one in use; the reworded code is left alone.
@@ -275,11 +289,11 @@ public sealed class CatalogueImportTests(HospitalServer server)
         ApiClient mrd, IcdCodeDto code, string? title = null, bool? isActive = null) =>
         mrd.PutAsync<IcdCodeDto>($"/api/v1/mrd/icd-codes/{code.Id}", new SaveIcdCodeRequest(
             code.Code, title ?? code.Title, code.Release, code.IsBillable, code.Keywords, FromOnlineLookup: false,
-            isActive ?? code.IsActive));
+            isActive ?? code.IsActive, code.Version));
 
     private static IcdCodeDto ToDto(IcdCode c) => new(
         c.Id, c.Code, c.Title, c.Release, c.Chapter, c.Block, null, c.IsBillable, c.Usage, c.Keywords, c.IncludedTerms,
-        c.Source, c.IsActive);
+        c.Source, c.IsActive, c.Version);
 
     private async Task<IcdCode> CodeAsync(string code)
     {

@@ -21,11 +21,16 @@ public sealed record CorporateBatchRequest(
 
 public sealed record CheckInCheckupRequest(Guid? VisitId);
 
+public sealed class CheckInCheckupRequestValidator : AbstractValidator<CheckInCheckupRequest>
+{
+    public CheckInCheckupRequestValidator() => RuleFor(x => x.VisitId).OptionalId();
+}
+
 public sealed record CompleteStopRequest(string? Notes);
 
 public sealed record SkipStopRequest(string Reason);
 
-public sealed record CheckupSummaryRequest(string Summary, string? Recommendations);
+public sealed record CheckupSummaryRequest(string Summary, string? Recommendations, uint Version);
 
 public sealed record CancelBookingRequest(string Reason);
 

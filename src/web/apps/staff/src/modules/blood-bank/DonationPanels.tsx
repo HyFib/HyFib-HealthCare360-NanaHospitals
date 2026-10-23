@@ -22,6 +22,7 @@ import { ConfirmDialog, DataTable, sameValues, useLeaveGuard, useNotify, useValu
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { formatDuration } from '@/modules/ot/shared/datetime';
+import { isConcurrencyConflict } from '@/modules/ot/shared/errors';
 import { ActionError } from '@/modules/ot/shared/feedback';
 import {
   bloodApi,
@@ -99,10 +100,19 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
   const queryClient = useQueryClient();
   const state = ttiState(donation.tti);
   const editable = canManage && !state.complete && donation.status !== 'Discarded';
-  const [group, setGroup] = useState<BloodGroup | ''>(donation.bloodGroup === 'Unknown' ? '' : donation.bloodGroup);
-  const [tti, setTti] = useState<TtiPanel>(donation.tti);
+  const shown = { group: donation.bloodGroup === 'Unknown' ? ('' as const) : donation.bloodGroup, tti: donation.tti };
+  // Only what is changed here is kept; until then the panel shows the donation as the server has it now.
+  const [edits, setEdits] = useState<{ group: BloodGroup | ''; tti: TtiPanel } | null>(null);
+  // The donation as it was when the first unsaved change was made: the save is refused if it changed since (REL-04).
+  const [baseVersion, setBaseVersion] = useState<number | null>(null);
+  const { group, tti } = edits ?? shown;
   const [confirmReactive, setConfirmReactive] = useState(false);
   const draft = ttiState(tti);
+
+  const change = (next: Partial<{ group: BloodGroup | ''; tti: TtiPanel }>) => {
+    setBaseVersion((base) => base ?? donation.version);
+    setEdits({ group, tti, ...next });
+  };
 
   const save = useMutation({
     mutationFn: () =>
@@ -113,8 +123,9 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
         hcv: tti.hcv,
         syphilis: tti.syphilis,
         malaria: tti.malaria,
+        version: baseVersion ?? donation.version,
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setConfirmReactive(false);
       notify.success(
         draft.reactive.length > 0
@@ -126,21 +137,25 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
           ? 'All units from this donation were discarded and the donor was deferred.'
           : undefined,
       );
-      void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
+      // Shown from the donation as read again: what was changed here goes once that is in.
+      await queryClient.invalidateQueries({ queryKey: bloodKeys.all });
+      setEdits(null);
+      setBaseVersion(null);
     },
-    onError: () => setConfirmReactive(false),
+    onError: (error) => {
+      setConfirmReactive(false);
+      if (isConcurrencyConflict(error)) {
+        // Someone else recorded results meanwhile: show them as they are now, and let the results be entered on that.
+        setEdits(null);
+        setBaseVersion(null);
+        notify.warning('The results changed meanwhile', 'They have been reloaded. Check them and enter yours again.');
+        void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
+      }
+    },
   });
 
   // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
-  useLeaveGuard({
-    dirty:
-      canManage &&
-      !sameValues(
-        { group, tti },
-        { group: donation.bloodGroup === 'Unknown' ? '' : donation.bloodGroup, tti: donation.tti },
-      ),
-    busy: save.isPending,
-  });
+  useLeaveGuard({ dirty: editable && edits !== null && !sameValues(edits, shown), busy: save.isPending });
 
   if (!editable) {
     return (
@@ -186,7 +201,7 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
   return (
     <div className={styles.stack}>
       <Field label="ABO and Rh(D) group of the donation" required>
-        <Select value={group} onChange={(_, d) => setGroup(d.value as BloodGroup | '')}>
+        <Select value={group} onChange={(_, d) => change({ group: d.value as BloodGroup | '' })}>
           <option value="">Choose the group</option>
           {KNOWN_GROUPS.map((g) => (
             <option key={g} value={g}>
@@ -203,7 +218,7 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
               layout="horizontal"
               aria-label={m.label}
               value={tti[m.key]}
-              onChange={(_, d) => setTti((current) => ({ ...current, [m.key]: d.value as TtiResult }))}
+              onChange={(_, d) => change({ tti: { ...tti, [m.key]: d.value as TtiResult } })}
             >
               <Radio value="Pending" label="Pending" />
               <Radio value="NonReactive" label="Non-reactive" />

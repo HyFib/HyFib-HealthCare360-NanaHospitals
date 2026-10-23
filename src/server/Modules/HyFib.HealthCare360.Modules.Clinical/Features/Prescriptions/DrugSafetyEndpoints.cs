@@ -19,13 +19,13 @@ internal static class DrugSafetyEndpoints
         group.MapPost("/drug-interactions", (SaveDrugInteractionRequest r, HospitalDbContext db, CancellationToken ct) => SaveInteraction(null, r, db, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDrugInteractionRequest>();
         group.MapPut("/drug-interactions/{id:guid}", (Guid id, SaveDrugInteractionRequest r, HospitalDbContext db, CancellationToken ct) => SaveInteraction(id, r, db, ct))
-            .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDrugInteractionRequest>();
+            .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDrugInteractionRequest>().RequireVersion();
 
         group.MapGet("/dose-limits", ListDoseLimits).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapPost("/dose-limits", (SaveDoseLimitRequest r, HospitalDbContext db, CancellationToken ct) => SaveDoseLimit(null, r, db, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDoseLimitRequest>();
         group.MapPut("/dose-limits/{id:guid}", (Guid id, SaveDoseLimitRequest r, HospitalDbContext db, CancellationToken ct) => SaveDoseLimit(id, r, db, ct))
-            .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDoseLimitRequest>();
+            .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDoseLimitRequest>().RequireVersion();
 
         group.MapGet("/controlled-drug-register", Register).RequireAnyPermission(ClinicalPermissions.PrescriptionsSign, ClinicalPermissions.MrdRecords);
     }

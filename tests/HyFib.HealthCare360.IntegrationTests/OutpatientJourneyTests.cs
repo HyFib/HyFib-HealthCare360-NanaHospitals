@@ -464,6 +464,7 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
 
         var sale = await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{created.Id}");
         sale.PatientId.ShouldBe(patient.PatientId);
+        sale.CustomerPhone.ShouldBe(Phone.Mask(Phone.Normalize(patient.Phone)), "A pharmacist neither contacts nor bills patients (SRS PRV-03).");
         sale.PrescriptionNumber.ShouldBe(consultation.Prescription.PrescriptionNumber);
         var sold = sale.Items.ShouldHaveSingleItem();
         sold.BatchNumber.ShouldBe(fefo.BatchNumber, "FEFO hands over the batch that expires first.");
@@ -602,9 +603,9 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await admin.PutAsync($"/api/v1/admin/settings/{key}", new SaveSettingRequest(
+        await admin.SaveSettingAsync(key, new SaveSettingRequest(
             new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["fromAddress"] = "reports@hospital.example" }, null, false, null));
-        return new Restore(() => admin.PutAsync($"/api/v1/admin/settings/{key}",
+        return new Restore(() => admin.SaveSettingAsync(key,
             new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }
 

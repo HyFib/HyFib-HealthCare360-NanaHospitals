@@ -39,7 +39,7 @@ public sealed class KeyRotationTests(HospitalServer server)
         var abha = "91" + Digits(12);
         var patient = await RegisterPatientAsync(abha);
         var settingKey = "it.rotation." + Digits(6) + ".secret";
-        await admin.PutAsync($"/api/v1/admin/settings/{settingKey}", new SaveSettingRequest(JsonNode.Parse("""{"apiKey":"k-123"}"""), null, true, null));
+        await admin.SaveSettingAsync(settingKey, new SaveSettingRequest(JsonNode.Parse("""{"apiKey":"k-123"}"""), null, true, null));
         var png = TinyPng;
         var fileId = await UploadAsync(admin, png);
         var before = await admin.GetAsync<EncryptionKeysStatus>("/api/v1/admin/system/keys");

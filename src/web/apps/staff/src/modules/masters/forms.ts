@@ -186,13 +186,22 @@ export function toLetterheadRequest(values: FacilityForm): LetterheadPreviewRequ
   };
 }
 
-export function toFacilityRequest(values: FacilityForm, existing: FacilityDto | null): SaveFacilityRequest {
+/**
+ * `version` is the facility's version when the form was filled (null when adding), not the one on screen now: a change
+ * saved meanwhile by someone else is then refused rather than overwritten (REL-04). The other masters' requests take it
+ * the same way.
+ */
+export function toFacilityRequest(
+  values: FacilityForm,
+  existing: Pick<FacilityDto, 'code'> | null,
+  version: number | null,
+): SaveFacilityRequest {
   return {
     ...toLetterheadRequest(values),
     code: existing?.code ?? values.code.trim().toUpperCase(),
     hfrId: orNull(values.hfrId),
     isActive: values.isActive,
-    version: existing?.version ?? null,
+    version,
   };
 }
 
@@ -235,7 +244,11 @@ export function toDepartmentForm(department: DepartmentDto | null, nextOrder = 1
   };
 }
 
-export function toDepartmentRequest(values: DepartmentForm, existing: DepartmentDto | null): SaveDepartmentRequest {
+export function toDepartmentRequest(
+  values: DepartmentForm,
+  existing: Pick<DepartmentDto, 'code'> | null,
+  version: number | null,
+): SaveDepartmentRequest {
   return {
     code: existing?.code ?? values.code.trim().toUpperCase(),
     name: values.name.trim(),
@@ -247,7 +260,7 @@ export function toDepartmentRequest(values: DepartmentForm, existing: Department
     tokenPrefix: orNull(values.tokenPrefix)?.toUpperCase() ?? null,
     displayOrder: values.displayOrder,
     isActive: values.isActive,
-    version: existing?.version ?? null,
+    version,
   };
 }
 
@@ -277,13 +290,17 @@ export function toSpecialtyForm(specialty: SpecialtyDto | null): SpecialtyForm {
   };
 }
 
-export function toSpecialtyRequest(values: SpecialtyForm, existing: SpecialtyDto | null): SaveSpecialtyRequest {
+export function toSpecialtyRequest(
+  values: SpecialtyForm,
+  existing: Pick<SpecialtyDto, 'code'> | null,
+  version: number | null,
+): SaveSpecialtyRequest {
   return {
     code: existing?.code ?? values.code.trim().toUpperCase(),
     name: values.name.trim(),
     description: orNull(values.description),
     isActive: values.isActive,
-    version: existing?.version ?? null,
+    version,
   };
 }
 
@@ -387,7 +404,8 @@ export function toPractitionerForm(practitioner: PractitionerDto | null): Practi
 
 export function toPractitionerRequest(
   values: PractitionerForm,
-  existing: PractitionerDto | null,
+  existing: Pick<PractitionerDto, 'code'> | null,
+  version: number | null,
 ): SavePractitionerRequest {
   return {
     code: existing?.code ?? values.code.trim().toUpperCase(),
@@ -414,7 +432,7 @@ export function toPractitionerRequest(
     availableForTelehealth: values.availableForTelehealth,
     facilityIds: values.allFacilities ? [] : values.facilityIds,
     isActive: values.isActive,
-    version: existing?.version ?? null,
+    version,
   };
 }
 
@@ -468,7 +486,11 @@ export function toServiceForm(service: ServiceItemDto | null): ServiceForm {
   };
 }
 
-export function toServiceRequest(values: ServiceForm, existing: ServiceItemDto | null): SaveServiceItemRequest {
+export function toServiceRequest(
+  values: ServiceForm,
+  existing: Pick<ServiceItemDto, 'code'> | null,
+  version: number | null,
+): SaveServiceItemRequest {
   return {
     code: existing?.code ?? values.code.trim().toUpperCase(),
     name: values.name.trim(),
@@ -482,6 +504,6 @@ export function toServiceRequest(values: ServiceForm, existing: ServiceItemDto |
     isPriceEditable: values.isPriceEditable,
     description: orNull(values.description),
     isActive: values.isActive,
-    version: existing?.version ?? null,
+    version,
   };
 }

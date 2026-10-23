@@ -17,9 +17,14 @@ internal sealed record OperationResult(
     public bool Met => Count > Failures && P95 <= TargetMs;
 }
 
-/// <summary>A list's largest page as the server sends it (PERF-05: paginated, compressed, under 100 KB).</summary>
-internal sealed record ListSize(string Name, long Bytes, string? Encoding, int Status)
+/// <summary>
+/// A list's largest page as the server sends it (PERF-05: paginated, compressed, under 100 KB), and how many rows it held:
+/// a page of fewer than <see cref="FullPage"/> rows says little about a full one.
+/// </summary>
+internal sealed record ListSize(string Name, long Bytes, string? Encoding, int Status, int Rows = 0)
 {
+    public const int FullPage = 200;
+
     public const long LimitBytes = 100 * 1024;
 
     public bool Met => Status is >= 200 and < 300 && Encoding is "br" or "gzip" && Bytes <= LimitBytes;
@@ -42,9 +47,19 @@ internal sealed record LoadTestResult(
 
     public double FailureRate => Requests == 0 ? 1 : (double)Failures / Requests;
 
-    public bool TargetsMet => Operations.All(o => o.Met) && Lists.All(l => l.Met);
+    public bool TargetsMet => Operations.All(o => o.Met) && ListsMet;
+
+    public bool ListsMet => Lists.All(l => l.Met);
 
     public bool FewFailures => Requests > 0 && FailureRate <= MaxFailureRate;
+
+    /// <summary>Whether the run passes, the targets held to as <paramref name="mode"/> says.</summary>
+    public bool Passed(TargetMode mode) => FewFailures && mode switch
+    {
+        TargetMode.Report => true,
+        TargetMode.Payloads => ListsMet,
+        _ => TargetsMet,
+    };
 }
 
 internal static class Results
@@ -100,12 +115,12 @@ internal static class Results
         }
 
         text.AppendLine();
-        text.AppendLine("| List, largest page (PERF-05) | Sent | Compression | Met |");
-        text.AppendLine("|---|--:|---|---|");
+        text.AppendLine("| List, largest page (PERF-05) | Rows | Sent | Compression | Met |");
+        text.AppendLine("|---|--:|--:|---|---|");
         foreach (var l in result.Lists)
         {
             var sent = l.Status is >= 200 and < 300 ? $"{l.Bytes / 1024.0:0.0} KB" : $"HTTP {l.Status}";
-            text.AppendLine(invariant, $"| {l.Name} | {sent} | {l.Encoding ?? "none"} | {(l.Met ? "yes" : "**no**")} |");
+            text.AppendLine(invariant, $"| {l.Name} | {l.Rows:N0} | {sent} | {l.Encoding ?? "none"} | {(l.Met ? "yes" : "**no**")} |");
         }
 
         if (result.FailuresByStatus.Count > 0)

@@ -56,7 +56,7 @@ export function nomineeDefaults(nominee: NomineeDto | null): NomineeValues {
 }
 
 /** The request for the server; call it only with values the schema accepted. */
-export function toSaveNominee(v: NomineeValues): SaveNomineeRequest {
+export function toSaveNominee(v: NomineeValues, version?: number): SaveNomineeRequest {
   const phone = v.phone.trim();
   const email = v.email.trim();
   return {
@@ -64,5 +64,6 @@ export function toSaveNominee(v: NomineeValues): SaveNomineeRequest {
     relationship: v.relationship.trim(),
     phone: phone ? (normalizePhone(phone) ?? phone) : null,
     email: email || null,
+    version,
   };
 }

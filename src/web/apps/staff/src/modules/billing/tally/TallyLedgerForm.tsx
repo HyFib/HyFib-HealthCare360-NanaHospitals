@@ -106,7 +106,8 @@ export function TallyLedgerForm({ map, canEdit }: { map: TallyLedgerMap; canEdit
   const disabled = !canEdit;
 
   const save = useMutation({
-    mutationFn: (values: LedgerForm) => tallyApi.saveLedgers(toLedgerMap(values)),
+    // The form is remounted on every fetch of the names, so `map` is what it was filled from.
+    mutationFn: (values: LedgerForm) => tallyApi.saveLedgers({ ...toLedgerMap(values), version: map.version }),
     onSuccess: (_, values) => {
       // What the form shows is saved now: leaving does not ask (SRS UX-08).
       form.reset(values);

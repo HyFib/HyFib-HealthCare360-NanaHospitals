@@ -26,10 +26,10 @@ internal static class CampaignEndpoints
             .RequirePermission(EngagementPermissions.CampaignsManage).WithValidation<SaveCampaignRequest>();
         group.MapPut("/{id:guid}", async (Guid id, SaveCampaignRequest r, CampaignService campaigns, CancellationToken ct) =>
                 (await campaigns.UpdateAsync(id, r, ct)).ToNoContent())
-            .RequirePermission(EngagementPermissions.CampaignsManage).WithValidation<SaveCampaignRequest>();
+            .RequirePermission(EngagementPermissions.CampaignsManage).WithValidation<SaveCampaignRequest>().RequireVersion();
         group.MapPost("/{id:guid}/schedule", async (Guid id, ScheduleCampaignRequest r, CampaignService campaigns, CancellationToken ct) =>
                 (await campaigns.ScheduleAsync(id, r, ct)).ToNoContent())
-            .RequirePermission(EngagementPermissions.CampaignsSend);
+            .RequirePermission(EngagementPermissions.CampaignsSend).WithValidation<ScheduleCampaignRequest>();
         group.MapPost("/{id:guid}/unschedule", async (Guid id, CampaignService campaigns, CancellationToken ct) =>
                 (await campaigns.UnscheduleAsync(id, ct)).ToNoContent())
             .RequirePermission(EngagementPermissions.CampaignsSend);
