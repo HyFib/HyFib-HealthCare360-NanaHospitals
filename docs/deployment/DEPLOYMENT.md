@@ -262,8 +262,10 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
    password works for 72 hours; after that, reset the password to give out a new one.
 5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
-   `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server's WiFi drops, its signal stays weak for a minute
-   or its network is not secure, or a backup fails).
+   `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server's WiFi drops, its WiFi adapter disappears, it
+   starts without the WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure).
+   Set `alerts.oncallWhatsApp` to `true` to have those alerts on WhatsApp too, once the hospital's WhatsApp provider
+   has approved the `system_alert` template. A failed backup is told to the administrators in the app, not by SMS.
 6. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a
@@ -648,8 +650,8 @@ it.
 
 - An **encrypted** backup (AES-256-GCM) runs every night at 01:30 IST and is kept for 30 days. With
   `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS.
-- Check **Administration › Backups** weekly for green "Succeeded" rows. A failure also raises a System health warning
-  and an SMS to `alerts.oncallPhone`.
+- Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
+  the app, and System health warns once no backup has succeeded for 36 hours.
 - Each backup holds the database, the stored documents and the field encryption keys, all encrypted. Every backup is
   read back and checked when it is made. The **Contents** and **Checked** columns show this.
 - **Restore test every quarter** on a spare machine. To check a copy on the NAS or a USB drive without restoring it:

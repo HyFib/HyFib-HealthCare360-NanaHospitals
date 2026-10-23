@@ -341,30 +341,7 @@ public sealed class SystemHealthService(
 
         // Its link: its certificate, and its WiFi.
         var link = new List<HealthWarning>(CertificateWarnings(certificate, now));
-        if (network.Wifi is { IsConnected: true, DetailsAvailable: false } hidden)
-        {
-            link.Add(new("wifi.details_hidden", "info", hidden.Note ?? WifiConnectionInfo.LocationPermissionNote));
-        }
-        else if (network.Wifi is { IsConnected: true } connected)
-        {
-            if (connected.SignalQuality < options.Value.Network.WifiWeakSignalThreshold)
-            {
-                link.Add(new("wifi.weak", "warning", $"WiFi signal is weak ({connected.SignalQuality}%)."));
-            }
-
-            if (connected.IsInsecure)
-            {
-                link.Add(new("wifi.insecure", "critical", "The Server Node is on an insecure WiFi network."));
-            }
-            else if (connected.UsesSharedPassword)
-            {
-                link.Add(new("wifi.shared_password", "warning", "The Server Node is on a WiFi network with a shared password (WPA-Personal). Use WPA2/WPA3-Enterprise."));
-            }
-        }
-        else if (network.WifiSupported && network.Wifi is { IsConnected: false })
-        {
-            link.Add(new("wifi.down", "critical", "The Server Node's WiFi is disconnected."));
-        }
+        link.AddRange(WifiWarnings(network.WifiSupported, network.Wifi, wifi.AdapterMissing, options.Value.Network.WifiWeakSignalThreshold));
 
         // What runs on it: the modules' own set-up here (such as the DSC trust folder), the PDF browser, and its UPS.
         var services = new List<HealthWarning>();
@@ -536,6 +513,43 @@ public sealed class SystemHealthService(
         }
 
         return new PowerInfo(false, null, null, null);
+    }
+
+    /// <summary>
+    /// The warnings about the Server Node's WiFi link (DED-06): details Windows withholds, a weak signal, an insecure or
+    /// shared-password network, a link that is down, and an adapter that disappeared while the link was in use
+    /// (<paramref name="adapterMissing"/>, from <see cref="WifiLinkState.AdapterMissing"/>, which says why).
+    /// </summary>
+    internal static IEnumerable<HealthWarning> WifiWarnings(bool supported, WifiConnectionInfo? wifi, string? adapterMissing, int weakThreshold)
+    {
+        if (wifi is { IsConnected: true, DetailsAvailable: false } hidden)
+        {
+            yield return new("wifi.details_hidden", "info", hidden.Note ?? WifiConnectionInfo.LocationPermissionNote);
+        }
+        else if (wifi is { IsConnected: true } connected)
+        {
+            if (connected.SignalQuality < weakThreshold)
+            {
+                yield return new("wifi.weak", "warning", $"WiFi signal is weak ({connected.SignalQuality}%).");
+            }
+
+            if (connected.IsInsecure)
+            {
+                yield return new("wifi.insecure", "critical", "The Server Node is on an insecure WiFi network.");
+            }
+            else if (connected.UsesSharedPassword)
+            {
+                yield return new("wifi.shared_password", "warning", "The Server Node is on a WiFi network with a shared password (WPA-Personal). Use WPA2/WPA3-Enterprise.");
+            }
+        }
+        else if (supported && wifi is { IsConnected: false })
+        {
+            yield return new("wifi.down", "critical", "The Server Node's WiFi is disconnected.");
+        }
+        else if (!supported && adapterMissing is not null)
+        {
+            yield return new("wifi.adapter_missing", "critical", adapterMissing);
+        }
     }
 
     /// <summary>This server's machine, and the warnings about it in its three places in the report.</summary>

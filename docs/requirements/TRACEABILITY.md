@@ -25,11 +25,11 @@ exist. Keep this file current in the same change as the code.
 
 | Priority | Done | Partial | Missing | Blocked | Total |
 |---|---|---|---|---|---|
-| Must | 103 | 7 | 0 | 1 | 111 |
+| Must | 104 | 6 | 0 | 1 | 111 |
 | Should | 10 | 0 | 0 | 2 | 12 |
 | Could | 2 | 0 | 0 | 0 | 2 |
 | Non-functional (§6, §7) | 38 | 11 | 0 | 4 | 53 |
-| **All** | **153** | **18** | **0** | **7** | **178** |
+| **All** | **154** | **17** | **0** | **7** | **178** |
 
 ### Release-1 gate (SRS §9)
 
@@ -41,7 +41,6 @@ Release 1 needs every *Must* implemented, the two end-to-end journeys passing, a
 
 | ID | Verdict | Gap |
 |---|---|---|
-| DED-06 | Partial | Drops and a weak signal are sampled every 30 s, logged, and alerted in-app and by SMS, each once per episode. Not built: a WhatsApp alert, an alert when the WiFi adapter itself disappears (disabled, or the WLAN service stopped), and one when the server starts with the link already down. |
 | FO-01..06 | Partial | Registration with duplicate detection (mobile, name and date of birth, ABHA, Aadhaar), cards and wristbands, visits, queue tokens, enquiries, visitor passes, the MLC flag and photos are tested. The quick registration's 60 seconds is a desk timing no test shows: time it at the desk during acceptance. |
 | MRD-01..06 | Partial | The morbidity index query on the server is not tested. Online ICD-11 lookup needs WHO ICD-API credentials, and the full ICD-10 catalogue the hospital's licensed WHO file. |
 | MHC-01..05 | Partial | Corporate checkups: booking a batch is not tested, and the company is free text, not Billing's corporate payer. |
@@ -71,7 +70,7 @@ Release 1 needs every *Must* implemented, the two end-to-end journeys passing, a
 | DED-03 | Must | **Done** | [ServerDiscovery.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/ServerDiscovery.cs), [ServerFallback.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/ServerFallback.cs) | [ServerFallbackTests.cs](../../tests/HyFib.HealthCare360.Desktop.Tests/ServerFallbackTests.cs), [DesktopTests.cs](../../tests/HyFib.HealthCare360.Desktop.Tests/DesktopTests.cs) | — | — |
 | DED-04 | Must | **Done** | [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) | [HospitalCaTransferTests.cs](../../tests/HyFib.HealthCare360.Platform.Tests/HospitalCaTransferTests.cs), [DesktopTests.cs](../../tests/HyFib.HealthCare360.Desktop.Tests/DesktopTests.cs) | — | — |
 | DED-05 | Must | **Done** | [DeviceEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/DeviceEndpoints.cs), [SetupWindow.xaml.cs](../../src/desktop/HyFib.HealthCare360.Desktop/SetupWindow.xaml.cs), [ServerTrust.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/ServerTrust.cs) | [DesktopTests.cs](../../tests/HyFib.HealthCare360.Desktop.Tests/DesktopTests.cs) | — | — |
-| DED-06 | Must | **Partial** | [WifiMonitor.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/WifiMonitor.cs) | [WifiMonitorTests.cs](../../tests/HyFib.HealthCare360.Platform.Tests/WifiMonitorTests.cs), [WifiSecurityTests.cs](../../tests/HyFib.HealthCare360.Platform.Tests/WifiSecurityTests.cs) | Drops and a weak signal are sampled every 30 s, logged, and alerted in-app and by SMS, each once per episode. Not built: a WhatsApp alert, an alert when the WiFi adapter itself disappears (disabled, or the WLAN service stopped), and one when the server starts with the link already down. | — |
+| DED-06 | Must | **Done** | [WifiMonitor.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/WifiMonitor.cs), [SystemHealth.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/SystemHealth.cs) | [WifiMonitorTests.cs](../../tests/HyFib.HealthCare360.Platform.Tests/WifiMonitorTests.cs), [WifiSecurityTests.cs](../../tests/HyFib.HealthCare360.Platform.Tests/WifiSecurityTests.cs) | — | The hospital, for WhatsApp alerts: its WhatsApp provider's approval of the `system_alert` template |
 | DED-07 | Must | **Done** | [ConnectionIndicator.tsx](../../src/web/apps/staff/src/shell/ConnectionIndicator.tsx), [connection.ts](../../src/web/packages/core/src/connection/connection.ts) | [ConnectionIndicator.test.tsx](../../src/web/apps/staff/src/shell/ConnectionIndicator.test.tsx), [connection.test.ts](../../src/web/packages/core/src/connection/connection.test.ts) | — | — |
 | DED-08 | Must | **Done** | [Idempotency.cs](../../src/server/HyFib.HealthCare360.Platform/Http/Idempotency.cs), [client.ts](../../src/web/packages/core/src/api/client.ts) | [IdempotencyTests.cs](../../tests/HyFib.HealthCare360.IntegrationTests/IdempotencyTests.cs), [client.test.ts](../../src/web/packages/core/src/api/client.test.ts) | — | — |
 | DED-09 | Must | **Done** | [client.ts](../../src/web/packages/core/src/api/client.ts), [realtime.tsx](../../src/web/packages/core/src/realtime/realtime.tsx) | [hub.test.ts](../../src/web/packages/core/src/realtime/hub.test.ts), [realtime.test.ts](../../src/web/packages/core/src/realtime/realtime.test.ts) | — | — |
