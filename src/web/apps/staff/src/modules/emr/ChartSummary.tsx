@@ -19,7 +19,7 @@ import {
 import { formatDateOnly, formatDateTime, formatRelative } from '@hc360/core';
 import { Section, StatusBadge } from '@hc360/ui';
 import { flagsSummaryNote } from './allergyStatus';
-import { encounterTypeLabel, type PatientClinicalSummary, type VitalsSnapshot } from './api';
+import { encounterTypeLabel, type PatientClinicalSummary, type RecentEncounter, type VitalsSnapshot } from './api';
 import type { ChartTab } from './timeline';
 import { vitalChips, type VitalChip } from './vitals';
 
@@ -285,41 +285,59 @@ export function ChartSummary({
           <ul className={styles.list}>
             {summary.recentEncounters.map((e) => (
               <li key={e.id}>
-                <div
-                  className={styles.encounter}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onOpenEncounter(e.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      onOpenEncounter(e.id);
-                    }
-                  }}
-                >
-                  <span className={styles.itemRow}>
-                    <Text weight="semibold">{formatDateTime(e.startedAt)}</Text>
-                    <StatusBadge
-                      status={e.status === 'InProgress' ? 'Draft' : e.status}
-                      label={e.status === 'InProgress' ? 'Unsigned' : undefined}
-                    />
-                  </span>
-                  <Caption1>
-                    {encounterTypeLabel[e.type]}
-                    {e.departmentName ? ` · ${e.departmentName}` : ''}
-                    {e.practitionerName ? ` · ${e.practitionerName}` : ''}
-                  </Caption1>
-                  {(e.diagnoses.length > 0 || e.chiefComplaint) && (
-                    <Caption1 className={styles.muted}>
-                      {e.diagnoses.length > 0 ? e.diagnoses.join('; ') : e.chiefComplaint}
-                    </Caption1>
-                  )}
-                </div>
+                <EncounterGlance encounter={e} onOpen={onOpenEncounter} />
               </li>
             ))}
           </ul>
         )}
       </Section>
+    </div>
+  );
+}
+
+/**
+ * One encounter at a glance, as the chart's recent encounters and the encounter workspace's previous visit show it:
+ * when, whether it is signed, the kind of care, department and doctor, and its diagnoses or else the complaint.
+ * Choosing it opens the encounter.
+ */
+export function EncounterGlance({
+  encounter: e,
+  onOpen,
+}: {
+  encounter: RecentEncounter;
+  onOpen: (encounterId: string) => void;
+}) {
+  const styles = useStyles();
+  return (
+    <div
+      className={styles.encounter}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(e.id)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen(e.id);
+        }
+      }}
+    >
+      <span className={styles.itemRow}>
+        <Text weight="semibold">{formatDateTime(e.startedAt)}</Text>
+        <StatusBadge
+          status={e.status === 'InProgress' ? 'Draft' : e.status}
+          label={e.status === 'InProgress' ? 'Unsigned' : undefined}
+        />
+      </span>
+      <Caption1>
+        {encounterTypeLabel[e.type]}
+        {e.departmentName ? ` · ${e.departmentName}` : ''}
+        {e.practitionerName ? ` · ${e.practitionerName}` : ''}
+      </Caption1>
+      {(e.diagnoses.length > 0 || e.chiefComplaint) && (
+        <Caption1 className={styles.muted}>
+          {e.diagnoses.length > 0 ? e.diagnoses.join('; ') : e.chiefComplaint}
+        </Caption1>
+      )}
     </div>
   );
 }

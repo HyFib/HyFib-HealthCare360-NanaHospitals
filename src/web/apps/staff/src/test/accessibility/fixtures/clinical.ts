@@ -7,6 +7,7 @@ import type {
   EncounterDetail,
   FavouriteDto,
   PatientClinicalSummary,
+  PreviousVisitResponse,
   TemplateDto,
   TemplateListItem,
   VitalsDto,
@@ -536,6 +537,9 @@ const SUMMARY: PatientClinicalSummary = {
   ],
   resultsAwaitingReview: 1,
 };
+
+/** The consultation's previous visit: the diabetes review, the last signed encounter before it. */
+const PREVIOUS_VISIT: PreviousVisitResponse = { previous: SUMMARY.recentEncounters[0] ?? null };
 
 const ENCOUNTER: EncounterDetail = {
   id: ENCOUNTER_ID,
@@ -1125,6 +1129,7 @@ export const CLINICAL_ANSWERS: FakeAnswers = {
   'GET /api/v1/emr/worklist': WORKLIST,
   'GET /api/v1/inpatient/rounds': ROUND,
   [`GET /api/v1/emr/encounters/${ENCOUNTER_ID}`]: ENCOUNTER,
+  [`GET /api/v1/emr/encounters/${ENCOUNTER_ID}/previous-visit`]: PREVIOUS_VISIT,
   [`GET ${patientPath}/summary`]: SUMMARY,
   [`GET ${patientPath}/vitals`]: paged(VITALS),
   [`GET ${patientPath}/diagnoses`]: DIAGNOSES,

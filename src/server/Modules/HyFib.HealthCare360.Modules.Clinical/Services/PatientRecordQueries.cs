@@ -102,12 +102,27 @@ public sealed class PatientRecordQueries(HospitalDbContext db, TimeProvider time
             .ToList();
     }
 
-    public async Task<IReadOnlyList<RecentEncounter>> RecentEncountersAsync(Guid patientId, int count, CancellationToken ct)
-    {
-        var encounters = await db.Set<Encounter>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
-            .Where(e => e.PatientId == patientId && !e.IsDeleted)
+    public Task<IReadOnlyList<RecentEncounter>> RecentEncountersAsync(Guid patientId, int count, CancellationToken ct) =>
+        GlanceAsync(Encounters().Where(e => e.PatientId == patientId && !e.IsDeleted).OrderByDescending(e => e.StartedAt).Take(count), ct);
+
+    /// <summary>
+    /// The previous visit the encounter workspace shows while <paramref name="current"/> is written (EMR-02..07): the
+    /// patient's latest signed encounter (signed, or amended since) that started before it, at any facility of the group.
+    /// Never the current encounter itself or a later one, nor one still in progress, which is not yet a record to rely on.
+    /// </summary>
+    public async Task<RecentEncounter?> PreviousVisitAsync(Encounter current, CancellationToken ct) =>
+        (await GlanceAsync(Encounters()
+            .Where(e => e.PatientId == current.PatientId && e.Id != current.Id && e.Status != EncounterStatus.InProgress
+                        && e.StartedAt < current.StartedAt)
             .OrderByDescending(e => e.StartedAt)
-            .Take(count)
+            .Take(1), ct)).SingleOrDefault();
+
+    private IQueryable<Encounter> Encounters() => db.Set<Encounter>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
+
+    /// <summary>Encounters as the chart lists them: who, where, the diagnoses (primary first) or else the complaint.</summary>
+    private async Task<IReadOnlyList<RecentEncounter>> GlanceAsync(IQueryable<Encounter> query, CancellationToken ct)
+    {
+        var encounters = await query
             .Select(e => new { e.Id, e.Type, e.Status, e.StartedAt, e.PractitionerId, e.DepartmentId, e.ChiefComplaint })
             .ToListAsync(ct);
         var ids = encounters.Select(e => (Guid?)e.Id).ToList();
