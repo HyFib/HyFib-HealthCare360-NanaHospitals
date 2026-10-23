@@ -32,6 +32,21 @@ updates:
       npm:
         update-types: [minor, patch]
 
+  # cdxgen, which makes the web apps' SBOMs (.github/scripts/sbom.mjs), with its lockfile. The CycloneDX .NET tool is in
+  # .config/dotnet-tools.json, which the nuget entry above updates.
+  - package-ecosystem: npm
+    directory: /.github/sbom
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    cooldown:
+      default-days: 7
+    groups:
+      sbom-tools:
+        patterns: ["*"]
+
   # The SDK in global.json. The server and HC360 Desktop are published self-contained, so the .NET runtime they ship,
   # and its security fixes, come from this SDK.
   - package-ecosystem: dotnet-sdk

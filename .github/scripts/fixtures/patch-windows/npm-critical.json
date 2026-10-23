@@ -1,0 +1,34 @@
+{
+  "actions": [],
+  "advisories": {
+    "1101234": {
+      "id": 1101234,
+      "github_advisory_id": "GHSA-crit-ical-0001",
+      "module_name": "example-parser",
+      "severity": "critical",
+      "title": "Prototype pollution in example-parser",
+      "url": "https://github.com/advisories/GHSA-crit-ical-0001",
+      "findings": [{ "version": "2.1.0", "paths": ["apps__staff>example-parser"] }]
+    },
+    "1101235": {
+      "id": 1101235,
+      "github_advisory_id": "GHSA-info-only-0002",
+      "module_name": "example-logger",
+      "severity": "info",
+      "title": "Informational only",
+      "url": "https://github.com/advisories/GHSA-info-only-0002",
+      "findings": [{ "version": "1.0.0", "paths": ["apps__portal>example-logger"] }]
+    },
+    "1101236": {
+      "id": 1101236,
+      "github_advisory_id": "GHSA-mode-rate-0003",
+      "module_name": "example-router",
+      "severity": "moderate",
+      "title": "Open redirect in example-router",
+      "url": "https://github.com/advisories/GHSA-mode-rate-0003",
+      "findings": [{ "version": "4.0.1", "paths": ["apps__portal>example-router"] }]
+    }
+  },
+  "muted": [],
+  "metadata": { "vulnerabilities": { "info": 1, "low": 0, "moderate": 1, "high": 0, "critical": 1 } }
+}

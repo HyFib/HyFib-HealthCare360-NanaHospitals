@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "parameters": "--vulnerable --include-transitive",
+  "problems": [{ "project": "HyFib.HealthCare360.Server.csproj", "level": "error", "text": "No assets file was found. Please run restore." }],
+  "projects": []
+}

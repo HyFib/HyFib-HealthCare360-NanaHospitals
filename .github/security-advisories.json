@@ -1,0 +1,4 @@
+{
+  "about": "The day each open security advisory was first seen (SRS SEC-11). Written by .github/scripts/patch_windows.py --record; see docs/security/SECURITY.md, 'Patching security advisories'. Do not change a firstSeen date by hand.",
+  "advisories": []
+}
