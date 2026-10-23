@@ -6,13 +6,14 @@ using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.SharedKernel;
+using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 
 namespace HyFib.HealthCare360.Modules.Interop.Tests;
 
 /// <summary>
-/// One patient's records for the ABDM document tests: an out-patient consultation with its prescription and lab report,
-/// and an earlier admission with its discharge summary. The bundles built from them are the sample documents in
-/// Fixtures/Abdm (validated with the HL7 FHIR validator against the NRCeS IG).
+/// One patient's records for the ABDM document tests: an out-patient consultation with its prescription, lab report and
+/// chest X-ray, and an earlier admission with its discharge summary. The bundles built from them are the sample documents
+/// in Fixtures/Abdm (validated against the NRCeS IG).
 /// </summary>
 internal static class AbdmTestData
 {
@@ -30,6 +31,17 @@ internal static class AbdmTestData
     public static readonly Guid StayLabReportId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab009");
     public static readonly Guid StayLabOrderId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab00a");
     public static readonly Guid CardiologistId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab00b");
+    public static readonly Guid RadiologyReportId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab00c");
+    public static readonly Guid ImagingStudyId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab00d");
+
+    /// <summary>The radiologist who signed the chest X-ray off, and the radiology resident who wrote it.</summary>
+    public static readonly Guid RadiologistId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab00e");
+    public static readonly Guid ResidentId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab00f");
+
+    // Their user accounts, which the radiology report names, and a clerk's, who is not a doctor.
+    public static readonly Guid RadiologistUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab010");
+    public static readonly Guid ResidentUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab011");
+    public static readonly Guid ClerkUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab012");
 
     private static readonly DateTimeOffset Seen = TestData.Now.AddHours(-2);
     private static readonly DateTimeOffset Admitted = TestData.Now.AddDays(-20);
@@ -44,7 +56,13 @@ internal static class AbdmTestData
 
     public static ReferenceDirectory Names { get; } = new()
     {
-        Practitioners = new Dictionary<Guid, string> { [TestData.DoctorId] = "Dr. Asha Rao", [CardiologistId] = "Dr. Vikram Shah" },
+        Practitioners = new Dictionary<Guid, string>
+        {
+            [TestData.DoctorId] = "Dr. Asha Rao",
+            [CardiologistId] = "Dr. Vikram Shah",
+            [RadiologistId] = "Dr. Neha Joshi",
+            [ResidentId] = "Dr. Kiran Patil",
+        },
         Departments = new Dictionary<Guid, string> { [TestData.DepartmentId] = "General Medicine" },
         Facilities = new Dictionary<Guid, FacilityInfo> { [TestData.FacilityId] = new("Nana Hospitals, Pune", "IN2710000123") },
         AdmissionVisits = new Dictionary<Guid, Guid> { [AdmissionId] = StayVisitId },
@@ -79,7 +97,39 @@ internal static class AbdmTestData
             Qualification = "MBBS, MD, DM (Cardiology)",
             CreatedAt = TestData.Now.AddYears(-2),
         },
+        new()
+        {
+            Id = RadiologistId,
+            Code = "D0031",
+            Title = "Dr.",
+            FirstName = "Neha",
+            LastName = "Joshi",
+            DisplayName = "Dr. Neha Joshi",
+            Gender = Gender.Female,
+            Qualification = "MBBS, MD (Radiodiagnosis)",
+            RegistrationCouncil = "Maharashtra Medical Council",
+            RegistrationNumber = "MMC-2012-055321",
+            CreatedAt = TestData.Now.AddYears(-2),
+        },
+        new()
+        {
+            Id = ResidentId,
+            Code = "D0058",
+            Title = "Dr.",
+            FirstName = "Kiran",
+            LastName = "Patil",
+            DisplayName = "Dr. Kiran Patil",
+            Gender = Gender.Male,
+            Qualification = "MBBS",
+            RegistrationCouncil = "Maharashtra Medical Council",
+            RegistrationNumber = "MMC-2021-071002",
+            CreatedAt = TestData.Now.AddYears(-1),
+        },
     ];
+
+    /// <summary>The user accounts of the doctors in radiology (user id to practitioner id); the clerk's is not a doctor's.</summary>
+    public static IReadOnlyDictionary<Guid, Guid> RadiologyDoctors { get; } =
+        new Dictionary<Guid, Guid> { [RadiologistUserId] = RadiologistId, [ResidentUserId] = ResidentId };
 
     public static IReadOnlyList<FacilityRow> Facilities { get; } =
     [
@@ -277,6 +327,42 @@ internal static class AbdmTestData
     ];
 
     public static LabReportData LabReportRecord(AbdmPdf? pdf) => new(Context(visit: OpVisit(), pdf: pdf), LabReport(), LabResults());
+
+    /// <summary>
+    /// The consultation's chest X-ray: its images linked from PACS, the report written by the resident, signed off by the
+    /// radiologist and released.
+    /// </summary>
+    public static RadiologyReportRow RadiologyReport() => new()
+    {
+        Id = RadiologyReportId,
+        PatientId = TestData.PatientId,
+        ImagingStudyId = ImagingStudyId,
+        VisitId = OpVisitId,
+        AccessionNumber = "NHRD2600217",
+        ServiceCode = "RAD-XR-CHEST",
+        StudyName = "X-ray chest PA view",
+        Modality = Modality.XR,
+        BodyPart = "Chest",
+        OrderedAt = Seen.AddMinutes(20),
+        StartedAt = Seen.AddMinutes(48),
+        AcquiredAt = Seen.AddMinutes(52),
+        StudyInstanceUid = "2.25.119382716123407654321098765432109876",
+        SeriesCount = 1,
+        InstanceCount = 2,
+        Technique = "PA view, erect, in full inspiration.",
+        ClinicalHistory = "Fever for three days with body ache.",
+        Findings = "Both lung fields are clear. Cardiac size is normal. Both costophrenic angles are clear.",
+        Impression = "No active lung lesion.",
+        ReportedBy = ResidentUserId,
+        VerifiedBy = RadiologistUserId,
+        VerifiedAt = TestData.Now.AddMinutes(-50),
+        ReleasedAt = TestData.Now.AddMinutes(-45),
+        CreatedAt = Seen.AddMinutes(60),
+        UpdatedAt = TestData.Now.AddMinutes(-45),
+    };
+
+    public static RadiologyReportData RadiologyReportRecord(AbdmPdf? pdf) =>
+        new(Context(visit: OpVisit(), pdf: pdf), RadiologyReport(), RadiologyDoctors);
 
     public static VisitRow StayVisit() => new()
     {

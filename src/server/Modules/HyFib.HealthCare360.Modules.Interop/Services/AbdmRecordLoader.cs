@@ -1,4 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Services;
@@ -45,6 +47,7 @@ internal sealed class AbdmRecordLoader(
     private const string PrescriptionPdf = "clinical.prescription";
     private const string DischargeSummaryPdf = "clinical.discharge-summary";
     private const string LabReportPdf = "diagnostics.lab-report";
+    private const string RadiologyReportPdf = "diagnostics.radiology-report";
 
     private EncounterProvider Encounters => Provider<EncounterProvider>();
     private ConditionProvider Conditions => Provider<ConditionProvider>();
@@ -77,6 +80,13 @@ internal sealed class AbdmRecordLoader(
                         row.Status is not (LabReportStatus.Released or LabReportStatus.Amended) ? "Only a released lab report can be exported." : null);
             }
 
+            case AbdmRecordType.RadiologyReport:
+            {
+                var row = await db.Set<RadiologyReport>().AsNoTracking().Where(r => r.Id == id)
+                    .Select(r => new { r.PatientId, r.FacilityId, r.Status }).FirstOrDefaultAsync(ct);
+                return row is null ? NotFound(type, id) : new AbdmSource(row.PatientId, row.FacilityId, RadiologyReportNotExportable(row.Status));
+            }
+
             case AbdmRecordType.OpConsultation:
             {
                 var row = await db.Set<ClinicalEncounter>().AsNoTracking().Where(e => e.Id == id)
@@ -106,10 +116,18 @@ internal sealed class AbdmRecordLoader(
         {
             AbdmRecordType.Prescription => nameof(Prescription),
             AbdmRecordType.LabReport => nameof(LabReport),
+            AbdmRecordType.RadiologyReport => nameof(RadiologyReport),
             AbdmRecordType.OpConsultation => "Encounter",
             _ => nameof(DischargeSummary),
         },
         id);
+
+    /// <summary>
+    /// Why a radiology report is not exported: only a released one is the hospital's report. A draft, a report waiting for
+    /// sign-off and one signed off but not released are still the radiologists' work.
+    /// </summary>
+    internal static string? RadiologyReportNotExportable(DiagnosticReportStatus status) =>
+        status == DiagnosticReportStatus.Released ? null : "Only a released radiology report can be exported.";
 
     /// <summary>
     /// The patients under whom records the document would hold are kept, besides the record's own: for a discharge
@@ -136,6 +154,7 @@ internal sealed class AbdmRecordLoader(
     {
         AbdmRecordType.Prescription => PrescriptionAsync(id, source, ct),
         AbdmRecordType.LabReport => LabReportAsync(id, source, ct),
+        AbdmRecordType.RadiologyReport => RadiologyReportAsync(id, source, ct),
         AbdmRecordType.OpConsultation => ConsultationAsync(id, source, ct),
         _ => DischargeSummaryAsync(id, source, ct),
     };
@@ -170,6 +189,18 @@ internal sealed class AbdmRecordLoader(
         var context = await ContextAsync(source, visit, encounter, [], [], [], LabReportPdf, id, ct);
         context = context with { ReferralLabs = await ReferralLabsAsync(results, ct) };
         return AbdmRecords.LabReport(new LabReportData(context, report, results));
+    }
+
+    private async Task<AbdmDocument> RadiologyReportAsync(Guid id, AbdmSource source, CancellationToken ct)
+    {
+        var report = await Reports.RadiologyReports(r => r.Id == id).FirstAsync(ct);
+        report = report with { Addenda = (await Reports.AddendumRowsAsync([id], ct)).GetValueOrDefault(id) ?? [] };
+        var doctors = await DoctorsAsync([report.ReportedBy, report.VerifiedBy, .. report.Addenda.Select(a => a.AddedBy)], ct);
+        var (visit, encounter) = await EncounterRowsAsync(null, report.VisitId, null, ct);
+
+        // The printed report is made from its imaging study, as everything in radiology is.
+        var context = await ContextAsync(source, visit, encounter, [.. doctors.Values.Select(p => (Guid?)p)], [], [], RadiologyReportPdf, report.ImagingStudyId, ct);
+        return AbdmRecords.RadiologyReport(new RadiologyReportData(context, report, doctors));
     }
 
     private async Task<AbdmDocument> ConsultationAsync(Guid id, AbdmSource source, CancellationToken ct)
@@ -289,6 +320,20 @@ internal sealed class AbdmRecordLoader(
 
     /// <summary>The released lab reports ordered in a stay's visit, under whichever UHID they are kept.</summary>
     private IQueryable<LabReportRow> StayReports(Guid stayVisit) => Reports.LabReports(r => true).Where(r => r.VisitId == stayVisit);
+
+    /// <summary>
+    /// The doctors of the users who wrote, signed off or added to a report (user id to practitioner id): a user who is not
+    /// a doctor is left out, and one deleted since still did what the report says.
+    /// </summary>
+    private async Task<Dictionary<Guid, Guid>> DoctorsAsync(IEnumerable<Guid?> users, CancellationToken ct)
+    {
+        Guid[] ids = [.. users.OfType<Guid>().Distinct()];
+        return ids.Length == 0
+            ? new Dictionary<Guid, Guid>()
+            : await db.Set<User>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                .Where(u => ids.Contains(u.Id) && u.PractitionerId != null)
+                .ToDictionaryAsync(u => u.Id, u => u.PractitionerId!.Value, ct);
+    }
 
     /// <summary>The doctor who made the latest of <paramref name="amendments"/> (their users), when that user is a doctor.</summary>
     private async Task<Guid?> AmenderAsync(IQueryable<Guid?> amendments, CancellationToken ct) =>
