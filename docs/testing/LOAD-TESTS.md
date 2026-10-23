@@ -78,3 +78,33 @@ requests.
 test works against the whole server, for a load test account and the front office, and that a short run has no failed
 request. With 200 synthetic patients the patient list's largest page is full, and it must be sent compressed under
 100 KB; the other lists are held to the size their rows would take on a full page.
+
+`tests/HyFib.HealthCare360.IntegrationTests/PatientSearchPlanTests.cs` holds PERF-02 on every pull request without a
+million patients: it asks PostgreSQL for the plan of each kind of search the front desk types (a UHID or its start, a
+mobile number, the last digits of either, words of the name) and fails when a column the search looks in is not
+matched by an index. Without one, every search of that kind reads the whole register.
+
+## A run over a million patients (October 2026)
+
+What one run showed on a development machine, before the hospital's own: a 4-core, 16 GB Linux virtual machine running
+the server, PostgreSQL 17 and the load test together, so the figures are the server's worst case rather than a Server
+Node's. The server ran as in production with demonstration data, from this repository's build, with the steps above
+(`loadtest patients --count 1000000`, `loadtest accounts --count 4`, then `run --targets report`).
+
+The first run, 20 users for 3 minutes, missed PERF-02: searching by mobile number took 897 ms at p95 and by UHID 948 ms
+(by name, 272 ms). Each read the whole register: there was no index for the alternate mobile number, and the UHID index
+could not serve a search by its start, nor either index one by its last digits. On their own, with the machine idle,
+the two searches took 151 ms and 166 ms; under load they queued behind each other. (Other builds were running on the
+machine during that run, which made it slower still.)
+
+With the indexes added (migration `PatientSearchIndexes`) the same searches take 0.5 ms and 0.6 ms on their own. The
+runs after it, with the machine otherwise idle:
+
+| Run | Search by name | by mobile | by UHID | Slowest other read (p95) | Register (p95) | Failed |
+|---|--:|--:|--:|--:|--:|--:|
+| 20 users, 3 minutes | 156 ms | 9 ms | 78 ms | 11 ms | 15 ms | 0 |
+| 75 users, 5 minutes (7,435 requests) | 171 ms | 9 ms | 93 ms | 13 ms | 15 ms | 0 |
+
+Every PERF-01, PERF-02 and PERF-05 target was met in both, the largest page of every list at most 14 KB as sent. This
+says the code meets the targets with room to spare on modest hardware; the run that decides go-live is still the one
+on the hospital's Server Node, over its WiFi, with the load test on a workstation.

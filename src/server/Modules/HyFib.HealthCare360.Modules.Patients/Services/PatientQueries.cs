@@ -41,7 +41,9 @@ public static class PatientQueries
 
         if (!hasLetters && digits.Length >= 4)
         {
-            return patients.Where(p => p.Uhid.EndsWith(digits) || (p.Phone != null && p.Phone.EndsWith(digits)));
+            // No null check on the phone: SQL's LIKE is already false for none, and the check would let PostgreSQL pick
+            // "has a phone" (nearly everyone) over the trigram index.
+            return patients.Where(p => p.Uhid.EndsWith(digits) || p.Phone!.EndsWith(digits));
         }
 
         foreach (var word in term.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(4))
