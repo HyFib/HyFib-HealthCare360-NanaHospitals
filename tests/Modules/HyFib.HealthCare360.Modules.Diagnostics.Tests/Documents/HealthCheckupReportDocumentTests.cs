@@ -269,7 +269,7 @@ public sealed class HealthCheckupReportDocumentTests
         var orderId = Guid.NewGuid();
         var booking = new BookingDto(
             Guid.NewGuid(), "NHHC26000042", PatientId, "NH0001", "Meena Iyer", Guid.NewGuid(), "HC-EXEC", "Executive health check", new DateOnly(2026, 9, 27),
-            status, null, orderId, null, "Acme <Pvt> Ltd", null, Day, "Mild dyslipidaemia.\nOtherwise normal.", "Diet control; repeat lipid profile in 3 months",
+            status, null, orderId, null, "Acme <Pvt> Ltd", null, null, Day, "Mild dyslipidaemia.\nOtherwise normal.", "Diet control; repeat lipid profile in 3 months",
             DoctorId, Day.AddHours(6), Day.AddHours(6.5), null,
             [
                 new ItineraryItemDto(Guid.NewGuid(), 2, null, "Radiology", "Chest X-ray", ItineraryStatus.Skipped, null, "Pregnancy not ruled out"),
