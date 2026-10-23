@@ -1,0 +1,7 @@
+<Project>
+  <ItemGroup>
+    <!-- Reviewed 2026-10-01: the vulnerable API is never called. Look again 2027-01-01. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-supp-ress-edxx" />
+    <!-- <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-aaaa-bbbb-cccc" /> commented out: not applied -->
+  </ItemGroup>
+</Project>

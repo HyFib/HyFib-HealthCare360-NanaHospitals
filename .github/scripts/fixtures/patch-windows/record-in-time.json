@@ -1,0 +1,8 @@
+{
+  "about": "Fixture: the same advisories, the critical one first seen 7 days before 2026-10-23 (its last day).",
+  "advisories": [
+    { "id": "GHSA-aaaa-bbbb-cccc", "severity": "high", "firstSeen": "2026-09-23", "packages": ["nuget:System.Text.Example@8.0.0"] },
+    { "id": "GHSA-crit-ical-0001", "severity": "critical", "firstSeen": "2026-10-16", "packages": ["npm:example-parser@2.1.0"] },
+    { "id": "GHSA-mode-rate-0003", "severity": "moderate", "firstSeen": "2026-10-15", "packages": ["npm:example-router@4.0.1"] }
+  ]
+}

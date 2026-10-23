@@ -1,11 +1,13 @@
 name: Security audit
 
-# CI audits the packages on every change. This runs the same audits on main every week, so an advisory published while
+# CI audits the packages on every change. This runs the same audits on main every day, so an advisory published while
 # nobody is changing the code still fails a run. GitHub emails whoever last changed the schedule when a run fails, and
-# the log names each vulnerable package and its advisory.
+# the log names each vulnerable package and its advisory. It also checks the patch windows (SRS SEC-11), as CI does:
+# docs/security/SECURITY.md, "Patching security advisories". Every day, not every week: a critical advisory must be
+# patched within 7 days, and a weekly run could see it for the first time on the last of them.
 on:
   schedule:
-    - cron: "30 0 * * 1" # Mondays 06:00 IST
+    - cron: "30 0 * * *" # every day, 06:00 IST
   workflow_dispatch:
 
 permissions:
@@ -27,6 +29,21 @@ jobs:
       # A package with a known vulnerability, direct or transitive, fails restore (see Directory.Build.props).
       - name: Restore and audit packages
         run: dotnet restore HyFib.HealthCare360.slnx
+
+      # For the patch-windows job below. The listing works after a restore the audit failed, too; it does not apply
+      # NuGetAuditSuppress, the script does.
+      - name: List the vulnerable packages for the patch windows
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: dotnet list HyFib.HealthCare360.slnx package --vulnerable --include-transitive --format json --no-restore > "${{ runner.temp }}/nuget-audit.json"
+
+      - name: Keep the listing for the patch windows
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: audit-nuget
+          path: ${{ runner.temp }}/nuget-audit.json
+          retention-days: 7
 
   npm:
     name: npm packages
@@ -50,3 +67,36 @@ jobs:
       # Reads the lockfile; nothing is installed.
       - name: Audit packages
         run: pnpm audit --audit-level low
+
+      # For the patch-windows job below. pnpm audit exits 1 when it finds an advisory; the script reads the file.
+      - name: Audit packages for the patch windows
+        if: ${{ !cancelled() }}
+        run: pnpm audit --json > "$RUNNER_TEMP/npm-audit.json" || true
+
+      - name: Keep the audit for the patch windows
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: audit-npm
+          path: ${{ runner.temp }}/npm-audit.json
+          retention-days: 7
+
+  # Fails when an advisory is past its patch window, or is reported but not recorded in .github/security-advisories.json.
+  patch-windows:
+    name: Security patch windows (SEC-11)
+    if: ${{ !cancelled() }}
+    needs: [nuget, npm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: audit-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/audits
+
+      - name: Check the patch windows
+        run: python3 .github/scripts/patch_windows.py --nuget "$RUNNER_TEMP/audits/nuget-audit.json" --npm "$RUNNER_TEMP/audits/npm-audit.json"

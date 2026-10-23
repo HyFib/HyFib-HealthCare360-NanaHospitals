@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "parameters": "--vulnerable --include-transitive",
+  "projects": [
+    {
+      "path": "C:\\a\\hc360\\src\\server\\HyFib.HealthCare360.Server\\HyFib.HealthCare360.Server.csproj",
+      "frameworks": [{ "framework": "net10.0", "topLevelPackages": [], "transitivePackages": [] }]
+    },
+    { "path": "C:\\a\\hc360\\tests\\HyFib.HealthCare360.UnitTests\\HyFib.HealthCare360.UnitTests.csproj" }
+  ]
+}

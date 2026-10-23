@@ -754,11 +754,36 @@ CI runs these checks on every pull request and on main. A pull request cannot me
   transitive dependency:
   - NuGet audits every restore (`Directory.Build.props`).
   - `pnpm audit` checks the web apps' lockfile.
-  - The weekly **Security audit** workflow runs both audits on main, so an advisory published while the code is not
+  - The daily **Security audit** workflow runs both audits on main, so an advisory published while the code is not
     changing still fails a run.
   - An advisory reviewed as not affecting HC360 is accepted explicitly, never by lowering the level. For NuGet, add a
     `NuGetAuditSuppress` item to `Directory.Packages.props`. For npm, add the advisory under `auditConfig` in
     `pnpm-workspace.yaml`. Each entry has a comment giving the reason and the date to look again.
+- **Patching security advisories** (SRS SEC-11): an advisory against a package HC360 uses is patched within 7 days
+  of the day it was first seen when it is critical, and within 30 days otherwise.
+  - `.github/security-advisories.json` records the day each open advisory was first seen. The
+    `Security patch windows (SEC-11)` job in CI, the daily Security audit and the release run
+    `.github/scripts/patch_windows.py` on what `dotnet list package --vulnerable` and `pnpm audit` report.
+  - The check fails when an advisory is past its window, or is reported but not recorded. It warns 3 days before a
+    window ends. A release is not made while it fails.
+  - When an advisory first appears, record it in the change that deals with it:
+    `python3 .github/scripts/patch_windows.py --nuget <listing> --npm <audit> --record`, then commit the file. The
+    commands that make the two files are at the top of the script. Never change a `firstSeen` date by hand.
+  - Patching is updating the package (or the SDK, for the .NET runtime). Accepting an advisory as not affecting HC360
+    (above) also ends its window, because the audits then leave it out. Run `--record` again to drop advisories that
+    are gone.
+  - The script's tests use saved audit output and dates (`.github/scripts/test_patch_windows.py`), and run in CI.
+- **SBOMs**: every release attaches a CycloneDX 1.6 SBOM for each package it ships, listed in `SHA256SUMS.txt`
+  with the packages. CI makes the same files on every change and keeps them with the run.
+  - `HC360-Server-<version>-win-x64.cdx.json` covers the server and the staff app and portal it serves.
+    `HC360-Desktop-…` covers HC360 Desktop and its updater, and `HC360-LabAgent-…` the lab agent. The staff app and
+    the portal also get one each (`HC360-Staff-…`, `HC360-Portal-…`).
+  - The .NET SBOMs come from the CycloneDX .NET tool (`.config/dotnet-tools.json`), with the .NET runtime packs a
+    self-contained package carries added. The web ones come from cdxgen reading `src/web/pnpm-lock.yaml`
+    (`.github/sbom/package-lock.json`), without development-only packages. Both tools are pinned, and Dependabot
+    updates them. `.github/scripts/sbom.mjs` makes the files and checks each against the CycloneDX schema.
+  - HC360 ships no container images, so there is no image to scan. `deploy/docker/compose.dev.yml` is for developers
+    only.
 - **Dependabot** proposes updates every Monday: NuGet packages, the web packages, the .NET SDK (the server and HC360
   Desktop ship the runtime that comes with it) and the CI actions.
   - Minor and patch updates come grouped, and CI tests them like any change.
