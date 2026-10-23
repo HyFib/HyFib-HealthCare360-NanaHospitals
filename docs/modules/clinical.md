@@ -505,6 +505,7 @@ supplies, in Medical records > ICD catalogue > Import or with the server command
 | GET | `/health-checkups/bookings/{id}/report` | healthcheck.manage or emr.read | → `CheckupReport{booking, patient, letterhead, reviewingDoctor, order}` |
 | GET | `/health-checkups/bookings/{id}/report/document`, `/report/pdf` | healthcheck.manage or emr.read | The full check-up report (summary, then every released lab, radiology and cardiology result) as a printable document or PDF. Served by the Diagnostics module, which reads the results; see [diagnostics.md](diagnostics.md) |
 | GET / POST | `/health-checkups/corporate-batches`, `GET /{id}` | healthcheck.manage | `CorporateBatchRequest{payerId, contactPerson, contactPhone, reference, packageId, scheduledDate, patientIds[≤500], notes}` → `CorporateBatchResult{batchId, batchNumber, booked, skipped[{patientId, reason}]}`. `payerId` is the company: an active corporate payer of the payer master, else 400 on `payerId`. The batch (`CorporateBatchDto.payerId`, `corporateName` as the payer master names it) and each booking (`BookingDto.corporatePayerId`) carry it |
+| GET | `/health-checkups/corporate-payers` | healthcheck.manage | → `CorporatePayer[]{id, name, contactPerson, phone}`: the payer master's active corporate payers by name, the companies a batch can be booked for (through `IPayerDirectory.ListCorporateAsync`, so the check-up desk needs no billing or insurance permission) |
 
 #### Package billing
 

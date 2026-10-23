@@ -29,6 +29,7 @@ internal static class BookingEndpoints
         group.MapGet("/bookings/{id:guid}/report", Report).RequireAnyPermission(ClinicalPermissions.HealthCheckManage, ClinicalPermissions.EmrRead);
 
         group.MapGet("/corporate-batches", ListBatches).RequirePermission(ClinicalPermissions.HealthCheckManage);
+        group.MapGet("/corporate-payers", CorporatePayers).RequirePermission(ClinicalPermissions.HealthCheckManage);
         group.MapPost("/corporate-batches", BookBatch).RequirePermission(ClinicalPermissions.HealthCheckManage).WithValidation<CorporateBatchRequest>();
         group.MapGet("/corporate-batches/{id:guid}", GetBatch).RequirePermission(ClinicalPermissions.HealthCheckManage);
     }
@@ -125,6 +126,10 @@ internal static class BookingEndpoints
                 b.BookedCount, b.SkippedCount, b.Notes, b.CreatedAt))
             .ToPagedResultAsync(page, ct));
     }
+
+    /// <summary>The companies a batch can be booked for: the payer master's active corporates, for the desk alone.</summary>
+    private static async Task<IResult> CorporatePayers(IPayerDirectory payers, CancellationToken ct) =>
+        TypedResults.Ok(await payers.ListCorporateAsync(ct));
 
     private static async Task<IResult> BookBatch(CorporateBatchRequest request, HealthCheckupService checkups, CancellationToken ct) =>
         (await checkups.BookCorporateAsync(request, ct)).ToCreated(r => $"/api/v1/health-checkups/corporate-batches/{r.BatchId}");

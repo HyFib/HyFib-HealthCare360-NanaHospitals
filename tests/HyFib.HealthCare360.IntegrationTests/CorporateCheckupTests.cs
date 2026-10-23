@@ -2,12 +2,15 @@ using System.Net;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
+using HyFib.HealthCare360.Modules.Clinical;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -129,6 +132,33 @@ public sealed class CorporateCheckupTests(HospitalServer server)
         var onDeskVisit = await frontOffice.PostAsync<BookingDto>(CheckIn(bookings[linked]), new CheckInCheckupRequest(deskVisit.Id));
         await frontOffice.PostAsync<BookingDto>($"{Booking(onDeskVisit)}/cancel", new CancelBookingRequest("Rescheduled by HR"));
         (await VisitStatusAsync(frontOffice, onDeskVisit)).ShouldBe(VisitStatus.Open);
+    }
+
+    [Fact]
+    public async Task A_check_up_desk_with_only_its_own_permission_lists_the_companies_to_book_for()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var company = await CompanyAsync(admin, isActive: true);
+        var closed = await CompanyAsync(admin, isActive: false);
+
+        // A role the hospital made for its check-up desk: health check-ups, nothing of billing or insurance.
+        var suffix = Letters(8).ToLowerInvariant();
+        var role = await (await server.SignInAsync(HospitalServer.Users.Admin)).PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+            "IT check-up desk " + suffix, "Runs corporate check-up drives", [ClinicalPermissions.HealthCheckManage], Version: null));
+        await server.CreateStaffAccountAsync("it-checkup-" + suffix, role.Name);
+        var desk = await server.SignInAsync("it-checkup-" + suffix);
+
+        // The insurance screens' payer list is not the desk's to read; its own list of companies is: the active
+        // corporate payers, with the contact the batch form fills in.
+        using (var refused = await desk.SendRawAsync(HttpMethod.Get, "/api/v1/insurance/payers?category=Corporate"))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        var companies = await desk.GetAsync<List<CorporatePayer>>("/api/v1/health-checkups/corporate-payers");
+        companies.ShouldContain(new CorporatePayer(company.Id, company.Name, "Meena Iyer", company.Phone));
+        companies.ShouldNotContain(c => c.Id == closed.Id, "an inactive company is not booked for");
+        companies.ShouldNotContain(c => c.Name.StartsWith("Star Health", StringComparison.Ordinal), "an insurer is not a company");
     }
 
     [Fact]

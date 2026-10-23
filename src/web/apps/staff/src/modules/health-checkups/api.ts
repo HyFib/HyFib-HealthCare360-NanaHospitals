@@ -146,6 +146,14 @@ export interface CorporateBatchDto {
   createdAt: string;
 }
 
+/** A company of the payer master (category Corporate) a batch can be booked for, with its contact. */
+export interface CorporatePayer {
+  id: string;
+  name: string;
+  contactPerson: string | null;
+  phone: string | null;
+}
+
 export interface CorporateBatchDetail {
   batch: CorporateBatchDto;
   bookings: BookingDto[];
@@ -169,6 +177,7 @@ export const checkupKeys = {
   booking: (id: string) => ['health-checkups', 'booking', id] as const,
   batches: (search: string, page: number) => ['health-checkups', 'batches', search, page] as const,
   batch: (id: string) => ['health-checkups', 'batch', id] as const,
+  corporatePayers: ['health-checkups', 'corporate-payers'] as const,
 };
 
 export const checkupQueries = {
@@ -227,6 +236,12 @@ export const checkupQueries = {
       queryKey: checkupKeys.batch(id),
       queryFn: ({ signal }) =>
         api.get<CorporateBatchDetail>(`/api/v1/health-checkups/corporate-batches/${id}`, { signal }),
+    }),
+  /** The active corporate payers, readable with the check-up desk's permission alone (not the insurance screens'). */
+  corporatePayers: () =>
+    queryOptions({
+      queryKey: checkupKeys.corporatePayers,
+      queryFn: ({ signal }) => api.get<CorporatePayer[]>('/api/v1/health-checkups/corporate-payers', { signal }),
     }),
 };
 

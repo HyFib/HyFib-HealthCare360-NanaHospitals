@@ -49,6 +49,13 @@ internal sealed class PayerDirectory(HospitalDbContext db, ICurrentUser user, IP
         return payer is null ? null : new PayerSummary(payer.Id, payer.Name, payer.ToPayerType(), payer.IsActive);
     }
 
+    public async Task<IReadOnlyList<CorporatePayer>> ListCorporateAsync(CancellationToken cancellationToken) =>
+        await db.Set<Payer>().AsNoTracking()
+            .Where(p => p.Category == PayerCategory.Corporate && p.IsActive)
+            .OrderBy(p => p.Name)
+            .Select(p => new CorporatePayer(p.Id, p.Name, p.ContactPerson, p.Phone))
+            .ToListAsync(cancellationToken);
+
     /// <summary>
     /// Whether the user holds one of the permissions, or the Super Admin's wildcard, as <c>RequireAnyPermission</c> on
     /// the insurance endpoints decides it (<see cref="PermissionAuthorizationHandler"/>).

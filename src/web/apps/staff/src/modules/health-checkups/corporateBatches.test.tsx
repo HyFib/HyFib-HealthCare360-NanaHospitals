@@ -3,10 +3,9 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PayerListItem } from '@/modules/insurance/api';
 import type { PatientListItem } from '@/modules/patients/api';
 import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, stubBrowserApis } from '@/test/appScreen';
-import type { CorporateBatchResult, PackageDto } from './api';
+import type { CorporateBatchResult, CorporatePayer, PackageDto } from './api';
 
 // The corporate batches screen, whole, with a fake server: the company of a drive is a corporate payer of the payer
 // master (MHC-05), and its id is what the batch is booked with, so every employee's check-up is billed to it.
@@ -16,17 +15,11 @@ vi.mock('@hc360/core', async (importOriginal) => ({
   RealtimeProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-const acme: PayerListItem = {
+const acme: CorporatePayer = {
   id: 'payer-acme',
-  code: 'ACME',
   name: 'Acme Steel Ltd',
-  category: 'Corporate',
   contactPerson: 'Meena Iyer',
   phone: '9876543210',
-  tariffPlanId: null,
-  tariffPlanName: null,
-  creditDays: 45,
-  isActive: true,
 };
 
 const executive: PackageDto = {
@@ -68,7 +61,7 @@ beforeEach(() => {
   server = fakeServer({
     'GET /api/v1/health-checkups/corporate-batches': paged([]),
     'GET /api/v1/health-checkups/packages': [executive],
-    'GET /api/v1/insurance/payers': [acme],
+    'GET /api/v1/health-checkups/corporate-payers': [acme],
     'GET /api/v1/patients': paged([employee]),
     'POST /api/v1/health-checkups/corporate-batches': booked,
   });
@@ -98,8 +91,8 @@ describe('corporate batches', SCREEN_TESTS, () => {
     await user.click(screen.getByRole('button', { name: 'Book 1 employee' }));
 
     expect(await screen.findByText('Batch NHPHCB260001 booked', {}, SLOW)).toBeInTheDocument();
-    const companies = server.requests.find((r) => r.path === '/api/v1/insurance/payers');
-    expect(companies?.url.searchParams.get('category')).toBe('Corporate');
+    // From the check-up desk's own lookup: the insurance screens' payer list needs a permission the desk may not hold.
+    expect(server.requests.some((r) => r.path === '/api/v1/insurance/payers')).toBe(false);
     const batch = server.requests.find(
       (r) => r.method === 'POST' && r.path === '/api/v1/health-checkups/corporate-batches',
     );

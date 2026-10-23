@@ -72,6 +72,9 @@ public sealed record PayerCoverageSummary(string? PayerName, string? PolicyNumbe
 /// <summary>A payer of the payer master: its name, the kind of payer its bills are billed as, and whether it is in use.</summary>
 public sealed record PayerSummary(Guid Id, string Name, PayerType PayerType, bool IsActive);
 
+/// <summary>A company of the payer master (category Corporate) with its contact, as a corporate health check-up names it.</summary>
+public sealed record CorporatePayer(Guid Id, string Name, string? ContactPerson, string? Phone);
+
 /// <summary>Implemented by the Billing module, which keeps the payer master and the patients' policies.</summary>
 public interface IPayerDirectory
 {
@@ -86,6 +89,12 @@ public interface IPayerDirectory
     /// caller's permissions: a module that bills its services to a payer has to know which payer that is.
     /// </summary>
     Task<PayerSummary?> FindAsync(Guid payerId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The active corporate payers, by name, whatever the caller's permissions, like <see cref="FindAsync"/>: the
+    /// check-up desk books a company's employees without reading the rest of the payer master.
+    /// </summary>
+    Task<IReadOnlyList<CorporatePayer>> ListCorporateAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>Fallbacks used until the Billing module registers its implementations.</summary>
@@ -104,6 +113,8 @@ internal sealed class NullPayerDirectory : IPayerDirectory
         Task.FromResult(new PayerCoverageSummary(null, null, null));
 
     public Task<PayerSummary?> FindAsync(Guid payerId, CancellationToken cancellationToken) => Task.FromResult<PayerSummary?>(null);
+
+    public Task<IReadOnlyList<CorporatePayer>> ListCorporateAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CorporatePayer>>([]);
 }
 
 internal sealed class NullBillingStatusProvider : IBillingStatusProvider

@@ -54,7 +54,6 @@ import { useState } from 'react';
 import { addDaysIso } from '@/modules/emr/encounterForm';
 import { checkupApi, checkupKeys, checkupQueries, type CorporateBatchResult } from '@/modules/health-checkups/api';
 import { checkupProblem } from '@/modules/health-checkups/itinerary';
-import { insuranceQueries } from '@/modules/insurance/api';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 
 export const Route = createFileRoute('/_app/health-checkups/corporate/')({
@@ -119,7 +118,7 @@ function NewBatchForm({
   const today = todayIso();
   const packages = useQuery(checkupQueries.packages());
   // The company is a corporate payer of the payer master, which every employee's check-up is billed to.
-  const companies = useQuery(insuranceQueries.payers({ category: 'Corporate' }));
+  const companies = useQuery(checkupQueries.corporatePayers());
   const [payerId, setPayerId] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [contactPhone, setContactPhone] = useState('');
