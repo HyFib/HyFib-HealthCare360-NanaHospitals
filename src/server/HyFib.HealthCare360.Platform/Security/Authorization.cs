@@ -66,8 +66,8 @@ public sealed class PermissionAuthorizationHandler(IPermissionService permission
         }
 
         if (held.Any(p => !PlatformPermissions.IsAdministrative(p))
-            || AdministrationOnDesktop.OnDesktop(context.User)
             || !await desktops.RequiredAsync()
+            || await desktops.AdministersFromAsync(AdministrationOnDesktop.DeviceOf(context.User))
             || (FirstDesktopEnrolment.Marks(context.Resource) && !await desktops.EnrolledAsync()))
         {
             context.Succeed(requirement);

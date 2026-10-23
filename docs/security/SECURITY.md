@@ -189,9 +189,11 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     account's other sessions. Setting up two-step verification asks for the password first.
 - **Administration needs an enrolled device** (SRS SEC-08). The administrative permissions (`admin.*` and all-access:
   users and roles, settings, devices, backups, integrations, the audit log, the server's own credentials) work only in
-  HC360 Desktop on a computer IT enrolled. A browser keeps everything else its user holds:
+  HC360 Desktop on a workstation or tablet IT enrolled; a kiosk or queue display signs staff in, but administers
+  nothing, like a browser. A browser keeps everything else its user holds:
   - The server refuses the request (403 `auth.device_required`, saying where administration works) when only an
-    administrative permission allows it and the session was not signed in with an enrolled desktop's credential. Any
+    administrative permission allows it and the session was not signed in with an enrolled workstation's or tablet's
+    credential. Any
     other permission the endpoint takes is enough anywhere. The app is given the permissions the session can use, so it
     shows no administration there, and says where it is.
   - Revoking a desktop ends its sessions at once; its credential then signs in as a browser does, without administration.

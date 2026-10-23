@@ -353,7 +353,7 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 
 ## 5. Install HC360 Desktop on workstations
 
-Administration works only in HC360 Desktop on an enrolled computer (SRS SEC-08). Until the first workstation or tablet
+Administration works only in HC360 Desktop on an enrolled workstation or tablet (SRS SEC-08), not on a kiosk or queue display. Until the first workstation or tablet
 is enrolled, a browser signed in as an administrator can open Administration › Devices and make its code, and nothing
 else of administration: enrol IT's own workstation first, and set up the rest of the hospital from it. Once one is
 enrolled, browsers keep everything but administration.

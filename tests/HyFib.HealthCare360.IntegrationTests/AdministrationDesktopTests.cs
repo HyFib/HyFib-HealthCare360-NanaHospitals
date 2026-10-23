@@ -110,6 +110,29 @@ public sealed class AdministrationDesktopTests(HospitalServer server)
         (await again.GetAsync<AuthUser>("/api/v1/auth/me")).AdministrationNeedsDesktop.ShouldBeTrue();
     }
 
+    [Theory]
+    [InlineData(DeviceKind.Kiosk)]
+    [InlineData(DeviceKind.DisplayBoard)]
+    public async Task A_kiosk_or_queue_display_does_not_open_administration(DeviceKind kind)
+    {
+        var it = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var (deviceId, secret) = await EnrolAsync(it, kind);
+        try
+        {
+            // An administrator who signs in at a shared kiosk or display keeps their other work there, as in a browser.
+            var there = await server.SignInFromDeviceAsync(HospitalServer.Users.HospitalAdmin, deviceId, secret);
+            await RefusedAsync(there, HttpMethod.Get, "/api/v1/admin/users");
+            (await there.GetAsync<PagedResult<JsonElement>>("/api/v1/patients?pageSize=1")).ShouldNotBeNull();
+            var me = await there.GetAsync<AuthUser>("/api/v1/auth/me");
+            me.Permissions.ShouldNotContain(p => PlatformPermissions.IsAdministrative(p));
+            me.AdministrationNeedsDesktop.ShouldBeTrue();
+        }
+        finally
+        {
+            await it.PostAsync($"/api/v1/admin/devices/{deviceId}/revoke");
+        }
+    }
+
     [Fact]
     public async Task The_hospital_can_let_browsers_administer_too()
     {

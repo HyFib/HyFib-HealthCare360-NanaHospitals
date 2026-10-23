@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -36,6 +37,8 @@ public sealed class AdministrationOnDesktopTests
     {
         _desktops.RequiredAsync(Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(true));
         _desktops.EnrolledAsync(Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(true));
+        _desktops.AdministersFromAsync(Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(false));
+        _desktops.AdministersFromAsync(DeviceId, Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(true));
     }
 
     [Fact]
@@ -57,6 +60,27 @@ public sealed class AdministrationOnDesktopTests
 
         (await AuthorizeAsync(Desktop(), PlatformPermissions.UsersManage)).HasSucceeded.ShouldBeTrue();
     }
+
+    [Fact]
+    public async Task On_a_kiosk_or_queue_display_it_is_refused_as_in_a_browser()
+    {
+        Holds(PlatformPermissions.UsersManage);
+        var kiosk = Browser(new Claim(HcClaims.Device, Guid.NewGuid().ToString()));
+
+        var context = await AuthorizeAsync(kiosk, PlatformPermissions.UsersManage);
+
+        context.HasSucceeded.ShouldBeFalse();
+        context.FailureReasons.ShouldHaveSingleItem().ShouldBeOfType<DesktopRequired>();
+    }
+
+    [Theory]
+    [InlineData(DeviceKind.Workstation, true)]
+    [InlineData(DeviceKind.Tablet, true)]
+    [InlineData(DeviceKind.Kiosk, false)]
+    [InlineData(DeviceKind.DisplayBoard, false)]
+    [InlineData(DeviceKind.LabAgent, false)]
+    public void Only_workstations_and_tablets_administer(DeviceKind kind, bool administers) =>
+        AdministrationOnDesktop.Administers(kind).ShouldBe(administers);
 
     [Fact]
     public async Task Any_other_permission_the_endpoint_takes_is_enough_in_a_browser()

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -50,8 +51,11 @@ public static class AdministrationOnDesktop
         _ => null,
     };
 
-    /// <summary>The session was signed in on an enrolled HC360 Desktop.</summary>
-    public static bool OnDesktop(ClaimsPrincipal user) => Guid.TryParse(user.FindFirst(HcClaims.Device)?.Value, out _);
+    /// <summary>The enrolled HC360 Desktop the session was signed in on, if any (<see cref="IAdministrationDesktops.AdministersFromAsync"/> says whether it may administer).</summary>
+    public static Guid? DeviceOf(ClaimsPrincipal user) => Guid.TryParse(user.FindFirst(HcClaims.Device)?.Value, out var id) ? id : null;
+
+    /// <summary>The kinds of desktop someone administers the hospital from: not a shared kiosk or a queue display.</summary>
+    public static bool Administers(DeviceKind kind) => kind is DeviceKind.Workstation or DeviceKind.Tablet;
 
     /// <summary>
     /// What a session that is not on an enrolled desktop may use of what its user holds: every permission but the
@@ -94,10 +98,19 @@ public interface IAdministrationDesktops
 
     /// <summary>A workstation or tablet is enrolled, and not revoked: the first enrolment is over.</summary>
     ValueTask<bool> EnrolledAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The session's device (<see cref="AdministrationOnDesktop.DeviceOf"/>) is a workstation or tablet, where its user may
+    /// administer; a kiosk or queue display signs staff in too, but nobody administers from one.
+    /// </summary>
+    ValueTask<bool> AdministersFromAsync(Guid? deviceId, CancellationToken cancellationToken = default);
 }
 
 internal sealed class AdministrationDesktops(IServiceScopeFactory scopeFactory, IOptions<PlatformOptions> options) : IAdministrationDesktops
 {
+    // A device's kind is set when it is enrolled and never changes; revoking it ends its sessions (SessionValidator).
+    private readonly ConcurrentDictionary<Guid, bool> _administers = new();
+
     public async ValueTask<bool> RequiredAsync(CancellationToken cancellationToken = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -118,6 +131,29 @@ internal sealed class AdministrationDesktops(IServiceScopeFactory scopeFactory, 
         await using var scope = scopeFactory.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Device>()
             .AnyAsync(d => !d.IsRevoked && (d.Kind == DeviceKind.Workstation || d.Kind == DeviceKind.Tablet), cancellationToken);
+    }
+
+    public async ValueTask<bool> AdministersFromAsync(Guid? deviceId, CancellationToken cancellationToken = default)
+    {
+        if (deviceId is not { } id)
+        {
+            return false;
+        }
+
+        if (_administers.TryGetValue(id, out var administers))
+        {
+            return administers;
+        }
+
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var kind = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Device>()
+            .Where(d => d.Id == id).Select(d => (DeviceKind?)d.Kind).FirstOrDefaultAsync(cancellationToken);
+        if (kind is null)
+        {
+            return false;
+        }
+
+        return _administers[id] = AdministrationOnDesktop.Administers(kind.Value);
     }
 }
 

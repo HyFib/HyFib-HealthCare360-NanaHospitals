@@ -1286,8 +1286,10 @@ public sealed class AuthService(
         // server refuses the requests themselves (SessionLock).
         var held = restriction is null or RestrictionLocked ? await permissions.GetPermissionsAsync(user.Id, ct) : new HashSet<string>();
 
-        // The app is given what the server allows the session: administration only on an enrolled desktop (SRS SEC-08).
-        var granted = deviceId is null && held.Any(PlatformPermissions.IsAdministrative) && await administrationDesktops.RequiredAsync(ct)
+        // The app is given what the server allows the session: administration only on an enrolled workstation or tablet
+        // (SRS SEC-08).
+        var granted = held.Any(PlatformPermissions.IsAdministrative) && await administrationDesktops.RequiredAsync(ct)
+                      && !await administrationDesktops.AdministersFromAsync(deviceId, ct)
             ? AdministrationOnDesktop.Elsewhere(held, permissionRegistry, firstEnrolment: !await administrationDesktops.EnrolledAsync(ct))
             : held;
         var facilities = await AllowedFacilitiesAsync(user, roles, ct);
