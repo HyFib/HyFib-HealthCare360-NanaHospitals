@@ -1,7 +1,9 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
@@ -25,7 +27,7 @@ public sealed class AbdmDocumentTests
 {
     private static R4.Bundle Build(AbdmDocument document) => AbdmDocumentBuilder.Build(document);
 
-    private static readonly string[] Samples = ["prescription", "op-consultation", "lab-report", "radiology-report", "discharge-summary"];
+    private static readonly string[] Samples = ["prescription", "op-consultation", "lab-report", "radiology-report", "cardiology-report", "discharge-summary"];
 
     public static TheoryData<string> RecordTypes => new(Samples);
 
@@ -35,6 +37,7 @@ public sealed class AbdmDocumentTests
         "op-consultation" => Build(AbdmRecords.Consultation(AbdmTestData.ConsultationRecord())),
         "lab-report" => Build(AbdmRecords.LabReport(AbdmTestData.LabReportRecord(AbdmTestData.Pdf))),
         "radiology-report" => Build(AbdmRecords.RadiologyReport(AbdmTestData.RadiologyReportRecord(AbdmTestData.Pdf))),
+        "cardiology-report" => Build(AbdmRecords.CardiologyReport(AbdmTestData.CardiologyReportRecord(AbdmTestData.Pdf))),
         _ => Build(AbdmRecords.DischargeSummary(AbdmTestData.DischargeSummaryRecord(pdf: null))),
     };
 
@@ -103,6 +106,7 @@ public sealed class AbdmDocumentTests
     [InlineData("op-consultation", AbdmProfiles.OpConsultRecord, "371530004", "Clinical consultation report")]
     [InlineData("lab-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
     [InlineData("radiology-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
+    [InlineData("cardiology-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
     [InlineData("discharge-summary", AbdmProfiles.DischargeSummaryRecord, "373942005", "Discharge summary")]
     public void The_composition_is_typed_with_the_snomed_code_the_ig_fixes(string name, string profile, string code, string display)
     {
@@ -463,6 +467,68 @@ public sealed class AbdmDocumentTests
         // A draft, a report waiting for sign-off and one signed off but not released are still the radiologists' work.
         AbdmRecordLoader.RadiologyReportNotExportable(status).ShouldBe("Only a released radiology report can be exported.");
         AbdmRecordLoader.RadiologyReportNotExportable(DiagnosticReportStatus.Released).ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(DiagnosticReportStatus.Draft)]
+    [InlineData(DiagnosticReportStatus.Reported)]
+    [InlineData(DiagnosticReportStatus.Verified)]
+    public void A_cardiology_report_is_exported_only_once_released(DiagnosticReportStatus status)
+    {
+        AbdmRecordLoader.CardiologyReportNotExportable(status).ShouldBe("Only a released cardiology report can be exported.");
+        AbdmRecordLoader.CardiologyReportNotExportable(DiagnosticReportStatus.Released).ShouldBeNull();
+    }
+
+    [Fact]
+    public void An_ecg_report_is_an_imaging_report_of_the_cardiology_department_with_no_imaging_study()
+    {
+        var bundle = Sample("cardiology-report");
+        var report = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().ShouldHaveSingleItem();
+
+        report.Meta.Profile.ShouldBe([AbdmProfiles.DiagnosticReportImaging]);
+        var category = report.Category.ShouldHaveSingleItem().Coding.ShouldHaveSingleItem();
+        (category.System, category.Code, category.Display).ShouldBe(("http://snomed.info/sct", "394579002", "Cardiology"));
+        var code = report.Code.Coding.ShouldHaveSingleItem();
+        (code.System, code.Code, code.Display).ShouldBe(("http://loinc.org", "11524-6", "EKG study"));
+        report.ImagingStudy.ShouldBeEmpty("an ECG is a recording, not an imaging study");
+        bundle.Entry.Select(e => e.Resource).OfType<R4.ImagingStudy>().ShouldBeEmpty();
+        report.Conclusion.ShouldBe("Normal sinus rhythm. No ST-T changes.");
+        report.PresentedForm.ShouldContain(f => f.ContentType == "text/plain; charset=utf-8");
+        Encoding.UTF8.GetString(report.PresentedForm.First(f => f.ContentType == "text/plain; charset=utf-8").Data).ShouldContain("QTc interval: 420 ms");
+
+        // The cardiologist who wrote and signed it off interprets it once, is the author and attests the document.
+        var cardiologist = FullUrl<R4.Practitioner>(bundle, p => p.Name[0].Text == "Dr. Vikram Shah");
+        report.ResultsInterpreter.ShouldHaveSingleItem().Reference.ShouldBe(cardiologist);
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        composition.Status.ShouldBe(R4.CompositionStatus.Final);
+        composition.Author.ShouldHaveSingleItem().Reference.ShouldBe(cardiologist);
+        composition.Attester.ShouldHaveSingleItem().Party.Reference.ShouldBe(cardiologist);
+    }
+
+    [Theory]
+    [InlineData(CardiologyStudyType.Ecg, "ECG 12 lead", "11524-6")]
+    [InlineData(CardiologyStudyType.Echo, "2D echocardiography with colour Doppler", "59281-6")]
+    [InlineData(CardiologyStudyType.Echo, "Transoesophageal echocardiography", null)]
+    [InlineData(CardiologyStudyType.Echo, "TEE", null)]
+    [InlineData(CardiologyStudyType.Tmt, "Treadmill test", "18752-6")]
+    [InlineData(CardiologyStudyType.Holter, "Holter monitoring 24 hours", "18754-2")]
+    [InlineData(CardiologyStudyType.Abpm, "Ambulatory BP monitoring", null)]
+    [InlineData(CardiologyStudyType.Other, "Cardiac event recorder", null)]
+    public void Each_cardiology_study_is_coded_with_the_loinc_study_it_is_where_loinc_names_one(CardiologyStudyType type, string name, string? loinc)
+    {
+        var data = AbdmTestData.CardiologyReportRecord(pdf: AbdmTestData.Pdf);
+        var bundle = Build(AbdmRecords.CardiologyReport(data with { Report = data.Report with { StudyType = type, StudyName = name } }));
+        var report = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().ShouldHaveSingleItem();
+
+        report.Code.Coding.Select(c => c.Code).ShouldBe(loinc is null ? [] : [loinc]);
+        report.Code.Text.ShouldBe(name);
+
+        // The printed copy is typed with the same study, else with LOINC's cardiology studies.
+        var pdf = bundle.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().ShouldHaveSingleItem();
+        pdf.Type.Coding.ShouldHaveSingleItem().Code.ShouldBe(loinc ?? "26441-6");
+        var validation = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+        validation.Errors.ShouldBeEmpty(validation.Describe());
+        validation.Warnings.ShouldBeEmpty(validation.Describe());
     }
 
     [Fact]

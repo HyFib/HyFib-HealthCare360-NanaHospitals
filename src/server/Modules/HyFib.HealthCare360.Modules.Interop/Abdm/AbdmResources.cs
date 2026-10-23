@@ -266,23 +266,26 @@ internal static class AbdmProfiler
     }
 
     /// <summary>
-    /// A radiology report: the IG's DiagnosticReportImaging profile wants a SNOMED CT service section, LOINC codings only,
-    /// who interpreted the study (<paramref name="interpreters"/>: the radiologists, else the hospital, which performed the
-    /// study and issues the report), the study (<paramref name="study"/>), a conclusion and at least one key image
+    /// A radiology or cardiology report: the IG's DiagnosticReportImaging profile, which it gives to "imaging services like
+    /// Radiology, Cardiology, Endoscopy", wants a SNOMED CT service section (<paramref name="service"/>), LOINC codings
+    /// only, who interpreted the study (<paramref name="interpreters"/>: the radiologists or cardiologists, else the
+    /// hospital, which performed the study and issues the report), the imaging study if there is one (<paramref name="study"/>:
+    /// an ECG, TMT or Holter is a recording, not one), a conclusion and at least one key image
     /// (<c>media</c>). HC360 keeps no key images: the images stay in the hospital's PACS, which the imaging study names, and
     /// no one marks key images among them. So the one media entry says there is none, with the reason FHIR gives a
     /// required element the source system cannot fill (data-absent-reason <c>unsupported</c>), rather than carrying
     /// something that is not a key image of the study.
     /// </summary>
     public static R4.DiagnosticReport ImagingReport(
-        R4.DiagnosticReport report, R4.ResourceReference hospital, IReadOnlyList<R4.ResourceReference> interpreters, R4.ResourceReference study)
+        R4.DiagnosticReport report, AbdmCode service, R4.ResourceReference hospital, IReadOnlyList<R4.ResourceReference> interpreters,
+        R4.ResourceReference? study)
     {
         report.Meta = Profile(report.Meta, AbdmProfiles.DiagnosticReportImaging);
-        report.Category = [AbdmCodes.RadiologyService.Concept("Radiology")];
+        report.Category = [service.Concept(service.Display)];
         Codings(report.Code, [FhirSystems.Loinc]);
         report.Performer = [Copy(hospital)];
         report.ResultsInterpreter = interpreters.Count > 0 ? [.. interpreters.Select(Copy)] : [Copy(hospital)];
-        report.ImagingStudy = [Copy(study)];
+        report.ImagingStudy = study is null ? [] : [Copy(study)];
         // A reference to nothing still says what it stands for (the HL7 validator warns on one without a display).
         var noImage = new R4.ResourceReference { Display = "No key image" };
         noImage.Extension.Add(new R4.Extension(AbdmSystems.DataAbsentReason, new R4.Code("unsupported")));

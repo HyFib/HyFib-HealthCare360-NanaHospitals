@@ -338,11 +338,12 @@ internal sealed record RadiologyReportRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
-/// <summary>Released cardiology report with its study.</summary>
+/// <summary>Released cardiology report with its study, and who wrote it and signed it off (user ids).</summary>
 internal sealed record CardiologyReportRow
 {
     public required Guid Id { get; init; }
     public required Guid PatientId { get; init; }
+    public Guid CardiologyStudyId { get; init; }
     public Guid? VisitId { get; init; }
     public string AccessionNumber { get; init; } = string.Empty;
     public string ServiceCode { get; init; } = string.Empty;
@@ -359,6 +360,9 @@ internal sealed record CardiologyReportRow
     public string? Conclusion { get; init; }
     public string? Recommendations { get; init; }
     public bool IsCriticalFinding { get; init; }
+    public Guid? ReportedBy { get; init; }
+    public Guid? VerifiedBy { get; init; }
+    public DateTimeOffset? VerifiedAt { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }

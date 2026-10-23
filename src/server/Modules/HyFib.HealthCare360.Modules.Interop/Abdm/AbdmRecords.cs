@@ -64,6 +64,12 @@ internal sealed record LabReportData(AbdmContext Context, LabReportRow Report, I
 /// </summary>
 internal sealed record RadiologyReportData(AbdmContext Context, RadiologyReportRow Report, IReadOnlyDictionary<Guid, Guid> Doctors);
 
+/// <summary>
+/// A released cardiology report with its study, and the doctors of the users who wrote it and signed it off (user id to
+/// practitioner id: a user who is not a doctor is not in it).
+/// </summary>
+internal sealed record CardiologyReportData(AbdmContext Context, CardiologyReportRow Report, IReadOnlyDictionary<Guid, Guid> Doctors);
+
 /// <summary>The signed consultation note of a clinician's encounter.</summary>
 internal sealed record ConsultationNote
 {
@@ -342,7 +348,8 @@ internal static class AbdmRecords
         ];
 
         var study = Study(row, interpreters);
-        var report = AbdmProfiler.ImagingReport(DiagnosticReportMapper.FromRadiology(row), people.Names.Organization(d.Context.FacilityId)!, interpreters,
+        var report = AbdmProfiler.ImagingReport(DiagnosticReportMapper.FromRadiology(row), AbdmCodes.RadiologyService,
+            people.Names.Organization(d.Context.FacilityId)!, interpreters,
             new R4.ResourceReference($"ImagingStudy/{study.Id}") { Type = "ImagingStudy", Display = row.StudyName });
 
         // This version was issued when the report was released, or amended by its latest addendum, and its text is as of then.
@@ -656,6 +663,76 @@ internal static class AbdmRecords
         var report = AbdmProfiler.LabReport(DiagnosticReportMapper.FromLab(row), laboratory, observations);
         return (report, observations);
     }
+
+    /// <summary>
+    /// A released cardiology report (DiagnosticReportRecord): an ECG, echo, TMT, Holter or ABPM report as the IG's
+    /// DiagnosticReportImaging, which it gives to cardiology as to radiology, with the cardiology department's service
+    /// section and the LOINC study it is of where LOINC names one (<see cref="DiagnosticReportMapper.CardiologyStudyCoding"/>);
+    /// the measurements are in its text, as on the printed report. An ECG, a TMT or a Holter is a recording, not an imaging
+    /// study, and HC360 keeps no echo series UIDs, so the report names no ImagingStudy. The hospital performed the study and
+    /// issues the report; the cardiologists who wrote it and signed it off interpret it, and the one who signed it off is
+    /// the author and attests it. A released cardiology report is not changed afterwards, so the document is final.
+    /// </summary>
+    public static AbdmDocument CardiologyReport(CardiologyReportData d)
+    {
+        var row = d.Report;
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        var date = row.ReleasedAt ?? row.VerifiedAt ?? row.CreatedAt;
+
+        Guid? DoctorOf(Guid? user) => user is { } id && d.Doctors.TryGetValue(id, out var practitioner) ? practitioner : null;
+        var signer = people.Find(DoctorOf(row.VerifiedBy));
+
+        // Whoever wrote the report or signed it off interpreted the study: each once, in that order.
+        List<R4.ResourceReference> interpreters =
+        [
+            .. new[] { row.ReportedBy, row.VerifiedBy }.Select(DoctorOf).OfType<Guid>().Distinct()
+                .Select(id => people.Names.Practitioner(id)).OfType<R4.ResourceReference>(),
+        ];
+
+        var report = AbdmProfiler.ImagingReport(DiagnosticReportMapper.FromCardiology(row), AbdmCodes.CardiologyService,
+            people.Names.Organization(d.Context.FacilityId)!, interpreters, study: null);
+        report.Issued = FhirTime.ToMilliseconds(date);
+        foreach (var form in report.PresentedForm)
+        {
+            form.Creation = FhirTime.DateTime(date);
+        }
+
+        List<R4.Resource> entries = [report];
+        if (d.Context.Pdf is { } pdf)
+        {
+            var study = DiagnosticReportMapper.CardiologyStudyCoding(row.StudyType, row.StudyName);
+            entries.Add(PdfDocument(FhirIds.Of(FhirIds.Cardiology, row.Id), d.Context.Patient.Id, pdf,
+                study is null
+                    ? FhirElements.Concept(FhirSystems.Loinc, CardiologyStudiesLoinc, "Cardiology studies (set)", "Cardiology report")
+                    : FhirElements.Concept(FhirSystems.Loinc, study.Code!, study.Display, "Cardiology report"),
+                R4.CompositionStatus.Final, date, people.Names.Organization(d.Context.FacilityId), Reference(d.Context)));
+        }
+
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.CardiologyReport,
+            FileName = AbdmFiles.Name("cardiology-report", row.AccessionNumber),
+            SourceId = row.Id,
+            Profile = AbdmProfiles.DiagnosticReportRecord,
+            DocumentType = AbdmCodes.DiagnosticStudiesReport,
+            Title = "Cardiology report",
+            Status = R4.CompositionStatus.Final,
+            Date = date,
+            RecordUpdated = FhirElements.Latest(row.CreatedAt, [row.UpdatedAt]),
+            Patient = Patient(d.Context, people, [row.PatientId]),
+            Encounter = Encounter(d.Context, people),
+            Author = (R4.Resource?)signer ?? (R4.Resource?)people.Find(DoctorOf(row.ReportedBy)) ?? hospital,
+            Attester = signer,
+            AttestedAt = row.VerifiedAt,
+            Custodian = hospital,
+            Sections = [new AbdmSection(AbdmCodes.ImagingReport, "Cardiology report", [], entries)],
+            Supporting = [.. people.All],
+        };
+    }
+
+    /// <summary>LOINC's document type for cardiology studies, for the printed copy of one LOINC names no study for.</summary>
+    private const string CardiologyStudiesLoinc = "26441-6";
 
     /// <summary>
     /// The study a radiology report is of (the IG's ImagingStudy): its accession number and, once PACS holds its images,

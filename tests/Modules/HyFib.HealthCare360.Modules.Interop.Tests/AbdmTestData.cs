@@ -1,5 +1,6 @@
 using System.Text;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
@@ -42,6 +43,11 @@ internal static class AbdmTestData
     public static readonly Guid RadiologistUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab010");
     public static readonly Guid ResidentUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab011");
     public static readonly Guid ClerkUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab012");
+
+    /// <summary>An ECG report and its study, and the user account of the cardiologist (<see cref="CardiologistId"/>) who signed it off.</summary>
+    public static readonly Guid CardiologyReportId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab013");
+    public static readonly Guid CardiologyStudyId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab014");
+    public static readonly Guid CardiologistUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab015");
 
     private static readonly DateTimeOffset Seen = TestData.Now.AddHours(-2);
     private static readonly DateTimeOffset Admitted = TestData.Now.AddDays(-20);
@@ -363,6 +369,45 @@ internal static class AbdmTestData
 
     public static RadiologyReportData RadiologyReportRecord(AbdmPdf? pdf) =>
         new(Context(visit: OpVisit(), pdf: pdf), RadiologyReport(), RadiologyDoctors);
+
+    /// <summary>A resting 12-lead ECG of the out-patient visit, recorded by a technician and reported and signed off by the cardiologist.</summary>
+    public static CardiologyReportRow EcgReport() => new()
+    {
+        Id = CardiologyReportId,
+        PatientId = TestData.PatientId,
+        CardiologyStudyId = CardiologyStudyId,
+        VisitId = OpVisitId,
+        AccessionNumber = "NHCD2600031",
+        ServiceCode = "CARD-ECG",
+        StudyName = "ECG 12 lead",
+        StudyType = CardiologyStudyType.Ecg,
+        OrderedAt = Seen.AddMinutes(20),
+        AcquiredAt = Seen.AddMinutes(35),
+        Ecg = new EcgFindings
+        {
+            HeartRate = 78,
+            Rhythm = "Sinus rhythm",
+            PrInterval = 160,
+            QrsDuration = 88,
+            QtInterval = 380,
+            QtcInterval = 420,
+            Axis = "Normal",
+            StTChanges = "None",
+            Interpretation = "Normal ECG",
+        },
+        Conclusion = "Normal sinus rhythm. No ST-T changes.",
+        ReportedBy = CardiologistUserId,
+        VerifiedBy = CardiologistUserId,
+        VerifiedAt = TestData.Now.AddMinutes(-40),
+        ReleasedAt = TestData.Now.AddMinutes(-38),
+        CreatedAt = Seen.AddMinutes(40),
+        UpdatedAt = TestData.Now.AddMinutes(-38),
+    };
+
+    public static IReadOnlyDictionary<Guid, Guid> CardiologyDoctors { get; } = new Dictionary<Guid, Guid> { [CardiologistUserId] = CardiologistId };
+
+    public static CardiologyReportData CardiologyReportRecord(AbdmPdf? pdf) =>
+        new(Context(visit: OpVisit(), pdf: pdf), EcgReport(), CardiologyDoctors);
 
     public static VisitRow StayVisit() => new()
     {

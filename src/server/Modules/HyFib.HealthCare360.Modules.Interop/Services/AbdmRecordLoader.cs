@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
@@ -48,6 +49,7 @@ internal sealed class AbdmRecordLoader(
     private const string DischargeSummaryPdf = "clinical.discharge-summary";
     private const string LabReportPdf = "diagnostics.lab-report";
     private const string RadiologyReportPdf = "diagnostics.radiology-report";
+    private const string CardiologyReportPdf = "diagnostics.cardiology-report";
 
     private EncounterProvider Encounters => Provider<EncounterProvider>();
     private ConditionProvider Conditions => Provider<ConditionProvider>();
@@ -87,6 +89,13 @@ internal sealed class AbdmRecordLoader(
                 return row is null ? NotFound(type, id) : new AbdmSource(row.PatientId, row.FacilityId, RadiologyReportNotExportable(row.Status));
             }
 
+            case AbdmRecordType.CardiologyReport:
+            {
+                var row = await db.Set<CardiologyReport>().AsNoTracking().Where(r => r.Id == id)
+                    .Select(r => new { r.PatientId, r.FacilityId, r.Status }).FirstOrDefaultAsync(ct);
+                return row is null ? NotFound(type, id) : new AbdmSource(row.PatientId, row.FacilityId, CardiologyReportNotExportable(row.Status));
+            }
+
             case AbdmRecordType.OpConsultation:
             {
                 var row = await db.Set<ClinicalEncounter>().AsNoTracking().Where(e => e.Id == id)
@@ -117,6 +126,7 @@ internal sealed class AbdmRecordLoader(
             AbdmRecordType.Prescription => nameof(Prescription),
             AbdmRecordType.LabReport => nameof(LabReport),
             AbdmRecordType.RadiologyReport => nameof(RadiologyReport),
+            AbdmRecordType.CardiologyReport => nameof(CardiologyReport),
             AbdmRecordType.OpConsultation => "Encounter",
             _ => nameof(DischargeSummary),
         },
@@ -128,6 +138,10 @@ internal sealed class AbdmRecordLoader(
     /// </summary>
     internal static string? RadiologyReportNotExportable(DiagnosticReportStatus status) =>
         status == DiagnosticReportStatus.Released ? null : "Only a released radiology report can be exported.";
+
+    /// <summary>Why a cardiology report is not exported: as a radiology report, only a released one is the hospital's report.</summary>
+    internal static string? CardiologyReportNotExportable(DiagnosticReportStatus status) =>
+        status == DiagnosticReportStatus.Released ? null : "Only a released cardiology report can be exported.";
 
     /// <summary>
     /// The patients under whom records the document would hold are kept, besides the record's own: for a discharge
@@ -155,6 +169,7 @@ internal sealed class AbdmRecordLoader(
         AbdmRecordType.Prescription => PrescriptionAsync(id, source, ct),
         AbdmRecordType.LabReport => LabReportAsync(id, source, ct),
         AbdmRecordType.RadiologyReport => RadiologyReportAsync(id, source, ct),
+        AbdmRecordType.CardiologyReport => CardiologyReportAsync(id, source, ct),
         AbdmRecordType.OpConsultation => ConsultationAsync(id, source, ct),
         _ => DischargeSummaryAsync(id, source, ct),
     };
@@ -320,6 +335,17 @@ internal sealed class AbdmRecordLoader(
 
     /// <summary>The released lab reports ordered in a stay's visit, under whichever UHID they are kept.</summary>
     private IQueryable<LabReportRow> StayReports(Guid stayVisit) => Reports.LabReports(r => true).Where(r => r.VisitId == stayVisit);
+
+    private async Task<AbdmDocument> CardiologyReportAsync(Guid id, AbdmSource source, CancellationToken ct)
+    {
+        var report = (await Reports.CardiologyRowsAsync(r => r.Id == id, ct)).Single();
+        var doctors = await DoctorsAsync([report.ReportedBy, report.VerifiedBy], ct);
+        var (visit, encounter) = await EncounterRowsAsync(null, report.VisitId, null, ct);
+
+        // The printed report is made from its study, as everything in cardiology is.
+        var context = await ContextAsync(source, visit, encounter, [.. doctors.Values.Select(p => (Guid?)p)], [], [], CardiologyReportPdf, report.CardiologyStudyId, ct);
+        return AbdmRecords.CardiologyReport(new CardiologyReportData(context, report, doctors));
+    }
 
     /// <summary>
     /// The doctors of the users who wrote, signed off or added to a report (user id to practitioner id): a user who is not

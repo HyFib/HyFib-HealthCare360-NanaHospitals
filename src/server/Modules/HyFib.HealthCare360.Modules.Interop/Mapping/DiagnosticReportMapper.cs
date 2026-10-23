@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
@@ -24,6 +25,9 @@ internal static class DiagnosticReportMapper
     public const string LaboratoryReportLoinc = "11502-2";
     public const string ImagingStudyLoinc = "18748-4";
     public const string EcgLoinc = "11524-6";
+    public const string EchoLoinc = "59281-6";
+    public const string ExerciseStressTestLoinc = "18752-6";
+    public const string HolterLoinc = "18754-2";
 
     public static R4.DiagnosticReport FromLab(LabReportRow r)
     {
@@ -80,9 +84,9 @@ internal static class DiagnosticReportMapper
     public static R4.DiagnosticReport FromCardiology(CardiologyReportRow r)
     {
         var code = new R4.CodeableConcept { Text = r.StudyName };
-        if (r.StudyType == CardiologyStudyType.Ecg)
+        if (CardiologyStudyCoding(r.StudyType, r.StudyName) is { } study)
         {
-            code.Coding.Add(FhirElements.Coding(FhirSystems.Loinc, EcgLoinc, "EKG study"));
+            code.Coding.Add(study);
         }
 
         code.Coding.Add(ServiceCoding(r.ServiceCode, r.StudyName));
@@ -104,6 +108,25 @@ internal static class DiagnosticReportMapper
         report.Identifier.Add(Accession(r.AccessionNumber));
         return report;
     }
+
+    /// <summary>
+    /// The LOINC study a cardiology report is of, with LOINC's name for it: an ECG, a transthoracic echo (the hospital's
+    /// "2D echo"; a transoesophageal one is another LOINC study, so it gets none here rather than a wrong one), an exercise
+    /// stress test (TMT) or a Holter monitor study. None for ambulatory blood pressure monitoring or any other study.
+    /// </summary>
+    public static R4.Coding? CardiologyStudyCoding(CardiologyStudyType type, string studyName) => type switch
+    {
+        CardiologyStudyType.Ecg => FhirElements.Coding(FhirSystems.Loinc, EcgLoinc, "EKG study"),
+        CardiologyStudyType.Echo when !Transoesophageal(studyName) =>
+            FhirElements.Coding(FhirSystems.Loinc, EchoLoinc, "Transthoracic cardiac echo study report US"),
+        CardiologyStudyType.Tmt => FhirElements.Coding(FhirSystems.Loinc, ExerciseStressTestLoinc, "Exercise stress test study"),
+        CardiologyStudyType.Holter => FhirElements.Coding(FhirSystems.Loinc, HolterLoinc, "Holter monitor study"),
+        _ => null,
+    };
+
+    private static bool Transoesophageal(string studyName) =>
+        studyName.Contains("oesophag", StringComparison.OrdinalIgnoreCase) || studyName.Contains("esophag", StringComparison.OrdinalIgnoreCase)
+        || Regex.IsMatch(studyName, @"\bTEE\b", RegexOptions.IgnoreCase);
 
     /// <summary>Diagnostic service section (v2-0074): EC for ECG, Holter and TMT, CUS for echo, OTH otherwise.</summary>
     public static R4.CodeableConcept CardiologySection(CardiologyStudyType type) => type switch

@@ -5,7 +5,7 @@ Read-only HL7 FHIR R4 API that lets other providers read a patient's record, **s
 and DocumentReference under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only
 and writes nothing.
 
-It also exports discharge summaries, lab reports, radiology reports, consultation notes and prescriptions as **ABDM health records**
+It also exports discharge summaries, lab reports, radiology and cardiology reports, consultation notes and prescriptions as **ABDM health records**
 (SRS **EHR-08**): FHIR documents of the NRCeS implementation guide for the Ayushman Bharat Digital Mission, carrying the
 patient's ABHA number, behind the `features.abdm` switch, which is **off** until an administrator turns it on
 ([ABDM health records](#abdm-health-records-ehr-08)). The ABDM gateway that would send them is set up in settings but not
@@ -15,7 +15,7 @@ live.
 |---|---|
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.Interop` (layer 8; references Patients, Clinical, Diagnostics and Inpatient) |
 | Schema | none. The module owns no tables and reads the other modules' entities through `HospitalDbContext` (no migration) |
-| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08, **partly met**: ABHA capture and the ABDM document export of consultations, prescriptions, lab reports, radiology reports and discharge summaries are built; verifying an ABHA with ABDM and linking care contexts to it need the ABDM gateway (the hospital's NHA credentials, not live), and cardiology reports are not exported yet |
+| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08, **partly met**: ABHA capture and the ABDM document export of consultations, prescriptions, lab reports, radiology and cardiology reports and discharge summaries are built; verifying an ABHA with ABDM and linking care contexts to it need the ABDM gateway (the hospital's NHA credentials, not live) |
 | Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, referral laboratories, the validated samples in `Fixtures/Abdm`), `AbdmDocumentVersionTests` (a document as of its record, its PDF made again, the order of rows, the PDF rule), `ValidatorSetupTests` (`Abdm/`: the Firely validator set-up, see [Validation](#validation)) and `AbdmGatewayTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example ids, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, read-only), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate (a restricted one at either end of the merge, in a discharge summary, the survivor deleted), an ABHA number a merge links, a later allergy left out of a signed note, the LOINC name rule, the download's file and the DSC rule, every downloaded document validated), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts`, `modules/emr/AbdmRecordButton.test.tsx`, `modules/emr/abdmRecords.test.tsx` |
 
 ## Permission and set-up
@@ -23,7 +23,7 @@ live.
 | Permission | Purpose | Default roles |
 |---|---|---|
 | `fhir.read` | Read and search patient records through the FHIR API (patients with record-sharing consent only; every access is audited) | HospitalAdmin |
-| `abdm.export` | Export discharge summaries, lab reports, radiology reports, consultation notes and prescriptions as ABDM health records (every export is audited). Staff only: it does not check the record-sharing consent, so never give it to an integration service account | HospitalAdmin, MrdOfficer |
+| `abdm.export` | Export discharge summaries, lab reports, radiology and cardiology reports, consultation notes and prescriptions as ABDM health records (every export is audited). Staff only: it does not check the record-sharing consent, so never give it to an integration service account | HospitalAdmin, MrdOfficer |
 
 Integration partners (a referral hospital, a health information exchange) get their own service user:
 
@@ -247,7 +247,9 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
   impression, then each addendum with its time (an addendum may correct the impression, and a reader may see only the
   conclusion); `presentedForm` = the whole report as UTF-8 text (study, modality, body part, technique, history,
   comparison, findings, impression, addenda); `appended` once addenda exist.
-* Cardiology (`card-`): category EC (ECG, Holter, TMT), CUS (echo) or OTH; ECG also coded LOINC 11524-6;
+* Cardiology (`card-`): category EC (ECG, Holter, TMT), CUS (echo) or OTH; coded with the LOINC study where LOINC names
+  one: 11524-6 EKG study, 59281-6 Transthoracic cardiac echo study report (not for a transoesophageal echo), 18752-6
+  Exercise stress test study (TMT), 18754-2 Holter monitor study (none for ABPM or other studies);
   `conclusion` and the study type's measurements as text (ECG intervals, LVEF, TMT, Holter, ABPM).
 
 ### DocumentReference
@@ -294,6 +296,7 @@ ABHA numbers, end in).
 | GET | `/bundles/discharge-summaries/{id}` | `abdm.export` | DischargeSummaryRecord document of a signed or amended discharge summary, as `discharge-summary-{UHID}-{discharge date}-abdm.json` |
 | GET | `/bundles/lab-reports/{id}` | `abdm.export` | DiagnosticReportRecord document of a released (or amended) lab report, as `lab-report-{report number}-abdm.json` |
 | GET | `/bundles/radiology-reports/{id}` | `abdm.export` | DiagnosticReportRecord document of a released radiology report (the report's id), as `radiology-report-{accession number}-abdm.json`; amended once an addendum is added after the release |
+| GET | `/bundles/cardiology-reports/{id}` | `abdm.export` | DiagnosticReportRecord document of a released ECG, echo, TMT, Holter or ABPM report (the report's id), as `cardiology-report-{accession number}-abdm.json` |
 | GET | `/bundles/op-consultations/{id}` | `abdm.export` | OPConsultRecord document of a signed out-patient, emergency, telehealth or health check-up consultation (clinical encounter id), as `consultation-{UHID}-{date}-abdm.json` |
 | GET | `/bundles/prescriptions/{id}` | `abdm.export` | PrescriptionRecord document of a signed prescription, as `prescription-{number}-abdm.json` |
 | GET | `/gateway` | `admin.integrations.manage` (no role has it by default: the super administrator) | `AbdmGatewayStatus`: how the gateway is set up, what is missing, `live: false` and what remains |
@@ -310,7 +313,7 @@ ABHA numbers, end in).
   the stay's discharge summary). A prescription is a copy of the prescription like its printout, so where the facility
   requires the doctor's DSC and the prescription has no valid one it is refused with the printout's codes: 422
   `prescription.digital_signature_required`, `…_untrusted` or `…_invalid` ([clinical.md](clinical.md)).
-* A record still kept under a duplicate UHID that was merged into another patient (a lab or radiology report: the Diagnostics module
+* A record still kept under a duplicate UHID that was merged into another patient (a lab, radiology or cardiology report: the Diagnostics module
   leaves its records where they are) is exported as the surviving patient's, with that patient's UHID and ABHA and the
   duplicate's UHID as an old one (its printed copy names it), once every patient on the way may be opened (a
   restricted patient at either end needs the permission). A discharge summary holds the stay's lab reports kept under
@@ -347,6 +350,7 @@ profiles.
 | Prescription | `PrescriptionRecord`, SNOMED CT 440545006 "Prescription record" | 440545006: one MedicationRequest per medicine, and the printed PDF as Binary; advice as text |
 | Lab report | `DiagnosticReportRecord`, SNOMED CT 721981007 "Diagnostic studies report" | 4241000179101 "Laboratory report": the DiagnosticReport (results as Observations) and the printed PDF as DocumentReference. The laboratory (facility) is the author |
 | Radiology report | `DiagnosticReportRecord`, SNOMED CT 721981007 "Diagnostic studies report" | 4201000179104 "Imaging report" (the parent of the IG's per-modality imaging report codes, so it fits every modality): the DiagnosticReport (`DiagnosticReportImaging`, with its ImagingStudy) and the printed PDF as DocumentReference. The radiologist who signed it off is the author and attester; an addendum after the release makes it `amended`, with the doctor who added the latest one as a second author and the attester from then (no one when that user is not a doctor). An addendum before the release is part of the report as first released |
+| Cardiology report | `DiagnosticReportRecord`, SNOMED CT 721981007 "Diagnostic studies report" | 4201000179104 "Imaging report", as for radiology: the IG's DiagnosticReportRecord takes a DiagnosticReportLab or a DiagnosticReportImaging, and gives the imaging one to "imaging services like Radiology, Cardiology, Endoscopy". The DiagnosticReport (`DiagnosticReportImaging`, with no ImagingStudy: an ECG, TMT or Holter is a recording, and HC360 keeps no echo series UIDs) and the printed PDF as DocumentReference, typed with the report's LOINC study, else LOINC 26441-6 "Cardiology studies (set)". The cardiologist who signed it off is the author and attester; a released cardiology report is not changed afterwards, so the document is final |
 | Consultation | `OPConsultRecord`, SNOMED CT 371530004 "Clinical consultation report" | 422843007 chief complaint: Conditions; 371529009 medical history (HPI); 425044008 physical examination: vital-sign Observations; 722446000 allergies; 721912009 medications: MedicationRequests; 390906007 follow-up; 306206005 referral; then LOINC 51847-2 assessment and plan (the IG has no such section; its slicing is open) |
 | Discharge summary | `DischargeSummaryRecord`, SNOMED CT 373942005 "Discharge summary" | 422843007 complaints and diagnoses: the stay's Conditions; 722446000 allergies; 721981007 investigations: the stay's lab DiagnosticReports; 1003606003 medications: the doctor's medicines on discharge as text, then the MedicationRequests prescribed during the stay; 1003640003 procedures; 734163000 care plan (advice, follow-up); 373942005 the summary as DocumentReference (the printed PDF, else the summary's text); then LOINC 8648-8 hospital course |
 
@@ -371,6 +375,7 @@ narrative must read safely on its own.
 | Observation | `ObservationVitalSigns`, `ObservationBodyMeasurement` (weight, height, BMI) or `Observation` (lab results, pain, GCS) | LOINC (and SNOMED CT) codings only, and only with the code system's own display, which the IG requires: a lab result's LOINC coding needs its LOINC name in the test master, else the test goes by its name as text; performer = the laboratory (results; the referral laboratory for a test sent out to one, as the printed report says) or the hospital (vital signs) |
 | DiagnosticReport | `DiagnosticReportLab` | Category SNOMED CT 394595002 "Pathology"; LOINC 11502-2; performer and results interpreter = the laboratory; conclusion (the IG requires one; the laboratory writes none) = the results the laboratory flagged ("Flagged by the laboratory: Haemoglobin (Low)."), or "See the individual results." when it flagged none: an unflagged result is not a normal one (a qualitative result, or one without a reference range, is never flagged), so nothing is said about the results |
 | DiagnosticReport (radiology) | `DiagnosticReportImaging` | Category SNOMED CT 394914008 "Radiology"; LOINC 18748-4 only (the service code dropped); performer = the hospital; results interpreter = the doctors who wrote it, signed it off and added addenda (else the hospital); `imagingStudy`; issued = the release or the latest addendum after it. The profile requires a key image (`media`): HC360 keeps none (the images stay in PACS), so the one media entry says so in its comment and its link carries data-absent-reason `unsupported`, rather than something that is not a key image |
+| DiagnosticReport (cardiology) | `DiagnosticReportImaging` | Category SNOMED CT 394579002 "Cardiology"; the LOINC study only, where LOINC names one (see the cardiology mapping above; the service code dropped); performer = the hospital; results interpreter = the doctors who wrote and signed off the report; no ImagingStudy; the media entry and the measurements in `presentedForm` as for radiology. The measurements are not separate coded Observations: LOINC's codes for the ECG intervals, LVEF and ambulatory BP could not be checked against LOINC when this was built, and an unchecked code is worse than none |
 | ImagingStudy | `ImagingStudy` | Accession number (ACSN) and, once PACS linked the images, the study instance UID (`urn:dicom:uid`) with the number of series and images; modality as a DICOM code as the worklist sends it (an X-ray as CR); started; interpreters; body part in the narrative (a series needs PACS's series UID, which HC360 does not keep) |
 | DocumentReference, Binary | `DocumentReference`, `Binary` | The printed PDF (made by the same document sources as the download and the messages); when this server cannot make PDFs, the lab report and prescription go without it and the discharge summary carries its text. An amended discharge summary's DocumentReference is authenticated by the doctor who amended it, an author with the signer (by no one when it was not a doctor), as its Composition is attested |
 
@@ -422,7 +427,7 @@ README says where from). Structure, cardinality, slicing, fixed values, invarian
 can be checked offline (MIME types, languages, UCUM, HL7 code systems) are checked; SNOMED CT and LOINC need a
 terminology server, so those checks are skipped and listed (`AbdmProfileValidator`), never passed silently.
 
-* `AbdmDocumentTests`: the five sample documents (consultation, prescription, lab report, radiology report, discharge summary) validate
+* `AbdmDocumentTests`: the six sample documents (consultation, prescription, lab report, radiology report, cardiology report, discharge summary) validate
   with no error and no warning.
 * `Abdm/ValidatorSetupTests`: the guide's own discharge summary and prescription examples validate, and fourteen
   deliberately broken documents fail on the rule they break, so a validator that checks nothing cannot pass.

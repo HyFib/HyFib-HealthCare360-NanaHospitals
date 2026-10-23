@@ -129,6 +129,7 @@ internal sealed class AbdmBundleService(
         AbdmRecordType.DischargeSummary => "discharge summary",
         AbdmRecordType.LabReport => "lab report",
         AbdmRecordType.RadiologyReport => "radiology report",
+        AbdmRecordType.CardiologyReport => "cardiology report",
         AbdmRecordType.OpConsultation => "consultation note",
         _ => "prescription",
     };

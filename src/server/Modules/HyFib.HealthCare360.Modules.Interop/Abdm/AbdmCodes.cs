@@ -111,6 +111,9 @@ internal static class AbdmCodes
     /// <summary>Diagnostic service section of a radiology report, the radiology department as Pathology is the laboratory.</summary>
     public static readonly AbdmCode RadiologyService = Snomed("394914008", "Radiology");
 
+    /// <summary>Diagnostic service section of a cardiology report (ECG, echo, TMT, Holter, ABPM): the cardiology department.</summary>
+    public static readonly AbdmCode CardiologyService = Snomed("394579002", "Cardiology");
+
     private static AbdmCode Snomed(string code, string display) => new(FhirSystems.Snomed, code, display);
 }
 

@@ -20,6 +20,9 @@ public enum AbdmRecordType
 
     /// <summary>A released radiology report (DiagnosticReportRecord, its report a DiagnosticReportImaging).</summary>
     RadiologyReport,
+
+    /// <summary>A released ECG, echo, TMT, Holter or ABPM report (DiagnosticReportRecord, its report a DiagnosticReportImaging).</summary>
+    CardiologyReport,
 }
 
 /// <summary>

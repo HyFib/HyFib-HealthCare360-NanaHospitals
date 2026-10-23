@@ -195,7 +195,11 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
         return [.. reports.Select(r => (R4.Resource)DiagnosticReportMapper.FromRadiology(r with { Addenda = byReport.GetValueOrDefault(r.Id) ?? [] }))];
     }
 
-    private async Task<List<R4.Resource>> CardiologyAsync(Expression<Func<CardiologyReport, bool>> filter, CancellationToken ct)
+    private async Task<List<R4.Resource>> CardiologyAsync(Expression<Func<CardiologyReport, bool>> filter, CancellationToken ct) =>
+        [.. (await CardiologyRowsAsync(filter, ct)).Select(r => (R4.Resource)DiagnosticReportMapper.FromCardiology(r))];
+
+    /// <summary>Released cardiology reports with their studies, as the FHIR API's DiagnosticReport and the ABDM export map them.</summary>
+    internal async Task<List<CardiologyReportRow>> CardiologyRowsAsync(Expression<Func<CardiologyReport, bool>> filter, CancellationToken ct)
     {
         var reports = await CardiologyReports(filter).ToListAsync(ct);
         if (reports.Count == 0)
@@ -209,10 +213,11 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
             .. reports.Where(r => studies.ContainsKey(r.CardiologyStudyId)).Select(r =>
             {
                 var study = studies[r.CardiologyStudyId];
-                return (R4.Resource)DiagnosticReportMapper.FromCardiology(new CardiologyReportRow
+                return new CardiologyReportRow
                 {
                     Id = r.Id,
                     PatientId = r.PatientId,
+                    CardiologyStudyId = r.CardiologyStudyId,
                     VisitId = study.VisitId,
                     AccessionNumber = study.AccessionNumber,
                     ServiceCode = study.ServiceCode,
@@ -229,9 +234,12 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
                     Conclusion = r.Conclusion,
                     Recommendations = r.Recommendations,
                     IsCriticalFinding = r.IsCriticalFinding,
+                    ReportedBy = r.ReportedBy,
+                    VerifiedBy = r.VerifiedBy,
+                    VerifiedAt = r.VerifiedAt,
                     CreatedAt = r.CreatedAt,
                     UpdatedAt = r.UpdatedAt,
-                });
+                };
             }),
         ];
     }

@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Flags;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Services;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
@@ -65,6 +66,9 @@ public sealed class AbdmExportTests(HospitalServer server)
 
     /// <summary>A prescription's notes for the pharmacist and nurse: not printed for the patient, and not shared.</summary>
     private const string PharmacistNotes = "Check the patient's allergy card before dispensing";
+
+    /// <summary>The conclusion of the ECG the cardiology tests report.</summary>
+    private const string EcgConclusion = "Normal sinus rhythm. No ST-T changes.";
 
     /// <summary>The impression of the chest X-ray the radiology tests report.</summary>
     private const string XrayImpression = "No active lung lesion.";
@@ -271,6 +275,10 @@ public sealed class AbdmExportTests(HospitalServer server)
         var xray = await ChestXrayAsync(facilityId, patient.Id);
         await RadiologyAsync(xray, (report, study, now) => SignOff(report, study, null, now));
 
+        // And an ECG, its report also signed off but not released.
+        var ecg = await EcgAsync(facilityId, patient.Id);
+        await CardiologyAsync(ecg, (report, study, now) => SignOffCardiology(report, study, null, now));
+
         try
         {
             await SwitchAsync(enabled: true);
@@ -278,6 +286,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             [
                 ($"/api/v1/abdm/bundles/op-consultations/{consultation}", consultation),
                 ($"/api/v1/abdm/bundles/radiology-reports/{xray}", xray),
+                ($"/api/v1/abdm/bundles/cardiology-reports/{ecg}", ecg),
             ];
             foreach (var (path, id) in records)
             {
@@ -483,6 +492,63 @@ public sealed class AbdmExportTests(HospitalServer server)
             appended.GetProperty("conclusion").GetString().ShouldNotBeNull().ShouldContain("Small left pleural effusion on review.");
             Composition(amended).GetProperty("attester").EnumerateArray().ShouldHaveSingleItem().GetProperty("party").GetProperty("reference").GetString()
                 .ShouldBe(appended.GetProperty("resultsInterpreter")[0].GetProperty("reference").GetString());
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
+    public async Task A_cardiology_report_is_exported_as_an_imaging_report_of_the_cardiology_department_once_released()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var abha = NewAbha();
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+
+        // A resting ECG, recorded by a technician and reported and signed off by a doctor.
+        var cardiologist = await server.SignInAsync(HospitalServer.Users.SecondDoctor);
+        var me = await cardiologist.GetAsync<JsonElement>("/api/v1/auth/me");
+        var cardiologistUser = me.GetProperty("id").GetGuid();
+        var ecg = await EcgAsync(me.GetProperty("facilityId").GetGuid(), patient.Id);
+        var path = $"/api/v1/abdm/bundles/cardiology-reports/{ecg}";
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+
+            // A draft, a report waiting for sign-off and a report signed off but not released are not exported.
+            await NotExportableAsync(path);
+            await CardiologyAsync(ecg, (report, study, now) => SubmitCardiology(report, study, cardiologistUser, now));
+            await NotExportableAsync(path);
+            await CardiologyAsync(ecg, (report, study, now) => SignOffCardiology(report, study, cardiologistUser, now));
+            (await NotExportableAsync(path)).ShouldBe("Only a released cardiology report can be exported.");
+
+            // Released, it is exported, and exports as the same document again.
+            await CardiologyAsync(ecg, (report, study, now) => report.Release(study, cardiologistUser, now));
+            var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "cardiology-report-NHCD");
+            (await ExportAsync(path, DiagnosticReportRecord, abha, "cardiology-report-NHCD")).GetRawText().ShouldBe(bundle.GetRawText());
+            Composition(bundle).GetProperty("status").GetString().ShouldBe("final");
+
+            var diagnostic = Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem();
+            diagnostic.GetProperty("meta").GetProperty("profile")[0].GetString().ShouldBe("https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReportImaging");
+            diagnostic.GetProperty("category")[0].GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe("394579002");
+            var code = diagnostic.GetProperty("code").GetProperty("coding").EnumerateArray().ShouldHaveSingleItem();
+            (code.GetProperty("system").GetString(), code.GetProperty("code").GetString()).ShouldBe(("http://loinc.org", "11524-6"));
+            diagnostic.GetProperty("conclusion").GetString().ShouldBe(EcgConclusion);
+            diagnostic.TryGetProperty("imagingStudy", out _).ShouldBeFalse("an ECG is a recording, not an imaging study");
+            Resources(bundle, "ImagingStudy").ShouldBeEmpty();
+
+            // The doctor who wrote it and signed it off interprets it and attests the document.
+            var interpreter = diagnostic.GetProperty("resultsInterpreter").EnumerateArray().ShouldHaveSingleItem().GetProperty("reference").GetString();
+            Entry(bundle, interpreter!).GetProperty("resourceType").GetString().ShouldBe("Practitioner");
+            Composition(bundle).GetProperty("attester").EnumerateArray().ShouldHaveSingleItem().GetProperty("party").GetProperty("reference").GetString()
+                .ShouldBe(interpreter);
+            ShouldCarryThePrintedCopy(Attachments(bundle));
+
+            var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
+            exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: cardiology report");
+            exportAudit.EntityId.ShouldBe(ecg.ToString("D"));
         }
         finally
         {
@@ -925,6 +991,64 @@ public sealed class AbdmExportTests(HospitalServer server)
 
     /// <summary>The radiologist signs the report off, which does not release it.</summary>
     private static Result SignOff(RadiologyReport report, ImagingStudy study, Guid? by, DateTimeOffset now)
+    {
+        study.MarkVerified(now);
+        return report.Verify(by, now);
+    }
+
+    /// <summary>
+    /// A resting ECG of the patient, recorded twenty minutes ago with its tracing attached, and the cardiologist's report
+    /// saved as a draft (its id). As for radiology, the steps are taken through the domain's own rules.
+    /// </summary>
+    private async Task<Guid> EcgAsync(Guid facilityId, Guid patientId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        var study = new CardiologyStudy
+        {
+            FacilityId = facilityId,
+            PatientId = patientId,
+            AccessionNumber = "NHCD" + Digits(7),
+            ServiceCode = "CARD-ECG",
+            StudyName = "ECG 12 lead",
+            StudyType = CardiologyStudyType.Ecg,
+            Priority = OrderPriority.Routine,
+            OrderedAt = now.AddMinutes(-40),
+            Status = CardiologyStudyStatus.Ordered,
+        };
+        study.Start(null, "ECG cart 1", now.AddMinutes(-25)).IsSuccess.ShouldBeTrue();
+        study.AttachFiles([Guid.CreateVersion7()]).IsSuccess.ShouldBeTrue();
+        study.Complete(null, null, now.AddMinutes(-20)).IsSuccess.ShouldBeTrue();
+        var report = new CardiologyReport { FacilityId = facilityId, CardiologyStudyId = study.Id, PatientId = patientId, StudyType = study.StudyType };
+        report.Save(new CardiologyReportContent(
+            new EcgFindings { HeartRate = 78, Rhythm = "Sinus rhythm", PrInterval = 160, QrsDuration = 88, QtcInterval = 420, Interpretation = "Normal ECG" },
+            null, null, null, null, EcgConclusion, null, IsCriticalFinding: false, CriticalFindingNote: null)).IsSuccess.ShouldBeTrue();
+        db.AddRange(study, report);
+        await db.SaveChangesAsync(Ct);
+        return report.Id;
+    }
+
+    /// <summary>One step of the cardiology workflow on the saved report and its study: submit, sign off, release.</summary>
+    private async Task CardiologyAsync(Guid reportId, Func<CardiologyReport, CardiologyStudy, DateTimeOffset, Result> step)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var report = await db.Set<CardiologyReport>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).SingleAsync(r => r.Id == reportId, Ct);
+        var study = await db.Set<CardiologyStudy>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).SingleAsync(s => s.Id == report.CardiologyStudyId, Ct);
+        step(report, study, DateTimeOffset.UtcNow).IsSuccess.ShouldBeTrue();
+        await db.SaveChangesAsync(Ct);
+    }
+
+    /// <summary>The cardiologist submits the report for sign-off.</summary>
+    private static Result SubmitCardiology(CardiologyReport report, CardiologyStudy study, Guid? by, DateTimeOffset now)
+    {
+        study.MarkReported(now);
+        return report.Submit(by, now);
+    }
+
+    /// <summary>The cardiologist signs the report off, which does not release it.</summary>
+    private static Result SignOffCardiology(CardiologyReport report, CardiologyStudy study, Guid? by, DateTimeOffset now)
     {
         study.MarkVerified(now);
         return report.Verify(by, now);
