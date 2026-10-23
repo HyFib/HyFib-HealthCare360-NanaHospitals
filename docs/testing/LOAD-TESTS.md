@@ -15,8 +15,8 @@ about a third of the steps are searches and one in ten registers a patient. The 
 only their requests after the last one has started are measured, for `--duration`. A request that fails (HTTP 400 or
 above, or no answer) counts as failed, never as fast. More than 1% failed requests fail the run whatever the timings.
 
-Not measured here: PERF-03 (the screens' load time, which a browser measures) and PERF-04 (real-time updates within
-2 s). PERF-04's server share is measured by `RealtimeLatencyTests` in the integration tests, which time a queue call, a
+Not measured by the load test: PERF-03 (the staff app's load time, which a browser measures; see "The staff app's load
+time" below) and PERF-04 (real-time updates within 2 s). PERF-04's server share is measured by `RealtimeLatencyTests` in the integration tests, which time a queue call, a
 bed change and a critical lab value from the request to the event arriving at a screen subscribed to the hub; on site,
 time the same three changes from one workstation to a second one on the hospital's WiFi (a stopwatch is enough at 2 s).
 
@@ -108,3 +108,23 @@ runs after it, with the machine otherwise idle:
 Every PERF-01, PERF-02 and PERF-05 target was met in both, the largest page of every list at most 14 KB as sent. This
 says the code meets the targets with room to spare on modest hardware; the run that decides go-live is still the one
 on the hospital's Server Node, over its WiFi, with the load test on a workstation.
+
+## The staff app's load time (PERF-03)
+
+PERF-03 asks for the staff app within 3 s the first time and within 1 s from the browser's cache. One run in October
+2026 timed it with Playwright's Chromium against the HC360 server (as installed: HTTPS, compression, the cache headers
+of Program.cs), on the same development machine: from navigating to the address to the sign-in form taking typing,
+seven times each, in a fresh browser profile (first run) and then again in it (cached). The second profile is a busy
+WiFi link to a modest workstation, set through the Chrome DevTools protocol: 20 Mbit/s down, 40 ms round trip, the CPU
+four times slower.
+
+| Profile | First run (median, max) | Cached (median, max) | Transferred, first run |
+|---|--:|--:|--:|
+| Unthrottled | 414 ms, 984 ms | 195 ms, 222 ms | 595 KB |
+| WiFi 20 Mbit/s, 40 ms, CPU × 4 | 1,621 ms, 1,817 ms | 817 ms, 898 ms | 595 KB |
+
+Most of the time is the browser parsing and running the code, not the transfer, and the cached second is the tighter
+target. `apps/staff/a11y/load-budget.spec.ts`, in the browser checks CI runs on every pull request, holds the code the
+sign-in page fetches to 620 KB as the server compresses it (516 KB in that run), about where the throttled cached load
+would reach a second. On site, open the staff app on a ward workstation over the hospital's WiFi, once after clearing
+the browser's cache and once again, and time each to the sign-in form.
