@@ -79,7 +79,9 @@ function PatientProfilePage() {
   const notify = useNotify();
   const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
   // Editing shows and saves the contact details in full, which only those who contact or bill patients see (SRS PRV-03).
-  const canEdit = usePermission('patients.register') && usePermission('patients.contact.read');
+  const canRegister = usePermission('patients.register');
+  const canReadContact = usePermission('patients.contact.read');
+  const canEdit = canRegister && canReadContact;
   const canCheckIn = usePermission('visits.manage');
   const canOpenChart = usePermission('clinical.emr.read');
   const canBook = usePermission('scheduling.appointments.book');

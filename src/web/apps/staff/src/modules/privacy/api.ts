@@ -471,7 +471,12 @@ export interface RetentionReview {
 
 export interface PrivacySettingsView {
   /** Each with its version (null until first saved), sent back with a change (REL-04). */
-  settings: { contact: PrivacyContact; responseDays: number; version: number | null; responseDaysVersion: number | null };
+  settings: {
+    contact: PrivacyContact;
+    responseDays: number;
+    version: number | null;
+    responseDaysVersion: number | null;
+  };
   /** What patients see: the saved contact with the hospital's own details filling any gap. */
   published: PrivacyContact;
 }

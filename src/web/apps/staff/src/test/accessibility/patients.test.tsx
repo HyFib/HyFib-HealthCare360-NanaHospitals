@@ -35,7 +35,15 @@ const MASKED: PatientDetail = {
   phone: '+91******3210',
   alternatePhone: '+91******5544',
   email: 'l***@example.org',
-  address: { line1: null, line2: null, city: 'Pune', district: null, state: 'Maharashtra', pinCode: null, country: 'India' },
+  address: {
+    line1: null,
+    line2: null,
+    city: 'Pune',
+    district: null,
+    state: 'Maharashtra',
+    pinCode: null,
+    country: 'India',
+  },
   guardianName: null,
   guardianRelation: null,
   emergencyContactName: 'Ramesh',
@@ -88,7 +96,9 @@ describe('patient record', SCREEN_TESTS, () => {
     // In the banner and among the details.
     expect(await screen.findAllByText('+91******3210', {}, SLOW)).toHaveLength(2);
 
-    expect(screen.getByText(/shown in part: in full they are for the staff who contact or bill patients/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/shown in part: in full they are for the staff who contact or bill patients/),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(server.unanswered).toEqual([]);
     await expectNoAxeViolations();
@@ -98,7 +108,9 @@ describe('patient record', SCREEN_TESTS, () => {
     openScreen(`/patients/${PATIENT_ID}/edit`, LAB_USER);
 
     const refusal = await screen.findByText(/cannot edit this patient's details/, {}, SLOW);
-    expect(within(refusal.closest('.fui-MessageBar') as HTMLElement).getByText(/Ask the front desk/)).toBeInTheDocument();
+    expect(
+      within(refusal.closest('.fui-MessageBar') as HTMLElement).getByText(/Ask the front desk/),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Save/ })).not.toBeInTheDocument();
   });
 });

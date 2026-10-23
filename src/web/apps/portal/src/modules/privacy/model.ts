@@ -408,7 +408,11 @@ export function checkNominee(values: NomineeFormValues): { path: keyof NomineeFo
   return problems;
 }
 
-export function buildNomineeRequest(values: NomineeFormValues, patientId: string, version?: number): PortalNomineeRequest {
+export function buildNomineeRequest(
+  values: NomineeFormValues,
+  patientId: string,
+  version?: number,
+): PortalNomineeRequest {
   const phone = sanitizePhoneInput(values.phone);
   return {
     patientId,
