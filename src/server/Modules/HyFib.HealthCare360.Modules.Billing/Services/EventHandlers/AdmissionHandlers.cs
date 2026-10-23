@@ -22,6 +22,12 @@ internal sealed class DischargeInitiatedHandler(IpBillingService ip) : IDomainEv
     public Task HandleAsync(DischargeInitiated domainEvent, CancellationToken cancellationToken) => ip.DischargeInitiatedAsync(domainEvent, cancellationToken);
 }
 
+/// <summary>Takes the account back to open when the discharge is revoked: the stay goes on.</summary>
+internal sealed class DischargeRevokedHandler(IpBillingService ip) : IDomainEventHandler<DischargeRevoked>
+{
+    public Task HandleAsync(DischargeRevoked domainEvent, CancellationToken cancellationToken) => ip.DischargeRevokedAsync(domainEvent, cancellationToken);
+}
+
 /// <summary>Records the discharge; closes a settled account or alerts billing about dues.</summary>
 internal sealed class PatientDischargedHandler(IpBillingService ip) : IDomainEventHandler<PatientDischarged>
 {

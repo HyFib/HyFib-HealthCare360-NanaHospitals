@@ -163,7 +163,9 @@ public sealed class WifiMonitorTests
         (lost.Kind, lost.At).ShouldBe((AdapterLost, At(1)));
         lost.Message.ShouldBe(
             "Server Node has no WiFi: the WLAN AutoConfig service is not running. Start it in Services. Workstations cannot reach HC360 over WiFi until then.");
-        (detector.LinkLost, detector.AdapterMissing).ShouldBe((true, lost.Message), "System health says so while it lasts");
+        (detector.LinkLost, detector.AdapterMissing).ShouldBe(
+            (true, lost.Message + " If Server Node now runs on Ethernet on purpose, restart the HC360Server service to clear this warning."),
+            "System health says so while it lasts, and how to clear it on a server wired on purpose");
 
         // Back, and connected.
         detector.Evaluate(null, Link(80), At(4), new NetworkOptions()).Select(e => e.Kind).ShouldBe([Reconnected]);

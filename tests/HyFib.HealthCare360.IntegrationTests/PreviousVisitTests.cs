@@ -43,6 +43,8 @@ public sealed class PreviousVisitTests(HospitalServer server)
             ReferralExternal: null, ReferralReason: null, first.Version));
         await doctor.PostAsync<DiagnosisDto>($"{Encounters}/{first.Id}/diagnoses",
             new AddDiagnosisRequest("R50.9", Title: null, DiagnosisType.Provisional, IsPrimary: true, OnsetDate: null, DiagnosisStatus.Active, Notes: null));
+        await doctor.PostAsync<DiagnosisDto>($"{Encounters}/{first.Id}/diagnoses",
+            new AddDiagnosisRequest("A90", Title: null, DiagnosisType.Differential, IsPrimary: false, OnsetDate: null, DiagnosisStatus.Active, Notes: null));
         var paracetamol = await DrugAsync(doctor, "Paracetamol", "DRG-PCM500");
         var given = await PrescribeAsync(doctor, patientId, first.Id, paracetamol, "1 tablet", DoseFrequency.TDS, 5);
         await doctor.PostAsync<SafetyCheckResponse>($"/api/v1/clinical/prescriptions/{given.Id}/check");
@@ -70,7 +72,7 @@ public sealed class PreviousVisitTests(HospitalServer server)
         (previous.Type, previous.Status, previous.StartedAt).ShouldBe((EncounterType.OutPatient, EncounterStatus.Signed, first.StartedAt));
         previous.PractitionerName.ShouldBe(first.PractitionerName);
         previous.ChiefComplaint.ShouldBe("Fever for three days");
-        previous.Diagnoses.ShouldBe(["R50.9 Fever, unspecified"]);
+        previous.Diagnoses.ShouldBe(["R50.9 Fever, unspecified"], "Dengue was only considered: a differential diagnosis is not what was found.");
         previous.Assessment.ShouldBe("Acute febrile illness, probably viral.");
         previous.Plan.ShouldBe("Paracetamol, fluids and rest.");
         (previous.FollowUpDate, previous.FollowUpAdvice).ShouldBe((today.AddDays(5), "Come back if the fever lasts beyond two more days."));

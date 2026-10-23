@@ -150,8 +150,8 @@ public sealed class Admission : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    /// <summary>Clinical condition changed after discharge was initiated: the stay continues.</summary>
-    public Result RevokeDischarge()
+    /// <summary>Clinical condition changed after discharge was initiated: the stay continues, and Billing reopens its account.</summary>
+    public Result RevokeDischarge(DateTimeOffset now)
     {
         if (Status != AdmissionStatus.DischargeInitiated)
         {
@@ -161,6 +161,7 @@ public sealed class Admission : AuditableEntity, IFacilityScoped
         Status = AdmissionStatus.Admitted;
         DischargeInitiatedAt = null;
         DischargeInitiatedBy = null;
+        Raise(new DischargeRevoked(Id, PatientId, now));
         return Result.Success();
     }
 

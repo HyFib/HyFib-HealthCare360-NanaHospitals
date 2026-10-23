@@ -143,16 +143,19 @@ public sealed class AdmissionTests
     }
 
     [Fact]
-    public void Revoking_a_discharge_keeps_the_stay_going()
+    public void Revoking_a_discharge_keeps_the_stay_going_and_says_so_to_billing()
     {
         var admission = NewAdmission();
         admission.InitiateDischarge(null, null, At(22, 9));
+        admission.ClearDomainEvents();
 
-        admission.RevokeDischarge().IsSuccess.ShouldBeTrue();
+        admission.RevokeDischarge(At(22, 11)).IsSuccess.ShouldBeTrue();
 
         admission.Status.ShouldBe(AdmissionStatus.Admitted);
         admission.DischargeInitiatedAt.ShouldBeNull();
-        admission.RevokeDischarge().Error!.Code.ShouldBe("discharge.not_initiated");
+        var revoked = admission.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<DischargeRevoked>();
+        (revoked.AdmissionId, revoked.PatientId, revoked.RevokedAt).ShouldBe((admission.Id, admission.PatientId, At(22, 11)));
+        admission.RevokeDischarge(At(22, 12)).Error!.Code.ShouldBe("discharge.not_initiated");
     }
 
     [Fact]

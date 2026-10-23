@@ -406,6 +406,12 @@ internal sealed class WifiEventDetector(bool onWifiWhenLastRun = false, string? 
     /// <summary>Weak samples in a row before the signal is reported weak: a minute below the threshold, sampled every 30 s.</summary>
     internal const int WeakStreakThreshold = 3;
 
+    /// <summary>
+    /// The warning lasts until the WiFi is back. A server moved to Ethernet on purpose clears it with a restart: its last
+    /// stored sample has no link, so the next run does not count the WiFi as lost.
+    /// </summary>
+    private const string WiredOnPurpose = " If Server Node now runs on Ethernet on purpose, restart the HC360Server service to clear this warning.";
+
     private bool _started;
     private int _weakStreak;
     private bool _weakAlerted;
@@ -440,7 +446,7 @@ internal sealed class WifiEventDetector(bool onWifiWhenLastRun = false, string? 
                 events.Add(new WifiEvent(now, WifiEventKind.AdapterLost, AdapterLostMessage(starting, absence)));
             }
 
-            AdapterMissing = LinkLost ? AdapterLostMessage(false, absence) : null;
+            AdapterMissing = LinkLost ? AdapterLostMessage(false, absence) + WiredOnPurpose : null;
             return events;
         }
 

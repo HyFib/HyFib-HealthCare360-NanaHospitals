@@ -17,6 +17,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
@@ -185,20 +186,32 @@ public sealed class InterimBillTests(HospitalServer server)
         var charges = await ChargesAsync(billing, admission.Id);
         charges.Select(c => c.ServiceCode).Order().ToArray().ShouldBe(["BED-GEN", "NURS-DAY", "VISIT-DR"]);
 
-        // Billing desk, on the discharge day: an interim bill of everything up to today takes every service of the stay.
+        // Billing desk, on the discharge day: an interim bill of everything up to today takes every service of the stay. It
+        // is drafted for review.
         var interim = await billing.PostAsync<BillDetail>(Path(account, "interim-bills"), new CreateInterimBillRequest(null));
         interim.Lines.Select(l => l.ChargeId).Order().ToArray().ShouldBe(charges.Select(c => c.Id).Order().ToArray());
-        interim = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{interim.Id}/finalize", new BillVersionRequest(interim.Version));
-
-        // During the stay more services may come, so the account is not settled yet.
-        await RefusedAsync(billing, Path(account, "settle"), "billing.discharge_not_initiated");
 
         // Nurse: initiates the discharge. No midnight has passed since the bed day, so nothing more is charged, and no final
-        // bill is drafted: it would hold nothing, and an empty bill cannot be finalized. Preparing one is refused.
+        // bill is drafted: it would hold nothing, and an empty bill cannot be finalized. The desk is told to finalize the
+        // draft interim bill first, and the account is not settled until it is.
         await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/initiate",
             new InitiateDischargeRequest(today, "Discharge advised on the ward round"));
         (await BillsAsync(billing, admission.Id)).ShouldHaveSingleItem().Id.ShouldBe(interim.Id);
+        (await NoticesAsync(billing, account)).ShouldHaveSingleItem().ShouldContain("Finalize the draft interim bill");
+        await RefusedAsync(billing, Path(account, "settle"), "billing.interim_bill_draft");
+        interim = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{interim.Id}/finalize", new BillVersionRequest(interim.Version));
         await RefusedAsync(billing, Path(account, "final-bill"), "billing.billed_on_interim_bills");
+
+        // A fever on the evening round keeps him: the discharge is revoked. The account is open again, so it is not
+        // settled (and the advance not refunded) while he is still in a bed. When the fever is gone, his discharge begins again.
+        await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/revoke",
+            new RevokeDischargeRequest("Fever spike on the evening round"));
+        (await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}")).Status.ShouldBe(IpAccountStatus.Open);
+        await RefusedAsync(billing, Path(account, "settle"), "billing.discharge_not_initiated");
+        await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/initiate",
+            new InitiateDischargeRequest(today, "Afebrile overnight"));
+        (await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}")).Status.ShouldBe(IpAccountStatus.DischargeInitiated);
+        (await NoticesAsync(billing, account))[0].ShouldContain($"Settle the advance of ₹{Money.FormatInr(Advance)}.");
 
         // The clearance waits only for the patient's share of the interim bill.
         var clearance = await billing.GetAsync<ClearanceDto>(Path(account, "clearance"));
@@ -419,6 +432,13 @@ public sealed class InterimBillTests(HospitalServer server)
 
     private static async Task<IReadOnlyList<BillListItem>> BillsAsync(ApiClient billing, Guid admissionId) =>
         (await billing.GetAsync<PagedResult<BillListItem>>($"/api/v1/billing/bills?admissionId={admissionId}")).Items;
+
+    /// <summary>What the billing desk was told about the account when its discharge began, the latest first.</summary>
+    private static async Task<List<string>> NoticesAsync(ApiClient billing, IpAccountDetail account) =>
+        [.. (await billing.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=200")).Items
+            .Where(n => n.Link == $"/billing/ip-accounts/{account.Id}" && n.Title == "Discharge initiated — nothing left to bill")
+            .OrderByDescending(n => n.CreatedAt)
+            .Select(n => n.Body ?? string.Empty)];
 
     private static string Path(IpAccountDetail account, string action) => $"/api/v1/billing/ip-accounts/{account.Id}/{action}";
 

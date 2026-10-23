@@ -8870,6 +8870,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("visit_id");
 
+                    b.Property<bool>("VisitOpenedForCheckup")
+                        .HasColumnType("boolean")
+                        .HasColumnName("visit_opened_for_checkup");
+
                     b.HasKey("Id")
                         .HasName("pk_package_bookings");
 

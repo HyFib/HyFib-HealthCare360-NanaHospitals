@@ -59,7 +59,7 @@ public sealed class DischargeService(
             return Error.NotFound(nameof(Admission), admissionId);
         }
 
-        var revoked = admission.RevokeDischarge();
+        var revoked = admission.RevokeDischarge(time.GetUtcNow());
         if (revoked.IsFailure)
         {
             return revoked.Error!;

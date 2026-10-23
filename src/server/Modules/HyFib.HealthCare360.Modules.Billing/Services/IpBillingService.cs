@@ -96,12 +96,14 @@ public sealed class IpBillingService(
             Discard(bill);
             var charged = await db.Set<Charge>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                 .AnyAsync(c => c.AdmissionId == account.AdmissionId && c.Status != ChargeStatus.Cancelled, ct);
+            var next = await HasDraftInterimBillAsync(account.AdmissionId, ct)
+                ? "Finalize the draft interim bill, then settle the account."
+                : account.DepositBalance > 0 ? $"Settle the advance of ₹{Money.FormatInr(account.DepositBalance)}." : "No advance is held.";
             await notifications.NotifyPermissionHoldersAsync(
                 BillingPermissions.IpManage,
                 account.FacilityId,
                 "Discharge initiated — nothing left to bill",
-                $"Admission {account.AdmissionNumber}: {(charged ? "every service is on an interim bill" : "no service was charged")}, so there is no final bill. "
-                    + (account.DepositBalance > 0 ? $"Settle the advance of ₹{Money.FormatInr(account.DepositBalance)}." : "No advance is held."),
+                $"Admission {account.AdmissionNumber}: {(charged ? "every service is on an interim bill" : "no service was charged")}, so there is no final bill. {next}",
                 $"/billing/ip-accounts/{account.Id}",
                 "billing",
                 "info",
@@ -114,6 +116,30 @@ public sealed class IpBillingService(
             account.FacilityId,
             "Discharge initiated — final bill drafted",
             $"Admission {account.AdmissionNumber}: the draft final bill (₹{Money.FormatInr(bill.NetAmount)}) is ready for review.",
+            $"/billing/ip-accounts/{account.Id}",
+            "billing",
+            "info",
+            ct);
+    }
+
+    /// <summary>
+    /// The discharge was revoked: the account is open again, so the stay is not settled while the patient is in a bed, and
+    /// the billing desk is told that a final bill drafted for the discharge waits for the new one.
+    /// </summary>
+    internal async Task DischargeRevokedAsync(DischargeRevoked revoked, CancellationToken ct)
+    {
+        var account = await charges.FindAccountAsync(revoked.AdmissionId, ct);
+        if (account is not { Status: IpAccountStatus.DischargeInitiated })
+        {
+            return;
+        }
+
+        account.ReopenAfterRevokedDischarge();
+        await notifications.NotifyPermissionHoldersAsync(
+            BillingPermissions.IpManage,
+            account.FacilityId,
+            "Discharge revoked — the stay goes on",
+            $"Admission {account.AdmissionNumber}: the discharge was revoked. Do not settle the account yet; a final bill already drafted stays a draft until the next discharge.",
             $"/billing/ip-accounts/{account.Id}",
             "billing",
             "info",
@@ -489,7 +515,9 @@ public sealed class IpBillingService(
         {
             if ((await BillingStatusProvider.PositionAsync(db, account.AdmissionId, ct)).UnbilledCount > 0)
             {
-                return Error.Rule("billing.final_bill_missing", "Finalize the final bill before settling the account.");
+                return await HasDraftInterimBillAsync(account.AdmissionId, ct)
+                    ? Error.Rule("billing.interim_bill_draft", "A draft interim bill holds services of this stay. Finalize it before settling the account.")
+                    : Error.Rule("billing.final_bill_missing", "Finalize the final bill before settling the account.");
             }
 
             if (account.Status == IpAccountStatus.Open)
@@ -639,6 +667,16 @@ public sealed class IpBillingService(
         {
             db.Entry(bill).State = EntityState.Detached;
         }
+    }
+
+    /// <summary>Whether a draft interim bill holds services of the admission: they are not billed until it is finalized.</summary>
+    private Task<bool> HasDraftInterimBillAsync(Guid admissionId, CancellationToken ct)
+    {
+        var drafts = db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(b => b.AdmissionId == admissionId && !b.IsFinalBill && b.Status == BillStatus.Draft)
+            .Select(b => (Guid?)b.Id);
+        return db.Set<Charge>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .AnyAsync(c => c.AdmissionId == admissionId && c.Status == ChargeStatus.Unbilled && drafts.Contains(c.BillId), ct);
     }
 
     private Task<bool> HasFinalizedFinalBillAsync(Guid admissionId, CancellationToken ct) =>

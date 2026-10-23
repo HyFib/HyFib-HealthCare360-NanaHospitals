@@ -136,6 +136,19 @@ public sealed class IpAccount : AuditableEntity, IFacilityScoped
         DischargeInitiatedAt ??= at;
     }
 
+    /// <summary>
+    /// The discharge was revoked: the stay goes on, so the account is open again (and not settled while the patient is
+    /// in a bed). A discharged, closed or cancelled account is left as it is.
+    /// </summary>
+    public void ReopenAfterRevokedDischarge()
+    {
+        if (Status == IpAccountStatus.DischargeInitiated)
+        {
+            Status = IpAccountStatus.Open;
+            DischargeInitiatedAt = null;
+        }
+    }
+
     public void MarkDischarged(DateTimeOffset at, string? dischargeType)
     {
         if (Status is not (IpAccountStatus.Closed or IpAccountStatus.Cancelled))

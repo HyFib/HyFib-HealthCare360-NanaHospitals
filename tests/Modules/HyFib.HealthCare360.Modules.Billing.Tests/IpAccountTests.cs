@@ -73,6 +73,24 @@ public sealed class IpAccountTests
         account.Status.ShouldBe(IpAccountStatus.Closed);
     }
 
+    /// <summary>A revoked discharge opens the account again: it is not settled while the patient is still in a bed.</summary>
+    [Fact]
+    public void A_revoked_discharge_opens_the_account_again()
+    {
+        var account = Admit();
+        account.MarkDischargeInitiated(TestData.Now);
+
+        account.ReopenAfterRevokedDischarge();
+        (account.Status, account.DischargeInitiatedAt).ShouldBe((IpAccountStatus.Open, (DateTimeOffset?)null));
+
+        // Initiated again later, and discharged: a late revocation changes nothing any more.
+        account.MarkDischargeInitiated(TestData.Now.AddDays(1));
+        account.DischargeInitiatedAt.ShouldBe(TestData.Now.AddDays(1));
+        account.MarkDischarged(TestData.Now.AddDays(1).AddHours(2), "Normal");
+        account.ReopenAfterRevokedDischarge();
+        account.Status.ShouldBe(IpAccountStatus.Discharged);
+    }
+
     [Fact]
     public void Packages_change_only_during_the_stay()
     {

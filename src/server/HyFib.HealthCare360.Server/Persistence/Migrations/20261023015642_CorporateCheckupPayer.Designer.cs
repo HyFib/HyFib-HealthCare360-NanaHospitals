@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261023002131_CorporateCheckupPayer")]
+    [Migration("20261023015642_CorporateCheckupPayer")]
     partial class CorporateCheckupPayer
     {
         /// <inheritdoc />
@@ -8872,6 +8872,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("VisitId")
                         .HasColumnType("uuid")
                         .HasColumnName("visit_id");
+
+                    b.Property<bool>("VisitOpenedForCheckup")
+                        .HasColumnType("boolean")
+                        .HasColumnName("visit_opened_for_checkup");
 
                     b.HasKey("Id")
                         .HasName("pk_package_bookings");

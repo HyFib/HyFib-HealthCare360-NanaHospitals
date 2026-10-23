@@ -18,6 +18,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                 type: "uuid",
                 nullable: true);
 
+            migrationBuilder.AddColumn<bool>(
+                name: "visit_opened_for_checkup",
+                schema: "clinical",
+                table: "package_bookings",
+                type: "boolean",
+                nullable: false,
+                defaultValue: false);
+
             migrationBuilder.AddColumn<Guid>(
                 name: "payer_id",
                 schema: "clinical",
@@ -31,6 +39,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
         {
             migrationBuilder.DropColumn(
                 name: "corporate_payer_id",
+                schema: "clinical",
+                table: "package_bookings");
+
+            migrationBuilder.DropColumn(
+                name: "visit_opened_for_checkup",
                 schema: "clinical",
                 table: "package_bookings");
 

@@ -698,6 +698,10 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
   });
 
   const c = clearance.data;
+  const stayGoesOn = account.status === 'Open';
+  // Nothing waits for a final bill: the interim bills took every service, or none was charged. Once the discharge has
+  // begun no more will come, so none is needed and the advance is settled against the interim bills.
+  const nothingForFinalBill = !!c && !c.hasFinalBill && c.unbilledCount === 0;
   return (
     <div className={styles.stack}>
       <Section title="Discharge clearance">
@@ -733,15 +737,23 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
               </SummaryRow>
               <SummaryRow
                 label="Final bill"
-                hint={c.billedOnInterimBills ? 'Every service is on an interim bill' : undefined}
+                hint={
+                  c.billedOnInterimBills
+                    ? stayGoesOn
+                      ? 'Every service so far is on an interim bill'
+                      : 'Every service is on an interim bill'
+                    : nothingForFinalBill
+                      ? 'No service was charged'
+                      : undefined
+                }
               >
                 {c.hasFinalBill ? (
                   <Badge appearance="tint" color="success">
                     Finalised
                   </Badge>
-                ) : c.billedOnInterimBills ? (
+                ) : nothingForFinalBill ? (
                   <Badge appearance="tint" color="informative">
-                    Not needed
+                    {stayGoesOn ? 'Not yet' : 'Not needed'}
                   </Badge>
                 ) : (
                   <Badge appearance="tint" color="warning">
@@ -795,7 +807,7 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
             <Button
               icon={<HandshakeRegular />}
               onClick={() => setDialog('settle')}
-              disabled={!(c?.hasFinalBill || (c?.billedOnInterimBills && account.status !== 'Open'))}
+              disabled={!(c?.hasFinalBill || (nothingForFinalBill && !stayGoesOn))}
             >
               Settle with the advance
             </Button>

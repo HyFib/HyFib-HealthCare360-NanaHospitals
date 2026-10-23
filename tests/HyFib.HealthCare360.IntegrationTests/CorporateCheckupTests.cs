@@ -92,6 +92,46 @@ public sealed class CorporateCheckupTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task The_visit_a_check_in_opened_for_the_company_closes_with_the_check_up_but_a_linked_one_is_the_desks()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var company = await CompanyAsync(admin, isActive: true);
+        var package = await PackageFromThirtyAsync(admin);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var today = server.Services.GetRequiredService<TimeProvider>().Today();
+        var (examined, leftEarly, linked) = (
+            await EmployeeAsync(frontOffice, "Suresh", Gender.Male, today.AddYears(-41)),
+            await EmployeeAsync(frontOffice, "Divya", Gender.Female, today.AddYears(-37)),
+            await EmployeeAsync(frontOffice, "Anil", Gender.Male, today.AddYears(-52)));
+        var batch = await frontOffice.PostAsync<CorporateBatchResult>(Batches, new CorporateBatchRequest(
+            company.Id, "Meena Iyer", "9876543210", null, package.Id, today, [examined, leftEarly, linked], null));
+        var bookings = (await frontOffice.GetAsync<BatchDetail>($"{Batches}/{batch.BatchId}")).Bookings.ToDictionary(b => b.PatientId);
+
+        // Seen at every station and summarised by the doctor: his check-up is complete, and so is the visit opened for it.
+        var checkedIn = await frontOffice.PostAsync<BookingDto>(CheckIn(bookings[examined]), new CheckInCheckupRequest(null));
+        foreach (var stop in checkedIn.Itinerary)
+        {
+            await frontOffice.PostAsync<BookingDto>($"{Booking(checkedIn)}/itinerary/{stop.Id}/complete", new CompleteStopRequest(null));
+        }
+
+        await doctor.PutAsync<BookingDto>($"{Booking(checkedIn)}/summary", new CheckupSummaryRequest("Fit. No abnormality detected.", null));
+        (await frontOffice.PostAsync<BookingDto>($"{Booking(checkedIn)}/complete")).Status.ShouldBe(BookingStatus.Completed);
+        (await VisitStatusAsync(frontOffice, checkedIn)).ShouldBe(VisitStatus.Completed);
+
+        // She left before the tests: her check-up is cancelled, and the visit opened for it with it.
+        var abandoned = await frontOffice.PostAsync<BookingDto>(CheckIn(bookings[leftEarly]), new CheckInCheckupRequest(null));
+        await frontOffice.PostAsync<BookingDto>($"{Booking(abandoned)}/cancel", new CancelBookingRequest("Left before the tests"));
+        (await VisitStatusAsync(frontOffice, abandoned)).ShouldBe(VisitStatus.Cancelled);
+
+        // He came in on a visit the desk opened for the company: it is the desk's to close, not the check-up's.
+        var deskVisit = await VisitAsync(frontOffice, linked, PayerType.Corporate, company.Id);
+        var onDeskVisit = await frontOffice.PostAsync<BookingDto>(CheckIn(bookings[linked]), new CheckInCheckupRequest(deskVisit.Id));
+        await frontOffice.PostAsync<BookingDto>($"{Booking(onDeskVisit)}/cancel", new CancelBookingRequest("Rescheduled by HR"));
+        (await VisitStatusAsync(frontOffice, onDeskVisit)).ShouldBe(VisitStatus.Open);
+    }
+
+    [Fact]
     public async Task Only_an_active_corporate_payer_can_be_the_company_of_a_batch()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -122,7 +162,12 @@ public sealed class CorporateCheckupTests(HospitalServer server)
         bookings.Items.ShouldNotContain(b => b.PatientId == employee);
     }
 
-    private static string CheckIn(BookingDto booking) => $"/api/v1/health-checkups/bookings/{booking.Id}/check-in";
+    private static string CheckIn(BookingDto booking) => $"{Booking(booking)}/check-in";
+
+    private static string Booking(BookingDto booking) => $"/api/v1/health-checkups/bookings/{booking.Id}";
+
+    private static async Task<VisitStatus> VisitStatusAsync(ApiClient frontOffice, BookingDto booking) =>
+        (await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{booking.VisitId.ShouldNotBeNull()}")).Status;
 
     /// <summary>A company the hospital has a tie-up with, as the insurance desk adds it to the payer master.</summary>
     private static Task<PayerDetail> CompanyAsync(ApiClient admin, bool isActive) =>

@@ -264,6 +264,8 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server's WiFi drops, its WiFi adapter disappears, it
    starts without the WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure).
+   System health warns while the adapter is missing; on a server moved to Ethernet on purpose, restart the
+   `HC360Server` service to clear the warning.
    Set `alerts.oncallWhatsApp` to `true` to have those alerts on WhatsApp too, once the hospital's WhatsApp provider
    has approved the `system_alert` template. A failed backup is told to the administrators in the app, not by SMS.
 6. **Documents and the messages that carry them** (reports, prescriptions, bills):

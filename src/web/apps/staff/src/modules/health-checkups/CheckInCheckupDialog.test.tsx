@@ -101,7 +101,8 @@ describe('CheckInCheckupDialog', () => {
 
     expect(await screen.findByText('₹2,400.00')).toBeInTheDocument();
     expect(screen.getByText(/is billed to/)).toHaveTextContent(
-      'The package fee ₹2,400.00 is billed to Acme Steel Ltd when you check in, on a health check-up visit opened for it.',
+      'The package fee ₹2,400.00 is billed to Acme Steel Ltd when you check in, on a health check-up visit opened for it. ' +
+        "A co-pay in the company's terms with the hospital is the patient's to pay. The tests are covered by the package.",
     );
     expect(screen.queryByRole('combobox', { name: /today's visit/i })).not.toBeInTheDocument();
     expect(api.get).not.toHaveBeenCalledWith('/api/v1/patients/patient-1/visits', expect.anything());

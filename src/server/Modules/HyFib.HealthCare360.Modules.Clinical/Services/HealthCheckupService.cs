@@ -28,6 +28,9 @@ public sealed class HealthCheckupService(
 
     public const string DefaultConsultationCode = "CONS-NEW";
 
+    /// <summary>The Patients module keeps a visit's cancel reason to 300 characters.</summary>
+    private const int MaxVisitCancelReason = 300;
+
     private static readonly ServiceCategory[] DiagnosticCategories = [ServiceCategory.Laboratory, ServiceCategory.Radiology, ServiceCategory.Cardiology];
 
     // ------------------------------------------------------------------ packages
@@ -233,6 +236,7 @@ public sealed class HealthCheckupService(
                 return ready;
             }
 
+            var opensVisit = b.CorporatePayerId is not null && visitId is null;
             if (b.CorporatePayerId is { } companyId)
             {
                 var companyVisit = await CompanyVisitAsync(b, companyId, visitId, ct);
@@ -245,7 +249,13 @@ public sealed class HealthCheckupService(
             }
 
             var packageServiceItemId = await db.Set<HealthPackage>().Where(p => p.Id == b.PackageId).Select(p => p.ServiceItemId).FirstOrDefaultAsync(ct);
-            return await billing.CheckInAsync(b, packageServiceItemId, visitId, time.GetUtcNow(), ct);
+            var checkedIn = await billing.CheckInAsync(b, packageServiceItemId, visitId, time.GetUtcNow(), ct);
+            if (checkedIn.IsSuccess && opensVisit)
+            {
+                b.MarkVisitOpenedForCheckup();
+            }
+
+            return checkedIn;
         }, ct);
         if (checkedIn.IsSuccess)
         {
@@ -266,8 +276,18 @@ public sealed class HealthCheckupService(
             ? b.RecordSummary(request.Summary, request.Recommendations, practitionerId, time.GetUtcNow())
             : Error.Rule("practitioner.required", "Only a doctor linked to a practitioner record can write the checkup summary.")), ct);
 
+    /// <summary>Completes the check-up, and the health check-up visit its check-in opened for the company.</summary>
     public Task<Result<BookingDto>> CompleteAsync(Guid id, CancellationToken ct) =>
-        ChangeAsync(id, b => Task.FromResult(b.Complete(time.GetUtcNow())), ct);
+        ChangeAsync(id, async b =>
+        {
+            var completed = b.Complete(time.GetUtcNow());
+            if (completed.IsSuccess && await OwnVisitAsync(b, ct) is { } visit)
+            {
+                visit.Complete(time.GetUtcNow());
+            }
+
+            return completed;
+        }, ct);
 
     /// <summary>Marks a no-show, cancelling any package charge and the ordered tests.</summary>
     public Task<Result<BookingDto>> NoShowAsync(Guid id, CancellationToken ct) =>
@@ -283,8 +303,10 @@ public sealed class HealthCheckupService(
         }, ct);
 
     /// <summary>
-    /// Cancelling the booking cancels its package charge and the tests that have not been done (ServiceOrderCancelled).
-    /// A charge already on a finalised bill leaves the booking unchanged (422 <c>booking.package_billed</c>).
+    /// Cancelling the booking cancels its package charge and the tests that have not been done (ServiceOrderCancelled),
+    /// and the health check-up visit its check-in opened for the company (VisitCancelled: Billing withdraws the visit's
+    /// draft and returns a registration fee charged on it to the patient's next visit). A charge already on a finalised
+    /// bill leaves the booking unchanged (422 <c>booking.package_billed</c>).
     /// </summary>
     public Task<Result<BookingDto>> CancelAsync(Guid id, string reason, CancellationToken ct) =>
         ChangeAsync(id, async b =>
@@ -292,7 +314,12 @@ public sealed class HealthCheckupService(
             var result = await billing.CancelAsync(b, reason, time.GetUtcNow(), ct);
             if (result.IsSuccess)
             {
-                await CancelOrderAsync(b, $"Health checkup cancelled: {reason.Trim()}", ct);
+                var why = $"Health checkup cancelled: {reason.Trim()}";
+                await CancelOrderAsync(b, why, ct);
+                if (await OwnVisitAsync(b, ct) is { } visit)
+                {
+                    visit.Cancel(why.Length <= MaxVisitCancelReason ? why : why[..MaxVisitCancelReason], time.GetUtcNow());
+                }
             }
 
             return result;
@@ -575,6 +602,12 @@ public sealed class HealthCheckupService(
         db.Add(visit);
         return visit.Id;
     }
+
+    /// <summary>The health check-up visit the check-in opened for the company, while it is still open.</summary>
+    private async Task<Visit?> OwnVisitAsync(PackageBooking booking, CancellationToken ct) =>
+        booking is { VisitOpenedForCheckup: true, VisitId: { } visitId }
+            ? await db.Set<Visit>().FirstOrDefaultAsync(v => v.Id == visitId && (v.Status == VisitStatus.Open || v.Status == VisitStatus.InProgress), ct)
+            : null;
 
     private async Task CancelOrderAsync(PackageBooking booking, string reason, CancellationToken ct)
     {

@@ -129,8 +129,8 @@ function CheckInBody({
               {company ? (
                 <>
                   The package fee {pkg.data ? <strong>{formatInr(pkg.data.price)}</strong> : ''} is billed to{' '}
-                  <strong>{company}</strong> when you check in, on a health check-up visit opened for it. The patient
-                  pays nothing for the package, and the tests are covered by it.
+                  <strong>{company}</strong> when you check in, on a health check-up visit opened for it. A co-pay in
+                  the company's terms with the hospital is the patient's to pay. The tests are covered by the package.
                 </>
               ) : (
                 <>

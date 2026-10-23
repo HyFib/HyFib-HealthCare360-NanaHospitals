@@ -143,7 +143,7 @@ public sealed class PatientRecordQueries(HospitalDbContext db, TimeProvider time
         }
 
         var diagnoses = await db.Set<Diagnosis>().AsNoTracking()
-            .Where(d => d.EncounterId == previous.Id)
+            .Where(d => d.EncounterId == previous.Id && d.Type != DiagnosisType.Differential)
             .OrderByDescending(d => d.IsPrimary).ThenBy(d => d.RecordedAt)
             .Select(d => d.IcdCode == null ? d.Title : d.IcdCode + " " + d.Title)
             .ToListAsync(ct);

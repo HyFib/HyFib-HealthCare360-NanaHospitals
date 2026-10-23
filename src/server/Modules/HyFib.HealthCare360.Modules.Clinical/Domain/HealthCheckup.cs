@@ -129,6 +129,12 @@ public sealed class PackageBooking : AuditableEntity, IFacilityScoped
     /// </summary>
     public Guid? CorporatePayerId { get; set; }
 
+    /// <summary>
+    /// <see cref="VisitId"/> is the health check-up visit the check-in opened for the company, not one the desk linked: it
+    /// is the check-up's alone, so it is completed with the check-up and cancelled with it.
+    /// </summary>
+    public bool VisitOpenedForCheckup { get; private set; }
+
     public string? Notes { get; set; }
     public DateTimeOffset? CheckedInAt { get; private set; }
     public string? Summary { get; private set; }
@@ -179,6 +185,9 @@ public sealed class PackageBooking : AuditableEntity, IFacilityScoped
         CheckedInAt = now;
         return Result.Success();
     }
+
+    /// <summary>The visit the booking was checked in on was opened for it (see <see cref="VisitOpenedForCheckup"/>).</summary>
+    public void MarkVisitOpenedForCheckup() => VisitOpenedForCheckup = VisitId is not null;
 
     public Result CompleteStop(Guid itemId, Guid? userId, string? notes, DateTimeOffset now) =>
         UpdateStop(itemId, ItineraryStatus.Done, userId, notes, now);
