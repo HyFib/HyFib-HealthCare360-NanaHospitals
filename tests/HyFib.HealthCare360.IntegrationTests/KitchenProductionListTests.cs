@@ -87,7 +87,7 @@ public sealed class KitchenProductionListTests(HospitalServer server)
         Guid admissionId, Guid dietTypeId, FoodPreference preference, List<string>? restrictions = null, string? allergy = null) =>
         new(admissionId, dietTypeId, preference, restrictions, allergy, null, null, null, null, null, null);
 
-    /// <summary>Front office registers a new patient and admits him or her, self-paying, to a vacant bed under the doctor.</summary>
+    /// <summary>Front office registers a new patient and admits them, self-paying, to a vacant bed under the doctor.</summary>
     private async Task<AdmissionCreated> AdmitAsync(Gender gender)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);

@@ -10,7 +10,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// Corporate health check-ups (MHC-05) over the real API and database: the front desk books one package for a company's
 /// employees on one day. Every employee the package's sex and age rules allow is booked once, under the batch, with the
-/// day's itinerary for his or her age and the package's tests ordered; every other one is reported with the reason and not
+/// day's itinerary for their age and the package's tests ordered; every other one is reported with the reason and not
 /// booked. Booking charges nothing: each package is charged when its employee checks in.
 /// </summary>
 public sealed class CorporateCheckupTests(HospitalServer server)
