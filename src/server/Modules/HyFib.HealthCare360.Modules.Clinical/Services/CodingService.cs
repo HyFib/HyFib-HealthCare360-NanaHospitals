@@ -149,7 +149,8 @@ public sealed class CodingService(
     }
 
     /// <summary>
-    /// Morbidity index: episodes and distinct patients per ICD code/block/chapter with sex and age-band breakdown.
+    /// Morbidity index: episodes and distinct patients per ICD code/block/chapter with sex and age-band breakdown, the age
+    /// being the patient's on the day of the episode (a child seen in January is a child in the year's index).
     /// <paramref name="source"/> "coded" uses verified/coded MRD coding; "clinical" uses clinicians' diagnoses.
     /// </summary>
     public async Task<MorbidityReport> MorbidityAsync(DateOnly fromDate, DateOnly toDate, string groupBy, string source, CancellationToken ct)
@@ -162,14 +163,16 @@ public sealed class CodingService(
                     from e in c.Entries
                     join p in db.Set<Patient>().IgnoreQueryFilters() on c.PatientId equals p.Id
                     where c.Status != CodingStatus.Pending && c.EpisodeDate >= fromDate && c.EpisodeDate <= toDate && e.Kind == CodingEntryKind.Diagnosis
-                    select new MorbidityFact(e.Code, e.Title, c.PatientId, c.Id, p.Gender, p.DateOfBirth))
+                    select new MorbidityFact(e.Code, e.Title, c.PatientId, c.Id, p.Gender, p.DateOfBirth, c.EpisodeDate!.Value))
                 .ToListAsync(ct)
-            : await (
+            : (await (
                     from d in db.Set<Diagnosis>()
                     join p in db.Set<Patient>().IgnoreQueryFilters() on d.PatientId equals p.Id
                     where d.IcdCode != null && d.Type != DiagnosisType.Differential && d.RecordedAt >= fromUtc && d.RecordedAt < toUtc
-                    select new MorbidityFact(d.IcdCode!, d.Title, d.PatientId, d.EncounterId ?? d.Id, p.Gender, p.DateOfBirth))
-                .ToListAsync(ct);
+                    select new { d.IcdCode, d.Title, d.PatientId, EpisodeId = d.EncounterId ?? d.Id, p.Gender, p.DateOfBirth, d.RecordedAt })
+                .ToListAsync(ct))
+                .Select(d => new MorbidityFact(d.IcdCode!, d.Title, d.PatientId, d.EpisodeId, d.Gender, d.DateOfBirth, ClinicalClock.LocalDate(d.RecordedAt)))
+                .ToList();
 
         var mode = groupBy.ToLowerInvariant() is "block" or "chapter" ? groupBy.ToLowerInvariant() : "code";
         var set = await classification.GetAsync(ct);
@@ -184,9 +187,8 @@ public sealed class CodingService(
                     g.Key, g.First().Group.Title, g.First().Group.Chapter, episodes.Count, facts.Select(f => f.PatientId).Distinct().Count(),
                     episodes.Count(f => f.Gender == Gender.Male), episodes.Count(f => f.Gender == Gender.Female),
                     episodes.Count(f => f.Gender is not (Gender.Male or Gender.Female)),
-                    episodes.Count(f => Band(f.DateOfBirth, toDate) == 0), episodes.Count(f => Band(f.DateOfBirth, toDate) == 1),
-                    episodes.Count(f => Band(f.DateOfBirth, toDate) == 2), episodes.Count(f => Band(f.DateOfBirth, toDate) == 3),
-                    episodes.Count(f => Band(f.DateOfBirth, toDate) < 0));
+                    episodes.Count(f => Band(f) == 0), episodes.Count(f => Band(f) == 1), episodes.Count(f => Band(f) == 2),
+                    episodes.Count(f => Band(f) == 3), episodes.Count(f => Band(f) < 0));
             })
             .OrderByDescending(r => r.Episodes)
             .ThenBy(r => r.Key, StringComparer.Ordinal)
@@ -296,9 +298,10 @@ public sealed class CodingService(
     }
 
     /// <summary>0: 0–14, 1: 15–44, 2: 45–64, 3: 65+, -1: unknown (age at the end of the period).</summary>
-    private static int Band(DateOnly? dateOfBirth, DateOnly asOf) => dateOfBirth is not { } dob
+    /// <summary>The age band of the patient on the day of the episode (-1 when the date of birth is not known).</summary>
+    private static int Band(MorbidityFact fact) => fact.DateOfBirth is not { } dob
         ? -1
-        : Age.InYears(dob, asOf) switch
+        : Age.InYears(dob, fact.EpisodeDate) switch
         {
             < 15 => 0,
             < 45 => 1,
@@ -306,5 +309,6 @@ public sealed class CodingService(
             _ => 3,
         };
 
-    private sealed record MorbidityFact(string Code, string Title, Guid PatientId, Guid EpisodeId, Gender Gender, DateOnly? DateOfBirth);
+    /// <summary>One diagnosis of an episode; <see cref="EpisodeDate"/> is the coded episode's date or the day it was diagnosed.</summary>
+    private sealed record MorbidityFact(string Code, string Title, Guid PatientId, Guid EpisodeId, Gender Gender, DateOnly? DateOfBirth, DateOnly EpisodeDate);
 }

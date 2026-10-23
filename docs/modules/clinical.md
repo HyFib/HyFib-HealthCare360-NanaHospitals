@@ -437,7 +437,7 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | GET / PUT | `/mrd/codings/{id}` | mrd.coding | `SaveCodingRequest{entries[{kind, code, isPrimary}], notes, version}` (catalogue codes only; categories with subdivisions rejected) |
 | POST | `/mrd/codings/{id}/verify` | mrd.coding | `VerifyCodingRequest{version}` (a different coder must verify); insurance claims then take the coding (MB-03) |
 | GET | `/mrd/codings/{id}/suggestions` | mrd.coding | → `CodingSuggestion[]` |
-| GET | `/mrd/reports/morbidity?from&to&groupBy=code|block|chapter&source=clinical|coded` | mrd.records | → `MorbidityReport` (episodes, patients, sex and age bands; ≤ 1 year) |
+| GET | `/mrd/reports/morbidity?from&to&groupBy=code|block|chapter&source=clinical|coded` | mrd.records | → `MorbidityReport` (episodes, patients, sex and age bands; ≤ 1 year). Each episode counts once per row and each patient once; ages are the patient's on the day of the episode (the coded episode's date, or the day the doctor recorded the diagnosis). `clinical` takes the doctors' ICD-coded diagnoses except differentials; `coded` takes MRD's coded and verified episodes |
 | GET / POST | `/mrd/records` | mrd.records | list (`status`, `overdue`, `retentionDue`, `assignedPractitionerId`, `search`) / `CreateMedicalRecordRequest` |
 | GET | `/mrd/records/{id}` | mrd.records | → `MedicalRecordDto` with deficiencies |
 | POST | `/mrd/records/{id}/deficiencies` | mrd.records | `AddDeficiencyRequest{type, description, assignedPractitionerId, dueDate}` |

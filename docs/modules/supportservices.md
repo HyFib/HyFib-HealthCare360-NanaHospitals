@@ -38,12 +38,12 @@ in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill wit
 | PUT | `/sets/{id}` | `cssd.masters.manage` | `SaveInstrumentSetRequest` (+`version`) → 204 |
 | GET | `/requests?status&departmentId&openOnly` | `cssd.read` or `cssd.requests` | → `CssdRequestDto[]` (urgent first) |
 | POST | `/requests` | `cssd.requests` | `CreateCssdRequestRequest` (departmentId, requiredBy, priority, lines[setId, quantity]) → 201 `CssdRequestDto` (urgent requests alert CSSD) |
-| POST | `/requests/{id}/cancel` | `cssd.requests` | `CancelCssdRequestRequest` → 204 |
+| POST | `/requests/{id}/cancel` | `cssd.requests` | `CancelCssdRequestRequest` → 204; 422 `cssd.request_closed` once it is issued or cancelled |
 | GET | `/receipts?from&to&discrepanciesOnly` | `cssd.read` | → `SoiledReceiptDto[]` |
 | POST | `/receipts` | `cssd.process` | `ReceiveSoiledRequest` (departmentId, lines[setId, setIssueId?, counts[itemName, received, damaged]]) → 201 `SoiledReceiptDto` (count check; discrepancies alert `cssd.recalls` holders) |
 | GET | `/packs?setId&status&expiringWithinDays` | `cssd.read` or `cssd.process` | → `SterilePackDto[]` (available by default, soonest expiry first) |
 | GET | `/issues?departmentId&loadId&openRecalls` (paged) | `cssd.read` or `cssd.recalls` | → `PagedResult<SetIssueDto>` |
-| POST | `/issues` | `cssd.process` | `IssuePacksRequest` (departmentId, cssdRequestId?, issuedToName, packIds ≤ 100) → `SetIssueDto[]` (expired/unreleased/recalled packs refused; 409 if issued concurrently) |
+| POST | `/issues` | `cssd.process` | `IssuePacksRequest` (departmentId, cssdRequestId?, issuedToName, packIds ≤ 100) → `SetIssueDto[]` (expired/unreleased/recalled packs refused; 409 `cssd.pack_taken` if a pack was issued concurrently). Against a request, each pack fills a line of its set (open → part issued → issued); the request must be open and the department's (400 on `cssdRequestId`). The request's version guards its line counts: a counter issuing against it while another does gets 409 `cssd.request_changed` and scans again, so no pack goes uncounted |
 | POST | `/issues/{id}/use` | `cssd.requests` or `cssd.process` | `RecordPackUseRequest` (patientId, usedAt) → 204 (traceability) |
 | POST | `/issues/{id}/acknowledge-recall` | `cssd.recalls` | `AcknowledgeRecallRequest` (action) → 204 |
 | GET | `/reports/summary?from&to` | `cssd.read` | → `CssdSummary` (loads, released, failed, failure rate, BI pending, by method, packs issued, open requests, discrepancy receipts, open recalls, stock by set, expiring ≤ 2 days) |
@@ -107,7 +107,7 @@ load is released the label says NOT RELEASED in white on black. On a ZPL or TSPL
 | POST | `/orders/{id}/review` | `dietary.orders.manage` | → `DietOrderDto` (clears `needsReview`) |
 | POST | `/meal-plans/generate` | `dietary.meals.manage` | `GenerateMealPlanRequest` (date: yesterday…+2 days) → `MealPlanResult` (added, cancelled, planned, charges posted) |
 | GET | `/meal-plans?date&wardId&slot` | `dietary.meals.manage` or `dietary.orders.read` | → `WardMealPlan[]` (ward-wise `PlannedMealDto` lines with bed, diet, preference, restrictions, allergies, delivery status) |
-| GET | `/meal-plans/production?date` | `dietary.meals.manage` | → `ProductionSummary` (per round and diet: veg/non-veg/egg/Jain counts, special notes) |
+| GET | `/meal-plans/production?date` | `dietary.meals.manage` | → `ProductionSummary` (per round and diet: veg/non-veg/egg/Jain counts, special notes "bed: restrictions (allergy: …)"). It counts the day's planned meals that are not cancelled, so it follows the diet orders once the plan is regenerated: nil by mouth gets nothing, a changed diet moves the meals, a stopped order drops out |
 | POST | `/meals/{id}/delivery` | `dietary.meals.manage` | `RecordDeliveryRequest` (Delivered/NotTaken — reason required/Returned, remarks, `version`) → `PlannedMealDto` |
 | POST | `/meal-plans/deliveries` | `dietary.meals.manage` | `BulkDeliveryRequest` (date, slot, wardId, status Delivered) → `BulkDeliveryResult` |
 
