@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups;
+using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -10,7 +11,8 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 /// Master health checkup (MHC-01..05): package master (registered as a HealthCheckup service item for billing),
 /// age/sex eligibility, booking with a department itinerary and one diagnostic order for the included tests,
 /// station-by-station progress, the reviewing doctor's consolidated summary and corporate batch bookings. The package
-/// is charged once, at check-in, through Billing (see <see cref="PackageBilling"/>).
+/// is charged once, at check-in, through Billing (see <see cref="PackageBilling"/>): to the visit's payer, and for a
+/// corporate batch to the company, a corporate payer of Billing's payer master.
 /// </summary>
 public sealed class HealthCheckupService(
     HospitalDbContext db,
@@ -18,6 +20,7 @@ public sealed class HealthCheckupService(
     ClinicalAccess access,
     ClinicalOrderService orders,
     IChargePoster charges,
+    IPayerDirectory payers,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -127,7 +130,7 @@ public sealed class HealthCheckupService(
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var booking = await BookCoreAsync(facilityId, request.PatientId, package, request.ScheduledDate, request.VisitId, request.Notes, null, null, ct);
+        var booking = await BookCoreAsync(facilityId, request.PatientId, package, request.ScheduledDate, request.VisitId, request.Notes, null, ct);
         if (booking.IsFailure)
         {
             return booking.Error!;
@@ -138,12 +141,31 @@ public sealed class HealthCheckupService(
         return await ToDtoAsync(booking.Value, ct);
     }
 
-    /// <summary>Corporate drive (MHC-05): books every eligible employee; ineligible ones are reported, not silently dropped.</summary>
+    /// <summary>
+    /// Corporate drive (MHC-05): books every eligible employee; ineligible ones are reported, not silently dropped. The
+    /// company is a corporate payer of the payer master, which each employee's check-up is billed to at check-in.
+    /// </summary>
     public async Task<Result<CorporateBatchResult>> BookCorporateAsync(CorporateBatchRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
         {
             return Error.Rule("facility.required", "Select a facility first.");
+        }
+
+        var company = await payers.FindAsync(request.PayerId, ct);
+        if (company is null)
+        {
+            return Error.Field("payerId", "Choose the company from the payer master.");
+        }
+
+        if (company.PayerType != PayerType.Corporate)
+        {
+            return Error.Field("payerId", $"{company.Name} is not a corporate payer. Choose the company among the corporates of the payer master.");
+        }
+
+        if (!company.IsActive)
+        {
+            return Error.Field("payerId", $"{company.Name} is inactive in the payer master.");
         }
 
         var package = await db.Set<HealthPackage>().AsNoTracking().Include(p => p.Items).FirstOrDefaultAsync(p => p.Id == request.PackageId, ct);
@@ -157,7 +179,8 @@ public sealed class HealthCheckupService(
         {
             FacilityId = facilityId,
             BatchNumber = await numbers.NextAsync(ClinicalNumberSeries.CorporateCheckupBatch, facilityId, ct),
-            CorporateName = request.CorporateName.Trim(),
+            PayerId = company.Id,
+            CorporateName = company.Name,
             ContactPerson = request.ContactPerson?.Trim(),
             ContactPhone = Phone.Normalize(request.ContactPhone),
             Reference = request.Reference?.Trim(),
@@ -173,7 +196,7 @@ public sealed class HealthCheckupService(
             var allowed = await access.EnsureCanRecordAsync(patientId, ct);
             var booking = allowed.IsFailure
                 ? allowed.Error!
-                : await BookCoreAsync(facilityId, patientId, package, request.ScheduledDate, null, request.Notes, batch.Id, batch.CorporateName, ct);
+                : await BookCoreAsync(facilityId, patientId, package, request.ScheduledDate, null, request.Notes, batch, ct);
             if (booking.IsFailure)
             {
                 skipped.Add(new BatchSkip(patientId, booking.Error!.Message));
@@ -189,19 +212,48 @@ public sealed class HealthCheckupService(
 
     /// <summary>
     /// Checks the patient in and charges the package in the same unit of work. If Billing refuses the charge (package no
-    /// longer offered, merged UHID…) the check-in is refused and the booking stays as it was.
+    /// longer offered, merged UHID…) the check-in is refused and the booking stays as it was. A check-up a company pays
+    /// for is charged on a visit billed to the company: the visit the desk links, which must be billed to it, or else a
+    /// health check-up visit opened with the check-in.
     /// </summary>
-    public Task<Result<BookingDto>> CheckInAsync(Guid id, Guid? visitId, CancellationToken ct) =>
-        ChangeAsync(id, async b =>
+    public async Task<Result<BookingDto>> CheckInAsync(Guid id, Guid? visitId, CancellationToken ct)
+    {
+        // A visit opened here takes its number in the check-in's transaction, so a refused check-in leaves no trace.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var checkedIn = await ChangeAsync(id, async b =>
         {
             if (visitId is { } vid && !await VisitBelongsToAsync(vid, b.PatientId, ct))
             {
                 return Error.Field("visitId", "This visit does not belong to the patient.");
             }
 
+            var ready = b.EnsureCanCheckIn();
+            if (ready.IsFailure)
+            {
+                return ready;
+            }
+
+            if (b.CorporatePayerId is { } companyId)
+            {
+                var companyVisit = await CompanyVisitAsync(b, companyId, visitId, ct);
+                if (companyVisit.IsFailure)
+                {
+                    return companyVisit.Error!;
+                }
+
+                visitId = companyVisit.Value;
+            }
+
             var packageServiceItemId = await db.Set<HealthPackage>().Where(p => p.Id == b.PackageId).Select(p => p.ServiceItemId).FirstOrDefaultAsync(ct);
             return await billing.CheckInAsync(b, packageServiceItemId, visitId, time.GetUtcNow(), ct);
         }, ct);
+        if (checkedIn.IsSuccess)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
+        return checkedIn;
+    }
 
     public Task<Result<BookingDto>> CompleteStopAsync(Guid id, Guid itemId, string? notes, CancellationToken ct) =>
         ChangeAsync(id, b => Task.FromResult(b.CompleteStop(itemId, currentUser.UserId, notes, time.GetUtcNow())), ct);
@@ -276,7 +328,7 @@ public sealed class HealthCheckupService(
 
     public static BookingDto ToDto(PackageBooking b, string? uhid, string? patientName) => new(
         b.Id, b.BookingNumber, b.PatientId, uhid, patientName, b.PackageId, b.PackageCode, b.PackageName, b.ScheduledDate, b.Status, b.VisitId, b.OrderId,
-        b.CorporateBatchId, b.CorporateName, b.Notes, b.CheckedInAt, b.Summary, b.Recommendations, b.ReviewedByPractitionerId, b.ReviewedAt,
+        b.CorporateBatchId, b.CorporateName, b.CorporatePayerId, b.Notes, b.CheckedInAt, b.Summary, b.Recommendations, b.ReviewedByPractitionerId, b.ReviewedAt,
         b.CompletedAt, b.CancelReason,
         b.Itinerary.OrderBy(i => i.Sequence)
             .Select(i => new ItineraryItemDto(i.Id, i.Sequence, i.DepartmentId, i.DepartmentName, i.Description, i.Status, i.CompletedAt, i.Notes)).ToList(),
@@ -289,9 +341,12 @@ public sealed class HealthCheckupService(
             .ToList(),
         p.Version);
 
-    /// <summary>Books one patient inside the caller's transaction: eligibility, itinerary, and the diagnostic order.</summary>
+    /// <summary>
+    /// Books one patient inside the caller's transaction: eligibility, itinerary, and the diagnostic order. A booking of a
+    /// corporate batch is the company's, and is billed to it at check-in.
+    /// </summary>
     private async Task<Result<PackageBooking>> BookCoreAsync(Guid facilityId, Guid patientId, HealthPackage package, DateOnly scheduledDate, Guid? visitId,
-        string? notes, Guid? batchId, string? corporateName, CancellationToken ct)
+        string? notes, CorporateCheckupBatch? batch, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == patientId)
             .Select(p => new { p.Gender, p.DateOfBirth, p.IsDeceased, p.IsActive }).FirstOrDefaultAsync(ct);
@@ -328,8 +383,9 @@ public sealed class HealthCheckupService(
             PackageCode = package.Code,
             PackageName = package.Name,
             ScheduledDate = scheduledDate,
-            CorporateBatchId = batchId,
-            CorporateName = corporateName,
+            CorporateBatchId = batch?.Id,
+            CorporateName = batch?.CorporateName,
+            CorporatePayerId = batch?.PayerId,
             Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim(),
         };
         booking.PlanItinerary(await PlanStopsAsync(applicable, ct));
@@ -472,6 +528,53 @@ public sealed class HealthCheckupService(
     /// <summary>Billing takes the facility and tariff from the visit, so a visit of another patient must never be used.</summary>
     private Task<bool> VisitBelongsToAsync(Guid visitId, Guid patientId, CancellationToken ct) =>
         db.Set<Visit>().AnyAsync(v => v.Id == visitId && v.PatientId == patientId, ct);
+
+    /// <summary>
+    /// The visit a company-paid check-up is charged on, as Billing bills a visit to its payer: the visit the desk linked,
+    /// when it is billed to the company, or else a health check-up visit billed to the company, numbered and raised as the
+    /// Patients module opens a visit (so Billing charges a first visit's registration fee on it, to the company too).
+    /// </summary>
+    private async Task<Result<Guid>> CompanyVisitAsync(PackageBooking booking, Guid companyId, Guid? linkedVisitId, CancellationToken ct)
+    {
+        if (linkedVisitId is { } linkedId)
+        {
+            var linked = await db.Set<Visit>().Where(v => v.Id == linkedId).Select(v => new { v.VisitNumber, v.PayerType, v.PayerId }).FirstAsync(ct);
+            return linked.PayerType == PayerType.Corporate && linked.PayerId == companyId
+                ? linkedId
+                : Error.Field("visitId", $"Visit {linked.VisitNumber} is not billed to {booking.CorporateName}, and this check-up is. "
+                                         + $"Check in without linking a visit: one billed to {booking.CorporateName} is opened for the check-up.");
+        }
+
+        var patient = await db.Set<Patient>().Where(p => p.Id == booking.PatientId)
+            .Select(p => new { p.MergedIntoPatientId, p.IsDeceased, p.IsActive }).FirstAsync(ct);
+        if (patient.MergedIntoPatientId is not null)
+        {
+            return Error.Rule("patient.merged", "This record was merged into another UHID. Use the surviving record.");
+        }
+
+        if (patient.IsDeceased || !patient.IsActive)
+        {
+            return Error.Rule("patient.inactive", "Visits cannot be created for inactive or deceased patients.");
+        }
+
+        var visit = new Visit
+        {
+            FacilityId = booking.FacilityId,
+            VisitNumber = await numbers.NextAsync(PatientsNumberSeries.Visit, booking.FacilityId, ct),
+            PatientId = booking.PatientId,
+            Type = VisitType.HealthCheckup,
+            Status = VisitStatus.Open,
+            VisitedAt = time.GetUtcNow(),
+            PayerType = PayerType.Corporate,
+            PayerId = companyId,
+            ReferralSource = ReferralSource.Corporate,
+            ReferredBy = booking.CorporateName,
+            Notes = $"Corporate health check-up {booking.BookingNumber}",
+        };
+        visit.MarkCreated();
+        db.Add(visit);
+        return visit.Id;
+    }
 
     private async Task CancelOrderAsync(PackageBooking booking, string reason, CancellationToken ct)
     {

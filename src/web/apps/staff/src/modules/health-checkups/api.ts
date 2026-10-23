@@ -88,6 +88,8 @@ export interface BookingDto {
   orderId: string | null;
   corporateBatchId: string | null;
   corporateName: string | null;
+  /** The company of a corporate batch, a corporate payer: the check-up is billed to it. */
+  corporatePayerId: string | null;
   notes: string | null;
   checkedInAt: string | null;
   summary: string | null;
@@ -109,7 +111,8 @@ export interface BookCheckupRequest {
 }
 
 export interface CorporateBatchRequest {
-  corporateName: string;
+  /** The company: a corporate payer of the payer master (Insurance → Payers). */
+  payerId: string;
   contactPerson: string | null;
   contactPhone: string | null;
   reference: string | null;
@@ -129,6 +132,8 @@ export interface CorporateBatchResult {
 export interface CorporateBatchDto {
   id: string;
   batchNumber: string;
+  /** Null on batches booked before a batch named its company's payer. */
+  payerId: string | null;
   corporateName: string;
   contactPerson: string | null;
   contactPhone: string | null;

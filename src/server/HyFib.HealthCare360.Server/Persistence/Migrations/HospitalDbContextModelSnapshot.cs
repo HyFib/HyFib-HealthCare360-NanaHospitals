@@ -7002,6 +7002,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("package_id");
 
+                    b.Property<Guid?>("PayerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payer_id");
+
                     b.Property<string>("Reference")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -8762,6 +8766,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("corporate_name");
+
+                    b.Property<Guid?>("CorporatePayerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("corporate_payer_id");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")

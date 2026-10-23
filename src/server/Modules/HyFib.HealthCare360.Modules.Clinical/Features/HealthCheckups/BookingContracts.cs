@@ -8,8 +8,9 @@ namespace HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups;
 
 public sealed record BookCheckupRequest(Guid PatientId, Guid PackageId, DateOnly ScheduledDate, Guid? VisitId, string? Notes);
 
+/// <summary>A corporate drive: <see cref="PayerId"/> is the company, a corporate payer of the payer master.</summary>
 public sealed record CorporateBatchRequest(
-    string CorporateName,
+    Guid PayerId,
     string? ContactPerson,
     string? ContactPhone,
     string? Reference,
@@ -53,6 +54,7 @@ public sealed record BookingDto(
     Guid? OrderId,
     Guid? CorporateBatchId,
     string? CorporateName,
+    Guid? CorporatePayerId,
     string? Notes,
     DateTimeOffset? CheckedInAt,
     string? Summary,
@@ -71,6 +73,7 @@ public sealed record CorporateBatchResult(Guid BatchId, string BatchNumber, int 
 public sealed record CorporateBatchDto(
     Guid Id,
     string BatchNumber,
+    Guid? PayerId,
     string CorporateName,
     string? ContactPerson,
     string? ContactPhone,
@@ -102,7 +105,7 @@ public sealed class CorporateBatchRequestValidator : AbstractValidator<Corporate
     public CorporateBatchRequestValidator(TimeProvider time)
     {
         var today = time.Today();
-        RuleFor(x => x.CorporateName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.PayerId).NotEmpty().WithMessage("Choose the company.");
         RuleFor(x => x.ContactPerson).MaximumLength(200);
         RuleFor(x => x.ContactPhone).PhoneNumber();
         RuleFor(x => x.Reference).MaximumLength(100);

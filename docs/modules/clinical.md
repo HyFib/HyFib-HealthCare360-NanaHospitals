@@ -496,14 +496,14 @@ supplies, in Medical records > ICD catalogue > Import or with the server command
 | POST / PUT | `/health-checkups/packages[/{id}]` | healthcheck.manage | `SavePackageRequest{code "HC-…", name, description, gender, minAgeYears, maxAgeYears, price, isActive, items[{kind, serviceItemId?, departmentCode?, gender, minAgeYears}], version?}` — also creates/updates the package's `org.service_items` row (category HealthCheckup) |
 | GET / POST | `/health-checkups/bookings` | healthcheck.manage or emr.read / healthcheck.manage | `BookCheckupRequest{patientId, packageId, scheduledDate, visitId?, notes}` (a `visitId` makes it a walk-in: checked in and charged at once) → `BookingDto` (itinerary + one ClinicalOrder for the included lab/radiology/cardiology tests) |
 | GET | `/health-checkups/bookings/{id}` | healthcheck.manage or emr.read | → `BookingDto` |
-| POST | `/health-checkups/bookings/{id}/check-in` | healthcheck.manage | `CheckInCheckupRequest{visitId?}` — posts the package charge (see *Package billing*); refused if Billing refuses the charge, if the package has no service item (422 `package.not_billable`) or if the visit is another patient's |
+| POST | `/health-checkups/bookings/{id}/check-in` | healthcheck.manage | `CheckInCheckupRequest{visitId?}` — posts the package charge (see *Package billing*); refused if Billing refuses the charge, if the package has no service item (422 `package.not_billable`) or if the visit is another patient's. A corporate batch's booking is charged on a visit billed to its company: a linked visit billed to anyone else is refused (400 on `visitId`), and without one a health check-up visit billed to the company is opened (see *Corporate check-ups*) |
 | POST | `/health-checkups/bookings/{id}/itinerary/{itemId}/complete` / `skip` | healthcheck.manage, emr.write or vitals.record | `CompleteStopRequest{notes}` / `SkipStopRequest{reason}` |
 | PUT | `/health-checkups/bookings/{id}/summary` | emr.write | `CheckupSummaryRequest{summary, recommendations}` (reviewing doctor) |
 | POST | `/health-checkups/bookings/{id}/complete` | healthcheck.manage or emr.write | all stops done/skipped + summary required |
 | POST | `/health-checkups/bookings/{id}/cancel` / `no-show` | healthcheck.manage | cancels the package charge, then the booking and the remaining tests (`ServiceOrderCancelled`); 422 `booking.package_billed` (booking unchanged) when the charge is on a finalised bill |
 | GET | `/health-checkups/bookings/{id}/report` | healthcheck.manage or emr.read | → `CheckupReport{booking, patient, letterhead, reviewingDoctor, order}` |
 | GET | `/health-checkups/bookings/{id}/report/document`, `/report/pdf` | healthcheck.manage or emr.read | The full check-up report (summary, then every released lab, radiology and cardiology result) as a printable document or PDF. Served by the Diagnostics module, which reads the results; see [diagnostics.md](diagnostics.md) |
-| GET / POST | `/health-checkups/corporate-batches`, `GET /{id}` | healthcheck.manage | `CorporateBatchRequest{corporateName, contactPerson, contactPhone, reference, packageId, scheduledDate, patientIds[≤500], notes}` → `CorporateBatchResult{batchId, batchNumber, booked, skipped[{patientId, reason}]}` |
+| GET / POST | `/health-checkups/corporate-batches`, `GET /{id}` | healthcheck.manage | `CorporateBatchRequest{payerId, contactPerson, contactPhone, reference, packageId, scheduledDate, patientIds[≤500], notes}` → `CorporateBatchResult{batchId, batchNumber, booked, skipped[{patientId, reason}]}`. `payerId` is the company: an active corporate payer of the payer master, else 400 on `payerId`. The batch (`CorporateBatchDto.payerId`, `corporateName` as the payer master names it) and each booking (`BookingDto.corporatePayerId`) carry it |
 
 #### Package billing
 
@@ -514,7 +514,7 @@ front desk collects the package fee — or at booking for a walk-in booked with 
 |---|---|
 | `SourceModule` / `SourceReference` | `healthcheck.package` / the booking id (`booking.Id.ToString()`); posting is idempotent on this key |
 | `ServiceItemId`, `Quantity` | the package's HC-* service item, 1 |
-| `PatientId`, `VisitId`, `PractitionerId` | the booking's patient, the check-in visit (if any), none |
+| `PatientId`, `VisitId`, `PractitionerId` | the booking's patient, the check-in visit (if any; for a corporate batch, the visit billed to the company), none |
 | `Description`, `ServiceDate` | "*package name* (*booking number*)", the check-in time |
 
 Billing is always asked before the booking changes, and the charge is committed with the booking in one unit of work
@@ -523,6 +523,26 @@ on a finalised bill the booking is left unchanged and the call returns 422 `book
 bill or issues a credit note, then the booking can be cancelled). The component tests carry `PackageBookingId` on
 `ServiceOrderPlaced` and are never priced individually. Diagnostics can gate on the charge through
 `IBillingStatusProvider.GetStatesAsync("healthcheck.package", [bookingId])`.
+
+#### Corporate check-ups
+
+A company that sends its employees for check-ups is a **corporate payer** of Billing's payer master (Insurance → Payers,
+category Corporate), with its tariff plan, co-pay and credit days. A batch names it by `payerId`, looked up through
+`IPayerDirectory.FindAsync` (Platform), and every booking of the batch is billed to it:
+
+* **Booking**: only an active corporate payer can be the company. The batch keeps the payer's id and its name as the
+  payer master has it; ineligible employees (age, sex, inactive record, already booked that day) are reported with the
+  reason and not booked.
+* **Check-in**: Billing bills a visit to the visit's payer, so the package is charged on a visit billed to the company.
+  Without a linked visit, the check-in opens a health check-up visit (type `HealthCheckup`, payer `Corporate` and the
+  company, referral `Corporate`, no token) as the Patients module numbers and raises a visit: `VisitCreated` charges a
+  first visit's registration fee on it too. A linked visit must be billed to the company (400 on `visitId` otherwise).
+  The visit and the charge are committed with the check-in in one transaction, or not at all.
+* **Billing**: the OP bill of that visit has the company as payer; with the payer's co-pay at 0 the whole bill is the
+  company's share, recovered as a corporate claim, and nothing is due from the employee.
+
+Batches booked before batches named their payer have only the company's name; their check-ups are billed to the
+visit's payer as before.
 
 ### Patient portal (`/portal`, permission `portal.access`, scoped by `PortalPatientScope`)
 

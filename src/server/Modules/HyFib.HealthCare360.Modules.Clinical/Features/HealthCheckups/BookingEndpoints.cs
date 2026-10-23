@@ -121,7 +121,7 @@ internal static class BookingEndpoints
         }
 
         return TypedResults.Ok(await batches.OrderByDescending(b => b.ScheduledDate)
-            .Select(b => new CorporateBatchDto(b.Id, b.BatchNumber, b.CorporateName, b.ContactPerson, b.ContactPhone, b.Reference, b.PackageId, b.ScheduledDate,
+            .Select(b => new CorporateBatchDto(b.Id, b.BatchNumber, b.PayerId, b.CorporateName, b.ContactPerson, b.ContactPhone, b.Reference, b.PackageId, b.ScheduledDate,
                 b.BookedCount, b.SkippedCount, b.Notes, b.CreatedAt))
             .ToPagedResultAsync(page, ct));
     }
@@ -146,7 +146,7 @@ internal static class BookingEndpoints
             .ToListAsync(ct);
         return TypedResults.Ok(new
         {
-            Batch = new CorporateBatchDto(batch.Id, batch.BatchNumber, batch.CorporateName, batch.ContactPerson, batch.ContactPhone, batch.Reference, batch.PackageId,
+            Batch = new CorporateBatchDto(batch.Id, batch.BatchNumber, batch.PayerId, batch.CorporateName, batch.ContactPerson, batch.ContactPhone, batch.Reference, batch.PackageId,
                 batch.ScheduledDate, batch.BookedCount, batch.SkippedCount, batch.Notes, batch.CreatedAt),
             Bookings = bookings.Select(x => HealthCheckupService.ToDto(x.Booking, x.Uhid, x.FullName)).ToList(),
         });
