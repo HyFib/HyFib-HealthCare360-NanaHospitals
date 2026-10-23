@@ -186,7 +186,7 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 | PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204; 400 `packageId` for a package for out-patient visits only |
 | POST | `/{id}/interim-bills` | `billing.ip.manage` | `CreateInterimBillRequest(upTo?)` → 201 `BillDetail`: the services not billed yet up to the end of `upTo` (today when empty). Self-pay, non-package stays only; 422 `billing.interim_insured`, `billing.interim_package`, `billing.ip_account_inactive`, `billing.nothing_to_bill` ([Interim bills](#interim-bills-ipb-05)) |
 | POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services); 422 `billing.billed_on_interim_bills` when interim bills took every service, `billing.nothing_to_bill` when none was charged |
-| POST | `/{id}/settle` | `billing.ip.manage` | → `SettlementResult` (advance adjusted oldest bill first; unused advance becomes a refund request). After the final bill; with nothing for a final bill (`finalBillId` null), once the discharge has been initiated: 422 `billing.discharge_not_initiated` before, `billing.final_bill_missing` while services wait for a final bill |
+| POST | `/{id}/settle` | `billing.ip.manage` | → `SettlementResult` (advance adjusted oldest bill first; unused advance becomes a refund request). Once the discharge has been initiated (422 `billing.discharge_not_initiated` while the account is open, a revoked discharge included) and every draft interim bill is finalized (422 `billing.interim_bill_draft`: the advance pays finalized bills only); after the final bill, or with nothing for one (`finalBillId` null; `billing.final_bill_missing` while services wait for it) |
 | GET | `/{id}/clearance` | readers | → `ClearanceDto` (`billedOnInterimBills`: interim bills took every service, so no final bill is needed) |
 | POST | `/{id}/discharge-approval` | `billing.discounts.approve` | `ApproveDischargeWithDuesRequest(reason)` → 204 |
 
@@ -204,6 +204,8 @@ A self-paying patient's long stay can be billed in parts, so the family pays as 
   only what no interim bill took. At settlement the advance pays what is still due on every bill of the stay, interim
   bills included.
 * **Only during the stay:** 422 `billing.ip_account_inactive` once the patient is discharged or the admission cancelled.
+* **Finalized before settlement:** while a draft interim bill holds services, the discharge notice says to finalize it
+  and settling answers 422 `billing.interim_bill_draft`, as the advance pays finalized bills only.
 * **Not for insured, credit or package stays** (422 `billing.interim_insured` when the account has an insurer, corporate
   or government scheme as payer; `billing.interim_package` when it has a package). This is deliberate: such a stay is
   billed once, on the final bill, because its split or its package is worked out over the whole stay.
@@ -442,6 +444,7 @@ Handled (all inside the raising transaction; handlers stage changes and never sa
 | `PatientAdmitted` | Opens the IP account (payer, tariff, policy, bed class); re-prices charges staged earlier in the same transaction |
 | `PatientTransferred` | Follows the bed class for later pricing |
 | `DischargeInitiated` | Drafts the final bill (package vs actuals, payer split) and alerts the IP desk |
+| `DischargeRevoked` | Opens the account again (no settlement while the patient is in) and tells the IP desk what becomes of the final bill |
 | `PatientDischarged` | Closes a settled account or alerts billing about dues |
 | `PatientsMerged` | Re-points every billing row (incl. advances, policies, claims) to the surviving UHID |
 | `AppointmentPaymentCaptured` (Scheduling) | Queues `billing.appointment.prepayment` (outbox) |

@@ -698,6 +698,7 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
   });
 
   const c = clearance.data;
+  // The account is settled once the discharge has begun (a revoked one opens it again): more services may come until then.
   const stayGoesOn = account.status === 'Open';
   // Nothing waits for a final bill: the interim bills took every service, or none was charged. Once the discharge has
   // begun no more will come, so none is needed and the advance is settled against the interim bills.
@@ -807,7 +808,7 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
             <Button
               icon={<HandshakeRegular />}
               onClick={() => setDialog('settle')}
-              disabled={!(c?.hasFinalBill || (nothingForFinalBill && !stayGoesOn))}
+              disabled={stayGoesOn || !(c?.hasFinalBill || nothingForFinalBill)}
             >
               Settle with the advance
             </Button>

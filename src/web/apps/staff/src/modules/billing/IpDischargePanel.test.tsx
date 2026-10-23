@@ -133,6 +133,14 @@ describe('IpDischargePanel', () => {
     expect(screen.getByRole('button', { name: /settle with the advance/i })).toBeDisabled();
   });
 
+  it('keeps a finalised final bill unsettled while a revoked discharge has the patient in again', async () => {
+    readClearance.mockResolvedValue(billedOnInterimBills({ hasFinalBill: true, billedOnInterimBills: false }));
+    renderPanel(account({ status: 'Open' }));
+
+    expect(await screen.findByText('Finalised')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /settle with the advance/i })).toBeDisabled();
+  });
+
   it('asks for the final bill while services wait for one', async () => {
     readClearance.mockResolvedValue(
       billedOnInterimBills({ unbilledCount: 2, unbilledAmount: 1_500, billedOnInterimBills: false, reason: null }),

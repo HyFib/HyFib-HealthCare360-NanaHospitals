@@ -603,11 +603,17 @@ public sealed class HealthCheckupService(
         return visit.Id;
     }
 
+    /// <summary>
+    /// The health check-up visit open at <paramref name="visitId"/>, at any facility: a booking is completed or cancelled
+    /// from whichever facility its doctor or desk works at (<see cref="Bookings"/>), and its visit closes with it.
+    /// </summary>
+    internal static IQueryable<Visit> OpenVisit(HospitalDbContext db, Guid visitId) =>
+        db.Set<Visit>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(v => v.Id == visitId && (v.Status == VisitStatus.Open || v.Status == VisitStatus.InProgress));
+
     /// <summary>The health check-up visit the check-in opened for the company, while it is still open.</summary>
     private async Task<Visit?> OwnVisitAsync(PackageBooking booking, CancellationToken ct) =>
-        booking is { VisitOpenedForCheckup: true, VisitId: { } visitId }
-            ? await db.Set<Visit>().FirstOrDefaultAsync(v => v.Id == visitId && (v.Status == VisitStatus.Open || v.Status == VisitStatus.InProgress), ct)
-            : null;
+        booking is { VisitOpenedForCheckup: true, VisitId: { } visitId } ? await OpenVisit(db, visitId).FirstOrDefaultAsync(ct) : null;
 
     private async Task CancelOrderAsync(PackageBooking booking, string reason, CancellationToken ct)
     {
