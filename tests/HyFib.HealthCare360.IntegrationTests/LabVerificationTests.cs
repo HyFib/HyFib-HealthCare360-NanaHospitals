@@ -39,7 +39,7 @@ public sealed class LabVerificationTests(HospitalServer server)
         var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
 
         // The technician enters a tube of electrolytes: the potassium is critically high, sodium and chloride are normal.
-        var tube = await ReceivedSampleAsync("LAB-ELECTROLYTES");
+        var tube = await ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
         var lines = await EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "7.2", ["CL"] = "101" });
         var potassium = lines.Single(l => l.TestCode == "K");
         potassium.Flag.ShouldBe(ResultFlag.CriticalHigh);
@@ -78,7 +78,7 @@ public sealed class LabVerificationTests(HospitalServer server)
         var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
         var me = await pathologist.GetAsync<AuthUser>("/api/v1/auth/me");
 
-        var tube = await ReceivedSampleAsync("LAB-ELECTROLYTES");
+        var tube = await ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
         var lines = await EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "141", ["K"] = "2.1", ["CL"] = "99" });
         var potassium = lines.Single(l => l.TestCode == "K");
         potassium.Flag.ShouldBe(ResultFlag.CriticalLow);
@@ -107,8 +107,8 @@ public sealed class LabVerificationTests(HospitalServer server)
         var pathologistId = (await pathologist.GetAsync<AuthUser>("/api/v1/auth/me")).Id;
 
         // Two patients' fasting sugars are entered, both normal.
-        var first = (await EnterAsync(lab, await ReceivedSampleAsync("LAB-FBS"), new Dictionary<string, string> { ["LAB-FBS"] = "92" })).Single().ResultId;
-        var second = (await EnterAsync(lab, await ReceivedSampleAsync("LAB-FBS"), new Dictionary<string, string> { ["LAB-FBS"] = "88" })).Single().ResultId;
+        var first = (await EnterAsync(lab, await ReceivedSampleAsync(server, "LAB-FBS"), new Dictionary<string, string> { ["LAB-FBS"] = "92" })).Single().ResultId;
+        var second = (await EnterAsync(lab, await ReceivedSampleAsync(server, "LAB-FBS"), new Dictionary<string, string> { ["LAB-FBS"] = "88" })).Single().ResultId;
 
         // The glucose assay's level 1 control on the chemistry analyser (seeded with three weeks of accepted runs).
         var fbs = (await lab.GetAsync<PagedResult<LabTestListItem>>("/api/v1/lab/tests?search=LAB-FBS")).Items.Single(t => t.Code == "LAB-FBS");
@@ -164,11 +164,11 @@ public sealed class LabVerificationTests(HospitalServer server)
     }
 
     /// <summary>A walk-in order for one test, its tube collected and received in the lab (the counter's payment gate waived).</summary>
-    private async Task<CreatedSample> ReceivedSampleAsync(string testCode)
+    internal static async Task<CreatedSample> ReceivedSampleAsync(HospitalServer server, string testCode)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
-        var patient = await RegisterPatientAsync();
+        var patient = await RegisterPatientAsync(server);
         var test = (await lab.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={testCode}")).Items.Single(t => t.Code == testCode);
         var order = await lab.PostAsync<LabOrderCreated>("/api/v1/lab/orders", new CreateLabOrderRequest(
             patient.Id, null, [test.Id], OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
@@ -193,7 +193,7 @@ public sealed class LabVerificationTests(HospitalServer server)
     }
 
     /// <summary>The technician enters a value for every analyte on the tube, by test code.</summary>
-    private static async Task<List<ResultSheetLine>> EnterAsync(ApiClient lab, CreatedSample tube, IReadOnlyDictionary<string, string> values)
+    internal static async Task<List<ResultSheetLine>> EnterAsync(ApiClient lab, CreatedSample tube, IReadOnlyDictionary<string, string> values)
     {
         var sheet = await SheetAsync(lab, tube);
         return await lab.PostAsync<List<ResultSheetLine>>("/api/v1/lab/results", new EnterResultsRequest(
@@ -234,7 +234,7 @@ public sealed class LabVerificationTests(HospitalServer server)
     private static Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
         admin.SaveSettingAsync("lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
 
-    private async Task<PatientCreated> RegisterPatientAsync()
+    private static async Task<PatientCreated> RegisterPatientAsync(HospitalServer server)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(

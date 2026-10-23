@@ -92,7 +92,7 @@ public sealed class WriteBodyValidationTests(HospitalServer server)
         JsonDocument.Parse(body).RootElement.GetProperty("errors").TryGetProperty(field, out _).ShouldBeTrue(body);
     }
 
-    private static async Task<Guid> WaitingTokenAsync(ApiClient frontOffice, ApiClient doctor)
+    internal static async Task<Guid> WaitingTokenAsync(ApiClient frontOffice, ApiClient doctor)
     {
         var created = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
             Title: null, FirstName: "Meena", MiddleName: null, LastName: "Sv" + Letters(8), Gender: Gender.Female,

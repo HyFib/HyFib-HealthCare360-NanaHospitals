@@ -15,8 +15,10 @@ about a third of the steps are searches and one in ten registers a patient. The 
 only their requests after the last one has started are measured, for `--duration`. A request that fails (HTTP 400 or
 above, or no answer) counts as failed, never as fast. More than 1% failed requests fail the run whatever the timings.
 
-Not measured here: PERF-03 (the screens' load time, which a browser measures) and PERF-04
-(real-time updates within 2 s).
+Not measured here: PERF-03 (the screens' load time, which a browser measures) and PERF-04 (real-time updates within
+2 s). PERF-04's server share is measured by `RealtimeLatencyTests` in the integration tests, which time a queue call, a
+bed change and a critical lab value from the request to the event arriving at a screen subscribed to the hub; on site,
+time the same three changes from one workstation to a second one on the hospital's WiFi (a stopwatch is enough at 2 s).
 
 ## Running it against a test Server Node
 
