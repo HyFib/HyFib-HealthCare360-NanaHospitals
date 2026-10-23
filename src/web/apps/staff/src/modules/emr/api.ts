@@ -294,6 +294,11 @@ export interface RecentEncounter {
   diagnoses: string[];
 }
 
+/** An encounter's previous visit (EMR-02..07): the patient's latest signed encounter that started before it, if any. */
+export interface PreviousVisitResponse {
+  previous: RecentEncounter | null;
+}
+
 export interface PatientClinicalSummary {
   patient: PatientSummary;
   allergiesEverRecorded: boolean;
@@ -759,6 +764,9 @@ export const emrKeys = {
   immunizations: (patientId: string, includeErrors: boolean) =>
     ['emr', 'patient', patientId, 'immunizations', includeErrors] as const,
   admissions: (patientId: string) => ['emr', 'patient', patientId, 'admissions'] as const,
+  /** Under the patient key, so a change to the patient's record refreshes it. */
+  previousVisit: (patientId: string, encounterId: string) =>
+    ['emr', 'patient', patientId, 'previous-visit', encounterId] as const,
   encounter: (id: string) => ['emr', 'encounter', id] as const,
   templates: (specialtyCode: string | null) => ['emr', 'templates', specialtyCode ?? 'all'] as const,
   template: (id: string) => ['emr', 'template', id] as const,
@@ -885,6 +893,14 @@ export const emrQueries = {
     queryOptions({
       queryKey: emrKeys.encounter(id),
       queryFn: ({ signal }) => api.get<EncounterDetail>(`/api/v1/emr/encounters/${id}`, { signal }),
+    }),
+  previousVisit: (patientId: string, encounterId: string) =>
+    queryOptions({
+      queryKey: emrKeys.previousVisit(patientId, encounterId),
+      queryFn: ({ signal }) =>
+        api.get<PreviousVisitResponse>(`/api/v1/emr/encounters/${encounterId}/previous-visit`, { signal }),
+      // Each fetch is an audited read, and a visit already signed seldom changes while this one is written.
+      staleTime: 60_000,
     }),
   templates: (specialtyCode: string | null = null) =>
     queryOptions({

@@ -59,6 +59,12 @@ public sealed record RecentEncounter(
     IReadOnlyList<string> Diagnoses);
 
 /// <summary>
+/// An encounter's previous visit (EMR-02..07), for the encounter workspace: <see cref="Previous"/> is null when the
+/// patient has no signed encounter before it (see <c>PatientRecordQueries.PreviousVisitAsync</c>).
+/// </summary>
+public sealed record PreviousVisitResponse(RecentEncounter? Previous);
+
+/// <summary>
 /// Everything the persistent EMR banner and summary panel need in one call (EHR-03, UX-04): allergies (with
 /// "never recorded" distinguished from "none active"), current critical/infection-control alerts, active problems,
 /// current medications, the last vitals with their flags and the last five encounters. <see cref="AllergyStatus"/> is

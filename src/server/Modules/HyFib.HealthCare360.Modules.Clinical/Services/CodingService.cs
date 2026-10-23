@@ -150,7 +150,8 @@ public sealed class CodingService(
 
     /// <summary>
     /// Morbidity index: episodes and distinct patients per ICD code/block/chapter with sex and age-band breakdown.
-    /// <paramref name="source"/> "coded" uses verified/coded MRD coding; "clinical" uses clinicians' diagnoses.
+    /// <paramref name="source"/> "coded" uses the facility's MRD coding that a second coder verified, by the day the episode
+    /// ended; "clinical" uses clinicians' diagnoses.
     /// </summary>
     public async Task<MorbidityReport> MorbidityAsync(DateOnly fromDate, DateOnly toDate, string groupBy, string source, CancellationToken ct)
     {
@@ -158,10 +159,12 @@ public sealed class CodingService(
         var coded = string.Equals(source, "coded", StringComparison.OrdinalIgnoreCase);
         var rows = coded
             ? await (
-                    from c in Codings()
+                    // The facility's own codings, as on the coding worklist. IgnoreQueryFilters anywhere in the query would
+                    // lift the facility filter from the codings too.
+                    from c in db.Set<EncounterCoding>()
                     from e in c.Entries
-                    join p in db.Set<Patient>().IgnoreQueryFilters() on c.PatientId equals p.Id
-                    where c.Status != CodingStatus.Pending && c.EpisodeDate >= fromDate && c.EpisodeDate <= toDate && e.Kind == CodingEntryKind.Diagnosis
+                    join p in db.Set<Patient>() on c.PatientId equals p.Id
+                    where c.Status == CodingStatus.Verified && c.EpisodeDate >= fromDate && c.EpisodeDate <= toDate && e.Kind == CodingEntryKind.Diagnosis
                     select new MorbidityFact(e.Code, e.Title, c.PatientId, c.Id, p.Gender, p.DateOfBirth))
                 .ToListAsync(ct)
             : await (
