@@ -88,11 +88,63 @@ public sealed class IpBillingService(
         }
 
         var bill = await StageFinalBillAsync(account, ct);
+        if (bill.Lines.Count == 0)
+        {
+            // Nothing is left for a final bill: the interim bills of a stay billed in parts took every service, or none
+            // was charged. An empty bill cannot be finalized, so none is drafted; the advance is settled against the
+            // interim bills.
+            Discard(bill);
+            var charged = await db.Set<Charge>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .AnyAsync(c => c.AdmissionId == account.AdmissionId && c.Status != ChargeStatus.Cancelled, ct);
+            var next = await HasDraftInterimBillAsync(account.AdmissionId, ct)
+                ? "Finalize the draft interim bill, then settle the account."
+                : account.DepositBalance > 0 ? $"Settle the advance of ₹{Money.FormatInr(account.DepositBalance)}." : "No advance is held.";
+            await notifications.NotifyPermissionHoldersAsync(
+                BillingPermissions.IpManage,
+                account.FacilityId,
+                "Discharge initiated — nothing left to bill",
+                $"Admission {account.AdmissionNumber}: {(charged ? "every service is on an interim bill" : "no service was charged")}, so there is no final bill. {next}",
+                $"/billing/ip-accounts/{account.Id}",
+                "billing",
+                "info",
+                ct);
+            return;
+        }
+
         await notifications.NotifyPermissionHoldersAsync(
             BillingPermissions.IpManage,
             account.FacilityId,
             "Discharge initiated — final bill drafted",
-            $"Admission {account.AdmissionNumber}: the draft final bill (₹{Money.FormatInr(bill.NetAmount)}) is ready for review.",
+            $"Admission {account.AdmissionNumber}: the draft final bill (₹{Money.FormatInr(bill.NetAmount)}) is ready for review."
+                + (await HasDraftInterimBillAsync(account.AdmissionId, ct) ? " A draft interim bill holds services too: finalize it before settling the account." : string.Empty),
+            $"/billing/ip-accounts/{account.Id}",
+            "billing",
+            "info",
+            ct);
+    }
+
+    /// <summary>
+    /// The discharge was revoked: the account is open again, so the stay is not settled while the patient is in a bed, and
+    /// the billing desk is told what becomes of the final bill: a draft waits for the next discharge, and services after
+    /// a finalized one go on a supplementary bill.
+    /// </summary>
+    internal async Task DischargeRevokedAsync(DischargeRevoked revoked, CancellationToken ct)
+    {
+        var account = await charges.FindAccountAsync(revoked.AdmissionId, ct);
+        if (account is not { Status: IpAccountStatus.DischargeInitiated })
+        {
+            return;
+        }
+
+        account.ReopenAfterRevokedDischarge();
+        var finalBill = await HasFinalizedFinalBillAsync(account.AdmissionId, ct)
+            ? "The final bill is finalized already, so services from now on go on a supplementary bill."
+            : "A final bill already drafted stays a draft until the next discharge.";
+        await notifications.NotifyPermissionHoldersAsync(
+            BillingPermissions.IpManage,
+            account.FacilityId,
+            "Discharge revoked — the stay goes on",
+            $"Admission {account.AdmissionNumber}: the discharge was revoked, so the account is settled once the discharge begins again. {finalBill}",
             $"/billing/ip-accounts/{account.Id}",
             "billing",
             "info",
@@ -110,7 +162,10 @@ public sealed class IpBillingService(
         account.MarkDischarged(discharged.DischargedAt, discharged.DischargeType);
         var position = await BillingStatusProvider.PositionAsync(db, discharged.AdmissionId, ct);
         var clearance = DischargeClearanceRules.Evaluate(position);
-        if (clearance.Outstanding <= 0 && position.HasFinalBill && account.DepositBalance <= 0)
+
+        // Every service is on a finalized bill (the final bill, or the interim bills that took them all), nothing is due
+        // and no advance is held.
+        if (clearance.Outstanding <= 0 && position.UnbilledCount == 0 && account.DepositBalance <= 0)
         {
             account.Close();
             return;
@@ -237,7 +292,7 @@ public sealed class IpBillingService(
         var clearance = DischargeClearanceRules.Evaluate(position);
         return new ClearanceDto(
             clearance.Cleared, clearance.Outstanding, clearance.Reason, position.UnbilledCount, position.UnbilledAmount, position.HasFinalBill,
-            position.PatientDue, position.DepositBalance, position.DischargeWithDuesApproved);
+            position.PatientDue, position.DepositBalance, position.DischargeWithDuesApproved, position.BilledOnInterimBills);
     }
 
     // ------------------------------------------------------------------ commands
@@ -431,12 +486,11 @@ public sealed class IpBillingService(
             bill = await StageFinalBillAsync(account, ct);
             if (bill.Lines.Count == 0)
             {
-                if (db.Entry(bill).State == EntityState.Added)
-                {
-                    db.Entry(bill).State = EntityState.Detached;
-                }
-
-                return Error.Rule("billing.nothing_to_bill", "No services have been charged to this admission yet.");
+                Discard(bill);
+                return await db.Set<Charge>().AnyAsync(c => c.AdmissionId == account.AdmissionId && c.Status != ChargeStatus.Cancelled, ct)
+                    ? Error.Rule("billing.billed_on_interim_bills",
+                        "Every service of this stay is on an interim bill, so a final bill would hold nothing. Finalize any draft interim bill, then settle the advance.")
+                    : Error.Rule("billing.nothing_to_bill", "No services have been charged to this admission yet.");
             }
         }
 
@@ -446,7 +500,10 @@ public sealed class IpBillingService(
 
     /// <summary>
     /// Final settlement (IPB-08): adjusts the advance against the admission's open bills, oldest first; when nothing is
-    /// due any more, the unused advance becomes a refund request (approved and paid like any refund).
+    /// due any more, the unused advance becomes a refund request (approved and paid like any refund). The account is
+    /// settled once the discharge has begun, as more services may come until then (a revoked discharge opens it again),
+    /// and once every draft interim bill is finalized, as the advance pays finalized bills only. It follows the final bill;
+    /// a stay with nothing for a final bill (its interim bills took every service, or none was charged) needs none.
     /// </summary>
     public async Task<Result<SettlementResult>> SettleAsync(Guid id, CancellationToken ct)
     {
@@ -456,11 +513,22 @@ public sealed class IpBillingService(
             return Error.NotFound(nameof(IpAccount), id);
         }
 
+        if (account.Status == IpAccountStatus.Open)
+        {
+            return Error.Rule("billing.discharge_not_initiated",
+                "The patient is still in, and more services may come. Settle the account once the discharge has been initiated.");
+        }
+
+        if (await HasDraftInterimBillAsync(account.AdmissionId, ct))
+        {
+            return Error.Rule("billing.interim_bill_draft", "A draft interim bill holds services of this stay. Finalize it before settling the account.");
+        }
+
         var finalBill = await db.Set<Bill>()
             .Where(b => b.AdmissionId == account.AdmissionId && b.IsFinalBill && b.Status != BillStatus.Draft && b.Status != BillStatus.Cancelled && b.Status != BillStatus.Refunded)
             .OrderByDescending(b => b.FinalizedAt)
             .FirstOrDefaultAsync(ct);
-        if (finalBill is null)
+        if (finalBill is null && (await BillingStatusProvider.PositionAsync(db, account.AdmissionId, ct)).UnbilledCount > 0)
         {
             return Error.Rule("billing.final_bill_missing", "Finalize the final bill before settling the account.");
         }
@@ -507,7 +575,7 @@ public sealed class IpBillingService(
 
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return new SettlementResult(finalBill.Id, adjusted, remainingDue, refund?.Id, refund?.Amount ?? 0m);
+        return new SettlementResult(finalBill?.Id, adjusted, remainingDue, refund?.Id, refund?.Amount ?? 0m);
     }
 
     public async Task<Result> ApproveDischargeWithDuesAsync(Guid id, string reason, CancellationToken ct)
@@ -597,6 +665,25 @@ public sealed class IpBillingService(
 
     internal static string PackageReference(IpAccount account) =>
         $"{account.AdmissionId:N}:{account.PackageId:N}:{(account.PackageAssignedAt ?? account.AdmittedAt).ToUnixTimeSeconds()}";
+
+    /// <summary>Drops a final bill drafted with nothing on it, unless it was saved before: an empty bill cannot be finalized.</summary>
+    private void Discard(Bill bill)
+    {
+        if (db.Entry(bill).State == EntityState.Added)
+        {
+            db.Entry(bill).State = EntityState.Detached;
+        }
+    }
+
+    /// <summary>Whether a draft interim bill holds services of the admission: they are not billed until it is finalized.</summary>
+    private Task<bool> HasDraftInterimBillAsync(Guid admissionId, CancellationToken ct)
+    {
+        var drafts = db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(b => b.AdmissionId == admissionId && !b.IsFinalBill && b.Status == BillStatus.Draft)
+            .Select(b => (Guid?)b.Id);
+        return db.Set<Charge>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .AnyAsync(c => c.AdmissionId == admissionId && c.Status == ChargeStatus.Unbilled && drafts.Contains(c.BillId), ct);
+    }
 
     private Task<bool> HasFinalizedFinalBillAsync(Guid admissionId, CancellationToken ct) =>
         db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(

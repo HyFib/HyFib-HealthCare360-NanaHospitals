@@ -53,7 +53,10 @@ const KNOWN: Record<string, string> = {
     "Whether staff may unlock their locked screen with the device's Windows Hello, fingerprint or face (off if not set, true turns it on, for the hospital or one facility). Only where each staff member has their own Windows login: on a shared Windows login, whoever can unlock it with Windows Hello could unlock a colleague's screen. The PIN and the password always work.",
   'security.maxSessionsPerUser':
     'How many sessions one staff account may have at once (3 if not set, 0 for no limit). Signing in once more signs out the one used least recently.',
-  'alerts.oncallPhone': 'Mobile number that gets an SMS when the server WiFi drops or backups fail.',
+  'alerts.oncallPhone':
+    "IT's mobile number, which gets an SMS when the server's WiFi drops or its adapter disappears, its signal stays weak, or its network is not secure.",
+  'alerts.oncallWhatsApp':
+    'Also send those alerts to the on-call number on WhatsApp (off if not set, true turns it on). The WhatsApp provider must have the system_alert template approved.',
   'security.antiAutomation.enabled':
     'Ask the patient portal’s sign-in and feedback forms for a proof of work, against scripts (on unless set to false).',
   'security.antiAutomation.bits':

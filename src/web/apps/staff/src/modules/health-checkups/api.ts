@@ -88,6 +88,8 @@ export interface BookingDto {
   orderId: string | null;
   corporateBatchId: string | null;
   corporateName: string | null;
+  /** The company of a corporate batch, a corporate payer: the check-up is billed to it. */
+  corporatePayerId: string | null;
   notes: string | null;
   checkedInAt: string | null;
   summary: string | null;
@@ -109,7 +111,8 @@ export interface BookCheckupRequest {
 }
 
 export interface CorporateBatchRequest {
-  corporateName: string;
+  /** The company: a corporate payer of the payer master (Insurance → Payers). */
+  payerId: string;
   contactPerson: string | null;
   contactPhone: string | null;
   reference: string | null;
@@ -129,6 +132,8 @@ export interface CorporateBatchResult {
 export interface CorporateBatchDto {
   id: string;
   batchNumber: string;
+  /** Null on batches booked before a batch named its company's payer. */
+  payerId: string | null;
   corporateName: string;
   contactPerson: string | null;
   contactPhone: string | null;
@@ -139,6 +144,14 @@ export interface CorporateBatchDto {
   skippedCount: number;
   notes: string | null;
   createdAt: string;
+}
+
+/** A company of the payer master (category Corporate) a batch can be booked for, with its contact. */
+export interface CorporatePayer {
+  id: string;
+  name: string;
+  contactPerson: string | null;
+  phone: string | null;
 }
 
 export interface CorporateBatchDetail {
@@ -164,6 +177,7 @@ export const checkupKeys = {
   booking: (id: string) => ['health-checkups', 'booking', id] as const,
   batches: (search: string, page: number) => ['health-checkups', 'batches', search, page] as const,
   batch: (id: string) => ['health-checkups', 'batch', id] as const,
+  corporatePayers: ['health-checkups', 'corporate-payers'] as const,
 };
 
 export const checkupQueries = {
@@ -222,6 +236,12 @@ export const checkupQueries = {
       queryKey: checkupKeys.batch(id),
       queryFn: ({ signal }) =>
         api.get<CorporateBatchDetail>(`/api/v1/health-checkups/corporate-batches/${id}`, { signal }),
+    }),
+  /** The active corporate payers, readable with the check-up desk's permission alone (not the insurance screens'). */
+  corporatePayers: () =>
+    queryOptions({
+      queryKey: checkupKeys.corporatePayers,
+      queryFn: ({ signal }) => api.get<CorporatePayer[]>('/api/v1/health-checkups/corporate-payers', { signal }),
     }),
 };
 

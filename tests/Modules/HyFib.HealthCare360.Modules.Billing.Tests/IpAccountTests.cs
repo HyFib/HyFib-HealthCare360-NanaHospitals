@@ -73,6 +73,24 @@ public sealed class IpAccountTests
         account.Status.ShouldBe(IpAccountStatus.Closed);
     }
 
+    /// <summary>A revoked discharge opens the account again: it is not settled while the patient is still in a bed.</summary>
+    [Fact]
+    public void A_revoked_discharge_opens_the_account_again()
+    {
+        var account = Admit();
+        account.MarkDischargeInitiated(TestData.Now);
+
+        account.ReopenAfterRevokedDischarge();
+        (account.Status, account.DischargeInitiatedAt).ShouldBe((IpAccountStatus.Open, (DateTimeOffset?)null));
+
+        // Initiated again later, and discharged: a late revocation changes nothing any more.
+        account.MarkDischargeInitiated(TestData.Now.AddDays(1));
+        account.DischargeInitiatedAt.ShouldBe(TestData.Now.AddDays(1));
+        account.MarkDischarged(TestData.Now.AddDays(1).AddHours(2), "Normal");
+        account.ReopenAfterRevokedDischarge();
+        account.Status.ShouldBe(IpAccountStatus.Discharged);
+    }
+
     [Fact]
     public void Packages_change_only_during_the_stay()
     {
@@ -153,10 +171,27 @@ public sealed class IpAccountTests
         clearance.Reason!.ShouldContain("2 service(s)");
     }
 
+    /// <summary>
+    /// A self-paying stay billed in parts whose interim bills took every service needs no final bill, which would hold
+    /// nothing: it is cleared once the patient owes nothing on those bills. Its clearance waited for a final bill that
+    /// could never be finalized, so the patient could leave only with management's approval of a discharge with dues.
+    /// </summary>
     [Fact]
-    public void A_missing_final_bill_blocks_the_discharge()
+    public void A_stay_billed_in_full_on_interim_bills_needs_no_final_bill()
     {
-        DischargeClearanceRules.Evaluate(Position(hasFinalBill: false)).Reason.ShouldBe("The final bill has not been prepared.");
+        var billed = Position(hasFinalBill: false);
+        billed.BilledOnInterimBills.ShouldBeTrue();
+        DischargeClearanceRules.Evaluate(billed).ShouldBe(new DischargeClearance(true, 0m, null));
+
+        var owing = DischargeClearanceRules.Evaluate(Position(hasFinalBill: false, due: 1_200m, deposit: 5_000m));
+        owing.Cleared.ShouldBeFalse();
+        owing.Outstanding.ShouldBe(1_200m);
+        owing.Reason!.ShouldContain("is due from the patient");
+
+        // Not billed in parts: services not on a finalized bill, a final bill, or no services at all.
+        Position(hasFinalBill: false, unbilledCount: 1, unbilled: 300m).BilledOnInterimBills.ShouldBeFalse();
+        Position().BilledOnInterimBills.ShouldBeFalse();
+        Position(hasCharges: false, hasFinalBill: false).BilledOnInterimBills.ShouldBeFalse();
     }
 
     [Fact]

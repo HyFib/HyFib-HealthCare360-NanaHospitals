@@ -359,6 +359,7 @@ public static class DefaultNotificationTemplates
         ("rpm.alert", NotificationChannel.Sms, null, "HC360 RPM alert: {{patient}} reported {{reading}} (outside set range) at {{time}}.", "Remote monitoring alert to care team"),
         ("lab.critical", NotificationChannel.Sms, null, "HC360 CRITICAL LAB: {{patient}} ({{uhid}}) {{test}} = {{value}}. Please review immediately.", "Critical lab value to doctor"),
         ("system.alert", NotificationChannel.Sms, null, "HC360 server alert ({{server}}): {{message}}", "Server Node alert to IT on-call (WiFi down, backup failed…)"),
+        ("system.alert", NotificationChannel.WhatsApp, null, "HC360 server alert ({{server}}): {{message}}", "Server Node alert to IT on-call, when alerts.oncallWhatsApp is on (WhatsApp)"),
         ("auth.credentials_changed", NotificationChannel.Email, "{{hospital}} HC360: your sign-in details changed",
             "{{change}} This happened to your account {{user}} on {{time}}. If you did not do this, tell your IT administrator at once.",
             "Tells staff that their password or two-step verification changed"),

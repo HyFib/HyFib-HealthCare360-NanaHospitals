@@ -294,9 +294,40 @@ export interface RecentEncounter {
   diagnoses: string[];
 }
 
-/** An encounter's previous visit (EMR-02..07): the patient's latest signed encounter that started before it, if any. */
+/**
+ * The patient's previous visit (EMR-02..07), as the server picks it: their latest signed encounter that started before
+ * this one, at any facility. Medicines are those of its signed prescriptions; the vitals are the last recorded in it,
+ * flagged for the age then.
+ */
+export interface PreviousVisitSummary {
+  encounterId: string;
+  type: EncounterType;
+  status: EncounterStatus;
+  startedAt: string;
+  practitionerName: string | null;
+  departmentName: string | null;
+  chiefComplaint: string | null;
+  diagnoses: string[];
+  assessment: string | null;
+  plan: string | null;
+  followUpDate: string | null;
+  followUpAdvice: string | null;
+  medicines: PreviousVisitMedicine[];
+  vitals: VitalsSnapshot | null;
+}
+
+export interface PreviousVisitMedicine {
+  drugName: string;
+  strength: string | null;
+  dose: string;
+  frequency: string;
+  durationDays: number;
+  instructions: string | null;
+}
+
+/** An encounter's previous visit: `previous` is null when the patient has no signed encounter before it. */
 export interface PreviousVisitResponse {
-  previous: RecentEncounter | null;
+  previous: PreviousVisitSummary | null;
 }
 
 export interface PatientClinicalSummary {

@@ -136,6 +136,19 @@ public sealed class IpAccount : AuditableEntity, IFacilityScoped
         DischargeInitiatedAt ??= at;
     }
 
+    /// <summary>
+    /// The discharge was revoked: the stay goes on, so the account is open again (and not settled while the patient is
+    /// in a bed). A discharged, closed or cancelled account is left as it is.
+    /// </summary>
+    public void ReopenAfterRevokedDischarge()
+    {
+        if (Status == IpAccountStatus.DischargeInitiated)
+        {
+            Status = IpAccountStatus.Open;
+            DischargeInitiatedAt = null;
+        }
+    }
+
     public void MarkDischarged(DateTimeOffset at, string? dischargeType)
     {
         if (Status is not (IpAccountStatus.Closed or IpAccountStatus.Cancelled))
@@ -215,12 +228,20 @@ public sealed record AdmissionBillingPosition(
     bool HasFinalBill,
     decimal PatientDue,
     decimal DepositBalance,
-    bool DischargeWithDuesApproved);
+    bool DischargeWithDuesApproved)
+{
+    /// <summary>
+    /// Every service is on a finalized bill, and none of them is the final bill: a self-paying stay billed in parts whose
+    /// interim bills took everything. It needs no final bill, which would hold nothing.
+    /// </summary>
+    public bool BilledOnInterimBills => HasAnyCharges && UnbilledCount == 0 && !HasFinalBill;
+}
 
 /// <summary>
-/// Discharge billing clearance (IPB-07): every IP charge is billed, the final bill exists and the patient's share is
-/// settled (the payer share is covered by the pre-authorisation, see the bill split) — or management approved a
-/// discharge with dues. The outstanding amount tells the ward how much is still to be collected.
+/// Discharge billing clearance (IPB-07): every IP charge is on a finalized bill (the final bill, or the interim bills of a
+/// self-paying stay billed in parts when they took everything) and the patient's share is settled (the payer share is
+/// covered by the pre-authorisation, see the bill split) — or management approved a discharge with dues. The outstanding
+/// amount tells the ward how much is still to be collected.
 /// </summary>
 public static class DischargeClearanceRules
 {
@@ -241,11 +262,6 @@ public static class DischargeClearanceRules
         {
             return new DischargeClearance(false, outstanding,
                 $"{position.UnbilledCount} service(s) worth ₹{Money.FormatInr(position.UnbilledAmount)} are not on a finalized bill yet.");
-        }
-
-        if (!position.HasFinalBill)
-        {
-            return new DischargeClearance(false, outstanding, "The final bill has not been prepared.");
         }
 
         if (position.PatientDue > 0)

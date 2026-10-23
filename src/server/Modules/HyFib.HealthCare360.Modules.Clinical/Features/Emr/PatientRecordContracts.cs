@@ -59,10 +59,34 @@ public sealed record RecentEncounter(
     IReadOnlyList<string> Diagnoses);
 
 /// <summary>
-/// An encounter's previous visit (EMR-02..07), for the encounter workspace: <see cref="Previous"/> is null when the
-/// patient has no signed encounter before it (see <c>PatientRecordQueries.PreviousVisitAsync</c>).
+/// The patient's previous visit (EMR-02..07), as the doctor reads it at the next consultation: their latest signed
+/// encounter before this one (see <c>PatientRecordQueries.PreviousVisitAsync</c>), when and with whom, what was found and
+/// decided, the medicines of its signed prescriptions, and the last vitals recorded in it.
 /// </summary>
-public sealed record PreviousVisitResponse(RecentEncounter? Previous);
+public sealed record PreviousVisitSummary(
+    Guid EncounterId,
+    EncounterType Type,
+    EncounterStatus Status,
+    DateTimeOffset StartedAt,
+    string? PractitionerName,
+    string? DepartmentName,
+    string? ChiefComplaint,
+    IReadOnlyList<string> Diagnoses,
+    string? Assessment,
+    string? Plan,
+    DateOnly? FollowUpDate,
+    string? FollowUpAdvice,
+    IReadOnlyList<PreviousVisitMedicine> Medicines,
+    VitalsSnapshot? Vitals);
+
+/// <summary>A medicine of a signed prescription of the previous visit, as prescribed.</summary>
+public sealed record PreviousVisitMedicine(string DrugName, string? Strength, string Dose, string Frequency, int DurationDays, string? Instructions);
+
+/// <summary>
+/// An encounter's previous visit, for the encounter workspace: <see cref="Previous"/> is null when the patient has no
+/// signed encounter before it.
+/// </summary>
+public sealed record PreviousVisitResponse(PreviousVisitSummary? Previous);
 
 /// <summary>
 /// Everything the persistent EMR banner and summary panel need in one call (EHR-03, UX-04): allergies (with

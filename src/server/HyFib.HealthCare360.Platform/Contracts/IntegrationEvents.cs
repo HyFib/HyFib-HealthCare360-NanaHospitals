@@ -114,6 +114,12 @@ public sealed record PatientTransferred(
 
 public sealed record DischargeInitiated(Guid AdmissionId, Guid PatientId, DateTimeOffset InitiatedAt) : DomainEvent;
 
+/// <summary>
+/// The discharge was revoked (the clinical condition changed): the stay goes on, and Billing takes the account back to
+/// open, so it is not settled while the patient is still in a bed.
+/// </summary>
+public sealed record DischargeRevoked(Guid AdmissionId, Guid PatientId, DateTimeOffset RevokedAt) : DomainEvent;
+
 public sealed record PatientDischarged(Guid AdmissionId, Guid PatientId, Guid VisitId, string DischargeType, DateTimeOffset DischargedAt) : DomainEvent;
 
 /// <summary>

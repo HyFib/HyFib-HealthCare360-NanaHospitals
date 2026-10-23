@@ -5,7 +5,7 @@ import { ErrorState, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { adminQueries } from './api';
-import { serversSummary } from './systemHealth';
+import { serversSummary, wifiAdapterMissing } from './systemHealth';
 
 const useStyles = makeStyles({
   rows: { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', alignItems: 'center' },
@@ -67,12 +67,14 @@ export function SystemHealthWidget() {
           ) : (
             <>
               <Caption1 className={styles.muted}>WiFi</Caption1>
-              <Caption1>
+              <Caption1 className={wifiAdapterMissing(h) ? styles.bad : undefined}>
                 {wifi?.isConnected
                   ? `${wifi.ssid ?? 'Connected'}${wifi.detailsAvailable ? ` · ${wifi.signalQuality}%` : ''}`
                   : h.network.wifiSupported
                     ? 'Disconnected'
-                    : 'Wired network'}
+                    : wifiAdapterMissing(h)
+                      ? 'Adapter missing'
+                      : 'Wired network'}
               </Caption1>
             </>
           )}

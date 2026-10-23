@@ -8,6 +8,7 @@ import type {
   FavouriteDto,
   PatientClinicalSummary,
   PreviousVisitResponse,
+  PreviousVisitSummary,
   TemplateDto,
   TemplateListItem,
   VitalsDto,
@@ -538,8 +539,47 @@ const SUMMARY: PatientClinicalSummary = {
   resultsAwaitingReview: 1,
 };
 
-/** The consultation's previous visit: the diabetes review, the last signed encounter before it. */
-const PREVIOUS_VISIT: PreviousVisitResponse = { previous: SUMMARY.recentEncounters[0] ?? null };
+/** The diabetes review of the summary's recent encounters, as the consultation's previous visit. */
+const PREVIOUS_VISIT: PreviousVisitSummary = {
+  encounterId: id('e05'),
+  type: 'OutPatient',
+  status: 'Signed',
+  startedAt: minutesAgo(50 * DAY),
+  practitionerName: 'Dr. Anil Rao',
+  departmentName: 'General medicine',
+  chiefComplaint: 'Diabetes review',
+  diagnoses: ['E11.9 Type 2 diabetes mellitus without complications'],
+  assessment: 'Type 2 diabetes, fair control on metformin.',
+  plan: 'Continue metformin. HbA1c before the next review.',
+  followUpDate: todayIso(40),
+  followUpAdvice: 'Walk 30 minutes a day; avoid sweets.',
+  medicines: [
+    {
+      drugName: 'Glycomet 500 mg Tablet',
+      strength: '500 mg',
+      dose: '1 tablet',
+      frequency: 'BD',
+      durationDays: 90,
+      instructions: 'After food',
+    },
+  ],
+  vitals: {
+    id: id('f100'),
+    recordedAt: minutesAgo(50 * DAY),
+    temperatureCelsius: 36.8,
+    pulse: 78,
+    respiratoryRate: 16,
+    systolicBp: 134,
+    diastolicBp: 84,
+    spO2: 98,
+    weightKg: 59,
+    bmi: 24.2,
+    painScore: null,
+    bloodGlucose: null,
+    gcs: null,
+    flags: [],
+  },
+};
 
 const ENCOUNTER: EncounterDetail = {
   id: ENCOUNTER_ID,
@@ -1129,7 +1169,9 @@ export const CLINICAL_ANSWERS: FakeAnswers = {
   'GET /api/v1/emr/worklist': WORKLIST,
   'GET /api/v1/inpatient/rounds': ROUND,
   [`GET /api/v1/emr/encounters/${ENCOUNTER_ID}`]: ENCOUNTER,
-  [`GET /api/v1/emr/encounters/${ENCOUNTER_ID}/previous-visit`]: PREVIOUS_VISIT,
+  [`GET /api/v1/emr/encounters/${ENCOUNTER_ID}/previous-visit`]: {
+    previous: PREVIOUS_VISIT,
+  } satisfies PreviousVisitResponse,
   [`GET ${patientPath}/summary`]: SUMMARY,
   [`GET ${patientPath}/vitals`]: paged(VITALS),
   [`GET ${patientPath}/diagnoses`]: DIAGNOSES,

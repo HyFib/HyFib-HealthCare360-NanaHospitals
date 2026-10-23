@@ -7002,6 +7002,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("package_id");
 
+                    b.Property<Guid?>("PayerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payer_id");
+
                     b.Property<string>("Reference")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -8763,6 +8767,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("corporate_name");
 
+                    b.Property<Guid?>("CorporatePayerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("corporate_payer_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -8861,6 +8869,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("VisitId")
                         .HasColumnType("uuid")
                         .HasColumnName("visit_id");
+
+                    b.Property<bool>("VisitOpenedForCheckup")
+                        .HasColumnType("boolean")
+                        .HasColumnName("visit_opened_for_checkup");
 
                     b.HasKey("Id")
                         .HasName("pk_package_bookings");

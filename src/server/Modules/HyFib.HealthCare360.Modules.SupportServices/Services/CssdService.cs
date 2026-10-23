@@ -232,13 +232,23 @@ public sealed class CssdService(
             cssdRequest?.RecordIssue(pack.InstrumentSetId);
         }
 
+        if (cssdRequest is not null)
+        {
+            // The request's lines have no version of their own. Saving the request with them puts its version on guard
+            // over the counts, so two counters issuing against it at once cannot both count from the same figures.
+            db.Entry(cssdRequest).Property(r => r.Status).IsModified = true;
+        }
+
         try
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException conflict)
         {
-            return Error.Conflict("cssd.pack_taken", "One of these packs was issued from another counter a moment ago. Scan again.");
+            return conflict.Entries.Any(e => e.Entity is SterilePack) || cssdRequest is null
+                ? Error.Conflict("cssd.pack_taken", "One of these packs was issued from another counter a moment ago. Scan again.")
+                : Error.Conflict("cssd.request_changed",
+                    $"Packs were issued against request {cssdRequest.RequestNumber} from another counter a moment ago. Scan these packs again.");
         }
 
         var ids = issues.Select(i => i.Id).ToList();

@@ -96,6 +96,16 @@ export function serversSummary(servers: ServerNodeHealth[]): { text: string; ton
   return { text: parts.join('; '), tone: silent.length > 0 || !jobs ? 'bad' : running.length > 1 ? 'warn' : 'ok' };
 }
 
+/**
+ * The WiFi adapter of this server's link is missing (DED-06: disabled, removed, or the WLAN AutoConfig service stopped),
+ * as its System health warning says. Windows then shows no adapter at all, as on a server that is wired only.
+ */
+export function wifiAdapterMissing(report: Pick<SystemHealthReport, 'server' | 'warnings'>): boolean {
+  return report.warnings.some(
+    (w) => w.code === 'wifi.adapter_missing' && (w.server == null || w.server === report.server.machineName),
+  );
+}
+
 /** Less than a tenth of the data drive is free, as the server warns. */
 export function lowDiskSpace(storage: SystemHealthReport['storage']): boolean {
   return (

@@ -698,6 +698,11 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
   });
 
   const c = clearance.data;
+  // The account is settled once the discharge has begun (a revoked one opens it again): more services may come until then.
+  const stayGoesOn = account.status === 'Open';
+  // Nothing waits for a final bill: the interim bills took every service, or none was charged. Once the discharge has
+  // begun no more will come, so none is needed and the advance is settled against the interim bills.
+  const nothingForFinalBill = !!c && !c.hasFinalBill && c.unbilledCount === 0;
   return (
     <div className={styles.stack}>
       <Section title="Discharge clearance">
@@ -731,10 +736,25 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
               >
                 <Amount value={c.unbilledAmount} />
               </SummaryRow>
-              <SummaryRow label="Final bill">
+              <SummaryRow
+                label="Final bill"
+                hint={
+                  c.billedOnInterimBills
+                    ? stayGoesOn
+                      ? 'Every service so far is on an interim bill'
+                      : 'Every service is on an interim bill'
+                    : nothingForFinalBill
+                      ? 'No service was charged'
+                      : undefined
+                }
+              >
                 {c.hasFinalBill ? (
                   <Badge appearance="tint" color="success">
                     Finalised
+                  </Badge>
+                ) : nothingForFinalBill ? (
+                  <Badge appearance="tint" color="informative">
+                    {stayGoesOn ? 'Not yet' : 'Not needed'}
                   </Badge>
                 ) : (
                   <Badge appearance="tint" color="warning">
@@ -775,15 +795,21 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
                 Interim bill
               </Button>
             )}
+            {!c?.billedOnInterimBills && (
+              <Button
+                appearance="primary"
+                icon={finalBill.isPending ? <Spinner size="tiny" aria-hidden /> : <DocumentCheckmarkRegular />}
+                onClick={() => finalBill.mutate()}
+                disabled={finalBill.isPending}
+              >
+                {c?.hasFinalBill ? 'Bill late services' : 'Prepare final bill'}
+              </Button>
+            )}
             <Button
-              appearance="primary"
-              icon={finalBill.isPending ? <Spinner size="tiny" aria-hidden /> : <DocumentCheckmarkRegular />}
-              onClick={() => finalBill.mutate()}
-              disabled={finalBill.isPending}
+              icon={<HandshakeRegular />}
+              onClick={() => setDialog('settle')}
+              disabled={stayGoesOn || !(c?.hasFinalBill || nothingForFinalBill)}
             >
-              {c?.hasFinalBill ? 'Bill late services' : 'Prepare final bill'}
-            </Button>
-            <Button icon={<HandshakeRegular />} onClick={() => setDialog('settle')} disabled={!c?.hasFinalBill}>
               Settle with the advance
             </Button>
             {canApproveDues && c && !c.cleared && !c.dischargeWithDuesApproved && (
@@ -809,14 +835,16 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
               : ''}
           </MessageBarBody>
           <div className={styles.row}>
-            <Button
-              icon={<DoorArrowRightRegular />}
-              onClick={() =>
-                void navigate({ to: '/billing/bills/$billId', params: { billId: settlement.finalBillId } })
-              }
-            >
-              Open the final bill
-            </Button>
+            {settlement.finalBillId && (
+              <Button
+                icon={<DoorArrowRightRegular />}
+                onClick={() =>
+                  void navigate({ to: '/billing/bills/$billId', params: { billId: settlement.finalBillId! } })
+                }
+              >
+                Open the final bill
+              </Button>
+            )}
             {settlement.refundId && (
               <Button
                 icon={<ArrowUndoRegular />}

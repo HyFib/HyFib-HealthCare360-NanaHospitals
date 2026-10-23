@@ -64,6 +64,7 @@ describe('doctor screens', SCREEN_TESTS, () => {
       await screen.findByText('E11.9 Type 2 diabetes mellitus without complications', {}, SLOW),
     ).toBeInTheDocument();
     expect(await screen.findByText('Dictate with AI', {}, SLOW)).toBeInTheDocument();
+    expect(await screen.findByText('Type 2 diabetes, fair control on metformin.', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('Template investigations (2)', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('104/min', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('Dengue fever [classical dengue]', {}, SLOW)).toBeInTheDocument();

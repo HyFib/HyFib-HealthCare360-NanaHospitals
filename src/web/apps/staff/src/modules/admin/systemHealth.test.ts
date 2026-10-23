@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { IntegrationHealthSummary, ServerNodeHealth } from './api';
+import type { IntegrationHealthSummary, ServerNodeHealth, SystemHealthReport } from './api';
 import {
   expiryTone,
   integrationsSummary,
@@ -9,6 +9,7 @@ import {
   runsJobs,
   serverRole,
   serversSummary,
+  wifiAdapterMissing,
 } from './systemHealth';
 
 function row(name: string, health: string, enabled = true, configured = true): IntegrationHealthSummary {
@@ -160,5 +161,26 @@ describe('servers', () => {
     expect(lowDiskSpace({ dataDirectory: 'D:', freeBytes: 9, totalBytes: 100, encryption: null })).toBe(true);
     expect(lowDiskSpace({ dataDirectory: 'D:', freeBytes: 10, totalBytes: 100, encryption: null })).toBe(false);
     expect(lowDiskSpace({ dataDirectory: 'D:', freeBytes: null, totalBytes: 100, encryption: null })).toBe(false);
+  });
+});
+
+describe('wifiAdapterMissing', () => {
+  const warning = (server: string | null) => ({
+    code: 'wifi.adapter_missing',
+    severity: 'critical',
+    message: 'Server Node lost its WiFi adapter.',
+    server,
+  });
+  const report = (warnings: ReturnType<typeof warning>[]) => ({
+    server: { machineName: 'HC360-SRV' } as SystemHealthReport['server'],
+    warnings,
+  });
+
+  it("is this server's WiFi adapter that went missing, not another server's", () => {
+    // A single Server Node names no server in its warnings; with several, each warning names its own.
+    expect(wifiAdapterMissing(report([warning(null)]))).toBe(true);
+    expect(wifiAdapterMissing(report([warning('HC360-SRV')]))).toBe(true);
+    expect(wifiAdapterMissing(report([warning('HC360-JOBS')]))).toBe(false);
+    expect(wifiAdapterMissing(report([]))).toBe(false);
   });
 });

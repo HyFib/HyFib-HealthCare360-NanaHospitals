@@ -111,6 +111,34 @@ describe('SystemHealthWidget', () => {
     expect(screen.queryByText('Servers')).not.toBeInTheDocument();
   });
 
+  it('says the WiFi adapter is missing, not that the network is wired, while its warning lasts', async () => {
+    const lost = report(null);
+    lost.network = { ...lost.network, wifiSupported: false };
+    readHealth.mockResolvedValue({
+      ...lost,
+      warnings: [
+        {
+          code: 'wifi.adapter_missing',
+          severity: 'critical',
+          message: 'Server Node lost its WiFi adapter.',
+          server: null,
+        },
+      ],
+    });
+    renderWidget();
+
+    expect(await screen.findByText('Adapter missing')).toBeInTheDocument();
+    expect(screen.queryByText('Wired network')).not.toBeInTheDocument();
+  });
+
+  it('says a server with no WiFi adapter, and no warning about one, is on a wired network', async () => {
+    const wired = report(null);
+    readHealth.mockResolvedValue({ ...wired, network: { ...wired.network, wifiSupported: false } });
+    renderWidget();
+
+    expect(await screen.findByText('Wired network')).toBeInTheDocument();
+  });
+
   it('says which of several servers no longer reports, the one that runs the jobs included', async () => {
     readHealth.mockResolvedValue(
       report([node('HC360-JOBS', 'worker', false), node('HC360-API1', 'api'), node('HC360-API2', 'api')]),

@@ -117,7 +117,9 @@ function NewBatchForm({
   const queryClient = useQueryClient();
   const today = todayIso();
   const packages = useQuery(checkupQueries.packages());
-  const [corporateName, setCorporateName] = useState('');
+  // The company is a corporate payer of the payer master, which every employee's check-up is billed to.
+  const companies = useQuery(checkupQueries.corporatePayers());
+  const [payerId, setPayerId] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [reference, setReference] = useState('');
@@ -129,8 +131,9 @@ function NewBatchForm({
   const phoneValid = !contactPhone.trim() || normalizePhone(contactPhone) !== null;
   const dateValid = date >= today && date <= addDaysIso(today, 365);
   const selected = packages.data?.find((p) => p.id === packageId);
+  const company = companies.data?.find((c) => c.id === payerId);
   const valid =
-    corporateName.trim().length > 0 &&
+    Boolean(company) &&
     Boolean(packageId) &&
     dateValid &&
     phoneValid &&
@@ -140,7 +143,7 @@ function NewBatchForm({
   const book = useMutation({
     mutationFn: () =>
       checkupApi.bookBatch({
-        corporateName: corporateName.trim(),
+        payerId,
         contactPerson: contactPerson.trim() || null,
         contactPhone: contactPhone.trim() || null,
         reference: reference.trim() || null,
@@ -164,7 +167,7 @@ function NewBatchForm({
   });
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ corporateName, contactPerson, contactPhone, reference, packageId, date, notes, people }),
+    dirty: useValuesChanged({ payerId, contactPerson, contactPhone, reference, packageId, date, notes, people }),
     busy: book.isPending,
     onClose,
   });
@@ -183,8 +186,37 @@ function NewBatchForm({
       <DrawerBody>
         <div className={styles.form}>
           <FormGrid columns={2}>
-            <Field label="Company" required>
-              <Input autoFocus value={corporateName} onChange={(_, d) => setCorporateName(d.value.slice(0, 200))} />
+            <Field
+              label="Company"
+              required
+              hint={
+                companies.data?.length === 0
+                  ? 'No company yet: add it as a corporate payer under Insurance → Payers first.'
+                  : "Each employee's check-up is billed to the company."
+              }
+              validationState={companies.error ? 'error' : 'none'}
+              validationMessage={companies.error ? 'The companies could not be loaded.' : undefined}
+            >
+              <Select
+                autoFocus
+                value={payerId}
+                onChange={(_, d) => {
+                  setPayerId(d.value);
+                  // The payer master's contact, unless the desk has already typed one for this drive.
+                  const chosen = companies.data?.find((c) => c.id === d.value);
+                  if (chosen && !contactPerson.trim() && !contactPhone.trim()) {
+                    setContactPerson(chosen.contactPerson ?? '');
+                    setContactPhone(chosen.phone ?? '');
+                  }
+                }}
+              >
+                <option value="">Choose a company</option>
+                {(companies.data ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
             </Field>
             <Field label="Purchase order / agreement">
               <Input value={reference} onChange={(_, d) => setReference(d.value.slice(0, 100))} />
@@ -255,10 +287,11 @@ function NewBatchForm({
           <Field label="Notes">
             <Textarea value={notes} onChange={(_, d) => setNotes(d.value.slice(0, 1000))} rows={2} resize="vertical" />
           </Field>
-          {selected && people.length > 0 && (
+          {selected && company && people.length > 0 && (
             <Caption1 className={styles.muted}>
               Package value for {people.length} {people.length === 1 ? 'employee' : 'employees'}:{' '}
-              {formatInr(selected.price * people.length, { whole: true })} (each is billed at check-in)
+              {formatInr(selected.price * people.length, { whole: true })}, billed to {company.name} as each employee
+              checks in
             </Caption1>
           )}
           {error && (
@@ -301,7 +334,7 @@ function CorporateBatchesPage() {
     <Page>
       <PageHeader
         title="Corporate batches"
-        subtitle="Book one package for a company's employees on one day. Each employee is checked in and billed individually."
+        subtitle="Book one package for a company's employees on one day. Each employee checks in on their own, and the company is billed for each check-up."
         actions={
           <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
             New batch

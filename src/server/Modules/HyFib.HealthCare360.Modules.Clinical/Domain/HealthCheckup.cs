@@ -122,6 +122,19 @@ public sealed class PackageBooking : AuditableEntity, IFacilityScoped
     public Guid? OrderId { get; set; }
     public Guid? CorporateBatchId { get; set; }
     public string? CorporateName { get; set; }
+
+    /// <summary>
+    /// The company of a corporate batch, as a corporate payer of Billing's payer master: the check-up is billed to it
+    /// (see <see cref="CorporateCheckupBatch.PayerId"/>).
+    /// </summary>
+    public Guid? CorporatePayerId { get; set; }
+
+    /// <summary>
+    /// <see cref="VisitId"/> is the health check-up visit the check-in opened for the company, not one the desk linked: it
+    /// is the check-up's alone, so it is completed with the check-up and cancelled with it.
+    /// </summary>
+    public bool VisitOpenedForCheckup { get; private set; }
+
     public string? Notes { get; set; }
     public DateTimeOffset? CheckedInAt { get; private set; }
     public string? Summary { get; private set; }
@@ -172,6 +185,9 @@ public sealed class PackageBooking : AuditableEntity, IFacilityScoped
         CheckedInAt = now;
         return Result.Success();
     }
+
+    /// <summary>The visit the booking was checked in on was opened for it (see <see cref="VisitOpenedForCheckup"/>).</summary>
+    public void MarkVisitOpenedForCheckup() => VisitOpenedForCheckup = VisitId is not null;
 
     public Result CompleteStop(Guid itemId, Guid? userId, string? notes, DateTimeOffset now) =>
         UpdateStop(itemId, ItineraryStatus.Done, userId, notes, now);
@@ -299,6 +315,14 @@ public sealed class CorporateCheckupBatch : AuditableEntity, IFacilityScoped
 {
     public Guid FacilityId { get; set; }
     public string BatchNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The company: a corporate payer of Billing's payer master, which every employee's check-up is billed to. Null on
+    /// batches booked before a batch named its payer, whose company is only <see cref="CorporateName"/>.
+    /// </summary>
+    public Guid? PayerId { get; set; }
+
+    /// <summary>The company's name, as the payer master had it when the batch was booked.</summary>
     public string CorporateName { get; set; } = string.Empty;
     public string? ContactPerson { get; set; }
     public string? ContactPhone { get; set; }

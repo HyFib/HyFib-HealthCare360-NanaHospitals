@@ -5,7 +5,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// <summary>
 /// The payer's name and the patient's policy with it for the patient banner (<see cref="IPayerDirectory"/>, UX-04). It
 /// shows each part only to staff whose permissions would let them read it on the insurance screens: the name to
-/// payer readers, the masked policy number and its validity to policy readers.
+/// payer readers, the masked policy number and its validity to policy readers. A module billing its services to a payer
+/// (a corporate health check-up) finds that payer whatever the user's permissions.
 /// </summary>
 internal sealed class PayerDirectory(HospitalDbContext db, ICurrentUser user, IPermissionService permissions, TimeProvider time) : IPayerDirectory
 {
@@ -41,6 +42,19 @@ internal sealed class PayerDirectory(HospitalDbContext db, ICurrentUser user, IP
             .FirstOrDefaultAsync(cancellationToken);
         return new PayerCoverageSummary(name, policy?.PolicyNumberMasked, policy?.ValidTo);
     }
+
+    public async Task<PayerSummary?> FindAsync(Guid payerId, CancellationToken cancellationToken)
+    {
+        var payer = await db.Set<Payer>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == payerId, cancellationToken);
+        return payer is null ? null : new PayerSummary(payer.Id, payer.Name, payer.ToPayerType(), payer.IsActive);
+    }
+
+    public async Task<IReadOnlyList<CorporatePayer>> ListCorporateAsync(CancellationToken cancellationToken) =>
+        await db.Set<Payer>().AsNoTracking()
+            .Where(p => p.Category == PayerCategory.Corporate && p.IsActive)
+            .OrderBy(p => p.Name)
+            .Select(p => new CorporatePayer(p.Id, p.Name, p.ContactPerson, p.Phone))
+            .ToListAsync(cancellationToken);
 
     /// <summary>
     /// Whether the user holds one of the permissions, or the Super Admin's wildcard, as <c>RequireAnyPermission</c> on

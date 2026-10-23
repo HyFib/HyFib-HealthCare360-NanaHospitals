@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Emr;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
@@ -105,18 +106,6 @@ public sealed class PatientRecordQueries(HospitalDbContext db, TimeProvider time
     public Task<IReadOnlyList<RecentEncounter>> RecentEncountersAsync(Guid patientId, int count, CancellationToken ct) =>
         GlanceAsync(Encounters().Where(e => e.PatientId == patientId && !e.IsDeleted).OrderByDescending(e => e.StartedAt).Take(count), ct);
 
-    /// <summary>
-    /// The previous visit the encounter workspace shows while <paramref name="current"/> is written (EMR-02..07): the
-    /// patient's latest signed encounter (signed, or amended since) that started before it, at any facility of the group.
-    /// Never the current encounter itself or a later one, nor one still in progress, which is not yet a record to rely on.
-    /// </summary>
-    public async Task<RecentEncounter?> PreviousVisitAsync(Encounter current, CancellationToken ct) =>
-        (await GlanceAsync(Encounters()
-            .Where(e => e.PatientId == current.PatientId && e.Id != current.Id && e.Status != EncounterStatus.InProgress
-                        && e.StartedAt < current.StartedAt)
-            .OrderByDescending(e => e.StartedAt)
-            .Take(1), ct)).SingleOrDefault();
-
     private IQueryable<Encounter> Encounters() => db.Set<Encounter>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
 
     /// <summary>Encounters as the chart lists them: who, where, the diagnoses (primary first) or else the complaint.</summary>
@@ -138,6 +127,56 @@ public sealed class PatientRecordQueries(HospitalDbContext db, TimeProvider time
                 e.DepartmentId is { } d ? departments.GetValueOrDefault(d) : null, e.ChiefComplaint,
                 diagnoses.Where(x => x.EncounterId == e.Id).Select(x => x.Label).ToList()))
             .ToList();
+    }
+
+    /// <summary>
+    /// The previous visit the encounter workspace shows while <paramref name="current"/> is written (EMR-02..07): the
+    /// patient's latest signed encounter (signed, or amended since) that started before it, at any facility of the group.
+    /// Never the current encounter itself or a later one, nor one still in progress, which is not yet a record to rely on.
+    /// It brings the complaint, the diagnoses found (not the differential ones), the assessment, plan and follow-up advice,
+    /// the medicines of its signed prescriptions (a draft is not what the patient was given) and the last vitals recorded
+    /// in it, flagged for the patient's age then. Null when there is none.
+    /// </summary>
+    public async Task<PreviousVisitSummary?> PreviousVisitAsync(Encounter current, CancellationToken ct)
+    {
+        var previous = await Encounters()
+            .Where(e => e.PatientId == current.PatientId && !e.IsDeleted && e.Id != current.Id && e.Status != EncounterStatus.InProgress
+                        && e.StartedAt < current.StartedAt)
+            .OrderByDescending(e => e.StartedAt)
+            .FirstOrDefaultAsync(ct);
+        if (previous is null)
+        {
+            return null;
+        }
+
+        var diagnoses = await db.Set<Diagnosis>().AsNoTracking()
+            .Where(d => d.EncounterId == previous.Id && d.Type != DiagnosisType.Differential)
+            .OrderByDescending(d => d.IsPrimary).ThenBy(d => d.RecordedAt)
+            .Select(d => d.IcdCode == null ? d.Title : d.IcdCode + " " + d.Title)
+            .ToListAsync(ct);
+        var prescriptions = await db.Set<Prescription>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Include(p => p.Items)
+            .Where(p => p.EncounterId == previous.Id && p.Status == PrescriptionStatus.Signed)
+            .OrderBy(p => p.SignedAt)
+            .ToListAsync(ct);
+        var vitals = await db.Set<VitalSigns>().AsNoTracking()
+            .Where(v => v.EncounterId == previous.Id && !v.IsEnteredInError)
+            .OrderByDescending(v => v.RecordedAt)
+            .FirstOrDefaultAsync(ct);
+        var dateOfBirth = vitals is null
+            ? null
+            : await db.Set<Patient>().Where(p => p.Id == previous.PatientId).Select(p => p.DateOfBirth).FirstOrDefaultAsync(ct);
+        var practitioners = await PrintQueries.PractitionerNamesAsync(db, [previous.PractitionerId], ct);
+        var departments = await PrintQueries.DepartmentNamesAsync(db, [previous.DepartmentId], ct);
+
+        return new PreviousVisitSummary(
+            previous.Id, previous.Type, previous.Status, previous.StartedAt, practitioners.GetValueOrDefault(previous.PractitionerId),
+            previous.DepartmentId is { } departmentId ? departments.GetValueOrDefault(departmentId) : null, previous.ChiefComplaint, diagnoses,
+            previous.Assessment, previous.Plan, previous.FollowUpDate, previous.FollowUpAdvice,
+            prescriptions.SelectMany(p => p.Items.OrderBy(i => i.Sequence))
+                .Select(i => new PreviousVisitMedicine(i.DrugName, i.Strength, i.Dose, i.FrequencyText, i.DurationDays, i.Instructions))
+                .ToList(),
+            vitals is null ? null : Snapshot(vitals, dateOfBirth, ClinicalClock.LocalDate(vitals.RecordedAt)));
     }
 
     public static VitalsSnapshot Snapshot(VitalSigns v, DateOnly? dateOfBirth, DateOnly today) => new(

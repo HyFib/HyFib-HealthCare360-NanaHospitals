@@ -35,6 +35,7 @@ import {
   lowDiskSpace,
   runningFor,
   serverRole,
+  wifiAdapterMissing,
 } from '@/modules/admin/systemHealth';
 
 export const Route = createFileRoute('/_app/admin/system')({
@@ -381,7 +382,13 @@ function NetworkCard({ h }: { h: SystemHealthReport }) {
     <Section title="Network">
       <div className={styles.rows}>
         {!h.network.wifiSupported ? (
-          <Row label="Connection">Wired (no WiFi adapter)</Row>
+          wifiAdapterMissing(h) ? (
+            <Row label="WiFi" tone="bad">
+              Adapter missing
+            </Row>
+          ) : (
+            <Row label="Connection">Wired (no WiFi adapter)</Row>
+          )
         ) : wifi ? (
           <>
             <Row label="WiFi" tone={wifi.isConnected ? 'ok' : 'bad'}>
