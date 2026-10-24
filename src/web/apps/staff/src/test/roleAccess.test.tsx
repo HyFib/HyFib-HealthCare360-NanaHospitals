@@ -6,7 +6,15 @@ import { join } from 'node:path';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { moduleManifests } from '@/lib/moduleRegistry';
+import type { WardDto } from '@/modules/inpatient/api';
+import { DEVICES_ANSWERS, SYSTEM_HEALTH_ANSWERS } from './accessibility/fixtures/admin';
+import { BILLING_ANSWERS } from './accessibility/fixtures/billing';
+import { CLINICAL_ANSWERS } from './accessibility/fixtures/clinical';
+import { CALENDAR_ANSWERS, FRONT_DESK_HOME_ANSWERS, FRONT_OFFICE_ANSWERS } from './accessibility/fixtures/frontOffice';
+import { PHARMACY_ANSWERS } from './accessibility/fixtures/pharmacy';
+import { SHELL_SCREEN_ANSWERS } from './accessibility/fixtures/shell';
 import { fakeServer, openScreen, STAFF_USER, stubBrowserApis } from './appScreen';
+import type { FakeAnswers } from './fakeApi';
 
 // Every built-in role sees the menu links its permissions allow (manifests). A link the role sees must open a screen it
 // can use: one that asks the server only for what the role may read. Each link is opened once with every permission to
@@ -48,12 +56,51 @@ function readRule(path: string) {
 const mayRead = (path: string, permissions: readonly string[]) =>
   readRule(path)?.rules.every((anyOf) => anyOf.some((p) => permissions.includes(p))) ?? true;
 
+const WARD: WardDto = {
+  id: '0192a000-0000-7000-8000-00000000e001',
+  code: 'GWM',
+  name: 'General Ward — Male',
+  type: 'General',
+  floor: '1',
+  block: null,
+  genderPolicy: 'MaleOnly',
+  nurseStation: null,
+  phone: null,
+  departmentId: null,
+  bedServiceItemId: null,
+  bedServiceCode: null,
+  displayOrder: 0,
+  isActive: true,
+  notes: null,
+  totalBeds: 12,
+  occupiedBeds: 0,
+  version: 1,
+};
+
+/**
+ * Data for the screens to work with, so that what a screen reads only once an earlier answer came back (a ward's rooms
+ * after the wards) is asked for too: the screen tests' canned answers, and a ward for the in-patient screens. A screen
+ * these do not feed reads only what it asks for on opening.
+ */
+const ANSWERS: FakeAnswers = {
+  ...SHELL_SCREEN_ANSWERS,
+  ...SYSTEM_HEALTH_ANSWERS,
+  ...DEVICES_ANSWERS,
+  ...FRONT_OFFICE_ANSWERS,
+  ...FRONT_DESK_HOME_ANSWERS,
+  ...CALENDAR_ANSWERS,
+  ...BILLING_ANSWERS,
+  ...CLINICAL_ANSWERS,
+  ...PHARMACY_ANSWERS,
+  'GET /api/v1/inpatient/wards': [WARD],
+};
+
 /** Links to a screen of their own; "/emr/patients/$patientId" needs a record and is opened from one. */
 const links = moduleManifests.flatMap((m) => m.links.filter((l) => !l.to.includes('$')));
 
 /** The GET paths a screen asks for once it has opened, waiting until it stops asking (up to 3 s). */
 async function readsOf(path: string, user: AuthUser): Promise<string[]> {
-  const server = fakeServer({});
+  const server = fakeServer(ANSWERS);
   openScreen(path, user);
   let seen = -1;
   for (let waited = 0; waited < 3000 && seen !== server.requests.length; waited += 250) {
