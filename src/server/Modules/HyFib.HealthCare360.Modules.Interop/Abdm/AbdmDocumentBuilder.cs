@@ -142,9 +142,11 @@ internal static partial class AbdmDocumentBuilder
         var nodes = PdfNodeId().Matches(printed);
         if (nodes.Count > 0)
         {
-            // Each id becomes its place among them: the gaps between them are other nodes the browser numbered meanwhile,
-            // in this page or in another it was printing at the same time, and differ from one print to the next.
-            var rank = nodes.Select(Node).Distinct().Order().Select((n, i) => (n, i)).ToDictionary(p => p.n, p => p.i);
+            // Each id becomes the order it first comes in the file: the gaps between them are other nodes the browser
+            // numbered meanwhile, in this page or in another it was printing at the same time, and even their order
+            // differs from one print to the next (Windows CI numbered a prescription's two headers the other way round).
+            // Where each one comes in the file, which follows the page, does not.
+            var rank = nodes.Select(Node).Distinct().Select((n, i) => (n, i)).ToDictionary(p => p.n, p => p.i);
             printed = PdfNodeId().Replace(printed, m => $"(node{rank[Node(m)].ToString("D8", CultureInfo.InvariantCulture)})");
         }
 

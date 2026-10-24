@@ -209,6 +209,15 @@ public sealed class AbdmDocumentVersionTests
         AbdmDocumentBuilder.PdfAsOf(spread, TestData.Now).ShouldBe(printed);
         text.ShouldContain("(node00000002)");
 
+        // Nor are they numbered in the same order: Windows CI printed a prescription twice and numbered two headers the
+        // other way round the second time. What the file says where stays the same, so each is known by where it comes.
+        var swapped = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(first)
+            .Replace("(node00000018)", "(node-swap)", StringComparison.Ordinal)
+            .Replace("(node00000019)", "(node00000018)", StringComparison.Ordinal)
+            .Replace("(node-swap)", "(node00000019)", StringComparison.Ordinal));
+        swapped.ShouldNotBe(first);
+        AbdmDocumentBuilder.PdfAsOf(swapped, TestData.Now).ShouldBe(printed);
+
         // So a prescription is one document, whichever of them it carries.
         var data = AbdmTestData.Prescription(AbdmTestData.Pdf);
         Json(AbdmRecords.Prescription(data with { Context = data.Context with { Pdf = new AbdmPdf(sameTab) } }))
