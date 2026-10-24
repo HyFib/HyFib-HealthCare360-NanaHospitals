@@ -49,20 +49,32 @@ public sealed class VisitCloseTests(HospitalServer server)
         (await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{visit.Id}")).Status.ShouldBe(VisitStatus.Completed);
     }
 
-    [Theory]
-    [InlineData("cancel")]
-    [InlineData("complete")]
-    public async Task An_in_patients_visit_closes_only_with_the_stay(string action)
+    [Fact]
+    public async Task An_in_patients_visit_closes_only_with_the_stay()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var admission = await AdmitAsync(frontOffice, doctor, await RegisterPatientAsync(frontOffice));
+        try
+        {
+            using (var cancel = await frontOffice.SendRawAsync(HttpMethod.Post, $"/api/v1/visits/{admission.VisitId}/cancel", new CancelVisitRequest("Wrong patient")))
+            {
+                (await CodeAsync(cancel)).ShouldBe("visit.inpatient");
+            }
 
-        using var refused = await frontOffice.SendRawAsync(HttpMethod.Post, $"/api/v1/visits/{admission.VisitId}/{action}",
-            action == "cancel" ? new CancelVisitRequest("Wrong patient") : null);
+            using (var complete = await frontOffice.SendRawAsync(HttpMethod.Post, $"/api/v1/visits/{admission.VisitId}/complete"))
+            {
+                (await CodeAsync(complete)).ShouldBe("visit.inpatient");
+            }
 
-        (await CodeAsync(refused)).ShouldBe("visit.inpatient");
-        (await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{admission.VisitId}")).Status.ShouldNotBe(VisitStatus.Cancelled);
+            (await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{admission.VisitId}")).Status.ShouldNotBeOneOf(VisitStatus.Cancelled, VisitStatus.Completed);
+        }
+        finally
+        {
+            // The general ward's beds are shared by every test in the run.
+            var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+            await admin.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/cancel", new CancelAdmissionRequest("Admitted for a test of closing visits"));
+        }
     }
 
     private static async Task<string?> CodeAsync(HttpResponseMessage response)
