@@ -22,6 +22,7 @@ import {
   CalendarAddRegular,
   CalendarLtrRegular,
   EditRegular,
+  MergeRegular,
   MoreHorizontalRegular,
   PrintRegular,
   StethoscopeRegular,
@@ -35,10 +36,12 @@ import { usePermission } from '@/lib/permissions';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
+import { useVisitActions } from '@/modules/front-office/VisitActions';
 import { guardianRelationLabel, patientApi, patientQueries, type PatientDetail } from '@/modules/patients/api';
 import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
 import { DocumentsPanel } from '@/modules/patients/DocumentsPanel';
 import { IdentityChecksPanel } from '@/modules/patients/IdentityChecksPanel';
+import { MergePatientDialog } from '@/modules/patients/MergePatientDialog';
 import { PortalAccessPanel } from '@/modules/patients/PortalAccessPanel';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
 
@@ -86,7 +89,10 @@ function PatientProfilePage() {
   const canOpenChart = usePermission('clinical.emr.read');
   const canBook = usePermission('scheduling.appointments.book');
   const canAdmit = usePermission('inpatient.admissions.admit');
+  // HospitalAdmin and the MRD officer merge a duplicate registration into the record that stays.
+  const canMerge = usePermission('patients.merge');
   const [checkIn, setCheckIn] = useState(false);
+  const [merging, setMerging] = useState(false);
   const patient = useQuery(patientQueries.detail(patientId));
 
   if (patient.isLoading) {
@@ -187,6 +193,11 @@ function PatientProfilePage() {
                   >
                     Print UHID card
                   </MenuItem>
+                  {canMerge && !p.mergedIntoPatientId && (
+                    <MenuItem icon={<MergeRegular />} onClick={() => setMerging(true)}>
+                      Merge duplicate…
+                    </MenuItem>
+                  )}
                 </MenuList>
               </MenuPopover>
             </Menu>
@@ -245,6 +256,7 @@ function PatientProfilePage() {
         open={checkIn}
         onClose={() => setCheckIn(false)}
       />
+      <MergePatientDialog patient={p} open={merging} onClose={() => setMerging(false)} />
     </Page>
   );
 }
@@ -301,30 +313,35 @@ function Overview({ patient: p }: { patient: PatientDetail }) {
 function Visits({ patientId }: { patientId: string }) {
   const [page, setPage] = useState(1);
   const visits = useQuery(patientQueries.visits(patientId, page));
+  const actions = useVisitActions();
   return (
-    <DataTable
-      ariaLabel="Visits"
-      rows={visits.data?.items}
-      loading={visits.isLoading}
-      error={visits.error}
-      onRetry={() => void visits.refetch()}
-      getRowId={(v) => v.id}
-      columns={[
-        { key: 'date', header: 'Date', render: (v) => formatDateTime(v.visitedAt), width: 170 },
-        { key: 'number', header: 'Visit', render: (v) => <Text font="monospace">{v.visitNumber}</Text> },
-        { key: 'type', header: 'Type', render: (v) => humanize(v.type) },
-        { key: 'dept', header: 'Department', render: (v) => v.departmentName ?? '—' },
-        { key: 'doctor', header: 'Doctor', render: (v) => v.practitionerName ?? '—', priority: 'low' },
-        { key: 'token', header: 'Token', render: (v) => v.tokenLabel ?? '—', priority: 'low' },
-        { key: 'status', header: 'Status', render: (v) => <StatusBadge status={v.status} /> },
-      ]}
-      emptyTitle="No visits yet"
-      page={page}
-      pageSize={10}
-      totalCount={visits.data?.totalCount}
-      onPageChange={setPage}
-      size="small"
-    />
+    <>
+      <DataTable
+        ariaLabel="Visits"
+        rows={visits.data?.items}
+        loading={visits.isLoading}
+        error={visits.error}
+        onRetry={() => void visits.refetch()}
+        getRowId={(v) => v.id}
+        columns={[
+          { key: 'date', header: 'Date', render: (v) => formatDateTime(v.visitedAt), width: 170 },
+          { key: 'number', header: 'Visit', render: (v) => <Text font="monospace">{v.visitNumber}</Text> },
+          { key: 'type', header: 'Type', render: (v) => humanize(v.type) },
+          { key: 'dept', header: 'Department', render: (v) => v.departmentName ?? '—' },
+          { key: 'doctor', header: 'Doctor', render: (v) => v.practitionerName ?? '—', priority: 'low' },
+          { key: 'token', header: 'Token', render: (v) => v.tokenLabel ?? '—', priority: 'low' },
+          { key: 'status', header: 'Status', render: (v) => <StatusBadge status={v.status} /> },
+        ]}
+        rowActions={actions.rowActions}
+        emptyTitle="No visits yet"
+        page={page}
+        pageSize={10}
+        totalCount={visits.data?.totalCount}
+        onPageChange={setPage}
+        size="small"
+      />
+      {actions.dialogs}
+    </>
   );
 }
 

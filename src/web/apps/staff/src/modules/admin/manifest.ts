@@ -83,6 +83,12 @@ const manifest: ModuleManifest = {
       keywords: ['sms', 'whatsapp', 'email', 'message', 'dlt', 'meta template', 'document header', 'report pdf'],
     },
     {
+      label: 'Notification delivery log',
+      to: '/admin/notification-logs',
+      permission: 'admin.notifications.manage',
+      keywords: ['sms', 'whatsapp', 'email', 'message', 'delivered', 'failed', 'not received', 'opt-out'],
+    },
+    {
       label: 'AI assistant',
       to: '/admin/ai',
       permission: 'ai.settings.manage',

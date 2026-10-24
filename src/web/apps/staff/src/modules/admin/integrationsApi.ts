@@ -217,9 +217,31 @@ export function istDayEnd(date: string): string {
   return `${next.toISOString().slice(0, 10)}T00:00:00+05:30`;
 }
 
+/**
+ * The ABDM gateway set-up (`GET /api/v1/abdm/gateway`, `AbdmGatewayStatus`; only while ABDM health records are switched
+ * on). Never the client secret: only whether the client id and secret are saved. `live` is false until the gateway client
+ * is built and certified, as `remaining` lists.
+ */
+export interface AbdmGatewayStatus {
+  enabled: boolean;
+  /** Base URL, HIP id, consent manager id, client id and secret are all set. */
+  configured: boolean;
+  live: boolean;
+  baseUrl: string | null;
+  hipId: string | null;
+  cmId: string | null;
+  hasClientId: boolean;
+  hasClientSecret: boolean;
+  /** Why the set-up is incomplete or wrong. */
+  problems: string[];
+  /** What has to be built and certified before records are sent. */
+  remaining: string[];
+}
+
 export const integrationKeys = {
   all: ['admin', 'integrations'] as const,
   status: ['admin', 'integrations', 'status'] as const,
+  abdmGateway: ['admin', 'integrations', 'abdm-gateway'] as const,
 };
 
 export const integrationQueries = {
@@ -228,6 +250,12 @@ export const integrationQueries = {
       queryKey: integrationKeys.status,
       queryFn: ({ signal }) => api.get<IntegrationStatusDto[]>('/api/v1/admin/integrations', { signal }),
       refetchInterval: 60_000,
+    }),
+  abdmGateway: () =>
+    queryOptions({
+      queryKey: integrationKeys.abdmGateway,
+      queryFn: ({ signal }) => api.get<AbdmGatewayStatus>('/api/v1/abdm/gateway', { signal }),
+      staleTime: 60_000,
     }),
   logs: (filters: IntegrationLogFilters) =>
     queryOptions({
@@ -345,6 +373,39 @@ const PROVIDER_LABELS: Record<string, string> = {
   push: 'Terminals send their punches',
   uidai: 'UIDAI, through the ASA',
 };
+
+/** The ABDM gateway's state in words and its badge colour. */
+export function abdmGatewayDisplay(status: AbdmGatewayStatus): { label: string; tone: Tone; hint: string } {
+  if (status.live) {
+    return { label: 'Sending records', tone: 'success', hint: 'Health records are shared with ABDM.' };
+  }
+  if (!status.enabled) {
+    return { label: 'Off', tone: 'subtle', hint: 'The gateway is switched off: no records are sent to ABDM.' };
+  }
+  if (!status.configured) {
+    return { label: 'Not set up', tone: 'warning', hint: 'Switched on, but its set-up is incomplete.' };
+  }
+  return {
+    label: 'Set up, not sending yet',
+    tone: 'informative',
+    hint: 'Set up, but records are not sent until the steps below are done.',
+  };
+}
+
+/** The consent manager id in words: `sbx` is NHA's sandbox, `abdm` production. */
+export function consentManagerLabel(cmId: string | null): string {
+  switch (cmId) {
+    case 'sbx':
+      return 'Sandbox (sbx)';
+    case 'abdm':
+      return 'Production (abdm)';
+    case null:
+    case '':
+      return 'Not set';
+    default:
+      return cmId;
+  }
+}
 
 export function providerLabel(provider: string | null | undefined): string {
   if (!provider) {

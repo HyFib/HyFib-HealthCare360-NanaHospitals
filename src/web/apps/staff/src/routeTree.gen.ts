@@ -18,6 +18,7 @@ import { Route as AppAdminAiRouteImport } from './routes/_app/admin/ai'
 import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
 import { Route as AppAdminBackupsRouteImport } from './routes/_app/admin/backups'
 import { Route as AppAdminDevicesRouteImport } from './routes/_app/admin/devices'
+import { Route as AppAdminNotificationLogsRouteImport } from './routes/_app/admin/notification-logs'
 import { Route as AppAdminNotificationTemplatesRouteImport } from './routes/_app/admin/notification-templates'
 import { Route as AppAdminRolesRouteImport } from './routes/_app/admin/roles'
 import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin/settings'
@@ -79,6 +80,8 @@ import { Route as AppDoctorFeesStatementsRouteImport } from './routes/_app/docto
 import { Route as AppEmrIndexRouteImport } from './routes/_app/emr/index'
 import { Route as AppEmrControlledDrugsRouteImport } from './routes/_app/emr/controlled-drugs'
 import { Route as AppEmrDrugSafetyRouteImport } from './routes/_app/emr/drug-safety'
+import { Route as AppEmrOrderSetsRouteImport } from './routes/_app/emr/order-sets'
+import { Route as AppEmrTemplatesRouteImport } from './routes/_app/emr/templates'
 import { Route as AppFeedbackIndexRouteImport } from './routes/_app/feedback/index'
 import { Route as AppFeedbackResponsesRouteImport } from './routes/_app/feedback/responses'
 import { Route as AppFrontOfficeIndexRouteImport } from './routes/_app/front-office/index'
@@ -123,6 +126,7 @@ import { Route as AppLabWorklistRouteImport } from './routes/_app/lab/worklist'
 import { Route as AppMrdIndexRouteImport } from './routes/_app/mrd/index'
 import { Route as AppMrdIcdRouteImport } from './routes/_app/mrd/icd'
 import { Route as AppMrdMorbidityRouteImport } from './routes/_app/mrd/morbidity'
+import { Route as AppMrdProcedureCodesRouteImport } from './routes/_app/mrd/procedure-codes'
 import { Route as AppMrdRequestsRouteImport } from './routes/_app/mrd/requests'
 import { Route as AppNursingIndexRouteImport } from './routes/_app/nursing/index'
 import { Route as AppOtIndexRouteImport } from './routes/_app/ot/index'
@@ -353,6 +357,12 @@ const AppAdminDevicesRoute = AppAdminDevicesRouteImport.update({
   path: '/admin/devices',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminNotificationLogsRoute =
+  AppAdminNotificationLogsRouteImport.update({
+    id: '/admin/notification-logs',
+    path: '/admin/notification-logs',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppAdminNotificationTemplatesRoute =
   AppAdminNotificationTemplatesRouteImport.update({
     id: '/admin/notification-templates',
@@ -661,6 +671,16 @@ const AppEmrDrugSafetyRoute = AppEmrDrugSafetyRouteImport.update({
   path: '/emr/drug-safety',
   getParentRoute: () => AppRoute,
 } as any)
+const AppEmrOrderSetsRoute = AppEmrOrderSetsRouteImport.update({
+  id: '/emr/order-sets',
+  path: '/emr/order-sets',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppEmrTemplatesRoute = AppEmrTemplatesRouteImport.update({
+  id: '/emr/templates',
+  path: '/emr/templates',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFeedbackIndexRoute = AppFeedbackIndexRouteImport.update({
   id: '/feedback/',
   path: '/feedback/',
@@ -880,6 +900,11 @@ const AppMrdIcdRoute = AppMrdIcdRouteImport.update({
 const AppMrdMorbidityRoute = AppMrdMorbidityRouteImport.update({
   id: '/mrd/morbidity',
   path: '/mrd/morbidity',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMrdProcedureCodesRoute = AppMrdProcedureCodesRouteImport.update({
+  id: '/mrd/procedure-codes',
+  path: '/mrd/procedure-codes',
   getParentRoute: () => AppRoute,
 } as any)
 const AppMrdRequestsRoute = AppMrdRequestsRouteImport.update({
@@ -1879,6 +1904,7 @@ export interface FileRoutesByFullPath {
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/backups': typeof AppAdminBackupsRoute
   '/admin/devices': typeof AppAdminDevicesRoute
+  '/admin/notification-logs': typeof AppAdminNotificationLogsRoute
   '/admin/notification-templates': typeof AppAdminNotificationTemplatesRoute
   '/admin/roles': typeof AppAdminRolesRoute
   '/admin/settings': typeof AppAdminSettingsRoute
@@ -1928,6 +1954,8 @@ export interface FileRoutesByFullPath {
   '/doctor-fees/statements': typeof AppDoctorFeesStatementsRoute
   '/emr/controlled-drugs': typeof AppEmrControlledDrugsRoute
   '/emr/drug-safety': typeof AppEmrDrugSafetyRoute
+  '/emr/order-sets': typeof AppEmrOrderSetsRoute
+  '/emr/templates': typeof AppEmrTemplatesRoute
   '/feedback/responses': typeof AppFeedbackResponsesRoute
   '/front-office/enquiries': typeof AppFrontOfficeEnquiriesRoute
   '/front-office/queue': typeof AppFrontOfficeQueueRoute
@@ -1963,6 +1991,7 @@ export interface FileRoutesByFullPath {
   '/lab/worklist': typeof AppLabWorklistRoute
   '/mrd/icd': typeof AppMrdIcdRoute
   '/mrd/morbidity': typeof AppMrdMorbidityRoute
+  '/mrd/procedure-codes': typeof AppMrdProcedureCodesRoute
   '/mrd/requests': typeof AppMrdRequestsRoute
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
@@ -2179,6 +2208,7 @@ export interface FileRoutesByTo {
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/backups': typeof AppAdminBackupsRoute
   '/admin/devices': typeof AppAdminDevicesRoute
+  '/admin/notification-logs': typeof AppAdminNotificationLogsRoute
   '/admin/notification-templates': typeof AppAdminNotificationTemplatesRoute
   '/admin/roles': typeof AppAdminRolesRoute
   '/admin/settings': typeof AppAdminSettingsRoute
@@ -2228,6 +2258,8 @@ export interface FileRoutesByTo {
   '/doctor-fees/statements': typeof AppDoctorFeesStatementsRoute
   '/emr/controlled-drugs': typeof AppEmrControlledDrugsRoute
   '/emr/drug-safety': typeof AppEmrDrugSafetyRoute
+  '/emr/order-sets': typeof AppEmrOrderSetsRoute
+  '/emr/templates': typeof AppEmrTemplatesRoute
   '/feedback/responses': typeof AppFeedbackResponsesRoute
   '/front-office/enquiries': typeof AppFrontOfficeEnquiriesRoute
   '/front-office/queue': typeof AppFrontOfficeQueueRoute
@@ -2263,6 +2295,7 @@ export interface FileRoutesByTo {
   '/lab/worklist': typeof AppLabWorklistRoute
   '/mrd/icd': typeof AppMrdIcdRoute
   '/mrd/morbidity': typeof AppMrdMorbidityRoute
+  '/mrd/procedure-codes': typeof AppMrdProcedureCodesRoute
   '/mrd/requests': typeof AppMrdRequestsRoute
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
@@ -2481,6 +2514,7 @@ export interface FileRoutesById {
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/backups': typeof AppAdminBackupsRoute
   '/_app/admin/devices': typeof AppAdminDevicesRoute
+  '/_app/admin/notification-logs': typeof AppAdminNotificationLogsRoute
   '/_app/admin/notification-templates': typeof AppAdminNotificationTemplatesRoute
   '/_app/admin/roles': typeof AppAdminRolesRoute
   '/_app/admin/settings': typeof AppAdminSettingsRoute
@@ -2530,6 +2564,8 @@ export interface FileRoutesById {
   '/_app/doctor-fees/statements': typeof AppDoctorFeesStatementsRoute
   '/_app/emr/controlled-drugs': typeof AppEmrControlledDrugsRoute
   '/_app/emr/drug-safety': typeof AppEmrDrugSafetyRoute
+  '/_app/emr/order-sets': typeof AppEmrOrderSetsRoute
+  '/_app/emr/templates': typeof AppEmrTemplatesRoute
   '/_app/feedback/responses': typeof AppFeedbackResponsesRoute
   '/_app/front-office/enquiries': typeof AppFrontOfficeEnquiriesRoute
   '/_app/front-office/queue': typeof AppFrontOfficeQueueRoute
@@ -2565,6 +2601,7 @@ export interface FileRoutesById {
   '/_app/lab/worklist': typeof AppLabWorklistRoute
   '/_app/mrd/icd': typeof AppMrdIcdRoute
   '/_app/mrd/morbidity': typeof AppMrdMorbidityRoute
+  '/_app/mrd/procedure-codes': typeof AppMrdProcedureCodesRoute
   '/_app/mrd/requests': typeof AppMrdRequestsRoute
   '/_app/ot/book': typeof AppOtBookRoute
   '/_app/ot/implants': typeof AppOtImplantsRoute
@@ -2783,6 +2820,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/backups'
     | '/admin/devices'
+    | '/admin/notification-logs'
     | '/admin/notification-templates'
     | '/admin/roles'
     | '/admin/settings'
@@ -2832,6 +2870,8 @@ export interface FileRouteTypes {
     | '/doctor-fees/statements'
     | '/emr/controlled-drugs'
     | '/emr/drug-safety'
+    | '/emr/order-sets'
+    | '/emr/templates'
     | '/feedback/responses'
     | '/front-office/enquiries'
     | '/front-office/queue'
@@ -2867,6 +2907,7 @@ export interface FileRouteTypes {
     | '/lab/worklist'
     | '/mrd/icd'
     | '/mrd/morbidity'
+    | '/mrd/procedure-codes'
     | '/mrd/requests'
     | '/ot/book'
     | '/ot/implants'
@@ -3083,6 +3124,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/backups'
     | '/admin/devices'
+    | '/admin/notification-logs'
     | '/admin/notification-templates'
     | '/admin/roles'
     | '/admin/settings'
@@ -3132,6 +3174,8 @@ export interface FileRouteTypes {
     | '/doctor-fees/statements'
     | '/emr/controlled-drugs'
     | '/emr/drug-safety'
+    | '/emr/order-sets'
+    | '/emr/templates'
     | '/feedback/responses'
     | '/front-office/enquiries'
     | '/front-office/queue'
@@ -3167,6 +3211,7 @@ export interface FileRouteTypes {
     | '/lab/worklist'
     | '/mrd/icd'
     | '/mrd/morbidity'
+    | '/mrd/procedure-codes'
     | '/mrd/requests'
     | '/ot/book'
     | '/ot/implants'
@@ -3384,6 +3429,7 @@ export interface FileRouteTypes {
     | '/_app/admin/audit'
     | '/_app/admin/backups'
     | '/_app/admin/devices'
+    | '/_app/admin/notification-logs'
     | '/_app/admin/notification-templates'
     | '/_app/admin/roles'
     | '/_app/admin/settings'
@@ -3433,6 +3479,8 @@ export interface FileRouteTypes {
     | '/_app/doctor-fees/statements'
     | '/_app/emr/controlled-drugs'
     | '/_app/emr/drug-safety'
+    | '/_app/emr/order-sets'
+    | '/_app/emr/templates'
     | '/_app/feedback/responses'
     | '/_app/front-office/enquiries'
     | '/_app/front-office/queue'
@@ -3468,6 +3516,7 @@ export interface FileRouteTypes {
     | '/_app/lab/worklist'
     | '/_app/mrd/icd'
     | '/_app/mrd/morbidity'
+    | '/_app/mrd/procedure-codes'
     | '/_app/mrd/requests'
     | '/_app/ot/book'
     | '/_app/ot/implants'
@@ -3745,6 +3794,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/devices'
       fullPath: '/admin/devices'
       preLoaderRoute: typeof AppAdminDevicesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/notification-logs': {
+      id: '/_app/admin/notification-logs'
+      path: '/admin/notification-logs'
+      fullPath: '/admin/notification-logs'
+      preLoaderRoute: typeof AppAdminNotificationLogsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/admin/notification-templates': {
@@ -4174,6 +4230,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppEmrDrugSafetyRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/emr/order-sets': {
+      id: '/_app/emr/order-sets'
+      path: '/emr/order-sets'
+      fullPath: '/emr/order-sets'
+      preLoaderRoute: typeof AppEmrOrderSetsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/emr/templates': {
+      id: '/_app/emr/templates'
+      path: '/emr/templates'
+      fullPath: '/emr/templates'
+      preLoaderRoute: typeof AppEmrTemplatesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/feedback/': {
       id: '/_app/feedback/'
       path: '/feedback'
@@ -4480,6 +4550,13 @@ declare module '@tanstack/react-router' {
       path: '/mrd/morbidity'
       fullPath: '/mrd/morbidity'
       preLoaderRoute: typeof AppMrdMorbidityRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mrd/procedure-codes': {
+      id: '/_app/mrd/procedure-codes'
+      path: '/mrd/procedure-codes'
+      fullPath: '/mrd/procedure-codes'
+      preLoaderRoute: typeof AppMrdProcedureCodesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/mrd/requests': {
@@ -5787,6 +5864,7 @@ interface AppRouteChildren {
   AppAdminAuditRoute: typeof AppAdminAuditRoute
   AppAdminBackupsRoute: typeof AppAdminBackupsRoute
   AppAdminDevicesRoute: typeof AppAdminDevicesRoute
+  AppAdminNotificationLogsRoute: typeof AppAdminNotificationLogsRoute
   AppAdminNotificationTemplatesRoute: typeof AppAdminNotificationTemplatesRoute
   AppAdminRolesRoute: typeof AppAdminRolesRoute
   AppAdminSettingsRoute: typeof AppAdminSettingsRoute
@@ -5836,6 +5914,8 @@ interface AppRouteChildren {
   AppDoctorFeesStatementsRoute: typeof AppDoctorFeesStatementsRoute
   AppEmrControlledDrugsRoute: typeof AppEmrControlledDrugsRoute
   AppEmrDrugSafetyRoute: typeof AppEmrDrugSafetyRoute
+  AppEmrOrderSetsRoute: typeof AppEmrOrderSetsRoute
+  AppEmrTemplatesRoute: typeof AppEmrTemplatesRoute
   AppFeedbackResponsesRoute: typeof AppFeedbackResponsesRoute
   AppFrontOfficeEnquiriesRoute: typeof AppFrontOfficeEnquiriesRoute
   AppFrontOfficeQueueRoute: typeof AppFrontOfficeQueueRoute
@@ -5871,6 +5951,7 @@ interface AppRouteChildren {
   AppLabWorklistRoute: typeof AppLabWorklistRoute
   AppMrdIcdRoute: typeof AppMrdIcdRoute
   AppMrdMorbidityRoute: typeof AppMrdMorbidityRoute
+  AppMrdProcedureCodesRoute: typeof AppMrdProcedureCodesRoute
   AppMrdRequestsRoute: typeof AppMrdRequestsRoute
   AppOtBookRoute: typeof AppOtBookRoute
   AppOtImplantsRoute: typeof AppOtImplantsRoute
@@ -6086,6 +6167,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminAuditRoute: AppAdminAuditRoute,
   AppAdminBackupsRoute: AppAdminBackupsRoute,
   AppAdminDevicesRoute: AppAdminDevicesRoute,
+  AppAdminNotificationLogsRoute: AppAdminNotificationLogsRoute,
   AppAdminNotificationTemplatesRoute: AppAdminNotificationTemplatesRoute,
   AppAdminRolesRoute: AppAdminRolesRoute,
   AppAdminSettingsRoute: AppAdminSettingsRoute,
@@ -6135,6 +6217,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppDoctorFeesStatementsRoute: AppDoctorFeesStatementsRoute,
   AppEmrControlledDrugsRoute: AppEmrControlledDrugsRoute,
   AppEmrDrugSafetyRoute: AppEmrDrugSafetyRoute,
+  AppEmrOrderSetsRoute: AppEmrOrderSetsRoute,
+  AppEmrTemplatesRoute: AppEmrTemplatesRoute,
   AppFeedbackResponsesRoute: AppFeedbackResponsesRoute,
   AppFrontOfficeEnquiriesRoute: AppFrontOfficeEnquiriesRoute,
   AppFrontOfficeQueueRoute: AppFrontOfficeQueueRoute,
@@ -6170,6 +6254,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppLabWorklistRoute: AppLabWorklistRoute,
   AppMrdIcdRoute: AppMrdIcdRoute,
   AppMrdMorbidityRoute: AppMrdMorbidityRoute,
+  AppMrdProcedureCodesRoute: AppMrdProcedureCodesRoute,
   AppMrdRequestsRoute: AppMrdRequestsRoute,
   AppOtBookRoute: AppOtBookRoute,
   AppOtImplantsRoute: AppOtImplantsRoute,

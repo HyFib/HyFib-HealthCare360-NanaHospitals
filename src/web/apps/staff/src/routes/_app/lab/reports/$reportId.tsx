@@ -9,7 +9,17 @@ import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { AmendReportDialog } from '@/modules/lab/AmendReportDialog';
-import { LAB_PERMISSIONS, labApi, labKeys, labQueries, labReportDocument, type LabReportView } from '@/modules/lab/api';
+import {
+  abdmLabReportBundle,
+  LAB_PERMISSIONS,
+  labApi,
+  labKeys,
+  labQueries,
+  labReportDocument,
+  type LabReportView,
+} from '@/modules/lab/api';
+import { labReportExportable } from '@/modules/lab/common/abdm';
+import { AbdmReportButton } from '@/modules/lab/common/AbdmReportButton';
 import { ReportStatusBadge } from '@/modules/lab/badges';
 import { LabReportPreview } from '@/modules/lab/LabReportPreview';
 import { useLabLive } from '@/modules/lab/useLabLive';
@@ -123,6 +133,9 @@ function LabReportPage() {
               path={labReportDocument(reportId)}
               printAppearance={canVerify && waiting.length > 0 ? 'secondary' : 'primary'}
             />
+            {labReportExportable(view.status) && (
+              <AbdmReportButton path={abdmLabReportBundle(view.reportId)} what="lab report" />
+            )}
             {canVerify && releasedTests(view) > 0 && (
               <Button icon={<EditRegular />} onClick={() => setAmending(true)}>
                 Amend

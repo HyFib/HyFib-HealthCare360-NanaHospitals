@@ -47,6 +47,7 @@ import { aiQueries } from '@/lib/ai';
 import { useServerDocuments } from '@/lib/documents';
 import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
+import { AbdmConsultationButton } from '@/modules/emr/AbdmConsultationButton';
 import { emrKeys, emrQueries, encounterTypeLabel, type EncounterDetail } from '@/modules/emr/api';
 import { LatestVitals } from '@/modules/emr/ChartSummary';
 import { BannerSkeleton, ClinicalBanner } from '@/modules/emr/ClinicalBanner';
@@ -430,6 +431,7 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
                 </MenuList>
               </MenuPopover>
             </Menu>
+            <AbdmConsultationButton encounter={encounter} disabled={note.amending} />
           </>
         }
       />

@@ -209,3 +209,16 @@ export const queueApi = {
   skip: (tokenId: string) => api.post(`/api/v1/queue/${tokenId}/skip`),
   requeue: (tokenId: string) => api.post(`/api/v1/queue/${tokenId}/requeue`),
 };
+
+/** Cancelling a visit's reason is required, up to 300 characters. */
+export const CANCEL_VISIT_REASON_MAX = 300;
+
+/**
+ * Ending a visit from the front desk needs `visits.manage`. Cancelling (a patient checked in by mistake, or who left)
+ * also cancels its queue token and withdraws Billing's own unbilled charges; closing finishes the token. Both answer 422
+ * `visit.closed` / `visit.cancelled` when the visit has already ended.
+ */
+export const visitApi = {
+  cancel: (visitId: string, reason: string) => api.post<void>(`/api/v1/visits/${visitId}/cancel`, { reason }),
+  complete: (visitId: string) => api.post<void>(`/api/v1/visits/${visitId}/complete`),
+};

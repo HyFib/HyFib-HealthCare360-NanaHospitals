@@ -462,6 +462,14 @@ export interface AttachDocumentRequest {
   notes: string | null;
 }
 
+/** Why the two records are the same person: 10 to 500 characters, kept in the audit trail. */
+export const MERGE_REASON_LIMITS = { min: 10, max: 500 } as const;
+
+export interface MergePatientRequest {
+  intoPatientId: string;
+  reason: string;
+}
+
 export interface PatientSearchParams {
   search?: string;
   page?: number;
@@ -605,6 +613,13 @@ export const patientApi = {
   update: (id: string, request: UpdatePatientRequest) => api.put<void>(`/api/v1/patients/${id}`, request),
   duplicates: (request: DuplicateCheckRequest, signal?: AbortSignal) =>
     api.post<DuplicateCandidate[]>('/api/v1/patients/duplicates', request, { signal }),
+  /**
+   * Merges the duplicate `id` into the surviving record `intoPatientId` (needs `patients.merge`): its visits, tokens,
+   * consents, documents and identity checks move there, and it stays only as a pointer to it. It cannot be undone. The
+   * server answers 422 `patient.merge_self` for the same record and `patient.already_merged` when either one has been
+   * merged; the reason (10 to 500 characters) goes into the audit trail.
+   */
+  merge: (id: string, request: MergePatientRequest) => api.post<void>(`/api/v1/patients/${id}/merge`, request),
   breakGlass: (id: string, reason: string) =>
     api.post<{ patientId: string; expiresAt: string }>(`/api/v1/patients/${id}/break-glass`, { reason }),
   createVisit: (request: CreateVisitRequest) => api.post<VisitDetail>('/api/v1/visits', request),
@@ -636,6 +651,8 @@ export const documentApi = {
   },
   attach: (patientId: string, request: AttachDocumentRequest) =>
     api.post<{ id: string }>(`/api/v1/patients/${patientId}/documents`, request),
+  /** Takes the document off the record (needs `patients.documents`); 404 when it is already gone. */
+  remove: (documentId: string) => api.delete<void>(`/api/v1/patients/documents/${documentId}`),
 };
 
 /**

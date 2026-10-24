@@ -1,10 +1,13 @@
-import { Badge, Field, SearchBox, Select, Switch, Text } from '@fluentui/react-components';
+import { Badge, Button, Field, SearchBox, Select, Switch, Text } from '@fluentui/react-components';
+import { AddRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
+import { usePermission } from '@/lib/permissions';
 import { mrdQueries, type MedicalRecordStatus, type RecordListParams } from '@/modules/mrd/api';
+import { NewChartDialog } from '@/modules/mrd/NewChartDialog';
 
 const STATUSES: MedicalRecordStatus[] = ['Incomplete', 'Deficient', 'Complete', 'Archived'];
 
@@ -26,6 +29,11 @@ function ChartsPage() {
   const [term, setTerm] = useState(filters.search ?? '');
   const debounced = useDebouncedValue(term.trim(), 300);
   const records = useQuery(mrdQueries.records(filters));
+  // Opening a chart by hand means choosing one of the patient's encounters, which needs the clinical record.
+  const canTrack = usePermission('mrd.records');
+  const canReadEmr = usePermission('clinical.emr.read');
+  const canOpen = canTrack && canReadEmr;
+  const [creating, setCreating] = useState(false);
   const set = (patch: Partial<RecordListParams>) =>
     void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
 
@@ -43,6 +51,13 @@ function ChartsPage() {
       <PageHeader
         title="Patient charts"
         subtitle="Charts are completed within 7 days of discharge. Deficiencies are assigned to the treating doctor."
+        actions={
+          canOpen && (
+            <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
+              New chart
+            </Button>
+          )
+        }
       />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
@@ -155,13 +170,14 @@ function ChartsPage() {
             },
           ]}
           emptyTitle="No charts match"
-          emptyDescription="Charts are opened automatically when a patient is admitted."
+          emptyDescription="Charts are opened automatically when a patient is admitted; open one for an out-patient encounter with New chart."
           page={filters.page ?? 1}
           pageSize={25}
           totalCount={records.data?.totalCount}
           onPageChange={(page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })}
         />
       </Section>
+      <NewChartDialog open={creating} onClose={() => setCreating(false)} />
     </Page>
   );
 }

@@ -149,7 +149,7 @@ function IpAccountPage() {
           </TabList>
         </div>
         <div style={{ padding: 16 }}>
-          {tab === 'bill' && <IpRunningBill accountId={a.id} />}
+          {tab === 'bill' && <IpRunningBill account={a} />}
           {tab === 'payments' && <IpBillsPanel account={a} />}
           {tab === 'package' && <IpPackagePanel account={a} />}
           {tab === 'payer' && <IpPayerPanel account={a} />}

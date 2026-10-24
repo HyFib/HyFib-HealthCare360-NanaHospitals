@@ -154,12 +154,22 @@ public sealed class VisitService(
         return ToDetail(visit, token);
     }
 
+    // An in-patient's visit is the admission's: it closes with the discharge, and Billing reads a cancelled in-patient visit
+    // as a cancelled admission (it reverses the IP account), so the front desk cannot close or cancel one on its own.
+    private static readonly Error InpatientVisitClosesWithTheStay =
+        Error.Rule("visit.inpatient", "An in-patient visit closes with the stay. Discharge the patient or cancel the admission instead.");
+
     public async Task<Result> CancelAsync(Guid visitId, string reason, CancellationToken ct)
     {
         var visit = await db.Set<Visit>().FirstOrDefaultAsync(v => v.Id == visitId, ct);
         if (visit is null)
         {
             return Error.NotFound(nameof(Visit), visitId);
+        }
+
+        if (visit.Type == VisitType.InPatient)
+        {
+            return InpatientVisitClosesWithTheStay;
         }
 
         var result = visit.Cancel(reason.Trim(), time.GetUtcNow());
@@ -189,6 +199,11 @@ public sealed class VisitService(
         if (visit is null)
         {
             return Error.NotFound(nameof(Visit), visitId);
+        }
+
+        if (visit.Type == VisitType.InPatient)
+        {
+            return InpatientVisitClosesWithTheStay;
         }
 
         var now = time.GetUtcNow();

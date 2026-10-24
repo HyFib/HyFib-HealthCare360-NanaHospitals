@@ -40,6 +40,11 @@ export function useRefreshBilling(): () => Promise<void> {
   return useCallback(() => queryClient.invalidateQueries({ predicate: isLiveBillingQuery }), [queryClient]);
 }
 
+/** Who may post and cancel charges by hand at the billing desk (billing.charges.manage). */
+export function useCanManageCharges(): boolean {
+  return usePermission('billing.charges.manage');
+}
+
 /** The signed-in user's own discount authority (0 % when the server cannot be asked). */
 export function useDiscountAuthority(): { authority: DiscountAuthority; loading: boolean } {
   const allowed = usePermission(['billing.op.create', 'billing.ip.manage']);

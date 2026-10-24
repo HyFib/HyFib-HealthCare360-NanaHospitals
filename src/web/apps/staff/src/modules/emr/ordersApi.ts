@@ -96,6 +96,23 @@ export interface OrderSetDto {
   version: number;
 }
 
+/** Create or edit an order set (server `SaveOrderSetRequest`, EMR-05): 1 to 40 services; an edit sends its version. */
+export interface SaveOrderSetRequest {
+  code: string;
+  name: string;
+  specialtyCode: string | null;
+  description: string | null;
+  serviceItemIds: string[];
+  isActive: boolean;
+  version: number | null;
+}
+
+/** Order sets as the management screen asks for them; a speciality also lists the sets shared by every speciality. */
+export interface OrderSetCatalogueParams {
+  specialtyCode: string | null;
+  includeInactive: boolean;
+}
+
 export interface OrderListParams {
   encounterId?: string | null;
   status?: ClinicalOrderStatus;
@@ -105,6 +122,8 @@ export interface OrderListParams {
 export const orderKeys = {
   list: (patientId: string, params: OrderListParams) => ['emr', 'patient', patientId, 'orders', params] as const,
   orderSets: (specialtyCode: string | null) => ['emr', 'order-sets', specialtyCode ?? 'all'] as const,
+  /** Under the order-sets key, so a saved set refreshes the order composer's list and this one alike. */
+  orderSetCatalogue: (params: OrderSetCatalogueParams) => ['emr', 'order-sets', 'catalogue', params] as const,
   services: (category: ServiceCategory | null, search: string) =>
     ['lookups', 'services', category ?? 'all', search] as const,
 };
@@ -126,6 +145,16 @@ export const orderQueries = {
       queryFn: ({ signal }) =>
         api.get<OrderSetDto[]>('/api/v1/clinical/order-sets', { query: { specialtyCode }, signal }),
       staleTime: 10 * 60_000,
+    }),
+  orderSetCatalogue: (params: OrderSetCatalogueParams) =>
+    queryOptions({
+      queryKey: orderKeys.orderSetCatalogue(params),
+      queryFn: ({ signal }) =>
+        api.get<OrderSetDto[]>('/api/v1/clinical/order-sets', {
+          query: { specialtyCode: params.specialtyCode, includeInactive: params.includeInactive || undefined },
+          signal,
+        }),
+      placeholderData: keepPreviousData,
     }),
   service: (id: string) =>
     queryOptions({
@@ -152,4 +181,9 @@ export const ordersApi = {
     api.post<OrderDto>(`/api/v1/clinical/orders/items/${itemId}/cancel`, { reason }),
   updateItemStatus: (itemId: string, status: 'InProgress' | 'Completed', resultReference: string | null) =>
     api.post<OrderDto>(`/api/v1/clinical/orders/items/${itemId}/status`, { status, resultReference }),
+  /** POST for a new set, PUT (with its version) for an edit; 409 `order_set.code_in_use` for a code taken. */
+  saveOrderSet: (id: string | null, request: SaveOrderSetRequest) =>
+    id
+      ? api.put<OrderSetDto>(`/api/v1/clinical/order-sets/${id}`, request)
+      : api.post<OrderSetDto>('/api/v1/clinical/order-sets', request),
 };

@@ -24,6 +24,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { AbdmGatewayStatus } from '@/modules/admin/AbdmGatewayStatus';
 import { IntegrationsTabs } from '@/modules/admin/IntegrationsTabs';
 import {
   healthDisplay,
@@ -241,6 +242,8 @@ function IntegrationsPage() {
           <ListenerTable listeners={worklist} worklist />
         </Section>
       )}
+
+      <AbdmGatewayStatus />
 
       <Caption1 className={styles.muted}>
         {canConfigure

@@ -27,6 +27,18 @@ const manifest: ModuleManifest = {
       permission: 'clinical.templates.manage',
       keywords: ['interactions', 'dose limits', 'maximum dose', 'prescribing checks'],
     },
+    {
+      label: 'Clinical note templates',
+      to: '/emr/templates',
+      permission: 'clinical.templates.manage',
+      keywords: ['template', 'speciality', 'note', 'opd', 'complaints', 'default medicines'],
+    },
+    {
+      label: 'Order sets',
+      to: '/emr/order-sets',
+      permission: 'clinical.templates.manage',
+      keywords: ['order set', 'panel', 'work-up', 'investigations', 'bundle'],
+    },
   ],
   quickActions: [
     {

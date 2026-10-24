@@ -1303,6 +1303,9 @@ export interface TrainingResultsOutcome {
 /** The A4 lab report as the server prints it and makes its PDF (see `@/lib/documents`). */
 export const labReportDocument = (reportId: string) => `/api/v1/lab/reports/${reportId}`;
 
+/** A released lab report as an ABDM health record (FHIR DiagnosticReport document, SRS EHR-08). */
+export const abdmLabReportBundle = (reportId: string) => `/api/v1/abdm/bundles/lab-reports/${reportId}`;
+
 /** Permission names used by the lab screens (the server enforces them again on every call). */
 export const LAB_PERMISSIONS = {
   read: 'lab.orders.read',

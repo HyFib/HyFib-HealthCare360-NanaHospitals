@@ -61,6 +61,32 @@ export interface SaveIcdCodeRequest {
   version?: number;
 }
 
+/**
+ * Adds or changes a code of the procedure catalogue (`SaveProcedureCodeRequest`). `system` is ICD-10-PCS when empty;
+ * the code is saved in capitals, and a code already in the catalogue for the same system is refused (`procedure.exists`).
+ */
+export interface SaveProcedureCodeRequest {
+  code: string;
+  title: string;
+  system: string | null;
+  category: string | null;
+  keywords: string | null;
+  isActive: boolean;
+  /** The code as shown, when changing one: a change saved meanwhile is not overwritten (REL-04). */
+  version?: number;
+}
+
+/** Opens a chart by hand (`CreateMedicalRecordRequest`): for an encounter or an admission of the patient. */
+export interface CreateMedicalRecordRequest {
+  patientId: string;
+  encounterId: string | null;
+  admissionId: string | null;
+  visitId: string | null;
+  assignedPractitionerId: string | null;
+  dueDate: string | null;
+  isMlc: boolean;
+}
+
 export interface IcdChapter {
   number: string;
   title: string;
@@ -383,6 +409,7 @@ export const mrdKeys = {
   classification: () => ['mrd', 'icd-classification'] as const,
   catalogue: () => ['mrd', 'catalogue'] as const,
   procedures: (search: string) => ['mrd', 'procedures', search] as const,
+  procedureCatalogue: (search: string) => ['mrd', 'procedure-catalogue', search] as const,
   codings: (params: CodingListParams) => ['mrd', 'codings', params] as const,
   coding: (id: string) => ['mrd', 'coding', id] as const,
   suggestions: (id: string) => ['mrd', 'coding', id, 'suggestions'] as const,
@@ -466,6 +493,18 @@ export const mrdQueries = {
       queryFn: ({ signal }) => searchProcedures(search, signal),
       staleTime: 10 * 60_000,
     }),
+  /** The procedure catalogue to maintain: the first 100 active codes by category, or the best 100 for `search`. */
+  procedureCatalogue: (search: string) =>
+    queryOptions({
+      queryKey: mrdKeys.procedureCatalogue(search),
+      queryFn: ({ signal }) =>
+        api.get<ProcedureCodeDto[]>('/api/v1/mrd/procedure-codes', {
+          query: { search: search || undefined, limit: 100 },
+          signal,
+        }),
+      staleTime: 60_000,
+      placeholderData: keepPreviousData,
+    }),
   codings: (params: CodingListParams) =>
     queryOptions({
       queryKey: mrdKeys.codings(params),
@@ -531,6 +570,10 @@ export const mrdApi = {
     id
       ? api.put<IcdCodeDto>(`/api/v1/mrd/icd-codes/${id}`, request)
       : api.post<IcdCodeDto>('/api/v1/mrd/icd-codes', request),
+  saveProcedure: (id: string | null, request: SaveProcedureCodeRequest) =>
+    id
+      ? api.put<ProcedureCodeDto>(`/api/v1/mrd/procedure-codes/${id}`, request)
+      : api.post<ProcedureCodeDto>('/api/v1/mrd/procedure-codes', request),
   /**
    * Uploads the WHO ICD-10 ClaML file or the CMS ICD-10-PCS order file. `dryRun` only reports what would change. A real
    * file takes the server tens of seconds, so the call may take up to ten minutes before it gives up.
@@ -545,6 +588,7 @@ export const mrdApi = {
   saveCoding: (id: string, entries: CodingLineRequest[], notes: string | null, version: number) =>
     api.put<CodingDto>(`/api/v1/mrd/codings/${id}`, { entries, notes, version }),
   verifyCoding: (id: string, version: number) => api.post<CodingDto>(`/api/v1/mrd/codings/${id}/verify`, { version }),
+  createRecord: (request: CreateMedicalRecordRequest) => api.post<MedicalRecordDto>('/api/v1/mrd/records', request),
   addDeficiency: (recordId: string, request: AddDeficiencyRequest) =>
     api.post<MedicalRecordDto>(`/api/v1/mrd/records/${recordId}/deficiencies`, request),
   resolveDeficiency: (deficiencyId: string, note: string | null) =>

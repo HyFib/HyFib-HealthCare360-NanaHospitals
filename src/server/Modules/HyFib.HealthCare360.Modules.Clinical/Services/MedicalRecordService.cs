@@ -35,6 +35,13 @@ public sealed class MedicalRecordService(
             return allowed.Error!;
         }
 
+        // The chart files the patient's own episode: an encounter or visit of someone else would put their record in it.
+        if ((request.EncounterId is { } encounterId && !await db.Set<Encounter>().AnyAsync(e => e.Id == encounterId && e.PatientId == request.PatientId, ct))
+            || (request.VisitId is { } ownVisitId && !await db.Set<Visit>().AnyAsync(v => v.Id == ownVisitId && v.PatientId == request.PatientId, ct)))
+        {
+            return Error.Field(request.EncounterId is null ? "visitId" : "encounterId", "This is not an episode of the patient.");
+        }
+
         var exists = await Charts().AnyAsync(m => (request.AdmissionId != null && m.AdmissionId == request.AdmissionId)
                                                   || (request.EncounterId != null && m.EncounterId == request.EncounterId), ct);
         if (exists)

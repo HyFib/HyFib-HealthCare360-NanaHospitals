@@ -47,12 +47,15 @@ import { useBaseVersion } from '@/lib/baseVersion';
 import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
+import { imagingReportExportable } from '@/modules/lab/common/abdm';
+import { AbdmReportButton } from '@/modules/lab/common/AbdmReportButton';
 import { CriticalCallDialog } from '@/modules/lab/common/CriticalCallDialog';
 import { hasErrorCode } from '@/modules/lab/common/errors';
 import type { CriticalCallDetails } from '@/modules/lab/common/types';
 import { AddendumDialog } from './AddendumDialog';
 import { AiFindingsPanel } from './AiFindingsPanel';
 import {
+  abdmRadiologyReportBundle,
   RADIOLOGY_PERMISSIONS,
   radiologyApi,
   radiologyKeys,
@@ -632,6 +635,9 @@ function SignedReport({
             </Button>
           )}
           <DocumentButtons path={radiologyReportDocument(study.id)} />
+          {imagingReportExportable(report.status) && (
+            <AbdmReportButton path={abdmRadiologyReportBundle(report.id)} what="radiology report" />
+          )}
           {canVerify && (report.status === 'Verified' || report.status === 'Released') && (
             <Button icon={<AddRegular />} onClick={() => setAddendum(true)}>
               Addendum

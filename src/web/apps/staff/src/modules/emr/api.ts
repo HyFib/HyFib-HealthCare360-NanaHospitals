@@ -651,6 +651,52 @@ export interface TemplateDto {
   version: number;
 }
 
+/** One default medicine of a template (server `TemplateMedicationRequest`); the list is replaced on every save. */
+export interface TemplateMedicationRequest {
+  drugItemId: string | null;
+  drugName: string;
+  genericName: string | null;
+  strength: string | null;
+  dosageForm: string | null;
+  route: string | null;
+  dose: string;
+  frequency: DoseFrequency;
+  customFrequency: string | null;
+  durationDays: number;
+  instructions: string | null;
+}
+
+/**
+ * Create or edit a clinical note template (server `SaveTemplateRequest`, EMR-02). `personal` templates belong to the
+ * signed-in doctor; the others are shared. An edit sends the version it was loaded at (REL-04).
+ */
+export interface SaveTemplateRequest {
+  code: string;
+  name: string;
+  specialtyCode: string | null;
+  personal: boolean;
+  chiefComplaint: string | null;
+  historyOfPresentIllness: string | null;
+  examination: string | null;
+  assessment: string | null;
+  plan: string | null;
+  followUpAdvice: string | null;
+  followUpDays: number | null;
+  commonComplaints: string[];
+  defaultServiceItemIds: string[];
+  medications: TemplateMedicationRequest[];
+  displayOrder: number;
+  isActive: boolean;
+  version: number | null;
+}
+
+/** The template catalogue as the management screen asks for it. */
+export interface TemplateCatalogueParams {
+  specialtyCode: string | null;
+  search: string;
+  includeInactive: boolean;
+}
+
 export interface FavouriteDto {
   id: string;
   kind: FavouriteKind;
@@ -801,6 +847,10 @@ export const emrKeys = {
   encounter: (id: string) => ['emr', 'encounter', id] as const,
   templates: (specialtyCode: string | null) => ['emr', 'templates', specialtyCode ?? 'all'] as const,
   template: (id: string) => ['emr', 'template', id] as const,
+  /** Under the templates key, so a saved template refreshes the encounter's picker and this list alike. */
+  templateCatalogue: (params: TemplateCatalogueParams) => ['emr', 'templates', 'catalogue', params] as const,
+  /** Under the patient key, so a prescription signed or cancelled on the chart refreshes it. */
+  currentMedications: (patientId: string) => ['emr', 'patient', patientId, 'medications'] as const,
   favourites: (kind: FavouriteKind) => ['emr', 'favourites', kind] as const,
   discharge: (admissionId: string) => ['emr', 'discharge', admissionId] as const,
   labReport: (reportId: string) => ['emr', 'lab-report', reportId] as const,
@@ -946,6 +996,29 @@ export const emrQueries = {
       queryFn: ({ signal }) => api.get<TemplateDto>(`/api/v1/emr/templates/${id}`, { signal }),
       staleTime: 5 * 60_000,
     }),
+  templateCatalogue: (params: TemplateCatalogueParams) =>
+    queryOptions({
+      queryKey: emrKeys.templateCatalogue(params),
+      queryFn: ({ signal }) =>
+        api.get<TemplateListItem[]>('/api/v1/emr/templates', {
+          query: {
+            specialtyCode: params.specialtyCode,
+            search: params.search || undefined,
+            includeInactive: params.includeInactive || undefined,
+          },
+          signal,
+        }),
+      placeholderData: keepPreviousData,
+    }),
+  /** Medicines the patient should be taking now: lines of signed prescriptions whose course has not ended. */
+  currentMedications: (patientId: string) =>
+    queryOptions({
+      queryKey: emrKeys.currentMedications(patientId),
+      queryFn: ({ signal }) =>
+        api.get<CurrentMedication[]>(`/api/v1/emr/patients/${patientId}/medications`, { signal }),
+      // Each fetch is an audited read.
+      staleTime: 60_000,
+    }),
   favourites: (kind: FavouriteKind) =>
     queryOptions({
       queryKey: emrKeys.favourites(kind),
@@ -1027,6 +1100,12 @@ export const emrApi = {
     api.post<ImmunizationDto>(`/api/v1/emr/patients/${patientId}/immunizations`, request),
   immunizationEnteredInError: (id: string, reason: string) =>
     api.post<ImmunizationDto>(`/api/v1/emr/immunizations/${id}/entered-in-error`, { reason }),
+
+  /** POST for a new template, PUT (with its version) for an edit; 409 `template.code_in_use` for a code taken. */
+  saveTemplate: (id: string | null, request: SaveTemplateRequest) =>
+    id
+      ? api.put<TemplateDto>(`/api/v1/emr/templates/${id}`, request)
+      : api.post<TemplateDto>('/api/v1/emr/templates', request),
 
   addFavourite: (request: SaveFavouriteRequest) => api.post<FavouriteDto>('/api/v1/emr/favourites', request),
   removeFavourite: (id: string) => api.delete<void>(`/api/v1/emr/favourites/${id}`),

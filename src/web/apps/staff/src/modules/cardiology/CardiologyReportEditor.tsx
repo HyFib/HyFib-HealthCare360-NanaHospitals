@@ -47,10 +47,13 @@ import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { parseAgeYears } from '@/modules/lab/common/banner';
+import { imagingReportExportable } from '@/modules/lab/common/abdm';
+import { AbdmReportButton } from '@/modules/lab/common/AbdmReportButton';
 import { CriticalCallDialog } from '@/modules/lab/common/CriticalCallDialog';
 import { hasErrorCode } from '@/modules/lab/common/errors';
 import type { CriticalCallDetails } from '@/modules/lab/common/types';
 import {
+  abdmCardiologyReportBundle,
   CARDIOLOGY_PERMISSIONS,
   cardiologyApi,
   cardiologyKeys,
@@ -1059,6 +1062,9 @@ function SignedReport({
             </Button>
           )}
           <DocumentButtons path={cardiologyReportDocument(study.id)} />
+          {imagingReportExportable(report.status) && (
+            <AbdmReportButton path={abdmCardiologyReportBundle(report.id)} what="cardiology report" />
+          )}
         </>
       }
     >
