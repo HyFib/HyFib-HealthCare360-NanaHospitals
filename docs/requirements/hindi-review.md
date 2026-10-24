@@ -7,7 +7,7 @@ tone and the words your patients use, mark the last column, and send corrections
 This list covers the text the **server** writes for patients:
 
 * the labels of the documents patients receive: bills, lab, radiology and heart test reports, discharge summaries, and
-  the prescription (which is always printed in English and Hindi, ERX-04);
+  the prescription (printed in English and Hindi for every patient whose record does not say Tamil, ERX-04);
 * the messages the patient portal shows when the server refuses something (a slot that was just taken, a wrong code,
   a payment that did not go through).
 

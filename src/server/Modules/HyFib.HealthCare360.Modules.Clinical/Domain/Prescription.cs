@@ -376,7 +376,10 @@ public sealed class PrescriptionItem : AuditableEntity
     public string FrequencyText => Frequency == DoseFrequency.Custom ? CustomFrequency ?? "Custom" : Frequency.ToString();
 }
 
-/// <summary>Bilingual (English/Hindi) directions printed on prescriptions (ERX-04).</summary>
+/// <summary>
+/// The directions printed on prescriptions (ERX-04): in English, with the same in Hindi or Tamil under them for the
+/// patient.
+/// </summary>
 public static class FrequencyLabels
 {
     public static (string English, string Hindi) For(DoseFrequency frequency, string? custom) => frequency switch
@@ -390,5 +393,19 @@ public static class FrequencyLabels
         DoseFrequency.STAT => ("Immediately, once", "तुरंत, एक बार"),
         DoseFrequency.Weekly => ("Once a week", "सप्ताह में एक बार"),
         _ => (custom ?? "As directed", custom ?? "निर्देशानुसार"),
+    };
+
+    /// <summary>The directions in Tamil; a custom frequency prints as the doctor typed it.</summary>
+    public static string Tamil(DoseFrequency frequency, string? custom) => frequency switch
+    {
+        DoseFrequency.OD => "நாளொன்றுக்கு ஒரு முறை",
+        DoseFrequency.BD => "நாளொன்றுக்கு இரண்டு முறை",
+        DoseFrequency.TDS => "நாளொன்றுக்கு மூன்று முறை",
+        DoseFrequency.QID => "நாளொன்றுக்கு நான்கு முறை",
+        DoseFrequency.HS => "இரவு தூங்கும் முன்",
+        DoseFrequency.SOS => "தேவைப்படும்போது மட்டும்",
+        DoseFrequency.STAT => "உடனடியாக, ஒரு முறை",
+        DoseFrequency.Weekly => "வாரத்திற்கு ஒரு முறை",
+        _ => custom ?? "அறிவுறுத்தியபடி",
     };
 }

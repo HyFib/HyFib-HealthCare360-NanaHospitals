@@ -233,6 +233,7 @@ const RX: PortalPrescriptionDetail = {
       frequency: 'TDS',
       frequencyEnglish: 'Three times a day',
       frequencyHindi: 'दिन में तीन बार',
+      frequencyTamil: 'நாளொன்றுக்கு மூன்று முறை',
       durationDays: 3,
       quantity: 9,
       instructions: null,

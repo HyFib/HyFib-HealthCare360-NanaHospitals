@@ -6,13 +6,14 @@ namespace HyFib.HealthCare360.Modules.Clinical.Documents;
 
 /// <summary>
 /// The A5 e-prescription (ERX-04, PP-02): clinical letterhead with the facility logo and the prescriber's block, the
-/// patient strip, known allergies, diagnosis, ℞ with each medicine's directions in English and the Hindi line under
-/// them, Schedule H1/X tags, advice, follow-up, the QR code that verifies the prescription, and the signature with the
+/// patient strip, known allergies, diagnosis, ℞ with each medicine's directions in English and the line in the
+/// patient's language under them, Schedule H1/X tags, advice, follow-up, the QR code that verifies the prescription, and the signature with the
 /// prescriber's signature image: "Digitally signed by …" with the certificate when the doctor signed it with their DSC,
 /// else "Signed electronically on …" (signed in HC360, which is not a digital signature under the IT Act). The same
 /// document is printed at the counter, downloaded from the portal and sent with the "prescription shared" message. It
-/// is bilingual whoever reads it (ERX-04): every label is printed in English with the Hindi after it, and the page
-/// carries its Hindi font. Medicine names, doses and codes are not translated.
+/// is bilingual whoever reads it (ERX-04): every label is printed in English with the same in the patient's language
+/// after it, Tamil for a patient whose record says Tamil and Hindi for everyone else, and the page carries that script's
+/// font. Medicine names, doses and codes are not translated.
 /// </summary>
 internal static class PrescriptionDocument
 {
@@ -21,8 +22,8 @@ internal static class PrescriptionDocument
         table.lines th { border-bottom: 1px solid #999; font-size: 8.5pt; color: #333; }
         table.lines td { border-bottom: 1px solid #E3E3E3; }
         .drug { font-weight: 600; }
-        .hindi { color: #333; font-size: 9pt; }
-        .hi { color: #333; }
+        .hindi, .tamil { color: #333; font-size: 9pt; }
+        .hi, .ta { color: #333; }
         .controlled { display: inline-block; border: 1px solid #B00020; color: #B00020; font-size: 7.5pt; padding: 0 4px; border-radius: 3px; margin-left: 4px; }
         .qr .qr-img { display: block; width: 26mm; height: 26mm; }
         .qr .mono { word-break: break-all; }
@@ -61,7 +62,8 @@ internal static class PrescriptionDocument
 
     public static Html Body(PrescriptionPrintModel model, ImageData? logo, ImageData? signature, PrintTemplate? template = null)
     {
-        var labels = ClinicalLabels.EnglishAndHindi;
+        var labels = ClinicalLabels.EnglishAndPatients(model.Patient.PreferredLanguage);
+        var second = labels.Second ?? DocumentText.Hindi;
         var patient = model.Patient;
         var warning = StatusWarningKey(model.Status) is { } key ? Html.Of($"<div class=\"draft\">{labels[key]}</div>") : Html.Empty;
         var diagnosis = model.Diagnoses.Count > 0
@@ -85,7 +87,7 @@ internal static class PrescriptionDocument
             <div class="rx keep-next">℞</div>
             <table class="lines">
               <thead><tr><th></th><th>{labels["doc.rx.medicine"]}</th><th>{labels["doc.rx.dose_directions"]}</th><th>{labels["doc.rx.duration"]}</th><th class="right">{labels["doc.rx.quantity"]}</th></tr></thead>
-              <tbody>{model.Lines.Select(Line)}</tbody>
+              <tbody>{model.Lines.Select(line => Line(line, second))}</tbody>
             </table>
             {ClinicalDocumentParts.TextSection(labels["doc.clinical.advice"], model.Advice)}
             {ClinicalDocumentParts.FollowUp(model.FollowUpDate, model.FollowUpAdvice, labels)}
@@ -103,7 +105,7 @@ internal static class PrescriptionDocument
     /// </summary>
     public static Html SignatureLine(PrescriptionPrintModel model, ClinicalLabels? labels = null)
     {
-        labels ??= ClinicalLabels.EnglishAndHindi;
+        labels ??= ClinicalLabels.EnglishAndPatients(model.Patient.PreferredLanguage);
         if (model.DigitalSignature is { } dsc)
         {
             var signer = dsc.RegistrationNumber is { Length: > 0 } registration ? $"{dsc.SignerName} ({registration})" : dsc.SignerName;
@@ -138,8 +140,8 @@ internal static class PrescriptionDocument
     };
 
     // One medicine: name, strength and Schedule H1/X tag; generic and form; the dose with English directions and the
-    // route (unless oral), the same in Hindi for the patient, and the instructions; duration and quantity.
-    private static Html Line(PrescriptionPrintLine line)
+    // route (unless oral), the same in the patient's language, and the instructions; duration and quantity.
+    private static Html Line(PrescriptionPrintLine line, DocumentText second)
     {
         var name = line.Strength is { Length: > 0 } strength ? $"{line.DrugName} {strength}" : line.DrugName;
         var controlled = line.IsControlledDrug ? Html.Of($"<span class=\"controlled\">Schedule H1/X</span>") : Html.Empty;
@@ -157,23 +159,28 @@ internal static class PrescriptionDocument
               </td>
               <td>
                 <div>{line.Dose} · {line.FrequencyEnglish}{route}</div>
-                <div class="hindi" lang="hi">{line.Dose} · {line.FrequencyHindi}</div>
+                <div class="{SecondClass(second)}" lang="{second.Language}">{line.Dose} · {(second == DocumentText.Tamil ? line.FrequencyTamil : line.FrequencyHindi)}</div>
                 {instructions}
               </td>
-              <td>{Duration(line)}</td>
+              <td>{Duration(line, second)}</td>
               <td class="right">{line.Quantity:0.##}</td>
             </tr>
             """);
     }
 
-    // "30 days" with "30 दिन" under it; a STAT dose is given once.
-    private static Html Duration(PrescriptionPrintLine line)
+    // "30 days" with "30 दिन" (or "30 நாட்கள்") under it; a STAT dose is given once.
+    private static Html Duration(PrescriptionPrintLine line, DocumentText second)
     {
-        var (english, hindi) = line.Frequency == "STAT"
-            ? (DocumentText.English["doc.rx.once"], DocumentText.Hindi["doc.rx.once"])
-            : (DurationText(line.DurationDays, DocumentText.English), DurationText(line.DurationDays, DocumentText.Hindi));
-        return english.Length == 0 ? Html.Empty : Html.Of($"{english}<div class=\"hindi\" lang=\"hi\">{hindi}</div>");
+        var (english, translated) = line.Frequency == "STAT"
+            ? (DocumentText.English["doc.rx.once"], second["doc.rx.once"])
+            : (DurationText(line.DurationDays, DocumentText.English), DurationText(line.DurationDays, second));
+        return english.Length == 0
+            ? Html.Empty
+            : Html.Of($"{english}<div class=\"{SecondClass(second)}\" lang=\"{second.Language}\">{translated}</div>");
     }
+
+    // The class of a line in the second language, for its smaller grey type.
+    private static string SecondClass(DocumentText second) => second == DocumentText.Tamil ? "tamil" : "hindi";
 
     // The QR code opens the portal's public verification page (prescriber, facility, date, still valid or not; no
     // patient data). Without the hospital's public address (portal.baseUrl) the code is printed without a QR code, as

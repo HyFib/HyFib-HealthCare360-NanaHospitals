@@ -330,7 +330,7 @@ public sealed class BillDocumentTests
 
         html.ShouldContain("<html lang=\"en\">");
         html.ShouldNotContain("@font-face");
-        html.ShouldContain("font-family: \"Segoe UI\", \"HC360 Devanagari\", \"Nirmala UI\"");
+        html.ShouldContain("font-family: \"Segoe UI\", \"HC360 Devanagari\", \"HC360 Tamil\", \"Nirmala UI\"");
     }
 
     private static string Render(BillDetail bill) => BillDocument.Build(bill, Letterhead).ToHtml();

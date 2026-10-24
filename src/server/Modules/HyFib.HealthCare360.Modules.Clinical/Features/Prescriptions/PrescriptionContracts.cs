@@ -131,6 +131,7 @@ public sealed record PrescriptionPrintLine(
     string Frequency,
     string FrequencyEnglish,
     string FrequencyHindi,
+    string FrequencyTamil,
     int DurationDays,
     decimal Quantity,
     string? Instructions,

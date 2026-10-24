@@ -49,7 +49,7 @@ function build(language: Language): Formatters {
   };
 }
 
-const sets: Record<Language, Formatters> = { en: build('en'), hi: build('hi') };
+const sets: Record<Language, Formatters> = { en: build('en'), hi: build('hi'), ta: build('ta') };
 
 /** Formatters bound to the current language: `const f = useFormat(); f.dateTime(appointment.startsAt)`. */
 export function useFormat(): Formatters {

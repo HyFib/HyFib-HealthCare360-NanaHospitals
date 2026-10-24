@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Engagement.Features.Campaigns;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
@@ -197,11 +198,11 @@ public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUs
         return batch.Count;
     }
 
-    /// <summary>Notification language from the patient's free-text preference ("Hindi" → hi); English otherwise.</summary>
-    public static string LanguageCode(string? preferredLanguage) =>
-        preferredLanguage is { } language && (language.StartsWith("hi", StringComparison.OrdinalIgnoreCase) || language.Contains("हिन्दी", StringComparison.Ordinal))
-            ? "hi"
-            : "en";
+    /// <summary>
+    /// Notification language from the patient's free-text preference ("Hindi" → hi, "Tamil" or "தமிழ்" → ta); English
+    /// when it names none HC360 writes.
+    /// </summary>
+    public static string LanguageCode(string? preferredLanguage) => PatientLanguages.FromPreference(preferredLanguage) ?? PatientLanguages.Default;
 
     /// <summary>
     /// Messages use this facility's template when it has one, otherwise the all-facility one, in the patient's language

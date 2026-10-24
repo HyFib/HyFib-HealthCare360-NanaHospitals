@@ -269,8 +269,9 @@ with every portal call), else the preferred language on the signed-in patient's 
 English. `ProblemLocalization` then writes that request's Problem
 Details title, detail and field messages in it, matched on their English text, and keeps the machine `code`. Documents
 take a `DocumentText` (their labels in one language): the portal's PDFs use the request's language, the copies sent
-in messages the record's preference, the staff app English; the prescription is always English and Hindi (ERX-04).
-A document with Devanagari text in it embeds Noto Sans Devanagari (`DocumentFonts`), and the browser shapes it. Staff
+in messages the record's preference, the staff app English; the prescription is English with the patient's Tamil, or
+Hindi for everyone else (ERX-04). A document with Devanagari or Tamil text in it embeds Noto Sans Devanagari or Noto
+Sans Tamil (`DocumentFonts`), and the browser shapes it. Staff
 answers are not touched.
 
 ---

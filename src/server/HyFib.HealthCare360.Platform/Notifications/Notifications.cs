@@ -613,10 +613,12 @@ internal sealed class WhatsAppDeliveryHandler(
 
     protected override bool NeedsDocument(NotificationTemplate? template) => template?.WhatsAppDocumentHeader == true;
 
+    // The template is asked for in the language of the one chosen: a patient whose language has none gets the English
+    // template, which Meta knows only in English.
     protected override Task<SendResult> SendAsync(
         NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
         whatsApp.SendTemplateAsync(
-            new WhatsAppTemplateMessage(delivery.To, template?.WhatsAppTemplateName ?? delivery.TemplateKey.Replace('.', '_'), delivery.Language,
+            new WhatsAppTemplateMessage(delivery.To, template?.WhatsAppTemplateName ?? delivery.TemplateKey.Replace('.', '_'), template?.Language ?? delivery.Language,
                 [body], delivery.LogId.ToString("N"), delivery.FacilityId,
                 document is null ? null : new WhatsAppHeaderDocument(document.FileName, document.Content, document.ContentType)),
             cancellationToken);

@@ -1,28 +1,38 @@
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Localization;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Documents;
 
 /// <summary>
 /// The labels of a clinical document (PP-06): in one language (the discharge summary, in the patient's language), or in
-/// English with the Hindi after it (the prescription, ERX-04).
+/// English with a second language after it (the prescription, ERX-04: the patient's Hindi or Tamil, else Hindi).
 /// </summary>
-internal sealed record ClinicalLabels(DocumentText Text, bool Bilingual)
+internal sealed record ClinicalLabels(DocumentText Text, DocumentText? Second)
 {
-    public static ClinicalLabels English { get; } = new(DocumentText.English, false);
+    public static ClinicalLabels English { get; } = new(DocumentText.English, null);
 
-    /// <summary>English and Hindi, whatever the patient reads.</summary>
-    public static ClinicalLabels EnglishAndHindi { get; } = new(DocumentText.English, true);
+    /// <summary>English and Hindi.</summary>
+    public static ClinicalLabels EnglishAndHindi { get; } = new(DocumentText.English, DocumentText.Hindi);
 
-    public static ClinicalLabels For(DocumentText text) => text.IsEnglish ? English : new(text, false);
+    /// <summary>English and Tamil.</summary>
+    public static ClinicalLabels EnglishAndTamil { get; } = new(DocumentText.English, DocumentText.Tamil);
 
-    /// <summary>The language of the page: English for a bilingual document, whose Hindi is marked where it is.</summary>
+    public static ClinicalLabels For(DocumentText text) => text.IsEnglish ? English : new(text, null);
+
+    /// <summary>English with the patient's own language after it when they read Hindi or Tamil, else with Hindi.</summary>
+    public static ClinicalLabels EnglishAndPatients(string? preferredLanguage) =>
+        PatientLanguages.FromPreference(preferredLanguage) == PatientLanguages.Tamil ? EnglishAndTamil : EnglishAndHindi;
+
+    public bool Bilingual => Second is not null;
+
+    /// <summary>The language of the page: English for a bilingual document, whose second language is marked where it is.</summary>
     public string Language => Bilingual ? DocumentText.English.Language : Text.Language;
 
     public Html this[string key] => Format(key);
 
     public Html Format(string key, params ReadOnlySpan<(string Name, string? Value)> values) =>
-        Bilingual ? DocumentText.Bilingual(key, values) : Html.Text(Text.Format(key, values));
+        Second is { } second ? DocumentText.Bilingual(second, key, values) : Html.Text(Text.Format(key, values));
 
     /// <summary>Plain text for where markup cannot go (an image's alternative text): the first language only.</summary>
     public string Plain(string key, params ReadOnlySpan<(string Name, string? Value)> values) => Text.Format(key, values);

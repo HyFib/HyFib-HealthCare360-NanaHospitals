@@ -4,14 +4,21 @@ import { isLanguage, LOCALES, type Language } from './define';
 const STORAGE_KEY = 'hc360:portal:language';
 
 /**
- * First visit: Hindi when the phone or browser prefers Hindi, otherwise English. After that the patient's own choice
- * is remembered on this device (it is a display preference, not personal data).
+ * First visit: the first Indian language the portal is written in (Hindi or Tamil) among the phone's or browser's
+ * languages, otherwise English: a phone set to "English, Tamil" is read by a Tamil reader. After that the patient's own choice is remembered on this device (it is a display
+ * preference, not personal data).
  */
 export function initialLanguage(stored: string | null, preferred: readonly string[]): Language {
   if (isLanguage(stored)) {
     return stored;
   }
-  return preferred.some((tag) => tag.toLowerCase().startsWith('hi')) ? 'hi' : 'en';
+  for (const tag of preferred) {
+    const code = tag.toLowerCase().split(/[-_]/)[0];
+    if (isLanguage(code) && code !== 'en') {
+      return code;
+    }
+  }
+  return 'en';
 }
 
 function readStored(): string | null {

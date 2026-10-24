@@ -10,9 +10,9 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { CheckmarkRegular, LocalLanguageRegular } from '@fluentui/react-icons';
-import { LANGUAGE_NAMES, LANGUAGES, LOCALES, useLanguage, useT, type Language } from '@/i18n';
+import { isLanguage, LANGUAGE_NAMES, LANGUAGES, LOCALES, useLanguage, useT, type Language } from '@/i18n';
 
-const SHORT: Record<Language, string> = { en: 'EN', hi: 'हि' };
+const SHORT: Record<Language, string> = { en: 'EN', hi: 'हि', ta: 'த' };
 
 const useStyles = makeStyles({
   trigger: { minWidth: '48px', minHeight: '44px' },
@@ -59,7 +59,7 @@ export function LanguageMenu() {
       checkedValues={{ language: [language] }}
       onCheckedValueChange={(_, data) => {
         const next = data.checkedItems[0];
-        if (next === 'en' || next === 'hi') {
+        if (isLanguage(next)) {
           setLanguage(next);
         }
       }}

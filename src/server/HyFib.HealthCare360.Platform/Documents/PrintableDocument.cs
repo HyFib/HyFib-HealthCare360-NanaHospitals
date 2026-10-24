@@ -82,8 +82,8 @@ public sealed partial record PrintableDocument
             ? $"@bottom-left {{ content: {CssString(text)}; {footerBox}{FooterFont} }}"
             : "";
 
-        // Hindi text (a translated document, the Hindi directions on a prescription, a name typed in Devanagari) brings its
-        // own font, so it prints the same on every computer.
+        // Hindi or Tamil text (a translated document, the directions on a prescription, a name typed in its own script)
+        // brings its own font, so it prints the same on every computer.
         var body = Body.ToString();
         var fonts = DocumentFonts.For(string.Concat(Title, Footer, body, closing.ToString()));
         var html = new StringBuilder(body.Length + fonts.Length + 4096);
@@ -143,13 +143,13 @@ public sealed partial record PrintableDocument
         return safe.Length == 0 ? "document" : safe.Length > 120 ? safe[..120] : safe;
     }
 
-    private const string FooterFont = "font: 7.5pt \"Segoe UI\", \"" + DocumentFonts.Devanagari + "\", \"Nirmala UI\", sans-serif; color: #555;";
+    private const string FooterFont = "font: 7.5pt " + DocumentFonts.Families + ", sans-serif; color: #555;";
 
     // Matches the staff app's print base (packages/core printDocument) so documents look the same wherever they print.
     private const string HouseStyle = """
         * { box-sizing: border-box; }
         html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        body { margin: 0; font-family: "Segoe UI", "HC360 Devanagari", "Nirmala UI", system-ui, sans-serif; font-size: 10pt; line-height: 1.35; color: #111; }
+        body { margin: 0; font-family: "Segoe UI", "HC360 Devanagari", "HC360 Tamil", "Nirmala UI", system-ui, sans-serif; font-size: 10pt; line-height: 1.35; color: #111; }
         h1, h2, h3 { margin: 0; break-after: avoid; }
         p { margin: 0 0 4px; }
         table { width: 100%; border-collapse: collapse; }

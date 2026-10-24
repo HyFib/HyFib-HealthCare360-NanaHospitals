@@ -33,7 +33,7 @@ const ROOT_ID = 'hc360-print-root';
 function baseStyles(root: string): string {
   return `
 @page { size: A4; margin: 12mm; }
-${root} { font-family: "Segoe UI", "Noto Sans", "Noto Sans Devanagari", system-ui, sans-serif; color: #111; font-size: 11pt; line-height: 1.4; }
+${root} { font-family: "Segoe UI", "Noto Sans", "Noto Sans Devanagari", "Noto Sans Tamil", "Nirmala UI", system-ui, sans-serif; color: #111; font-size: 11pt; line-height: 1.4; }
 ${root} h1 { font-size: 16pt; margin: 0 0 4px; }
 ${root} h2 { font-size: 12.5pt; margin: 14px 0 6px; }
 ${root} h3 { font-size: 11.5pt; margin: 10px 0 4px; }

@@ -45,6 +45,9 @@ export type PendingPayment =
 const RAZORPAY_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
 const SCRIPT_TIMEOUT_MS = 15_000;
 
+/** Razorpay Checkout's own codes for the portal's languages; English is its default. */
+const CHECKOUT_LANGUAGES: Partial<Record<Language, string>> = { hi: 'hi', ta: 'tam' };
+
 interface RazorpayResponse {
   razorpay_payment_id: string;
   razorpay_order_id: string;
@@ -142,7 +145,9 @@ export async function runCheckout(checkout: PaymentCheckout, context: CheckoutCo
         name: context.hospital,
         description: context.description,
         theme: { color: '#0A7CA7' },
-        config: context.language === 'hi' ? { display: { language: 'hi' } } : undefined,
+        config: CHECKOUT_LANGUAGES[context.language]
+          ? { display: { language: CHECKOUT_LANGUAGES[context.language] } }
+          : undefined,
         modal: {
           escape: true,
           confirm_close: true,

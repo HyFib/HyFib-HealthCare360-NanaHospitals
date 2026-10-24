@@ -18,6 +18,8 @@ public sealed class DocumentText
 
     public static DocumentText Hindi => ByLanguage[PatientLanguages.Hindi];
 
+    public static DocumentText Tamil => ByLanguage[PatientLanguages.Tamil];
+
     /// <summary>The labels in <paramref name="language"/>, or in English when HC360 does not write that language.</summary>
     public static DocumentText For(string? language) => ByLanguage[PatientLanguages.OrDefault(language)];
 
@@ -32,9 +34,13 @@ public sealed class DocumentText
     public string Format(string key, params ReadOnlySpan<(string Name, string? Value)> values) => PatientTexts.Catalog.Text(Language, key, values);
 
     /// <summary>
-    /// A label in English followed by its Hindi, for the documents the SRS asks to be bilingual (the prescription,
-    /// ERX-04): "Medicine / दवा".
+    /// A label in English followed by the same in <paramref name="second"/>, for the documents the SRS asks to be
+    /// bilingual (the prescription, ERX-04): "Medicine / दवा", "Medicine / மருந்து".
     /// </summary>
-    public static Html Bilingual(string key, params ReadOnlySpan<(string Name, string? Value)> values) => Html.Of(
-        $"{English.Format(key, values)} <span class=\"hi\" lang=\"hi\">/ {Hindi.Format(key, values)}</span>");
+    public static Html Bilingual(DocumentText second, string key, params ReadOnlySpan<(string Name, string? Value)> values)
+    {
+        ArgumentNullException.ThrowIfNull(second);
+        return Html.Of(
+            $"{English.Format(key, values)} <span class=\"{second.Language}\" lang=\"{second.Language}\">/ {second.Format(key, values)}</span>");
+    }
 }

@@ -32,6 +32,11 @@ public sealed class PatientLocalizationTests
     [InlineData("  HINDI ", "hi")]
     [InlineData("हिन्दी", "hi")]
     [InlineData("हिंदी", "hi")]
+    [InlineData("ta", "ta")]
+    [InlineData("ta-IN", "ta")]
+    [InlineData("Tamil", "ta")]
+    [InlineData("TAMIL", "ta")]
+    [InlineData("தமிழ்", "ta")]
     [InlineData("English", "en")]
     [InlineData("English (India)", "en")]
     [InlineData("en", "en")]
@@ -46,6 +51,8 @@ public sealed class PatientLocalizationTests
     [InlineData("hi-IN,hi;q=0.9,en;q=0.8", "hi")]
     [InlineData("en-US,en;q=0.9,hi;q=0.8", "en")]
     [InlineData("mr-IN,hi;q=0.5,en;q=0.3", "hi")]
+    [InlineData("ta-IN,ta;q=0.9,en;q=0.8", "ta")]
+    [InlineData("en;q=0.5, ta;q=0.8, hi;q=0.6", "ta")]
     [InlineData("en;q=0.2, hi;q=0.7", "hi")]
     [InlineData("fr-FR,de", null)]
     [InlineData("*", null)]
@@ -107,7 +114,7 @@ public sealed class PatientLocalizationTests
     public async Task With_neither_the_answer_is_in_english()
     {
         (await LanguageOfAsync("/api/v1/portal/bills", Patient(Guid.NewGuid()), acceptLanguage: null)).ShouldBe("en");
-        (await LanguageOfAsync("/api/v1/portal/bills", Patient(Guid.NewGuid()), acceptLanguage: "ta-IN")).ShouldBe("en");
+        (await LanguageOfAsync("/api/v1/portal/bills", Patient(Guid.NewGuid()), acceptLanguage: "mr-IN")).ShouldBe("en");
     }
 
     [Theory]
@@ -174,6 +181,18 @@ public sealed class PatientLocalizationTests
         problem.GetProperty("detail").GetString().ShouldBe("यह समय अभी-अभी बुक हो गया है। कृपया कोई दूसरा समय चुनें।");
         problem.GetProperty("code").GetString().ShouldBe("appointment.slot_full");
         response.Headers.ContentLanguage.ToString().ShouldBe("hi");
+    }
+
+    [Fact]
+    public async Task A_refusal_on_the_portal_reaches_a_tamil_reader_in_tamil_with_its_code_unchanged()
+    {
+        var response = await ProblemAsync(Error.Conflict("appointment.slot_full", "This slot has just been booked. Choose another slot."), "ta");
+        var problem = await BodyOf(response);
+
+        problem.GetProperty("title").GetString().ShouldBe("இந்தக் கோரிக்கையை முடிக்க முடியவில்லை");
+        problem.GetProperty("detail").GetString().ShouldBe("இந்த நேரம் இப்போதுதான் முன்பதிவு செய்யப்பட்டுவிட்டது. வேறொரு நேரத்தைத் தேர்ந்தெடுங்கள்.");
+        problem.GetProperty("code").GetString().ShouldBe("appointment.slot_full");
+        response.Headers.ContentLanguage.ToString().ShouldBe("ta");
     }
 
     [Fact]
@@ -267,6 +286,29 @@ public sealed class PatientLocalizationTests
     }
 
     [Fact]
+    public void The_tamil_texts_are_written_in_tamil_script()
+    {
+        var tamil = PatientTexts.Catalog.Languages[PatientLanguages.Tamil];
+
+        tamil.Where(t => !DocumentFonts.HasTamil(t.Value)).Select(t => t.Key).ShouldBe(
+            ["doc.bill.mode.upi"], ignoreOrder: true, "only a name that is the same in both languages may stay in Latin letters");
+    }
+
+    [Fact]
+    public void A_document_carries_the_font_of_each_script_it_has_and_no_other()
+    {
+        DocumentFonts.For("Patient").ShouldBeEmpty();
+        DocumentFonts.For("रोगी").ShouldContain("font-family: \"HC360 Devanagari\"");
+        DocumentFonts.For("रोगी").ShouldNotContain("HC360 Tamil");
+        DocumentFonts.For("நோயாளி").ShouldContain("font-family: \"HC360 Tamil\"");
+        DocumentFonts.For("நோயாளி").ShouldContain("unicode-range: U+0964-0965, U+0B80-0BFF");
+        DocumentFonts.For("நோயாளி").ShouldNotContain("HC360 Devanagari");
+        var both = DocumentFonts.For("रोगी / நோயாளி");
+        both.ShouldContain("HC360 Devanagari");
+        both.ShouldContain("HC360 Tamil");
+    }
+
+    [Fact]
     public void Each_server_message_has_one_entry_so_a_message_never_matches_two()
     {
         var messages = PatientTexts.Catalog.Languages[PatientLanguages.English].Where(t => t.Key.StartsWith("message.", StringComparison.Ordinal)).ToList();
@@ -285,10 +327,11 @@ public sealed class PatientLocalizationTests
 
         texts.Text("hi", "doc.a", ("name", "Asha")).ShouldBe("रोगी Asha");
         texts.Text("hi", "doc.b").ShouldBe("Only English");
-        texts.Text("ta", "doc.a", ("name", "Asha")).ShouldBe("Patient Asha");
+        texts.Text("mr", "doc.a", ("name", "Asha")).ShouldBe("Patient Asha");
         Should.Throw<KeyNotFoundException>(() => texts.Text("en", "doc.missing"));
         DocumentText.Hindi["doc.patient"].ShouldBe("रोगी");
-        DocumentText.For("ta").ShouldBeSameAs(DocumentText.English);
+        DocumentText.For("mr").ShouldBeSameAs(DocumentText.English);
+        DocumentText.For("ta").ShouldBeSameAs(DocumentText.Tamil);
     }
 
     [Fact]

@@ -18,7 +18,7 @@ import { videoMessages } from './messages/video';
 
 /**
  * Every feature's message set. Adding a feature = add its `messages/<feature>.ts` here; the dictionary tests then
- * check it (both languages complete, same placeholders, no key defined twice).
+ * check it (every language complete, same placeholders, no key defined twice).
  */
 export const MESSAGE_SETS = {
   common,
@@ -55,4 +55,5 @@ function compose(language: Language): Readonly<Record<MessageKey, string>> {
 export const DICTIONARIES: Readonly<Record<Language, Readonly<Record<MessageKey, string>>>> = {
   en: compose('en'),
   hi: compose('hi'),
+  ta: compose('ta'),
 };
