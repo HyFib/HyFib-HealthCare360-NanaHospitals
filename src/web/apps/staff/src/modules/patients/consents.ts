@@ -178,6 +178,7 @@ const STANDING_PERMISSIONS: readonly ConsentType[] = [
   'Telehealth',
   'Research',
   'Photography',
+  'PrivacyNotice',
 ];
 
 export function isStandingPermission(type: string): boolean {

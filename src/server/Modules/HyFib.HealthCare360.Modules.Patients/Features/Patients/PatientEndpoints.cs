@@ -45,8 +45,7 @@ internal static class PatientEndpoints
         IFieldProtector protector,
         IAuditLogger audit,
         TimeProvider time,
-        ICurrentUser currentUser,
-        IPermissionService permissions,
+        PatientAccessGuard access,
         CancellationToken ct)
     {
         var page = query.ToRequest();
@@ -91,16 +90,8 @@ internal static class PatientEndpoints
             Details = new { term = page.SearchTerm, gender, category, includeInactive, page = page.Page, matched = result.TotalCount, shown = result.Items.Select(p => p.Id) },
         }, ct);
 
-        // A restricted (VIP) patient's name shows only to those who may open the record: with the restricted-read
-        // permission, or with emergency access to that patient still running. Others see initials (R-3).
-        var now = time.GetUtcNow();
-        var restricted = result.Items.Where(p => p.IsVip).Select(p => p.Id).ToList();
-        var opened = restricted.Count == 0 || currentUser.UserId is not { } userId
-            ? []
-            : await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct)
-                ? restricted.ToHashSet()
-                : (await db.Set<BreakGlassAccess>().Where(g => g.UserId == userId && g.ExpiresAt > now && restricted.Contains(g.PatientId))
-                    .Select(g => g.PatientId).ToListAsync(ct)).ToHashSet();
+        // A restricted (VIP) patient's name shows only to those who may open the record (R-3).
+        var opened = await access.OpenableAsync([.. result.Items.Where(p => p.IsVip).Select(p => p.Id)], ct);
 
         var today = time.Today();
         return TypedResults.Ok(result.Map(p => new PatientListItem(

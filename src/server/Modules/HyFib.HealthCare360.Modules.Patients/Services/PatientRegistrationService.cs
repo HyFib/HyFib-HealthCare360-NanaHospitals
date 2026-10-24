@@ -41,6 +41,7 @@ public sealed class PatientRegistrationService(
     IAuditLogger audit,
     WhatsAppConsent whatsApp,
     ISettingsService settings,
+    PatientAccessGuard access,
     TimeProvider time)
 {
     /// <summary>Audit action of a change to the patient's ABHA number or address.</summary>
@@ -71,8 +72,11 @@ public sealed class PatientRegistrationService(
                         || (sameFirstName != null && dob != null && p.DateOfBirth == dob && EF.Functions.ILike(p.FirstName, sameFirstName, QueryExtensions.LikeEscape)))
             .OrderByDescending(p => p.RegisteredAt)
             .Take(25)
-            .Select(p => new { p.Id, p.Uhid, p.FullName, p.FirstName, p.Gender, p.DateOfBirth, p.Phone, p.AbhaNumberIndex, p.AadhaarIndex })
+            .Select(p => new { p.Id, p.Uhid, p.FullName, p.FirstName, p.Gender, p.DateOfBirth, p.Phone, p.AbhaNumberIndex, p.AadhaarIndex, p.IsVip })
             .ToListAsync(ct);
+
+        // A restricted record shows as initials to those who may not open it, as in search (R-3).
+        var opened = await access.OpenableAsync([.. rows.Where(p => p.IsVip).Select(p => p.Id)], ct);
 
         var today = time.Today();
         return rows
@@ -89,7 +93,7 @@ public sealed class PatientRegistrationService(
                     : samePhone && similarAge ? (75, "Same mobile number and similar age")
                     : samePhone ? (50, "Same mobile number (possibly a family member)")
                     : (0, string.Empty);
-                return new DuplicateCandidate(p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth is { } d ? Age.Format(d, today) : null,
+                return new DuplicateCandidate(p.Id, p.Uhid, p.IsVip && !opened.Contains(p.Id) ? PatientNames.Restricted(p.FullName) : p.FullName, p.Gender, p.DateOfBirth is { } d ? Age.Format(d, today) : null,
                     Phone.Mask(p.Phone), score, reason);
             })
             .Where(c => c.Score > 0)

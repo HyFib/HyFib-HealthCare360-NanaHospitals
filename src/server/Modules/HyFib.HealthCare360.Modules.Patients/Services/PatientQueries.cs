@@ -156,6 +156,27 @@ public sealed class PatientAccessGuard(
         return new BreakGlassGrant(patientId, expires);
     }
 
+    /// <summary>
+    /// Which of these restricted records the user may open: all of them with the restricted-read permission, otherwise
+    /// those with emergency access still running. Lists show the others' names only as initials (R-3).
+    /// </summary>
+    public async Task<IReadOnlySet<Guid>> OpenableAsync(IReadOnlyCollection<Guid> restrictedIds, CancellationToken ct)
+    {
+        if (restrictedIds.Count == 0 || currentUser.UserId is not { } userId)
+        {
+            return new HashSet<Guid>();
+        }
+
+        if (await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct))
+        {
+            return restrictedIds.ToHashSet();
+        }
+
+        var now = time.GetUtcNow();
+        return (await db.Set<BreakGlassAccess>().Where(g => g.UserId == userId && g.ExpiresAt > now && restrictedIds.Contains(g.PatientId))
+            .Select(g => g.PatientId).ToListAsync(ct)).ToHashSet();
+    }
+
     private async Task<Result> CheckRestrictedAsync(Guid patientId, CancellationToken ct)
     {
         if (currentUser.UserId is not { } userId)

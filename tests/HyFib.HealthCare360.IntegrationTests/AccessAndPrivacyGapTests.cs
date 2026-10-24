@@ -49,6 +49,13 @@ public sealed class AccessAndPrivacyGapTests(HospitalServer server)
         // The hospital administrator may open restricted records, so sees the name.
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         (await admin.GetAsync<PagedResult<PatientListItem>>(search)).Items.ShouldHaveSingleItem().FullName.ShouldContain(lastName);
+
+        // The duplicate check at registration masks it alike.
+        var check = new DuplicateCheckRequest("Rajiv", lastName, masked.DateOfBirth, null, null, null);
+        (await frontOffice.PostAsync<List<DuplicateCandidate>>("/api/v1/patients/duplicates", check)).Single(c => c.Id == patient.Id)
+            .FullName.ShouldBe(masked.FullName);
+        (await admin.PostAsync<List<DuplicateCandidate>>("/api/v1/patients/duplicates", check)).Single(c => c.Id == patient.Id)
+            .FullName.ShouldContain(lastName);
     }
 
     [Fact]

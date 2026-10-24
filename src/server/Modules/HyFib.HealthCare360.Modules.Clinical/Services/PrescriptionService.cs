@@ -283,8 +283,15 @@ public sealed class PrescriptionService(
     /// <summary>The medicines a teleconsultation may not prescribe, for a prescription written in one (TPG 2020).</summary>
     private async Task<IReadOnlyList<string>> TelemedicineProhibitedAsync(Prescription prescription, CancellationToken ct)
     {
-        if (prescription.EncounterId is not { } encounterId
-            || !await db.Set<Encounter>().AnyAsync(e => e.Id == encounterId && e.Type == EncounterType.Telehealth, ct))
+        // A teleconsultation is a telehealth encounter, or anything written on a telehealth visit: the prescription's own
+        // visit, or its encounter's.
+        var encounter = prescription.EncounterId is { } encounterId
+            ? await db.Set<Encounter>().AsNoTracking().Where(e => e.Id == encounterId).Select(e => new { e.Type, e.VisitId }).FirstOrDefaultAsync(ct)
+            : null;
+        Guid?[] visitIds = [prescription.VisitId, encounter?.VisitId];
+        var teleconsult = encounter?.Type == EncounterType.Telehealth
+                          || await db.Set<Visit>().AnyAsync(v => visitIds.Contains(v.Id) && v.Type == VisitType.Telehealth, ct);
+        if (!teleconsult)
         {
             return [];
         }
@@ -295,8 +302,9 @@ public sealed class PrescriptionService(
         return TelemedicinePrescribing.Prohibited(prescription.Items.Select(i =>
             i.DrugItemId is { } id && master.TryGetValue(id, out var drug)
                 ? new TelemedicinePrescribing.Medicine(i.DrugName, drug.Schedule, drug.IsControlled)
-                // A medicine typed in, not from the drug master: what the line itself says.
-                : new TelemedicinePrescribing.Medicine(i.DrugName, i.ControlledSchedule == "X" ? DrugSchedule.X : DrugSchedule.None, false)));
+                // A medicine typed in, not from the drug master: what the line itself says. A controlled line may be an NDPS
+                // drug, which the line cannot tell from Schedule H1, so it counts as one.
+                : new TelemedicinePrescribing.Medicine(i.DrugName, i.ControlledSchedule == "X" ? DrugSchedule.X : DrugSchedule.None, i.IsControlledDrug)));
     }
 
     private async Task<Result<IReadOnlyList<SafetyAlert>>> SignCoreAsync(Prescription prescription, string? overrideReason, bool acknowledgeWarnings,

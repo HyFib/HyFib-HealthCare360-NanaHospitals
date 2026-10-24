@@ -144,6 +144,22 @@ public sealed class TeleconsultationJourneyTests(HospitalServer server)
             body.ShouldContain("Morphine 10 mg/ml Injection cannot be prescribed in a teleconsultation");
         }
 
+        // Written on the telehealth visit without the encounter, and typed in rather than chosen from the drug master: a
+        // controlled medicine is still refused, as the line cannot tell an NDPS drug from a Schedule H1 one.
+        var typedIn = await doctor.PostAsync<PrescriptionDto>("/api/v1/clinical/prescriptions", new CreatePrescriptionRequest(
+            patient.Id, EncounterId: null, visitId, AdmissionId: null, IsInpatient: false, PractitionerId: null, Notes: null, Advice: null, RefillsAllowed: 0,
+            [
+                new PrescriptionItemRequest(
+                    DrugItemId: null, "Tramadol 50 mg", "Tramadol", "50 mg", "Tablet", Route: "Oral", Dose: "1 tablet", DoseFrequency.STAT,
+                    CustomFrequency: null, DosesPerDay: null, 1, Quantity: 1, Instructions: null, IsControlledDrug: true, ControlledSchedule: "H1"),
+            ]));
+        using (var refused = await doctor.SendRawAsync(HttpMethod.Post, $"/api/v1/clinical/prescriptions/{typedIn.Id}/sign",
+                   new SignPrescriptionRequest(OverrideReason: null, AcknowledgeWarnings: true, ConfirmControlledDrugs: true, typedIn.Version)))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            (await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("Tramadol 50 mg cannot be prescribed in a teleconsultation");
+        }
+
         // Ends the call.
         (await doctor.PostAsync<TelehealthSessionDetail>($"/api/v1/telehealth/sessions/{session.Id}/end", new EndTelehealthSessionRequest(QualityNotes: null)))
             .Status.ShouldBe(TelehealthStatus.Completed);
