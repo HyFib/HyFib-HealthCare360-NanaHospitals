@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain.Safety;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
@@ -279,9 +280,33 @@ public sealed class PrescriptionService(
         p.SignerName,
         finalCopyAvailable);
 
+    /// <summary>The medicines a teleconsultation may not prescribe, for a prescription written in one (TPG 2020).</summary>
+    private async Task<IReadOnlyList<string>> TelemedicineProhibitedAsync(Prescription prescription, CancellationToken ct)
+    {
+        if (prescription.EncounterId is not { } encounterId
+            || !await db.Set<Encounter>().AnyAsync(e => e.Id == encounterId && e.Type == EncounterType.Telehealth, ct))
+        {
+            return [];
+        }
+
+        var drugIds = prescription.Items.Where(i => i.DrugItemId is not null).Select(i => i.DrugItemId!.Value).Distinct().ToList();
+        var master = await db.Set<Item>().AsNoTracking().Where(i => drugIds.Contains(i.Id))
+            .Select(i => new { i.Id, i.Schedule, i.IsControlled }).ToDictionaryAsync(i => i.Id, ct);
+        return TelemedicinePrescribing.Prohibited(prescription.Items.Select(i =>
+            i.DrugItemId is { } id && master.TryGetValue(id, out var drug)
+                ? new TelemedicinePrescribing.Medicine(i.DrugName, drug.Schedule, drug.IsControlled)
+                // A medicine typed in, not from the drug master: what the line itself says.
+                : new TelemedicinePrescribing.Medicine(i.DrugName, i.ControlledSchedule == "X" ? DrugSchedule.X : DrugSchedule.None, false)));
+    }
+
     private async Task<Result<IReadOnlyList<SafetyAlert>>> SignCoreAsync(Prescription prescription, string? overrideReason, bool acknowledgeWarnings,
         bool confirmControlledDrugs, CancellationToken ct)
     {
+        if (await TelemedicineProhibitedAsync(prescription, ct) is { Count: > 0 } prohibited)
+        {
+            return TelemedicinePrescribing.Refusal(prohibited);
+        }
+
         var check = await safety.CheckAsync(prescription, ct);
         if (check.IsBlocked && string.IsNullOrWhiteSpace(overrideReason))
         {

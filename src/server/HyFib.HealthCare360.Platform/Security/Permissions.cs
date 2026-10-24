@@ -141,6 +141,16 @@ public static class PlatformPermissions
     public static readonly string[] AllStaff = SystemRoles.All.Select(r => r.Name)
         .Where(r => r is not SystemRoles.Patient and not SystemRoles.SuperAdmin).ToArray();
 
+    /// <summary>
+    /// The staff roles whose work is about patients: every staff role but those that never see one (the canteen, CSSD,
+    /// biomedical engineering, HR, stores, purchase and MIS). Searching the patient register is for them only (DPDP s.8
+    /// data minimisation).
+    /// </summary>
+    public static readonly string[] PatientFacingStaff = AllStaff
+        .Except([SystemRoles.CanteenManager, SystemRoles.CssdTechnician, SystemRoles.BiomedicalEngineer, SystemRoles.HrManager,
+            SystemRoles.StoreKeeper, SystemRoles.PurchaseOfficer, SystemRoles.MisAnalyst])
+        .ToArray();
+
     public static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(UsersRead, "Administration", "View users and their roles", Admins),

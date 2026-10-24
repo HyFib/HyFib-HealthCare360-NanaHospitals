@@ -87,6 +87,9 @@ public enum ConsentType
     HighRiskProcedure,
     Anaesthesia,
     BloodTransfusion,
+
+    /// <summary>The patient was given the hospital's privacy notice (DPDP Act s.5, Rules 2025 rule 3), at the version in force.</summary>
+    PrivacyNotice,
 }
 
 /// <summary>Recorded consent (EHR-06): version, who captured it, witness, proxy signer and revocation.</summary>
@@ -116,13 +119,14 @@ public sealed class PatientConsent : AuditableEntity
     public bool IsActive => Granted && RevokedAt is null;
 
     /// <summary>
-    /// Standing permissions (sharing records, messages, video consultations, research, photographs) hold until the
-    /// patient withdraws them, so a withdrawal or a later refusal ends every earlier grant of the type. The other types
+    /// Standing permissions (sharing records, messages, video consultations, research, photographs) and the privacy notice
+    /// given hold until the patient withdraws them, so a withdrawal or a later refusal ends every earlier grant of the type. The other types
     /// are consents for one stay or procedure (general treatment, a high-risk procedure, anaesthesia, a transfusion): a
     /// patient may have several, and each is withdrawn on its own.
     /// </summary>
     public static bool IsStandingPermission(ConsentType type) => type is ConsentType.DataSharing or ConsentType.SmsWhatsAppUpdates
-        or ConsentType.MarketingCommunication or ConsentType.Telehealth or ConsentType.Research or ConsentType.Photography;
+        or ConsentType.MarketingCommunication or ConsentType.Telehealth or ConsentType.Research or ConsentType.Photography
+        or ConsentType.PrivacyNotice;
 
     /// <summary>
     /// Withdraws a consent that was given. The record stays as history, marked with when, by whom and why. A refusal

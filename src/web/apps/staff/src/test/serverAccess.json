@@ -58,9 +58,7 @@
       "hr.self",
       "integrations.labels.print",
       "masters.read",
-      "patients.read",
-      "quality.incidents.report",
-      "visits.read"
+      "quality.incidents.report"
     ],
     "BloodBankOfficer": [
       "bloodbank.crossmatch.perform",
@@ -94,9 +92,7 @@
       "hr.self",
       "integrations.labels.print",
       "masters.read",
-      "patients.read",
-      "quality.incidents.report",
-      "visits.read"
+      "quality.incidents.report"
     ],
     "Cardiologist": [
       "cardiology.reports.verify",
@@ -180,9 +176,7 @@
       "hr.self",
       "integrations.labels.print",
       "masters.read",
-      "patients.read",
-      "quality.incidents.report",
-      "visits.read"
+      "quality.incidents.report"
     ],
     "DialysisTechnician": [
       "clinical.flags.read",
@@ -491,9 +485,7 @@
       "hr.self",
       "integrations.labels.print",
       "masters.read",
-      "patients.read",
-      "quality.incidents.report",
-      "visits.read"
+      "quality.incidents.report"
     ],
     "InsuranceDesk": [
       "billing.charges.read",
@@ -543,9 +535,7 @@
       "integrations.labels.print",
       "masters.read",
       "ot.reports.read",
-      "patients.read",
-      "quality.incidents.report",
-      "visits.read"
+      "quality.incidents.report"
     ],
     "MrdOfficer": [
       "abdm.export",
@@ -723,10 +713,8 @@
       "inventory.items.manage",
       "inventory.stock.read",
       "masters.read",
-      "patients.read",
       "purchase.manage",
-      "quality.incidents.report",
-      "visits.read"
+      "quality.incidents.report"
     ],
     "QualityManager": [
       "admin.audit.read",
@@ -797,11 +785,9 @@
       "inventory.stock.read",
       "inventory.transfers",
       "masters.read",
-      "patients.read",
       "purchase.grn.receive",
       "purchase.manage",
-      "quality.incidents.report",
-      "visits.read"
+      "quality.incidents.report"
     ],
     "SuperAdmin": [
       "*"
@@ -1306,6 +1292,7 @@
     "/api/v1/privacy/retention/review privacy.retention.manage",
     "/api/v1/privacy/retention/runs privacy.retention.manage",
     "/api/v1/privacy/settings privacy.settings.manage",
+    "/api/v1/privacy/settings/cert-in privacy.settings.manage",
     "/api/v1/purchase/grns purchase.grn.receive|purchase.manage|purchase.approve",
     "/api/v1/purchase/grns/{id:guid} purchase.grn.receive|purchase.manage|purchase.approve",
     "/api/v1/purchase/orders purchase.manage|purchase.approve|purchase.grn.receive",
@@ -2064,6 +2051,7 @@
     "PUT /api/v1/privacy/patients/{patientId:guid}/nominee privacy.requests.log",
     "PUT /api/v1/privacy/retention/{key} privacy.retention.manage",
     "PUT /api/v1/privacy/settings privacy.settings.manage",
+    "PUT /api/v1/privacy/settings/cert-in privacy.settings.manage",
     "PUT /api/v1/purchase/orders/{id:guid} purchase.manage",
     "PUT /api/v1/purchase/vendors/{id:guid} purchase.manage",
     "PUT /api/v1/quality/capas/{id:guid} quality.capa.manage",

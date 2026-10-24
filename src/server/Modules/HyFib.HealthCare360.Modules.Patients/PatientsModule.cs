@@ -41,7 +41,7 @@ public static class PatientsPermissions
 
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
-        new(Read, "Patients", "Search and view patient demographics", PlatformPermissions.AllStaff),
+        new(Read, "Patients", "Search and view patient demographics", PlatformPermissions.PatientFacingStaff),
         new(Register, "Patients", "Register patients and edit demographics", [.. Desk, SystemRoles.Nurse, SystemRoles.Billing, SystemRoles.InsuranceDesk]),
         new(Merge, "Patients", "Merge duplicate patient records", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
         new(ReadRestricted, "Patients", "Open restricted (VIP/confidential) records without break-the-glass", [SystemRoles.HospitalAdmin]),
@@ -54,7 +54,7 @@ public static class PatientsPermissions
         new(Consents, "Patients", "Capture and revoke patient consents", [.. Desk, .. Clinical]),
         new(Documents, "Patients", "Attach and view patient documents", [.. Desk, .. Clinical, SystemRoles.MrdOfficer, SystemRoles.InsuranceDesk]),
         new(IdentityVerify, "Patients", "Check a patient's identity with their Aadhaar fingerprint (UIDAI)", Desk),
-        new(VisitsRead, "Visits", "View visits and queues", PlatformPermissions.AllStaff),
+        new(VisitsRead, "Visits", "View visits and queues", PlatformPermissions.PatientFacingStaff),
         new(VisitsManage, "Visits", "Create, cancel and complete visits", [.. Desk, .. Clinical]),
         new(QueueManage, "Visits", "Call, start and complete queue tokens", [.. Desk, .. Clinical]),
         new(QueueDisplay, "Visits", "Show the queue display board (kiosk/TV)", Desk),

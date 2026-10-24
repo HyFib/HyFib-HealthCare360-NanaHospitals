@@ -226,7 +226,7 @@ function DevicesPage() {
               key: 'ip',
               header: 'Allowed address',
               priority: 'low',
-              render: (d) => (d.connection === 'Pull' ? '—' : (d.allowedIpAddress ?? 'Any')),
+              render: (d) => (d.connection === 'Pull' ? '—' : (d.allowedIpAddress ?? 'First address it calls from')),
             },
           ]}
           rowActions={(d) => (
@@ -423,6 +423,14 @@ const schema = z
       .nullable(),
   })
   .superRefine((v, ctx) => {
+    // A pushing terminal is known by the serial number printed on it, so its address must match too.
+    if (v.connection === 'Push' && !v.allowedIpAddress) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['allowedIpAddress'],
+        message: 'Enter the terminal’s IP address: punches from any other address are refused.',
+      });
+    }
     if (v.connection === 'Pull' && !ipAddress(v.pullAddress)) {
       ctx.addIssue({
         code: 'custom',
@@ -589,8 +597,8 @@ function DeviceDrawer({
         <TextField
           control={form.control}
           name="allowedIpAddress"
-          label="Only accept from this IP address"
-          hint="Optional: pins the terminal to its fixed LAN address."
+          label="Terminal's IP address"
+          hint="Punches are accepted only from this address. Give the terminal a fixed address on the LAN."
         />
       )}
       <SwitchField control={form.control} name="isActive" label="Accept punches from this terminal" />

@@ -148,6 +148,9 @@ public sealed class SaveBiometricDeviceRequestValidator : AbstractValidator<Save
         RuleFor(x => x.AllowedIpAddress)
             .Must(ip => string.IsNullOrWhiteSpace(ip) || IPAddress.TryParse(ip.Trim(), out _))
             .WithMessage("Enter a valid IP address.");
+        // A terminal that pushes is known by its serial number, which is printed on it: its address must match too (R-5).
+        RuleFor(x => x.AllowedIpAddress).NotEmpty().When(x => x.Connection == BiometricConnection.Push)
+            .WithMessage("Enter the terminal's IP address: punches from any other address are refused.");
         RuleFor(x => x.Connection).IsInEnum();
         When(x => x.Connection == BiometricConnection.Pull, () =>
         {

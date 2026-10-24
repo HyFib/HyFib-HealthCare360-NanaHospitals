@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Privacy.Features.Requests;
 using HyFib.HealthCare360.Modules.Privacy.Features.Retention;
 using HyFib.HealthCare360.Modules.Privacy.Features.Settings;
 using HyFib.HealthCare360.Modules.Privacy.Services;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Privacy;
@@ -53,6 +54,7 @@ public sealed class PrivacyModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<PrivacySettings>();
+        services.AddScoped<IHealthWarningSource, CertInContactHealthWarnings>();
         services.AddScoped<DataRequestService>();
         services.AddScoped<PersonalDataInventory>();
         services.AddScoped<ErasureService>();

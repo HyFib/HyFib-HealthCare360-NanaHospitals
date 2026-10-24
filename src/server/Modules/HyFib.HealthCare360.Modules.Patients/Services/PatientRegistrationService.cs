@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Patients.Persistence;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Patients.Services;
 
@@ -39,6 +40,7 @@ public sealed class PatientRegistrationService(
     ICurrentUser currentUser,
     IAuditLogger audit,
     WhatsAppConsent whatsApp,
+    ISettingsService settings,
     TimeProvider time)
 {
     /// <summary>Audit action of a change to the patient's ABHA number or address.</summary>
@@ -146,6 +148,20 @@ public sealed class PatientRegistrationService(
             CapturedByUserId = currentUser.UserId,
             Notes = "Transactional SMS/WhatsApp updates accepted at registration.",
         });
+        if (request.PrivacyNoticeGiven)
+        {
+            db.Set<PatientConsent>().Add(new PatientConsent
+            {
+                PatientId = patient.Id,
+                Type = ConsentType.PrivacyNotice,
+                ConsentVersion = await PrivacyNotice.CurrentVersionAsync(settings, facilityId, ct),
+                Granted = true,
+                CapturedAt = patient.RegisteredAt,
+                CapturedByUserId = currentUser.UserId,
+                Notes = "Privacy notice given at registration.",
+            });
+        }
+
         if (request.WhatsAppOptIn)
         {
             // Recorded for the number, as WhatsApp's own opt-in is; a STOP the number sent earlier stays in force.

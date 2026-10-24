@@ -39,6 +39,18 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
         var device = await db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .FirstOrDefaultAsync(d => d.SerialNumber == serial, ct);
 
+        // A terminal registered before its address was required is pinned to the address it first calls from: a serial
+        // number is printed on the device, so on its own it lets anything on the network post punches (R-5).
+        if (device is { Connection: BiometricConnection.Push, IsActive: true, AllowedIpAddress: null } && NormalizeIp(remoteIp) is { } first)
+        {
+            var pinned = await db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstAsync(d => d.Id == device.Id, ct);
+            pinned.AllowedIpAddress = first;
+            await db.SaveChangesAsync(ct);
+            device.AllowedIpAddress = first;
+            await integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, "zkteco-adms", "device.address_pinned", IntegrationDirection.Inbound, true,
+                Reference: serial, FacilityId: device.FacilityId), ct);
+        }
+
         var refusal = device switch
         {
             null => "Unregistered serial number.",

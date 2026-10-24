@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Security;
 
 namespace HyFib.HealthCare360.Modules.Patients.Features.Patients;
 
@@ -44,6 +45,8 @@ internal static class PatientEndpoints
         IFieldProtector protector,
         IAuditLogger audit,
         TimeProvider time,
+        ICurrentUser currentUser,
+        IPermissionService permissions,
         CancellationToken ct)
     {
         var page = query.ToRequest();
@@ -88,9 +91,20 @@ internal static class PatientEndpoints
             Details = new { term = page.SearchTerm, gender, category, includeInactive, page = page.Page, matched = result.TotalCount, shown = result.Items.Select(p => p.Id) },
         }, ct);
 
+        // A restricted (VIP) patient's name shows only to those who may open the record: with the restricted-read
+        // permission, or with emergency access to that patient still running. Others see initials (R-3).
+        var now = time.GetUtcNow();
+        var restricted = result.Items.Where(p => p.IsVip).Select(p => p.Id).ToList();
+        var opened = restricted.Count == 0 || currentUser.UserId is not { } userId
+            ? []
+            : await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct)
+                ? restricted.ToHashSet()
+                : (await db.Set<BreakGlassAccess>().Where(g => g.UserId == userId && g.ExpiresAt > now && restricted.Contains(g.PatientId))
+                    .Select(g => g.PatientId).ToListAsync(ct)).ToHashSet();
+
         var today = time.Today();
         return TypedResults.Ok(result.Map(p => new PatientListItem(
-            p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, p.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
+            p.Id, p.Uhid, p.IsVip && !opened.Contains(p.Id) ? PatientNames.Restricted(p.FullName) : p.FullName, p.Gender, p.DateOfBirth, p.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
             Phone.Mask(p.Phone), p.Category, p.IsVip, p.IsDeceased, p.RegisteredAt, p.LastVisitAt)));
     }
 

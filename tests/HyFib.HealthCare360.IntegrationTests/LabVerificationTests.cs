@@ -10,12 +10,14 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
+using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -69,6 +71,39 @@ public sealed class LabVerificationTests(HospitalServer server)
         var call = await RegisteredCallAsync(pathologist, potassium.ResultId);
         call.Finding.ShouldBe("Potassium 7.2 mmol/L (CriticalHigh)");
         (call.InformedPersonName, call.Method, call.ReadBackConfirmed).ShouldBe(("Dr. Meena Iyer", CommunicationMethod.Phone, true));
+    }
+
+    [Fact]
+    public async Task Where_the_lab_asks_for_a_second_person_whoever_entered_a_result_does_not_verify_it()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+        var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
+                         ?? throw new InvalidOperationException("The hospital administrator has no facility.");
+        var own = await ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
+        var entered = await ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
+        var normal = new Dictionary<string, string> { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101" };
+        var ownResults = (await EnterAsync(pathologist, own, normal)).Select(l => l.ResultId).ToList();
+        var labResults = (await EnterAsync(lab, entered, normal)).Select(l => l.ResultId).ToList();
+
+        await admin.SaveSettingAsync(LabResultService.SeparateVerifierSetting, new SaveSettingRequest(JsonValue.Create(true), facilityId, false, null));
+        try
+        {
+            var refused = await RefusalAsync(pathologist, VerifyPath, new VerifyResultsRequest(ownResults, null, null, Release: false));
+            refused.GetProperty("code").GetString().ShouldBe("lab.verify_own_result");
+            (await SheetAsync(pathologist, own)).Lines.ShouldAllBe(l => l.Status == LabResultStatus.Entered);
+
+            (await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest(labResults, null, null, Release: false))).Verified.ShouldBe(3);
+        }
+        finally
+        {
+            await using var scope = server.Services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>().RemoveAsync(LabResultService.SeparateVerifierSetting, facilityId, Ct);
+        }
+
+        // A lab with one pathologist, the default: the pathologist verifies what they entered.
+        (await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest(ownResults, null, null, Release: false))).Verified.ShouldBe(3);
     }
 
     [Fact]

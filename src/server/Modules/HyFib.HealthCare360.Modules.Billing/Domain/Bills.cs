@@ -396,7 +396,10 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    /// <summary>Cancels a finalized bill; whatever the patient paid becomes refundable (BillCancelled is raised).</summary>
+    /// <summary>
+    /// Cancels a finalized bill; whatever the patient paid becomes refundable (BillCancelled is raised). Someone other
+    /// than whoever finalized it cancels it, as with refunds and discounts: one person cannot bill, collect and undo.
+    /// </summary>
     public Result Cancel(string reason, Guid? userId, DateTimeOffset now)
     {
         if (Status == BillStatus.Draft)
@@ -407,6 +410,11 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         if (Status is BillStatus.Cancelled or BillStatus.Refunded)
         {
             return Error.Rule("billing.bill_cancelled", "This bill is already cancelled.");
+        }
+
+        if (userId is not null && userId == FinalizedBy)
+        {
+            return Error.Rule("billing.cancel_own_bill", "You finalized this bill, so someone else must cancel it.");
         }
 
         Status = BillStatus.Cancelled;

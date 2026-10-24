@@ -99,6 +99,7 @@ internal sealed class IdentitySeeder(
             }
         }
 
+        WithdrawDroppedDefaults(db, roles, await db.Set<SeededGrant>().ToListAsync(cancellationToken));
         await db.SaveChangesAsync(cancellationToken);
 
         if (!await db.Set<User>().AnyAsync(u => u.Type == UserType.Staff, cancellationToken))
@@ -201,4 +202,30 @@ internal sealed class IdentitySeeder(
 
         await db.SaveChangesAsync(ct);
     }
+    /// <summary>
+    /// Takes back a grant this seeder gave when its permission no longer names the role among its defaults (patient
+    /// search was taken from the canteen, stores and HR roles, for example). Only grants the seeder itself recorded go:
+    /// one an administrator gave by hand has no seeded record and stays, and so does one given again after this.
+    /// </summary>
+    private void WithdrawDroppedDefaults(DbContext db, Dictionary<string, Role> roles, List<SeededGrant> seededGrants)
+    {
+        var defaults = registry.All.ToDictionary(d => d.Name, d => d.DefaultRoles ?? [], StringComparer.Ordinal);
+        foreach (var grant in seededGrants)
+        {
+            // A permission no module declares here (a module left out of this build) is not withdrawn.
+            if (!defaults.TryGetValue(grant.Permission, out var defaultRoles) || defaultRoles.Contains(grant.RoleName, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            if (roles.TryGetValue(grant.RoleName, out var role) && role.Permissions.FirstOrDefault(p => p.Permission == grant.Permission) is { } given)
+            {
+                role.Permissions.Remove(given);
+                logger.LogInformation("Took {Permission} from the {Role} role: it is no longer one of the role's defaults", grant.Permission, grant.RoleName);
+            }
+
+            db.Remove(grant);
+        }
+    }
+
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Privacy.Domain;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Services;
@@ -17,6 +18,16 @@ public sealed record PrivacyContact(string Title, string? Name, string? Email, s
 /// </summary>
 public sealed record PrivacySettingsDto(PrivacyContact Contact, int ResponseDays, uint? Version = null, uint? ResponseDaysVersion = null);
 
+/// <summary>
+/// The point of contact the hospital designates to CERT-In (Directions of 28 April 2022, direction (iii)): who CERT-In
+/// writes to about an incident, and who reports one within the 6 hours. <paramref name="Version"/>: none until first saved.
+/// </summary>
+public sealed record CertInContact(string? Name, string? Designation, string? Email, string? Phone, string? Address, uint? Version = null)
+{
+    /// <summary>A contact CERT-In can use: a person, and an e-mail address and a phone number to reach them.</summary>
+    public bool IsComplete => Name is not null && Email is not null && Phone is not null;
+}
+
 /// <summary>Reads and saves the privacy settings. Values are read leniently, so a malformed setting falls back to the default.</summary>
 public sealed class PrivacySettings(ISettingsService settings, HospitalDbContext db)
 {
@@ -24,6 +35,27 @@ public sealed class PrivacySettings(ISettingsService settings, HospitalDbContext
     public const string ResponseDaysSetting = "privacy.responseDays";
     public const int DefaultResponseDays = 30;
     public const string DefaultTitle = "Grievance Officer";
+    public const string CertInContactSetting = "privacy.certInContact";
+
+    public async Task<CertInContact> CertInContactAsync(CancellationToken ct)
+    {
+        var json = await settings.GetAsync<JsonElement?>(CertInContactSetting, null, ct);
+        var version = await SettingVersions.OfAsync(db, CertInContactSetting, null, ct);
+        return json is { ValueKind: JsonValueKind.Object } value
+            ? new CertInContact(Text(value, "name"), Text(value, "designation"), Text(value, "email"), Text(value, "phone"), Text(value, "address"), version)
+            : new CertInContact(null, null, null, null, null, version);
+    }
+
+    /// <summary>Saves the CERT-In point of contact, unless it changed since <see cref="CertInContact.Version"/> was loaded (409).</summary>
+    public Task SaveCertInContactAsync(CertInContact value, CancellationToken ct) =>
+        settings.SetAsync(CertInContactSetting, new
+        {
+            name = Clean(value.Name),
+            designation = Clean(value.Designation),
+            email = Clean(value.Email),
+            phone = Phone.Normalize(value.Phone),
+            address = Clean(value.Address),
+        }, null, false, value.Version, ct);
 
     public async Task<PrivacySettingsDto> GetAsync(CancellationToken ct)
     {
@@ -99,4 +131,16 @@ public sealed class PrivacySettings(ISettingsService settings, HospitalDbContext
         value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String ? Clean(property.GetString()) : null;
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
+
+/// <summary>System health says so while no point of contact has been designated to CERT-In.</summary>
+internal sealed class CertInContactHealthWarnings(PrivacySettings privacy) : IHealthWarningSource
+{
+    public const string Code = "privacy.cert_in_contact_missing";
+
+    public async Task<IReadOnlyList<HealthWarning>> WarningsAsync(CancellationToken cancellationToken) =>
+        (await privacy.CertInContactAsync(cancellationToken)).IsComplete
+            ? []
+            : [new HealthWarning(Code, "warning",
+                "No point of contact is designated to CERT-In. Name one, with an e-mail address and phone number, under Privacy › Settings.")];
 }

@@ -283,6 +283,13 @@ export function PatientForm(props: PatientFormProps) {
                       : 'Enter the mobile number first.'
                   }
                 />
+                <div style={{ height: 12 }} />
+                <SwitchField
+                  control={control}
+                  name="privacyNoticeGiven"
+                  label="Patient was given the privacy notice"
+                  hint="Hand over or show the notice: what the hospital records, why, and whom to contact. HC360 records which version they had."
+                />
               </>
             )}
             <div style={{ height: 12 }} />
