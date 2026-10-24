@@ -16,6 +16,7 @@ import { PHARMACY_ANSWERS } from './accessibility/fixtures/pharmacy';
 import { SHELL_SCREEN_ANSWERS } from './accessibility/fixtures/shell';
 import { fakeServer, openScreen, STAFF_USER, stubBrowserApis } from './appScreen';
 import type { FakeAnswers } from './fakeApi';
+import { RECORD_ID, WARD_ID } from './roleAccessIds';
 
 // Every built-in role sees the menu links its permissions allow (manifests), and the record screens those links open
 // (a bill from the bills list, a chart from the charts list). A screen the role can reach must be one it can use:
@@ -86,7 +87,7 @@ const mayWrite = (write: string, permissions: readonly string[]) => {
 };
 
 const WARD: WardDto = {
-  id: '0192a000-0000-7000-8000-00000000e001',
+  id: WARD_ID,
   code: 'GWM',
   name: 'General Ward — Male',
   type: 'General',
@@ -124,9 +125,16 @@ const ANSWERS: FakeAnswers = {
   ...CLINICAL_ANSWERS,
   ...PHARMACY_ANSWERS,
   'GET /api/v1/inpatient/wards': [WARD],
+  // roleAccess/<module>.ts: each module's lists and records, for the screens the answers above do not feed.
+  ...Object.assign(
+    {},
+    ...Object.values(import.meta.glob<{ ANSWERS: FakeAnswers }>('./roleAccess/*.ts', { eager: true })).map(
+      (m) => m.ANSWERS,
+    ),
+  ),
 };
 
-export const RECORD_ID = '0192a000-0000-7000-8000-00000000f0f0';
+export { RECORD_ID };
 
 /** A screen to open: a menu link, or a record screen with the permission of the list it is opened from. */
 interface Screen {
@@ -288,7 +296,7 @@ export interface Learned {
   unanswered: string[];
 }
 
-async function learn(path: string): Promise<Learned> {
+export async function learn(path: string): Promise<Learned> {
   let server = fakeServer(ANSWERS);
   let opened = openScreen(path, STAFF_USER);
   await settle(server);
