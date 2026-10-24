@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_TEMPLATE_FORM,
   filterTemplates,
+  languageLabel,
+  TEMPLATE_LANGUAGES,
   templateFormSchema,
   templateScope,
   toSaveRequest,
@@ -130,6 +132,12 @@ describe('notification template list', () => {
     expect(filterTemplates(templates, undefined, 'REMINDER').map((t) => t.id)).toEqual(['t3']);
     expect(filterTemplates(templates, 'WhatsApp', 'report').map((t) => t.id)).toEqual(['t1']);
     expect(filterTemplates(templates, undefined, ' ')).toHaveLength(3);
+  });
+
+  it('offers a template in every language patients read HC360 in', () => {
+    expect(Object.keys(TEMPLATE_LANGUAGES)).toEqual(['en', 'hi', 'ta']);
+    expect(languageLabel('ta')).toBe('Tamil');
+    expect(languageLabel('mr')).toBe('mr');
   });
 
   it('says who a template is for', () => {

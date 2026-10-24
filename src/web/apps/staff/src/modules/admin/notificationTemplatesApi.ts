@@ -24,7 +24,7 @@ export const CHANNEL_LABELS: Record<NotificationChannel, string> = {
 };
 
 /** The languages messages are sent in (the patient's preferred language, English otherwise). */
-export const TEMPLATE_LANGUAGES: Record<string, string> = { en: 'English', hi: 'Hindi' };
+export const TEMPLATE_LANGUAGES: Record<string, string> = { en: 'English', hi: 'Hindi', ta: 'Tamil' };
 
 export function languageLabel(code: string): string {
   return TEMPLATE_LANGUAGES[code] ?? code;

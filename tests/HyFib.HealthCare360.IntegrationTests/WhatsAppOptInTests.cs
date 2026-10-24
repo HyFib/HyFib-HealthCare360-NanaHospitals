@@ -110,6 +110,23 @@ public sealed class WhatsAppOptInTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_patient_whose_language_has_no_template_gets_the_english_one_asked_for_in_english()
+    {
+        // The bill template is approved in English only; a Tamil reader's bill falls back to it, so Meta must be asked
+        // for the English template, not for a Tamil one that does not exist.
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var (patientId, phone) = await RegisterAsync(frontOffice, optIn: false);
+        await using var scope = server.Services.CreateAsyncScope();
+        var whatsApp = new FakeWhatsApp();
+
+        var bill = await DeliveryAsync(scope, "bill.shared", phone, patientId, new NotificationDocument("billing.bill", Guid.NewGuid()), "ta");
+        await Handler(scope, whatsApp).HandleAsync(Message(bill.Delivery), Ct);
+
+        var sent = whatsApp.Sent.ShouldHaveSingleItem();
+        (sent.TemplateName, sent.Language).ShouldBe(("bill_shared", "en"));
+    }
+
+    [Fact]
     public async Task In_the_portal_only_the_numbers_holder_switches_whatsapp_and_switching_on_lifts_a_stop()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
@@ -257,7 +274,7 @@ public sealed class WhatsAppOptInTests(HospitalServer server)
     }
 
     private static async Task<(NotificationDelivery Delivery, Guid LogId)> DeliveryAsync(
-        AsyncServiceScope scope, string key, string phone, Guid patientId, NotificationDocument? document)
+        AsyncServiceScope scope, string key, string phone, Guid patientId, NotificationDocument? document, string language = "en")
     {
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         var log = new NotificationLog
@@ -278,7 +295,7 @@ public sealed class WhatsAppOptInTests(HospitalServer server)
             ["billNumber"] = "NHOB260000001",
             ["amount"] = "450.00",
         };
-        return (new NotificationDelivery(log.Id, key, NotificationChannel.WhatsApp, phone, "Meena", "en", values, null, document), log.Id);
+        return (new NotificationDelivery(log.Id, key, NotificationChannel.WhatsApp, phone, "Meena", language, values, null, document), log.Id);
     }
 
     private static async Task<NotificationLog> LogAsync(AsyncServiceScope scope, Guid id) =>
