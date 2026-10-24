@@ -25,11 +25,12 @@ import { RECORD_ID, WARD_ID } from './roleAccessIds';
 // - each action button the role is shown sends only what the role may do.
 //
 // Each screen is opened once with every permission, to learn what it reads and what each of its buttons sends: a button
-// that acts at once, opens a confirmation whose last button acts, or opens a menu whose items do either. A role whose permissions do not cover all of that
-// opens the screen again as itself (a screen leaves out what its user may not see or do), and what it still asks for,
-// or still offers, fails the test. serverAccess.json holds the roles' permissions and the server's read and write rules;
-// StaffAccessFixtureTests keeps it current. The roleAccess.*.test.tsx files check a part of the screens each, so they
-// run side by side; each mocks the realtime connection away.
+// that acts at once, opens a confirmation whose last button acts, or opens a menu whose items do either. A role whose
+// permissions do not cover all of that opens the screen again as itself (a screen leaves out what its user may not see
+// or do), and what it still asks for, or still offers, fails the test. serverAccess.json holds the roles' permissions
+// and the server's read and write rules; StaffAccessFixtureTests keeps it current. The roleAccess.*.test.tsx files
+// check a part of the screens each, so they run side by side; each mocks the realtime connection and the charts away
+// (jsdom has no canvas to draw on).
 
 interface ServerAccess {
   roles: Record<string, string[]>;
@@ -135,6 +136,13 @@ const ANSWERS: FakeAnswers = {
 };
 
 export { RECORD_ID };
+
+/**
+ * The screens that may open without all of their data (path → why): what each one goes without is not checked. Any
+ * other screen whose data the answers above miss, or that asks for nothing at all, fails the check, and so does a screen
+ * listed here that no longer goes without: a screen cannot quietly fall back to an empty list.
+ */
+export const WITHOUT_DATA: Record<string, string> = {};
 
 /** A screen to open: a menu link, or a record screen with the permission of the list it is opened from. */
 interface Screen {
@@ -250,8 +258,21 @@ const menuItems = () => [
   ),
 ];
 
-/** Waits until the screen stops asking the server for anything (up to 3 s). */
-async function settle(server: ReturnType<typeof fakeServer>) {
+type Opened = ReturnType<typeof openScreen>;
+
+/**
+ * Waits until the screen stops asking the server for anything (up to 3 s). Given the screen just `opened`, first waits
+ * (up to 10 s) for its route to load: the first screen of a run waits for its code while it asks for nothing, and would
+ * otherwise be taken as a screen that reads nothing and has no buttons.
+ */
+async function settle(server: ReturnType<typeof fakeServer>, opened?: Opened) {
+  for (
+    let waited = 0;
+    opened && waited < 10_000 && (opened.router.state.status === 'pending' || opened.router.state.isLoading);
+    waited += 50
+  ) {
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  }
   let seen = -1;
   for (let waited = 0; waited < 3000 && seen !== server.requests.length; waited += 250) {
     seen = server.requests.length;
@@ -268,6 +289,8 @@ function close() {
   vi.stubGlobal('confirm', () => true);
   URL.createObjectURL = () => 'blob:test';
   URL.revokeObjectURL = () => undefined;
+  // jsdom does not lay pages out, so has no scrollIntoView (a tile that scrolls to its list).
+  Element.prototype.scrollIntoView = () => undefined;
 }
 
 const getsOf = (server: ReturnType<typeof fakeServer>, from = 0) => [
@@ -299,7 +322,9 @@ export interface Learned {
 export async function learn(path: string): Promise<Learned> {
   let server = fakeServer(ANSWERS);
   let opened = openScreen(path, STAFF_USER);
-  await settle(server);
+  await settle(server, opened);
+  // Where the screen opened, search included: a tab or step button changes only the search, and the view with it.
+  const start = opened.router.state.location.href;
   const learned: Learned = {
     reads: getsOf(server),
     buttons: new Map(),
@@ -309,7 +334,7 @@ export async function learn(path: string): Promise<Learned> {
     close();
     server = fakeServer(ANSWERS);
     opened = openScreen(path, STAFF_USER);
-    await settle(server);
+    await settle(server, opened);
   };
   const names = actionButtons();
   for (let i = 0; i < names.length; i++) {
@@ -324,7 +349,7 @@ export async function learn(path: string): Promise<Learned> {
     const items = !name.includes(MENU) && sent.length === 0 ? menuItems() : [];
     names.splice(i + 1, 0, ...items.map((item) => `${name}${MENU}${item}`));
     // Back to the screen as it opened, for the next button.
-    if (confirmed || items.length > 0 || opened.router.state.location.pathname !== path || sent.length > 0) {
+    if (confirmed || items.length > 0 || opened.router.state.location.href !== start || sent.length > 0) {
       await reopen();
     }
   }
@@ -338,8 +363,7 @@ export async function learn(path: string): Promise<Learned> {
  */
 async function pressAs(path: string, user: AuthUser, name: string): Promise<string[]> {
   const server = fakeServer(ANSWERS);
-  openScreen(path, user);
-  await settle(server);
+  await settle(server, openScreen(path, user));
   await press(server, name);
   const sent = writesOf(server, 0);
   close();
@@ -349,8 +373,7 @@ async function pressAs(path: string, user: AuthUser, name: string): Promise<stri
 /** What a screen reads on opening as `user`, and the action buttons it shows them. */
 async function asUser(path: string, user: AuthUser): Promise<{ reads: string[]; buttons: string[] }> {
   const server = fakeServer(ANSWERS);
-  openScreen(path, user);
-  await settle(server);
+  await settle(server, openScreen(path, user));
   const seen = { reads: getsOf(server), buttons: actionButtons() };
   close();
   return seen;
@@ -394,5 +417,17 @@ export async function findRefusals(part: number, parts: number) {
       }
     }
   }
-  return { learned, refused };
+  // Screens that opened without their data, or asked for nothing (not loaded in time), against WITHOUT_DATA.
+  const gaps: string[] = [];
+  for (const s of mine) {
+    const l = learned.get(s.to)!;
+    const empty = l.reads.length === 0 && l.buttons.size === 0;
+    const without = l.unanswered.length > 0 || empty;
+    if (without && !(s.to in WITHOUT_DATA)) {
+      gaps.push(`"${s.label}" (${s.to}) ${empty ? 'asked for nothing' : `went without ${l.unanswered.join(', ')}`}`);
+    } else if (!without && s.to in WITHOUT_DATA) {
+      gaps.push(`"${s.label}" (${s.to}) has all its data now: take it out of WITHOUT_DATA`);
+    }
+  }
+  return { learned, refused, gaps };
 }
