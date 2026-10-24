@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
+import { usePermission } from '@/lib/permissions';
 import { patientApi, patientKeys, patientQueries, type PatientDetail } from '@/modules/patients/api';
 import { PatientForm } from '@/modules/patients/PatientForm';
 import { photoChange } from '@/modules/patients/photo';
@@ -27,7 +28,22 @@ export const Route = createFileRoute('/_app/patients/$patientId/edit')({
 function EditPatientPage() {
   const { patientId } = Route.useParams();
   const patient = useQuery(patientQueries.detail(patientId));
+  // The patient's page offers Edit only to registration staff; anyone else who opens the address finds no form whose
+  // save the server would refuse them.
+  const canRegister = usePermission('patients.register');
 
+  if (!canRegister) {
+    return (
+      <Page maxWidth={900}>
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>You cannot edit patients&apos; details</MessageBarTitle>
+            Changing a patient&apos;s registration is for the front desk. Ask them to make the change.
+          </MessageBarBody>
+        </MessageBar>
+      </Page>
+    );
+  }
   if (patient.isLoading) {
     return <LoadingState />;
   }
