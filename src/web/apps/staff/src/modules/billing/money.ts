@@ -299,3 +299,13 @@ export function amountInWords(rupees: number): string {
   const words = `Rupees ${indianNumberInWords(whole)}${part ? ` and ${belowHundred(part)} Paise` : ''} Only`;
   return paise < 0n ? `Minus ${words}` : words;
 }
+
+/** Quantity: more than zero, at most 10,000 and 3 decimals (the server's rule). */
+export function parseQuantity(text: string): number | null {
+  const match = /^(\d{1,5})(?:\.(\d{1,3}))?$/.exec(text.trim());
+  if (!match) {
+    return null;
+  }
+  const value = Number(text.trim());
+  return value > 0 && value <= 10_000 ? value : null;
+}

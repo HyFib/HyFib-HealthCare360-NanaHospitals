@@ -107,6 +107,8 @@ export const videoMessages = defineMessages({
     'video.chat.notAdmitted': 'Chat opens when the doctor lets you in.',
     'video.chat.new': 'New message from {name}',
     'video.chat.failed': 'The message was not sent. Try again.',
+    'video.chat.history': 'Chat from this consultation',
+    'video.chat.none': 'There were no chat messages in this consultation.',
 
     'video.ended.title': 'The consultation has ended',
     'video.ended.body': 'If the doctor gave you a prescription, it will appear under Prescriptions shortly.',
@@ -239,6 +241,8 @@ export const videoMessages = defineMessages({
     'video.chat.notAdmitted': 'डॉक्टर के अंदर बुलाने पर चैट खुलेगी।',
     'video.chat.new': '{name} का नया संदेश',
     'video.chat.failed': 'संदेश नहीं गया। फिर से कोशिश करें।',
+    'video.chat.history': 'इस परामर्श की चैट',
+    'video.chat.none': 'इस परामर्श में कोई चैट संदेश नहीं था।',
 
     'video.ended.title': 'परामर्श समाप्त हो गया है',
     'video.ended.body': 'अगर डॉक्टर ने दवा का पर्चा दिया है, तो वह जल्द ही "दवा के पर्चे" में दिखेगा।',
@@ -375,6 +379,8 @@ export const videoMessages = defineMessages({
     'video.chat.notAdmitted': 'மருத்துவர் உங்களை உள்ளே அனுமதித்ததும் சாட் திறக்கும்.',
     'video.chat.new': '{name} அவர்களிடமிருந்து புதிய செய்தி',
     'video.chat.failed': 'செய்தி அனுப்பப்படவில்லை. மீண்டும் முயலுங்கள்.',
+    'video.chat.history': 'இந்த ஆலோசனையின் சாட்',
+    'video.chat.none': 'இந்த ஆலோசனையில் சாட் செய்திகள் எதுவும் இல்லை.',
 
     'video.ended.title': 'ஆலோசனை முடிந்தது',
     'video.ended.body':

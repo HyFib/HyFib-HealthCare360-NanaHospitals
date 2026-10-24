@@ -91,7 +91,7 @@ public sealed class RefillService(
         await notifications.NotifyPermissionHoldersAsync(
             PharmacyPermissions.Refills, entry.FacilityId, $"Refill requested: {entry.PrescriptionNumber}",
             channel == RefillChannel.Portal ? "Requested by the patient on the portal." : "Requested at the hospital.",
-            $"/pharmacy/refills/{refill.Id}", "pharmacy", "info", ct);
+            "/pharmacy/refills", "pharmacy", "info", ct);
         await realtime.RefillChangedAsync(entry.FacilityId, refill.Id, refill.Status, ct);
         return new RefillRequestCreated(refill.Id, refill.Number);
     }

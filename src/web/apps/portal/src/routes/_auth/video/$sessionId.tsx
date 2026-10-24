@@ -14,6 +14,7 @@ import { useNow } from '@/lib/hooks';
 import { isGuid } from '@/lib/ids';
 import { useCallActivity } from '@/lib/sessionEnd';
 import { videoQueries } from '@/modules/video/api';
+import { ChatTranscript } from '@/modules/video/ChatLog';
 import { isClosedSession } from '@/modules/video/labels';
 import { VideoConsultation } from '@/modules/video/VideoConsultation';
 import { useActiveProfile } from '@/shell/profileContext';
@@ -102,15 +103,18 @@ function VideoSessionPage() {
   return (
     <PortalPage title={title} subtitle={subtitle} back={back} width="wide">
       {isClosedSession(session.status) ? (
-        <Notice intent={session.status === 'Completed' ? 'success' : 'warning'}>
-          {t(
-            session.status === 'Cancelled'
-              ? 'video.ended.cancelled'
-              : session.status === 'Missed'
-                ? 'video.ended.missed'
-                : 'video.ended.body',
-          )}
-        </Notice>
+        <>
+          <Notice intent={session.status === 'Completed' ? 'success' : 'warning'}>
+            {t(
+              session.status === 'Cancelled'
+                ? 'video.ended.cancelled'
+                : session.status === 'Missed'
+                  ? 'video.ended.missed'
+                  : 'video.ended.body',
+            )}
+          </Notice>
+          {session.status === 'Completed' && <ChatTranscript patientId={profile.id} sessionId={session.sessionId} />}
+        </>
       ) : !session.canJoinNow ? (
         <div className={styles.wait} role="status">
           <ClockRegular className={styles.waitIcon} aria-hidden />

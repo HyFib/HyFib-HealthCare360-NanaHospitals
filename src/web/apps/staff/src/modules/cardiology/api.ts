@@ -299,6 +299,9 @@ export const cardiologyApi = {
 /** The A4 cardiology report as the server prints it and makes its PDF (see `@/lib/documents`). */
 export const cardiologyReportDocument = (studyId: string) => `${study(studyId)}/report`;
 
+/** A released cardiology report as an ABDM health record (SRS EHR-08), by the report's own id (not the study's). */
+export const abdmCardiologyReportBundle = (reportId: string) => `/api/v1/abdm/bundles/cardiology-reports/${reportId}`;
+
 export const CARDIOLOGY_PERMISSIONS = {
   read: 'cardiology.studies.read',
   manage: 'cardiology.studies.manage',

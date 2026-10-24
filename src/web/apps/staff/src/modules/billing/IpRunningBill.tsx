@@ -1,11 +1,13 @@
-import { Badge, Caption1, makeStyles, Tab, TabList, Text, tokens } from '@fluentui/react-components';
-import { ArrowUndoRegular } from '@fluentui/react-icons';
+import { Badge, Button, Caption1, makeStyles, Tab, TabList, Text, tokens } from '@fluentui/react-components';
+import { ArrowUndoRegular, DismissCircleRegular } from '@fluentui/react-icons';
 import { formatDate, formatDateOnly, formatInr } from '@hc360/core';
 import { DataTable, ErrorState, KpiCard, LoadingState, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
-import { ipQueries, type RunningBill } from './ipApi';
+import { AddChargeButton, CancelChargeDialog, type CancellableCharge } from './ChargeDialogs';
+import { useCanManageCharges } from './hooks';
+import { ipQueries, type IpAccountDetail, type RunningBill } from './ipApi';
 import { SERVICE_CATEGORY_LABEL } from './labels';
 import { formatPercent } from './money';
 import { Amount } from './ui';
@@ -15,7 +17,13 @@ const useStyles = makeStyles({
   kpis: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' },
   muted: { color: tokens.colorNeutralForeground3 },
   service: { display: 'inline-flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' },
+  tabs: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
 });
+
+/** New services can be charged until the account is closed (a discharged stay may still get late charges). */
+function takesCharges(account: IpAccountDetail): boolean {
+  return account.status !== 'Closed' && account.status !== 'Cancelled';
+}
 
 function DayChart({ bill }: { bill: RunningBill }) {
   const option = useMemo<ChartOption>(
@@ -31,11 +39,16 @@ function DayChart({ bill }: { bill: RunningBill }) {
   return <EChart option={option} height={220} ariaLabel="Services charged per day" />;
 }
 
-/** IP running bill (IPB-02): what the stay has cost so far, by day and by category, every line (returns shown as returns). */
-export function IpRunningBill({ accountId }: { accountId: string }) {
+/**
+ * IP running bill (IPB-02): what the stay has cost so far, by day and by category, every line (returns shown as
+ * returns). With billing.charges.manage the desk can add a charge by hand and cancel a line not yet billed.
+ */
+export function IpRunningBill({ account }: { account: IpAccountDetail }) {
   const styles = useStyles();
   const [view, setView] = useState<'category' | 'day' | 'lines'>('category');
-  const running = useQuery({ ...ipQueries.runningBill(accountId), refetchInterval: 120_000 });
+  const [cancelling, setCancelling] = useState<CancellableCharge | null>(null);
+  const canManageCharges = useCanManageCharges();
+  const running = useQuery({ ...ipQueries.runningBill(account.id), refetchInterval: 120_000 });
 
   if (running.isLoading) {
     return <LoadingState label="Adding up the stay…" />;
@@ -97,12 +110,23 @@ export function IpRunningBill({ accountId }: { accountId: string }) {
       )}
 
       <Section flush>
-        <div style={{ padding: '0 8px' }}>
+        <div className={styles.tabs} style={{ padding: '0 8px' }}>
           <TabList selectedValue={view} onTabSelect={(_, d) => setView(d.value as typeof view)} size="small">
             <Tab value="category">By category</Tab>
             <Tab value="day">By day</Tab>
             <Tab value="lines">All services</Tab>
           </TabList>
+          {takesCharges(account) && (
+            <AddChargeButton
+              appearance="subtle"
+              target={{
+                patientId: account.patientId,
+                visitId: null,
+                admissionId: account.admissionId,
+                label: `Admission ${account.admissionNumber}`,
+              }}
+            />
+          )}
         </div>
         {view === 'category' && (
           <DataTable
@@ -190,10 +214,33 @@ export function IpRunningBill({ accountId }: { accountId: string }) {
                 render: (l) => (l.billId ? 'On a bill' : l.status === 'Unbilled' ? 'Not yet' : l.status),
               },
             ]}
+            rowActions={
+              canManageCharges
+                ? (l) =>
+                    l.status === 'Unbilled' ? (
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<DismissCircleRegular />}
+                        aria-label={`Cancel ${l.description}`}
+                        title="Cancel this charge"
+                        onClick={() =>
+                          setCancelling({
+                            id: l.chargeId,
+                            description: l.description,
+                            netAmount: l.netAmount,
+                            onDraft: l.billId !== null,
+                          })
+                        }
+                      />
+                    ) : null
+                : undefined
+            }
             emptyTitle="No services charged yet"
           />
         )}
       </Section>
+      <CancelChargeDialog charge={cancelling} onClose={() => setCancelling(null)} />
     </div>
   );
 }

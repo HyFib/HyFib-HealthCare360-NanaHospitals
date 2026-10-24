@@ -40,6 +40,12 @@ const manifest: ModuleManifest = {
       keywords: ['icd', 'icd-10', 'icd-11', 'icd-10-pcs', 'diagnosis codes', 'who', 'import', 'claml'],
     },
     {
+      label: 'Procedure catalogue',
+      to: '/mrd/procedure-codes',
+      permission: ['mrd.coding', 'clinical.emr.read', 'mrd.catalogue.import'],
+      keywords: ['procedure codes', 'icd-10-pcs', 'pcs', 'surgery codes', 'operation codes'],
+    },
+    {
       label: 'Morbidity report',
       to: '/mrd/morbidity',
       permission: 'mrd.records',

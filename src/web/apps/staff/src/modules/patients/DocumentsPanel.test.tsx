@@ -11,10 +11,12 @@ import type { PatientDocumentDto } from './api';
 import { DocumentsPanel } from './DocumentsPanel';
 
 // The server, the toasts and the signed-in user are outside the test; what the panel sends and shows is what is tested.
-vi.mock('@/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn(), blob: vi.fn() } }));
+vi.mock('@/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn(), delete: vi.fn(), blob: vi.fn() } }));
 const notify = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock('@hc360/ui', async (importOriginal) => ({ ...(await importOriginal<typeof Ui>()), useNotify: () => notify }));
-vi.mock('@/lib/permissions', () => ({ usePermission: () => true }));
+// Every permission unless a test takes one away.
+const denied = vi.hoisted(() => new Set<string>());
+vi.mock('@/lib/permissions', () => ({ usePermission: (permission: string) => !denied.has(permission) }));
 
 const discharge: PatientDocumentDto = {
   id: 'd1',
@@ -47,6 +49,8 @@ describe('DocumentsPanel', () => {
   beforeEach(() => {
     vi.mocked(api.get).mockReset().mockResolvedValue([]);
     vi.mocked(api.post).mockReset();
+    vi.mocked(api.delete).mockReset();
+    denied.clear();
     Object.values(notify).forEach((spy) => spy.mockClear());
   });
 
@@ -131,5 +135,54 @@ describe('DocumentsPanel', () => {
     expect(await screen.findByText('Contains characters that are not allowed.')).toBeInTheDocument();
     expect(notify.error).not.toHaveBeenCalled();
     expect(notify.success).not.toHaveBeenCalled();
+  });
+
+  it('removes a document once confirmed, and lists the rest', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValueOnce([discharge]).mockResolvedValue([]);
+    vi.mocked(api.delete).mockResolvedValueOnce(undefined);
+    renderPanel();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Remove document: Discharge summary after knee surgery' }),
+    );
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove document' });
+    expect(within(dialog).getByText('Discharge summary after knee surgery')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => expect(notify.success).toHaveBeenCalledWith('Document removed'));
+    expect(api.delete).toHaveBeenCalledWith('/api/v1/patients/documents/d1');
+    expect(await screen.findByText('No documents')).toBeInTheDocument();
+  });
+
+  it('says why a document could not be removed, and keeps it listed', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockResolvedValue([discharge]);
+    const refusal = new ApiError({ status: 403, title: 'This is a restricted record.' });
+    vi.mocked(api.delete).mockRejectedValueOnce(refusal);
+    renderPanel();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Remove document: Discharge summary after knee surgery' }),
+    );
+    await user.click(
+      within(await screen.findByRole('alertdialog', { name: 'Remove document' })).getByRole('button', {
+        name: 'Remove',
+      }),
+    );
+
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith(refusal, 'Could not remove the document'));
+    expect(notify.success).not.toHaveBeenCalled();
+    expect(screen.getByText('Ruby Hall Clinic, Pune')).toBeInTheDocument();
+  });
+
+  it('offers no removal without patients.documents', async () => {
+    denied.add('patients.documents');
+    vi.mocked(api.get).mockResolvedValue([discharge]);
+    renderPanel();
+
+    expect(await screen.findByText('Ruby Hall Clinic, Pune')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Remove document/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^File/)).not.toBeInTheDocument();
   });
 });

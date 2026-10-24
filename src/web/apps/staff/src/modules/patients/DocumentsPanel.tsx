@@ -9,13 +9,15 @@ import {
   Field,
   makeStyles,
   Spinner,
+  Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowUploadRegular, DocumentRegular } from '@fluentui/react-icons';
+import { ArrowUploadRegular, DeleteRegular, DocumentRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatDate, formatDateOnly, humanize, todayIso } from '@hc360/core';
+import { formatDate, formatDateOnly, humanize, isApiError, todayIso } from '@hc360/core';
 import {
   applyServerErrors,
+  ConfirmDialog,
   DataTable,
   DateField,
   EmptyState,
@@ -30,7 +32,7 @@ import { useEffect, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
-import { documentApi, PATIENT_DOCUMENT_TYPES, patientKeys, patientQueries } from './api';
+import { documentApi, PATIENT_DOCUMENT_TYPES, patientKeys, patientQueries, type PatientDocumentDto } from './api';
 import {
   DOCUMENT_LIMITS,
   documentFormDefaults,
@@ -52,7 +54,7 @@ const TYPE_OPTIONS = PATIENT_DOCUMENT_TYPES.map((type) => ({ value: type, label:
 /**
  * The documents attached to the patient record (EHR-04), on the patient profile: scanned IDs, insurance cards and
  * outside reports, each with its type, the date on it and where it came from. Staff who may attach documents and
- * upload files attach them here; a row opens the document.
+ * upload files attach them here, and take off one attached by mistake; a row opens the document.
  */
 export function DocumentsPanel({ patientId }: { patientId: string }) {
   const styles = useStyles();
@@ -60,7 +62,28 @@ export function DocumentsPanel({ patientId }: { patientId: string }) {
   const canManageDocuments = usePermission('patients.documents');
   const canWriteFiles = usePermission('files.write');
   const documents = useQuery(patientQueries.documents(patientId));
+  const queryClient = useQueryClient();
   const [viewer, setViewer] = useState<{ url: string; contentType: string; title: string } | null>(null);
+  const [removing, setRemoving] = useState<{ document: PatientDocumentDto; open: boolean } | null>(null);
+  // The document is kept while the dialog closes, so its title does not change during the animation.
+  const closeRemoving = () => setRemoving((current) => current && { ...current, open: false });
+
+  const remove = useMutation({
+    mutationFn: (document: PatientDocumentDto) => documentApi.remove(document.id),
+    onSuccess: () => {
+      notify.success('Document removed');
+      closeRemoving();
+      void queryClient.invalidateQueries({ queryKey: patientKeys.documents(patientId) });
+    },
+    onError: (error) => {
+      closeRemoving();
+      notify.error(error, 'Could not remove the document');
+      // Removed by someone else meanwhile: the list shows it as it is now.
+      if (isApiError(error) && error.status === 404) {
+        void queryClient.invalidateQueries({ queryKey: patientKeys.documents(patientId) });
+      }
+    },
+  });
 
   // Release the decrypted document from memory when the viewer closes or shows another file.
   useEffect(
@@ -129,9 +152,37 @@ export function DocumentsPanel({ patientId }: { patientId: string }) {
               priority: 'low',
             },
           ]}
+          rowActions={
+            canManageDocuments
+              ? (d) => (
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label={`Remove document: ${d.title}`}
+                    onClick={() => {
+                      remove.reset();
+                      setRemoving({ document: d, open: true });
+                    }}
+                  />
+                )
+              : undefined
+          }
           size="small"
         />
       )}
+      <ConfirmDialog
+        open={removing?.open ?? false}
+        title="Remove document"
+        confirmLabel="Remove"
+        destructive
+        busy={remove.isPending}
+        onConfirm={() => removing && remove.mutate(removing.document)}
+        onCancel={closeRemoving}
+      >
+        Remove <Text weight="semibold">{removing?.document.title}</Text> ({humanize(removing?.document.type)}) from the
+        patient record? Attach it again if it was removed by mistake.
+      </ConfirmDialog>
       <Dialog open={viewer !== null} onOpenChange={(_, d) => !d.open && setViewer(null)}>
         <DialogSurface style={{ maxWidth: '90vw', width: 1000 }}>
           <DialogBody>

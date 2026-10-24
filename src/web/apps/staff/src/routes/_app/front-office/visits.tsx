@@ -6,6 +6,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { frontOfficeQueries, type VisitFilters } from '@/modules/front-office/api';
+import { useVisitActions } from '@/modules/front-office/VisitActions';
 import type { VisitStatus, VisitType } from '@/modules/patients/api';
 
 const VISIT_TYPES: VisitType[] = ['OutPatient', 'Emergency', 'DayCare', 'Telehealth', 'HealthCheckup', 'InPatient'];
@@ -34,6 +35,7 @@ function VisitsPage() {
   const [term, setTerm] = useState(filters.search ?? '');
   const debounced = useDebouncedValue(term.trim(), 300);
   const visits = useQuery(frontOfficeQueries.visits(filters));
+  const actions = useVisitActions();
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
@@ -177,6 +179,7 @@ function VisitsPage() {
               render: (v) => <StatusBadge status={v.tokenStatus && v.status === 'Open' ? v.tokenStatus : v.status} />,
             },
           ]}
+          rowActions={actions.rowActions}
           emptyTitle="No visits match"
           emptyDescription="Patients appear here as soon as they are checked in."
           page={filters.page ?? 1}
@@ -186,6 +189,7 @@ function VisitsPage() {
           size="small"
         />
       </Section>
+      {actions.dialogs}
     </Page>
   );
 }

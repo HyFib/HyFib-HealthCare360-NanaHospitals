@@ -19,6 +19,7 @@ import {
   AddRegular,
   ArrowLeftRegular,
   BedRegular,
+  DismissCircleRegular,
   DocumentRegular,
   PersonAddRegular,
   ReceiptAddRegular,
@@ -41,9 +42,10 @@ import {
   type ChargeDto,
 } from '@/modules/billing/api';
 import { BillingPatientBanner } from '@/modules/billing/BillingPatientBanner';
+import { AddChargeButton, CancelChargeDialog, type CancellableCharge } from '@/modules/billing/ChargeDialogs';
 import { BillWorkspace } from '@/modules/billing/BillWorkspace';
 import { CounterSettingsDialog } from '@/modules/billing/CounterSettingsDialog';
-import { useBillingLive } from '@/modules/billing/hooks';
+import { useBillingLive, useCanManageCharges } from '@/modules/billing/hooks';
 import { SERVICE_CATEGORY_LABEL } from '@/modules/billing/labels';
 import { sumRupees } from '@/modules/billing/money';
 import { idParam } from '@/modules/billing/searchParams';
@@ -95,6 +97,7 @@ const useStyles = makeStyles({
   },
   charges: { display: 'flex', flexDirection: 'column', gap: '4px' },
   charge: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '12px', alignItems: 'center' },
+  chargeWithAction: { gridTemplateColumns: 'minmax(0, 1fr) auto auto' },
   foot: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
   back: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
@@ -404,7 +407,14 @@ function VisitChooser({
             icon={<DocumentRegular />}
             title="Nothing to bill yet"
             description="This patient has no recent visit or unbilled service. Start a bill without a visit to add services directly."
-            action={<PatientLevelStart patientId={patientId} onOpenBill={onOpenBill} />}
+            action={
+              <>
+                <PatientLevelStart patientId={patientId} onOpenBill={onOpenBill} />{' '}
+                <AddChargeButton
+                  target={{ patientId, visitId: null, admissionId: null, label: 'Services without a visit' }}
+                />
+              </>
+            }
           />
         ) : (
           <div className={styles.cards}>
@@ -486,10 +496,13 @@ function VisitCard({
 }) {
   const styles = useStyles();
   const start = useStartBill(onOpenBill);
+  const canManageCharges = useCanManageCharges();
+  const [cancelling, setCancelling] = useState<CancellableCharge | null>(null);
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
   const selected = group.charges.filter((c) => !excluded.has(c.id));
   const selectedTotal = sumRupees(selected.map((c) => c.netAmount));
   const visit = group.visit;
+  const title = visit ? `Visit ${visit.visitNumber}` : group.visitId ? 'Earlier visit' : 'Services without a visit';
 
   const toggle = (chargeId: string, checked: boolean) =>
     setExcluded((current) => {
@@ -513,9 +526,7 @@ function VisitCard({
     <div className={mergeClasses(styles.card, highlighted && styles.highlight)}>
       <div className={styles.cardHead}>
         <span>
-          <Text weight="semibold">
-            {visit ? `Visit ${visit.visitNumber}` : group.visitId ? 'Earlier visit' : 'Services without a visit'}
-          </Text>
+          <Text weight="semibold">{title}</Text>
           {visit && (
             <Caption1 block className={styles.muted}>
               {formatDateTime(visit.visitedAt)} · {humanize(visit.type)} · {visit.departmentName ?? 'No department'}
@@ -537,7 +548,7 @@ function VisitCard({
       {group.charges.length > 0 ? (
         <div className={styles.charges} role="group" aria-label="Unbilled services">
           {group.charges.map((charge) => (
-            <div key={charge.id} className={styles.charge}>
+            <div key={charge.id} className={mergeClasses(styles.charge, canManageCharges && styles.chargeWithAction)}>
               <Checkbox
                 checked={!excluded.has(charge.id)}
                 onChange={(_, data) => toggle(charge.id, Boolean(data.checked))}
@@ -559,6 +570,24 @@ function VisitCard({
                 }
               />
               <Amount value={charge.netAmount} />
+              {canManageCharges && (
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DismissCircleRegular />}
+                  aria-label={`Cancel ${charge.description}`}
+                  title="Cancel this charge"
+                  onClick={() =>
+                    setCancelling({
+                      id: charge.id,
+                      description: charge.description,
+                      netAmount: charge.netAmount,
+                      sourceModule: charge.sourceModule,
+                      onDraft: charge.billId !== null,
+                    })
+                  }
+                />
+              )}
             </div>
           ))}
         </div>
@@ -578,23 +607,29 @@ function VisitCard({
             </>
           )}
         </Text>
-        {group.draft ? (
-          <Button appearance="primary" onClick={() => onOpenBill(group.draft!.id)} autoFocus={highlighted}>
-            Continue the draft bill
-          </Button>
-        ) : (
-          <Button
-            appearance={highlighted || group.charges.length > 0 ? 'primary' : 'secondary'}
-            icon={start.isPending ? <Spinner size="tiny" aria-hidden /> : <ReceiptAddRegular />}
-            onClick={begin}
-            disabled={start.isPending || (group.charges.length > 0 && selected.length === 0)}
-            autoFocus={highlighted}
-          >
-            Start bill
-          </Button>
-        )}
+        <span className={styles.back}>
+          {!group.draft && (
+            <AddChargeButton target={{ patientId, visitId: group.visitId, admissionId: null, label: title }} />
+          )}
+          {group.draft ? (
+            <Button appearance="primary" onClick={() => onOpenBill(group.draft!.id)} autoFocus={highlighted}>
+              Continue the draft bill
+            </Button>
+          ) : (
+            <Button
+              appearance={highlighted || group.charges.length > 0 ? 'primary' : 'secondary'}
+              icon={start.isPending ? <Spinner size="tiny" aria-hidden /> : <ReceiptAddRegular />}
+              onClick={begin}
+              disabled={start.isPending || (group.charges.length > 0 && selected.length === 0)}
+              autoFocus={highlighted}
+            >
+              Start bill
+            </Button>
+          )}
+        </span>
       </div>
       <ActionError error={existingDraftId(start.error) ? null : start.error} />
+      <CancelChargeDialog charge={cancelling} onClose={() => setCancelling(null)} />
     </div>
   );
 }

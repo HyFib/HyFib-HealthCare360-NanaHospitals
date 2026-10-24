@@ -17,6 +17,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { NoAccess } from '@/modules/admin/NoAccess';
+import { NotificationsTabs } from '@/modules/admin/NotificationsTabs';
 import { NotificationTemplateDrawer } from '@/modules/admin/NotificationTemplateEditor';
 import {
   CHANNEL_LABELS,
@@ -94,6 +95,7 @@ function NotificationTemplatesPage() {
           </Button>
         }
       />
+      <NotificationsTabs selected="templates" />
       <Section flush>
         <div className={styles.toolbar}>
           <FilterBar>

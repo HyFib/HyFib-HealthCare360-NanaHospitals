@@ -120,7 +120,7 @@ public sealed class EmployeeService(
         {
             await notifications.NotifyUsersAsync([userId], "Your salary bank account was changed",
                 $"Salary will now be paid to account {employee.BankAccountMasked}. Contact HR immediately if you did not ask for this.",
-                "/hr/me/profile", "security", "warning", ct);
+                "/hr/me", "security", "warning", ct);
         }
 
         return Result.Success();

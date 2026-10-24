@@ -111,7 +111,7 @@ public sealed class LeaveService(
         await approvers.NotifyRequestAsync(employeeId, employee.FacilityId, HRPermissions.LeaveApprove,
             "Leave request to review",
             $"{employee.FullName} applied for {days:0.#} day(s) of {type.Name} from {request.FromDate:dd MMM} to {request.ToDate:dd MMM yyyy}.",
-            "/hr/leave/requests?status=Pending", ct);
+            "/hr/leave?status=Pending", ct);
         return leave.Id;
     }
 

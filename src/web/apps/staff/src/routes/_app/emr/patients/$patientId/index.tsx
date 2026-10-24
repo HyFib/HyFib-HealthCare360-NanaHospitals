@@ -29,6 +29,7 @@ import { usePermission } from '@/lib/permissions';
 import type { TimelineFilters } from '@/modules/emr/api';
 import { ChartSummary } from '@/modules/emr/ChartSummary';
 import { BannerSkeleton, ChartLoadError, ClinicalBanner } from '@/modules/emr/ClinicalBanner';
+import { CurrentMedications } from '@/modules/emr/CurrentMedications';
 import { DiagnosesTab } from '@/modules/emr/DiagnosisPanel';
 import { AlertsTab, AllergiesTab, RaiseAlertDialog, RecordAllergyDialog } from '@/modules/emr/FlagsPanels';
 import { useClinicalSummary } from '@/modules/emr/hooks';
@@ -82,6 +83,7 @@ export const Route = createFileRoute('/_app/emr/patients/$patientId/')({
 const useStyles = makeStyles({
   tabs: { padding: '0 8px', flexWrap: 'wrap', rowGap: '2px' },
   tabBody: { padding: '16px' },
+  stack: { display: 'flex', flexDirection: 'column', gap: '16px' },
 });
 
 type OpenDialog = 'encounter' | 'vitals' | 'allergy' | 'alert' | null;
@@ -250,7 +252,12 @@ function PatientChartPage() {
           {tab === 'procedures' && <ProceduresTab patientId={patientId} />}
           {tab === 'immunisations' && <ImmunizationsTab patientId={patientId} />}
           {tab === 'orders' && <OrdersTab patientId={patientId} />}
-          {tab === 'prescriptions' && <PrescriptionsList patientId={patientId} />}
+          {tab === 'prescriptions' && (
+            <div className={styles.stack}>
+              <CurrentMedications patientId={patientId} />
+              <PrescriptionsList patientId={patientId} />
+            </div>
+          )}
           {tab === 'documents' && <DocumentsTab patientId={patientId} />}
           {tab === 'consents' && <ConsentsPanel patientId={patientId} />}
           {tab === 'admissions' && <AdmissionsTab patientId={patientId} />}

@@ -10,15 +10,16 @@ import {
   Spinner,
   Text,
   tokens,
+  type FieldProps,
 } from '@fluentui/react-components';
 import { AddRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue, useHotkey } from '@hc360/core';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useRef, useState, type Ref } from 'react';
 import { usePractitioners } from '@/lib/lookups';
 import { billingApi, quotePrice, searchServices, type BillDetail, type ServiceItemDto } from './api';
 import { PRICE_SOURCE_LABEL, SERVICE_CATEGORY_LABEL } from './labels';
-import { amountInputText, formatPercent, fromPaise, parseRupees, roundDiv, toPaise } from './money';
+import { amountInputText, formatPercent, fromPaise, parseQuantity, parseRupees, roundDiv, toPaise } from './money';
 import { ActionError, KeyHint } from './ui';
 
 const useStyles = makeStyles({
@@ -31,14 +32,89 @@ const useStyles = makeStyles({
   option: { display: 'flex', justifyContent: 'space-between', gap: '12px', width: '100%' },
 });
 
-/** Quantity: more than zero, at most 10,000 and 3 decimals (the server's rule). */
-function parseQuantity(text: string): number | null {
-  const match = /^(\d{1,5})(?:\.(\d{1,3}))?$/.exec(text.trim());
-  if (!match) {
-    return null;
+/**
+ * Catalogue search (active services, 2+ letters): type a name or code and pick one. Shared by the "add a service" row
+ * of a draft bill and the manual charge dialog.
+ */
+export function ServiceSearchField({
+  label,
+  value,
+  onChange,
+  enabled = true,
+  required,
+  className,
+  inputRef,
+}: {
+  label: FieldProps['label'];
+  value: ServiceItemDto | null;
+  onChange: (item: ServiceItemDto | null) => void;
+  enabled?: boolean;
+  required?: boolean;
+  className?: string;
+  inputRef?: Ref<HTMLInputElement>;
+}) {
+  const styles = useStyles();
+  const [term, setTerm] = useState('');
+  const debounced = useDebouncedValue(term.trim(), 250);
+  const results = useQuery({
+    queryKey: ['billing', 'service-search', debounced],
+    queryFn: () => searchServices(debounced),
+    enabled: enabled && debounced.length >= 2,
+    staleTime: 60_000,
+  });
+  // The text clears once a service is picked; picking nothing (cleared) clears the service too.
+  const [shown, setShown] = useState(value);
+  if (shown !== value) {
+    setShown(value);
+    if (value === null) {
+      setTerm('');
+    }
   }
-  const value = Number(text.trim());
-  return value > 0 && value <= 10_000 ? value : null;
+
+  const items = results.data ?? [];
+  return (
+    <Field label={label} className={className} required={required}>
+      <Combobox
+        ref={inputRef}
+        placeholder="Type a service name or code (2+ letters)"
+        value={term || (value ? `${value.name} (${value.code})` : '')}
+        selectedOptions={value ? [value.id] : []}
+        onChange={(event) => {
+          setTerm(event.target.value);
+          if (!event.target.value) {
+            onChange(null);
+          }
+        }}
+        onOptionSelect={(_, data) => {
+          setTerm('');
+          onChange(items.find((s) => s.id === data.optionValue) ?? null);
+        }}
+        expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
+        freeform
+        clearable
+        disabled={!enabled}
+      >
+        {debounced.length >= 2 && items.length === 0 && !results.isFetching && (
+          <Option value="" disabled text="No match">
+            No service matches “{debounced}”
+          </Option>
+        )}
+        {items.map((service) => (
+          <Option key={service.id} value={service.id} text={`${service.name} (${service.code})`}>
+            <span className={styles.option}>
+              <span>
+                {service.name}
+                <Caption1 block className={styles.muted}>
+                  {service.code} · {SERVICE_CATEGORY_LABEL[service.category]}
+                </Caption1>
+              </span>
+              <Text>{formatInr(service.basePrice)}</Text>
+            </span>
+          </Option>
+        ))}
+      </Combobox>
+    </Field>
+  );
 }
 
 /**
@@ -57,21 +133,13 @@ export function ServicePicker({
   const styles = useStyles();
   const searchRef = useRef<HTMLInputElement>(null);
   const quantityRef = useRef<HTMLInputElement>(null);
-  const [term, setTerm] = useState('');
   const [item, setItem] = useState<ServiceItemDto | null>(null);
   const [quantity, setQuantity] = useState('1');
   const [price, setPrice] = useState('');
   const [doctorId, setDoctorId] = useState('');
-  const debounced = useDebouncedValue(term.trim(), 250);
 
   useHotkey('f2', () => searchRef.current?.focus(), { enabled, allowInInputs: true });
 
-  const results = useQuery({
-    queryKey: ['billing', 'service-search', debounced],
-    queryFn: () => searchServices(debounced),
-    enabled: enabled && debounced.length >= 2,
-    staleTime: 60_000,
-  });
   const quote = useQuery({
     queryKey: ['billing', 'quote', item?.id ?? '', bill.visitId ?? '', bill.tariffPlanId ?? ''],
     queryFn: () =>
@@ -96,7 +164,6 @@ export function ServicePicker({
 
   const clearSelection = () => {
     setItem(null);
-    setTerm('');
     setQuantity('1');
     setPrice('');
     setDoctorId('');
@@ -128,61 +195,27 @@ export function ServicePicker({
     }
   };
 
-  const items = results.data ?? [];
   return (
     <div className={styles.root}>
       <div className={styles.row}>
-        <Field
+        <ServiceSearchField
           label={
             <>
               Add a service <KeyHint>F2</KeyHint>
             </>
           }
           className={styles.search}
-        >
-          <Combobox
-            ref={searchRef}
-            placeholder="Type a service name or code (2+ letters)"
-            value={term || (item ? `${item.name} (${item.code})` : '')}
-            selectedOptions={item ? [item.id] : []}
-            onChange={(event) => {
-              setTerm(event.target.value);
-              if (!event.target.value) {
-                setItem(null);
-              }
-            }}
-            onOptionSelect={(_, data) => {
-              const picked = items.find((s) => s.id === data.optionValue) ?? null;
-              setItem(picked);
-              setTerm('');
-              setPrice(picked?.isPriceEditable ? amountInputText(picked.basePrice) : '');
+          inputRef={searchRef}
+          value={item}
+          enabled={enabled}
+          onChange={(picked) => {
+            setItem(picked);
+            setPrice(picked?.isPriceEditable ? amountInputText(picked.basePrice) : '');
+            if (picked) {
               window.setTimeout(() => quantityRef.current?.select(), 0);
-            }}
-            expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
-            freeform
-            clearable
-            disabled={!enabled}
-          >
-            {debounced.length >= 2 && items.length === 0 && !results.isFetching && (
-              <Option value="" disabled text="No match">
-                No service matches “{debounced}”
-              </Option>
-            )}
-            {items.map((service) => (
-              <Option key={service.id} value={service.id} text={`${service.name} (${service.code})`}>
-                <span className={styles.option}>
-                  <span>
-                    {service.name}
-                    <Caption1 block className={styles.muted}>
-                      {service.code} · {SERVICE_CATEGORY_LABEL[service.category]}
-                    </Caption1>
-                  </span>
-                  <Text>{formatInr(service.basePrice)}</Text>
-                </span>
-              </Option>
-            ))}
-          </Combobox>
-        </Field>
+            }
+          }}
+        />
         <Field
           label="Qty"
           validationMessage={quantity && qty === null ? 'More than 0, at most 3 decimals' : undefined}

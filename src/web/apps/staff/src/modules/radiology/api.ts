@@ -497,6 +497,9 @@ export const radiologyApi = {
 /** The A4 radiology report as the server prints it and makes its PDF (see `@/lib/documents`). */
 export const radiologyReportDocument = (studyId: string) => `${study(studyId)}/report`;
 
+/** A released radiology report as an ABDM health record (SRS EHR-08), by the report's own id (not the study's). */
+export const abdmRadiologyReportBundle = (reportId: string) => `/api/v1/abdm/bundles/radiology-reports/${reportId}`;
+
 export const RADIOLOGY_PERMISSIONS = {
   read: 'radiology.studies.read',
   worklist: 'radiology.worklist',

@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { PortalTelehealthSession, TelehealthJoinInfo } from '@/lib/types';
+import type { PortalTelehealthSession, TelehealthJoinInfo, TelehealthMessageDto } from '@/lib/types';
 
 const id = (value: string) => encodeURIComponent(value);
 
@@ -21,5 +21,13 @@ export const videoQueries = {
       queryFn: ({ signal }) =>
         api.get<TelehealthJoinInfo>(`/api/v1/portal/telehealth/sessions/${id(sessionId)}/join`, { signal }),
       refetchInterval: 30_000,
+    }),
+
+  /** The chat of a consultation, oldest first, to read again once it has ended. */
+  messages: (patientId: string, sessionId: string) =>
+    queryOptions({
+      queryKey: ['portal', patientId, 'video', 'messages', sessionId],
+      queryFn: ({ signal }) =>
+        api.get<TelehealthMessageDto[]>(`/api/v1/portal/telehealth/sessions/${id(sessionId)}/messages`, { signal }),
     }),
 };

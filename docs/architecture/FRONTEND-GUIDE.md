@@ -56,6 +56,10 @@ export default manifest;
   "any of". Links a user may not open are hidden. The server enforces permissions again on every call.
 * Icons: use only names that exist in `@fluentui/react-icons` 2.0.342 (`*Regular`). The full list of valid names is in
   `fluent-icons-regular.txt` in the session scratchpad; when unsure, `grep -x Name` it.
+* A link the server puts on an alert (`NotifyUsersAsync`, `NotifyPermissionHoldersAsync`: "/assets/tickets?id=…") is
+  opened in the staff app, so it must be a route here. `src/test/serverLinks.test.ts` reads the server's C# and fails
+  the build for a staff path with no route; point the link at a list screen with a search parameter rather than at a
+  detail route the app does not have.
 
 ## 3. Data access
 

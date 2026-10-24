@@ -1,4 +1,5 @@
-import { queryOptions } from '@tanstack/react-query';
+import type { PagedResult } from '@hc360/core';
+import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { api } from '@/lib/api';
 
@@ -66,13 +67,114 @@ export interface SaveNotificationTemplateRequest {
 
 const BASE = '/api/v1/admin/notification-templates';
 
-export const notificationTemplateKeys = { all: ['admin', 'notification-templates'] as const };
+export const notificationTemplateKeys = {
+  all: ['admin', 'notification-templates'] as const,
+  logs: ['admin', 'notification-logs'] as const,
+};
 
 export const notificationTemplateQueries = {
   list: () =>
     queryOptions({
       queryKey: notificationTemplateKeys.all,
       queryFn: ({ signal }) => api.get<NotificationTemplateDto[]>(BASE, { signal }),
+    }),
+};
+
+// ------------------------------------------------------------------------------------------------ delivery log
+
+/** `NotificationStatus` on the server. */
+export type NotificationStatus = 'Queued' | 'Sent' | 'Failed' | 'Skipped' | 'Delivered' | 'Suppressed';
+
+export const NOTIFICATION_STATUSES: readonly NotificationStatus[] = [
+  'Queued',
+  'Sent',
+  'Delivered',
+  'Failed',
+  'Skipped',
+  'Suppressed',
+];
+
+/**
+ * One message HC360 sent or tried to send (`GET /api/v1/admin/notification-logs`, newest first). The recipient's mobile
+ * number or e-mail address is masked by the server; `error` says why a message failed, or was skipped or suppressed.
+ */
+export interface NotificationLogDto {
+  id: string;
+  createdAt: string;
+  channel: NotificationChannel;
+  templateKey: string;
+  recipient: string | null;
+  patientId: string | null;
+  status: NotificationStatus;
+  error: string | null;
+  sentAt: string | null;
+}
+
+export interface NotificationLogFilters {
+  channel?: NotificationChannel;
+  status?: NotificationStatus;
+  /** Part of the message key (`lab.report`); the server matches it as typed, and keys are lower-case. */
+  search?: string;
+  page: number;
+}
+
+export const NOTIFICATION_LOG_PAGE_SIZE = 50;
+
+/** A delivery status in words, its badge colour, and what it means for the patient. */
+export function deliveryStatusDisplay(status: NotificationStatus): {
+  label: string;
+  tone: 'success' | 'warning' | 'danger' | 'informative' | 'subtle';
+  hint: string;
+} {
+  switch (status) {
+    case 'Queued':
+      return { label: 'Waiting', tone: 'informative', hint: 'Waiting to be sent, or to be tried again.' };
+    case 'Sent':
+      return { label: 'Sent', tone: 'success', hint: 'Handed to the provider.' };
+    case 'Delivered':
+      return { label: 'Delivered', tone: 'success', hint: 'The provider confirmed delivery to the phone or inbox.' };
+    case 'Failed':
+      return {
+        label: 'Failed',
+        tone: 'danger',
+        hint: 'Not sent: the provider refused it, or it could not be reached.',
+      };
+    case 'Skipped':
+      return {
+        label: 'Skipped',
+        tone: 'warning',
+        hint: 'Not attempted: no contact details for the channel, or a document the template needs is missing.',
+      };
+    default:
+      return {
+        label: 'Suppressed',
+        tone: 'subtle',
+        hint: 'Deliberately not sent: the number opted out, or never opted in to WhatsApp.',
+      };
+  }
+}
+
+export function isNotificationStatus(value: unknown): value is NotificationStatus {
+  return NOTIFICATION_STATUSES.includes(value as NotificationStatus);
+}
+
+export const notificationLogQueries = {
+  list: (filters: NotificationLogFilters) =>
+    queryOptions({
+      queryKey: [...notificationTemplateKeys.logs, filters],
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<NotificationLogDto>>('/api/v1/admin/notification-logs', {
+          query: {
+            channel: filters.channel,
+            status: filters.status,
+            search: filters.search?.trim().toLowerCase() || undefined,
+            page: filters.page,
+            pageSize: NOTIFICATION_LOG_PAGE_SIZE,
+          },
+          signal,
+        }),
+      placeholderData: keepPreviousData,
+      refetchInterval: 60_000,
     }),
 };
 

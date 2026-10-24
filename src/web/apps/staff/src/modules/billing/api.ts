@@ -312,6 +312,24 @@ export interface ChargeDto {
   cancelReason: string | null;
 }
 
+/**
+ * A service charged by hand at the billing desk (source `billing.manual`), e.g. a procedure that was not ordered
+ * electronically. `unitPrice` only for a service whose price is editable (else 422 on `unitPrice`); none takes the
+ * tariff price. `serviceDate` defaults to now and cannot be in the future.
+ */
+export interface PostChargeRequest {
+  patientId: string;
+  visitId: string | null;
+  admissionId: string | null;
+  serviceItemId: string;
+  quantity: number;
+  unitPrice: number | null;
+  description: string | null;
+  practitionerId: string | null;
+  departmentId: string | null;
+  serviceDate: string | null;
+}
+
 // ------------------------------------------------------------------ receipts, dues, advances, refunds
 
 export interface ReceiptPaymentDto {
@@ -673,6 +691,11 @@ export const billingQueries = {
           signal,
         }),
     }),
+  charge: (id: string) =>
+    queryOptions({
+      queryKey: [...billingKeys.charges(), 'detail', id],
+      queryFn: ({ signal }) => api.get<ChargeDto>(`/api/v1/billing/charges/${id}`, { signal }),
+    }),
   dues: (patientId: string) =>
     queryOptions({
       queryKey: billingKeys.dues(patientId),
@@ -784,6 +807,14 @@ export interface WriteOptions {
 }
 
 export const billingApi = {
+  /** Manual charge (billing.charges.manage); it waits unbilled for the visit's or admission's bill. */
+  postCharge: (request: PostChargeRequest) => api.post<ChargeDto>('/api/v1/billing/charges', request),
+  /**
+   * Cancels an unbilled charge (billing.charges.manage); one reserved by a draft bill is taken off that draft first.
+   * 422 `billing.charge_billed` once it is on a finalized bill (cancel the bill or issue a credit note instead). The
+   * order, dispense or admission the charge came from is not changed.
+   */
+  cancelCharge: (id: string, reason: string) => api.post<void>(`/api/v1/billing/charges/${id}/cancel`, { reason }),
   createBill: (request: CreateBillRequest) => api.post<BillDetail>('/api/v1/billing/bills', request),
   addLine: (billId: string, request: AddBillLineRequest) =>
     api.post<BillDetail>(`/api/v1/billing/bills/${billId}/lines`, request),
