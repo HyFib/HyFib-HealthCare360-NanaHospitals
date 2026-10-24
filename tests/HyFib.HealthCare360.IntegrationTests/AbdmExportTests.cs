@@ -365,7 +365,7 @@ public sealed class AbdmExportTests(HospitalServer server)
 
             // Exported again it is the same document, byte for byte: its printed PDF is made again (where this server
             // makes PDFs, as CI's Windows runner does with Edge) and prints the same.
-            (await ExportAsync(path, PrescriptionRecord, abha, $"prescription-{prescription.PrescriptionNumber}")).GetRawText().ShouldBe(text);
+            ShouldBeTheSameDocument(await ExportAsync(path, PrescriptionRecord, abha, $"prescription-{prescription.PrescriptionNumber}"), bundle);
 
             var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
             exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: prescription");
@@ -401,7 +401,7 @@ public sealed class AbdmExportTests(HospitalServer server)
 
             await ReleaseAsync(crp);
             var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-");
-            (await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-")).GetRawText().ShouldBe(bundle.GetRawText(), "the same report exports as the same document");
+            ShouldBeTheSameDocument(await ExportAsync(path, DiagnosticReportRecord, abha, "lab-report-"), bundle);
             ShouldCarryThePrintedCopy(Attachments(bundle));
             var result = Results(bundle, Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem()).ShouldHaveSingleItem();
             result.GetProperty("resourceType").GetString().ShouldBe("Observation");
@@ -453,7 +453,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             // does not need it. The same report exports as the same document.
             await RadiologyAsync(xray, (report, study, now) => report.Release(study, signerUser, now));
             var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "radiology-report-NHRDA");
-            (await ExportAsync(path, DiagnosticReportRecord, abha, "radiology-report-NHRDA")).GetRawText().ShouldBe(bundle.GetRawText());
+            ShouldBeTheSameDocument(await ExportAsync(path, DiagnosticReportRecord, abha, "radiology-report-NHRDA"), bundle);
             Composition(bundle).GetProperty("section").EnumerateArray().ShouldHaveSingleItem()
                 .GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe("4201000179104");
 
@@ -527,7 +527,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             // Released, it is exported, and exports as the same document again.
             await CardiologyAsync(ecg, (report, study, now) => report.Release(study, cardiologistUser, now));
             var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "cardiology-report-NHCD");
-            (await ExportAsync(path, DiagnosticReportRecord, abha, "cardiology-report-NHCD")).GetRawText().ShouldBe(bundle.GetRawText());
+            ShouldBeTheSameDocument(await ExportAsync(path, DiagnosticReportRecord, abha, "cardiology-report-NHCD"), bundle);
             Composition(bundle).GetProperty("status").GetString().ShouldBe("final");
 
             var diagnostic = Resources(bundle, "DiagnosticReport").ShouldHaveSingleItem();
@@ -1192,6 +1192,66 @@ public sealed class AbdmExportTests(HospitalServer server)
     /// <summary>The resource of the entry a reference in the document points to.</summary>
     private static JsonElement Entry(JsonElement bundle, string fullUrl) =>
         bundle.GetProperty("entry").EnumerateArray().Single(e => e.GetProperty("fullUrl").GetString() == fullUrl).GetProperty("resource");
+
+    /// <summary>
+    /// The same record exported again is the same document, byte for byte. When it is not, the failure names the entries
+    /// that changed and, for a printed PDF, the bytes where the two prints part: the whole document is too long to show.
+    /// </summary>
+    private static void ShouldBeTheSameDocument(JsonElement again, JsonElement first)
+    {
+        if (string.Equals(again.GetRawText(), first.GetRawText(), StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var changes = new List<string>();
+        var before = first.GetProperty("entry").EnumerateArray().Select(e => e.GetProperty("resource")).ToList();
+        var after = again.GetProperty("entry").EnumerateArray().Select(e => e.GetProperty("resource")).ToList();
+        foreach (var (was, now) in before.Zip(after))
+        {
+            if (!string.Equals(was.GetRawText(), now.GetRawText(), StringComparison.Ordinal))
+            {
+                changes.Add($"{was.GetProperty("resourceType").GetString()}: {Parting(was.GetRawText(), now.GetRawText())}");
+            }
+
+            foreach (var (pdf, pdfAgain) in Pdfs(was).Zip(Pdfs(now)))
+            {
+                if (!pdf.AsSpan().SequenceEqual(pdfAgain))
+                {
+                    changes.Add($"its PDF ({pdf.Length} and {pdfAgain.Length} bytes): {Parting(Encoding.Latin1.GetString(pdf), Encoding.Latin1.GetString(pdfAgain))}");
+                }
+            }
+        }
+
+        if (before.Count != after.Count)
+        {
+            changes.Add($"{before.Count} entries, then {after.Count}");
+        }
+
+        again.GetRawText().ShouldBe(first.GetRawText(), $"exported again, the document changed: {string.Join("; ", changes)}");
+
+        static IEnumerable<byte[]> Pdfs(JsonElement resource) =>
+            resource.GetProperty("resourceType").GetString() == "Binary" && resource.TryGetProperty("data", out var data)
+                ? [data.GetBytesFromBase64()]
+                : resource.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array
+                    ? content.EnumerateArray().Select(c => c.GetProperty("attachment"))
+                        .Where(a => a.TryGetProperty("data", out _)).Select(a => a.GetProperty("data").GetBytesFromBase64())
+                    : [];
+
+        // Where two texts part: the first difference, with what comes before it and each side's next characters.
+        static string Parting(string a, string b)
+        {
+            var at = 0;
+            while (at < a.Length && at < b.Length && a[at] == b[at])
+            {
+                at++;
+            }
+
+            static string Shown(string text) => string.Concat(text.Select(c => c is >= ' ' and <= '~' ? c.ToString() : $"\\x{(int)c:x2}"));
+            var from = Math.Max(0, at - 80);
+            return $"at {at}, after \"{Shown(a[from..at])}\": \"{Shown(a[at..Math.Min(a.Length, at + 160)])}\" then \"{Shown(b[at..Math.Min(b.Length, at + 160)])}\"";
+        }
+    }
 
     /// <summary>The document's resources of one type, in document order.</summary>
     private static List<JsonElement> Resources(JsonElement bundle, string type) =>
