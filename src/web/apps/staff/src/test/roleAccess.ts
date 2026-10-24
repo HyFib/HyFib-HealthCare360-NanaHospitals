@@ -24,7 +24,7 @@ import type { FakeAnswers } from './fakeApi';
 // - each action button the role is shown sends only what the role may do.
 //
 // Each screen is opened once with every permission, to learn what it reads and what each of its buttons sends: a button
-// that acts at once, or opens a confirmation whose last button acts. A role whose permissions do not cover all of that
+// that acts at once, opens a confirmation whose last button acts, or opens a menu whose items do either. A role whose permissions do not cover all of that
 // opens the screen again as itself (a screen leaves out what its user may not see or do), and what it still asks for,
 // or still offers, fails the test. serverAccess.json holds the roles' permissions and the server's read and write rules;
 // StaffAccessFixtureTests keeps it current. The roleAccess.*.test.tsx files check a part of the screens each, so they
@@ -109,8 +109,9 @@ const WARD: WardDto = {
 /**
  * Data for the screens to work with, so that what a screen reads only once an earlier answer came back (a ward's rooms
  * after the wards) is asked for too: the screen tests' canned answers, and a ward for the in-patient screens. A screen
- * these do not feed reads only what it asks for on opening; a record screen whose record they do not answer shows
- * its "not found" state, so only its first read is checked.
+ * these do not feed (most of them: Learned.unanswered lists what each went without) is checked for what it reads on
+ * opening and the buttons it shows with no records, not for the actions on a record's row; a record screen whose record
+ * they do not answer shows its "not found" state, so only its first read is checked.
  */
 const ANSWERS: FakeAnswers = {
   ...SHELL_SCREEN_ANSWERS,
@@ -182,11 +183,64 @@ function actionButtons(): string[] {
   }
   const names = within(main as HTMLElement)
     .queryAllByRole('button')
-    .filter((b) => !b.hasAttribute('disabled') && b.getAttribute('aria-disabled') !== 'true')
+    .filter(enabled)
     .map(buttonName)
     .filter((name) => name && !NOT_ACTIONS.test(name));
   return [...new Set(names)];
 }
+
+/** A menu item is learned and pressed as "Trigger › Item". */
+const MENU = ' › ';
+
+const enabled = (b: HTMLElement) => !b.hasAttribute('disabled') && b.getAttribute('aria-disabled') !== 'true';
+
+/**
+ * Presses `name` on the page ("Trigger › Item" opens the menu, then presses its item), then the last button of the
+ * confirmation that opens, if one does. Returns whether a confirmation opened.
+ */
+async function press(server: ReturnType<typeof fakeServer>, name: string) {
+  const [trigger, item] = name.split(MENU);
+  const button = within(document.querySelector('main') as HTMLElement)
+    .queryAllByRole('button')
+    .find((b) => buttonName(b) === trigger && enabled(b));
+  if (!button) {
+    return false;
+  }
+  fireEvent.click(button);
+  await settle(server);
+  if (item !== undefined) {
+    const menuItem = screen.queryAllByRole('menuitem').find((m) => buttonName(m) === item && enabled(m));
+    if (!menuItem) {
+      return false;
+    }
+    fireEvent.click(menuItem);
+    await settle(server);
+  }
+  // A confirmation: its last button is the one that acts.
+  const dialog = screen.queryAllByRole('dialog').concat(screen.queryAllByRole('alertdialog')).at(-1);
+  const confirm = dialog
+    ? within(dialog)
+        .queryAllByRole('button')
+        .filter((b) => enabled(b) && !NOT_ACTIONS.test(buttonName(b)))
+        .at(-1)
+    : undefined;
+  if (confirm) {
+    fireEvent.click(confirm);
+    await settle(server);
+  }
+  return dialog !== undefined;
+}
+
+/** The items of the menu open on the page, by name. */
+const menuItems = () => [
+  ...new Set(
+    screen
+      .queryAllByRole('menuitem')
+      .filter(enabled)
+      .map(buttonName)
+      .filter((name) => name && !NOT_ACTIONS.test(name)),
+  ),
+];
 
 /** Waits until the screen stops asking the server for anything (up to 3 s). */
 async function settle(server: ReturnType<typeof fakeServer>) {
@@ -230,45 +284,40 @@ const writesOf = (server: ReturnType<typeof fakeServer>, from: number) => [
 export interface Learned {
   reads: string[];
   buttons: Map<string, string[]>;
+  /** What it read on opening that the canned answers do not answer (a 404): it opened without that data. */
+  unanswered: string[];
 }
 
 async function learn(path: string): Promise<Learned> {
   let server = fakeServer(ANSWERS);
   let opened = openScreen(path, STAFF_USER);
   await settle(server);
-  const learned: Learned = { reads: getsOf(server), buttons: new Map() };
-  for (const name of actionButtons()) {
-    const button = within(document.querySelector('main') as HTMLElement)
-      .queryAllByRole('button')
-      .find((b) => buttonName(b) === name && !b.hasAttribute('disabled'));
-    if (!button) {
-      continue;
-    }
-    const from = server.requests.length;
-    fireEvent.click(button);
+  const learned: Learned = {
+    reads: getsOf(server),
+    buttons: new Map(),
+    unanswered: [...new Set(server.unanswered.filter((r) => r.startsWith('GET ')).map((r) => r.split('?')[0]!))],
+  };
+  const reopen = async () => {
+    close();
+    server = fakeServer(ANSWERS);
+    opened = openScreen(path, STAFF_USER);
     await settle(server);
-    // A confirmation: its last button is the one that acts.
-    const dialog = screen.queryAllByRole('dialog').concat(screen.queryAllByRole('alertdialog')).at(-1);
-    const confirm = dialog
-      ? within(dialog)
-          .queryAllByRole('button')
-          .filter((b) => !b.hasAttribute('disabled') && !NOT_ACTIONS.test(buttonName(b)))
-          .at(-1)
-      : undefined;
-    if (confirm) {
-      fireEvent.click(confirm);
-      await settle(server);
-    }
+  };
+  const names = actionButtons();
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i]!;
+    const from = server.requests.length;
+    const confirmed = await press(server, name);
     const sent = writesOf(server, from);
     if (sent.length > 0) {
       learned.buttons.set(name, sent);
     }
+    // A menu opened: each of its items is pressed in turn.
+    const items = !name.includes(MENU) && sent.length === 0 ? menuItems() : [];
+    names.splice(i + 1, 0, ...items.map((item) => `${name}${MENU}${item}`));
     // Back to the screen as it opened, for the next button.
-    if (dialog || opened.router.state.location.pathname !== path || sent.length > 0) {
-      close();
-      server = fakeServer(ANSWERS);
-      opened = openScreen(path, STAFF_USER);
-      await settle(server);
+    if (confirmed || items.length > 0 || opened.router.state.location.pathname !== path || sent.length > 0) {
+      await reopen();
     }
   }
   close();
@@ -276,31 +325,14 @@ async function learn(path: string): Promise<Learned> {
 }
 
 /**
- * Opens a screen as `user`, presses the button `name` (and the last button of the confirmation it opens, as `learn`
- * does) and returns what was sent. The same button can do less for a role (a dialog that leaves out Acknowledge).
+ * Opens a screen as `user`, presses `name` as `learn` does and returns what was sent. The same button can do less for
+ * a role (a dialog that leaves out Acknowledge, a menu without Reset password).
  */
 async function pressAs(path: string, user: AuthUser, name: string): Promise<string[]> {
   const server = fakeServer(ANSWERS);
   openScreen(path, user);
   await settle(server);
-  const button = within(document.querySelector('main') as HTMLElement)
-    .queryAllByRole('button')
-    .find((b) => buttonName(b) === name && !b.hasAttribute('disabled'));
-  if (button) {
-    fireEvent.click(button);
-    await settle(server);
-    const dialog = screen.queryAllByRole('dialog').concat(screen.queryAllByRole('alertdialog')).at(-1);
-    const confirm = dialog
-      ? within(dialog)
-          .queryAllByRole('button')
-          .filter((b) => !b.hasAttribute('disabled') && !NOT_ACTIONS.test(buttonName(b)))
-          .at(-1)
-      : undefined;
-    if (confirm) {
-      fireEvent.click(confirm);
-      await settle(server);
-    }
-  }
+  await press(server, name);
   const sent = writesOf(server, 0);
   close();
   return sent;
@@ -345,7 +377,7 @@ export async function findRefusals(part: number, parts: number) {
       refused.push(
         ...seen.reads.filter((p) => !mayRead(p, permissions)).map((p) => `${role}: "${s.label}" (${s.to}) reads ${p}`),
       );
-      for (const [name] of doubtful.filter(([n]) => seen.buttons.includes(n))) {
+      for (const [name] of doubtful.filter(([n]) => seen.buttons.includes(n.split(MENU)[0]!))) {
         refused.push(
           ...(await pressAs(s.to, user, name))
             .filter((w) => !mayWrite(w, permissions))
