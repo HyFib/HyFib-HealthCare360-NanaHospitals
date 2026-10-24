@@ -20,8 +20,9 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* Devanagari needs a little more line height than Latin script to keep matras readable. */
-:lang(hi) body {
+/* Devanagari and Tamil need a little more line height than Latin script to keep vowel signs readable. */
+:lang(hi) body,
+:lang(ta) body {
   line-height: 1.6;
 }
 

@@ -23,6 +23,7 @@ public sealed record PortalPrescriptionLine(
     string Frequency,
     string FrequencyEnglish,
     string FrequencyHindi,
+    string FrequencyTamil,
     int DurationDays,
     decimal Quantity,
     string? Instructions);

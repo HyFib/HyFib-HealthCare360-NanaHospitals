@@ -18,12 +18,14 @@ public static class PatientLanguages
 {
     public const string English = "en";
     public const string Hindi = "hi";
+    public const string Tamil = "ta";
     public const string Default = English;
 
     public static IReadOnlyList<PatientLanguage> All { get; } =
     [
-        new(English, "en-IN", ["english", "eng", "अंग्रेज़ी", "अंग्रेजी"]),
+        new(English, "en-IN", ["english", "eng", "अंग्रेज़ी", "अंग्रेजी", "ஆங்கிலம்"]),
         new(Hindi, "hi-IN", ["hindi", "hin", "हिन्दी", "हिंदी"]),
+        new(Tamil, "ta-IN", ["tamil", "tam", "தமிழ்"]),
     ];
 
     public static IReadOnlyList<string> Codes { get; } = [.. All.Select(l => l.Code)];
@@ -39,7 +41,7 @@ public static class PatientLanguages
 
     /// <summary>
     /// The language a patient record's free-text preference names: a code or culture ("hi", "hi-IN"), or a name in
-    /// English or in the language itself ("Hindi", "हिन्दी"). Null when it names none HC360 writes (blank, "Marathi").
+    /// English or in the language itself ("Hindi", "हिन्दी", "Tamil", "தமிழ்"). Null when it names none HC360 writes (blank, "Marathi").
     /// </summary>
     public static string? FromPreference(string? preference)
     {

@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { interpolate, isLanguage, LANGUAGES, placeholdersOf } from './define';
+import { interpolate, isLanguage, LANGUAGES, placeholdersOf, type Language } from './define';
 import { DICTIONARIES, MESSAGE_SETS, type MessageKey } from './dictionary';
 import { createTranslator } from './index';
 import { initialLanguage } from './store';
 
-const sets = Object.entries(MESSAGE_SETS) as [string, { en: Record<string, string>; hi: Record<string, string> }][];
+const sets = Object.entries(MESSAGE_SETS) as [string, Record<Language, Record<string, string>>][];
+const translations = LANGUAGES.filter((language) => language !== 'en');
 
 describe('message sets', () => {
-  it.each(sets)('%s has the same keys in English and Hindi', (_, set) => {
-    expect(Object.keys(set.hi).sort()).toEqual(Object.keys(set.en).sort());
+  it.each(sets)('%s has the same keys in English, Hindi and Tamil', (_, set) => {
+    for (const language of translations) {
+      expect(Object.keys(set[language]).sort(), language).toEqual(Object.keys(set.en).sort());
+    }
   });
 
   it.each(sets)('%s has no empty or untrimmed text', (_, set) => {
@@ -21,9 +24,11 @@ describe('message sets', () => {
     }
   });
 
-  it.each(sets)('%s uses the same placeholders in both languages', (_, set) => {
-    for (const [key, english] of Object.entries(set.en)) {
-      expect(placeholdersOf(set.hi[key] ?? ''), key).toEqual(placeholdersOf(english));
+  it.each(sets)('%s uses the same placeholders in every language', (_, set) => {
+    for (const language of translations) {
+      for (const [key, english] of Object.entries(set.en)) {
+        expect(placeholdersOf(set[language][key] ?? ''), `${language} ${key}`).toEqual(placeholdersOf(english));
+      }
     }
   });
 
@@ -42,9 +47,9 @@ describe('message sets', () => {
     expect(duplicates).toEqual([]);
   });
 
-  it('actually translates: Hindi text differs from English for most keys', () => {
+  it.each(translations)('actually translates: %s text differs from English for most keys', (language) => {
     const keys = Object.keys(DICTIONARIES.en) as MessageKey[];
-    const same = keys.filter((key) => DICTIONARIES.hi[key] === DICTIONARIES.en[key]);
+    const same = keys.filter((key) => DICTIONARIES[language][key] === DICTIONARIES.en[key]);
     // A few strings are the same in both (UHID, product names); anything more means a table was copied untranslated.
     expect(same.length / keys.length).toBeLessThan(0.05);
   });
@@ -54,6 +59,15 @@ describe('message sets', () => {
     const latinOnly = keys.filter((key) => {
       const text = DICTIONARIES.hi[key].replace(/\{\w+\}/g, '');
       return /[A-Za-z]{3,}/.test(text) && !/[ऀ-ॿ]/.test(text);
+    });
+    expect(latinOnly.length / keys.length).toBeLessThan(0.05);
+  });
+
+  it('keeps Tamil text in Tamil script (not transliterated English)', () => {
+    const keys = Object.keys(DICTIONARIES.ta) as MessageKey[];
+    const latinOnly = keys.filter((key) => {
+      const text = DICTIONARIES.ta[key].replace(/\{\w+\}/g, '');
+      return /[A-Za-z]{3,}/.test(text) && !/[\u0B80-\u0BFF]/.test(text);
     });
     expect(latinOnly.length / keys.length).toBeLessThan(0.05);
   });
@@ -93,10 +107,12 @@ describe('language choice', () => {
     expect(initialLanguage('en', ['hi-IN'])).toBe('en');
   });
 
-  it('uses Hindi when the browser prefers it, English otherwise', () => {
+  it('uses Hindi or Tamil when the browser lists it, English otherwise', () => {
     expect(initialLanguage(null, ['hi-IN', 'en'])).toBe('hi');
     expect(initialLanguage(null, ['en-IN', 'hi'])).toBe('hi');
-    expect(initialLanguage(null, ['ta-IN'])).toBe('en');
+    expect(initialLanguage(null, ['ta-IN'])).toBe('ta');
+    expect(initialLanguage(null, ['en-IN', 'ta_IN', 'hi'])).toBe('ta');
+    expect(initialLanguage(null, ['mr-IN', 'en'])).toBe('en');
     expect(initialLanguage('fr', [])).toBe('en');
   });
 

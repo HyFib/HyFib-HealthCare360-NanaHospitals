@@ -629,6 +629,7 @@ export interface PortalPrescriptionLine {
   frequency: string;
   frequencyEnglish: string;
   frequencyHindi: string;
+  frequencyTamil: string;
   durationDays: number;
   quantity: number;
   instructions: string | null;

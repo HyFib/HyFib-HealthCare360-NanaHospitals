@@ -95,8 +95,8 @@ internal static class PortalEndpoints
         var lines = p.Items.OrderBy(i => i.Sequence).Select(i =>
         {
             var (english, hindi) = FrequencyLabels.For(i.Frequency, i.CustomFrequency);
-            return new PortalPrescriptionLine(i.DrugName, i.GenericName, i.Strength, i.DosageForm, i.Dose, i.FrequencyText, english, hindi, i.DurationDays,
-                i.Quantity, i.Instructions);
+            return new PortalPrescriptionLine(i.DrugName, i.GenericName, i.Strength, i.DosageForm, i.Dose, i.FrequencyText, english, hindi,
+                FrequencyLabels.Tamil(i.Frequency, i.CustomFrequency), i.DurationDays, i.Quantity, i.Instructions);
         }).ToList();
         var signature = await finalCopies.CheckAsync(p, ct);
         var token = p.Status == PrescriptionStatus.Signed && signature.FinalCopyAvailable ? p.VerificationToken : null;

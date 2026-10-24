@@ -16,15 +16,15 @@ export const REFILL_STATUS: Record<RefillStatus, { key: MessageKey; tone: Tone }
 };
 
 /**
- * "Twice a day, after food" in the patient's language (the server sends English and Hindi), with the written pattern
+ * "Twice a day, after food" in the patient's language (the server sends English, Hindi and Tamil), with the written pattern
  * ("1-0-1") alongside when it adds something.
  */
 export function frequencyText(
-  line: Pick<PortalPrescriptionLine, 'frequency' | 'frequencyEnglish' | 'frequencyHindi'>,
+  line: Pick<PortalPrescriptionLine, 'frequency' | 'frequencyEnglish' | 'frequencyHindi' | 'frequencyTamil'>,
   language: Language,
 ): string {
-  const words =
-    (language === 'hi' ? line.frequencyHindi : line.frequencyEnglish) || line.frequencyEnglish || line.frequency;
+  const translated = { en: line.frequencyEnglish, hi: line.frequencyHindi, ta: line.frequencyTamil }[language];
+  const words = translated || line.frequencyEnglish || line.frequency;
   const pattern = line.frequency?.trim();
   return pattern && words && !words.toLowerCase().includes(pattern.toLowerCase())
     ? `${words} (${pattern})`

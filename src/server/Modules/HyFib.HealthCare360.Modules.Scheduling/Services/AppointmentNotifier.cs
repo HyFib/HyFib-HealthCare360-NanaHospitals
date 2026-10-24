@@ -1,6 +1,7 @@
 using System.Globalization;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -100,11 +101,11 @@ public sealed class AppointmentNotifier(HospitalDbContext db, INotificationServi
         return new Contact(patient.Id, patient.FullName, patient.Phone, patient.Email, LanguageOf(patient.PreferredLanguage), doctor ?? "your doctor", facility ?? "the hospital");
     }
 
-    /// <summary>Hindi-speaking patients get the Hindi template when one is configured (the renderer falls back to English).</summary>
-    private static string LanguageOf(string? preferred) =>
-        preferred is not null && (preferred.StartsWith("hi", StringComparison.OrdinalIgnoreCase) || preferred.Contains("हिन्दी", StringComparison.Ordinal))
-            ? "hi"
-            : "en";
+    /// <summary>
+    /// Patients who read Hindi or Tamil get that language's template when one is configured (the renderer falls back to
+    /// English).
+    /// </summary>
+    private static string LanguageOf(string? preferred) => PatientLanguages.FromPreference(preferred) ?? PatientLanguages.Default;
 
     private sealed record Contact(Guid PatientId, string PatientName, string? Phone, string? Email, string Language, string DoctorName, string FacilityName);
 }

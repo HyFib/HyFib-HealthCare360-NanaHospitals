@@ -123,7 +123,9 @@ public sealed class CampaignTests
     [InlineData("Hindi", "hi")]
     [InlineData("hi", "hi")]
     [InlineData("हिन्दी", "hi")]
-    [InlineData("Tamil", "en")]
+    [InlineData("Tamil", "ta")]
+    [InlineData("தமிழ்", "ta")]
+    [InlineData("Marathi", "en")]
     [InlineData(null, "en")]
     public void Message_language_follows_the_patients_preference(string? preferred, string expected) =>
         CampaignService.LanguageCode(preferred).ShouldBe(expected);

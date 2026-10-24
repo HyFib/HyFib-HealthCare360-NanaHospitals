@@ -65,11 +65,45 @@ public sealed class PrescriptionDocumentTests
         html.ShouldContain("@font-face { font-family: \"HC360 Devanagari\"; font-style: normal; font-weight: 400;");
         html.ShouldContain("@font-face { font-family: \"HC360 Devanagari\"; font-style: normal; font-weight: 700;");
         html.ShouldContain("src: url(data:font/woff2;base64,");
-        html.ShouldContain("font-family: \"Segoe UI\", \"HC360 Devanagari\", \"Nirmala UI\"");
+        html.ShouldContain("font-family: \"Segoe UI\", \"HC360 Devanagari\", \"HC360 Tamil\", \"Nirmala UI\"");
 
         // Medicine names, doses and codes stay as the doctor wrote them.
         html.ShouldContain("<div class=\"drug\">Metformin 500 mg</div>");
         html.ShouldContain("Type 2 diabetes mellitus (E11.9)");
+    }
+
+    [Theory]
+    [InlineData("Tamil")]
+    [InlineData("தமிழ்")]
+    [InlineData("ta")]
+    public void A_tamil_readers_prescription_is_printed_in_english_and_tamil_with_its_tamil_font(string preference)
+    {
+        var model = Model();
+        var document = PrescriptionDocument.Build(model with { Patient = model.Patient with { PreferredLanguage = preference } }, null, null);
+        var html = document.ToHtml();
+
+        document.Language.ShouldBe("en");
+        html.ShouldContain("<th>Medicine <span class=\"ta\" lang=\"ta\">/ மருந்து</span></th>");
+        html.ShouldContain("<div class=\"tamil\" lang=\"ta\">1 tab · நாளொன்றுக்கு இரண்டு முறை</div>");
+        html.ShouldContain("<td>30 days<div class=\"tamil\" lang=\"ta\">30 நாட்கள்</div></td>");
+        html.ShouldContain("@font-face { font-family: \"HC360 Tamil\"; font-style: normal; font-weight: 400;");
+        html.ShouldContain("@font-face { font-family: \"HC360 Tamil\"; font-style: normal; font-weight: 700;");
+        html.ShouldNotContain("दवा");
+        html.ShouldNotContain("@font-face { font-family: \"HC360 Devanagari\"");
+    }
+
+    [Theory]
+    [InlineData("Hindi")]
+    [InlineData("English")]
+    [InlineData("Marathi")]
+    [InlineData(null)]
+    public void Everyone_else_gets_english_and_hindi(string? preference)
+    {
+        var model = Model();
+        var html = PrescriptionDocument.Build(model with { Patient = model.Patient with { PreferredLanguage = preference } }, null, null).ToHtml();
+
+        html.ShouldContain("<th>Medicine <span class=\"hi\" lang=\"hi\">/ दवा</span></th>");
+        html.ShouldNotContain("@font-face { font-family: \"HC360 Tamil\"");
     }
 
     [Fact]
@@ -324,12 +358,12 @@ public sealed class PrescriptionDocumentTests
         ["Type 2 diabetes mellitus (E11.9)", "Hypertension (I10)"],
         ["Penicillin", "Sulfa drugs"],
         [
-            new PrescriptionPrintLine(1, "Metformin", "Metformin hydrochloride", "500 mg", "Tablet", "Oral", "1 tab", "BD", "Twice a day", "दिन में दो बार", 30,
-                60.00m, "After food", false),
-            new PrescriptionPrintLine(2, "Tramadol", "Tramadol", "50 mg", "Capsule", "Oral", "1 cap", "SOS", "Only when required", "आवश्यकता होने पर", 5,
-                10.00m, null, true),
-            new PrescriptionPrintLine(3, "Ceftriaxone", null, "1 g", "Injection", "IV", "1 g", "STAT", "Immediately, once", "तुरंत, एक बार", 1, 1.00m, null,
-                false),
+            new PrescriptionPrintLine(1, "Metformin", "Metformin hydrochloride", "500 mg", "Tablet", "Oral", "1 tab", "BD", "Twice a day", "दिन में दो बार",
+                "நாளொன்றுக்கு இரண்டு முறை", 30, 60.00m, "After food", false),
+            new PrescriptionPrintLine(2, "Tramadol", "Tramadol", "50 mg", "Capsule", "Oral", "1 cap", "SOS", "Only when required", "आवश्यकता होने पर",
+                "தேவைப்படும்போது மட்டும்", 5, 10.00m, null, true),
+            new PrescriptionPrintLine(3, "Ceftriaxone", null, "1 g", "Injection", "IV", "1 g", "STAT", "Immediately, once", "तुरंत, एक बार",
+                "உடனடியாக, ஒரு முறை", 1, 1.00m, null, false),
         ],
         "Walk 30 minutes a day.\nAvoid sweets.",
         new DateOnly(2026, 10, 3),

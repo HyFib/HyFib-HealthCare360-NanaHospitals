@@ -8,7 +8,7 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
 /// <summary>
 /// What a printed prescription shows (ERX-04): letterhead, prescriber registration, patient, the encounter's diagnoses,
-/// known allergies, medicines with English and Hindi directions, advice, follow-up, the QR verification link and the
+/// known allergies, medicines with English directions and the same in Hindi and Tamil, advice, follow-up, the QR verification link and the
 /// doctor's DSC signature while it checks out. The
 /// print model, the printed and downloaded document, the portal's PDF and the copy sent with the "prescription shared"
 /// message are all made from it. It applies no access rules: callers check the permission or portal scope, the
@@ -43,7 +43,7 @@ internal sealed class PrescriptionPrintBuilder(HospitalDbContext db, ISettingsSe
         {
             var (english, hindi) = FrequencyLabels.For(i.Frequency, i.CustomFrequency);
             return new PrescriptionPrintLine(i.Sequence, i.DrugName, i.GenericName, i.Strength, i.DosageForm, i.Route, i.Dose, i.FrequencyText, english, hindi,
-                i.DurationDays, i.Quantity, i.Instructions, i.IsControlledDrug);
+                FrequencyLabels.Tamil(i.Frequency, i.CustomFrequency), i.DurationDays, i.Quantity, i.Instructions, i.IsControlledDrug);
         }).ToList();
         var publicAddress = p.VerificationToken is null ? null : await PortalAddress.BaseUrlAsync(settings, p.FacilityId, ct);
         var prescriber = await PrintQueries.PrescriberAsync(db, p.PractitionerId, ct);

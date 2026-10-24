@@ -305,13 +305,23 @@ describe('bills', () => {
 
 describe('prescriptions', () => {
   it('writes directions in the patient language with the pattern alongside', () => {
-    const line = { frequency: '1-0-1', frequencyEnglish: 'Twice a day', frequencyHindi: 'दिन में दो बार' };
+    const line = {
+      frequency: '1-0-1',
+      frequencyEnglish: 'Twice a day',
+      frequencyHindi: 'दिन में दो बार',
+      frequencyTamil: 'நாளொன்றுக்கு இரண்டு முறை',
+    };
     expect(frequencyText(line, 'en')).toBe('Twice a day (1-0-1)');
     expect(frequencyText(line, 'hi')).toBe('दिन में दो बार (1-0-1)');
+    expect(frequencyText(line, 'ta')).toBe('நாளொன்றுக்கு இரண்டு முறை (1-0-1)');
     expect(frequencyText({ ...line, frequencyHindi: '' }, 'hi')).toBe('Twice a day (1-0-1)');
-    expect(frequencyText({ frequency: 'SOS', frequencyEnglish: 'When needed (SOS)', frequencyHindi: '' }, 'en')).toBe(
-      'When needed (SOS)',
-    );
+    expect(frequencyText({ ...line, frequencyTamil: '' }, 'ta')).toBe('Twice a day (1-0-1)');
+    expect(
+      frequencyText(
+        { frequency: 'SOS', frequencyEnglish: 'When needed (SOS)', frequencyHindi: '', frequencyTamil: '' },
+        'en',
+      ),
+    ).toBe('When needed (SOS)');
     expect(medicineName({ drugName: 'Paracetamol', strength: '500 mg', dosageForm: null })).toBe('Paracetamol 500 mg');
   });
 });

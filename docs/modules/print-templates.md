@@ -108,18 +108,19 @@ as they are. The amount in words on a bill stays in English.
 | Printed or downloaded by staff (`GET …/document`, `GET …/pdf`) | English |
 | Downloaded from the portal (`GET /api/v1/portal/…/pdf`) | The request's: the language chosen in the portal (`X-HC360-Language`); without one, the preferred language on the signed-in patient's record when it is English or Hindi, then Accept-Language, then English |
 | Sent with a message (`INotificationDocumentSource`) | The preferred language on the document's patient's record, else English |
-| The prescription, wherever it goes | English with the Hindi after every label (ERX-04), and the Hindi directions under each medicine |
+| The prescription, wherever it goes | English with the patient's language after every label (ERX-04): Tamil when their record says Tamil, Hindi for everyone else; and the directions in that language under each medicine |
 
 Each document takes a `DocumentText` (`Platform/Documents/DocumentText.cs`) and reads its words from the patient text
-catalogue (`Platform/Localization/Resources/patient-texts-{en,hi}.json`, keys `doc.*`). The page's `lang` is the
-document's language (the bilingual prescription is `en`, its Hindi marked `lang="hi"`). A bill's legal title keeps its
+catalogue (`Platform/Localization/Resources/patient-texts-{en,hi,ta}.json`, keys `doc.*`). The page's `lang` is the
+document's language (the bilingual prescription is `en`, its Hindi or Tamil marked `lang="hi"` or `lang="ta"`). A bill's legal title keeps its
 English in brackets ("कर बीजक (Tax invoice)").
 
-**Hindi font.** A document with any Devanagari in it (a Hindi document, the prescription, a name typed in Devanagari)
-carries Noto Sans Devanagari, regular and bold, as `@font-face` rules with `data:` URIs (about 135 KB; the page's
+**Hindi and Tamil fonts.** A document with any Devanagari in it (a Hindi document, the prescription, a name typed in
+Devanagari) carries Noto Sans Devanagari, regular and bold, as `@font-face` rules with `data:` URIs (about 135 KB; the page's
 content security policy already allows `font-src data:`), limited by `unicode-range` to the Devanagari blocks, so Latin
 text keeps Segoe UI. The family is `HC360 Devanagari`, listed after Segoe UI and before Nirmala UI in the house style.
-An English document carries no font. The browser (Edge for the PDF, the workstation's for a print) lays the text out
+A document with Tamil in it carries Noto Sans Tamil the same way (family `HC360 Tamil`, about 36 KB), and one with
+both scripts carries both. An English document carries no font. The browser (Edge for the PDF, the workstation's for a print) lays the text out
 with HarfBuzz, which forms conjuncts and places the vowel signs; the PDF embeds the font's subset.
 
 The font files are in `src/server/HyFib.HealthCare360.Platform/Documents/Fonts`: Noto Sans Devanagari 2.007 by the Noto
@@ -127,9 +128,12 @@ Project Authors under the SIL Open Font License 1.1 (`OFL.txt` beside them; no R
 from the variable font in `google/fonts` (`ofl/notosansdevanagari/NotoSansDevanagari[wdth,wght].ttf`) with fontTools:
 instanced at weight 400 and 700 and width 100 (names updated), cut down to U+0900–097F, U+1CD0–1CFF, U+200C–200D, U+20B9, U+25CC,
 U+A830–A839 and U+A8E0–A8FF with every OpenType layout feature kept, and saved as WOFF2. The OFL allows this; the
-font may be redistributed with HC360 and the licence must go with it.
+font may be redistributed with HC360 and the licence must go with it. Noto Sans Tamil was made the same way from
+`ofl/notosanstamil/NotoSansTamil[wdth,wght].ttf` (SHA-256 `aa3a9b32…cf88`), cut down to U+0964–0965, U+0B80–0BFF,
+U+11FC0–11FFF, U+200C–200D and U+25CC; its copyright line is in the same `OFL.txt`.
 
-The Hindi text is listed for the hospital's review in [../requirements/hindi-review.md](../requirements/hindi-review.md).
+The Hindi text is listed for the hospital's review in [../requirements/hindi-review.md](../requirements/hindi-review.md),
+the Tamil text in [../requirements/tamil-review.md](../requirements/tamil-review.md).
 
 Tests: `PrintTemplateTests` (Platform.Tests and IntegrationTests), the template tests in `BillDocumentTests`,
 `PrescriptionDocumentTests` and `LabReportDocumentTests`; in the web apps, `packages/core/src/print/letterhead.test.ts`,

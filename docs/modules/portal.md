@@ -7,7 +7,7 @@ API only, and the staff app's address sends `/portal/...` there (SECURITY.md, "S
 `index.html`. It covers the SRS Patient Portal requirements **PP-01..06**, patient-side telehealth (**TEL-01..05**)
 and the public checks of printed documents (**ERX-04**, **LIS-07**).
 
-It is mobile-first, bilingual (English and Hindi, switchable at any time) and built to WCAG 2.2 AA: 44 px or larger
+It is mobile-first, in English, Hindi and Tamil (switchable at any time) and built to WCAG 2.2 AA: 44 px or larger
 tap targets, visible focus, headings that take focus after navigation, status never shown by colour alone, and
 reduced motion respected.
 
@@ -23,7 +23,7 @@ i18n is a small typed dictionary.
 | `src/shell` | Frame (header, bottom or side navigation, footer), family-member switcher, language menu, connection banner |
 | `src/modules/<feature>` | API query options, labels, pure helpers, feature components, print templates |
 | `src/components` | Shared building blocks: links, list rows, notices, sheets, choice cards, document actions |
-| `src/i18n` | `messages/<feature>.ts` (English and Hindi side by side), formatters in hospital time (IST) with Indian digit grouping |
+| `src/i18n` | `messages/<feature>.ts` (English, Hindi and Tamil side by side), formatters in hospital time (IST) with Indian digit grouping |
 | `src/lib` | API client (`clientType: 'portal'`), session, errors, payments, printing, PDF downloads, link tokens |
 
 Commands (run from `src/web`): `pnpm --filter @hc360/portal dev` (port 5361, proxies `/api`, `/hubs` and `/health` to
@@ -212,7 +212,7 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 
 * **Download PDF.** Reports, prescriptions, discharge summaries and bills come with the hospital's official PDF. It is
   the same document the hospital prints and sends, with the letterhead, signatures and QR check, and its labels in the
-  patient's language (below); the prescription is always in English and Hindi. The page fetches it from the
+  patient's language (below); the prescription is in English with the patient's Tamil, or Hindi for everyone else. The page fetches it from the
   document's `…/pdf` endpoint and saves it under the file name the server gives (Content-Disposition). This works on
   Android Chrome and on iPhone Safari, which asks first. The button says "Preparing your PDF…" while the server makes
   the PDF, and takes one tap at a time. When the server cannot make PDFs
