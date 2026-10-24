@@ -61,8 +61,10 @@ internal static class ChartEndpoints
 
         if (page.SearchTerm is not null)
         {
+            // A patient, or a paper file by the number on it.
             var matching = db.Set<Patient>().Search(page.SearchTerm, protector).Select(p => p.Id);
-            charts = charts.Where(m => matching.Contains(m.PatientId));
+            var fileNumber = page.SearchTerm.Trim().ToUpperInvariant();
+            charts = charts.Where(m => matching.Contains(m.PatientId) || m.PaperFileNumber == fileNumber);
         }
 
         var result = await (
@@ -80,7 +82,7 @@ internal static class ChartEndpoints
         return TypedResults.Ok(result.Map(x => new MedicalRecordDto(x.Chart.Id, x.Chart.PatientId, x.Uhid, x.FullName, x.Chart.EncounterId, x.Chart.AdmissionId,
             x.Chart.VisitId, x.Chart.AdmittedAt, x.Chart.DischargedAt, x.Chart.Status, x.Chart.AssignedPractitionerId, x.Chart.DueDate,
             x.Chart.DueDate is { } due && due < today && x.Chart.Status is MedicalRecordStatus.Incomplete or MedicalRecordStatus.Deficient, x.Chart.IsMlc,
-            x.Chart.CompletedAt, x.Chart.ArchivedAt, x.Chart.ArchiveLocation, x.Chart.RetainUntil, x.Open, [], x.Chart.Version)));
+            x.Chart.CompletedAt, x.Chart.ArchivedAt, x.Chart.ArchiveLocation, x.Chart.RetainUntil, x.Open, [], x.Chart.Version, MedicalRecordService.Paper(x.Chart))));
     }
 
     private static async Task<IResult> Create(CreateMedicalRecordRequest request, MedicalRecordService charts, CancellationToken ct) =>

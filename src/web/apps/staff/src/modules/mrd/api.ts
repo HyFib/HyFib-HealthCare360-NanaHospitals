@@ -76,7 +76,10 @@ export interface SaveProcedureCodeRequest {
   version?: number;
 }
 
-/** Opens a chart by hand (`CreateMedicalRecordRequest`): for an encounter or an admission of the patient. */
+/**
+ * Opens a chart by hand (`CreateMedicalRecordRequest`): for an encounter or an admission of the patient, or with
+ * `paper` (and no encounter, admission or visit) for a file that exists only on paper.
+ */
 export interface CreateMedicalRecordRequest {
   patientId: string;
   encounterId: string | null;
@@ -85,6 +88,16 @@ export interface CreateMedicalRecordRequest {
   assignedPractitionerId: string | null;
   dueDate: string | null;
   isMlc: boolean;
+  paper?: PaperChart;
+}
+
+/** A paper file: the number on it, the episode's days (discharge only for a stay) and what it holds. */
+export interface PaperChart {
+  fileNumber: string;
+  isInpatient: boolean;
+  episodeFrom: string;
+  episodeTo: string | null;
+  note: string | null;
 }
 
 export interface IcdChapter {
@@ -304,6 +317,8 @@ export interface MedicalRecordDto {
   openDeficiencies: number;
   deficiencies: ChartDeficiencyDto[];
   version: number;
+  /** A chart of a file that exists only on paper; null for a chart of the record. */
+  paper: PaperChart | null;
 }
 
 export interface AddDeficiencyRequest {
@@ -403,13 +418,20 @@ export interface MorbidityParams {
 
 export const mrdKeys = {
   all: ['mrd'] as const,
-  icd: (search: string, chapter: string | null, billableOnly: boolean, limit: number, release: string | null = null) =>
-    ['mrd', 'icd', search, chapter ?? 'all', billableOnly, limit, release ?? 'any'] as const,
+  icd: (
+    search: string,
+    chapter: string | null,
+    billableOnly: boolean,
+    limit: number,
+    release: string | null = null,
+    includeInactive = false,
+  ) => ['mrd', 'icd', search, chapter ?? 'all', billableOnly, limit, release ?? 'any', includeInactive] as const,
   icdOnline: (search: string, release: string) => ['mrd', 'icd-online', search, release] as const,
   classification: () => ['mrd', 'icd-classification'] as const,
   catalogue: () => ['mrd', 'catalogue'] as const,
   procedures: (search: string) => ['mrd', 'procedures', search] as const,
-  procedureCatalogue: (search: string) => ['mrd', 'procedure-catalogue', search] as const,
+  procedureCatalogue: (search: string, includeInactive = false) =>
+    ['mrd', 'procedure-catalogue', search, includeInactive] as const,
   codings: (params: CodingListParams) => ['mrd', 'codings', params] as const,
   coding: (id: string) => ['mrd', 'coding', id] as const,
   suggestions: (id: string) => ['mrd', 'coding', id, 'suggestions'] as const,
@@ -430,6 +452,8 @@ export function searchIcd(
     billableOnly?: boolean;
     limit?: number;
     release?: string | null;
+    /** Also codes switched off or withdrawn by an import, for MRD to switch back on. Pickers leave it out. */
+    includeInactive?: boolean;
     signal?: AbortSignal;
   } = {},
 ): Promise<IcdCodeDto[]> {
@@ -440,6 +464,7 @@ export function searchIcd(
       billableOnly: options.billableOnly || undefined,
       limit: options.limit ?? 20,
       release: options.release ?? undefined,
+      includeInactive: options.includeInactive || undefined,
     },
     signal: options.signal,
   });
@@ -459,10 +484,11 @@ export const mrdQueries = {
     billableOnly = false,
     limit = 20,
     release: string | null = null,
+    includeInactive = false,
   ) =>
     queryOptions({
-      queryKey: mrdKeys.icd(search, chapter, billableOnly, limit, release),
-      queryFn: ({ signal }) => searchIcd(search, { chapter, billableOnly, limit, release, signal }),
+      queryKey: mrdKeys.icd(search, chapter, billableOnly, limit, release, includeInactive),
+      queryFn: ({ signal }) => searchIcd(search, { chapter, billableOnly, limit, release, includeInactive, signal }),
       staleTime: 10 * 60_000,
       placeholderData: keepPreviousData,
     }),
@@ -493,13 +519,16 @@ export const mrdQueries = {
       queryFn: ({ signal }) => searchProcedures(search, signal),
       staleTime: 10 * 60_000,
     }),
-  /** The procedure catalogue to maintain: the first 100 active codes by category, or the best 100 for `search`. */
-  procedureCatalogue: (search: string) =>
+  /**
+   * The procedure catalogue to maintain: the first 100 active codes by category, or the best 100 for `search`; with
+   * `includeInactive`, switched-off codes too, so MRD can switch one back on.
+   */
+  procedureCatalogue: (search: string, includeInactive = false) =>
     queryOptions({
-      queryKey: mrdKeys.procedureCatalogue(search),
+      queryKey: mrdKeys.procedureCatalogue(search, includeInactive),
       queryFn: ({ signal }) =>
         api.get<ProcedureCodeDto[]>('/api/v1/mrd/procedure-codes', {
-          query: { search: search || undefined, limit: 100 },
+          query: { search: search || undefined, includeInactive: includeInactive || undefined, limit: 100 },
           signal,
         }),
       staleTime: 60_000,

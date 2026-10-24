@@ -45,11 +45,13 @@ internal static class CodeCatalogueEndpoints
     /// finds candidates with ILIKE on the trigram-indexed search text and orders them in the ranker's tiers (see
     /// <see cref="Ordered"/>) before taking the best 300; the ranker orders those.
     /// <c>release</c> is <c>ICD-10 2019</c> or <c>ICD-11 MMS</c> (any label <see cref="CodeReleases.Normalize"/> accepts).
+    /// <c>includeInactive</c> also finds codes switched off by hand or withdrawn by an import, for MRD to switch back on;
+    /// the pickers in coding and in the doctor's notes never ask for them.
     /// </summary>
-    private static async Task<IResult> SearchIcd(string? search, string? chapter, bool? billableOnly, string? release, int? limit, HospitalDbContext db,
-        IcdClassificationProvider classification, CancellationToken ct)
+    private static async Task<IResult> SearchIcd(string? search, string? chapter, bool? billableOnly, string? release, bool? includeInactive, int? limit,
+        HospitalDbContext db, IcdClassificationProvider classification, CancellationToken ct)
     {
-        var codes = db.Set<IcdCode>().AsNoTracking().Where(c => c.IsActive);
+        var codes = db.Set<IcdCode>().AsNoTracking().Where(c => includeInactive == true || c.IsActive);
         if (!string.IsNullOrWhiteSpace(chapter))
         {
             var ch = chapter.Trim().ToUpperInvariant();
@@ -85,9 +87,11 @@ internal static class CodeCatalogueEndpoints
         return TypedResults.Ok(ranked.Select(c => ToDto(c, set)).ToList());
     }
 
-    private static async Task<IResult> SearchProcedures(string? search, string? category, int? limit, HospitalDbContext db, CancellationToken ct)
+    /// <summary>The procedure catalogue by code prefix or words; <c>includeInactive</c> as for <see cref="SearchIcd"/>.</summary>
+    private static async Task<IResult> SearchProcedures(string? search, string? category, bool? includeInactive, int? limit, HospitalDbContext db,
+        CancellationToken ct)
     {
-        var codes = db.Set<ProcedureCode>().AsNoTracking().Where(c => c.IsActive);
+        var codes = db.Set<ProcedureCode>().AsNoTracking().Where(c => includeInactive == true || c.IsActive);
         if (!string.IsNullOrWhiteSpace(category))
         {
             var cat = category.Trim();

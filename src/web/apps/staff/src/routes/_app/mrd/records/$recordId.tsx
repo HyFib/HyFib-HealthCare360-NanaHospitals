@@ -343,7 +343,13 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
     <Page>
       <PageHeader
         title={`Chart · ${r.patientName ?? 'Patient'}`}
-        subtitle={`${r.uhid ?? ''} · ${r.admissionId ? 'In-patient stay' : 'Out-patient encounter'}`}
+        subtitle={`${r.uhid ?? ''} · ${
+          r.paper
+            ? `Paper file ${r.paper.fileNumber} · ${r.paper.isInpatient ? 'in-patient stay' : 'out-patient'}`
+            : r.admissionId
+              ? 'In-patient stay'
+              : 'Out-patient encounter'
+        }`}
         breadcrumbs={[
           { label: 'Patient charts', onClick: () => void navigate({ to: '/mrd/records' }) },
           { label: r.uhid ?? 'Chart' },
@@ -358,7 +364,7 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
                 Clinical chart
               </Button>
             )}
-            {!archived && (
+            {!archived && !r.paper && (
               <Button
                 icon={scan.isPending ? <Spinner size="tiny" aria-hidden /> : <ScanRegular />}
                 disabled={scan.isPending}
@@ -401,8 +407,23 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
               </Badge>
             )}
           </Fact>
-          <Fact label="Admitted">{r.admittedAt ? formatDateTime(r.admittedAt) : '—'}</Fact>
-          <Fact label="Discharged">{r.dischargedAt ? formatDateTime(r.dischargedAt) : '—'}</Fact>
+          {r.paper ? (
+            <>
+              <Fact label="Paper file">{r.paper.fileNumber}</Fact>
+              <Fact label={r.paper.isInpatient ? 'Admitted' : 'Visit day'}>
+                {r.paper.episodeFrom ? formatDateOnly(r.paper.episodeFrom) : '—'}
+              </Fact>
+              {r.paper.isInpatient && (
+                <Fact label="Discharged">{r.paper.episodeTo ? formatDateOnly(r.paper.episodeTo) : '—'}</Fact>
+              )}
+              <Fact label="The file holds">{r.paper.note ?? '—'}</Fact>
+            </>
+          ) : (
+            <>
+              <Fact label="Admitted">{r.admittedAt ? formatDateTime(r.admittedAt) : '—'}</Fact>
+              <Fact label="Discharged">{r.dischargedAt ? formatDateTime(r.dischargedAt) : '—'}</Fact>
+            </>
+          )}
           <Fact label="Complete by">{r.dueDate ? formatDateOnly(r.dueDate) : '—'}</Fact>
           <Fact label="Completed">{r.completedAt ? formatDateTime(r.completedAt) : '—'}</Fact>
           <Fact label="Keep until">

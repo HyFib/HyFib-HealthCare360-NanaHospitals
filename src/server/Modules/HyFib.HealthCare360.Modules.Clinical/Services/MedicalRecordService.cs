@@ -35,6 +35,11 @@ public sealed class MedicalRecordService(
             return allowed.Error!;
         }
 
+        if (request.Paper is { } paper)
+        {
+            return await CreatePaperAsync(facilityId, request, paper, ct);
+        }
+
         // The chart files the patient's own episode: an encounter or visit of someone else would put their record in it.
         if ((request.EncounterId is { } encounterId && !await db.Set<Encounter>().AnyAsync(e => e.Id == encounterId && e.PatientId == request.PatientId, ct))
             || (request.VisitId is { } ownVisitId && !await db.Set<Visit>().AnyAsync(v => v.Id == ownVisitId && v.PatientId == request.PatientId, ct)))
@@ -60,6 +65,36 @@ public sealed class MedicalRecordService(
             AssignedPractitionerId = request.AssignedPractitionerId,
             DueDate = request.DueDate,
             IsMlc = isMlc,
+        };
+        db.Add(chart);
+        await db.SaveChangesAsync(ct);
+        return await ToDtoAsync(chart, ct);
+    }
+
+    /// <summary>
+    /// A chart of a file that exists only on paper. Its number is unique in the facility (it is how the file is found on
+    /// the shelf); the file's own number is kept as written, in capitals.
+    /// </summary>
+    private async Task<Result<MedicalRecordDto>> CreatePaperAsync(Guid facilityId, CreateMedicalRecordRequest request, PaperChartDetails paper, CancellationToken ct)
+    {
+        var number = paper.FileNumber.Trim().ToUpperInvariant();
+        if (await Charts().AnyAsync(m => m.FacilityId == facilityId && m.PaperFileNumber == number, ct))
+        {
+            return Error.Conflict("chart.paper_exists", $"A chart for paper file {number} already exists.");
+        }
+
+        var chart = new MedicalRecord
+        {
+            FacilityId = facilityId,
+            PatientId = request.PatientId,
+            PaperFileNumber = number,
+            IsPaperInpatient = paper.IsInpatient,
+            PaperEpisodeFrom = paper.EpisodeFrom,
+            PaperEpisodeTo = paper.IsInpatient ? paper.EpisodeTo : null,
+            PaperNote = string.IsNullOrWhiteSpace(paper.Note) ? null : paper.Note.Trim(),
+            AssignedPractitionerId = request.AssignedPractitionerId,
+            DueDate = request.DueDate,
+            IsMlc = request.IsMlc,
         };
         db.Add(chart);
         await db.SaveChangesAsync(ct);
@@ -101,14 +136,21 @@ public sealed class MedicalRecordService(
             : await ChangeAsync(chartId.Value, chart => chart.ResolveDeficiency(deficiencyId, currentUser.UserId, note, time.GetUtcNow()), ct);
     }
 
-    /// <summary>Completes the chart; its retention date follows the schedule in force (SRS PRV-02, set in Privacy).</summary>
+    /// <summary>
+    /// Completes the chart; its retention date follows the schedule in force (SRS PRV-02, set in Privacy), counted from
+    /// discharge, a paper file's episode, or (an out-patient chart of the record) today.
+    /// </summary>
     public async Task<Result<MedicalRecordDto>> CompleteAsync(Guid chartId, CancellationToken ct)
     {
         var outPatientYears = await RecordRetention.YearsAsync(settings, inpatient: false, ct);
         var inPatientYears = await RecordRetention.YearsAsync(settings, inpatient: true, ct);
-        return await ChangeAsync(chartId, chart => chart.Complete(currentUser.UserId, time.GetUtcNow(),
-            chart.DischargedAt is { } discharged ? ClinicalClock.LocalDate(discharged) : time.Today(), outPatientYears, inPatientYears), ct);
+        return await ChangeAsync(chartId, chart => chart.Complete(currentUser.UserId, time.GetUtcNow(), RetentionFrom(chart), outPatientYears, inPatientYears), ct);
     }
+
+    private DateOnly RetentionFrom(MedicalRecord chart) =>
+        chart.DischargedAt is { } discharged ? ClinicalClock.LocalDate(discharged)
+        : chart.IsPaper ? chart.PaperEpisodeTo ?? chart.PaperEpisodeFrom ?? time.Today()
+        : time.Today();
 
     public Task<Result<MedicalRecordDto>> ArchiveAsync(Guid chartId, string location, CancellationToken ct) =>
         ChangeAsync(chartId, chart => chart.Archive(location, time.GetUtcNow()), ct);
@@ -128,6 +170,11 @@ public sealed class MedicalRecordService(
         if (chart.Status == MedicalRecordStatus.Archived)
         {
             return Error.Rule("chart.archived", "This chart is archived.");
+        }
+
+        if (chart.IsPaper)
+        {
+            return Error.Rule("chart.paper", "A paper chart has no electronic record to scan. Check the file and raise its deficiencies by hand.");
         }
 
         var now = time.GetUtcNow();
@@ -162,8 +209,12 @@ public sealed class MedicalRecordService(
                     d.AssignedPractitionerId is { } p ? names.GetValueOrDefault(p) : null, d.DueDate, d.RaisedAt, d.IsSystemDetected, d.ResolvedAt,
                     d.ResolutionNote))
                 .ToList(),
-            m.Version);
+            m.Version,
+            Paper(m));
     }
+
+    public static PaperChartDto? Paper(MedicalRecord m) =>
+        m.PaperFileNumber is { } number ? new PaperChartDto(number, m.IsPaperInpatient, m.PaperEpisodeFrom, m.PaperEpisodeTo, m.PaperNote) : null;
 
     // ------------------------------------------------------------------ record requests
 

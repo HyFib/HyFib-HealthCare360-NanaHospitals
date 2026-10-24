@@ -24,7 +24,10 @@ public enum DeficiencyType
 
 /// <summary>
 /// MRD chart of one admission or encounter (MRD-03/05): completeness, deficiencies assigned to doctors, completion
-/// and archival with a retention date (PRV-02: OP 3 years, IP 5 years, medico-legal cases permanently).
+/// and archival with a retention date (PRV-02: OP 3 years, IP 5 years, medico-legal cases permanently). A paper chart
+/// tracks a file that exists only on paper (an episode from before the system, or written up by hand when it was down):
+/// it has the file's own number and the episode's dates instead of an admission or encounter, and is issued, returned,
+/// completed, archived and kept like any other chart.
 /// </summary>
 public sealed class MedicalRecord : AuditableEntity, IFacilityScoped
 {
@@ -33,11 +36,28 @@ public sealed class MedicalRecord : AuditableEntity, IFacilityScoped
 
     public const int InPatientRetentionYears = RecordRetention.MinimumInpatientYears;
 
+    public const int PaperFileNumberMaxLength = 40;
+
     public Guid FacilityId { get; set; }
     public Guid PatientId { get; set; }
     public Guid? EncounterId { get; set; }
     public Guid? AdmissionId { get; set; }
     public Guid? VisitId { get; set; }
+
+    /// <summary>The number written on a paper chart's file (its old IP or MRD number); null for a chart of the electronic record.</summary>
+    public string? PaperFileNumber { get; set; }
+
+    /// <summary>A paper chart of an in-patient stay (kept as long as in-patient records); otherwise an out-patient episode.</summary>
+    public bool IsPaperInpatient { get; set; }
+
+    /// <summary>A paper chart's episode: the visit or admission day, and the discharge day of a stay.</summary>
+    public DateOnly? PaperEpisodeFrom { get; set; }
+
+    public DateOnly? PaperEpisodeTo { get; set; }
+
+    /// <summary>What the paper file holds (volumes, department, condition), as MRD wrote it.</summary>
+    public string? PaperNote { get; set; }
+
     public DateTimeOffset? AdmittedAt { get; set; }
     public DateTimeOffset? DischargedAt { get; set; }
     public MedicalRecordStatus Status { get; private set; }
@@ -59,7 +79,9 @@ public sealed class MedicalRecord : AuditableEntity, IFacilityScoped
 
     public List<ChartDeficiency> Deficiencies { get; set; } = [];
 
-    public bool IsInpatient => AdmissionId is not null;
+    public bool IsPaper => PaperFileNumber is not null;
+
+    public bool IsInpatient => AdmissionId is not null || IsPaperInpatient;
 
     public int OpenDeficiencyCount => Deficiencies.Count(d => d.IsOpen);
 

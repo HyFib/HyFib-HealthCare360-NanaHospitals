@@ -106,12 +106,18 @@ internal sealed class MedicalRecordConfiguration : IEntityTypeConfiguration<Medi
     {
         b.ToTable("medical_records", ClinicalSchema.Name);
         b.Property(x => x.ArchiveLocation).HasMaxLength(200);
+        b.Property(x => x.PaperFileNumber).HasMaxLength(MedicalRecord.PaperFileNumberMaxLength);
+        b.Property(x => x.PaperNote).HasMaxLength(300);
+        b.Ignore(x => x.IsPaper);
         b.Ignore(x => x.IsInpatient);
         b.Ignore(x => x.OpenDeficiencyCount);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(x => x.Deficiencies).WithOne().HasForeignKey(x => x.MedicalRecordId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.AdmissionId).IsUnique();
         b.HasIndex(x => x.EncounterId).IsUnique();
+
+        // One chart per paper file in a facility: the file's number is how MRD finds it on the shelf.
+        b.HasIndex(x => new { x.FacilityId, x.PaperFileNumber }).IsUnique().HasFilter("paper_file_number IS NOT NULL");
         b.HasIndex(x => new { x.Status, x.DueDate });
         b.HasIndex(x => x.PatientId);
         b.HasIndex(x => x.RetainUntil);

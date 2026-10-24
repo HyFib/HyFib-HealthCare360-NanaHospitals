@@ -17,12 +17,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, todayIso } from '@hc360/core';
 import {
   applyServerErrors,
+  ChoiceField,
   CloseRequestScope,
   DateField,
   FormGrid,
   LookupField,
   SelectField,
   SwitchField,
+  TextAreaField,
+  TextField,
   useCloseRequests,
   useNotify,
   useUnsavedChanges,
@@ -42,23 +45,52 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
-const chartSchema = z.object({
-  patient: z.custom<PickedPatient | null>((patient) => patient !== null, 'Find the patient.'),
-  encounterId: z.custom<string | null>(
-    (id) => typeof id === 'string' && id.length > 0,
-    'Choose the encounter the chart is for.',
-  ),
-  assignedPractitionerId: z.string().nullable(),
-  dueDate: z.string().nullable(),
-  isMlc: z.boolean(),
-});
+const chartSchema = z
+  .object({
+    patient: z.custom<PickedPatient | null>((patient) => patient !== null, 'Find the patient.'),
+    /** A chart of an encounter in the record, or of a file that exists only on paper. */
+    kind: z.enum(['encounter', 'paper']),
+    encounterId: z.string().nullable(),
+    fileNumber: z.string().trim().max(40, 'Use at most 40 characters.'),
+    episode: z.enum(['OutPatient', 'InPatient']),
+    episodeFrom: z.string().nullable(),
+    episodeTo: z.string().nullable(),
+    note: z.string().trim().max(300, 'Use at most 300 characters.'),
+    assignedPractitionerId: z.string().nullable(),
+    dueDate: z.string().nullable(),
+    isMlc: z.boolean(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.kind === 'encounter') {
+      if (!v.encounterId) {
+        ctx.addIssue({ code: 'custom', path: ['encounterId'], message: 'Choose the encounter the chart is for.' });
+      }
+      return;
+    }
+    if (!v.fileNumber) {
+      ctx.addIssue({ code: 'custom', path: ['fileNumber'], message: 'Enter the number on the file.' });
+    } else if (!/^[A-Za-z0-9][A-Za-z0-9/.-]*$/.test(v.fileNumber)) {
+      ctx.addIssue({ code: 'custom', path: ['fileNumber'], message: 'Use letters, digits, / . and -.' });
+    }
+    if (!v.episodeFrom) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['episodeFrom'],
+        message: v.episode === 'InPatient' ? 'Enter the admission day.' : 'Enter the visit day.',
+      });
+    } else if (v.episode === 'InPatient' && v.episodeTo && v.episodeTo < v.episodeFrom) {
+      ctx.addIssue({ code: 'custom', path: ['episodeTo'], message: 'The discharge day is on or after admission.' });
+    }
+  });
 
 type ChartValues = z.infer<typeof chartSchema>;
 
 /**
  * Opens a chart for an out-patient encounter (MRD-03): admissions get theirs automatically, but MRD also tracks the
- * file of an OP, emergency or day-care visit it keeps (a medico-legal case, a procedure done as an OP). The server
- * refuses a second chart for the same encounter and says so.
+ * file of an OP, emergency or day-care visit it keeps (a medico-legal case, a procedure done as an OP). Or a chart of
+ * a file that exists only on paper (an episode from before the system, or written by hand while it was down): its
+ * number, its episode's days and what it holds; it is issued, returned and archived like any other. The server refuses
+ * a second chart for the same encounter or paper file and says so.
  */
 export function NewChartDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const closing = useCloseRequests({ onClose });
@@ -78,14 +110,46 @@ function NewChartForm({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const form = useForm<ChartValues>({
     resolver: zodResolver(chartSchema),
-    defaultValues: { patient: null, encounterId: null, assignedPractitionerId: null, dueDate: null, isMlc: false },
+    defaultValues: {
+      patient: null,
+      kind: 'encounter',
+      encounterId: null,
+      fileNumber: '',
+      episode: 'OutPatient',
+      episodeFrom: null,
+      episodeTo: null,
+      note: '',
+      assignedPractitionerId: null,
+      dueDate: null,
+      isMlc: false,
+    },
   });
   const patient = useWatch({ control: form.control, name: 'patient' });
+  const kind = useWatch({ control: form.control, name: 'kind' });
+  const episode = useWatch({ control: form.control, name: 'episode' });
   const encounters = useQuery({ ...emrQueries.encounters(patient?.id ?? ''), enabled: Boolean(patient) });
   const choices = chartableEncounters(encounters.data?.items ?? []);
 
   const save = useMutation({
     mutationFn: (v: ChartValues) => {
+      if (v.kind === 'paper') {
+        return mrdApi.createRecord({
+          patientId: v.patient!.id,
+          encounterId: null,
+          admissionId: null,
+          visitId: null,
+          assignedPractitionerId: v.assignedPractitionerId,
+          dueDate: v.dueDate,
+          isMlc: v.isMlc,
+          paper: {
+            fileNumber: v.fileNumber,
+            isInpatient: v.episode === 'InPatient',
+            episodeFrom: v.episodeFrom!,
+            episodeTo: v.episode === 'InPatient' ? v.episodeTo : null,
+            note: v.note || null,
+          },
+        });
+      }
       const encounter = choices.find((e) => e.id === v.encounterId);
       return mrdApi.createRecord({
         patientId: v.patient!.id,
@@ -99,7 +163,10 @@ function NewChartForm({ onClose }: { onClose: () => void }) {
     },
     onSuccess: (chart) => {
       void queryClient.invalidateQueries({ queryKey: mrdKeys.all });
-      notify.success('Chart opened', 'Add its deficiencies, or scan it to find them.');
+      notify.success(
+        'Chart opened',
+        chart.paper ? 'Add the deficiencies you find in the file.' : 'Add its deficiencies, or scan it to find them.',
+      );
       // Saved: the chart is opened without asking about leaving unsaved changes.
       guard.close();
       void navigate({ to: '/mrd/records/$recordId', params: { recordId: chart.id } });
@@ -107,6 +174,8 @@ function NewChartForm({ onClose }: { onClose: () => void }) {
     onError: (error) => {
       if (isApiError(error) && error.code === 'chart.exists') {
         form.setError('encounterId', { message: error.userMessage });
+      } else if (isApiError(error) && error.code === 'chart.paper_exists') {
+        form.setError('fileNumber', { message: error.userMessage });
       } else if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not open the chart');
       }
@@ -121,7 +190,7 @@ function NewChartForm({ onClose }: { onClose: () => void }) {
         <DialogContent className={styles.form}>
           <Caption1 className={styles.muted}>
             In-patient charts are opened automatically at admission. Open one here for an out-patient, emergency or
-            check-up encounter whose file MRD keeps.
+            check-up encounter whose file MRD keeps, or for a file that exists only on paper.
           </Caption1>
           <Controller
             control={form.control}
@@ -139,7 +208,59 @@ function NewChartForm({ onClose }: { onClose: () => void }) {
               />
             )}
           />
-          {patient &&
+          <ChoiceField
+            control={form.control}
+            name="kind"
+            label="Chart of"
+            options={[
+              { value: 'encounter', label: 'An encounter in the record' },
+              { value: 'paper', label: 'A paper file' },
+            ]}
+          />
+          {kind === 'paper' && (
+            <>
+              <FormGrid columns={2}>
+                <TextField
+                  control={form.control}
+                  name="fileNumber"
+                  label="File number"
+                  hint="As written on the file (old IP or MRD number)"
+                  required
+                />
+                <ChoiceField
+                  control={form.control}
+                  name="episode"
+                  label="Episode"
+                  options={[
+                    { value: 'OutPatient', label: 'Out-patient' },
+                    { value: 'InPatient', label: 'In-patient stay' },
+                  ]}
+                />
+                <DateField
+                  control={form.control}
+                  name="episodeFrom"
+                  label={episode === 'InPatient' ? 'Admitted on' : 'Visit day'}
+                  required
+                  max={todayIso()}
+                />
+                {episode === 'InPatient' && (
+                  <DateField control={form.control} name="episodeTo" label="Discharged on" max={todayIso()} />
+                )}
+              </FormGrid>
+              <TextAreaField
+                control={form.control}
+                name="note"
+                label="What the file holds"
+                hint="Volumes, department, condition of the file"
+              />
+              <Caption1 className={styles.muted}>
+                The retention period counts from the episode. A paper chart has no record to scan: raise its
+                deficiencies by hand.
+              </Caption1>
+            </>
+          )}
+          {kind === 'encounter' &&
+            patient &&
             (encounters.isLoading ? (
               <Spinner size="tiny" label="Finding the patient's encounters…" />
             ) : encounters.error ? (
@@ -172,7 +293,7 @@ function NewChartForm({ onClose }: { onClose: () => void }) {
               control={form.control}
               name="assignedPractitionerId"
               label="Responsible doctor"
-              hint="The encounter's doctor when left empty"
+              hint={kind === 'encounter' ? "The encounter's doctor when left empty" : undefined}
               load={searchPractitioners}
             />
             <DateField control={form.control} name="dueDate" label="Complete by" min={todayIso()} />
