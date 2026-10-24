@@ -371,7 +371,7 @@ public sealed class TransfusionService(
         await notifications.NotifyPermissionHoldersAsync(SpecialtyCarePermissions.BloodBankReactionsInvestigate, issue.FacilityId,
             reaction.IsSerious ? "Serious transfusion reaction" : "Transfusion reaction reported",
             $"Unit {issue.UnitNumber}: {reaction.Severity} reaction reported. Investigate and send the bag and post-transfusion sample to the blood bank.",
-            $"/blood-bank/reactions/{reaction.Id}", "bloodbank", reaction.IsSerious ? "critical" : "warning", ct);
+            "/blood-bank/reactions?status=Reported", "bloodbank", reaction.IsSerious ? "critical" : "warning", ct);
         return reaction;
     }
 

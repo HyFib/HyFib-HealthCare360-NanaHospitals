@@ -159,7 +159,7 @@ public sealed class MaintenanceService(
             asset.FacilityId,
             $"Breakdown {ticket.Number}: {asset.Name} ({asset.AssetTag})",
             $"{priority} priority. {ticket.Issue}",
-            $"/assets/tickets/{ticket.Id}",
+            $"/assets/tickets?id={ticket.Id}",
             "assets",
             priority >= TicketPriority.High ? "critical" : "warning",
             ct);

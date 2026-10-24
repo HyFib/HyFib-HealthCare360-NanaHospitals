@@ -41,6 +41,7 @@ import { useFormat } from '@/i18n/useFormat';
 import { useNow } from '@/lib/hooks';
 import { useCallActivity } from '@/lib/sessionEnd';
 import type { IceServerDto, TelehealthMessageDto } from '@/lib/types';
+import { ChatLog } from './ChatLog';
 import type { DeviceChoice } from './DeviceCheck';
 import { classifyJoinError, detectPlatform, type JoinProblem } from './media';
 import { PatientCall, type PatientCallOptions, type PatientCallState } from './PatientCall';
@@ -247,17 +248,6 @@ const useStyles = makeStyles({
   chatButton: { position: 'relative' },
   badge: { position: 'absolute', top: '-2px', right: '-2px' },
   tapToHear: { position: 'absolute', zIndex: 3, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' },
-  chatList: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' },
-  bubble: {
-    maxWidth: '85%',
-    padding: '8px 12px',
-    borderRadius: tokens.borderRadiusXLarge,
-    backgroundColor: tokens.colorNeutralBackground3,
-    alignSelf: 'flex-start',
-  },
-  mine: { alignSelf: 'flex-end', backgroundColor: tokens.colorBrandBackground2 },
-  bubbleMeta: { fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 },
-  bubbleText: { margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
   srOnly: {
     position: 'absolute',
     width: '1px',
@@ -715,9 +705,7 @@ function ChatSheet({
   messages: TelehealthMessageDto[];
   onSend: (text: string) => Promise<void>;
 }) {
-  const styles = useStyles();
   const t = useT();
-  const f = useFormat();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -788,19 +776,7 @@ function ChatSheet({
       {messages.length === 0 ? (
         <p style={{ margin: 0 }}>{t('video.chat.empty')}</p>
       ) : (
-        <ul className={styles.chatList} role="log" aria-live="polite">
-          {messages.map((message) => {
-            const mine = message.senderRole !== 'Clinician';
-            return (
-              <li key={message.id} className={mergeClasses(styles.bubble, mine && styles.mine)}>
-                <span className={styles.bubbleMeta}>
-                  {mine ? t('video.call.you') : message.senderName} · {f.time(message.sentAt)}
-                </span>
-                <p className={styles.bubbleText}>{message.text}</p>
-              </li>
-            );
-          })}
-        </ul>
+        <ChatLog messages={messages} live />
       )}
     </Sheet>
   );

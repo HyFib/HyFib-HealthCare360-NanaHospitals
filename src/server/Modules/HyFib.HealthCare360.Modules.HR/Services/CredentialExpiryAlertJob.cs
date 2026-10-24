@@ -91,7 +91,7 @@ internal sealed class CredentialExpiryAlertJob(
 
         foreach (var item in due.Where(d => d.UserId is not null))
         {
-            await notifications.NotifyUsersAsync([item.UserId!.Value], Title(item), Describe(item), "/hr/me/credentials", "hr",
+            await notifications.NotifyUsersAsync([item.UserId!.Value], Title(item), Describe(item), "/hr/me", "hr",
                 item.Stage == CredentialExpiryStage.DueIn30Days ? "info" : "warning", ct);
         }
 

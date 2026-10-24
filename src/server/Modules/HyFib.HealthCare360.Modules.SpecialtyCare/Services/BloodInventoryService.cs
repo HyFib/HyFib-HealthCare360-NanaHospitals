@@ -92,7 +92,7 @@ public sealed class BloodInventoryService(HospitalDbContext db, INotificationSer
             var expired = expiredByFacility.GetValueOrDefault(facilityId);
             var expiring = expiringByFacility.GetValueOrDefault(facilityId);
             await notifications.NotifyPermissionHoldersAsync(SpecialtyCarePermissions.BloodBankInventory, facilityId, "Blood stock expiry",
-                $"{expired} unit(s) expired today; {expiring} unit(s) expire within 3 days.", "/blood-bank/inventory", "bloodbank",
+                $"{expired} unit(s) expired today; {expiring} unit(s) expire within 3 days.", "/blood-bank/units", "bloodbank",
                 expired > 0 ? "warning" : "info", ct);
         }
 
