@@ -261,6 +261,9 @@ export const FRONT_OFFICE_DASHBOARD: FrontOfficeDashboard = {
 /** The hospital's calendar date (IST) today, "yyyy-MM-dd". */
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 
+/** Seven in the morning today (IST), before the OPD's first slot. */
+export const CALENDAR_MORNING = `${today}T07:00:00+05:30`;
+
 export const DAY_END: DayEndReport = {
   date: today,
   counter: null,

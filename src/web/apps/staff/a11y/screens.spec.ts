@@ -13,6 +13,7 @@ import { ASHA, BILLING_ANSWERS, DRAFT_ID } from '../src/test/accessibility/fixtu
 import { CLINICAL_ANSWERS, ENCOUNTER_ID } from '../src/test/accessibility/fixtures/clinical';
 import {
   CALENDAR_ANSWERS,
+  CALENDAR_MORNING,
   FRONT_DESK_HOME_ANSWERS,
   FRONT_DESK_USER,
   FRONT_OFFICE_ANSWERS,
@@ -35,6 +36,8 @@ interface Screen {
   /** What shows once the screen has its data. */
   ready: (page: Page) => Locator;
   check?: ScreenCheckOptions;
+  /** The time the browser's clock shows, for a screen that draws what depends on the hour. */
+  clock?: string;
 }
 
 const SCREENS: Screen[] = [
@@ -93,6 +96,9 @@ const SCREENS: Screen[] = [
     path: `/scheduling/calendar?departmentId=${OPD.id}`,
     answers: CALENDAR_ANSWERS,
     ready: (page) => page.getByText('Ravi Shankar').first(),
+    // Before the OPD opens: every slot is still free to book and the red "now" line, drawn over the slot of the
+    // current minute, is not on the grid (axe cannot tell a slot's colours under it).
+    clock: CALENDAR_MORNING,
   },
   {
     name: "doctor's worklist",
@@ -137,7 +143,7 @@ const FRAME: Pick<Screen, 'path' | 'answers' | 'ready'> = {
 async function open(
   page: Page,
   theme: BrowserTheme,
-  { path, answers, user = STAFF_USER, ready }: Pick<Screen, 'path' | 'answers' | 'user' | 'ready'>,
+  { path, answers, user = STAFF_USER, ready, clock }: Pick<Screen, 'path' | 'answers' | 'user' | 'ready' | 'clock'>,
 ) {
   const server = createFakeFetch({
     ...answers,
@@ -149,6 +155,9 @@ async function open(
   });
   await prepareTheme(page, theme, 'stored');
   await serveFakeApi(page, server.fetch);
+  if (clock) {
+    await page.clock.setFixedTime(new Date(clock));
+  }
   await page.goto(path);
   await expect(ready(page)).toBeVisible();
   await page.waitForLoadState('networkidle');
