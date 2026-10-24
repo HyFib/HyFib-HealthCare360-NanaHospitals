@@ -95,6 +95,7 @@ const CHART: MedicalRecordDto = {
   openDeficiencies: 0,
   deficiencies: [],
   version: 1,
+  paper: null,
 };
 
 /** The server's refusal of a request, with its error code. */
@@ -204,6 +205,40 @@ describe('MRD screens: procedure catalogue and new charts', SCREEN_TESTS, () => 
     );
   });
 
+  it('finds a switched-off code and switches it back on', async () => {
+    const user = userEvent.setup();
+    const retired: ProcedureCodeDto = {
+      ...CHOLE,
+      id: id('003'),
+      code: '0FB44ZZ',
+      title: 'Excision of gallbladder',
+      isActive: false,
+    };
+    server = fakeServer({
+      'GET /api/v1/mrd/procedure-codes': (request: FakeRequest) =>
+        request.url.searchParams.get('includeInactive') === 'true' ? [CHOLE, retired] : [CHOLE],
+      'PUT /api/v1/mrd/procedure-codes/*': (request: FakeRequest) => ({ ...retired, ...(request.body as object) }),
+    });
+    openScreen('/mrd/procedure-codes');
+    const table = await screen.findByRole('table', { name: 'Procedure codes' }, SLOW);
+    await within(table).findByText('0FT44ZZ', {}, SLOW);
+    expect(within(table).queryByText('0FB44ZZ')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('switch', { name: 'Show switched-off codes' }));
+    await user.click(await within(table).findByText('0FB44ZZ', {}, SLOW));
+    expect(within(table).getByText('Switched off')).toBeInTheDocument();
+    const drawer = await screen.findByRole('dialog', { name: '0FB44ZZ' }, SLOW);
+    const active = within(drawer).getByRole('switch', { name: 'Active (offered in searches)' });
+    expect(active).not.toBeChecked();
+    await user.click(active);
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(server.requests.filter((r) => r.method === 'PUT').map((r) => [r.path, r.body])).toEqual([
+        [`/api/v1/mrd/procedure-codes/${retired.id}`, expect.objectContaining({ isActive: true, version: 4 })],
+      ]),
+    );
+  });
+
   it('shows the server’s refusal of a duplicate code on the code field', async () => {
     const user = userEvent.setup();
     server = fakeServer({
@@ -223,6 +258,75 @@ describe('MRD screens: procedure catalogue and new charts', SCREEN_TESTS, () => 
     expect(
       await within(drawer).findByText('0FT44ZZ (ICD-10-PCS) is already in the catalogue.', {}, SLOW),
     ).toBeInTheDocument();
+  });
+
+  it('opens a chart for a paper file: its number, the stay’s days and what it holds', async () => {
+    const user = userEvent.setup();
+    server = fakeServer({
+      'GET /api/v1/mrd/records': paged([]),
+      'GET /api/v1/mrd/records/*': {
+        ...CHART,
+        encounterId: null,
+        paper: {
+          fileNumber: 'IP/2016/431',
+          isInpatient: true,
+          episodeFrom: '2016-03-02',
+          episodeTo: '2016-03-09',
+          note: null,
+        },
+      },
+      'POST /api/v1/mrd/records': (request: FakeRequest) => ({
+        ...CHART,
+        encounterId: null,
+        paper: (request.body as { paper: unknown }).paper,
+      }),
+      'GET /api/v1/patients': paged([PATIENT]),
+      'GET /api/v1/emr/patients/*': paged([OP, IP]),
+      'GET /api/v1/masters/lookups/practitioners': [],
+    });
+    openScreen('/mrd/records');
+    await user.click(await screen.findByRole('button', { name: 'New chart' }, SLOW));
+    const dialog = await screen.findByRole('dialog', { name: 'New chart' }, SLOW);
+    await user.type(within(dialog).getByRole('combobox', { name: /Patient/ }), 'Asha');
+    await user.click(await screen.findByRole('option', { name: /Asha Kulkarni/ }, SLOW));
+    await user.click(within(dialog).getByRole('radio', { name: 'A paper file' }));
+    // No encounter to choose: a paper chart is of the file.
+    expect(within(dialog).queryByRole('combobox', { name: /Encounter/ })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Open chart' }));
+    expect(await within(dialog).findByText('Enter the number on the file.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Enter the visit day.')).toBeInTheDocument();
+    expect(sent('POST', '/api/v1/mrd/records')).toEqual([]);
+
+    await user.type(within(dialog).getByRole('textbox', { name: /^File number/ }), 'IP/2016/431');
+    await user.click(within(dialog).getByRole('radio', { name: 'In-patient stay' }));
+    await user.type(within(dialog).getByLabelText(/^Admitted on/), '2016-03-02');
+    await user.type(within(dialog).getByLabelText(/^Discharged on/), '2016-03-09');
+    await user.click(within(dialog).getByRole('button', { name: 'Open chart' }));
+
+    await waitFor(() =>
+      expect(sent('POST', '/api/v1/mrd/records')).toEqual([
+        {
+          patientId: PATIENT.id,
+          encounterId: null,
+          admissionId: null,
+          visitId: null,
+          assignedPractitionerId: null,
+          dueDate: null,
+          isMlc: false,
+          paper: {
+            fileNumber: 'IP/2016/431',
+            isInpatient: true,
+            episodeFrom: '2016-03-02',
+            episodeTo: '2016-03-09',
+            note: null,
+          },
+        },
+      ]),
+    );
+    // A paper chart has no record to scan for gaps.
+    expect(await screen.findByText('IP/2016/431', {}, SLOW)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Check for gaps' })).not.toBeInTheDocument();
   });
 
   it('opens a chart for a patient’s out-patient encounter and goes to it', async () => {

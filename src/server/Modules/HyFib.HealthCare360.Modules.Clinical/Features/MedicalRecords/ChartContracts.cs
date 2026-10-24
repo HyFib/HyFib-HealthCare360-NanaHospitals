@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.MedicalRecords;
 
+/// <summary>A chart of an admission or encounter, or (with <see cref="Paper"/>) of a file that exists only on paper.</summary>
 public sealed record CreateMedicalRecordRequest(
     Guid PatientId,
     Guid? EncounterId,
@@ -10,7 +11,16 @@ public sealed record CreateMedicalRecordRequest(
     Guid? VisitId,
     Guid? AssignedPractitionerId,
     DateOnly? DueDate,
-    bool IsMlc);
+    bool IsMlc,
+    PaperChartDetails? Paper = null);
+
+/// <summary>
+/// A paper file: the number written on it, whether it is of an in-patient stay, the episode's day (and discharge day of
+/// a stay), and what it holds. The retention period counts from the episode, not from the day the chart was entered.
+/// </summary>
+public sealed record PaperChartDetails(string FileNumber, bool IsInpatient, DateOnly EpisodeFrom, DateOnly? EpisodeTo, string? Note);
+
+public sealed record PaperChartDto(string FileNumber, bool IsInpatient, DateOnly? EpisodeFrom, DateOnly? EpisodeTo, string? Note);
 
 public sealed record AddDeficiencyRequest(DeficiencyType Type, string Description, Guid? AssignedPractitionerId, DateOnly? DueDate);
 
@@ -52,7 +62,8 @@ public sealed record MedicalRecordDto(
     DateOnly? RetainUntil,
     int OpenDeficiencies,
     IReadOnlyList<ChartDeficiencyDto> Deficiencies,
-    uint Version);
+    uint Version,
+    PaperChartDto? Paper = null);
 
 public sealed record CreateRecordRequestRequest(
     Guid PatientId,
@@ -94,11 +105,31 @@ public sealed record RecordRequestDto(
 
 public sealed class CreateMedicalRecordRequestValidator : AbstractValidator<CreateMedicalRecordRequest>
 {
-    public CreateMedicalRecordRequestValidator()
+    public CreateMedicalRecordRequestValidator(TimeProvider time)
     {
         RuleFor(x => x.PatientId).NotEmpty();
-        RuleFor(x => x).Must(x => x.EncounterId is not null || x.AdmissionId is not null)
-            .WithName("admissionId").WithMessage("A chart tracks either an admission or an encounter.");
+        RuleFor(x => x).Must(x => x.EncounterId is not null || x.AdmissionId is not null || x.Paper is not null)
+            .WithName("admissionId").WithMessage("A chart tracks an admission, an encounter or a paper file.");
+        RuleFor(x => x).Must(x => x.Paper is null || (x.EncounterId is null && x.AdmissionId is null && x.VisitId is null))
+            .WithName("paper").WithMessage("A paper chart is of a file only: leave out the admission, encounter and visit.");
+        When(x => x.Paper is not null, () =>
+        {
+            RuleFor(x => x.Paper!.FileNumber).NotEmpty().MaximumLength(MedicalRecord.PaperFileNumberMaxLength)
+                .Matches("^[A-Za-z0-9][A-Za-z0-9/.-]*$").OverridePropertyName("paper.fileNumber")
+                .WithMessage("Enter the number on the file: letters, digits, / . and -.");
+            RuleFor(x => x.Paper!.EpisodeFrom).NotEmpty().OverridePropertyName("paper.episodeFrom")
+                .WithMessage("Enter the visit day, or the admission day of a stay.");
+            RuleFor(x => x.Paper!.EpisodeFrom).LessThanOrEqualTo(_ => time.Today()).OverridePropertyName("paper.episodeFrom")
+                .WithMessage("The episode cannot be in the future.");
+            // A stay's records are kept from discharge, so a stay's file says when it ended.
+            RuleFor(x => x.Paper!.EpisodeTo).NotNull().When(x => x.Paper!.IsInpatient).OverridePropertyName("paper.episodeTo")
+                .WithMessage("Enter the discharge day: the stay's records are kept from it.");
+            RuleFor(x => x.Paper!.EpisodeTo).Must((x, to) => to is null || (to >= x.Paper!.EpisodeFrom && to <= time.Today()))
+                .OverridePropertyName("paper.episodeTo").WithMessage("The discharge day is on or after the admission day, and not in the future.");
+            RuleFor(x => x.Paper!.EpisodeTo).Null().When(x => !x.Paper!.IsInpatient).OverridePropertyName("paper.episodeTo")
+                .WithMessage("An out-patient episode is one day: leave the discharge day empty.");
+            RuleFor(x => x.Paper!.Note).SafeText(300).OverridePropertyName("paper.note");
+        });
     }
 }
 

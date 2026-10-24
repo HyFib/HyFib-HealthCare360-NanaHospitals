@@ -8513,6 +8513,28 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_mlc");
 
+                    b.Property<bool>("IsPaperInpatient")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_paper_inpatient");
+
+                    b.Property<DateOnly?>("PaperEpisodeFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("paper_episode_from");
+
+                    b.Property<DateOnly?>("PaperEpisodeTo")
+                        .HasColumnType("date")
+                        .HasColumnName("paper_episode_to");
+
+                    b.Property<string>("PaperFileNumber")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("paper_file_number");
+
+                    b.Property<string>("PaperNote")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("paper_note");
+
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
@@ -8567,6 +8589,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("RetainUntil")
                         .HasDatabaseName("ix_medical_records_retain_until");
+
+                    b.HasIndex("FacilityId", "PaperFileNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_medical_records_facility_id_paper_file_number")
+                        .HasFilter("paper_file_number IS NOT NULL");
 
                     b.HasIndex("Status", "DueDate")
                         .HasDatabaseName("ix_medical_records_status_due_date");

@@ -63,7 +63,11 @@ function ChartsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Patient" style={{ flex: '1 1 240px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="UHID, mobile or name" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="UHID, mobile, name or paper file number"
+              />
             </Field>
             <Field label="Status">
               <Select
@@ -118,7 +122,12 @@ function ChartsPage() {
               key: 'episode',
               header: 'Episode',
               priority: 'low',
-              render: (r) => (r.admissionId ? 'In-patient' : 'Out-patient'),
+              render: (r) =>
+                r.paper
+                  ? `Paper ${r.paper.fileNumber} · ${r.paper.isInpatient ? 'in-patient' : 'out-patient'}`
+                  : r.admissionId
+                    ? 'In-patient'
+                    : 'Out-patient',
             },
             {
               key: 'discharged',

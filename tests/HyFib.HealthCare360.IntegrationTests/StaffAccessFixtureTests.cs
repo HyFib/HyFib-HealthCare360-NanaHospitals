@@ -53,7 +53,10 @@ public sealed class StaffAccessFixtureTests(HospitalServer server)
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
-    /// <summary>The built-in roles' permissions (as seeded) and the permission rules of every GET under /api.</summary>
+    /// <summary>
+    /// The built-in roles' permissions (as seeded), the permission rules of every GET under /api, and of every write
+    /// (POST, PUT, PATCH, DELETE) as "METHOD path rules".
+    /// </summary>
     private string Describe()
     {
         var registry = server.Services.GetRequiredService<PermissionRegistry>();
@@ -66,6 +69,7 @@ public sealed class StaffAccessFixtureTests(HospitalServer server)
         }
 
         var reads = new SortedSet<string>(StringComparer.Ordinal);
+        var writes = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var endpoint in server.Services.GetServices<EndpointDataSource>().SelectMany(s => s.Endpoints).OfType<RouteEndpoint>())
         {
             var path = "/" + endpoint.RoutePattern.RawText?.Trim('/');
@@ -75,13 +79,23 @@ public sealed class StaffAccessFixtureTests(HospitalServer server)
                 .Where(p => p?.StartsWith(PermissionPolicyProvider.Prefix, StringComparison.Ordinal) == true)
                 .Select(p => p![PermissionPolicyProvider.Prefix.Length..])
                 .ToArray();
-            if (methods.Contains("GET") && path.StartsWith("/api/", StringComparison.Ordinal) && rules.Length > 0)
+            if (!path.StartsWith("/api/", StringComparison.Ordinal) || rules.Length == 0)
+            {
+                continue;
+            }
+
+            if (methods.Contains("GET"))
             {
                 reads.Add($"{path} {string.Join(',', rules)}");
             }
+
+            foreach (var method in methods.Where(m => m is "POST" or "PUT" or "PATCH" or "DELETE"))
+            {
+                writes.Add($"{method} {path} {string.Join(',', rules)}");
+            }
         }
 
-        return JsonSerializer.Serialize(new { roles, reads }, new JsonSerializerOptions { WriteIndented = true }).ReplaceLineEndings("\n") + "\n";
+        return JsonSerializer.Serialize(new { roles, reads, writes }, new JsonSerializerOptions { WriteIndented = true }).ReplaceLineEndings("\n") + "\n";
     }
 
     private static string RepositoryRoot()

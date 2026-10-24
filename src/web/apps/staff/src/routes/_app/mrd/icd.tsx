@@ -68,6 +68,8 @@ interface IcdSearch {
   billable?: boolean;
   /** ICD-11 codes saved from the WHO online search; ICD-10 when absent. */
   release?: 'icd11';
+  /** Also the codes switched off or withdrawn by an import, to switch one back on. */
+  inactive?: boolean;
 }
 
 export const Route = createFileRoute('/_app/mrd/icd')({
@@ -76,6 +78,7 @@ export const Route = createFileRoute('/_app/mrd/icd')({
     chapter: typeof s.chapter === 'string' && /^[IVXLC]+$/.test(s.chapter) ? s.chapter : undefined,
     billable: s.billable === true || s.billable === 'true' ? true : undefined,
     release: s.release === 'icd11' ? 'icd11' : undefined,
+    inactive: s.inactive === true || s.inactive === 'true' ? true : undefined,
   }),
   component: IcdBrowserPage,
 });
@@ -337,6 +340,7 @@ function onlineReleaseFor(term: string): string {
 /**
  * The ICD catalogue (MRD-01, INT-ICD): its state, chapters and blocks, ranked search including clinical shorthand, the
  * WHO online search, and for administrators the import of the hospital's WHO ICD-10 file or the CMS ICD-10-PCS file.
+ * Coders find a switched-off or withdrawn code with "Show switched-off codes" and switch it back on in its drawer.
  */
 function IcdBrowserPage() {
   const styles = useStyles();
@@ -355,6 +359,7 @@ function IcdBrowserPage() {
   const icd10 = release === ICD10_RELEASE;
   const status = useQuery(mrdQueries.catalogue());
   const classification = useQuery({ ...mrdQueries.classification(), enabled: icd10 });
+  const showInactive = canCode && (search.inactive ?? false);
   const results = useQuery(
     mrdQueries.icd(
       search.search ?? '',
@@ -362,6 +367,7 @@ function IcdBrowserPage() {
       search.billable ?? false,
       100,
       release,
+      showInactive,
     ),
   );
 
@@ -410,6 +416,15 @@ function IcdBrowserPage() {
             }
             label="Codable only"
           />
+          {canCode && (
+            <Switch
+              checked={showInactive}
+              onChange={(_, d) =>
+                void navigate({ search: (prev) => ({ ...prev, inactive: d.checked || undefined }), replace: true })
+              }
+              label="Show switched-off codes"
+            />
+          )}
           {(canCode || canRead) && (
             <Button
               icon={<GlobeSearchRegular />}
@@ -482,6 +497,22 @@ function IcdBrowserPage() {
             priority: 'low',
             render: (c) => <StatusBadge status={c.source} tone="informative" label={sourceLabel(c.source)} />,
           },
+          ...(showInactive
+            ? [
+                {
+                  key: 'status',
+                  header: 'Status',
+                  width: 120,
+                  render: (c: IcdCodeDto) => (
+                    <StatusBadge
+                      status={c.isActive ? 'Active' : 'Off'}
+                      tone={c.isActive ? 'success' : 'subtle'}
+                      label={c.isActive ? 'Active' : 'Switched off'}
+                    />
+                  ),
+                },
+              ]
+            : []),
         ]}
         emptyTitle={search.search ? 'No local code matches' : 'Type to search the catalogue'}
         emptyDescription={search.search ? 'Try other words or the code, or search the WHO service online.' : undefined}

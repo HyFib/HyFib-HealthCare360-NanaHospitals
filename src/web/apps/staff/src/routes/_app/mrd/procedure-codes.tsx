@@ -1,4 +1,4 @@
-import { Button, Caption1, Field, makeStyles, SearchBox, Text, tokens } from '@fluentui/react-components';
+import { Button, Caption1, Field, makeStyles, SearchBox, Switch, Text, tokens } from '@fluentui/react-components';
 import { AddRegular } from '@fluentui/react-icons';
 import { useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
@@ -12,11 +12,14 @@ import { ProcedureCodeDrawer } from '@/modules/mrd/ProcedureCodeDrawer';
 
 interface ProcedureSearch {
   search?: string;
+  /** Also the codes switched off, to switch one back on. */
+  inactive?: boolean;
 }
 
 export const Route = createFileRoute('/_app/mrd/procedure-codes')({
   validateSearch: (s: Record<string, unknown>): ProcedureSearch => ({
     search: typeof s.search === 'string' && s.search ? s.search.slice(0, 100) : undefined,
+    inactive: s.inactive === true || s.inactive === 'true' ? true : undefined,
   }),
   component: ProcedureCodesPage,
 });
@@ -30,7 +33,8 @@ const useStyles = makeStyles({
 /**
  * The procedure catalogue (MRD-01): the ICD-10-PCS codes and the hospital's own procedure codes coders and doctors
  * search, with ranked search by code, words or shorthand. MRD coders add codes and change them; the CMS ICD-10-PCS file
- * is imported on the ICD catalogue screen.
+ * is imported on the ICD catalogue screen. A code switched off (by hand, or withdrawn by an import) is found with
+ * "Show switched-off codes" and switched back on in its drawer; the change is audited like any other edit.
  */
 function ProcedureCodesPage() {
   const styles = useStyles();
@@ -40,7 +44,8 @@ function ProcedureCodesPage() {
   const [term, setTerm] = useState(search.search ?? '');
   const debounced = useDebouncedValue(term.trim(), 250);
   const [editing, setEditing] = useState<ProcedureCodeDto | 'new' | null>(null);
-  const codes = useQuery(mrdQueries.procedureCatalogue(search.search ?? ''));
+  const showInactive = canCode && (search.inactive ?? false);
+  const codes = useQuery(mrdQueries.procedureCatalogue(search.search ?? '', showInactive));
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
@@ -72,10 +77,20 @@ function ProcedureCodesPage() {
                 placeholder="Code, words or shorthand"
               />
             </Field>
+            {canCode && (
+              <Switch
+                checked={showInactive}
+                onChange={(_, d) =>
+                  void navigate({ search: (prev) => ({ ...prev, inactive: d.checked || undefined }), replace: true })
+                }
+                label="Show switched-off codes"
+              />
+            )}
           </FilterBar>
           <Caption1 className={styles.muted}>
-            Codes switched off are not offered in searches and are not listed here. The CMS ICD-10-PCS file is imported
-            on the <Link to="/mrd/icd">ICD catalogue</Link> screen.
+            Codes switched off are not offered in coding or the doctor&rsquo;s notes.
+            {canCode && ' To bring one back, show switched-off codes, open it and switch it on.'} The CMS ICD-10-PCS
+            file is imported on the <Link to="/mrd/icd">ICD catalogue</Link> screen.
           </Caption1>
         </div>
         <DataTable
@@ -105,6 +120,22 @@ function ProcedureCodesPage() {
             },
             { key: 'category', header: 'Category', priority: 'low', render: (c) => c.category ?? '—' },
             { key: 'system', header: 'System', width: 120, priority: 'low', render: (c) => c.system },
+            ...(showInactive
+              ? [
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    width: 120,
+                    render: (c: ProcedureCodeDto) => (
+                      <StatusBadge
+                        status={c.isActive ? 'Active' : 'Off'}
+                        tone={c.isActive ? 'success' : 'subtle'}
+                        label={c.isActive ? 'Active' : 'Switched off'}
+                      />
+                    ),
+                  },
+                ]
+              : []),
             {
               key: 'source',
               header: 'Source',

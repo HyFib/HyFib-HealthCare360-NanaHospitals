@@ -425,20 +425,20 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
-| GET | `/mrd/icd-codes?search&chapter&billableOnly&release&limit` | emr.read or mrd.coding or mrd.catalogue.import | → ranked `IcdCodeDto[]` (code prefix incl. "e119" → E11.9, title words, shorthand keywords) |
+| GET | `/mrd/icd-codes?search&chapter&billableOnly&release&includeInactive&limit` | emr.read or mrd.coding or mrd.catalogue.import | → ranked `IcdCodeDto[]` (code prefix incl. "e119" → E11.9, title words, shorthand keywords). Active codes only, unless `includeInactive=true`: the catalogue screen's "Show switched-off codes", so MRD can find a code switched off or withdrawn and switch it back on (PUT with `isActive: true`, audited like any edit). The pickers never ask for them |
 | GET | `/mrd/icd-codes/online?search&release&limit` | emr.read or mrd.coding | → `OnlineIcdResult[]` via `IIcdLookup` (422 `icd.online_unavailable` / `icd.online_failed`) |
 | GET | `/mrd/icd-classification` | emr.read or mrd.coding or mrd.catalogue.import | chapters with their blocks (the imported WHO file's, else the built-in list) |
 | POST / PUT | `/mrd/icd-codes[/{id}]` | mrd.coding | `SaveIcdCodeRequest{code, title, release, isBillable, keywords, fromOnlineLookup, isActive}` (see "Catalogue import" for what an edit means to later imports) |
 | GET | `/mrd/catalogue` | emr.read or mrd.coding or mrd.catalogue.import | → `CatalogueStatusDto`: per catalogue the active, codable, withdrawn and switched-off codes, codes by source, the last import; the 10 latest imports |
 | POST | `/mrd/catalogue/imports` | mrd.catalogue.import | multipart `file` (at most 100 MB) and `dryRun` → `CatalogueImportResult` (200 for a dry run, 201 for an import; 400 `file` with the reason; 409 `catalogue.import_running`) |
-| GET / POST / PUT | `/mrd/procedure-codes[/{id}]` | emr.read or mrd.coding / mrd.coding | `SaveProcedureCodeRequest` |
+| GET / POST / PUT | `/mrd/procedure-codes[/{id}]` | emr.read or mrd.coding / mrd.coding | `?search&category&includeInactive&limit` (switched-off codes as for ICD) / `SaveProcedureCodeRequest` |
 | GET | `/mrd/codings?status&from&to&page` | mrd.coding | coding worklist (pending first) |
 | POST | `/mrd/codings` | mrd.coding | `CreateCodingRequest{patientId, encounterId?, admissionId?, visitId?, episodeDate?, notes}` |
 | GET / PUT | `/mrd/codings/{id}` | mrd.coding | `SaveCodingRequest{entries[{kind, code, isPrimary}], notes, version}` (catalogue codes only; categories with subdivisions rejected) |
 | POST | `/mrd/codings/{id}/verify` | mrd.coding | `VerifyCodingRequest{version}` (a different coder must verify); insurance claims then take the coding (MB-03) |
 | GET | `/mrd/codings/{id}/suggestions` | mrd.coding | → `CodingSuggestion[]` |
 | GET | `/mrd/reports/morbidity?from&to&groupBy=code|block|chapter&source=clinical|coded` | mrd.records | → `MorbidityReport` (episodes, patients, sex and age bands, most episodes first; ≤ 1 year). Each episode counts once per row and each patient once; ages are the patient's on the day of the episode (the day the coded episode ended, or the day the doctor recorded the diagnosis). `clinical` takes the doctors' ICD-coded diagnoses except differentials; `coded` the facility's codings a second coder verified, by the day the episode ended, every diagnosis line counted and procedures left out (`MorbidityIndexTests`) |
-| GET / POST | `/mrd/records` | mrd.records | list (`status`, `overdue`, `retentionDue`, `assignedPractitionerId`, `search`) / `CreateMedicalRecordRequest` |
+| GET / POST | `/mrd/records` | mrd.records | list (`status`, `overdue`, `retentionDue`, `assignedPractitionerId`, `search`: a patient or a paper file's number) / `CreateMedicalRecordRequest`, of an encounter or admission, or with `paper{fileNumber, isInpatient, episodeFrom, episodeTo, note}` of a file that exists only on paper (no encounter, admission or visit; 409 `chart.paper_exists` for a number already charted in the facility). A paper chart is lent and returned, completed and archived like any other; its retention counts from the episode (the discharge day of a stay, which a stay's file must give, or the visit day); it cannot be scanned (422 `chart.paper`): MRD raises its deficiencies by hand |
 | GET | `/mrd/records/{id}` | mrd.records | → `MedicalRecordDto` with deficiencies |
 | POST | `/mrd/records/{id}/deficiencies` | mrd.records | `AddDeficiencyRequest{type, description, assignedPractitionerId, dueDate}` |
 | POST | `/mrd/records/deficiencies/{deficiencyId}/resolve` | mrd.records or emr.write | `ResolveDeficiencyRequest{note}` |
