@@ -60,6 +60,12 @@ export default manifest;
   opened in the staff app, so it must be a route here. `src/test/serverLinks.test.ts` reads the server's C# and fails
   the build for a staff path with no route; point the link at a list screen with a search parameter rather than at a
   detail route the app does not have.
+* A link a role can see must open a screen that role can use. `src/test/roleAccess.test.tsx` opens every link as every
+  built-in role and fails for a screen that asks the server for something the role may not read; fix the link's
+  `permission`, the role's default permissions or the endpoint's rule, whichever is wrong. It reads the roles and the
+  server's read rules from `src/test/serverAccess.json`, which `StaffAccessFixtureTests` checks against the server: after
+  changing a GET endpoint's permission or a role's default permissions, run that test with
+  `HC360_WRITE_ACCESS_FIXTURE=1` and commit the file it writes.
 
 ## 3. Data access
 

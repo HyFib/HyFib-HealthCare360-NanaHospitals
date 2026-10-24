@@ -11,15 +11,15 @@ internal static class TemplateEndpoints
     public static void Map(IEndpointRouteBuilder app)
     {
         var templates = app.MapGroup("/api/v1/emr/templates").WithTags("EMR");
-        templates.MapGet("/", ListTemplates).RequirePermission(ClinicalPermissions.EmrRead);
-        templates.MapGet("/{id:guid}", GetTemplate).RequirePermission(ClinicalPermissions.EmrRead);
+        templates.MapGet("/", ListTemplates).RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.TemplatesManage);
+        templates.MapGet("/{id:guid}", GetTemplate).RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.TemplatesManage);
         templates.MapPost("/", (SaveTemplateRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveTemplate(null, r, db, u, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveTemplateRequest>();
         templates.MapPut("/{id:guid}", (Guid id, SaveTemplateRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveTemplate(id, r, db, u, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveTemplateRequest>().RequireVersion();
 
         var orderSets = app.MapGroup("/api/v1/clinical/order-sets").WithTags("Clinical Orders");
-        orderSets.MapGet("/", ListOrderSets).RequirePermission(ClinicalPermissions.EmrRead);
+        orderSets.MapGet("/", ListOrderSets).RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.TemplatesManage);
         orderSets.MapPost("/", (SaveOrderSetRequest r, HospitalDbContext db, CancellationToken ct) => SaveOrderSet(null, r, db, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveOrderSetRequest>();
         orderSets.MapPut("/{id:guid}", (Guid id, SaveOrderSetRequest r, HospitalDbContext db, CancellationToken ct) => SaveOrderSet(id, r, db, ct))

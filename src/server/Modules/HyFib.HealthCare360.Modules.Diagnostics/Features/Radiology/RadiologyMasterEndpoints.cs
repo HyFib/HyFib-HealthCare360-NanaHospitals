@@ -16,7 +16,8 @@ internal static class RadiologyMasterEndpoints
 
         var procedures = app.MapGroup("/api/v1/radiology/procedures").WithTags("Radiology masters");
         procedures.MapGet("/", ListProcedures)
-            .RequireAnyPermission(DiagnosticsPermissions.RadiologyRead, DiagnosticsPermissions.RadiologyWorklist, DiagnosticsPermissions.RadiologyReportsVerify);
+            .RequireAnyPermission(DiagnosticsPermissions.RadiologyRead, DiagnosticsPermissions.RadiologyWorklist, DiagnosticsPermissions.RadiologyReportsVerify,
+                PlatformPermissions.MastersManage);
         procedures.MapPost("/", (SaveImagingProcedureRequest r, HospitalDbContext db, CancellationToken ct) => SaveProcedure(null, r, db, ct))
             .RequireAnyPermission(DiagnosticsPermissions.RadiologyReportsVerify, PlatformPermissions.MastersManage).WithValidation<SaveImagingProcedureRequest>();
         procedures.MapPut("/{id:guid}", (Guid id, SaveImagingProcedureRequest r, HospitalDbContext db, CancellationToken ct) => SaveProcedure(id, r, db, ct))

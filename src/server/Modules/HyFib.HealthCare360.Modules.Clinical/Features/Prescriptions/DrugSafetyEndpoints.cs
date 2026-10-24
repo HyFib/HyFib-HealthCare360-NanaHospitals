@@ -15,13 +15,13 @@ internal static class DrugSafetyEndpoints
     {
         var group = app.MapGroup("/api/v1/clinical").WithTags("E-Prescribing");
 
-        group.MapGet("/drug-interactions", ListInteractions).RequirePermission(ClinicalPermissions.EmrRead);
+        group.MapGet("/drug-interactions", ListInteractions).RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.TemplatesManage);
         group.MapPost("/drug-interactions", (SaveDrugInteractionRequest r, HospitalDbContext db, CancellationToken ct) => SaveInteraction(null, r, db, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDrugInteractionRequest>();
         group.MapPut("/drug-interactions/{id:guid}", (Guid id, SaveDrugInteractionRequest r, HospitalDbContext db, CancellationToken ct) => SaveInteraction(id, r, db, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDrugInteractionRequest>().RequireVersion();
 
-        group.MapGet("/dose-limits", ListDoseLimits).RequirePermission(ClinicalPermissions.EmrRead);
+        group.MapGet("/dose-limits", ListDoseLimits).RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.TemplatesManage);
         group.MapPost("/dose-limits", (SaveDoseLimitRequest r, HospitalDbContext db, CancellationToken ct) => SaveDoseLimit(null, r, db, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDoseLimitRequest>();
         group.MapPut("/dose-limits/{id:guid}", (Guid id, SaveDoseLimitRequest r, HospitalDbContext db, CancellationToken ct) => SaveDoseLimit(id, r, db, ct))
