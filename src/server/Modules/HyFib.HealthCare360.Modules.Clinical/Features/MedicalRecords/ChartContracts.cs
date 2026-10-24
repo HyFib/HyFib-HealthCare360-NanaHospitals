@@ -117,8 +117,13 @@ public sealed class CreateMedicalRecordRequestValidator : AbstractValidator<Crea
             RuleFor(x => x.Paper!.FileNumber).NotEmpty().MaximumLength(MedicalRecord.PaperFileNumberMaxLength)
                 .Matches("^[A-Za-z0-9][A-Za-z0-9/.-]*$").OverridePropertyName("paper.fileNumber")
                 .WithMessage("Enter the number on the file: letters, digits, / . and -.");
+            RuleFor(x => x.Paper!.EpisodeFrom).NotEmpty().OverridePropertyName("paper.episodeFrom")
+                .WithMessage("Enter the visit day, or the admission day of a stay.");
             RuleFor(x => x.Paper!.EpisodeFrom).LessThanOrEqualTo(_ => time.Today()).OverridePropertyName("paper.episodeFrom")
                 .WithMessage("The episode cannot be in the future.");
+            // A stay's records are kept from discharge, so a stay's file says when it ended.
+            RuleFor(x => x.Paper!.EpisodeTo).NotNull().When(x => x.Paper!.IsInpatient).OverridePropertyName("paper.episodeTo")
+                .WithMessage("Enter the discharge day: the stay's records are kept from it.");
             RuleFor(x => x.Paper!.EpisodeTo).Must((x, to) => to is null || (to >= x.Paper!.EpisodeFrom && to <= time.Today()))
                 .OverridePropertyName("paper.episodeTo").WithMessage("The discharge day is on or after the admission day, and not in the future.");
             RuleFor(x => x.Paper!.EpisodeTo).Null().When(x => !x.Paper!.IsInpatient).OverridePropertyName("paper.episodeTo")

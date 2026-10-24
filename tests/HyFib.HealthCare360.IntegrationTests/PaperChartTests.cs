@@ -85,7 +85,11 @@ public sealed class PaperChartTests(HospitalServer server)
         (await FieldErrorsAsync(mrd, PaperChart(patient, "OP-2", new DateOnly(2018, 1, 1), new DateOnly(2018, 1, 2), inpatient: false)))
             .ShouldContainKey("paper.episodeTo");
         (await FieldErrorsAsync(mrd, PaperChart(patient, "IP-3", new DateOnly(2018, 1, 5), new DateOnly(2018, 1, 2)))).ShouldContainKey("paper.episodeTo");
-        (await FieldErrorsAsync(mrd, PaperChart(patient, "IP 4", new DateOnly(2018, 1, 5), null))).ShouldContainKey("paper.fileNumber");
+        (await FieldErrorsAsync(mrd, PaperChart(patient, "IP 4", new DateOnly(2018, 1, 5), new DateOnly(2018, 1, 9)))).ShouldContainKey("paper.fileNumber");
+
+        // A stay is kept from its discharge, so it must have one; and every episode has its day.
+        (await FieldErrorsAsync(mrd, PaperChart(patient, "IP-5", new DateOnly(2018, 1, 5), null))).ShouldContainKey("paper.episodeTo");
+        (await FieldErrorsAsync(mrd, PaperChart(patient, "OP-6", default, null, inpatient: false))).ShouldContainKey("paper.episodeFrom");
     }
 
     [Fact]

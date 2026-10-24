@@ -149,7 +149,7 @@ public sealed class MedicalRecordService(
 
     private DateOnly RetentionFrom(MedicalRecord chart) =>
         chart.DischargedAt is { } discharged ? ClinicalClock.LocalDate(discharged)
-        : chart.IsPaper ? chart.PaperEpisodeTo ?? chart.PaperEpisodeFrom ?? time.Today()
+        : chart.IsPaper ? (chart.IsPaperInpatient ? chart.PaperEpisodeTo : chart.PaperEpisodeFrom) ?? time.Today()
         : time.Today();
 
     public Task<Result<MedicalRecordDto>> ArchiveAsync(Guid chartId, string location, CancellationToken ct) =>

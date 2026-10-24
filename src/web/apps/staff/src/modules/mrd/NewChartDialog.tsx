@@ -81,6 +81,10 @@ const chartSchema = z
     } else if (v.episode === 'InPatient' && v.episodeTo && v.episodeTo < v.episodeFrom) {
       ctx.addIssue({ code: 'custom', path: ['episodeTo'], message: 'The discharge day is on or after admission.' });
     }
+    // A stay's records are kept from discharge.
+    if (v.episode === 'InPatient' && !v.episodeTo) {
+      ctx.addIssue({ code: 'custom', path: ['episodeTo'], message: 'Enter the discharge day.' });
+    }
   });
 
 type ChartValues = z.infer<typeof chartSchema>;
@@ -244,7 +248,7 @@ function NewChartForm({ onClose }: { onClose: () => void }) {
                   max={todayIso()}
                 />
                 {episode === 'InPatient' && (
-                  <DateField control={form.control} name="episodeTo" label="Discharged on" max={todayIso()} />
+                  <DateField control={form.control} name="episodeTo" label="Discharged on" required max={todayIso()} />
                 )}
               </FormGrid>
               <TextAreaField
