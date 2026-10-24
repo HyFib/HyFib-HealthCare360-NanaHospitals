@@ -71,7 +71,7 @@ public sealed class VisitCloseTests(HospitalServer server)
         }
         finally
         {
-            // The general ward's beds are shared by every test in the run.
+            // A cancelled admission sends the bed for cleaning, so the suite stays out of use for the rest of the run.
             var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
             await admin.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/cancel", new CancelAdmissionRequest("Admitted for a test of closing visits"));
         }
@@ -108,11 +108,11 @@ public sealed class VisitCloseTests(HospitalServer server)
         return created.Id;
     }
 
-    /// <summary>Front office: admits the patient under the doctor to a free bed of the male general ward.</summary>
+    /// <summary>Front office: admits the patient under the doctor to a free deluxe suite, a ward no other test admits to.</summary>
     private static async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
-        var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
+        var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "DLX");
         var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
             .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
