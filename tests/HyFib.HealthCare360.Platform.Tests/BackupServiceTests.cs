@@ -18,6 +18,7 @@ public sealed class BackupServiceTests : IDisposable
     private readonly FakePostgres _postgres = new();
     private readonly PlatformOptions _options;
     private readonly DataDirectories _directories;
+    private readonly Auditing.AuditSealKey _sealKey;
     private readonly FieldProtector _protector;
     private readonly RecoveryKeyStore _recoveryKeys;
 
@@ -30,6 +31,7 @@ public sealed class BackupServiceTests : IDisposable
         var protection = new EphemeralDataProtectionProvider();
         _protector = new FieldProtector(_directories, protection);
         _recoveryKeys = new RecoveryKeyStore(_directories, protection, _protector, TimeProvider.System);
+        _sealKey = new Auditing.AuditSealKey(_directories, protection);
     }
 
     public void Dispose()
@@ -187,6 +189,7 @@ public sealed class BackupServiceTests : IDisposable
         _directories,
         _recoveryKeys,
         _protector,
+        _sealKey,
         new NoDocumentsLock(),
         _postgres,
         Substitute.For<INotificationService>(),

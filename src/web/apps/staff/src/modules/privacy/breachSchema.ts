@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import { fromIstInput, nowIstInput, toIstInput } from '@/modules/hr/shared/dates';
 import type { BreachDetail, SaveBreachRequest } from './api';
-import { BREACH_DATA_CATEGORIES, BREACH_NATURES, NOTICE_MAX_LENGTH } from './labels';
+import { BREACH_DATA_CATEGORIES, BREACH_NATURES, CERT_IN_INCIDENT_TYPES, NOTICE_MAX_LENGTH } from './labels';
 
 /** A few minutes of slack for workstation clocks that run fast. */
 const CLOCK_SLACK_MS = 5 * 60_000;
@@ -23,6 +23,8 @@ export const breachFormSchema = z
     occurredFrom: z.string(),
     occurredTo: z.string(),
     nature: z.array(z.enum(BREACH_NATURES)),
+    /** The kind of cyber security incident CERT-In must be told of, or '' when it is none; older local drafts do not have it. */
+    certInType: z.union([z.enum(CERT_IN_INCIDENT_TYPES), z.literal('')]).optional(),
     location: z.string().trim().max(500),
     dataCategories: z.array(z.enum(BREACH_DATA_CATEGORIES)),
     estimatedAffected: z
@@ -78,6 +80,7 @@ export function newBreachDefaults(): BreachFormValues {
     occurredFrom: '',
     occurredTo: '',
     nature: [],
+    certInType: '',
     location: '',
     dataCategories: [],
     estimatedAffected: null,
@@ -99,6 +102,7 @@ export function fromBreachDetail(b: BreachDetail): BreachFormValues {
     occurredFrom: toIstInput(b.occurredFrom),
     occurredTo: toIstInput(b.occurredTo),
     nature: [...b.nature],
+    certInType: b.certInType ?? '',
     location: b.location ?? '',
     dataCategories: [...b.dataCategories],
     estimatedAffected: b.estimatedAffected,
@@ -141,6 +145,7 @@ export function toSaveBreachRequest(v: BreachFormValues, version: number | null)
     remediation: clean(v.remediation),
     principalNotice: clean(v.principalNotice),
     version,
+    certInType: v.certInType ? v.certInType : null,
   };
 }
 

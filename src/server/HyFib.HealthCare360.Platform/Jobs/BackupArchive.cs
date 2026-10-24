@@ -15,6 +15,7 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// <param name="KeyFingerprint">The fingerprint of the escrowed field master key (<see cref="FieldMasterKey.Fingerprint"/>).</param>
 /// <param name="RingKeys">The ids of the keys rotations added to the ring (<see cref="FieldKeyRing"/>), escrowed too; none before the first rotation.</param>
 /// <param name="CurrentKey">Which key of the ring was current, or null for the original key.</param>
+/// <param name="AuditSealKey">The fingerprint of the escrowed audit seal key (<see cref="Auditing.AuditSealKey"/>); null in older backups.</param>
 public sealed record BackupManifest(
     int Format,
     string Kind,
@@ -27,7 +28,8 @@ public sealed record BackupManifest(
     long DocumentBytes,
     string KeyFingerprint,
     IReadOnlyList<string>? RingKeys = null,
-    string? CurrentKey = null);
+    string? CurrentKey = null,
+    string? AuditSealKey = null);
 
 /// <summary>A stored document file, relative to the documents folder (forward slashes).</summary>
 public sealed record BackupDocument(string RelativePath, long Length);
@@ -40,6 +42,9 @@ public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, i
 {
     /// <summary>The keys rotations added to the ring, in the order the manifest lists them.</summary>
     public IReadOnlyList<byte[]> RingKeys { get; init; } = [];
+
+    /// <summary>The audit seal key, when the backup escrows one.</summary>
+    public byte[]? AuditSealKey { get; init; }
 }
 
 /// <summary>
@@ -54,6 +59,7 @@ public static class BackupArchive
     public const string ManifestEntry = "manifest.json";
     public const string KeyEntry = "keys/field-master.key";
     public const string RingKeyPrefix = "keys/" + FieldKeyRing.FolderName + "/";
+    public const string AuditSealKeyEntry = "keys/" + Auditing.AuditSealKey.FileName;
     public const string DatabaseEntry = "database.dump";
     public const string DocumentsPrefix = "files/";
 
@@ -80,6 +86,7 @@ public static class BackupArchive
         BackupManifest manifest,
         byte[] masterKey,
         IReadOnlyList<byte[]> ringKeys,
+        byte[]? auditSealKey,
         string databaseDumpPath,
         string documentsFolder,
         IReadOnlyList<BackupDocument> documents,
@@ -91,6 +98,11 @@ public static class BackupArchive
         foreach (var key in ringKeys)
         {
             await WriteEntryAsync(tar, RingKeyPrefix + FieldMasterKey.Fingerprint(key) + ".key", new MemoryStream(key, writable: false), ct);
+        }
+
+        if (auditSealKey is not null)
+        {
+            await WriteEntryAsync(tar, AuditSealKeyEntry, new MemoryStream(auditSealKey, writable: false), ct);
         }
         await WriteEntryAsync(tar, DatabaseEntry, OpenForReading(databaseDumpPath), ct);
         foreach (var document in documents)
@@ -116,6 +128,7 @@ public static class BackupArchive
     {
         BackupManifest? manifest = null;
         byte[]? masterKey = null;
+        byte[]? auditSealKey = null;
         var ringKeys = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var hasDatabase = false;
         var documentCount = 0;
@@ -159,6 +172,15 @@ public static class BackupArchive
 
                         break;
 
+                    case AuditSealKeyEntry when auditSealKey is null:
+                        auditSealKey = await ReadSmallAsync(entry, FieldMasterKey.Length, ct);
+                        if (auditSealKey.Length != FieldMasterKey.Length || FieldMasterKey.Fingerprint(auditSealKey) != manifest.AuditSealKey)
+                        {
+                            throw new InvalidDataException("The audit seal key in the backup does not match its manifest.");
+                        }
+
+                        break;
+
                     case DatabaseEntry when !hasDatabase:
                         hasDatabase = true;
                         await CopyEntryAsync(entry, targets.DatabaseDumpPath, overwrite: true, ct);
@@ -191,12 +213,21 @@ public static class BackupArchive
             throw new InvalidDataException("The backup is incomplete: an encryption key its manifest lists is missing.");
         }
 
+        if (manifest.AuditSealKey is not null && auditSealKey is null)
+        {
+            throw new InvalidDataException("The backup is incomplete: the audit seal key its manifest lists is missing.");
+        }
+
         if (documentCount != manifest.DocumentCount || documentBytes != manifest.DocumentBytes)
         {
             throw new InvalidDataException($"The backup holds {documentCount} documents ({documentBytes} bytes); its manifest lists {manifest.DocumentCount} ({manifest.DocumentBytes} bytes).");
         }
 
-        return new BackupContents(manifest, masterKey, documentCount, documentBytes) { RingKeys = listed.Select(id => ringKeys[id]).ToList() };
+        return new BackupContents(manifest, masterKey, documentCount, documentBytes)
+        {
+            RingKeys = listed.Select(id => ringKeys[id]).ToList(),
+            AuditSealKey = auditSealKey,
+        };
     }
 
     /// <summary>
@@ -288,6 +319,9 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
     /// <summary>How many keys rotations had added to the backup's key ring, installed beside the original key.</summary>
     public int RingKeysInstalled { get; init; }
 
+    /// <summary>Whether the backup's audit seal key was installed (older backups have none).</summary>
+    public bool AuditSealKeyInstalled { get; init; }
+
     /// <summary>
     /// Whether this machine now backs up with the recovery key the backup was opened with: it had no recovery key of its
     /// own, and the backup's was not the original key.
@@ -366,6 +400,14 @@ public static class BackupRestore
 
                 var keptAs = FieldMasterKey.Install(FieldMasterKey.PathIn(directories), protector, contents.MasterKey, time.GetUtcNow());
 
+                // The seals of the restored audit trail were made with the backup's audit key; a different one here is kept
+                // under a new name, as the field key is.
+                if (contents.AuditSealKey is { } auditSealKey)
+                {
+                    FieldMasterKey.Install(Auditing.AuditSealKey.PathIn(directories), Auditing.AuditSealKey.CreateProtector(dataProtection), auditSealKey,
+                        time.GetUtcNow());
+                }
+
                 // The backup decides which key encrypts new data, also when it is the original key (no current key in its
                 // manifest): a key this machine had made current before is not used again, in case it was exposed.
                 var current = contents.Manifest.CurrentKey;
@@ -388,6 +430,7 @@ public static class BackupRestore
                 return new BackupRestoreResult(payload.Version, contents.Manifest, restored, present, KeyInstalled: true, keptAs)
                 {
                     RingKeysInstalled = contents.RingKeys.Count,
+                    AuditSealKeyInstalled = contents.AuditSealKey is not null,
                     RecoveryKeyKept = recoveryKeyKept,
                     RecoveryKeyProblem = recoveryKeyProblem,
                 };
@@ -398,6 +441,11 @@ public static class BackupRestore
                 foreach (var key in contents.RingKeys)
                 {
                     CryptographicOperations.ZeroMemory(key);
+                }
+
+                if (contents.AuditSealKey is { } sealKey)
+                {
+                    CryptographicOperations.ZeroMemory(sealKey);
                 }
             }
         }

@@ -20,6 +20,7 @@ import { usePermission } from '@/lib/permissions';
 import {
   adminQueries,
   formatBytes,
+  type ClockCheck,
   type ServerNodeHealth,
   type SystemHealthReport,
   type WifiSample,
@@ -29,6 +30,7 @@ import { EncryptionKeys } from '@/modules/admin/EncryptionKeys';
 import { encryptionSummary } from '@/modules/admin/diskEncryption';
 import { healthDisplay } from '@/modules/admin/integrationsApi';
 import {
+  clockText,
   expiryTone,
   integrationsSummary,
   integrationTone,
@@ -281,6 +283,7 @@ function SystemHealthPage() {
                   {humanize(h.server.environment)} · {h.server.role}
                 </Row>
                 <Row label="Running for">{runningFor(h.server.uptimeHours)}</Row>
+                <ClockRow clock={h.server.clock} />
                 <Row label="Memory used">{formatBytes(h.server.workingSetBytes)}</Row>
                 <Row label="Processors">{h.server.processorCount}</Row>
               </div>
@@ -290,6 +293,16 @@ function SystemHealthPage() {
       </div>
     </Page>
   );
+}
+
+/** The server clock against the national time servers (CERT-In 2022), once it has been checked. */
+function ClockRow({ clock }: { clock: ClockCheck | null | undefined }) {
+  const row = clockText(clock);
+  return row ? (
+    <Row label="Clock" tone={row.bad ? 'bad' : undefined}>
+      {row.text}
+    </Row>
+  ) : null;
 }
 
 /**
@@ -307,6 +320,7 @@ function ServerCard({ node }: { node: ServerNodeHealth }) {
         </Row>
         <Row label="HC360 version">{node.server.version}</Row>
         <Row label="Running for">{runningFor(node.server.uptimeHours)}</Row>
+        <ClockRow clock={node.server.clock} />
         <Row label="Memory used">{formatBytes(node.server.workingSetBytes)}</Row>
         <Row label="Free space" tone={lowDiskSpace(node.storage) ? 'bad' : undefined}>
           {formatBytes(node.storage.freeBytes)} of {formatBytes(node.storage.totalBytes)}

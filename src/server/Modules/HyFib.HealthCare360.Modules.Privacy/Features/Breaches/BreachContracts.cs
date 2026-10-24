@@ -15,7 +15,11 @@ public sealed record BreachListItem(
     int AffectedListed,
     int Notified,
     DateTimeOffset? BoardInformedAt,
-    DateTimeOffset? ReportSubmittedAt);
+    DateTimeOffset? ReportSubmittedAt,
+    CertInIncidentType? CertInType,
+    DateTimeOffset? CertInReportDueAt,
+    DateTimeOffset? CertInReportedAt,
+    bool CertInReportOverdue);
 
 public sealed record BreachCreated(Guid Id, string BreachNumber);
 
@@ -53,7 +57,12 @@ public sealed record BreachDetail(
     int WithoutContact,
     IReadOnlyList<string> MissingForReport,
     IReadOnlyList<string> MissingForNotice,
-    uint Version);
+    uint Version,
+    CertInIncidentType? CertInType,
+    DateTimeOffset? CertInReportDueAt,
+    DateTimeOffset? CertInReportedAt,
+    string? CertInReference,
+    bool CertInReportOverdue);
 
 /// <summary>A new breach, or changes to one. <see cref="Version"/> is required for changes.</summary>
 public sealed record SaveBreachRequest(
@@ -73,7 +82,8 @@ public sealed record SaveBreachRequest(
     string? Findings,
     string? Remediation,
     string? PrincipalNotice,
-    uint? Version);
+    uint? Version,
+    CertInIncidentType? CertInType = null);
 
 public sealed record BoardInformedRequest(DateTimeOffset At, string? Reference);
 
@@ -82,6 +92,9 @@ public sealed record BoardExtensionRequest(DateTimeOffset Until, string? Referen
 public sealed record ReportSubmittedRequest(DateTimeOffset At, string? Reference);
 
 public sealed record CloseBreachRequest(string? Note);
+
+/// <summary>When the incident was reported to CERT-In, and its reference.</summary>
+public sealed record CertInReportedRequest(DateTimeOffset At, string? Reference);
 
 /// <summary>Patients to add to the breach: chosen one by one (ids), or pasted as a list of UHIDs.</summary>
 public sealed record AddAffectedRequest(IReadOnlyList<Guid>? PatientIds, IReadOnlyList<string>? Uhids);
@@ -130,7 +143,13 @@ public sealed class SaveBreachRequestValidator : AbstractValidator<SaveBreachReq
         RuleFor(x => x.Findings).SafeText(4000);
         RuleFor(x => x.Remediation).SafeText(4000);
         RuleFor(x => x.PrincipalNotice).SafeText(320);
+        RuleFor(x => x.CertInType).IsInEnum();
     }
+}
+
+public sealed class CertInReportedRequestValidator : AbstractValidator<CertInReportedRequest>
+{
+    public CertInReportedRequestValidator() => RuleFor(x => x.Reference).SafeText(100);
 }
 
 public sealed class BoardInformedRequestValidator : AbstractValidator<BoardInformedRequest>

@@ -246,6 +246,16 @@ export interface ServerInfo {
   processorCount: number;
   workingSetBytes: number;
   framework: string;
+  /** The last check of this server's clock against the national time servers (CERT-In 2022); null before the first. */
+  clock?: ClockCheck | null;
+}
+
+/** How far this server's clock was from a national time server (positive: behind), or why none answered. */
+export interface ClockCheck {
+  checkedAt: string;
+  server: string | null;
+  offsetSeconds: number | null;
+  problem: string | null;
 }
 
 /**
@@ -363,6 +373,17 @@ export interface AuditVerification {
   firstInvalidChainIndex: number | null;
   unsealedCount: number;
   message: string | null;
+  /** How many anchors kept outside the database the chain was checked against. */
+  anchorsChecked: number;
+  lastAnchor: AuditAnchor | null;
+}
+
+/** Where the audit chain ended at a moment, written outside the database (the anchor file and the server log). */
+export interface AuditAnchor {
+  chainIndex: number;
+  hash: string;
+  mac: string | null;
+  anchoredAt: string;
 }
 
 export interface SettingDto {

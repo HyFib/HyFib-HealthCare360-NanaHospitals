@@ -18,8 +18,8 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ShieldCheckmarkRegular } from '@fluentui/react-icons';
-import { formatDateTime, humanize, useDebouncedValue } from '@hc360/core';
+import { ArrowDownloadRegular, ShieldCheckmarkRegular } from '@fluentui/react-icons';
+import { formatDateTime, humanize, saveFile, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
@@ -58,6 +58,7 @@ function AuditPage() {
   const search = useDebouncedValue(term.trim(), 300);
   const [page, setPage] = useState(1);
   const [detail, setDetail] = useState<AuditEventDto | null>(null);
+  const [exporting, setExporting] = useState(false);
   const query = { ...filters, search: search || undefined, page };
   const events = useQuery(adminQueries.audit(query));
 
@@ -77,11 +78,17 @@ function AuditPage() {
         title="Audit log"
         subtitle="Every sign-in, record access and change. Entries cannot be edited or deleted."
         actions={
-          <Button icon={<ShieldCheckmarkRegular />} onClick={() => verify.mutate()} disabled={verify.isPending}>
-            {verify.isPending ? 'Verifying…' : 'Verify integrity'}
-          </Button>
+          <>
+            <Button icon={<ArrowDownloadRegular />} onClick={() => setExporting(true)}>
+              Export for auditors
+            </Button>
+            <Button icon={<ShieldCheckmarkRegular />} onClick={() => verify.mutate()} disabled={verify.isPending}>
+              {verify.isPending ? 'Verifying…' : 'Verify integrity'}
+            </Button>
+          </>
         }
       />
+      <AuditExportDialog open={exporting} onClose={() => setExporting(false)} />
 
       {verify.data && (
         <MessageBar intent={verify.data.valid ? 'success' : 'error'} layout="multiline">
@@ -93,6 +100,12 @@ function AuditPage() {
               `${verify.data.checkedCount.toLocaleString('en-IN')} sealed entries checked${verify.data.unsealedCount ? `, ${verify.data.unsealedCount} awaiting sealing` : ''}.`}
             {verify.data.firstInvalidChainIndex !== null &&
               ` First broken link at entry #${verify.data.firstInvalidChainIndex}.`}
+            {verify.data.lastAnchor && (
+              <Caption1 block>
+                Last anchored outside the database at entry #{verify.data.lastAnchor.chainIndex} on{' '}
+                {formatDateTime(verify.data.lastAnchor.anchoredAt)}, hash {verify.data.lastAnchor.hash.slice(0, 16)}…
+              </Caption1>
+            )}
           </MessageBarBody>
         </MessageBar>
       )}
@@ -227,4 +240,72 @@ function prettyJson(value: string): string {
   } catch {
     return value;
   }
+}
+
+/** The day before, in India: the default start of an export. */
+function istDay(offsetDays: number): string {
+  return new Date(Date.now() + 5.5 * 3600_000 + offsetDays * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The sealed audit trail of a period for an auditor (a JSON file): every record, its hash and seal, and the anchors kept
+ * outside the database. The auditor checks it on any machine with "HyFib.HealthCare360.Server.exe audit verify-export".
+ * It holds patients' data, so the export is itself recorded.
+ */
+function AuditExportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const notify = useNotify();
+  const [from, setFrom] = useState(() => istDay(-30));
+  const [to, setTo] = useState(() => istDay(0));
+  const exportFile = useMutation({
+    mutationFn: async () => {
+      const file = await api.download('/api/v1/admin/audit/export', {
+        query: { from: `${from}T00:00:00+05:30`, to: `${to}T23:59:59.999+05:30` },
+        timeoutMs: 300_000,
+      });
+      saveFile(file.blob, file.fileName ?? 'hc360-audit.json');
+    },
+    onSuccess: () => {
+      notify.success('Audit export saved', 'Give the file to the auditor with the anchor file, kept apart.');
+      onClose();
+    },
+    onError: (error) => notify.error(error, 'Could not export the audit log'),
+  });
+  return (
+    <Dialog open={open} onOpenChange={(_, d) => !d.open && !exportFile.isPending && onClose()}>
+      <DialogSurface style={{ maxWidth: 520 }}>
+        <DialogBody>
+          <DialogTitle>Export for auditors</DialogTitle>
+          <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Text>
+              The sealed audit records of the period, with their hashes, seals and the anchors kept outside the
+              database. An auditor checks the file on any machine with{' '}
+              <code>HyFib.HealthCare360.Server.exe audit verify-export</code>. It holds patients&rsquo; data: the export
+              is recorded in the audit log.
+            </Text>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <Field label="From" required>
+                <Input type="date" value={from} max={to} onChange={(_, d) => setFrom(d.value)} />
+              </Field>
+              <Field label="To" required>
+                <Input type="date" value={to} min={from} onChange={(_, d) => setTo(d.value)} />
+              </Field>
+            </div>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onClose} disabled={exportFile.isPending}>
+              Cancel
+            </Button>
+            <Button
+              appearance="primary"
+              icon={<ArrowDownloadRegular />}
+              disabled={exportFile.isPending || !from || !to || to < from}
+              onClick={() => exportFile.mutate()}
+            >
+              {exportFile.isPending ? 'Exporting…' : 'Export'}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
 }

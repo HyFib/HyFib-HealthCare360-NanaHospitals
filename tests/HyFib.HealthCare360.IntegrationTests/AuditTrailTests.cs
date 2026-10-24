@@ -96,6 +96,7 @@ public sealed class AuditTrailTests(HospitalServer server)
             ("details", e => e.Details = "{\"reason\": \"Routine review\"}"),
             ("previous_hash", e => e.PreviousHash = new string('0', 64)),
             ("hash", e => e.Hash = new string('0', 64)),
+            ("mac", e => e.Mac = new string('0', 64)),
             ("chain_index, moved out of the chain", e => e.ChainIndex = -e.ChainIndex),
         };
 
@@ -106,8 +107,10 @@ public sealed class AuditTrailTests(HospitalServer server)
             try
             {
                 var verification = await VerifyAsync();
-                if (verification.Valid || verification.FirstInvalidChainIndex != position
-                    || verification.Message != $"The audit chain is broken at position {position}. Records may have been altered or removed.")
+                var expected = what == "mac"
+                    ? $"The seal of the audit record at position {position} does not match. Records may have been altered."
+                    : $"The audit chain is broken at position {position}. Records may have been altered or removed.";
+                if (verification.Valid || verification.FirstInvalidChainIndex != position || verification.Message != expected)
                 {
                     unnoticed.Add($"{what}: {verification.Message}");
                 }
@@ -276,11 +279,11 @@ public sealed class AuditTrailTests(HospitalServer server)
         await db.Database.ExecuteSqlAsync($"SET LOCAL session_replication_role = replica", Ct);
         await db.Database.ExecuteSqlAsync($"""
             INSERT INTO audit.audit_events (id, occurred_at, category, action, severity, entity_type, entity_id, patient_id, user_id,
-                user_name, facility_id, device_id, session_id, ip_address, correlation_id, summary, details, chain_index, previous_hash, hash)
+                user_name, facility_id, device_id, session_id, ip_address, correlation_id, summary, details, chain_index, previous_hash, hash, mac)
             OVERRIDING SYSTEM VALUE
             VALUES ({e.Id}, {e.OccurredAt}, {e.Category}, {e.Action}, {e.Severity.ToString()}, {e.EntityType}, {e.EntityId}, {e.PatientId},
                 {e.UserId}, {e.UserName}, {e.FacilityId}, {e.DeviceId}, {e.SessionId}, {e.IpAddress}, {e.CorrelationId}, {e.Summary},
-                CAST({e.Details} AS jsonb), {e.ChainIndex}, {e.PreviousHash}, {e.Hash})
+                CAST({e.Details} AS jsonb), {e.ChainIndex}, {e.PreviousHash}, {e.Hash}, {e.Mac})
             """, Ct);
         await transaction.CommitAsync(Ct);
     }
@@ -306,6 +309,7 @@ public sealed class AuditTrailTests(HospitalServer server)
         stored.ChainIndex = original.ChainIndex;
         stored.PreviousHash = original.PreviousHash;
         stored.Hash = original.Hash;
+        stored.Mac = original.Mac;
     }
 
     /// <summary>The test server's own connection, which signs in as a superuser and owns the tables.</summary>

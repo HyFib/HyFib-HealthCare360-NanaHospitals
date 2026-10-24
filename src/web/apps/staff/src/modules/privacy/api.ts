@@ -5,6 +5,7 @@ import type {
   BreachDataCategory,
   BreachNature,
   BreachStatus,
+  CertInIncidentType,
   CorrectableField,
   CorrectionDecision,
   DataRequestChannel,
@@ -300,6 +301,10 @@ export interface BreachListItem {
   notified: number;
   boardInformedAt: string | null;
   reportSubmittedAt: string | null;
+  certInType: CertInIncidentType | null;
+  certInReportDueAt: string | null;
+  certInReportedAt: string | null;
+  certInReportOverdue: boolean;
 }
 
 export interface BreachCreated {
@@ -346,6 +351,12 @@ export interface BreachDetail {
   /** What the notice to people must carry that is still empty. */
   missingForNotice: string[];
   version: number;
+  /** The kind of cyber security incident, when CERT-In must be told of it within 6 hours of the hospital noticing it. */
+  certInType: CertInIncidentType | null;
+  certInReportDueAt: string | null;
+  certInReportedAt: string | null;
+  certInReference: string | null;
+  certInReportOverdue: boolean;
 }
 
 export interface SaveBreachRequest {
@@ -368,6 +379,7 @@ export interface SaveBreachRequest {
   remediation: string | null;
   principalNotice: string | null;
   version: number | null;
+  certInType: CertInIncidentType | null;
 }
 
 export interface BreachReport {
@@ -687,6 +699,9 @@ export const privacyApi = {
     api.post<void>(`${BASE}/breaches/${id}/extension`, { until, reference }),
   reportSubmitted: (id: string, at: string, reference: string | null) =>
     api.post<void>(`${BASE}/breaches/${id}/report-submitted`, { at, reference }),
+  /** CERT-In was told of the incident (within 6 hours of the hospital noticing it). */
+  certInReported: (id: string, at: string, reference: string | null) =>
+    api.post<void>(`${BASE}/breaches/${id}/cert-in-reported`, { at, reference }),
   closeBreach: (id: string, note: string | null) => api.post<void>(`${BASE}/breaches/${id}/close`, { note }),
   /** The detailed report for printing (audited). */
   breachReport: (id: string) => api.get<BreachReport>(`${BASE}/breaches/${id}/report`),

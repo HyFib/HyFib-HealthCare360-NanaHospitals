@@ -115,6 +115,7 @@ public sealed class HospitalServer : IAsyncLifetime
             ["HealthCare360:Security:AccessTokenMinutes"] = "120",
             ["HealthCare360:Network:EnableMdns"] = "false",
             ["HealthCare360:Network:EnableWifiMonitor"] = "false",
+            ["HealthCare360:TimeSync:Enabled"] = "false",
             ["HealthCare360:Backup:Enabled"] = "false",
             ["HealthCare360:Backup:BeforeMigrations"] = "false",
         });

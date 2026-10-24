@@ -60,8 +60,8 @@ Each entry records a decision, its context, and the consequences. New decisions 
 
 ## ADR-010 — Hash-chained, append-only audit log
 **Status:** Accepted
-**Decision:** Audit rows are inserted without locks, and a sealer job computes a SHA-256 chain in sequence order. A database trigger forbids UPDATE (except sealing a null hash) and DELETE.
-**Consequences:** It is tamper-evident without serialising business transactions. Verification is available on demand.
+**Decision:** Audit rows are inserted without locks, and a sealer job computes a SHA-256 chain in sequence order. A database trigger forbids UPDATE (except sealing a null hash) and DELETE. Each sealed row also carries an HMAC of its hash under a key kept outside the database (escrowed in backups), and the chain's end is anchored, at most hourly, in an append-only file outside the database and in the server log.
+**Consequences:** It is tamper-evident without serialising business transactions. Verification is available on demand. Whoever can write the database cannot compute new seals over changed rows, and a chain cut short or made again no longer matches the anchors. An export of the chain can be checked by an auditor without the database (`audit verify-export`). A database restored from a backup older than the latest anchor fails verification: the records after the backup are gone, which is what it should say.
 
 ## ADR-011 — AI assistant is provider-pluggable, off by default, human-in-the-loop
 **Status:** Accepted

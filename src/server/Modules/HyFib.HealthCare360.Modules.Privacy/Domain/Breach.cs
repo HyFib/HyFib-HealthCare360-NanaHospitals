@@ -40,15 +40,83 @@ public enum BreachDataCategory
 }
 
 /// <summary>
+/// The kinds of cyber security incident CERT-In must be told of within 6 hours of their being noticed (Directions under
+/// section 70B(6) of the IT Act, 28 April 2022, Annexure I).
+/// </summary>
+public enum CertInIncidentType
+{
+    /// <summary>Targeted scanning or probing of critical networks or systems.</summary>
+    TargetedScanning = 1,
+
+    /// <summary>Compromise of critical systems or information.</summary>
+    CriticalSystemCompromise,
+
+    /// <summary>Unauthorised access of IT systems or data.</summary>
+    UnauthorisedAccess,
+
+    /// <summary>Defacement of a website, or intrusion into one and unauthorised changes.</summary>
+    WebsiteDefacement,
+
+    /// <summary>Malicious code: virus, worm, Trojan, bots, spyware, ransomware, crypto miners.</summary>
+    MaliciousCode,
+
+    /// <summary>Attacks on servers (database, mail, DNS) and network devices (routers).</summary>
+    ServerOrNetworkAttack,
+
+    /// <summary>Identity theft, spoofing and phishing.</summary>
+    IdentityTheftOrPhishing,
+
+    /// <summary>Denial of service and distributed denial of service.</summary>
+    DenialOfService,
+
+    /// <summary>Attacks on critical infrastructure, SCADA and operational technology systems, and wireless networks.</summary>
+    CriticalInfrastructureAttack,
+
+    /// <summary>Attacks on applications (e-governance, e-commerce and others).</summary>
+    ApplicationAttack,
+
+    DataBreach,
+    DataLeak,
+
+    /// <summary>Attacks on Internet of Things devices and their systems, networks, software and servers.</summary>
+    IotAttack,
+
+    /// <summary>Attacks or incidents affecting digital payment systems.</summary>
+    DigitalPaymentAttack,
+
+    /// <summary>Attacks through malicious mobile apps.</summary>
+    MaliciousMobileApp,
+
+    FakeMobileApp,
+
+    /// <summary>Unauthorised access to social media accounts.</summary>
+    SocialMediaAccountAccess,
+
+    /// <summary>Attacks or suspicious activity affecting cloud computing systems, servers, software or applications.</summary>
+    CloudAttack,
+
+    /// <summary>Attacks or suspicious activity affecting Big Data, blockchain, virtual assets, robotics, 3D/4D printing or drones.</summary>
+    EmergingTechnologyAttack,
+
+    /// <summary>Attacks or suspicious activity affecting artificial intelligence and machine learning systems.</summary>
+    ArtificialIntelligenceAttack,
+}
+
+/// <summary>
 /// A personal data breach (DPDP Act 2023 s8(6); DPDP Rules 2025, rule 7). The hospital tells the Data Protection
 /// Board without delay, and sends the detailed report within 72 hours of becoming aware (longer only if the Board
 /// allows it). Each affected person is told, without delay, what happened, the likely consequences, what the hospital
 /// is doing, what they can do to protect themselves, and whom to contact. The register is group-wide, not per facility.
+/// A breach that is also a cyber security incident of a kind CERT-In lists (<see cref="CertInType"/>) is reported to
+/// CERT-In within 6 hours of the hospital noticing it, which the register tracks beside the Board's 72 hours.
 /// </summary>
 public sealed class Breach : AuditableEntity
 {
     /// <summary>The time the Rules give for the detailed report, from the moment the hospital became aware.</summary>
     public static readonly TimeSpan ReportWindow = TimeSpan.FromHours(72);
+
+    /// <summary>The time CERT-In's Directions of 28 April 2022 give for reporting an incident, from when it was noticed.</summary>
+    public static readonly TimeSpan CertInReportWindow = TimeSpan.FromHours(6);
 
     /// <summary>"DPB{YY}{SEQ:4}".</summary>
     public string BreachNumber { get; set; } = string.Empty;
@@ -106,9 +174,47 @@ public sealed class Breach : AuditableEntity
     /// <summary>When the first notices to the people affected were queued.</summary>
     public DateTimeOffset? NotifiedAt { get; set; }
 
+    /// <summary>The kind of cyber security incident it is, of those CERT-In must be told of; null when it is none of them.</summary>
+    public CertInIncidentType? CertInType { get; set; }
+
+    /// <summary>When the incident was reported to CERT-In (incident@cert-in.org.in, or its portal).</summary>
+    public DateTimeOffset? CertInReportedAt { get; private set; }
+
+    /// <summary>CERT-In's reference for the report.</summary>
+    public string? CertInReference { get; private set; }
+
     public DateTimeOffset ReportDueAt => ExtendedUntil ?? AwareAt + ReportWindow;
 
     public bool IsReportOverdue(DateTimeOffset now) => Status is BreachStatus.Open or BreachStatus.BoardInformed && now > ReportDueAt;
+
+    /// <summary>When the report to CERT-In is due; null when the incident is not one CERT-In lists.</summary>
+    public DateTimeOffset? CertInReportDueAt => CertInType is null ? null : AwareAt + CertInReportWindow;
+
+    public bool IsCertInReportOverdue(DateTimeOffset now) =>
+        CertInReportDueAt is { } due && CertInReportedAt is null && Status != BreachStatus.Closed && now > due;
+
+    /// <summary>The incident was reported to CERT-In.</summary>
+    public Result RecordCertInReported(DateTimeOffset at, string? reference, DateTimeOffset now)
+    {
+        if (CertInType is null)
+        {
+            return Error.Rule("privacy.breach_not_cert_in", "Choose the kind of cyber security incident first: only those CERT-In lists are reported to it.");
+        }
+
+        if (CertInReportedAt is not null)
+        {
+            return Error.Rule("privacy.breach_cert_in_reported", "The report to CERT-In has already been recorded.");
+        }
+
+        if (at < AwareAt || at > now)
+        {
+            return Error.Field("at", "Enter when CERT-In was told: after the hospital became aware, and not in the future.");
+        }
+
+        CertInReportedAt = at;
+        CertInReference = Clean(reference);
+        return Result.Success();
+    }
 
     /// <summary>The Board was told of the breach (the intimation rule 7(2)(a) asks for without delay).</summary>
     public Result RecordBoardInformed(DateTimeOffset at, string? reference, DateTimeOffset now)

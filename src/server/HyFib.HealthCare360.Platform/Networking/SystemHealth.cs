@@ -24,8 +24,9 @@ using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Platform.Networking;
 
+/// <param name="Clock">The last check of this server's clock against the national time servers (<see cref="ServerClock"/>); null before the first.</param>
 public sealed record ServerInfo(string MachineName, string OsDescription, string Version, string Environment, string Role, DateTimeOffset StartedAt,
-    double UptimeHours, int ProcessorCount, long WorkingSetBytes, string Framework);
+    double UptimeHours, int ProcessorCount, long WorkingSetBytes, string Framework, ClockCheck? Clock = null);
 
 public sealed record NetworkInfo(bool WifiSupported, WifiConnectionInfo? Wifi, DateTimeOffset? ConnectedSince, DateTimeOffset? LastDisconnectAt,
     IReadOnlyList<WifiEvent> RecentEvents, IReadOnlyList<string> IpAddresses, int HttpsPort, int PortalHttpsPort, bool MdnsEnabled);
@@ -131,6 +132,7 @@ public sealed class SystemHealthService(
     IIntegrationHealthSource integrationHealth,
     IEnumerable<IHealthWarningSource> moduleWarnings,
     ServerNodeBoard servers,
+    ServerClock clock,
     TimeProvider time)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
@@ -306,7 +308,8 @@ public sealed class SystemHealthService(
             Math.Round((now - StartedAt).TotalHours, 2),
             Environment.ProcessorCount,
             process.WorkingSet64,
-            RuntimeInformation.FrameworkDescription);
+            RuntimeInformation.FrameworkDescription,
+            clock.Last);
 
         var network = new NetworkInfo(
             wifi.Supported, wifi.Current, wifi.ConnectedSince, wifi.LastDisconnectAt, wifi.RecentEvents,
@@ -326,6 +329,8 @@ public sealed class SystemHealthService(
         {
             machine.Add(new("disk.low", "critical", $"Less than 10% disk space free on the data drive ({free / (1024 * 1024 * 1024)} GB)."));
         }
+
+        machine.AddRange(ServerClock.Warnings(clock.Last, options.Value.TimeSync.MaxOffset));
 
         if (OperatingSystem.IsWindows())
         {

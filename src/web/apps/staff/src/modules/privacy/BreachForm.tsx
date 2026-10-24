@@ -23,6 +23,7 @@ import {
   LEAVE_KEEPING_DRAFT,
   NumberField,
   Section,
+  SelectField,
   TextAreaField,
   TextField,
   useLeaveGuard,
@@ -41,6 +42,8 @@ import {
   type BreachFormValues,
 } from './breachSchema';
 import {
+  CERT_IN_INCIDENT_TYPES,
+  certInIncidentLabel,
   BREACH_DATA_CATEGORIES,
   BREACH_NATURES,
   breachDataCategoryLabel,
@@ -298,6 +301,16 @@ export function BreachForm({
                 )}
               />
             )}
+          />
+          <SelectField
+            control={form.control}
+            name="certInType"
+            label="Cyber security incident to report to CERT-In"
+            hint="If it is one of the kinds CERT-In lists, report it to CERT-In within 6 hours of the hospital becoming aware (incident@cert-in.org.in)."
+            options={[
+              { value: '', label: 'None of these' },
+              ...CERT_IN_INCIDENT_TYPES.map((t) => ({ value: t, label: certInIncidentLabel[t] })),
+            ]}
           />
           <TextAreaField
             control={form.control}

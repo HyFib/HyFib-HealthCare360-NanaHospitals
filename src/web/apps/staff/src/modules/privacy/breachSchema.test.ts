@@ -59,6 +59,11 @@ const detail: BreachDetail = {
   missingForReport: [],
   missingForNotice: [],
   version: 7,
+  certInType: null,
+  certInReportDueAt: null,
+  certInReportedAt: null,
+  certInReference: null,
+  certInReportOverdue: false,
 };
 
 describe('breach form', () => {
@@ -122,6 +127,16 @@ describe('breach form', () => {
     expect(request.version).toBe(7);
     expect(request.mitigation).toBe('Passwords changed.');
     expect(request.dataCategories).toEqual(['Identity', 'Health']);
+  });
+
+  it('reports a cyber security incident to CERT-In only when one of its kinds is chosen', () => {
+    expect(toSaveBreachRequest(fromBreachDetail(detail), 7).certInType).toBeNull();
+    const ransomware = fromBreachDetail({ ...detail, certInType: 'MaliciousCode' });
+    expect(ransomware.certInType).toBe('MaliciousCode');
+    expect(toSaveBreachRequest(ransomware, 7).certInType).toBe('MaliciousCode');
+    // A draft saved before the field existed has none.
+    const { certInType: _, ...older } = values();
+    expect(toSaveBreachRequest(breachFormSchema.parse(older), null).certInType).toBeNull();
   });
 
   it('lists what the report and the notice still need, in the server’s words', () => {

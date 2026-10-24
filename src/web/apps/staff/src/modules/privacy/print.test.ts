@@ -124,6 +124,11 @@ const breach: BreachDetail = {
   missingForReport: ['the cause'],
   missingForNotice: [],
   version: 3,
+  certInType: null,
+  certInReportDueAt: null,
+  certInReportedAt: null,
+  certInReference: null,
+  certInReportOverdue: false,
 };
 
 describe('Board report print', () => {

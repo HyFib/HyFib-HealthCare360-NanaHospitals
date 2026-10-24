@@ -252,6 +252,56 @@ export const breachDataCategoryLabel: Record<BreachDataCategory, string> = {
   Children: 'Children’s data',
 };
 
+/**
+ * The cyber security incidents CERT-In must be told of within 6 hours of their being noticed (Directions of 28 April
+ * 2022, Annexure I), as the server names them (CertInIncidentType).
+ */
+export const CERT_IN_INCIDENT_TYPES = [
+  'TargetedScanning',
+  'CriticalSystemCompromise',
+  'UnauthorisedAccess',
+  'WebsiteDefacement',
+  'MaliciousCode',
+  'ServerOrNetworkAttack',
+  'IdentityTheftOrPhishing',
+  'DenialOfService',
+  'CriticalInfrastructureAttack',
+  'ApplicationAttack',
+  'DataBreach',
+  'DataLeak',
+  'IotAttack',
+  'DigitalPaymentAttack',
+  'MaliciousMobileApp',
+  'FakeMobileApp',
+  'SocialMediaAccountAccess',
+  'CloudAttack',
+  'EmergingTechnologyAttack',
+  'ArtificialIntelligenceAttack',
+] as const;
+export type CertInIncidentType = (typeof CERT_IN_INCIDENT_TYPES)[number];
+export const certInIncidentLabel: Record<CertInIncidentType, string> = {
+  TargetedScanning: 'Targeted scanning or probing of critical networks or systems',
+  CriticalSystemCompromise: 'Compromise of critical systems or information',
+  UnauthorisedAccess: 'Unauthorised access to IT systems or data',
+  WebsiteDefacement: 'Website defaced, or intruded into and changed',
+  MaliciousCode: 'Malicious code: virus, worm, Trojan, bot, spyware, ransomware, crypto miner',
+  ServerOrNetworkAttack: 'Attack on servers (database, mail, DNS) or network devices',
+  IdentityTheftOrPhishing: 'Identity theft, spoofing or phishing',
+  DenialOfService: 'Denial of service (DoS or DDoS)',
+  CriticalInfrastructureAttack: 'Attack on critical infrastructure, SCADA, OT systems or wireless networks',
+  ApplicationAttack: 'Attack on applications',
+  DataBreach: 'Data breach',
+  DataLeak: 'Data leak',
+  IotAttack: 'Attack on Internet of Things devices and their systems',
+  DigitalPaymentAttack: 'Attack or incident affecting digital payment systems',
+  MaliciousMobileApp: 'Attack through malicious mobile apps',
+  FakeMobileApp: 'Fake mobile apps',
+  SocialMediaAccountAccess: 'Unauthorised access to social media accounts',
+  CloudAttack: 'Attack or suspicious activity affecting cloud systems',
+  EmergingTechnologyAttack: 'Attack affecting Big Data, blockchain, virtual assets, robotics, 3D printing or drones',
+  ArtificialIntelligenceAttack: 'Attack affecting artificial intelligence or machine learning systems',
+};
+
 /** The short notice goes by SMS; the server keeps it to this many characters. */
 export const NOTICE_MAX_LENGTH = 320;
 

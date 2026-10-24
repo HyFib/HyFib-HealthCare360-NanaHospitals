@@ -135,6 +135,23 @@ function BreachesPage() {
             },
             { key: 'clock', header: 'Report to the Board', render: (b) => <ReportClock b={b} now={now} /> },
             {
+              key: 'certIn',
+              header: 'CERT-In (6 hours)',
+              priority: 'low',
+              render: (b) =>
+                !b.certInType ? (
+                  '—'
+                ) : b.certInReportedAt ? (
+                  `Told ${shortDate(Date.parse(b.certInReportedAt), now)}`
+                ) : b.certInReportOverdue ? (
+                  <Text weight="semibold" style={{ color: tokens.colorPaletteRedForeground1 }}>
+                    Overdue
+                  </Text>
+                ) : (
+                  `Due ${shortDate(Date.parse(b.certInReportDueAt!), now)}`
+                ),
+            },
+            {
               key: 'status',
               header: 'Status',
               render: (b) => <BreachStatusBadge status={b.status} reportOverdue={b.reportOverdue} />,

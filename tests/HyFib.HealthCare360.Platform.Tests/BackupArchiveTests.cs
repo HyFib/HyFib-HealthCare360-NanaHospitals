@@ -32,7 +32,7 @@ public sealed class BackupArchiveTests : IDisposable
         var documents = BackupArchive.ListDocuments(source.Files);
 
         var payload = new MemoryStream();
-        await BackupArchive.WriteAsync(payload, Manifest(key, documents), key, [], dump, source.Files, documents, CancellationToken.None);
+        await BackupArchive.WriteAsync(payload, Manifest(key, documents), key, [], null, dump, source.Files, documents, CancellationToken.None);
         payload.Position = 0;
 
         var target = Machine("target");
@@ -67,7 +67,7 @@ public sealed class BackupArchiveTests : IDisposable
         var documents = BackupArchive.ListDocuments(source.Files);
 
         var payload = new MemoryStream();
-        await BackupArchive.WriteAsync(payload, Manifest(key, documents) with { DocumentCount = 2 }, key, [], dump, source.Files, documents, CancellationToken.None);
+        await BackupArchive.WriteAsync(payload, Manifest(key, documents) with { DocumentCount = 2 }, key, [], null, dump, source.Files, documents, CancellationToken.None);
         payload.Position = 0;
 
         var ex = await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None));
@@ -82,11 +82,38 @@ public sealed class BackupArchiveTests : IDisposable
         var dump = WriteDump(source);
 
         var payload = new MemoryStream();
-        await BackupArchive.WriteAsync(payload, Manifest(RandomNumberGenerator.GetBytes(32), []), key, [], dump, source.Files, [], CancellationToken.None);
+        await BackupArchive.WriteAsync(payload, Manifest(RandomNumberGenerator.GetBytes(32), []), key, [], null, dump, source.Files, [], CancellationToken.None);
         payload.Position = 0;
 
         var ex = await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None));
         ex.Message.ShouldContain("does not match its manifest");
+    }
+
+    [Fact]
+    public async Task An_archive_escrows_the_audit_seal_key_and_refuses_one_missing_or_not_its_own()
+    {
+        var source = Machine("source");
+        var key = RandomNumberGenerator.GetBytes(32);
+        var sealKey = RandomNumberGenerator.GetBytes(32);
+        var dump = WriteDump(source);
+        var manifest = Manifest(key, []) with { AuditSealKey = FieldMasterKey.Fingerprint(sealKey) };
+
+        var payload = new MemoryStream();
+        await BackupArchive.WriteAsync(payload, manifest, key, [], sealKey, dump, source.Files, [], CancellationToken.None);
+        payload.Position = 0;
+        (await BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None)).AuditSealKey.ShouldBe(sealKey);
+
+        var missing = new MemoryStream();
+        await BackupArchive.WriteAsync(missing, manifest, key, [], null, dump, source.Files, [], CancellationToken.None);
+        missing.Position = 0;
+        (await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(missing, new BackupReadTargets(), CancellationToken.None)))
+            .Message.ShouldContain("audit seal key its manifest lists is missing");
+
+        var other = new MemoryStream();
+        await BackupArchive.WriteAsync(other, manifest, key, [], RandomNumberGenerator.GetBytes(32), dump, source.Files, [], CancellationToken.None);
+        other.Position = 0;
+        (await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(other, new BackupReadTargets(), CancellationToken.None)))
+            .Message.ShouldContain("audit seal key in the backup does not match its manifest");
     }
 
     [Theory]
@@ -388,7 +415,7 @@ public sealed class BackupArchiveTests : IDisposable
         await using (var output = File.Create(file))
         await using (var encryptor = unnamed ? BackupEncryption.CreateUnnamedEncryptor(output, recoveryKey) : BackupEncryption.CreateEncryptor(output, recoveryKey))
         {
-            await BackupArchive.WriteAsync(encryptor, Manifest(masterKey, documents), masterKey, [], WriteDump(machine), machine.Files, documents, CancellationToken.None);
+            await BackupArchive.WriteAsync(encryptor, Manifest(masterKey, documents), masterKey, [], null, WriteDump(machine), machine.Files, documents, CancellationToken.None);
             await encryptor.CompleteAsync(CancellationToken.None);
         }
 

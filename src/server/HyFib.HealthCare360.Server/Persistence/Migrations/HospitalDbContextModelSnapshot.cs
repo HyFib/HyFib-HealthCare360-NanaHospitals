@@ -22711,6 +22711,20 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(4000)")
                         .HasColumnName("cause");
 
+                    b.Property<string>("CertInReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("cert_in_reference");
+
+                    b.Property<DateTimeOffset?>("CertInReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cert_in_reported_at");
+
+                    b.Property<string>("CertInType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("cert_in_type");
+
                     b.Property<DateTimeOffset?>("ClosedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("closed_at");
@@ -34487,6 +34501,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("ip_address");
+
+                    b.Property<string>("Mac")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("mac");
 
                     b.Property<Guid?>("PatientId")
                         .HasColumnType("uuid")

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { IntegrationHealthSummary, ServerNodeHealth, SystemHealthReport } from './api';
 import {
+  clockText,
   expiryTone,
   integrationsSummary,
   integrationTone,
@@ -24,6 +25,23 @@ function row(name: string, health: string, enabled = true, configured = true): I
     failuresLast24Hours: 0,
   };
 }
+
+describe('clockText', () => {
+  const check = (offsetSeconds: number | null) => ({
+    checkedAt: '2026-10-24T10:00:00Z',
+    server: offsetSeconds === null ? null : 'time.nplindia.org',
+    offsetSeconds,
+    problem: offsetSeconds === null ? 'time.nplindia.org: timed out.' : null,
+  });
+
+  it('says how far off the clock is, and from which time server, and flags more than a second', () => {
+    expect(clockText(undefined)).toBeNull();
+    expect(clockText(check(0.0004))).toEqual({ text: 'Exact · time.nplindia.org', bad: false });
+    expect(clockText(check(0.25))).toEqual({ text: '0.250 s behind · time.nplindia.org', bad: false });
+    expect(clockText(check(-3.5))).toEqual({ text: '3.500 s ahead · time.nplindia.org', bad: true });
+    expect(clockText(check(null))).toEqual({ text: 'Not checked: no national time server answered', bad: true });
+  });
+});
 
 describe('expiryTone', () => {
   const now = new Date('2026-10-16T09:00:00Z');

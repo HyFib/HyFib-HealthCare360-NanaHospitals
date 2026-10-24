@@ -80,6 +80,13 @@ public sealed class SensitiveDataAttribute : Attribute;
 [AttributeUsage(AttributeTargets.Class)]
 public sealed class NotAuditedAttribute : Attribute;
 
+/// <summary>
+/// Audits the changes to an entity that is not an <see cref="AuditableEntity"/>, as the data audit does for those: an
+/// append-only statutory register, whose every line and every change belongs in the sealed audit trail.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class)]
+public sealed class AuditedAttribute : Attribute;
+
 /// <summary>Marker for in-process domain events.</summary>
 public interface IDomainEvent;
 

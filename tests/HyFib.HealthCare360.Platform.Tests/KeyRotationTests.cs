@@ -248,7 +248,7 @@ public sealed class KeyRotationTests : IDisposable
         using var payload = new MemoryStream();
         var dump = Path.Combine(server.Temp, "db.dump");
         File.WriteAllBytes(dump, "PGDMP"u8.ToArray());
-        await BackupArchive.WriteAsync(payload, manifest, masterKey, [], dump, server.Files, [], CancellationToken.None);
+        await BackupArchive.WriteAsync(payload, manifest, masterKey, [], null, dump, server.Files, [], CancellationToken.None);
         payload.Position = 0;
 
         var ex = await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None));
@@ -330,7 +330,7 @@ public sealed class KeyRotationTests : IDisposable
         await using (var output = File.Create(file))
         await using (var encryptor = BackupEncryption.CreateEncryptor(output, recoveryKey))
         {
-            await BackupArchive.WriteAsync(encryptor, manifest, protector.ExportMasterKey(), ring.Keys, dump, machine.Files, documents, CancellationToken.None);
+            await BackupArchive.WriteAsync(encryptor, manifest, protector.ExportMasterKey(), ring.Keys, null, dump, machine.Files, documents, CancellationToken.None);
             await encryptor.CompleteAsync(CancellationToken.None);
         }
 
