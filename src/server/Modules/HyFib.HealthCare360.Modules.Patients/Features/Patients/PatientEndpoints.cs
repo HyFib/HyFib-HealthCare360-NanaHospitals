@@ -42,6 +42,7 @@ internal static class PatientEndpoints
         bool? includeInactive,
         HospitalDbContext db,
         IFieldProtector protector,
+        IAuditLogger audit,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -79,6 +80,13 @@ internal static class PatientEndpoints
                 LastVisitAt = db.Set<Visit>().Where(v => v.PatientId == p.Id).Max(v => (DateTimeOffset?)v.VisitedAt),
             })
             .ToPagedResultAsync(page, ct);
+
+        // A search shows names, UHIDs and ages: who searched for what, and whom they were shown, is PHI access (A-1).
+        await audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, "patient.searched",
+            page.SearchTerm is null ? "Listed patients" : $"Searched patients for \"{page.SearchTerm}\"")
+        {
+            Details = new { term = page.SearchTerm, gender, category, includeInactive, page = page.Page, matched = result.TotalCount, shown = result.Items.Select(p => p.Id) },
+        }, ct);
 
         var today = time.Today();
         return TypedResults.Ok(result.Map(p => new PatientListItem(
@@ -120,11 +128,24 @@ internal static class PatientEndpoints
             ContactsMasked: !full));
     }
 
-    private static async Task<IResult> GetSummary(
+    private static Task<IResult> GetSummary(
         Guid id,
         HospitalDbContext db,
         PatientAccessGuard guard,
         PatientContactAccess contacts,
+        IAuditLogger audit,
+        TimeProvider time,
+        CancellationToken ct) =>
+        Summary(id, "Viewed patient summary", db, guard, contacts, audit, time, ct);
+
+    /// <summary>The patient's summary (the banner), recorded as access to the patient's record like the full record is.</summary>
+    private static async Task<IResult> Summary(
+        Guid id,
+        string what,
+        HospitalDbContext db,
+        PatientAccessGuard guard,
+        PatientContactAccess contacts,
+        IAuditLogger audit,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -135,7 +156,13 @@ internal static class PatientEndpoints
         }
 
         var summaries = await PatientQueries.SummariesAsync(db, [id], time.Today(), await contacts.FullAsync(ct), ct);
-        return summaries.TryGetValue(id, out var summary) ? TypedResults.Ok(summary) : Error.NotFound(nameof(Patient), id).ToProblem();
+        if (!summaries.TryGetValue(id, out var summary))
+        {
+            return Error.NotFound(nameof(Patient), id).ToProblem();
+        }
+
+        await audit.PatientRecordAccessedAsync(id, what, ct);
+        return TypedResults.Ok(summary);
     }
 
     private static async Task<IResult> GetByUhid(
@@ -143,6 +170,7 @@ internal static class PatientEndpoints
         HospitalDbContext db,
         PatientAccessGuard guard,
         PatientContactAccess contacts,
+        IAuditLogger audit,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -153,7 +181,7 @@ internal static class PatientEndpoints
             return Error.NotFound(nameof(Patient), normalized).ToProblem();
         }
 
-        return await GetSummary(id.Value, db, guard, contacts, time, ct);
+        return await Summary(id.Value, $"Looked up patient by UHID {normalized}", db, guard, contacts, audit, time, ct);
     }
 
     private static async Task<IResult> CheckDuplicates(DuplicateCheckRequest request, PatientRegistrationService registration, CancellationToken ct) =>

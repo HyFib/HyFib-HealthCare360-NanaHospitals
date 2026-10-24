@@ -65,6 +65,10 @@ public sealed class PlatformOptions
 
     public RateLimitOptions RateLimits { get; set; } = new();
 
+    public AuditOptions Audit { get; set; } = new();
+
+    public TimeSyncOptions TimeSync { get; set; } = new();
+
     public bool RunsJobs => !string.Equals(Role, "api", StringComparison.OrdinalIgnoreCase);
 
     public bool ServesApi => !string.Equals(Role, "worker", StringComparison.OrdinalIgnoreCase);
@@ -226,6 +230,44 @@ public sealed class PartitionOptions
     public int MonthsAhead { get; set; } = 3;
 }
 
+/// <summary>Where the audit chain's anchors go (<see cref="Auditing.AuditAnchors"/>).</summary>
+public sealed class AuditOptions
+{
+    /// <summary>
+    /// The anchor file: one line per anchor, only ever appended to. Default <c>audit/anchors.log</c> in the shared folder of
+    /// several nodes, or the data directory. Point it at storage the database's administrators cannot write (a write-once
+    /// share, another machine), so a chain rewritten in the database no longer matches what was written here.
+    /// </summary>
+    public string? AnchorFile { get; set; }
+
+    /// <summary>How often the chain's end is anchored, at most (default an hour; at least a minute).</summary>
+    public TimeSpan AnchorInterval { get; set; } = TimeSpan.FromHours(1);
+}
+
+/// <summary>
+/// The server clock's check against the national time servers (CERT-In Directions of 28 April 2022, direction (i): ICT
+/// systems synchronise their clocks to the NTP servers of NIC or NPL, or servers traceable to them).
+/// </summary>
+public sealed class TimeSyncOptions
+{
+    /// <summary>NPL's and NIC's public NTP servers, asked when <see cref="Servers"/> lists none.</summary>
+    public static readonly IReadOnlyList<string> NationalServers = ["time.nplindia.org", "samay1.nic.in", "samay2.nic.in"];
+
+    /// <summary>Check the clock (default on).</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>NTP servers asked in turn, the first that answers used: a hospital time server that follows NIC or NPL, say. Empty: <see cref="NationalServers"/>.</summary>
+    public List<string> Servers { get; set; } = [];
+
+    public IReadOnlyList<string> ServersToAsk => Servers.Count > 0 ? Servers : NationalServers;
+
+    /// <summary>How far the server clock may be from theirs before System health warns (default 1 second).</summary>
+    public TimeSpan MaxOffset { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>How often the clock is checked (default every 15 minutes).</summary>
+    public TimeSpan CheckInterval { get; set; } = TimeSpan.FromMinutes(15);
+}
+
 public sealed class BackupOptions
 {
     /// <summary>The nightly backup (<see cref="Schedule"/>).</summary>
@@ -294,6 +336,9 @@ public sealed class DataDirectories
         Logs = Path.Combine(Root, "logs");
         Backups = string.IsNullOrWhiteSpace(options.Backup.Directory) ? Path.Combine(Root, "backups") : options.Backup.Directory;
         Temp = Path.Combine(Root, "temp");
+        AuditAnchors = string.IsNullOrWhiteSpace(options.Audit.AnchorFile)
+            ? Path.Combine(Shared ?? Root, "audit", "anchors.log")
+            : Path.GetFullPath(Environment.ExpandEnvironmentVariables(options.Audit.AnchorFile));
     }
 
     public string Root { get; }
@@ -318,6 +363,9 @@ public sealed class DataDirectories
     public string Logs { get; }
     public string Backups { get; }
     public string Temp { get; }
+
+    /// <summary>The audit chain's anchor file (<see cref="AuditOptions.AnchorFile"/>).</summary>
+    public string AuditAnchors { get; }
 
     public void EnsureCreated()
     {

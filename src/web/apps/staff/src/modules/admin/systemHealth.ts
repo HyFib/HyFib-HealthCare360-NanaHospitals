@@ -1,4 +1,4 @@
-import type { IntegrationHealthSummary, ServerNodeHealth, SystemHealthReport } from './api';
+import type { IntegrationHealthSummary, ServerNodeHealth, SystemHealthReport, ClockCheck } from './api';
 
 export type HealthTone = 'ok' | 'warn' | 'bad';
 
@@ -117,6 +117,21 @@ export function lowDiskSpace(storage: SystemHealthReport['storage']): boolean {
 }
 
 /** How long a server has been running, in hours for two days and in days after. */
+/** The clock row: how far off, and from which time server; null before the first check. */
+export function clockText(clock: ClockCheck | null | undefined): { text: string; bad: boolean } | null {
+  if (!clock) {
+    return null;
+  }
+  if (clock.offsetSeconds === null) {
+    return { text: 'Not checked: no national time server answered', bad: true };
+  }
+  const off = Math.abs(clock.offsetSeconds);
+  return {
+    text: `${off < 0.001 ? 'Exact' : `${off.toFixed(3)} s ${clock.offsetSeconds > 0 ? 'behind' : 'ahead'}`} · ${clock.server}`,
+    bad: off > 1,
+  };
+}
+
 export function runningFor(uptimeHours: number): string {
   return uptimeHours < 48 ? `${Math.round(uptimeHours)} hours` : `${Math.round(uptimeHours / 24)} days`;
 }

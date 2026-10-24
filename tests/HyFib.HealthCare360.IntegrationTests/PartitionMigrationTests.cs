@@ -145,7 +145,10 @@ public sealed class PartitionMigrationTests(HospitalServer server)
         await db.Database.ExecuteSqlRawAsync(PlatformSql.PostMigrationScript, Ct);
         var thisMonth = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var expected = await SeedAsync(database.ConnectionString, thisMonth);
-        (await new AuditChainService(db).SealPendingAsync(Ct)).ShouldBe(expected.Count(r => r.Table == "audit.audit_events"));
+
+        // The audit trail's keyed seal came after these migrations; this version of HC360 reads and writes it.
+        await ExecuteAsync(database.ConnectionString, "ALTER TABLE audit.audit_events ADD COLUMN IF NOT EXISTS mac character varying(64)");
+        (await Chain(db).SealPendingAsync(Ct)).ShouldBe(expected.Count(r => r.Table == "audit.audit_events"));
         await ExecuteAsync(database.ConnectionString,
             "INSERT INTO audit.audit_events (occurred_at, category, action, severity) VALUES (now(), 'security', 'it.unsealed', 'Info')");
         var before = await ChecksumsAsync(database.ConnectionString);
@@ -234,8 +237,8 @@ public sealed class PartitionMigrationTests(HospitalServer server)
         (await db.Set<NotificationLog>().Where(l => l.Id == log.Id).ExecuteDeleteAsync(Ct)).ShouldBe(1);
         (await db.Set<IntegrationLog>().CountAsync(l => l.CreatedAt < new DateTimeOffset(thisMonth), Ct))
             .ShouldBe(expected.Count(r => r.Table == "integrations.integration_logs" && r.At < thisMonth));
-        (await new AuditChainService(db).SealPendingAsync(Ct)).ShouldBe(2);
-        var verified = await new AuditChainService(db).VerifyAsync(Ct);
+        (await Chain(db).SealPendingAsync(Ct)).ShouldBe(2);
+        var verified = await Chain(db).VerifyAsync(Ct);
         (verified.Valid, verified.UnsealedCount).ShouldBe((true, 0));
         verified.CheckedCount.ShouldBe(before["audit.audit_events"].Rows + 1);
 
@@ -266,7 +269,7 @@ public sealed class PartitionMigrationTests(HospitalServer server)
             await Should.ThrowAsync<PostgresException>(() => ExecuteAsync(connection, "TRUNCATE audit.audit_events"));
         }
 
-        (await new AuditChainService(db).VerifyAsync(Ct)).Valid.ShouldBeTrue();
+        (await Chain(db).VerifyAsync(Ct)).Valid.ShouldBeTrue();
     }
 
     /// <summary>
@@ -391,6 +394,17 @@ public sealed class PartitionMigrationTests(HospitalServer server)
 
     /// <summary>A UTC time as a timestamptz literal, to the microsecond.</summary>
     private static string Bound(DateTime at) => at.ToString("yyyy-MM-dd HH:mm:ss.ffffff", CultureInfo.InvariantCulture) + "+00";
+
+    /// <summary>The audit chain as the server seals and verifies it, with a seal key and anchors of the test's own.</summary>
+    private AuditChainService Chain(HospitalDbContext db)
+    {
+        var directories = new DataDirectories(new PlatformOptions { DataDirectory = Path.Combine(Path.GetTempPath(), "hc360-it-chain", Guid.NewGuid().ToString("N")) });
+        return new AuditChainService(db, _sealKey ??= new AuditSealKey(directories, new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()),
+            _anchors ??= new AuditAnchors(directories, NullLogger<AuditAnchors>.Instance), TimeProvider.System);
+    }
+
+    private AuditSealKey? _sealKey;
+    private AuditAnchors? _anchors;
 
     private HospitalDbContext Context(string connectionString) => new(
         new DbContextOptionsBuilder<HospitalDbContext>()

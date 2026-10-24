@@ -79,7 +79,9 @@ internal sealed class BreachConfiguration : IEntityTypeConfiguration<Breach>
         b.Property(x => x.PrincipalNotice).HasMaxLength(320);
         b.Property(x => x.BoardReference).HasMaxLength(100);
         b.Property(x => x.ClosingNote).HasMaxLength(1000);
+        b.Property(x => x.CertInReference).HasMaxLength(100);
         b.Ignore(x => x.ReportDueAt);
+        b.Ignore(x => x.CertInReportDueAt);
         b.HasIndex(x => x.BreachNumber).IsUnique();
         b.HasIndex(x => new { x.Status, x.AwareAt });
     }

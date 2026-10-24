@@ -296,7 +296,9 @@ and grants nothing.
   - The patient, the account holder or staff can end a link, and it stops on the next request. Making and ending links
     are audited, and a patient merge or the erasure that closes a portal account carries them along or ends them.
   - Signing in counts as proof of identity (for a privacy request, say) only for patients on the account's own number.
-- Every access to a patient record is audited.
+- Every access to a patient record is audited, and so is every way staff see one: a patient search (what was searched
+  for, how many matched and which patients were shown, `patient.searched`), the summary the banner shows and a lookup
+  by UHID (`PatientAccessAuditTests`).
 - **Radiology images** from PACS reach the browser only through the server, as JPEG or PNG within a size limit, for
   people with `radiology.images.view` (doctors, radiographers, radiologists). PACS credentials stay on the server. A
   study's images are found by the study UID in HC360's database, and only series and objects PACS lists for that study
@@ -426,14 +428,45 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     hash, chain position and previous hash together, linked to the sealed entry before it (checked at commit), with
     nothing else in the row changed. Each server, as it starts, puts back any of these triggers it finds dropped,
     turned off or changed, on the log and on each month's partition.
-  - Administration › Audit log › *Verify integrity* re-checks the chain, and names the position of the first entry
-    changed, moved or removed, even by someone who turned the triggers off. The chain has no key, so someone who also
-    sealed every later entry again would not be found (ASVS V16.4.2). It also fails on any seal outside the chain.
-    Tests: `AuditTrailTests` (against PostgreSQL) and `AuditSealTests`.
+  - Each entry also carries a keyed seal: an HMAC-SHA256 of its hash under the audit seal key (`keys/audit-seal.key`,
+    wrapped by Data Protection like the field key, so not in the database). Someone who can write the database and
+    turns the triggers off can change an entry and compute the SHA-256 chain again from it, but cannot make the seals;
+    once entries carry seals, none after may lack one. Backups escrow the key beside the field keys, and a restore puts
+    it back, so a restored server verifies the seals it made.
+  - Anchors outside the database: at most every hour (`HealthCare360:Audit:AnchorInterval`) the sealer appends the
+    chain's end (position, hash, seal, time) to the anchor file (`audit/anchors.log`, or `HealthCare360:Audit:AnchorFile`:
+    point it at storage the database's administrators cannot write) and to the server log. Every anchor's position
+    must hold that hash, and the chain must reach the last anchor, so a chain cut short, or made again from an earlier
+    point, is found even by someone who holds the key.
+  - Administration › Audit log › *Verify integrity* re-checks the chain, the seals and the anchors, and names the position
+    of the first entry changed, moved or removed, even by someone who turned the triggers off (ASVS V16.4.2). It also
+    fails on any seal outside the chain.
+  - *Export for auditors* writes the sealed entries of a period, contiguous by position, with their hashes, seals and the
+    anchors in range, to a JSON file (`audit.exported` is audited). An auditor checks it on any machine with
+    `HyFib.HealthCare360.Server.exe audit verify-export --in <file> [--anchors <their copy of the anchor file>]`: the
+    chain and the anchors, without HC360's database or key (the seals need the key, which only the server's own
+    verification has).
+  - Tests, against PostgreSQL: `AuditTrailTests` (the triggers, and each column changed behind them),
+    `AuditSealTests` (a chain computed again without the key, seals taken off, a chain cut short past an anchor or made
+    again at an anchored position, an export changed after it was made), `AuditTriggerTests`.
   - The log is partitioned by month (SCAL-04). Each month's partition refuses TRUNCATE and DELETE as the table does, and
     the chain-link trigger refuses a seal that takes a chain position another entry has (a unique index would have to
     include the month). No partition is ever dropped, of the audit log or any other table: records are deleted only by
     the Privacy retention schedule, row by row, at least as late as the law allows and with every run audited.
+- The controlled-drug registers (the pharmacy's of every Schedule H1/X and NDPS movement, and the prescriber's of every
+  signed controlled line) are append-only in the database: a trigger refuses a delete, a truncate and any change but the
+  patient link a merge of duplicate records moves (`ControlledDrugRegisterGuardTests`). Each line, and each move of its
+  link, is in the sealed audit trail (`[Audited]`).
+- CERT-In's Directions of 28 April 2022:
+  - The server's log files are kept 180 days (`HospitalLogging.RetentionDays`), on the Server Node, in India.
+  - Each server checks its clock against NPL's and NIC's NTP servers (time.nplindia.org, samay1/samay2.nic.in; or the
+    hospital's own, `HealthCare360:TimeSync:Servers`) every 15 minutes, and System health warns when it is more than a
+    second off (`HealthCare360:TimeSync:MaxOffset`) or none answers. Windows Time keeps the clock; the check shows when
+    it does not (`ServerClockTests`).
+  - A breach that is also an incident of a kind CERT-In lists (Annexure I) is reported to CERT-In within 6 hours of
+    the hospital becoming aware: the breach register shows the deadline beside the Board's 72 hours, says when it has
+    passed, and records when CERT-In was told and its reference (`BreachCertInTests`). An incident with no personal
+    data is recorded in the same register and closed with a note saying so.
 - Records carry who and when on every change, and deletes are soft deletes. Every change to an audited record also
   writes a data audit event with each changed value (from/to); compound values such as addresses, cardiology
   findings and TTI results are recorded part by part. Binary values (a prescription's DSC signature and the bytes it

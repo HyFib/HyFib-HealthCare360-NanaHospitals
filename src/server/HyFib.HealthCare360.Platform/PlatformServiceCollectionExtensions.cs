@@ -228,6 +228,9 @@ public static class PlatformServiceCollectionExtensions
         // ---------------- cross-cutting services
         services.AddScoped<IAuditLogger, AuditLogger>();
         services.AddScoped<AuditChainService>();
+        services.AddSingleton<AuditSealKey>();
+        services.AddSingleton<AuditAnchors>();
+        services.AddServerClock();
         services.AddScoped<INumberSeries, NumberSeriesService>();
         services.AddScoped<IOutbox, Outbox>();
         services.AddScoped<INotificationService, NotificationService>();

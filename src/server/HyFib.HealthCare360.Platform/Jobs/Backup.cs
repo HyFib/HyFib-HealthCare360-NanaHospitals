@@ -124,6 +124,7 @@ internal sealed class BackupService(
     DataDirectories directories,
     RecoveryKeyStore recoveryKeys,
     IFieldKeyEscrow keys,
+    Auditing.AuditSealKey auditSealKey,
     IDocumentStoreLock documentsLock,
     IPostgresTools postgres,
     INotificationService notifications,
@@ -218,21 +219,23 @@ internal sealed class BackupService(
             var ring = keys.ExportRing();
             var manifest = new BackupManifest(BackupArchive.Format, kind.ToString(), startedAt, ServerVersion, postgres.DatabaseName, migrations,
                 includeDocuments, documents.Count, documents.Sum(d => d.Length), keys.Fingerprint,
-                ring.Keys.Count == 0 ? null : ring.Keys.Select(FieldMasterKey.Fingerprint).ToList(), ring.Current);
+                ring.Keys.Count == 0 ? null : ring.Keys.Select(FieldMasterKey.Fingerprint).ToList(), ring.Current, auditSealKey.Fingerprint);
 
             string sha256;
             var masterKey = keys.ExportMasterKey();
+            var sealKey = auditSealKey.Export();
             try
             {
                 await using var file = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
                 await using var encryptor = BackupEncryption.CreateEncryptor(file, backupKey);
-                await BackupArchive.WriteAsync(encryptor, manifest, masterKey, ring.Keys, dump, directories.Files, documents, ct);
+                await BackupArchive.WriteAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, directories.Files, documents, ct);
                 await encryptor.CompleteAsync(ct);
                 sha256 = encryptor.Sha256!;
             }
             finally
             {
                 CryptographicOperations.ZeroMemory(masterKey);
+                CryptographicOperations.ZeroMemory(sealKey);
                 foreach (var key in ring.Keys)
                 {
                     CryptographicOperations.ZeroMemory(key);

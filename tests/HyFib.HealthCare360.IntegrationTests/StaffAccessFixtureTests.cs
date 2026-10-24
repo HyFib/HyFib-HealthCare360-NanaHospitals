@@ -9,10 +9,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
-/// The staff app's role-access check (src/web/apps/staff/src/test/roleAccess.test.tsx) opens every menu link as every
-/// built-in role and fails for a screen that asks the server for something the role may not read. It reads the roles'
-/// permissions and the API's permission rules from <c>serverAccess.json</c>, kept beside it; this test fails when that
-/// file no longer says what the server does. Write it again with HC360_WRITE_ACCESS_FIXTURE=1.
+/// The staff app's role-access check (src/web/apps/staff/src/test/roleAccess.ts) opens every menu link and record screen
+/// as every built-in role and fails for a screen that asks the server for something the role may not read, or shows a
+/// button that sends what the role may not do. It reads the roles' permissions and the API's permission rules from
+/// <c>serverAccess.json</c>, kept beside it; this test fails when that file no longer says what the server does. Write
+/// it again with HC360_WRITE_ACCESS_FIXTURE=1.
 /// </summary>
 public sealed class StaffAccessFixtureTests(HospitalServer server)
 {

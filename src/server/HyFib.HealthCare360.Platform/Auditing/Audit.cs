@@ -28,8 +28,9 @@ public enum AuditSeverity
 
 /// <summary>
 /// Append-only audit record. Rows are inserted without locking; <see cref="AuditSealer"/> later assigns
-/// <see cref="ChainIndex"/> and a SHA-256 hash chained to the previous sealed row, so tampering is detectable.
-/// A database trigger forbids UPDATE (other than sealing) and DELETE.
+/// <see cref="ChainIndex"/>, a SHA-256 hash chained to the previous sealed row, so tampering is detectable, and a seal of
+/// that hash under a key held outside the database (<see cref="Mac"/>), so whoever can write the database cannot make a new
+/// chain that verifies. A database trigger forbids UPDATE (other than sealing) and DELETE.
 /// </summary>
 public sealed class AuditEvent
 {
@@ -55,8 +56,11 @@ public sealed class AuditEvent
     public string? PreviousHash { get; set; }
     public string? Hash { get; set; }
 
+    /// <summary>HMAC-SHA256 of <see cref="Hash"/> under the <see cref="AuditSealKey"/>; null for events sealed before it.</summary>
+    public string? Mac { get; set; }
+
     /// <summary>
-    /// Canonical text hashed into the chain (stable field order, invariant formatting): every column but the seal, so a
+    /// Canonical text hashed into the chain (stable field order, invariant formatting): every column but the seals, so a
     /// changed severity, user name, device, session, address or correlation ID breaks the chain as a changed summary does.
     /// </summary>
     public string CanonicalContent() => string.Join('\u001f',
@@ -111,6 +115,7 @@ internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEv
         b.Property(x => x.Details).HasColumnType("jsonb");
         b.Property(x => x.PreviousHash).HasMaxLength(64);
         b.Property(x => x.Hash).HasMaxLength(64);
+        b.Property(x => x.Mac).HasMaxLength(64);
 
         b.HasIndex(x => x.OccurredAt);
         b.HasIndex(x => new { x.PatientId, x.OccurredAt });

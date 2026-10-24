@@ -98,6 +98,13 @@ internal static class ServerCli
               rights; the "HC360 disk encryption check" scheduled task runs it as SYSTEM every day and at start-up. Exit code
               0 when every disk is protected, 3 when one is not.
 
+          audit verify-export --in <hc360-audit-....json> [--anchors <anchors.log>]
+              Checks an audit export (Administration > Audit log > Export for auditors) on any machine, without the
+              database: every record's hash is that of its content and links to the one before, and each anchor in the
+              export, and in --anchors (a copy of the anchor file kept elsewhere), matches the record at its position. The
+              keyed seals need the server's key, so HC360's own verification checks them. Exit code 0 when it is intact, 3
+              when it is not.
+
           catalogue import --file <file> [--dry-run]
               Imports the hospital's WHO ICD-10 ClaML file (icd102019en.xml, or the icd102019en.xml.zip WHO provides) or the
               CMS ICD-10-PCS order file (icd10pcs_order_YYYY.txt, or its zip) into the local code catalogue, as Medical
@@ -116,7 +123,7 @@ internal static class ServerCli
         """;
 
     public static bool IsCommand(string argument) =>
-        argument is "backup" or "catalogue" or "settings" or "database" or "certificates" or "disk-encryption" or "loadtest" or "desktop" or "help"
+        argument is "backup" or "audit" or "catalogue" or "settings" or "database" or "certificates" or "disk-encryption" or "loadtest" or "desktop" or "help"
             or "--help" or "-h";
 
     public static async Task<int> RunAsync(string[] args)
@@ -131,6 +138,7 @@ internal static class ServerCli
                 ["backup", "verify", ..] when options.ContainsKey("in") => await VerifyAsync(options),
                 ["backup", "restore", ..] when options.ContainsKey("in") => await RestoreAsync(options),
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
+                ["audit", "verify-export", ..] when options.ContainsKey("in") => AuditCli.VerifyExport(options["in"], options.GetValueOrDefault("anchors")),
                 ["catalogue", "import", ..] when options.ContainsKey("file") => await CatalogueCli.ImportAsync(options["file"], dryRun),
                 ["loadtest", "patients", ..] when options.ContainsKey("count") => await LoadTestCli.AddPatientsAsync(options["count"]),
                 ["loadtest", "accounts", ..] when options.ContainsKey("count") => await LoadTestCli.AddAccountsAsync(options["count"]),
@@ -234,6 +242,9 @@ internal static class ServerCli
         Console.WriteLine(result.RingKeysInstalled == 0
             ? $"Installed the backup's field encryption key in {directories.Keys}."
             : $"Installed the backup's field encryption key and the {result.RingKeysInstalled} key(s) its rotations added in {directories.Keys}.");
+        Console.WriteLine(result.AuditSealKeyInstalled
+            ? "Installed the backup's audit seal key: the restored audit trail's seals verify on this server."
+            : "This backup has no audit seal key (it is older): audit records it sealed with a key will not verify here.");
         if (result.PreviousKeyKeptAs is { } keptAs)
         {
             Console.WriteLine($"The different key that was here is kept as {keptAs}.");

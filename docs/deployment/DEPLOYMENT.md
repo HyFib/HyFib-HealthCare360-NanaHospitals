@@ -178,7 +178,7 @@ of work already stop guessing.
 ### Reading the server log
 
 The server writes its log to `%ProgramData%\HyFib\HealthCare360\logs\hc360-server-<date>.json`, one event per line as a
-JSON object (SRS OBS-01), and keeps 60 days. Each line has the time (`@t`), the level (`@l`), the message (`@m`), the
+JSON object (SRS OBS-01), and keeps 180 days, as CERT-In's Directions of 28 April 2022 ask. Each line has the time (`@t`), the level (`@l`), the message (`@m`), the
 error (`@x`), the part of the server that wrote it (`SourceContext`) and the request's correlation id (`CorrelationId`),
 the "Reference" an error message in HC360 shows. Phone, Aadhaar and ABHA numbers, e-mail addresses and secrets
 are masked. Errors also go to Windows Event Viewer › Application (source *HyFib HealthCare360*). To list today's errors in
@@ -297,17 +297,26 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 4. **Administration › Backups › Recovery key › Make a new key** (see "A new backup recovery key" above): write down
    the key and its ID, type the key back from your copy, and store the copy in the hospital safe. Until then System
    health warns that nobody holds the key, and backups cannot be restored on new hardware.
-5. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
+5. **Audit anchors and the clock** (CERT-In's Directions of 28 April 2022):
+   - The audit trail's anchors go to `%ProgramData%\HyFib\HealthCare360\audit\anchors.log`. To keep them where the
+     database's administrators cannot change them, set `HealthCare360:Audit:AnchorFile` to a write-once share or another
+     machine, and give that file to auditors with an audit export (Administration › Audit log › Export for auditors).
+   - Set Windows Time to synchronise with NPL or NIC (`w32tm /config /manualpeerlist:"time.nplindia.org samay1.nic.in"
+     /syncfromflags:manual /update`), and allow NTP (UDP 123) to them. System health shows the clock's offset and warns
+     when it is more than a second off or no time server answers; a hospital with its own time server that follows
+     them lists it under `HealthCare360:TimeSync:Servers`.
+   - The server keeps its log files 180 days in `logs`; leave room for them on the data drive.
+6. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
    refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
    password works for 72 hours; after that, reset the password to give out a new one.
-6. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
+7. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server's WiFi drops, its WiFi adapter disappears, it
    starts without the WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure).
    System health warns while the adapter is missing; on a server moved to Ethernet on purpose, restart the
    `HC360Server` service to clear the warning.
    Set `alerts.oncallWhatsApp` to `true` to have those alerts on WhatsApp too, once the hospital's WhatsApp provider
    has approved the `system_alert` template. A failed backup is told to the administrators in the app, not by SMS.
-7. **Documents and the messages that carry them** (reports, prescriptions, bills):
+8. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a
      document embeds). *Preview letterhead* shows the result before saving. Doctors' signatures are uploaded in
@@ -327,7 +336,7 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - To stop sending report PDFs by e-mail and WhatsApp, set `diagnostics.reports.sendPdf` to `false`, and use a
      WhatsApp template without a document header (untick "Document header"). A template with a header can't go
      without its PDF, so those WhatsApp messages would be skipped; the SMS and e-mail still go.
-8. **Doctors' DSC signatures on prescriptions** (ERX-04; only where the hospital sets
+9. **Doctors' DSC signatures on prescriptions** (ERX-04; only where the hospital sets
    `clinical.prescriptions.signature` to `"optional"` or `"required"`, docs/modules/clinical.md): HC360 accepts a
    doctor's DSC only from a certificate that chains to a CCA India root in the server's **DSC trust folder**, and HC360
    does not ship those roots. Download the CCA India root certificates from cca.gov.in, check their thumbprints against
@@ -347,7 +356,7 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    hand may not): a folder it cannot read counts as an empty one, and System health says why
    (`prescriptions.dsc_trust_unreadable`). In **Hospital setup › Doctors and clinical staff**, write each doctor's name
    in full as it is on their DSC: a DSC is accepted only from the doctor it is issued to.
-9. **Administration › System health**: everything should be green, and the WiFi signal above 60%. It also shows each
+10. **Administration › System health**: everything should be green, and the WiFi signal above 60%. It also shows each
    integration set up in step 7 as Administration › Integrations does, and when the hospital CA and the server
    certificate expire.
 
@@ -698,8 +707,8 @@ it.
   `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS.
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
-- Each backup holds the database, the stored documents and the field encryption keys, all encrypted. Every backup is
-  read back and checked when it is made. The **Contents** and **Checked** columns show this.
+- Each backup holds the database, the stored documents, the field encryption keys and the audit seal key, all encrypted.
+  Every backup is read back and checked when it is made. The **Contents** and **Checked** columns show this.
 - **Restore test every quarter** on a spare machine. To check a copy on the NAS or a USB drive without restoring it:
 
   ```powershell
@@ -724,7 +733,7 @@ it.
      the restore. Workstations then trust the new server as they trusted the old one, and find it on the network.
      Otherwise re-run HC360 Desktop setup on each (Change server…) and compare the new fingerprint.
   4. Where doctors sign prescriptions with their DSC, copy the CCA India root certificates back into
-     `%ProgramData%\HyFib\HealthCare360\certs\dsc-trust` (section 4, step 8): they are not in the backup. Until then
+     `%ProgramData%\HyFib\HealthCare360\certs\dsc-trust` (section 4, step 9): they are not in the backup. Until then
      DSC signing is refused and DSC-signed prescriptions are not printed as such (where the DSC is required, not at all);
      System health warns.
 
@@ -949,7 +958,7 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    (step 6), every workstation must be set up again: Change server…, and compare the new fingerprint.
 6. **Check**: System health; and that the records made just before the failure are there. Where doctors sign
    prescriptions with their DSC, System health warns (`prescriptions.dsc_trust_empty`) if the standby's DSC trust
-   folder is empty: copy the CCA India roots there (section 4, step 8).
+   folder is empty: copy the CCA India roots there (section 4, step 9).
 
 ### Making the old primary the new standby
 

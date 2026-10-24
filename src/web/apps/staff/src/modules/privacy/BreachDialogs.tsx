@@ -23,7 +23,7 @@ import { privacyApi, type BreachDetail } from './api';
 import { extensionMinimum } from './rules';
 import type { BreachCommand } from './useBreachCommand';
 
-export type BreachStepKind = 'boardInformed' | 'extension' | 'reportSubmitted';
+export type BreachStepKind = 'boardInformed' | 'extension' | 'reportSubmitted' | 'certInReported';
 
 const steps: Record<
   BreachStepKind,
@@ -51,6 +51,14 @@ const steps: Record<
     dateLabel: 'When the report was sent',
     confirm: 'Record',
     success: 'Recorded that the report was sent',
+  },
+  certInReported: {
+    title: 'Record that CERT-In was told',
+    description:
+      'Record when the incident was reported to CERT-In (incident@cert-in.org.in, or its portal), within 6 hours of the hospital becoming aware of it, and the reference CERT-In gave.',
+    dateLabel: 'When CERT-In was told',
+    confirm: 'Record',
+    success: 'Recorded that CERT-In was told',
   },
 };
 
@@ -81,13 +89,16 @@ function stepSchema(kind: BreachStepKind, breach: BreachDetail) {
         }
         return;
       }
-      const earliest = kind === 'boardInformed' ? breach.awareAt : (breach.boardInformedAt ?? breach.awareAt);
+      const earliest =
+        kind === 'boardInformed' || kind === 'certInReported'
+          ? breach.awareAt
+          : (breach.boardInformedAt ?? breach.awareAt);
       if (at < Date.parse(earliest) - 60_000) {
         ctx.addIssue({
           code: 'custom',
           path: ['at'],
           message:
-            kind === 'boardInformed'
+            kind === 'boardInformed' || kind === 'certInReported'
               ? `It cannot be before the hospital became aware (${formatDateTime(earliest)}).`
               : `It cannot be before the Board was first told (${formatDateTime(earliest)}).`,
         });
@@ -99,7 +110,7 @@ function stepSchema(kind: BreachStepKind, breach: BreachDetail) {
 
 type StepValues = { at: string; reference: string };
 
-/** Board told, extension granted, or report sent: when, and the Board's reference. */
+/** Board told, extension granted, report sent, or CERT-In told: when, and the reference given. */
 export function BreachStepDialog({
   kind,
   breach,
@@ -143,7 +154,10 @@ function StepBody({
   const [schema] = useState(() => stepSchema(kind, breach));
   const form = useForm<StepValues>({
     resolver: zodResolver(schema),
-    defaultValues: { at: kind === 'extension' ? '' : nowIstInput(), reference: breach.boardReference ?? '' },
+    defaultValues: {
+      at: kind === 'extension' ? '' : nowIstInput(),
+      reference: (kind === 'certInReported' ? breach.certInReference : breach.boardReference) ?? '',
+    },
   });
 
   const submit = async (values: StepValues) => {
@@ -157,7 +171,9 @@ function StepBody({
         ? () => privacyApi.boardInformed(breach.id, at, reference)
         : kind === 'extension'
           ? () => privacyApi.extension(breach.id, at, reference)
-          : () => privacyApi.reportSubmitted(breach.id, at, reference);
+          : kind === 'certInReported'
+            ? () => privacyApi.certInReported(breach.id, at, reference)
+            : () => privacyApi.reportSubmitted(breach.id, at, reference);
     const result = await command.run(action, {
       success: text.success,
       failure: 'Could not record it',
@@ -210,7 +226,7 @@ function StepBody({
           <TextField
             control={form.control}
             name="reference"
-            label="The Board’s reference (if any)"
+            label={kind === 'certInReported' ? 'CERT-In’s reference (if any)' : 'The Board’s reference (if any)'}
             maxLength={100}
             autoComplete="off"
           />

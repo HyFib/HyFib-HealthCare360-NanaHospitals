@@ -29,6 +29,9 @@ internal static class BreachEndpoints
         group.MapPost("/{id:guid}/report-submitted", async (Guid id, ReportSubmittedRequest r, BreachService breaches, CancellationToken ct) =>
                 (await breaches.RecordReportSubmittedAsync(id, r, ct)).ToNoContent())
             .WithValidation<ReportSubmittedRequest>();
+        group.MapPost("/{id:guid}/cert-in-reported", async (Guid id, CertInReportedRequest r, BreachService breaches, CancellationToken ct) =>
+                (await breaches.RecordCertInReportedAsync(id, r, ct)).ToNoContent())
+            .WithValidation<CertInReportedRequest>();
         group.MapPost("/{id:guid}/close", async (Guid id, CloseBreachRequest r, BreachService breaches, CancellationToken ct) =>
                 (await breaches.CloseAsync(id, r, ct)).ToNoContent())
             .WithValidation<CloseBreachRequest>();

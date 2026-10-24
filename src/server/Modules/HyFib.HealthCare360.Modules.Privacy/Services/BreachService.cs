@@ -73,7 +73,7 @@ public sealed class BreachService(
             .ToPagedResultAsync(page, ct);
         return rows.Map(x => new BreachListItem(x.Breach.Id, x.Breach.BreachNumber, x.Breach.Title, x.Breach.Status, x.Breach.AwareAt,
             x.Breach.ReportDueAt, x.Breach.IsReportOverdue(now), x.Breach.EstimatedAffected, x.Listed, x.Notified, x.Breach.BoardInformedAt,
-            x.Breach.ReportSubmittedAt));
+            x.Breach.ReportSubmittedAt, x.Breach.CertInType, x.Breach.CertInReportDueAt, x.Breach.CertInReportedAt, x.Breach.IsCertInReportOverdue(now)));
     }
 
     public async Task<BreachDetail?> DetailAsync(Guid id, CancellationToken ct)
@@ -106,8 +106,10 @@ public sealed class BreachService(
 
         await notifications.NotifyPermissionHoldersAsync(PrivacyPermissions.BreachesManage, null,
             $"Personal data breach {breach.BreachNumber} recorded",
-            $"Tell the Data Protection Board without delay. The detailed report is due by {LocalTime(breach.ReportDueAt)}.",
-            $"/privacy/breaches/{breach.Id}", "privacy", "warning", ct);
+            breach.CertInReportDueAt is { } certInDue
+                ? $"Report it to CERT-In by {LocalTime(certInDue)} (6 hours), and tell the Data Protection Board without delay. The detailed report is due by {LocalTime(breach.ReportDueAt)}."
+                : $"Tell the Data Protection Board without delay. The detailed report is due by {LocalTime(breach.ReportDueAt)}.",
+            $"/privacy/breaches/{breach.Id}", "privacy", breach.CertInType is null ? "warning" : "critical", ct);
         return new BreachCreated(breach.Id, breach.BreachNumber);
     }
 
@@ -144,6 +146,9 @@ public sealed class BreachService(
 
     public Task<Result> RecordReportSubmittedAsync(Guid id, ReportSubmittedRequest request, CancellationToken ct) =>
         ChangeAsync(id, b => b.RecordReportSubmitted(request.At, request.Reference, time.GetUtcNow()), ct, "privacy.breach.reported");
+
+    public Task<Result> RecordCertInReportedAsync(Guid id, CertInReportedRequest request, CancellationToken ct) =>
+        ChangeAsync(id, b => b.RecordCertInReported(request.At, request.Reference, time.GetUtcNow()), ct, "privacy.breach.cert_in_reported");
 
     public Task<Result> CloseAsync(Guid id, CloseBreachRequest request, CancellationToken ct) =>
         ChangeAsync(id, b => b.Close(request.Note, time.GetUtcNow()), ct, "privacy.breach.closed");
@@ -432,7 +437,8 @@ public sealed class BreachService(
             breach.BoardInformedAt,
             breach.ReportDueAt, breach.ExtendedUntil, breach.ReportSubmittedAt, breach.BoardReference, breach.ClosedAt, breach.ClosingNote, breach.NotifiedAt,
             breach.IsReportOverdue(time.GetUtcNow()), listed, notified, withoutContact,
-            breach.MissingForReport(), breach.MissingForNotice(), breach.Version);
+            breach.MissingForReport(), breach.MissingForNotice(), breach.Version, breach.CertInType, breach.CertInReportDueAt, breach.CertInReportedAt,
+            breach.CertInReference, breach.IsCertInReportOverdue(time.GetUtcNow()));
     }
 
     private static void Apply(Breach breach, SaveBreachRequest request)
@@ -453,6 +459,12 @@ public sealed class BreachService(
         breach.Findings = Clean(request.Findings);
         breach.Remediation = Clean(request.Remediation);
         breach.PrincipalNotice = Clean(request.PrincipalNotice);
+
+        // Once CERT-In has been told, the kind of incident it was told of stays.
+        if (breach.CertInReportedAt is null)
+        {
+            breach.CertInType = request.CertInType;
+        }
     }
 
     /// <summary>The template values for the notice: the SMS uses the short notice and the link; the e-mail carries it all.</summary>

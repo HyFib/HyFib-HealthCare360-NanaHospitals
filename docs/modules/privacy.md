@@ -13,6 +13,7 @@ the DPDP Rules 2025, whose duties for hospitals come into force in May 2027:
 | Nominating someone to act after death or incapacity | Act s14 | nominees |
 | Publishing whom to contact, and naming them in every reply | Act s8(9); Rules r9 | privacy settings, messages |
 | Breach intimation: the Board without delay and a detailed report within 72 hours; each person affected | Act s8(6); Rules r7 | breach register |
+| A cyber security incident of a kind CERT-In lists reported to CERT-In within 6 hours of being noticed | CERT-In Directions under IT Act s70B(6), 28 April 2022, (ii) and Annexure I | breach register (`certInType`) |
 | Logs of processing kept at least one year | Rules r6, r8(3) | retention schedule |
 
 ## Permissions
@@ -153,14 +154,15 @@ Availability`. Data categories: `Identity, Contact, Health, Financial, Governmen
 
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/` | `openOnly, search, page, pageSize` → `PagedResult<BreachListItem {id, breachNumber, title, status, awareAt, reportDueAt, reportOverdue, estimatedAffected, affectedListed, notified, boardInformedAt, reportSubmittedAt}>` |
-| GET | `/{id}` | → `BreachDetail {…, description, occurredFrom, occurredTo, nature[], location, dataCategories[], consequences, mitigation, principalSteps, cause, findings, remediation, principalNotice, boardInformedAt, reportDueAt, extendedUntil, reportSubmittedAt, boardReference, closedAt, closingNote, notifiedAt, withoutContact, missingForReport[], missingForNotice[], version}` |
-| POST | `/` | `SaveBreachRequest {title, description, awareAt, occurredFrom?, occurredTo?, nature[], location?, dataCategories[], estimatedAffected?, consequences?, mitigation?, principalSteps?, cause?, findings?, remediation?, principalNotice? (≤ 320, the SMS), version?}` → 201 `{id, breachNumber}`; alerts every holder. `cause` is rule 7(2)(b)(i) (the events and reasons), `findings` rule 7(2)(b)(iii) (any findings about who caused it) |
+| GET | `/` | `openOnly, search, page, pageSize` → `PagedResult<BreachListItem {id, breachNumber, title, status, awareAt, reportDueAt, reportOverdue, estimatedAffected, affectedListed, notified, boardInformedAt, reportSubmittedAt, certInType, certInReportDueAt, certInReportedAt, certInReportOverdue}>` |
+| GET | `/{id}` | → `BreachDetail {…, description, occurredFrom, occurredTo, nature[], location, dataCategories[], consequences, mitigation, principalSteps, cause, findings, remediation, principalNotice, boardInformedAt, reportDueAt, extendedUntil, reportSubmittedAt, boardReference, closedAt, closingNote, notifiedAt, withoutContact, missingForReport[], missingForNotice[], version, certInType, certInReportDueAt (awareAt + 6 h), certInReportedAt, certInReference, certInReportOverdue}` |
+| POST | `/` | `SaveBreachRequest {title, description, awareAt, occurredFrom?, occurredTo?, nature[], location?, dataCategories[], estimatedAffected?, consequences?, mitigation?, principalSteps?, cause?, findings?, remediation?, principalNotice? (≤ 320, the SMS), version?, certInType? (a CERT-In Annexure I kind, or none; kept as it was once CERT-In has been told)}` → 201 `{id, breachNumber}`; alerts every holder. `cause` is rule 7(2)(b)(i) (the events and reasons), `findings` rule 7(2)(b)(iii) (any findings about who caused it) |
 | PUT | `/{id}` | same, with `version` |
 | POST | `/{id}/board-informed` | `{at, reference?}`: the Board was told |
 | POST | `/{id}/extension` | `{until, reference?}`: the Board allowed more time (after the 72 hours) |
 | POST | `/{id}/report-submitted` | `{at, reference?}`: needs the Board told first, and `missingForReport` empty |
 | POST | `/{id}/close` | `{note?}`: a note is required when the report was never sent |
+| POST | `/{id}/cert-in-reported` | `CertInReportedRequest {at, reference?}`: CERT-In was told (after `awareAt`, not in the future); 422 `privacy.breach_not_cert_in` without a `certInType`, `privacy.breach_cert_in_reported` once recorded |
 | GET | `/{id}/report` | → `BreachReport {hospital, legalName, address, registrationNumber, contact, breach, generatedAt}` for printing (audited) |
 | GET | `/{id}/affected` | → `PagedResult<AffectedPatientItem {patientId, uhid, fullName, phone (masked), hasEmail, addedAt, notifiedAt, noticeChannels}>` |
 | POST | `/{id}/affected` | `{patientIds?[], uhids?[]}` (up to 5,000; a merged record counts as the one it was merged into) → `{added, alreadyListed, notFound[]}` |

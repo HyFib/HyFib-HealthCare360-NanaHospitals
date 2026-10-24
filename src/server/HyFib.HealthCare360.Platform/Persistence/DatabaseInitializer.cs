@@ -244,15 +244,16 @@ internal static class PlatformSql
     public const string PostMigrationScript = """
         -- Audit events are append-only: forbid DELETE/TRUNCATE, rows inserted already sealed, and any change except
         -- sealing the hash chain. Sealing is all or nothing: the hash, the chain position and the link to the previous
-        -- hash together (only the first event has no previous hash), so no event can drop out of verification. It
-        -- changes nothing else in the row, a column added later included.
+        -- hash together (only the first event has no previous hash), so no event can drop out of verification, with the
+        -- keyed seal of the hash (mac). It changes nothing else in the row, a column added later included.
         CREATE OR REPLACE FUNCTION audit.protect_audit_events() RETURNS trigger AS $$
         BEGIN
             IF TG_OP = 'DELETE' OR TG_OP = 'TRUNCATE' THEN
                 RAISE EXCEPTION 'audit events are append-only';
             END IF;
             IF TG_OP = 'INSERT' THEN
-                IF NEW.hash IS NOT NULL OR NEW.chain_index IS NOT NULL OR NEW.previous_hash IS NOT NULL THEN
+                -- The seal is read through jsonb: a database migrated only part of the way has no mac column yet.
+                IF NEW.hash IS NOT NULL OR NEW.chain_index IS NOT NULL OR NEW.previous_hash IS NOT NULL OR to_jsonb(NEW)->>'mac' IS NOT NULL THEN
                     RAISE EXCEPTION 'audit events are sealed by the server, never inserted sealed';
                 END IF;
                 RETURN NEW;
@@ -264,9 +265,9 @@ internal static class PlatformSql
                OR NEW.chain_index IS NULL
                OR NEW.chain_index < 1
                OR (NEW.chain_index = 1) <> (NEW.previous_hash IS NULL)
-               OR (to_jsonb(NEW) - 'hash' - 'chain_index' - 'previous_hash')
+               OR (to_jsonb(NEW) - 'hash' - 'chain_index' - 'previous_hash' - 'mac')
                   IS DISTINCT FROM
-                  (to_jsonb(OLD) - 'hash' - 'chain_index' - 'previous_hash') THEN
+                  (to_jsonb(OLD) - 'hash' - 'chain_index' - 'previous_hash' - 'mac') THEN
                 RAISE EXCEPTION 'audit events can only be sealed completely, not edited';
             END IF;
             RETURN NEW;

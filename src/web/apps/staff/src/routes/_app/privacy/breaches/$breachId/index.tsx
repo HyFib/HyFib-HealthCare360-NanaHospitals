@@ -40,6 +40,7 @@ import { BreachStepDialog, type BreachStepKind } from '@/modules/privacy/BreachD
 import {
   breachDataCategoryLabel,
   breachNatureLabel,
+  certInIncidentLabel,
   NOTICE_MAX_LENGTH,
   PRIVACY_PERMISSIONS as P,
 } from '@/modules/privacy/labels';
@@ -305,6 +306,46 @@ function BreachView({
           </>
         }
       />
+
+      {b.certInType && (
+        <section
+          aria-label="The 6-hour deadline for CERT-In"
+          className={mergeClasses(
+            styles.banner,
+            b.certInReportedAt
+              ? styles.sent
+              : b.certInReportOverdue
+                ? styles.overdue
+                : b.status === 'Closed'
+                  ? styles.closed
+                  : styles.urgent,
+          )}
+        >
+          <Text weight="semibold" className={mergeClasses(b.certInReportOverdue && styles.overdueText)}>
+            {b.certInReportedAt
+              ? `Reported to CERT-In on ${formatDateTime(b.certInReportedAt)}${b.certInReference ? ` (reference ${b.certInReference})` : ''}`
+              : b.certInReportOverdue
+                ? `The report to CERT-In is overdue: it was due by ${formatDateTime(b.certInReportDueAt)}`
+                : `Report it to CERT-In by ${formatDateTime(b.certInReportDueAt)}: 6 hours after the hospital became aware`}
+          </Text>
+          <Text>
+            {certInIncidentLabel[b.certInType]}. CERT-In&rsquo;s Directions of 28 April 2022 ask for the report within 6
+            hours, to incident@cert-in.org.in or its incident portal.
+          </Text>
+          {!b.certInReportedAt && b.status !== 'Closed' && (
+            <div className={styles.steps}>
+              <Button
+                appearance="primary"
+                icon={<BuildingGovernmentRegular />}
+                disabled={command.busy}
+                onClick={() => setStep('certInReported')}
+              >
+                CERT-In told
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
 
       <section
         aria-label="The 72-hour clock for the Board's report"

@@ -146,7 +146,8 @@ public sealed class UnitOfWorkInterceptor(
     }
 
     private static bool ShouldAudit(EntityEntry entry) =>
-        entry.Entity is AuditableEntity && entry.Metadata.ClrType.GetCustomAttribute<NotAuditedAttribute>() is null;
+        (entry.Entity is AuditableEntity && entry.Metadata.ClrType.GetCustomAttribute<NotAuditedAttribute>() is null)
+        || entry.Metadata.ClrType.GetCustomAttribute<AuditedAttribute>() is not null;
 
     private AuditEvent BuildAuditEvent(EntityEntry entry, string action, DateTimeOffset now)
     {

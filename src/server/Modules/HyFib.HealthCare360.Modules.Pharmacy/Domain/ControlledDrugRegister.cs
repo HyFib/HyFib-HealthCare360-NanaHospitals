@@ -5,9 +5,12 @@ namespace HyFib.HealthCare360.Modules.Pharmacy.Domain;
 /// <summary>
 /// Statutory register line for a Schedule H1 / X / NDPS-controlled item (PH-06): every receipt, transfer,
 /// dispense, return and write-off with the store's running balance of that item. Dispenses record the patient,
-/// prescriber and prescription. Append-only (one row per stock-ledger movement) — never edited or deleted.
+/// prescriber and prescription. Append-only (one row per stock-ledger movement): a database trigger refuses a delete and
+/// any change but the patient link a merge of duplicate records moves (migration <c>ControlledDrugRegisterAppendOnly</c>).
+/// Unlike the stock ledger it is audited (<see cref="AuditedAttribute"/>): each line, and each move of its patient link,
+/// has a copy in the sealed audit chain, so a line changed behind the server's back no longer matches it.
 /// </summary>
-[NotAudited]
+[Audited]
 public sealed class ControlledDrugRegisterEntry : Entity, IFacilityScoped
 {
     public Guid FacilityId { get; set; }

@@ -42,8 +42,10 @@ public sealed class DrugDoseLimit : AuditableEntity
 
 /// <summary>
 /// Prescribing register of Schedule H1/X medicines (ERX-06): one append-only row per controlled line of every
-/// signed prescription, recording who explicitly confirmed it.
+/// signed prescription, recording who explicitly confirmed it. A database trigger refuses a delete and any change but the
+/// patient link a merge moves (migration <c>CertInAndAuditSeals</c>), and each line has a copy in the sealed audit chain.
 /// </summary>
+[Audited]
 public sealed class ControlledDrugRegisterEntry : Entity, IFacilityScoped
 {
     public Guid FacilityId { get; set; }
