@@ -5,7 +5,7 @@ import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeServer, openScreen, SCREEN_TESTS, SLOW, stubBrowserApis } from '../appScreen';
+import { fakeServer, openScreen, SCREEN_TESTS, SLOW, STAFF_USER, stubBrowserApis } from '../appScreen';
 import { SHELL_SCREEN_ANSWERS } from './fixtures/shell';
 
 // The staff app's frame on a real screen: navigation, top bar, command palette, notifications, account menu, the lock
@@ -40,6 +40,21 @@ describe('the staff app frame', SCREEN_TESTS, () => {
   it('navigation and top bar', async () => {
     await openPatients();
     expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument();
+    expect(screen.queryByText(/computer IT has enrolled/)).not.toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('navigation where administration opens only in HC360 Desktop (SRS SEC-08)', async () => {
+    openScreen('/patients', { ...STAFF_USER, permissions: ['patients.read'], administrationNeedsDesktop: true });
+    expect(await screen.findByText('NH26000123', {}, SLOW)).toBeInTheDocument();
+
+    const administration = screen.getByRole('group', { name: 'Administration' });
+    expect(
+      within(administration).getByText(
+        'Users, roles, settings, devices, backups, integrations and the audit log open in HC360 Desktop on a computer IT has enrolled.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(administration).queryByRole('button')).not.toBeInTheDocument();
     await expectNoAxeViolations();
   });
 

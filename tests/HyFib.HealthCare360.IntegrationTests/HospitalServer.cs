@@ -20,6 +20,7 @@ using HyFib.HealthCare360.SharedKernel;
 using HyFib.HealthCare360.WindowsInterop.Updates;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -61,6 +62,11 @@ public sealed class HospitalServer : IAsyncLifetime
 
     // A test-only password for the staff accounts, new for every run.
     private readonly string _password = "It-" + Guid.NewGuid().ToString("N");
+
+    // The workstation IT enrolled, which every sign-in comes from unless a test signs in from a browser: administration
+    // works only on an enrolled HC360 Desktop (AdministrationOnDesktop, SRS SEC-08).
+    private readonly string _desktopSecret = SecretTokens.NewOpaqueToken(32);
+    private Guid _desktopId;
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "hc360-tests", "it-" + Guid.NewGuid().ToString("N"));
     private readonly ConcurrentDictionary<string, ApiClient> _signedIn = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _created = new(StringComparer.Ordinal);
@@ -76,6 +82,13 @@ public sealed class HospitalServer : IAsyncLifetime
 
     /// <summary>The run's password of the seeded staff accounts, for a test that signs in on its own.</summary>
     public string Password => _password;
+
+    /// <summary>The enrolled workstation the sign-ins come from (<see cref="SignInFromBrowserAsync"/> aside): its id and secret.</summary>
+    public (Guid Id, string Secret) Desktop => (_desktopId, _desktopSecret);
+
+    /// <summary>Every endpoint the server maps, as routing sees them.</summary>
+    public IReadOnlyList<RouteEndpoint> Endpoints =>
+        [.. ((IEndpointRouteBuilder)App).DataSources.SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()];
 
     private WebApplication App => _app ?? throw new InvalidOperationException("The test server has not started.");
 
@@ -140,6 +153,21 @@ public sealed class HospitalServer : IAsyncLifetime
         await using (var scope = _app.Services.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(AuthService.MaxSessionsSetting, 0, cancellationToken: ct);
+
+            var now = DateTimeOffset.UtcNow;
+            var desktop = new Device
+            {
+                Name = "IT workstation",
+                MachineName = "IT-01",
+                Kind = DeviceKind.Workstation,
+                SecretHash = SecretTokens.Hash(_desktopSecret),
+                EnrolledAt = now,
+                LastSeenAt = now,
+            };
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            db.Add(desktop);
+            await db.SaveChangesAsync(ct);
+            _desktopId = desktop.Id;
         }
 
         await _app.StartAsync(ct);
@@ -322,6 +350,20 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     /// <summary>
+    /// A new sign-in of a staff account in a browser, on no enrolled device: a client for the new session, and the refresh
+    /// cookie the server set (<c>name=value</c>). It comes from the test's own address, so the test has a rate-limit budget
+    /// of its own.
+    /// </summary>
+    public async Task<(ApiClient Client, string RefreshCookie)> SignInFromBrowserAsync(string userName)
+    {
+        var http = CreateHttpClient(ownAddress: true);
+        using var response = await PostLoginAsync(http, userName, _password, fromBrowser: true);
+        var result = await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", FullAccess(userName, result));
+        return (new ApiClient(http), RefreshCookieOf(response) ?? throw new InvalidOperationException($"Signing in as '{userName}' set no refresh cookie."));
+    }
+
+    /// <summary>
     /// A refresh of the session behind <paramref name="refreshCookie"/>, as the staff app sends it: with
     /// <paramref name="idleSeconds"/>, saying how long nobody has used the app.
     /// </summary>
@@ -349,24 +391,26 @@ public sealed class HospitalServer : IAsyncLifetime
             ? cookies.Select(c => c.Split(';')[0]).FirstOrDefault(c => c.StartsWith(name + "=", StringComparison.Ordinal) && c.Length > name.Length + 1)
             : null;
 
-    private static async Task<SignInResult> LogInAsync(HttpClient http, string userName, string password)
+    private async Task<SignInResult> LogInAsync(HttpClient http, string userName, string password)
     {
         using var response = await PostLoginAsync(http, userName, password);
         return await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
     }
 
     // Sign-in allows 10 attempts a minute per address, and test-server requests share one unless a test has its own (see
-    // ClientAddressHeader): past that, wait for the next minute rather than fail the run.
-    private static async Task<HttpResponseMessage> PostLoginAsync(HttpClient http, string userName, string password)
+    // ClientAddressHeader): past that, wait for the next minute rather than fail the run. From the enrolled workstation
+    // (Desktop), as HC360 Desktop signs in, unless fromBrowser.
+    private async Task<HttpResponseMessage> PostLoginAsync(HttpClient http, string userName, string password, bool fromBrowser = false)
     {
         var ct = TestContext.Current.CancellationToken;
-        var response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, ct);
+        var request = fromBrowser ? new LoginRequest(userName, password) : new LoginRequest(userName, password, DeviceId: _desktopId, DeviceSecret: _desktopSecret);
+        var response = await http.PostAsJsonAsync("/api/v1/auth/login", request, ApiClient.Json, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {
             var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromMinutes(1);
             response.Dispose();
             await Task.Delay(wait + TimeSpan.FromSeconds(1), ct);
-            response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, ct);
+            response = await http.PostAsJsonAsync("/api/v1/auth/login", request, ApiClient.Json, ct);
         }
 
         return response;

@@ -13,7 +13,7 @@ internal static class DesignationEndpoints
         group.MapPost("/", (SaveDesignationRequest r, HospitalDbContext db, CancellationToken ct) => Save(null, r, db, ct))
             .RequirePermission(HRPermissions.EmployeesManage).WithValidation<SaveDesignationRequest>();
         group.MapPut("/{id:guid}", (Guid id, SaveDesignationRequest r, HospitalDbContext db, CancellationToken ct) => Save(id, r, db, ct))
-            .RequirePermission(HRPermissions.EmployeesManage).WithValidation<SaveDesignationRequest>();
+            .RequirePermission(HRPermissions.EmployeesManage).WithValidation<SaveDesignationRequest>().RequireVersion();
     }
 
     private static async Task<IResult> List(bool? includeInactive, HospitalDbContext db, CancellationToken ct) =>

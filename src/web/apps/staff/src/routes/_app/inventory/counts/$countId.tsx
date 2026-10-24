@@ -15,7 +15,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { DocumentArrowLeftRegular, PrintRegular, SaveRegular, SendRegular } from '@fluentui/react-icons';
-import { formatDateTime, formatInr, formatRelative, useDraft, useHotkey } from '@hc360/core';
+import { formatDateTime, formatInr, formatRelative, isApiError, useDraft, useHotkey } from '@hc360/core';
 import {
   ConfirmDialog,
   ErrorState,
@@ -89,6 +89,35 @@ function serverEntry(line: CountLineDto): Entry {
   return { counted: line.countedQuantity === null ? '' : String(line.countedQuantity), remarks: line.remarks ?? '' };
 }
 
+interface SavedCount {
+  lineId: string;
+  countedQuantity: number;
+  remarks: string | null;
+}
+
+/**
+ * Whether the sheet read back after this user's save holds exactly the counts shown, with the ones that save wrote
+ * (blank remarks leave a line's remarks as they were). If it does not, someone else saved counts in between.
+ */
+function holdsCounts(fresh: CountDetail, shown: CountLineDto[], saved: SavedCount[]): boolean {
+  const written = new Map(saved.map((s) => [s.lineId, s]));
+  return (
+    fresh.lines.length === shown.length &&
+    shown.every((line) => {
+      const now = fresh.lines.find((l) => l.id === line.id);
+      const own = written.get(line.id);
+      return (
+        now !== undefined &&
+        now.countedQuantity === (own ? own.countedQuantity : line.countedQuantity) &&
+        now.remarks === (own?.remarks ?? line.remarks)
+      );
+    })
+  );
+}
+
+/** The count sheet changed after this user's own counts were saved on it: nothing typed is left to keep. */
+class ChangedAfterSave extends Error {}
+
 /** Count sheet: type what is on the shelf; differences are worked out as you go. Ctrl+S saves. */
 function CountSheet({ count }: { count: CountDetail }) {
   const styles = useStyles();
@@ -100,6 +129,9 @@ function CountSheet({ count }: { count: CountDetail }) {
   const editable = canCount && count.status === 'InProgress';
   // Only lines typed on this computer are kept locally; everything else always shows the server's latest counts.
   const [edits, setEdits] = useState<Record<string, Entry>>({});
+  // The sheet as it was when the first unsaved count was typed: the save is refused if counts were saved on it since
+  // (REL-04).
+  const [baseVersion, setBaseVersion] = useState<number | null>(null);
   const [filter, setFilter] = useState('');
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [confirm, setConfirm] = useState<'submit' | 'cancel' | null>(null);
@@ -140,36 +172,86 @@ function CountSheet({ count }: { count: CountDetail }) {
     void queryClient.invalidateQueries({ queryKey: inventoryKeys.adjustments });
   };
 
-  const saveLines = async () => {
+  const saveLines = async (): Promise<SavedCount[]> => {
     const lines = changed
       .map((l) => ({ line: l, counted: parseNumber(entryOf(l).counted) }))
       .filter((c): c is { line: CountLineDto; counted: number } => c.counted !== null)
       .map((c) => ({ lineId: c.line.id, countedQuantity: c.counted, remarks: entryOf(c.line).remarks.trim() || null }));
     if (lines.length > 0) {
-      await inventoryApi.recordCounts(count.id, lines);
+      await inventoryApi.recordCounts(count.id, baseVersion ?? count.version, lines);
     }
-    return lines.length;
+    return lines;
+  };
+
+  /**
+   * Someone else saved counts on the sheet meanwhile: it is shown as it is now, and counts typed here that were not
+   * saved wait as a draft.
+   */
+  const conflicted = (error: unknown): boolean => {
+    const saved = error instanceof ChangedAfterSave;
+    if (!saved && !(isApiError(error) && error.code === 'concurrency')) {
+      return false;
+    }
+    const kept = !saved && changed.length > 0;
+    if (kept) {
+      setSavedDraft({ value: edits, savedAt: Date.now() });
+    }
+    setEdits({});
+    setBaseVersion(null);
+    notify.warning(
+      'The count sheet changed meanwhile',
+      kept
+        ? 'It has been reloaded with the counts saved since. Your counts are kept: restore them to save them on it.'
+        : 'It has been reloaded with the counts saved since. Check them, then submit the count again.',
+    );
+    refresh();
+    return true;
   };
 
   const save = useMutation({
     mutationFn: saveLines,
-    onSuccess: (n) => {
+    onSuccess: ({ length: n }) => {
       draft.clear();
       setEdits({});
+      setBaseVersion(null);
       notify.success(n > 0 ? `${n} count${n === 1 ? '' : 's'} saved` : 'Nothing new to save');
       refresh();
     },
-    onError: (error) => notify.error(error, 'The counts were not saved'),
+    onError: (error) => {
+      if (!conflicted(error)) {
+        notify.error(error, 'The counts were not saved');
+      }
+    },
   });
 
   const submit = useMutation({
     mutationFn: async () => {
-      await saveLines();
-      return inventoryApi.submitCount(count.id);
+      const lines = await saveLines();
+      if (lines.length === 0) {
+        // Submitted on the sheet as shown: counts saved on it since are refused (REL-04).
+        return inventoryApi.submitCount(count.id, count.version);
+      }
+      // The counts typed here are on the sheet now.
+      draft.clear();
+      setEdits({});
+      setBaseVersion(null);
+      try {
+        // Their save does not return the version it gave the sheet, so the sheet is read again. That is the version to
+        // submit on only while it holds exactly what was shown with these counts: otherwise someone else saved counts
+        // in between, and the count is not submitted until the user has seen them.
+        const fresh = await queryClient.fetchQuery({ ...inventoryQueries.count(count.id), staleTime: 0 });
+        if (!holdsCounts(fresh, count.lines, lines)) {
+          throw new ChangedAfterSave();
+        }
+        return await inventoryApi.submitCount(count.id, fresh.version);
+      } catch (error) {
+        throw isApiError(error) && error.code === 'concurrency' ? new ChangedAfterSave() : error;
+      }
     },
     onSuccess: (result) => {
       draft.clear();
       setEdits({});
+      setBaseVersion(null);
       setConfirm(null);
       refresh();
       if (result.adjustmentId) {
@@ -181,7 +263,10 @@ function CountSheet({ count }: { count: CountDetail }) {
     },
     onError: (error) => {
       setConfirm(null);
-      notify.error(error, 'The count was not submitted');
+      if (!conflicted(error)) {
+        refresh();
+        notify.error(error, 'The count was not submitted');
+      }
     },
   });
 
@@ -203,8 +288,10 @@ function CountSheet({ count }: { count: CountDetail }) {
     allowInInputs: true,
   });
 
-  const setEntry = (line: CountLineDto, patch: Partial<Entry>) =>
+  const setEntry = (line: CountLineDto, patch: Partial<Entry>) => {
+    setBaseVersion((base) => base ?? count.version);
     setEdits((prev) => ({ ...prev, [line.id]: { ...(prev[line.id] ?? serverEntry(line)), ...patch } }));
+  };
 
   // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
   useLeaveGuard({
@@ -275,6 +362,8 @@ function CountSheet({ count }: { count: CountDetail }) {
           <MessageBarActions>
             <Button
               onClick={() => {
+                // Put back on the sheet as shown now: that is what they are saved on.
+                setBaseVersion((base) => base ?? count.version);
                 setEdits({ ...savedDraft.value, ...edits });
                 setSavedDraft(null);
               }}

@@ -19,7 +19,7 @@ internal static class MaintenanceEndpoints
             .RequirePermission(SupplyChainPermissions.AssetsMaintenance).WithValidation<SavePmPlanRequest>();
         group.MapPut("/{assetId:guid}/pm-plans/{planId:guid}", async (Guid assetId, Guid planId, SavePmPlanRequest r, MaintenanceService maintenance, CancellationToken ct) =>
                 (await maintenance.SavePlanAsync(assetId, planId, r, ct)).ToHttpResult(_ => TypedResults.NoContent()))
-            .RequirePermission(SupplyChainPermissions.AssetsMaintenance).WithValidation<SavePmPlanRequest>();
+            .RequirePermission(SupplyChainPermissions.AssetsMaintenance).WithValidation<SavePmPlanRequest>().RequireVersion();
         group.MapPost("/pm-plans/{planId:guid}/visits", async (Guid planId, RecordPmVisitRequest r, MaintenanceService maintenance, CancellationToken ct) =>
                 (await maintenance.RecordVisitAsync(planId, r, ct)).ToCreated(id => $"/api/v1/assets/pm-visits/{id}"))
             .RequirePermission(SupplyChainPermissions.AssetsMaintenance).WithValidation<RecordPmVisitRequest>();

@@ -299,7 +299,7 @@ public sealed class AntiAutomationTests(HospitalServer server)
             }
 
             using (var allowed = await admin.SendRawAsync(HttpMethod.Put, $"/api/v1/admin/settings/{AntiAutomationSettings.MaxBits}",
-                new SaveSettingRequest(JsonValue.Create(20), null, false, null)))
+                new SaveSettingRequest(JsonValue.Create(20), null, false, null, await admin.SettingVersionAsync(AntiAutomationSettings.MaxBits))))
             {
                 allowed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
             }

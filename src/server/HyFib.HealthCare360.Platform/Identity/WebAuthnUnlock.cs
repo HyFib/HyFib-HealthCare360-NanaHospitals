@@ -4,8 +4,10 @@ using System.Text.Json;
 using Fido2NetLib;
 using Fido2NetLib.Exceptions;
 using Fido2NetLib.Objects;
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
@@ -18,6 +20,11 @@ namespace HyFib.HealthCare360.Platform.Identity;
 /// <summary>The password, asked again before a device is set up to unlock the screen (ASVS V7.5.1).</summary>
 public sealed record WebAuthnRegistrationRequest(string Password);
 
+public sealed class WebAuthnRegistrationRequestValidator : AbstractValidator<WebAuthnRegistrationRequest>
+{
+    public WebAuthnRegistrationRequestValidator() => RuleFor(r => r.Password).GivenPassword("Enter your password.");
+}
+
 /// <summary>
 /// A WebAuthn ceremony the browser is to carry out: the options for <c>navigator.credentials.create</c> or
 /// <c>.get</c>, in their JSON form, and the id to send its answer back with.
@@ -27,8 +34,28 @@ public sealed record WebAuthnCeremony(Guid ChallengeId, JsonElement Options);
 /// <summary>The device's answer to a registration, and what to call the device.</summary>
 public sealed record WebAuthnRegisterRequest(Guid ChallengeId, string? Name, JsonElement Credential);
 
+/// <summary>The answer is read and checked by the WebAuthn library; here, only that there is one, as an object.</summary>
+public sealed class WebAuthnRegisterRequestValidator : AbstractValidator<WebAuthnRegisterRequest>
+{
+    public WebAuthnRegisterRequestValidator()
+    {
+        RuleFor(r => r.ChallengeId).NotEmpty();
+        RuleFor(r => r.Name).SafeText(64);
+        RuleFor(r => r.Credential).Must(c => c.ValueKind == JsonValueKind.Object).WithMessage(WebAuthnUnlockService.NoAnswerMessage);
+    }
+}
+
 /// <summary>The device's answer to an unlock.</summary>
 public sealed record WebAuthnUnlockRequest(Guid ChallengeId, JsonElement Credential);
+
+public sealed class WebAuthnUnlockRequestValidator : AbstractValidator<WebAuthnUnlockRequest>
+{
+    public WebAuthnUnlockRequestValidator()
+    {
+        RuleFor(r => r.ChallengeId).NotEmpty();
+        RuleFor(r => r.Credential).Must(c => c.ValueKind == JsonValueKind.Object).WithMessage(WebAuthnUnlockService.NoAnswerMessage);
+    }
+}
 
 /// <summary>A device its owner set up to unlock the screen.</summary>
 /// <param name="CredentialId">The credential's id (base64url), by which the app knows the device it runs on holds it.</param>
@@ -103,8 +130,10 @@ public sealed class WebAuthnUnlockService(
 
     private static readonly Error Expired = Error.Rule("auth.biometric_unlock_expired", "That took too long. Try again.");
 
-    private static readonly Error NotVerified = Error.Rule(
-        "auth.biometric_unlock_failed", "This device could not be verified. Try again, or use your PIN or password.");
+    /// <summary>The device's answer was missing or was not an object (refused before the challenge is taken).</summary>
+    internal const string NoAnswerMessage = "This device could not be verified. Try again, or use your PIN or password.";
+
+    private static readonly Error NotVerified = Error.Rule("auth.biometric_unlock_failed", NoAnswerMessage);
 
     /// <summary>The signed-in user's devices set up to unlock the screen.</summary>
     public async Task<IReadOnlyList<WebAuthnCredentialInfo>> ListAsync(Guid? userId, HttpContext http, CancellationToken ct)

@@ -21,7 +21,7 @@ internal static class ScheduleEndpoints
         group.MapPost("/exceptions", (SaveScheduleExceptionRequest request, ScheduleService schedules, CancellationToken ct) => SaveException(null, request, schedules, ct))
             .RequirePermission(SchedulingPermissions.SchedulesManage).WithValidation<SaveScheduleExceptionRequest>();
         group.MapPut("/exceptions/{id:guid}", (Guid id, SaveScheduleExceptionRequest request, ScheduleService schedules, CancellationToken ct) => SaveException(id, request, schedules, ct))
-            .RequirePermission(SchedulingPermissions.SchedulesManage).WithValidation<SaveScheduleExceptionRequest>();
+            .RequirePermission(SchedulingPermissions.SchedulesManage).WithValidation<SaveScheduleExceptionRequest>().RequireVersion();
         group.MapDelete("/exceptions/{id:guid}", DeleteException).RequirePermission(SchedulingPermissions.SchedulesManage);
     }
 

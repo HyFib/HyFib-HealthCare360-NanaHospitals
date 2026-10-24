@@ -1,8 +1,12 @@
+using System.IO.Compression;
 using System.Text.Json;
 using HyFib.HealthCare360.LoadTest;
 using HyFib.HealthCare360.Modules.Patients.Seed;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Server;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -97,6 +101,62 @@ public sealed class LoadTestTests(HospitalServer server)
         result.Requests.ShouldBeGreaterThan(20, log.ToString());
         result.Failures.ShouldBe(0, log + Environment.NewLine + Results.Markdown(result));
         result.Lists.ShouldAllBe(l => l.Status == 200);
+    }
+
+    /// <summary>
+    /// SRS PERF-05 on every pull request: the lists the load test measures, at their largest page, fit in 100 KB as the
+    /// server sends them, compressed with Brotli at its fastest level. With 200 synthetic patients the patient list's page
+    /// is full; a list with fewer rows is held to the size its rows would take on a full page. This test server is built
+    /// without Program.cs's compression, so each page is compressed here as that compression does, and its decision for a
+    /// list is checked too. The weekly load test (load.yml) measures the pages the real server sends.
+    /// </summary>
+    [Fact]
+    public async Task The_largest_page_of_each_list_fits_in_100_KB_as_sent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // The server's compression (Program.cs), deciding for a list over HTTPS as a workstation asks for it.
+        var services = new ServiceCollection().AddLogging().AddHospitalCompression().BuildServiceProvider();
+        await using (services)
+        {
+            var json = new Microsoft.AspNetCore.Http.DefaultHttpContext { RequestServices = services };
+            json.Request.Scheme = "https";
+            json.Request.Headers.AcceptEncoding = "br, gzip";
+            json.Response.ContentType = "application/json; charset=utf-8";
+            var compression = services.GetRequiredService<IResponseCompressionProvider>();
+            compression.ShouldCompressResponse(json).ShouldBeTrue();
+            compression.GetCompressionProvider(json).ShouldNotBeNull().EncodingName.ShouldBe("br");
+            services.GetRequiredService<IOptions<BrotliCompressionProviderOptions>>().Value.Level.ShouldBe(CompressionLevel.Fastest);
+        }
+
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<LoadTestPatients>().AddAsync(ListSize.FullPage, null, ct)).IsSuccess.ShouldBeTrue();
+        }
+
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        foreach (var (name, path) in Operations.Lists)
+        {
+            var page = await frontOffice.Http.GetByteArrayAsync(path, ct);
+            var rows = LoadRunner.Rows(page, encoding: null);
+            using var sent = new MemoryStream();
+            await using (var brotli = new BrotliStream(sent, CompressionLevel.Fastest, leaveOpen: true))
+            {
+                await brotli.WriteAsync(page, ct);
+            }
+
+            if (name == "Patients")
+            {
+                rows.ShouldBe(ListSize.FullPage, "the largest page is full");
+            }
+
+            // A page of fewer rows is held to what its rows would take on a full page; a handful of rows says too little.
+            if (rows >= 50)
+            {
+                (sent.Length * ListSize.FullPage / Math.Min(rows, ListSize.FullPage))
+                    .ShouldBeLessThanOrEqualTo(ListSize.LimitBytes, $"{name}: {rows} rows, {sent.Length:N0} bytes as sent");
+            }
+        }
     }
 
     /// <summary>The load test's accounts, with this run's password, as <c>loadtest accounts</c> makes them.</summary>

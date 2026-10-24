@@ -287,6 +287,8 @@ export interface ComponentPlan {
 
 export interface RecordLabResultsRequest extends TtiPanel {
   bloodGroup: BloodGroup;
+  /** The donation as it was shown: results another technician saved meanwhile are not written over (REL-04). */
+  version: number;
 }
 
 export interface DonationDetail {

@@ -46,6 +46,7 @@ import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DocumentButtons } from '@/lib/DocumentButtons';
+import { useBaseVersion } from '@/lib/baseVersion';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
@@ -112,6 +113,15 @@ const summarySchema = z.object({
 
 type SummaryValues = z.infer<typeof summarySchema>;
 
+function summaryValues(booking: BookingDto): SummaryValues {
+  return { summary: booking.summary ?? '', recommendations: booking.recommendations ?? '' };
+}
+
+/** The same summary and recommendations, as the server keeps them (trimmed). */
+function sameSummary(a: SummaryValues, b: SummaryValues): boolean {
+  return a.summary.trim() === b.summary.trim() && a.recommendations.trim() === b.recommendations.trim();
+}
+
 function BookingPage() {
   const { bookingId } = Route.useParams();
   const booking = useQuery(checkupQueries.booking(bookingId));
@@ -153,26 +163,77 @@ function BookingBanner({ patientId }: { patientId: string }) {
   return null;
 }
 
-function SummaryEditor({ booking, onSaved }: { booking: BookingDto; onSaved: (b: BookingDto) => void }) {
+function SummaryEditor({
+  booking,
+  ownChange,
+  onSaved,
+}: {
+  booking: BookingDto;
+  /** The check-up as this user's latest change elsewhere on the page returned it (a station closed, say). */
+  ownChange: BookingDto | null;
+  onSaved: (b: BookingDto) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
-  const [defaults] = useState<SummaryValues>(() => ({
-    summary: booking.summary ?? '',
-    recommendations: booking.recommendations ?? '',
-  }));
+  const queryClient = useQueryClient();
+  const [defaults, setDefaults] = useState<SummaryValues>(() => summaryValues(booking));
+  // The booking the summary was filled from, then as this user saved it: its version goes with the save. The booking is
+  // read again in the background, and a version read so must never be sent with this text (REL-04). The summary
+  // follows this user's own changes elsewhere on the page while the check-up they return still holds it as filled.
+  const [version, setVersion] = useBaseVersion(booking.version, ownChange, (returned) =>
+    sameSummary(summaryValues(returned), defaults),
+  );
   const form = useForm<SummaryValues>({ resolver: zodResolver(summarySchema), defaultValues: defaults });
   const draft = useFormDraft(form, `hc-summary:${booking.id}`);
   const closed = !['Booked', 'CheckedIn', 'InProgress'].includes(booking.status);
+
+  /** After a conflict: the check-up as it is now. Whether the summary itself changed decides what the form shows. */
+  const reload = async () => {
+    try {
+      const latest = await queryClient.fetchQuery({ ...checkupQueries.booking(booking.id), staleTime: 0 });
+      const saved = summaryValues(latest);
+      if (sameSummary(saved, defaults)) {
+        // Only the rest of the check-up moved on (a station closed): the text stays, written on the summary as saved.
+        setVersion(latest.version);
+        notify.warning(
+          'The check-up changed meanwhile',
+          'It has been reloaded. Check it, then save your summary again.',
+        );
+        return;
+      }
+      // Another doctor saved a summary: theirs fills the form, and the text typed here waits as a draft to restore.
+      draft.keep();
+      setDefaults(saved);
+      form.reset(saved);
+      setVersion(latest.version);
+      notify.warning(
+        'Another summary was saved meanwhile',
+        'It is shown now. Your text is kept: restore it to save it again.',
+      );
+    } catch {
+      // The server was not reached: the text stays, and its save is refused until the check-up is read.
+      notify.warning('The check-up changed meanwhile', 'Reload the page to see it, then save your summary again.');
+    }
+  };
+
   const save = useMutation({
     mutationFn: (values: SummaryValues) =>
-      checkupApi.saveSummary(booking.id, values.summary.trim(), values.recommendations.trim() || null),
+      checkupApi.saveSummary(booking.id, values.summary.trim(), values.recommendations.trim() || null, version),
     onSuccess: (updated, values) => {
+      setVersion(updated.version);
+      setDefaults(values);
       form.reset(values);
       draft.discard();
       notify.success('Summary saved');
       onSaved(updated);
     },
-    onError: (error) => notify.error(error, 'Could not save the summary'),
+    onError: (error) => {
+      if (isApiError(error) && error.code === 'concurrency') {
+        void reload();
+        return;
+      }
+      notify.error(error, 'Could not save the summary');
+    },
   });
   const restorable = draft.saved && JSON.stringify(draft.saved.value) !== JSON.stringify(defaults);
   // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
@@ -270,8 +331,11 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
   const [confirmNoShow, setConfirmNoShow] = useState(false);
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [problem, setProblem] = useState<Wording | null>(null);
+  // The check-up as this user's latest change on this page returned it, for the summary being written (REL-04).
+  const [ownChange, setOwnChange] = useState<BookingDto | null>(null);
 
   const publish = (updated: BookingDto) => {
+    setOwnChange(updated);
     queryClient.setQueryData(checkupKeys.booking(updated.id), updated);
     void queryClient.invalidateQueries({ queryKey: ['health-checkups', 'bookings'] });
   };
@@ -549,7 +613,7 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
           }
         >
           {canSummarise ? (
-            <SummaryEditor key={b.id} booking={b} onSaved={publish} />
+            <SummaryEditor key={b.id} booking={b} ownChange={ownChange} onSaved={publish} />
           ) : b.summary ? (
             <div className={styles.stack}>
               <Text style={{ whiteSpace: 'pre-wrap' }}>{b.summary}</Text>

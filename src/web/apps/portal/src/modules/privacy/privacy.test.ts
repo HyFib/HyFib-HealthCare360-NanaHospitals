@@ -325,6 +325,7 @@ describe('the nominee form', () => {
       email: null,
       recordedVia: 'FrontDesk',
       updatedAt: '2026-09-01T06:00:00Z',
+      version: 7,
     });
     expect(values).toEqual({ name: 'Ravi Verma', relationship: 'Son', phone: '9876543210', email: '' });
     expect(nomineeFormValues(null)).toEqual({ name: '', relationship: '', phone: '', email: '' });
@@ -336,6 +337,8 @@ describe('the nominee form', () => {
       email: null,
     });
     expect(buildNomineeRequest({ ...values, phone: '', email: 'ravi@example.in' }, 'p1').phone).toBeNull();
+    // Replacing the nominee shown sends its version; one named meanwhile at the desk is then not replaced unseen.
+    expect(buildNomineeRequest(values, 'p1', 7).version).toBe(7);
   });
 });
 

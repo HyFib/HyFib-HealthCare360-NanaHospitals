@@ -134,7 +134,8 @@ public sealed class BiometricPullTests(HospitalServer server)
             accepted.StatusCode.ShouldBe(HttpStatusCode.OK);
         }
 
-        await hr.PutAsync($"/api/v1/hr/biometric-devices/{pushing.DeviceId}", Terminal(serial, BiometricConnection.Pull, "192.168.10.202"));
+        var loaded = (await hr.GetAsync<List<BiometricDeviceDto>>("/api/v1/hr/biometric-devices")).Single(d => d.Id == pushing.DeviceId);
+        await hr.PutAsync($"/api/v1/hr/biometric-devices/{pushing.DeviceId}", Terminal(serial, BiometricConnection.Pull, "192.168.10.202") with { Version = loaded.Version });
         using (var refused = await PushAsync(anonymous, serial, pushing.ApiKey!))
         {
             refused.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
@@ -231,8 +232,8 @@ public sealed class BiometricPullTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={Key}"))
             .FirstOrDefault(s => s.Key == Key && s.FacilityId is null)?.Value;
-        await admin.PutAsync($"/api/v1/admin/settings/{Key}", new SaveSettingRequest(value, null, false, null));
-        return new Restore(() => admin.PutAsync($"/api/v1/admin/settings/{Key}",
+        await admin.SaveSettingAsync(Key, new SaveSettingRequest(value, null, false, null));
+        return new Restore(() => admin.SaveSettingAsync(Key,
             new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }
 

@@ -159,6 +159,9 @@ public sealed class IncidentService(
             return Error.Rule("rca.completed", "The analysis is complete. Reopen it to make changes.");
         }
 
+        // Its factors are rows of their own, so the investigation is written on every save and its version checked.
+        db.GuardVersion(investigation, request.Version);
+
         investigation.Method = request.Method;
         investigation.ProblemStatement = request.ProblemStatement.Trim();
         investigation.Whys = request.Whys?.Where(w => !string.IsNullOrWhiteSpace(w)).Select(w => w.Trim()).ToList() ?? [];

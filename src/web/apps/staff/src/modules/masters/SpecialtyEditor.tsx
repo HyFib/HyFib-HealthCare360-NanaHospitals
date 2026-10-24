@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useForm, type Control } from 'react-hook-form';
 import { mastersApi, mastersQueries, refreshAfterMasterChange, type SpecialtyDto } from './api';
 import { PERMANENT_CODE_HINT, specialtySchema, toSpecialtyForm, toSpecialtyRequest, type SpecialtyForm } from './forms';
@@ -12,7 +13,8 @@ import { useEditorGuard } from './useEditorGuard';
 /** Add a speciality (`specialtyId` null), or change one. Specialities are shared by every facility. */
 export function SpecialtyEditorDrawer({ specialtyId, onClose }: { specialtyId: string | null; onClose: () => void }) {
   const existing = useQuery({ ...mastersQueries.specialty(specialtyId ?? ''), enabled: specialtyId !== null });
-  if (specialtyId !== null && !existing.data) {
+  // Filled from the speciality as read now, not from an older copy kept from before (REL-04).
+  if (specialtyId !== null && (!existing.isFetchedAfterMount || !existing.data)) {
     return <LoadingDrawer error={existing.error} what="speciality" size="small" onClose={onClose} />;
   }
   return <SpecialtyEditor specialty={existing.data ?? null} onClose={onClose} />;
@@ -26,9 +28,11 @@ function SpecialtyEditor({ specialty, onClose }: { specialty: SpecialtyDto | nul
     defaultValues: toSpecialtyForm(specialty),
     mode: 'onTouched',
   });
+  // The version the form was filled from, not a newer one read since (REL-04).
+  const [loadedVersion] = useState(specialty?.version ?? null);
   const save = useMutation({
     mutationFn: (values: SpecialtyForm) =>
-      mastersApi.saveSpecialty(specialty?.id ?? null, toSpecialtyRequest(values, specialty)),
+      mastersApi.saveSpecialty(specialty?.id ?? null, toSpecialtyRequest(values, specialty, loadedVersion)),
     onSuccess: () => {
       notify.success(specialty ? 'Speciality saved' : 'Speciality added');
       refreshAfterMasterChange(queryClient);

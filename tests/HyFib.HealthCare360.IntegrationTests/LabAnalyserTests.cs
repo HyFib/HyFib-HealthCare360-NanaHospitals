@@ -277,10 +277,10 @@ public sealed class LabAnalyserTests(HospitalServer server)
         (await client.GetAsync<List<SessionInfo>>("/api/v1/auth/sessions")).Single(s => s.IsCurrent);
 
     private static Task EnableGatewayAsync(ApiClient admin) =>
-        admin.PutAsync("/api/v1/admin/settings/integrations.lab", new SaveSettingRequest(JsonNode.Parse("""{"enabled":true}"""), null, false, null));
+        admin.SaveSettingAsync("integrations.lab", new SaveSettingRequest(JsonNode.Parse("""{"enabled":true}"""), null, false, null));
 
     private static Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
-        admin.PutAsync("/api/v1/admin/settings/lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
+        admin.SaveSettingAsync("lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
 
     private ApiClient AgentClient(Guid deviceId, string secret)
     {

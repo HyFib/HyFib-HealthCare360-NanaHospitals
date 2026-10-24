@@ -26,6 +26,7 @@ import {
   useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toOptions, useDepartments } from '@/lib/lookups';
@@ -141,6 +142,9 @@ export function AssetDrawer({
     defaultValues: toValues(asset),
     mode: 'onTouched',
   });
+  // The version the form was filled from: the asset page reads the asset again in the background, and a newer version
+  // must not be sent with these values (REL-04).
+  const [loadedVersion] = useState(asset?.version ?? null);
   const [method, vendorName, vendorId] = useWatch({
     control: form.control,
     name: ['depreciationMethod', 'vendorName', 'vendorId'],
@@ -173,7 +177,7 @@ export function AssetDrawer({
         requiresCalibration: v.requiresCalibration,
         barcode: v.barcode || null,
         notes: v.notes || null,
-        version: asset?.version ?? null,
+        version: loadedVersion,
       }),
     onSuccess: (created) => {
       void queryClient.invalidateQueries({ queryKey: assetKeys.all });

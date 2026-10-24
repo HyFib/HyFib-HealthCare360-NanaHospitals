@@ -158,7 +158,7 @@ public sealed class DietChargeTests(HospitalServer server)
     }
 
     private static Task SetDietChargesAsync(ApiClient admin, Guid facilityId, bool enabled) =>
-        admin.PutAsync($"/api/v1/admin/settings/{MealPlanService.DietChargesSetting}", new SaveSettingRequest(JsonValue.Create(enabled), facilityId, false, null));
+        admin.SaveSettingAsync(MealPlanService.DietChargesSetting, new SaveSettingRequest(JsonValue.Create(enabled), facilityId, false, null));
 
     /// <summary>
     /// Today in the hospital's calendar (IST). Diet charges are per calendar day, so the test must not straddle midnight:

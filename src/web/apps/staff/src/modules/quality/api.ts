@@ -146,6 +146,8 @@ export interface SaveInvestigationRequest {
   findings: string | null;
   recommendations: string | null;
   investigatorUserIds: string[] | null;
+  /** The analysis as shown; none before it is first saved. One saved meanwhile is not overwritten (REL-04). */
+  version?: number;
 }
 
 export interface RcaFactorDto extends RcaFactorInput {
@@ -406,6 +408,7 @@ export interface IndicatorValueDto {
   value: number;
   meetsTarget: boolean | null;
   notes: string | null;
+  version: number;
 }
 
 export interface IndicatorTrendDto {
@@ -625,9 +628,10 @@ export const qualityApi = {
     id
       ? api.put<void>(`/api/v1/quality/indicators/${id}`, request)
       : api.post<unknown>('/api/v1/quality/indicators', request),
+  /** `version`: the period's value as shown; none for a period without one. One recorded meanwhile is not overwritten. */
   recordValue: (
     id: string,
-    request: { periodStart: string; numerator: number; denominator: number; notes: string | null },
+    request: { periodStart: string; numerator: number; denominator: number; notes: string | null; version?: number },
   ) => api.put<IndicatorValueDto>(`/api/v1/quality/indicators/${id}/values`, request),
   deleteValue: (valueId: string) => api.delete<void>(`/api/v1/quality/indicators/values/${valueId}`),
 };

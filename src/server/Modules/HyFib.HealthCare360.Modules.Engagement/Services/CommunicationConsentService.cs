@@ -101,10 +101,12 @@ public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUs
     }
 
     /// <summary>The patient's own choices from the portal; only actual changes are recorded.</summary>
+    /// <param name="marketing">Marketing messages on or off; null leaves the choice as it is.</param>
+    /// <param name="updates">Updates by SMS and WhatsApp on or off; null leaves the choice as it is.</param>
     /// <param name="whatsApp">WhatsApp on or off for the patient's number; null leaves it as it is.</param>
     /// <param name="accountPhone">The number the portal user signed in with: only its holder changes its WhatsApp choice.</param>
     public async Task<Result> SetPreferencesAsync(
-        Guid patientId, bool marketing, bool updates, string via, CancellationToken ct, bool? whatsApp = null, string? accountPhone = null)
+        Guid patientId, bool? marketing, bool? updates, string via, CancellationToken ct, bool? whatsApp = null, string? accountPhone = null)
     {
         if (!await db.Set<Patient>().AnyAsync(p => p.Id == patientId, ct))
         {
@@ -129,14 +131,14 @@ public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUs
             }
         }
 
-        if (marketing != await HasActiveConsentAsync(patientId, ct))
+        if (marketing is { } wantsMarketing && wantsMarketing != await HasActiveConsentAsync(patientId, ct))
         {
-            await ChangeAsync(patientId, ConsentType.MarketingCommunication, marketing, via, ct);
+            await ChangeAsync(patientId, ConsentType.MarketingCommunication, wantsMarketing, via, ct);
         }
 
-        if (updates != await HasTransactionalConsentAsync(patientId, ct))
+        if (updates is { } wantsUpdates && wantsUpdates != await HasTransactionalConsentAsync(patientId, ct))
         {
-            await ChangeAsync(patientId, ConsentType.SmsWhatsAppUpdates, updates, via, ct);
+            await ChangeAsync(patientId, ConsentType.SmsWhatsAppUpdates, wantsUpdates, via, ct);
         }
 
         await db.SaveChangesAsync(ct);

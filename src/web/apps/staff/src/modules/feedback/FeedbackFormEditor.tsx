@@ -20,9 +20,10 @@ import { isApiError, useHotkey } from '@hc360/core';
 import { Section, useLeaveGuard, useNotify, type LeaveQuestion } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
+import { useBaseVersion } from '@/lib/baseVersion';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { MainAside, Stack } from '@/modules/hr/shared/layout';
-import { feedbackApi, feedbackKeys, type FeedbackFormDto, type SaveFeedbackFormRequest } from './api';
+import { feedbackApi, feedbackKeys, feedbackQueries, type FeedbackFormDto, type SaveFeedbackFormRequest } from './api';
 import { FeedbackQuestions } from './FeedbackQuestions';
 import { ASPECTS, aspectLabel, FORM_TYPES, formTypeLabel, type FeedbackAspect, type FeedbackFormType } from './labels';
 import { EMPTY_ANSWERS, type FeedbackAnswers } from './rules';
@@ -130,24 +131,34 @@ export function FeedbackFormEditor({
   canManage,
   onSaved,
   aside,
+  ownChange,
 }: {
   form: FeedbackFormDto | null;
   canManage: boolean;
   onSaved: (id: string) => void;
   /** Extra content above the preview (for example the QR panel of a saved form). */
   aside?: ReactNode;
+  /** The form as this manager's latest change to it elsewhere on the page returned it (a new QR code). */
+  ownChange?: FeedbackFormDto | null;
 }) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const departments = useDepartments();
   const [draft, setDraft] = useState<Draft>(() => toDraft(form));
+  // The form as the editor was filled, then as this manager saved it: its version goes with the save. The page reads
+  // it again in the background, and a version read so must never be sent with this draft (REL-04). The editor follows
+  // this manager's own changes elsewhere on the page while the form they return still holds what it was filled from.
+  const [loaded, setLoaded] = useState(form);
+  const [version, setVersion] = useBaseVersion(form?.version ?? null, ownChange, (returned) =>
+    sameDraft(toDraft(returned), toDraft(loaded)),
+  );
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
   const [previewAnswers, setPreviewAnswers] = useState<FeedbackAnswers>(EMPTY_ANSWERS);
 
-  // Compared with what the server holds now, so saving (and the refetch after it) clears the flag.
-  const dirty = canManage && !sameDraft(draft, toDraft(form));
+  // Compared with what the editor was filled from, which saving fills again.
+  const dirty = canManage && !sameDraft(draft, toDraft(loaded));
   // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
   const leave = useLeaveGuard({ dirty, busy, leaveQuestion: LEAVE_FORM });
 
@@ -159,6 +170,18 @@ export function FeedbackFormEditor({
   const toggleAspect = (aspect: FeedbackAspect, on: boolean) => {
     setDraft((d) => ({ ...d, aspects: ASPECTS.filter((a) => (a === aspect ? on : d.aspects.includes(a))) }));
     setErrors((e) => ({ ...e, aspects: undefined }));
+  };
+
+  /** The save answers with nothing: the editor is filled again from the form read after it, version included. */
+  const refill = async (id: string) => {
+    try {
+      const saved = await queryClient.fetchQuery({ ...feedbackQueries.form(id), staleTime: 0 });
+      setLoaded(saved);
+      setDraft(toDraft(saved));
+      setVersion(saved.version);
+    } catch {
+      // Not read: the editor keeps the version it had, so its next save is refused rather than saved over a change.
+    }
   };
 
   const save = async () => {
@@ -178,16 +201,17 @@ export function FeedbackFormEditor({
       thankYouText: draft.thankYouText.trim() || null,
       departmentId: draft.departmentId || null,
       isActive: draft.isActive,
-      version: form?.version ?? null,
+      version,
     };
     setBusy(true);
     try {
-      if (form) {
-        await feedbackApi.updateForm(form.id, request);
+      if (loaded) {
+        await feedbackApi.updateForm(loaded.id, request);
         notify.success(
           'Form saved',
           draft.isActive ? 'Patients see the changes straight away.' : 'The form is inactive.',
         );
+        await refill(loaded.id);
         await queryClient.invalidateQueries({ queryKey: feedbackKeys.forms });
       } else {
         const id = await feedbackApi.createForm(request);
@@ -204,6 +228,8 @@ export function FeedbackFormEditor({
           'Someone else changed this form',
           'Reload the page to see their changes, then make yours again.',
         );
+        // Read again for the page, which fills the editor afresh when opened again; the editor keeps refusing until then.
+        void queryClient.invalidateQueries({ queryKey: feedbackKeys.forms });
       } else if (isApiError(error) && error.isValidation) {
         setErrors(
           Object.fromEntries(

@@ -19985,6 +19985,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.HasIndex("AbhaNumberIndex")
                         .HasDatabaseName("ix_patients_abha_number_index");
 
+                    b.HasIndex("AlternatePhone")
+                        .HasDatabaseName("ix_patients_alternate_phone");
+
                     b.HasIndex("FullName")
                         .HasDatabaseName("ix_patients_full_name");
 
@@ -20006,6 +20009,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("FirstName", "DateOfBirth")
                         .HasDatabaseName("ix_patients_first_name_date_of_birth");
+
+                    b.HasIndex(new[] { "Phone" }, "PhoneTrigram")
+                        .HasDatabaseName("ix_patients_phone_trigram");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex(new[] { "Phone" }, "PhoneTrigram"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex(new[] { "Phone" }, "PhoneTrigram"), new[] { "gin_trgm_ops" });
+
+                    b.HasIndex(new[] { "Uhid" }, "UhidPrefix")
+                        .HasDatabaseName("ix_patients_uhid_prefix");
+
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex(new[] { "Uhid" }, "UhidPrefix"), new[] { "varchar_pattern_ops" });
+
+                    b.HasIndex(new[] { "Uhid" }, "UhidTrigram")
+                        .HasDatabaseName("ix_patients_uhid_trigram");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex(new[] { "Uhid" }, "UhidTrigram"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex(new[] { "Uhid" }, "UhidTrigram"), new[] { "gin_trgm_ops" });
 
                     b.ToTable("patients", "patients");
                 });

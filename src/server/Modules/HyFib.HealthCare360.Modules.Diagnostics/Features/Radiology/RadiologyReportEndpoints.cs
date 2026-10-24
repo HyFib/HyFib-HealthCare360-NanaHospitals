@@ -25,9 +25,10 @@ internal static class RadiologyReportEndpoints
         report.MapGet("/document", Document).RequireAnyPermission(readers);
         report.MapGet("/pdf", Pdf).RequireAnyPermission(readers);
         report.MapPut("/", async (Guid id, SaveRadiologyReportRequest r, RadiologyReportService s, CancellationToken ct) => (await s.SaveDraftAsync(id, r, ct)).ToOk())
-            .RequirePermission(DiagnosticsPermissions.RadiologyReportsWrite).WithValidation<SaveRadiologyReportRequest>();
-        report.MapPost("/submit", async (Guid id, RadiologyReportService s, CancellationToken ct) => (await s.SubmitAsync(id, ct)).ToOk())
-            .RequirePermission(DiagnosticsPermissions.RadiologyReportsWrite);
+            .RequirePermission(DiagnosticsPermissions.RadiologyReportsWrite).WithValidation<SaveRadiologyReportRequest>().FirstSaveCreates();
+        // Submitting and signing name the version read, so a report changed meanwhile is not signed unseen (REL-04).
+        report.MapPost("/submit", async (Guid id, SubmitReportRequest r, RadiologyReportService s, CancellationToken ct) => (await s.SubmitAsync(id, r.Version, ct)).ToOk())
+            .RequirePermission(DiagnosticsPermissions.RadiologyReportsWrite).WithValidation<SubmitReportRequest>();
         report.MapPost("/verify", async (Guid id, SignReportRequest r, RadiologyReportService s, CancellationToken ct) => (await s.VerifyAsync(id, r, ct)).ToOk())
             .RequirePermission(DiagnosticsPermissions.RadiologyReportsVerify).WithValidation<SignReportRequest>();
         report.MapPost("/release", async (Guid id, RadiologyReportService s, CancellationToken ct) => (await s.ReleaseAsync(id, ct)).ToOk())

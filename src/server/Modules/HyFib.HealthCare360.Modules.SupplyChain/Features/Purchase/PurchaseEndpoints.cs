@@ -38,7 +38,7 @@ internal static class PurchaseEndpoints
             .RequirePermission(SupplyChainPermissions.PurchaseManage).WithValidation<SavePurchaseOrderRequest>();
         group.MapPut("/orders/{id:guid}", async (Guid id, SavePurchaseOrderRequest r, PurchaseService purchase, CancellationToken ct) =>
                 (await purchase.UpdateOrderAsync(id, r, ct)).ToNoContent())
-            .RequirePermission(SupplyChainPermissions.PurchaseManage).WithValidation<SavePurchaseOrderRequest>();
+            .RequirePermission(SupplyChainPermissions.PurchaseManage).WithValidation<SavePurchaseOrderRequest>().RequireVersion();
         group.MapPost("/orders/{id:guid}/submit", async (Guid id, PurchaseService purchase, CancellationToken ct) =>
                 (await purchase.SubmitOrderAsync(id, ct)).ToNoContent())
             .RequirePermission(SupplyChainPermissions.PurchaseManage);

@@ -71,23 +71,16 @@ function PreferencesPage() {
   const [saving, setSaving] = useState<Choice | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Each switch saves at once (no separate Save button to forget); the other choices are sent unchanged, and WhatsApp
-  // only when it is the switch that changed.
+  // Each switch saves at once (no separate Save button to forget) and sends only itself: the others, as this page last
+  // loaded them, may have been changed meanwhile on another device.
   const change = async (choice: Choice, value: boolean) => {
-    const current = preferences.data;
-    if (!current || saving) {
+    if (!preferences.data || saving) {
       return;
     }
     setSaving(choice);
     setError(null);
-    const next = { ...current, [choice]: value };
     try {
-      await feedbackApi.savePreferences({
-        patientId: profile.id,
-        marketing: next.marketing,
-        updates: next.updates,
-        ...(choice === 'whatsApp' ? { whatsApp: value } : {}),
-      });
+      await feedbackApi.savePreferences({ patientId: profile.id, [choice]: value });
       await queryClient.invalidateQueries({ queryKey: query.queryKey });
       toast.success(t('preferences.saved'));
     } catch (err) {

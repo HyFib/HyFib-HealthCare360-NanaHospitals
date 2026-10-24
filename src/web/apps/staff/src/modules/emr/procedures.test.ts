@@ -28,6 +28,7 @@ function dto(partial: Partial<ProcedureDto> = {}): ProcedureDto {
     status: 'Completed',
     statusReason: null,
     statusChangedAt: null,
+    version: 1,
     ...partial,
   };
 }

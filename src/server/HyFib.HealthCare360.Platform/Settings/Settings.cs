@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Http;
@@ -65,12 +66,13 @@ public interface ISettingsService
     Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Saves the value as <see cref="SetAsync{T}(string, T, Guid?, bool, CancellationToken)"/> does, unless someone else
-    /// changed it since the caller read it at <paramref name="expectedVersion"/> (its <see cref="SystemSetting.Version"/>):
-    /// then nothing is saved and a <see cref="DbUpdateConcurrencyException"/> (409) is thrown, so the last writer does not
-    /// silently win (REL-04). Without an expected version it saves whatever is there, as before.
+    /// Saves a person's edit as <see cref="SetAsync{T}(string, T, Guid?, bool, CancellationToken)"/> does, unless someone
+    /// else changed the value since the person read it at <paramref name="expectedVersion"/> (its
+    /// <see cref="SystemSetting.Version"/>): then nothing is saved and a <see cref="DbUpdateConcurrencyException"/> (409) is
+    /// thrown, so the last writer does not silently win (REL-04). No expected version means the person saw no saved value:
+    /// the edit is refused the same way if one was saved meanwhile.
     /// </summary>
-    /// <exception cref="DbUpdateConcurrencyException">The value changed, or was removed, since it was read.</exception>
+    /// <exception cref="DbUpdateConcurrencyException">The value changed, was removed, or was saved, since it was read.</exception>
     Task SetAsync<T>(string key, T value, Guid? facilityId, bool secret, uint? expectedVersion, CancellationToken cancellationToken = default);
 
     /// <summary>Removes the value of <paramref name="key"/> for the facility (or the global one). False when there was none.</summary>
@@ -125,6 +127,17 @@ internal sealed class SettingChangeTokens : IClusterCache
     }
 }
 
+/// <summary>The versions of stored values, for an edit to send back with its change (REL-04).</summary>
+public static class SettingVersions
+{
+    /// <summary>
+    /// The version of the value saved for <paramref name="key"/> and exactly <paramref name="facilityId"/> (null: the
+    /// hospital-wide value), or null when none is saved: an edit then sends none.
+    /// </summary>
+    public static Task<uint?> OfAsync(HospitalDbContext db, string key, Guid? facilityId, CancellationToken ct) =>
+        db.Set<SystemSetting>().AsNoTracking().Where(s => s.Key == key && s.FacilityId == facilityId).Select(s => (uint?)s.Version).FirstOrDefaultAsync(ct);
+}
+
 /// <summary>
 /// Values are cached for a minute per key and facility. Every cached value of a key (the hospital-wide one and each
 /// facility's merged one) depends on one change token (<see cref="SettingChangeTokens"/>), so saving the key,
@@ -173,9 +186,13 @@ internal sealed class SettingsService(
     }
 
     public Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default) =>
-        SetAsync(key, value, facilityId, secret, expectedVersion: null, cancellationToken);
+        SaveAsync(key, value, facilityId, secret, checkVersion: false, expectedVersion: null, cancellationToken);
 
-    public async Task SetAsync<T>(string key, T value, Guid? facilityId, bool secret, uint? expectedVersion, CancellationToken cancellationToken = default)
+    public Task SetAsync<T>(string key, T value, Guid? facilityId, bool secret, uint? expectedVersion, CancellationToken cancellationToken = default) =>
+        SaveAsync(key, value, facilityId, secret, checkVersion: true, expectedVersion, cancellationToken);
+
+    private async Task SaveAsync<T>(
+        string key, T value, Guid? facilityId, bool secret, bool checkVersion, uint? expectedVersion, CancellationToken cancellationToken)
     {
         // The flag alone is not trusted: a script, an older admin screen or a module that forgets it would otherwise leave
         // credentials in clear text in the database and in every backup.
@@ -184,14 +201,17 @@ internal sealed class SettingsService(
         var stored = secret ? JsonSerializer.Serialize(protector.Protect(json)) : json;
 
         var row = await db.Set<SystemSetting>().FirstOrDefaultAsync(s => s.Key == key && s.FacilityId == facilityId, cancellationToken);
-        if (expectedVersion is { } expected)
+        if (checkVersion)
         {
-            if (row is null)
+            if (row is null && expectedVersion is not null)
             {
                 throw new DbUpdateConcurrencyException($"Setting {key} was removed after it was read.");
             }
 
-            db.SetExpectedVersion(row, expected);
+            if (row is not null)
+            {
+                db.SetExpectedVersion(row, expectedVersion);
+            }
         }
 
         if (row is null)
@@ -246,6 +266,24 @@ public sealed record SettingDto(
 /// </param>
 public sealed record SaveSettingRequest(JsonNode? Value, Guid? FacilityId, bool Secret, string? Description, uint? Version = null);
 
+/// <summary>
+/// What any setting may hold: a value of at most <see cref="MaxValueLength"/> characters of JSON (every server reads the
+/// settings into memory), and a description that fits its column. A setting with rules of its own is checked against
+/// them by its key when it is saved.
+/// </summary>
+public sealed class SaveSettingRequestValidator : AbstractValidator<SaveSettingRequest>
+{
+    public const int MaxValueLength = 64 * 1024;
+
+    public SaveSettingRequestValidator()
+    {
+        RuleFor(r => r.Value).Must(value => value is null || value.ToJsonString().Length <= MaxValueLength)
+            .WithMessage($"A setting holds at most {MaxValueLength / 1024} KB.");
+        RuleFor(r => r.FacilityId).OptionalId();
+        RuleFor(r => r.Description).SafeText(300);
+    }
+}
+
 internal static class SettingsEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
@@ -297,7 +335,7 @@ internal static class SettingsEndpoints
             }
 
             // A setting with rules of its own is refused here, not read leniently later (a default, or the nearest value allowed).
-            if (AntiAutomationSettings.Problem(key, request.Value) is { } problem)
+            if ((AntiAutomationSettings.Problem(key, request.Value) ?? AdministrationOnDesktop.Problem(key, request.Value, request.FacilityId)) is { } problem)
             {
                 return Error.Field("value", problem).ToProblem();
             }
@@ -319,6 +357,6 @@ internal static class SettingsEndpoints
                 Severity = key.StartsWith("integrations.", StringComparison.Ordinal) || secret ? AuditSeverity.Warning : AuditSeverity.Info,
             }, ct);
             return TypedResults.NoContent();
-        });
+        }).WithValidation<SaveSettingRequest>().FirstSaveCreates();
     }
 }

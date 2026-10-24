@@ -187,7 +187,7 @@ public sealed class FeatureSwitchTests(HospitalServer server)
             f => f.DefaultEnabled.ShouldBeFalse());
         try
         {
-            var off = await admin.PutAsync<FeatureDto>($"/api/v1/admin/features/{FeatureKeys.Telehealth}", new SetFeatureRequest(false));
+            var off = await admin.SetFeatureAsync(FeatureKeys.Telehealth, new SetFeatureRequest(false));
             off.Enabled.ShouldBeFalse();
             (await admin.GetAsync<List<FeatureDto>>("/api/v1/admin/features")).Single(f => f.Key == FeatureKeys.Telehealth).Enabled.ShouldBeFalse();
 
@@ -213,7 +213,7 @@ public sealed class FeatureSwitchTests(HospitalServer server)
     private async Task SwitchAsync(string feature, bool enabled)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        (await admin.PutAsync<FeatureDto>($"/api/v1/admin/features/{feature}", new SetFeatureRequest(enabled))).Enabled.ShouldBe(enabled);
+        (await admin.SetFeatureAsync(feature, new SetFeatureRequest(enabled))).Enabled.ShouldBe(enabled);
     }
 
     private async Task<AuditEvent?> LastChangeAsync(string feature)

@@ -9,12 +9,12 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 /// Read models for the EMR banner and summary. Patient-level clinical facts are shown from every facility of the
 /// hospital group (the EHR is longitudinal), so facility filters are bypassed deliberately here.
 /// </summary>
-public sealed class PatientRecordQueries(HospitalDbContext db, TimeProvider time)
+public sealed class PatientRecordQueries(HospitalDbContext db, PatientContactAccess contacts, TimeProvider time)
 {
     public async Task<PatientClinicalSummary?> SummaryAsync(Guid patientId, CancellationToken ct)
     {
         var today = time.Today();
-        var patients = await PatientQueries.SummariesAsync(db, [patientId], today, ct);
+        var patients = await PatientQueries.SummariesAsync(db, [patientId], today, await contacts.FullAsync(ct), ct);
         if (!patients.TryGetValue(patientId, out var patient))
         {
             return null;

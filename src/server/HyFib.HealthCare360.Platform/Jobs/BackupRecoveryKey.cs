@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Identity;
@@ -212,6 +213,12 @@ public sealed record NewRecoveryKey(string KeyId, string Key, DateTimeOffset Exp
 
 /// <summary>The new recovery key, typed back from the copy the administrator made.</summary>
 public sealed record ConfirmRecoveryKeyRequest(string Key);
+
+/// <summary>The key as typed back: given, and no longer than its grouped form; whether it is right is the store's to say.</summary>
+public sealed class ConfirmRecoveryKeyRequestValidator : AbstractValidator<ConfirmRecoveryKeyRequest>
+{
+    public ConfirmRecoveryKeyRequestValidator() => RuleFor(r => r.Key).NotEmpty().WithMessage("Enter the recovery key.").MaximumLength(128);
+}
 
 /// <summary>
 /// The recovery key on the Server Node: <c>keys/backup-recovery.key</c>, wrapped by Data Protection like the other keys;

@@ -250,6 +250,7 @@ public sealed class DonorService(
             return Error.NotFound(nameof(Donation), donationId);
         }
 
+        db.SetExpectedVersion(donation, request.Version);
         var donor = await db.Set<Donor>().FirstAsync(d => d.Id == donation.DonorId, ct);
         var now = time.GetUtcNow();
         var tti = request.ToPanel();

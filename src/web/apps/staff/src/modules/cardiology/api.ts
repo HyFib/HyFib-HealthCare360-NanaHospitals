@@ -197,6 +197,9 @@ export interface CardiologyStudyDetail {
   version: number;
 }
 
+/** A study as the save of its report returns it: with that report. */
+export type ReportedCardiologyStudy = CardiologyStudyDetail & { report: CardiologyReportDto };
+
 export interface SaveCardiologyReportRequest {
   ecg: EcgFindings | null;
   echo: EchoFindings | null;
@@ -279,10 +282,13 @@ export const cardiologyApi = {
   complete: (id: string, notes: string | null) => api.post<CardiologyStudyDetail>(`${study(id)}/complete`, { notes }),
   cancel: (id: string, reason: string) => api.post<CardiologyStudyDetail>(`${study(id)}/cancel`, { reason }),
   saveReport: (id: string, request: SaveCardiologyReportRequest) =>
-    api.put<CardiologyStudyDetail>(`${study(id)}/report`, request),
-  submitReport: (id: string) => api.post<CardiologyStudyDetail>(`${study(id)}/report/submit`),
-  verifyReport: (id: string, criticalCall: CriticalCallDetails | null, release: boolean) =>
-    api.post<CardiologyStudyDetail>(`${study(id)}/report/verify`, { criticalCall, release }),
+    api.put<ReportedCardiologyStudy>(`${study(id)}/report`, request),
+  /** `version`: the report as the cardiologist last saved or read it; refused once it changed since (REL-04). */
+  submitReport: (id: string, version: number) =>
+    api.post<CardiologyStudyDetail>(`${study(id)}/report/submit`, { version }),
+  /** `version`: the report as the cardiologist signing it last saved or read it; refused once it changed since (REL-04). */
+  verifyReport: (id: string, criticalCall: CriticalCallDetails | null, version: number, release: boolean) =>
+    api.post<CardiologyStudyDetail>(`${study(id)}/report/verify`, { criticalCall, version, release }),
   releaseReport: (id: string) => api.post<CardiologyStudyDetail>(`${study(id)}/report/release`),
   /** Sends the study's DICOM files the PACS does not hold yet, under the patient's UHID and the study. */
   sendToPacs: (id: string) => api.post<CardiologyStudyDetail>(`${study(id)}/pacs`),

@@ -48,15 +48,21 @@ public sealed record RosterEntryDto(
     TimeOnly? StartTime,
     TimeOnly? EndTime,
     bool IsWeekOff,
-    string? Notes);
+    string? Notes,
+    uint Version);
 
 public sealed record RosterAssignmentInput(Guid EmployeeId, DateOnly Date, Guid? ShiftId, bool IsWeekOff, string? Notes);
 
+/// <summary>A roster entry as the planner saw it, with its version (REL-04).</summary>
+public sealed record RosterEntryVersion(Guid Id, uint Version);
+
 /// <summary>
 /// Saves roster cells. With <see cref="ReplaceExisting"/> (the roster-grid default) the cells sent replace whatever was
-/// rostered for those employee-dates. Warnings must be acknowledged; errors never save.
+/// rostered for those employee-dates. Warnings must be acknowledged; errors never save. <see cref="Replacing"/> are the
+/// entries the grid showed in those cells: an entry changed or added there since is not overwritten (409, REL-04).
 /// </summary>
-public sealed record SaveRosterRequest(IReadOnlyList<RosterAssignmentInput> Assignments, bool ReplaceExisting = true, bool AcknowledgeWarnings = false);
+public sealed record SaveRosterRequest(
+    IReadOnlyList<RosterAssignmentInput> Assignments, bool ReplaceExisting = true, bool AcknowledgeWarnings = false, IReadOnlyList<RosterEntryVersion>? Replacing = null);
 
 public sealed record CopyRosterWeekRequest(DateOnly SourceWeekStart, DateOnly TargetWeekStart, Guid? DepartmentId, bool AcknowledgeWarnings = false);
 

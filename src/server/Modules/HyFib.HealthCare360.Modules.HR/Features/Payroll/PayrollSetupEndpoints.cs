@@ -14,11 +14,11 @@ internal static class PayrollSetupEndpoints
         group.MapPost("/payroll/components", (SaveSalaryComponentRequest r, HospitalDbContext db, CancellationToken ct) => SaveComponent(null, r, db, ct))
             .RequirePermission(HRPermissions.PayrollProcess).WithValidation<SaveSalaryComponentRequest>();
         group.MapPut("/payroll/components/{id:guid}", (Guid id, SaveSalaryComponentRequest r, HospitalDbContext db, CancellationToken ct) => SaveComponent(id, r, db, ct))
-            .RequirePermission(HRPermissions.PayrollProcess).WithValidation<SaveSalaryComponentRequest>();
+            .RequirePermission(HRPermissions.PayrollProcess).WithValidation<SaveSalaryComponentRequest>().RequireVersion();
 
         group.MapGet("/payroll/professional-tax", ListProfessionalTax).RequireAnyPermission(viewers);
         group.MapPut("/payroll/professional-tax/{stateCode}", SaveProfessionalTax)
-            .RequirePermission(HRPermissions.PayrollApprove).WithValidation<SaveProfessionalTaxRequest>();
+            .RequirePermission(HRPermissions.PayrollApprove).WithValidation<SaveProfessionalTaxRequest>().FirstSaveCreates();
 
         group.MapGet("/employees/{employeeId:guid}/salary-structures", ListStructures).RequireAnyPermission(viewers);
         group.MapPost("/employees/{employeeId:guid}/salary-structures", CreateStructure)
@@ -88,7 +88,7 @@ internal static class PayrollSetupEndpoints
         var slabs = await db.Set<ProfessionalTaxSlab>().AsNoTracking().OrderBy(s => s.StateCode).ThenBy(s => s.IncomeFrom).ToListAsync(ct);
         return TypedResults.Ok(slabs.GroupBy(s => s.StateCode).Select(g => new ProfessionalTaxScheduleDto(
             g.Key, g.First().StateName, g.First().Frequency, g.First().DeductionMonths,
-            g.Select(s => new ProfessionalTaxBandDto(s.IncomeFrom, s.IncomeTo, s.Amount, s.FebruaryAmount)).ToList())).ToList());
+            g.Select(s => new ProfessionalTaxBandDto(s.IncomeFrom, s.IncomeTo, s.Amount, s.FebruaryAmount)).ToList(), g.Max(s => s.Version))).ToList());
     }
 
     private static async Task<IResult> SaveProfessionalTax(string stateCode, SaveProfessionalTaxRequest request, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
@@ -99,7 +99,15 @@ internal static class PayrollSetupEndpoints
             return Error.Field("stateCode", "Use the state code, for example TN or KA.").ToProblem();
         }
 
-        db.RemoveRange(await db.Set<ProfessionalTaxSlab>().Where(s => s.StateCode == code).ToListAsync(ct));
+        // One save writes all of a state's slabs, so any of them carries the version of the table (REL-04). Removing them
+        // checks it again, so a save that raced this one is refused too.
+        var slabs = await db.Set<ProfessionalTaxSlab>().Where(s => s.StateCode == code).ToListAsync(ct);
+        if ((slabs.Count == 0 ? null : slabs.Max(s => (uint?)s.Version)) != request.Version)
+        {
+            return Error.ConcurrencyConflict.ToProblem();
+        }
+
+        db.RemoveRange(slabs);
         var months = request.Frequency == ProfessionalTaxFrequency.HalfYearly ? request.DeductionMonths.Distinct().Order().ToList() : [];
         foreach (var band in request.Bands.OrderBy(b => b.IncomeFrom))
         {

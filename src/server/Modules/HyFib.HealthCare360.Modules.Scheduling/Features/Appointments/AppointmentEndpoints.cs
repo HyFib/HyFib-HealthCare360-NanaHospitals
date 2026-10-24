@@ -160,9 +160,10 @@ internal static class AppointmentEndpoints
             loads));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Get(
+        Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
-        var detail = await AppointmentQueries.DetailAsync(db, id, time.Today(), ct);
+        var detail = await AppointmentQueries.DetailAsync(db, id, time.Today(), await contacts.FullAsync(ct), ct);
         if (detail is null)
         {
             return Error.NotFound(nameof(Appointment), id).ToProblem();
@@ -184,6 +185,7 @@ internal static class AppointmentEndpoints
         IPermissionService permissions,
         ICurrentUser user,
         HospitalDbContext db,
+        PatientContactAccess contacts,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -199,7 +201,7 @@ internal static class AppointmentEndpoints
             NotifyPatient = request.NotifyPatient,
             WaitlistEntryId = request.WaitlistEntryId,
         };
-        return await ToDetailResultAsync(await booking.BookAsync(command, ct), db, time, created: true, ct);
+        return await ToDetailResultAsync(await booking.BookAsync(command, ct), db, contacts, time, created: true, ct);
     }
 
     private static async Task<IResult> Reschedule(
@@ -207,6 +209,7 @@ internal static class AppointmentEndpoints
         RescheduleAppointmentRequest request,
         AppointmentBookingService booking,
         HospitalDbContext db,
+        PatientContactAccess contacts,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -215,7 +218,7 @@ internal static class AppointmentEndpoints
             Overbook = request.Overbook,
             NotifyPatient = request.NotifyPatient,
         };
-        return await ToDetailResultAsync(await booking.RescheduleAsync(id, command, ct), db, time, created: false, ct);
+        return await ToDetailResultAsync(await booking.RescheduleAsync(id, command, ct), db, contacts, time, created: false, ct);
     }
 
     private static async Task<IResult> Cancel(
@@ -223,16 +226,20 @@ internal static class AppointmentEndpoints
         CancelAppointmentRequest request,
         AppointmentBookingService booking,
         HospitalDbContext db,
+        PatientContactAccess contacts,
         TimeProvider time,
         CancellationToken ct) =>
         await ToDetailResultAsync(
-            await booking.CancelAsync(id, request.ReasonCode, request.Reason, CancellationSource.Staff, request.NotifyPatient, ct), db, time, created: false, ct);
+            await booking.CancelAsync(id, request.ReasonCode, request.Reason, CancellationSource.Staff, request.NotifyPatient, ct), db, contacts, time,
+            created: false, ct);
 
-    private static async Task<IResult> Confirm(Guid id, AppointmentBookingService booking, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
-        await ToDetailResultAsync(await booking.ConfirmAsync(id, ct), db, time, created: false, ct);
+    private static async Task<IResult> Confirm(
+        Guid id, AppointmentBookingService booking, HospitalDbContext db, PatientContactAccess contacts, TimeProvider time, CancellationToken ct) =>
+        await ToDetailResultAsync(await booking.ConfirmAsync(id, ct), db, contacts, time, created: false, ct);
 
-    private static async Task<IResult> NoShow(Guid id, AppointmentBookingService booking, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
-        await ToDetailResultAsync(await booking.MarkNoShowAsync(id, ct), db, time, created: false, ct);
+    private static async Task<IResult> NoShow(
+        Guid id, AppointmentBookingService booking, HospitalDbContext db, PatientContactAccess contacts, TimeProvider time, CancellationToken ct) =>
+        await ToDetailResultAsync(await booking.MarkNoShowAsync(id, ct), db, contacts, time, created: false, ct);
 
     private static async Task<IResult> CheckIn(Guid id, CheckInAppointmentRequest request, AppointmentBookingService booking, CancellationToken ct)
     {
@@ -245,14 +252,15 @@ internal static class AppointmentEndpoints
     private static async Task<bool> CanManageAsync(ICurrentUser user, IPermissionService permissions, CancellationToken ct) =>
         user.UserId is { } userId && await permissions.HasPermissionAsync(userId, SchedulingPermissions.AppointmentsManage, ct);
 
-    internal static async Task<IResult> ToDetailResultAsync(Result<Appointment> result, HospitalDbContext db, TimeProvider time, bool created, CancellationToken ct)
+    internal static async Task<IResult> ToDetailResultAsync(
+        Result<Appointment> result, HospitalDbContext db, PatientContactAccess contacts, TimeProvider time, bool created, CancellationToken ct)
     {
         if (result.IsFailure)
         {
             return result.Error!.ToProblem();
         }
 
-        var detail = await AppointmentQueries.DetailAsync(db, result.Value.Id, time.Today(), ct);
+        var detail = await AppointmentQueries.DetailAsync(db, result.Value.Id, time.Today(), await contacts.FullAsync(ct), ct);
         if (detail is null)
         {
             return Error.NotFound(nameof(Appointment), result.Value.Id).ToProblem();

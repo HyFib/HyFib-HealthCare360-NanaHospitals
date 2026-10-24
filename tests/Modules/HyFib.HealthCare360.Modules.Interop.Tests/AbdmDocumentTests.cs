@@ -1,11 +1,16 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Testing.Abdm;
+using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Tests;
@@ -13,15 +18,16 @@ namespace HyFib.HealthCare360.Modules.Interop.Tests;
 /// <summary>
 /// The ABDM documents (SRS EHR-08) against the NRCeS "FHIR Implementation Guide for ABDM": the DocumentBundle, the
 /// Composition profile of each record type with the SNOMED CT codes the IG fixes, the resources' profiles and the
-/// rules the IG adds to them, and references that all resolve inside the document. The four sample documents are kept in
-/// Fixtures/Abdm and must match what the code builds; they were checked with the HL7 FHIR validator against the IG
-/// (docs/modules/interop.md, ABDM health records). Set HC360_WRITE_ABDM_FIXTURES=1 to write them again after a change.
+/// rules the IG adds to them, and references that all resolve inside the document. The five sample documents are kept in
+/// Fixtures/Abdm and must match what the code builds; they are validated against the IG here (Firely), and were also
+/// checked with the HL7 FHIR validator (docs/modules/interop.md, ABDM health records). Set HC360_WRITE_ABDM_FIXTURES=1
+/// to write them again after a change.
 /// </summary>
 public sealed class AbdmDocumentTests
 {
     private static R4.Bundle Build(AbdmDocument document) => AbdmDocumentBuilder.Build(document);
 
-    private static readonly string[] Samples = ["prescription", "op-consultation", "lab-report", "discharge-summary"];
+    private static readonly string[] Samples = ["prescription", "op-consultation", "lab-report", "radiology-report", "cardiology-report", "discharge-summary"];
 
     public static TheoryData<string> RecordTypes => new(Samples);
 
@@ -30,6 +36,8 @@ public sealed class AbdmDocumentTests
         "prescription" => Build(AbdmRecords.Prescription(AbdmTestData.Prescription(AbdmTestData.Pdf))),
         "op-consultation" => Build(AbdmRecords.Consultation(AbdmTestData.ConsultationRecord())),
         "lab-report" => Build(AbdmRecords.LabReport(AbdmTestData.LabReportRecord(AbdmTestData.Pdf))),
+        "radiology-report" => Build(AbdmRecords.RadiologyReport(AbdmTestData.RadiologyReportRecord(AbdmTestData.Pdf))),
+        "cardiology-report" => Build(AbdmRecords.CardiologyReport(AbdmTestData.CardiologyReportRecord(AbdmTestData.Pdf))),
         _ => Build(AbdmRecords.DischargeSummary(AbdmTestData.DischargeSummaryRecord(pdf: null))),
     };
 
@@ -97,6 +105,8 @@ public sealed class AbdmDocumentTests
     [InlineData("prescription", AbdmProfiles.PrescriptionRecord, "440545006", "Prescription record")]
     [InlineData("op-consultation", AbdmProfiles.OpConsultRecord, "371530004", "Clinical consultation report")]
     [InlineData("lab-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
+    [InlineData("radiology-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
+    [InlineData("cardiology-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
     [InlineData("discharge-summary", AbdmProfiles.DischargeSummaryRecord, "373942005", "Discharge summary")]
     public void The_composition_is_typed_with_the_snomed_code_the_ig_fixes(string name, string profile, string code, string display)
     {
@@ -251,6 +261,274 @@ public sealed class AbdmDocumentTests
         report.Conclusion.ShouldBe("See the individual results.");
         report.Text.Div.ShouldNotContain("See the individual results");
         FhirJson.Serialize(bundle).ShouldNotContain("reference range", Case.Insensitive);
+    }
+
+    [Fact]
+    public void A_radiology_report_is_an_imaging_report_of_its_study_interpreted_by_its_radiologists()
+    {
+        var bundle = Sample("radiology-report");
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        var hospital = FullUrl<R4.Organization>(bundle);
+        var radiologist = FullUrl<R4.Practitioner>(bundle, p => p.Name[0].Text == "Dr. Neha Joshi");
+        var resident = FullUrl<R4.Practitioner>(bundle, p => p.Name[0].Text == "Dr. Kiran Patil");
+        var data = AbdmTestData.RadiologyReport();
+
+        // The radiologist who signed it off wrote the document and answers for it, from when she signed it off.
+        composition.Title.ShouldBe("Radiology report");
+        composition.Author.ShouldHaveSingleItem().Reference.ShouldBe(radiologist);
+        var attester = composition.Attester.ShouldHaveSingleItem();
+        (attester.Mode, attester.Party.Reference, attester.Time).ShouldBe((R4.Composition.CompositionAttestationMode.Legal, radiologist, FhirTime.DateTime(data.VerifiedAt!.Value)));
+        composition.Date.ShouldBe(FhirTime.DateTime(data.ReleasedAt!.Value));
+        var section = composition.Section.ShouldHaveSingleItem();
+        section.Code.Coding.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            c => c.System.ShouldBe("http://snomed.info/sct"), c => c.Code.ShouldBe("4201000179104"), c => c.Display.ShouldBe("Imaging report"));
+        section.Entry.Select(e => e.Type).ShouldBe(["DiagnosticReport", "DocumentReference"]);
+
+        var report = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().ShouldHaveSingleItem();
+        report.Meta.Profile.ShouldBe([AbdmProfiles.DiagnosticReportImaging]);
+        report.Status.ShouldBe(R4.DiagnosticReport.DiagnosticReportStatus.Final);
+        report.Category.ShouldHaveSingleItem().Coding.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            c => c.System.ShouldBe("http://snomed.info/sct"), c => c.Code.ShouldBe("394914008"), c => c.Display.ShouldBe("Radiology"));
+        report.Code.Coding.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            c => c.System.ShouldBe("http://loinc.org"), c => c.Code.ShouldBe("18748-4"), c => c.Display.ShouldBe("Diagnostic imaging study"));
+        report.Code.Text.ShouldBe("X-ray chest PA view");
+        report.Identifier.ShouldHaveSingleItem().Value.ShouldBe("NHRD2600217");
+        report.Issued.ShouldBe(data.ReleasedAt);
+
+        // The hospital performed the study and issues the report; the resident who wrote it and the radiologist who
+        // signed it off interpret it.
+        report.Performer.ShouldHaveSingleItem().Reference.ShouldBe(hospital);
+        report.ResultsInterpreter.Select(r => r.Reference).ShouldBe([resident, radiologist]);
+
+        // Findings and impression: the impression as the conclusion, the whole report as text, with the study's modality
+        // and body part as the printed report heads it.
+        report.Conclusion.ShouldBe("No active lung lesion.");
+        var text = System.Text.Encoding.UTF8.GetString(report.PresentedForm.ShouldHaveSingleItem().Data);
+        text.ShouldStartWith("X-ray chest PA view\nModality: X-ray\nBody part: Chest\nTechnique: PA view, erect, in full inspiration.\n");
+        text.ShouldContain("Findings: Both lung fields are clear.");
+        text.ShouldContain("Impression: No active lung lesion.");
+
+        // The study: its UID in PACS, its accession number, the modality as the worklist sends an X-ray, and its images.
+        var study = bundle.Entry.Select(e => e.Resource).OfType<R4.ImagingStudy>().ShouldHaveSingleItem();
+        report.ImagingStudy.ShouldHaveSingleItem().Reference.ShouldBe(FullUrl<R4.ImagingStudy>(bundle));
+        study.Meta.Profile.ShouldBe([AbdmProfiles.ImagingStudy]);
+        study.Identifier.Select(i => (i.System, i.Value)).ShouldBe(
+            [("urn:dicom:uid", "urn:oid:" + data.StudyInstanceUid), (FhirSystems.AccessionNumber, "NHRD2600217")]);
+        study.Modality.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            c => c.System.ShouldBe("http://dicom.nema.org/resources/ontology/DCM"), c => c.Code.ShouldBe("CR"), c => c.Display.ShouldBe("Computed Radiography"));
+        (study.NumberOfSeries, study.NumberOfInstances).ShouldBe((1, 2));
+        study.Started.ShouldBe(FhirTime.DateTime(data.StartedAt!.Value));
+        study.Subject.Reference.ShouldBe(FullUrl<R4.Patient>(bundle));
+        study.Encounter.Reference.ShouldBe(composition.Encounter.Reference);
+        study.Interpreter.Select(r => r.Reference).ShouldBe([resident, radiologist]);
+        study.Description.ShouldBe("X-ray chest PA view");
+        study.Text.Div.ShouldContain("<p>Body part: Chest</p>");
+
+        // The printed report, as the laboratory's is.
+        var pdf = bundle.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().ShouldHaveSingleItem();
+        pdf.Type.Coding.ShouldHaveSingleItem().Code.ShouldBe("18748-4");
+        pdf.Content.ShouldHaveSingleItem().Attachment.ShouldSatisfyAllConditions(
+            a => a.ContentType.ShouldBe("application/pdf"), a => a.Data.ShouldBe(AbdmTestData.Pdf.Content));
+        pdf.Author.ShouldHaveSingleItem().Reference.ShouldBe(hospital);
+    }
+
+    [Fact]
+    public void A_radiology_report_says_it_has_no_key_images_rather_than_carrying_something_that_is_not_one()
+    {
+        // DiagnosticReportImaging requires a key image. HC360 keeps none (the images stay in PACS), so the one media entry
+        // gives FHIR's reason for a required element the system cannot fill, and no Media resource stands in for one.
+        var bundle = Sample("radiology-report");
+        var media = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().Single().Media.ShouldHaveSingleItem();
+
+        media.Comment.ShouldBe("No key images are attached: the images of the study are kept in the hospital's PACS.");
+        (media.Link.Reference, media.Link.Display).ShouldBe((null, "No key image"));
+        var reason = media.Link.Extension.ShouldHaveSingleItem();
+        reason.Url.ShouldBe("http://hl7.org/fhir/StructureDefinition/data-absent-reason");
+        reason.Value.ShouldBeOfType<R4.Code>().Value.ShouldBe("unsupported");
+        bundle.Entry.Select(e => e.Resource).OfType<R4.Media>().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void An_addendum_after_the_release_amends_a_radiology_report_and_who_added_it_attests_it()
+    {
+        // The resident's second read finds an effusion an hour after the report was released.
+        var data = AbdmTestData.RadiologyReportRecord(AbdmTestData.Pdf);
+        var addedAt = data.Report.ReleasedAt!.Value.AddHours(1);
+        var bundle = Build(AbdmRecords.RadiologyReport(data with
+        {
+            Report = data.Report with { Addenda = [new RadiologyAddendumRow("Small left pleural effusion on review.", "Second read", addedAt, AbdmTestData.ResidentUserId)] },
+        }));
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        var radiologist = FullUrl<R4.Practitioner>(bundle, p => p.Name[0].Text == "Dr. Neha Joshi");
+        var resident = FullUrl<R4.Practitioner>(bundle, p => p.Name[0].Text == "Dr. Kiran Patil");
+
+        composition.Status.ShouldBe(R4.CompositionStatus.Amended);
+        composition.Date.ShouldBe(FhirTime.DateTime(addedAt));
+        composition.Author.Select(a => a.Reference).ShouldBe([radiologist, resident]);
+        var attester = composition.Attester.ShouldHaveSingleItem();
+        (attester.Party.Reference, attester.Time).ShouldBe((resident, FhirTime.DateTime(addedAt)));
+
+        // The report is appended, and the addendum is in its conclusion, as it may correct the impression.
+        var report = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().Single();
+        report.Status.ShouldBe(R4.DiagnosticReport.DiagnosticReportStatus.Appended);
+        report.Issued.ShouldBe(addedAt);
+        report.Conclusion.ShouldBe($"No active lung lesion. Addendum {FhirTime.DateTime(addedAt)}: Small left pleural effusion on review.");
+        System.Text.Encoding.UTF8.GetString(report.PresentedForm[0].Data).ShouldContain("(reason: Second read): Small left pleural effusion on review.");
+        bundle.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().Single().DocStatus.ShouldBe(R4.CompositionStatus.Amended);
+
+        var validation = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+        validation.Errors.ShouldBeEmpty(validation.Describe());
+    }
+
+    [Fact]
+    public void An_addendum_before_the_release_is_part_of_the_report_as_first_released()
+    {
+        var data = AbdmTestData.RadiologyReportRecord(pdf: null);
+        var addedAt = data.Report.VerifiedAt!.Value.AddMinutes(2);
+        var composition = (R4.Composition)Build(AbdmRecords.RadiologyReport(data with
+        {
+            Report = data.Report with { Addenda = [new RadiologyAddendumRow("Old healed rib fracture on the left.", null, addedAt, AbdmTestData.RadiologistUserId)] },
+        })).Entry[0].Resource;
+
+        composition.Status.ShouldBe(R4.CompositionStatus.Final);
+        composition.Date.ShouldBe(FhirTime.DateTime(data.Report.ReleasedAt!.Value));
+        composition.Attester.ShouldHaveSingleItem().Time.ShouldBe(FhirTime.DateTime(data.Report.VerifiedAt.Value));
+    }
+
+    [Fact]
+    public void A_radiology_report_of_users_who_are_not_doctors_is_written_and_interpreted_by_the_hospital()
+    {
+        // Signed off and amended by accounts not linked to a doctor: no one is named as a radiologist or attests it, and
+        // the document still meets the profiles.
+        var data = AbdmTestData.RadiologyReportRecord(pdf: null);
+        var bundle = Build(AbdmRecords.RadiologyReport(data with
+        {
+            Doctors = new Dictionary<Guid, Guid>(),
+            Report = data.Report with { Addenda = [new RadiologyAddendumRow("Image quality noted.", null, data.Report.ReleasedAt!.Value.AddHours(1), AbdmTestData.ClerkUserId)] },
+        }));
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        var hospital = FullUrl<R4.Organization>(bundle);
+
+        composition.Status.ShouldBe(R4.CompositionStatus.Amended);
+        composition.Author.ShouldHaveSingleItem().Reference.ShouldBe(hospital);
+        composition.Attester.ShouldBeEmpty();
+        bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().Single().ResultsInterpreter.ShouldHaveSingleItem().Reference.ShouldBe(hospital);
+        bundle.Entry.Select(e => e.Resource).OfType<R4.ImagingStudy>().Single().Interpreter.ShouldBeEmpty();
+        bundle.Entry.Select(e => e.Resource).OfType<R4.Practitioner>().Select(p => p.Name[0].Text).ShouldBe(["Dr. Asha Rao"], "only the visit's doctor");
+
+        var validation = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+        validation.Errors.ShouldBeEmpty(validation.Describe());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("1.2.840.abc")]
+    [InlineData("1.2..840")]
+    public void A_study_whose_images_pacs_does_not_hold_names_no_uid_and_no_images(string? uid)
+    {
+        // Before PACS links the images the UID is only the one the worklist proposed, and the loader passes none; a UID
+        // DICOM would not take is not passed on either.
+        var data = AbdmTestData.RadiologyReportRecord(pdf: null);
+        var study = Build(AbdmRecords.RadiologyReport(data with
+        {
+            Report = data.Report with { StudyInstanceUid = uid, SeriesCount = null, InstanceCount = null },
+        })).Entry.Select(e => e.Resource).OfType<R4.ImagingStudy>().Single();
+
+        study.Identifier.ShouldHaveSingleItem().System.ShouldBe(FhirSystems.AccessionNumber);
+        (study.NumberOfSeries, study.NumberOfInstances).ShouldBe((null, null));
+        study.Text.Div.ShouldNotContain("PACS");
+    }
+
+    [Theory]
+    [InlineData(Modality.XR, "CR", "Computed Radiography", "X-ray")]
+    [InlineData(Modality.DX, "DX", "Digital Radiography", "Digital X-ray")]
+    [InlineData(Modality.CT, "CT", "Computed Tomography", "CT scan")]
+    [InlineData(Modality.MR, "MR", "Magnetic Resonance", "MRI")]
+    [InlineData(Modality.US, "US", "Ultrasound", "Ultrasound")]
+    [InlineData(Modality.MG, "MG", "Mammography", "Mammography")]
+    [InlineData(Modality.RF, "RF", "Radiofluoroscopy", "Fluoroscopy")]
+    public void A_study_is_coded_with_the_dicom_modality_its_worklist_sends(Modality modality, string code, string display, string name)
+    {
+        var data = AbdmTestData.RadiologyReportRecord(pdf: null);
+        var bundle = Build(AbdmRecords.RadiologyReport(data with { Report = data.Report with { Modality = modality } }));
+
+        bundle.Entry.Select(e => e.Resource).OfType<R4.ImagingStudy>().Single().Modality.ShouldHaveSingleItem()
+            .ShouldSatisfyAllConditions(c => c.Code.ShouldBe(code), c => c.Display.ShouldBe(display));
+        System.Text.Encoding.UTF8.GetString(bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().Single().PresentedForm[0].Data)
+            .ShouldContain($"Modality: {name}\n");
+    }
+
+    [Theory]
+    [InlineData(DiagnosticReportStatus.Draft)]
+    [InlineData(DiagnosticReportStatus.Reported)]
+    [InlineData(DiagnosticReportStatus.Verified)]
+    public void A_radiology_report_is_exported_only_once_released(DiagnosticReportStatus status)
+    {
+        // A draft, a report waiting for sign-off and one signed off but not released are still the radiologists' work.
+        AbdmRecordLoader.RadiologyReportNotExportable(status).ShouldBe("Only a released radiology report can be exported.");
+        AbdmRecordLoader.RadiologyReportNotExportable(DiagnosticReportStatus.Released).ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(DiagnosticReportStatus.Draft)]
+    [InlineData(DiagnosticReportStatus.Reported)]
+    [InlineData(DiagnosticReportStatus.Verified)]
+    public void A_cardiology_report_is_exported_only_once_released(DiagnosticReportStatus status)
+    {
+        AbdmRecordLoader.CardiologyReportNotExportable(status).ShouldBe("Only a released cardiology report can be exported.");
+        AbdmRecordLoader.CardiologyReportNotExportable(DiagnosticReportStatus.Released).ShouldBeNull();
+    }
+
+    [Fact]
+    public void An_ecg_report_is_an_imaging_report_of_the_cardiology_department_with_no_imaging_study()
+    {
+        var bundle = Sample("cardiology-report");
+        var report = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().ShouldHaveSingleItem();
+
+        report.Meta.Profile.ShouldBe([AbdmProfiles.DiagnosticReportImaging]);
+        var category = report.Category.ShouldHaveSingleItem().Coding.ShouldHaveSingleItem();
+        (category.System, category.Code, category.Display).ShouldBe(("http://snomed.info/sct", "394579002", "Cardiology"));
+        var code = report.Code.Coding.ShouldHaveSingleItem();
+        (code.System, code.Code, code.Display).ShouldBe(("http://loinc.org", "11524-6", "EKG study"));
+        report.ImagingStudy.ShouldBeEmpty("an ECG is a recording, not an imaging study");
+        bundle.Entry.Select(e => e.Resource).OfType<R4.ImagingStudy>().ShouldBeEmpty();
+        report.Conclusion.ShouldBe("Normal sinus rhythm. No ST-T changes.");
+        report.PresentedForm.ShouldContain(f => f.ContentType == "text/plain; charset=utf-8");
+        Encoding.UTF8.GetString(report.PresentedForm.First(f => f.ContentType == "text/plain; charset=utf-8").Data).ShouldContain("QTc interval: 420 ms");
+
+        // The cardiologist who wrote and signed it off interprets it once, is the author and attests the document.
+        var cardiologist = FullUrl<R4.Practitioner>(bundle, p => p.Name[0].Text == "Dr. Vikram Shah");
+        report.ResultsInterpreter.ShouldHaveSingleItem().Reference.ShouldBe(cardiologist);
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        composition.Status.ShouldBe(R4.CompositionStatus.Final);
+        composition.Author.ShouldHaveSingleItem().Reference.ShouldBe(cardiologist);
+        composition.Attester.ShouldHaveSingleItem().Party.Reference.ShouldBe(cardiologist);
+    }
+
+    [Theory]
+    [InlineData(CardiologyStudyType.Ecg, "ECG 12 lead", "11524-6")]
+    [InlineData(CardiologyStudyType.Echo, "2D echocardiography with colour Doppler", "59281-6")]
+    [InlineData(CardiologyStudyType.Echo, "Transoesophageal echocardiography", null)]
+    [InlineData(CardiologyStudyType.Echo, "TEE", null)]
+    [InlineData(CardiologyStudyType.Tmt, "Treadmill test", "18752-6")]
+    [InlineData(CardiologyStudyType.Holter, "Holter monitoring 24 hours", "18754-2")]
+    [InlineData(CardiologyStudyType.Abpm, "Ambulatory BP monitoring", null)]
+    [InlineData(CardiologyStudyType.Other, "Cardiac event recorder", null)]
+    public void Each_cardiology_study_is_coded_with_the_loinc_study_it_is_where_loinc_names_one(CardiologyStudyType type, string name, string? loinc)
+    {
+        var data = AbdmTestData.CardiologyReportRecord(pdf: AbdmTestData.Pdf);
+        var bundle = Build(AbdmRecords.CardiologyReport(data with { Report = data.Report with { StudyType = type, StudyName = name } }));
+        var report = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().ShouldHaveSingleItem();
+
+        report.Code.Coding.Select(c => c.Code).ShouldBe(loinc is null ? [] : [loinc]);
+        report.Code.Text.ShouldBe(name);
+
+        // The printed copy is typed with the same study, else with LOINC's cardiology studies.
+        var pdf = bundle.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().ShouldHaveSingleItem();
+        pdf.Type.Coding.ShouldHaveSingleItem().Code.ShouldBe(loinc ?? "26441-6");
+        var validation = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+        validation.Errors.ShouldBeEmpty(validation.Describe());
+        validation.Warnings.ShouldBeEmpty(validation.Describe());
     }
 
     [Fact]
@@ -680,6 +958,56 @@ public sealed class AbdmDocumentTests
 
         validation.Errors.ShouldBeEmpty(validation.Describe());
         validation.Warnings.ShouldBeEmpty(validation.Describe());
+    }
+
+    /// <summary>
+    /// The radiology sample validates because it meets DiagnosticReportImaging and ImagingStudy, not because they go
+    /// unchecked: broken against them, it fails on the rule it breaks.
+    /// </summary>
+    [Theory]
+    [InlineData("no media entry", "Missing required member: 'media'")]
+    [InlineData("an empty media link", "ele-1")]
+    [InlineData("an absent reason the value set lacks", "Code 'no-key-image' does not exist in the value set 'DataAbsentReason'")]
+    [InlineData("no interpreter", "Missing required member: 'resultsInterpreter'")]
+    [InlineData("no conclusion", "Missing required member: 'conclusion'")]
+    [InlineData("the service code kept", "is not exactly equal to fixed value 'http://loinc.org'")]
+    [InlineData("a series without its uid", "Missing required member: 'uid'")]
+    public void A_radiology_report_broken_against_the_imaging_profiles_fails(string breakage, string expected)
+    {
+        var bundle = Sample("radiology-report");
+        var report = bundle.Entry.Select(e => e.Resource).OfType<R4.DiagnosticReport>().Single();
+        switch (breakage)
+        {
+            case "no media entry":
+                report.Media.Clear();
+                break;
+            case "an empty media link":
+                report.Media[0].Link = new R4.ResourceReference();
+                break;
+            case "an absent reason the value set lacks":
+                report.Media[0].Link.Extension[0].Value = new R4.Code("no-key-image");
+                break;
+            case "no interpreter":
+                report.ResultsInterpreter.Clear();
+                break;
+            case "no conclusion":
+                report.Conclusion = null;
+                break;
+            case "the service code kept":
+                report.Code.Coding.Add(new R4.Coding(FhirSystems.Service, "RAD-XR-CHEST", "X-ray chest PA view"));
+                break;
+            case "a series without its uid":
+                bundle.Entry.Select(e => e.Resource).OfType<R4.ImagingStudy>().Single().Series.Add(new R4.ImagingStudy.SeriesComponent
+                {
+                    Modality = new R4.Coding(AbdmSystems.Dicom, "CR", "Computed Radiography"),
+                });
+                break;
+        }
+
+        var result = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+
+        TestContext.Current.SendDiagnosticMessage($"{breakage}: {result.Describe()}");
+        result.Errors.ShouldContain(e => (e.Details.Text ?? e.Diagnostics ?? string.Empty).Contains(expected), result.Describe());
     }
 
     [Theory]

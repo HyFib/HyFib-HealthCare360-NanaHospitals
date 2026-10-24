@@ -15,7 +15,7 @@ internal static class ScheduleEndpoints
         group.MapGet("/schedules", List);
         group.MapGet("/schedules/{id:guid}", Get);
         group.MapPost("/schedules", Create).WithValidation<SaveScheduleRequest>();
-        group.MapPut("/schedules/{id:guid}", Update).WithValidation<SaveScheduleRequest>();
+        group.MapPut("/schedules/{id:guid}", Update).WithValidation<SaveScheduleRequest>().RequireVersion();
         group.MapDelete("/schedules/{id:guid}", Delete);
         group.MapPost("/schedules/{id:guid}/send-now", SendNow);
         group.MapGet("/schedules/{id:guid}/deliveries", Deliveries);

@@ -141,6 +141,7 @@ function ProcedureForm({
         ? procedureApi.correct(editing.id, {
             ...procedureFields(v, editing.performerPractitionerId),
             reason: v.reason.trim(),
+            version: editing.version,
           })
         : procedureApi.record(patientId, { ...procedureFields(v), encounterId: null }),
     onSuccess: () => {

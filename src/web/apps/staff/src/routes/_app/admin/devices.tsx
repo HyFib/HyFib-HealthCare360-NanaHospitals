@@ -12,6 +12,7 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Select,
   Text,
   tokens,
@@ -24,7 +25,7 @@ import {
   TabletRegular,
   TvRegular,
 } from '@fluentui/react-icons';
-import { formatDateTime, formatRelative, humanize } from '@hc360/core';
+import { formatDateTime, formatRelative, humanize, useSession } from '@hc360/core';
 import {
   ConfirmDialog,
   DataTable,
@@ -98,12 +99,17 @@ function DevicesPage() {
   const [enrolling, setEnrolling] = useState(false);
   const [editing, setEditing] = useState<DeviceDto | null>(null);
   const [revoking, setRevoking] = useState<DeviceDto | null>(null);
+  // Away from an enrolled desktop this page opens only while the hospital enrols its first workstation (SRS SEC-08).
+  const firstEnrolment = useSession((s) => s.user?.administrationNeedsDesktop === true);
 
   const revoke = useMutation({
     mutationFn: (device: DeviceDto) => api.post(`/api/v1/admin/devices/${device.id}/revoke`),
     onSuccess: () => {
       setRevoking(null);
-      notify.success('Device revoked', 'It can no longer be used for sign-ins that require an enrolled device.');
+      notify.success(
+        'Device revoked',
+        'Its sessions have ended, and it can no longer be used for administration or for sign-ins that require an enrolled device.',
+      );
       void queryClient.invalidateQueries({ queryKey: ['admin', 'devices'] });
     },
     onError: (error) => notify.error(error, 'Could not revoke the device'),
@@ -120,6 +126,16 @@ function DevicesPage() {
           </Button>
         }
       />
+      {firstEnrolment && (
+        <MessageBar intent="info" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Enrol the first workstation</MessageBarTitle>
+            Enrol the hospital&apos;s first HC360 Desktop workstation from here. Once a workstation or tablet is
+            enrolled, administration, this page included, works only in HC360 Desktop on an enrolled computer: sign in
+            there to change or revoke a device.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       {updateSummary && (
         <MessageBar intent={updateSummary.intent}>
           <MessageBarBody>{updateSummary.text}</MessageBarBody>

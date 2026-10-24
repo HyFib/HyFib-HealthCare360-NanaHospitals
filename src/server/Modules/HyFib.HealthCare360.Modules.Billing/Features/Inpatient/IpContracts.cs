@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Services;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
 
@@ -68,6 +69,15 @@ public sealed record UpdateIpAccountRequest(
 
 public sealed record AssignPackageRequest(Guid? PackageId, uint Version);
 
+public sealed class AssignPackageRequestValidator : AbstractValidator<AssignPackageRequest>
+{
+    public AssignPackageRequestValidator()
+    {
+        RuleFor(x => x.PackageId).OptionalId();
+        RuleFor(x => x.Version).SeenVersion();
+    }
+}
+
 public sealed record RunningBillCategory(ServiceCategory Category, int Items, decimal Gross, decimal Discount, decimal Tax, decimal Net);
 
 public sealed record RunningBillDay(DateOnly Date, int Items, decimal Net);
@@ -127,13 +137,24 @@ public sealed record RunningBill(
 
 public sealed record CreateInterimBillRequest(DateOnly? UpTo);
 
+/// <summary>An interim bill covers services already given: up to today at the latest (the hospital's day).</summary>
+public sealed class CreateInterimBillRequestValidator : AbstractValidator<CreateInterimBillRequest>
+{
+    public CreateInterimBillRequestValidator(TimeProvider time) =>
+        RuleFor(x => x.UpTo).LessThanOrEqualTo(_ => BillingTime.Today(time)).WithMessage("Bill up to today or an earlier day.");
+}
+
 /// <summary>
 /// A final settlement: the final bill it followed (none for a stay whose interim bills took every service, or with no
 /// services), the advance adjusted against the open bills, what is still due, and the refund requested of what is left.
 /// </summary>
 public sealed record SettlementResult(Guid? FinalBillId, decimal AdvanceAdjusted, decimal RemainingDue, Guid? RefundId, decimal RefundRequested);
 
-public sealed record ApproveDischargeWithDuesRequest(string Reason);
+/// <summary>
+/// Management's approval to discharge with dues, made on the account as it was read (<see cref="Version"/>): a discharge
+/// revoked since then withdrew any approval, and an approval from the screen as it was then is refused (REL-04).
+/// </summary>
+public sealed record ApproveDischargeWithDuesRequest(string Reason, uint Version);
 
 public sealed record ClearanceDto(
     bool Cleared,
@@ -162,5 +183,9 @@ public sealed class UpdateIpAccountRequestValidator : AbstractValidator<UpdateIp
 
 public sealed class ApproveDischargeWithDuesRequestValidator : AbstractValidator<ApproveDischargeWithDuesRequest>
 {
-    public ApproveDischargeWithDuesRequestValidator() => RuleFor(x => x.Reason).Reason();
+    public ApproveDischargeWithDuesRequestValidator()
+    {
+        RuleFor(x => x.Reason).Reason();
+        RuleFor(x => x.Version).SeenVersion();
+    }
 }

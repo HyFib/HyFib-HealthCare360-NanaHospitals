@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "ERR_PNPM_AUDIT_BAD_RESPONSE",
+    "summary": "The audit endpoint (at https://registry.npmjs.org/-/npm/v1/security/audits/quick) responded with 503"
+  }
+}

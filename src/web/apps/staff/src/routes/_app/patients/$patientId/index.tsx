@@ -59,6 +59,7 @@ const useStyles = makeStyles({
   label: { color: tokens.colorNeutralForeground3 },
   tabs: { marginBottom: '8px' },
   breakGlass: { display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '560px' },
+  masked: { gridColumn: '1 / -1', color: tokens.colorNeutralForeground3 },
 });
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
@@ -77,7 +78,10 @@ function PatientProfilePage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
   const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
-  const canEdit = usePermission('patients.register');
+  // Editing shows and saves the contact details in full, which only those who contact or bill patients see (SRS PRV-03).
+  const canRegister = usePermission('patients.register');
+  const canReadContact = usePermission('patients.contact.read');
+  const canEdit = canRegister && canReadContact;
   const canCheckIn = usePermission('visits.manage');
   const canOpenChart = usePermission('clinical.emr.read');
   const canBook = usePermission('scheduling.appointments.book');
@@ -284,6 +288,12 @@ function Overview({ patient: p }: { patient: PatientDetail }) {
       <Detail label="Religion / nationality">{[p.religion, p.nationality].filter(Boolean).join(' / ')}</Detail>
       <Detail label="Registered">{formatDateTime(p.registeredAt)}</Detail>
       {p.notes && <Detail label="Front-desk notes">{p.notes}</Detail>}
+      {p.contactsMasked && (
+        <Caption1 className={styles.masked}>
+          Phone numbers, email and the street address are shown in part: in full they are for the staff who contact or
+          bill patients.
+        </Caption1>
+      )}
     </div>
   );
 }

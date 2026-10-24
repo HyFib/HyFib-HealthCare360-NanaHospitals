@@ -200,6 +200,15 @@ public sealed class AbdmDocumentVersionTests
         text.ShouldContain("/ID (node00000000)");
         text.ShouldContain("/Headers [(node00000000)]");
 
+        // The browser numbers other nodes between them too, of the page or of another it prints at the same time, so
+        // the gaps differ from one print to the next (Windows CI printed a report's six headers as 0, 3, 5, 8, 11, 14).
+        var spread = Encoding.Latin1.GetBytes(Encoding.Latin1.GetString(first)
+            .Replace("(node00000018)", "(node00000021)", StringComparison.Ordinal)
+            .Replace("(node00000019)", "(node00000023)", StringComparison.Ordinal));
+        spread.ShouldNotBe(first);
+        AbdmDocumentBuilder.PdfAsOf(spread, TestData.Now).ShouldBe(printed);
+        text.ShouldContain("(node00000002)");
+
         // So a prescription is one document, whichever of them it carries.
         var data = AbdmTestData.Prescription(AbdmTestData.Pdf);
         Json(AbdmRecords.Prescription(data with { Context = data.Context with { Pdf = new AbdmPdf(sameTab) } }))

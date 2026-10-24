@@ -77,7 +77,14 @@ internal static class InpatientEndpoints
     }
 
     private static async Task<IResult> GetIndent(
-        Guid id, Guid? storeId, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+        Guid id,
+        Guid? storeId,
+        HospitalDbContext db,
+        PatientAccessGuard guard,
+        PatientContactAccess contacts,
+        IAuditLogger audit,
+        TimeProvider time,
+        CancellationToken ct)
     {
         var indent = await db.Set<WardIndent>().AsNoTracking().Include(i => i.Lines).FirstOrDefaultAsync(i => i.Id == id, ct);
         if (indent is null)
@@ -93,7 +100,7 @@ internal static class InpatientEndpoints
 
         await audit.PatientRecordAccessedAsync(indent.PatientId, $"Viewed ward indent {indent.Number}", ct);
         var today = time.Today();
-        var summaries = await PatientQueries.SummariesAsync(db, [indent.PatientId], today, ct);
+        var summaries = await PatientQueries.SummariesAsync(db, [indent.PatientId], today, await contacts.FullAsync(ct), ct);
         if (!summaries.TryGetValue(indent.PatientId, out var patient))
         {
             return Error.NotFound(nameof(Patient), indent.PatientId).ToProblem();
@@ -143,7 +150,8 @@ internal static class InpatientEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> GetIssue(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> GetIssue(
+        Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var issue = await db.Set<IpIssue>().AsNoTracking().Include(i => i.Lines).FirstOrDefaultAsync(i => i.Id == id, ct);
         if (issue is null)
@@ -158,7 +166,7 @@ internal static class InpatientEndpoints
         }
 
         await audit.PatientRecordAccessedAsync(issue.PatientId, $"Viewed IP pharmacy issue {issue.Number}", ct);
-        var summaries = await PatientQueries.SummariesAsync(db, [issue.PatientId], time.Today(), ct);
+        var summaries = await PatientQueries.SummariesAsync(db, [issue.PatientId], time.Today(), await contacts.FullAsync(ct), ct);
         if (!summaries.TryGetValue(issue.PatientId, out var patient))
         {
             return Error.NotFound(nameof(Patient), issue.PatientId).ToProblem();

@@ -1,0 +1,8 @@
+{
+  "about": "Fixture: the critical npm advisory first seen 8 days before 2026-10-23, the NuGet one 20 days before.",
+  "advisories": [
+    { "id": "GHSA-aaaa-bbbb-cccc", "severity": "high", "firstSeen": "2026-10-03", "packages": ["nuget:System.Text.Example@8.0.0"] },
+    { "id": "GHSA-crit-ical-0001", "severity": "critical", "firstSeen": "2026-10-15", "packages": ["npm:example-parser@2.1.0"] },
+    { "id": "GHSA-mode-rate-0003", "severity": "moderate", "firstSeen": "2026-10-15", "packages": ["npm:example-router@4.0.1"] }
+  ]
+}

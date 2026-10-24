@@ -43,9 +43,10 @@ internal static class CardiologyEndpoints
             .RequirePermission(Manage).WithValidation<CancelCardiologyRequest>();
 
         studies.MapPut("/{id:guid}/report", async (Guid id, SaveCardiologyReportRequest r, CardiologyService s, CancellationToken ct) => (await s.SaveReportAsync(id, r, ct)).ToOk())
-            .RequireAnyPermission(Manage, Verify).WithValidation<SaveCardiologyReportRequest>();
-        studies.MapPost("/{id:guid}/report/submit", async (Guid id, CardiologyService s, CancellationToken ct) => (await s.SubmitReportAsync(id, ct)).ToOk())
-            .RequireAnyPermission(Manage, Verify);
+            .RequireAnyPermission(Manage, Verify).WithValidation<SaveCardiologyReportRequest>().FirstSaveCreates();
+        studies.MapPost("/{id:guid}/report/submit", async (Guid id, SubmitCardiologyReportRequest r, CardiologyService s, CancellationToken ct) =>
+                (await s.SubmitReportAsync(id, r.Version, ct)).ToOk())
+            .RequireAnyPermission(Manage, Verify).WithValidation<SubmitCardiologyReportRequest>();
         studies.MapPost("/{id:guid}/report/verify", async (Guid id, SignCardiologyReportRequest r, CardiologyService s, CancellationToken ct) => (await s.VerifyReportAsync(id, r, ct)).ToOk())
             .RequirePermission(Verify).WithValidation<SignCardiologyReportRequest>();
         studies.MapPost("/{id:guid}/report/release", async (Guid id, CardiologyService s, CancellationToken ct) => (await s.ReleaseReportAsync(id, ct)).ToOk())

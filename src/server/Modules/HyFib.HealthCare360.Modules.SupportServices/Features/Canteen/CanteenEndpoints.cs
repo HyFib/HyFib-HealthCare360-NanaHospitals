@@ -13,7 +13,7 @@ internal static class CanteenEndpoints
 
         group.MapGet("/menu", ListMenu).RequireAnyPermission(SupportServicesPermissions.CanteenSales, SupportServicesPermissions.CanteenMenu);
         group.MapPost("/menu", CreateMenuItem).RequirePermission(SupportServicesPermissions.CanteenMenu).WithValidation<SaveMenuItemRequest>();
-        group.MapPut("/menu/{id:guid}", UpdateMenuItem).RequirePermission(SupportServicesPermissions.CanteenMenu).WithValidation<SaveMenuItemRequest>();
+        group.MapPut("/menu/{id:guid}", UpdateMenuItem).RequirePermission(SupportServicesPermissions.CanteenMenu).WithValidation<SaveMenuItemRequest>().RequireVersion();
         group.MapPost("/menu/{id:guid}/stock", async (Guid id, StockMovementRequest r, CanteenService canteen, CancellationToken ct) =>
                 (await canteen.MoveStockAsync(id, r, ct)).ToOk())
             .RequirePermission(SupportServicesPermissions.CanteenMenu).WithValidation<StockMovementRequest>();

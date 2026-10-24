@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "parameters": "--vulnerable --include-transitive",
+  "projects": [
+    {
+      "path": "C:\\a\\hc360\\src\\server\\HyFib.HealthCare360.Server\\HyFib.HealthCare360.Server.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [],
+          "transitivePackages": [
+            {
+              "id": "System.Text.Example",
+              "resolvedVersion": "8.0.0",
+              "vulnerabilities": [
+                { "severity": "High", "advisoryurl": "https://github.com/advisories/GHSA-aaaa-bbbb-cccc" },
+                { "severity": "Low", "advisoryurl": "https://github.com/advisories/GHSA-supp-ress-edxx" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "C:\\a\\hc360\\src\\agent\\HyFib.HealthCare360.LabAgent\\HyFib.HealthCare360.LabAgent.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "System.Text.Example",
+              "requestedVersion": "8.0.0",
+              "resolvedVersion": "8.0.0",
+              "vulnerabilities": [{ "severity": "High", "advisoryurl": "https://github.com/advisories/GHSA-aaaa-bbbb-cccc" }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

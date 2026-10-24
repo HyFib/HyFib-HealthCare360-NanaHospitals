@@ -15,7 +15,7 @@ internal static class PreAuthEndpoints
         group.MapGet("/", List).RequireAnyPermission(Readers);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(Readers);
         group.MapPost("/", Create).RequirePermission(BillingPermissions.PreAuthManage).WithValidation<SavePreAuthRequest>();
-        group.MapPut("/{id:guid}", Update).RequirePermission(BillingPermissions.PreAuthManage).WithValidation<SavePreAuthRequest>();
+        group.MapPut("/{id:guid}", Update).RequirePermission(BillingPermissions.PreAuthManage).WithValidation<SavePreAuthRequest>().RequireVersion();
         group.MapPost("/{id:guid}/submit", Submit).RequirePermission(BillingPermissions.PreAuthManage);
         group.MapPost("/{id:guid}/query", RaiseQuery).RequirePermission(BillingPermissions.PreAuthManage).WithValidation<PreAuthTextRequest>();
         group.MapPost("/{id:guid}/answer", AnswerQuery).RequirePermission(BillingPermissions.PreAuthManage).WithValidation<PreAuthTextRequest>();
@@ -55,7 +55,7 @@ internal static class PreAuthEndpoints
         }
 
         var result = await rows.OrderByDescending(p => p.CreatedAt).ToPagedResultAsync(page, ct);
-        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(p => p.PatientId), BillingTime.Today(time), ct);
+        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(p => p.PatientId), BillingTime.Today(time), fullContacts: false, ct);
         var payerIds = result.Items.Select(p => p.PayerId).Distinct().ToList();
         var payers = await db.Set<Payer>().Where(p => payerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
         return TypedResults.Ok(result.Map(p =>
@@ -81,7 +81,7 @@ internal static class PreAuthEndpoints
             return access.Error!.ToProblem();
         }
 
-        var patient = (await PatientQueries.SummariesAsync(db, [p.PatientId], BillingTime.Today(time), ct)).GetValueOrDefault(p.PatientId);
+        var patient = (await PatientQueries.SummariesAsync(db, [p.PatientId], BillingTime.Today(time), fullContacts: false, ct)).GetValueOrDefault(p.PatientId);
         var payerIds = new List<Guid> { p.PayerId };
         if (p.TpaId is { } tpaId)
         {

@@ -91,6 +91,12 @@ public sealed record VerifyIdentityRequest(IdentityCheck Check, string? Note);
 
 public sealed record AssignDataRequestRequest(Guid? UserId);
 
+/// <summary>The staff member the request is given to, or none to take it back.</summary>
+public sealed class AssignDataRequestRequestValidator : AbstractValidator<AssignDataRequestRequest>
+{
+    public AssignDataRequestRequestValidator() => RuleFor(x => x.UserId).OptionalId();
+}
+
 public sealed record DataRequestNoteRequest(string Text);
 
 public sealed record CorrectionDecisionInput(int Index, CorrectionDecision Decision, string? Note);

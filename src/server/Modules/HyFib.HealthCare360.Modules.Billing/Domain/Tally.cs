@@ -165,6 +165,13 @@ public sealed record TallyLedgerMap
     /// <summary>Pharmacy and canteen sales go to one income ledger per GST rate ("Pharmacy Sales @ 12%"), which Tally's GST reports need.</summary>
     public bool SalesLedgerPerGstRate { get; init; } = true;
 
+    /// <summary>
+    /// The version of the facility's saved names, shown with them and sent back with a change (REL-04); none while the
+    /// facility uses the hospital-wide names. Never saved with the names.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public uint? Version { get; init; }
+
     /// <summary>The ledgers of a counter that bills its own sales, with the built-in names for anything not set.</summary>
     public TallyCounterLedgers CounterLedgers(string counter) => TallyCounters.Ledgers(this, counter);
 

@@ -41,7 +41,7 @@ internal static class StoreEndpoints
         group.MapPost("/", (SaveStoreRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => Save(null, r, db, u, ct))
             .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveStoreRequest>();
         group.MapPut("/{id:guid}", (Guid id, SaveStoreRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => Save(id, r, db, u, ct))
-            .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveStoreRequest>();
+            .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveStoreRequest>().RequireVersion();
     }
 
     private static async Task<IResult> List(StoreType? type, bool? includeInactive, HospitalDbContext db, CancellationToken ct)

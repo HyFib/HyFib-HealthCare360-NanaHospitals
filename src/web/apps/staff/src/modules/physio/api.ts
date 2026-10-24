@@ -159,6 +159,7 @@ export interface PhysioSessionDto {
   missedReason: string | null;
   chargeStatus: ChargeStatus;
   chargeError: string | null;
+  version: number;
 }
 
 export interface PhysioReferralDetail {
@@ -199,6 +200,7 @@ export interface PhysioWorklistItem {
   scheduledAt: string;
   status: PhysioSessionStatus;
   therapistName: string | null;
+  version: number;
 }
 
 // ---------------------------------------------------------------- queries
@@ -263,8 +265,9 @@ export const physioApi = {
     api.put<{ id: string }>(`/api/v1/physio/referrals/${id}/plan`, request),
   scheduleSessions: (id: string, firstSessionAt: string, count: number, intervalDays: number | null) =>
     api.post<string[]>(`/api/v1/physio/referrals/${id}/sessions`, { firstSessionAt, count, intervalDays }),
-  reschedule: (sessionId: string, scheduledAt: string) =>
-    api.put<void>(`/api/v1/physio/sessions/${sessionId}`, { scheduledAt }),
+  /** `version`: the session as it was shown; one moved meanwhile is not moved again over it (REL-04). */
+  reschedule: (sessionId: string, scheduledAt: string, version: number) =>
+    api.put<void>(`/api/v1/physio/sessions/${sessionId}`, { scheduledAt, version }),
   attend: (sessionId: string, request: AttendPhysioSessionRequest) =>
     api.post<void>(`/api/v1/physio/sessions/${sessionId}/attend`, request),
   close: (sessionId: string, reason: string, missed: boolean) =>

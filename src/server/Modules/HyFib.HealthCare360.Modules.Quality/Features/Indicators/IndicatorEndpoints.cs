@@ -15,9 +15,9 @@ internal static class IndicatorEndpoints
         group.MapGet("/", List);
         group.MapGet("/scorecard", Scorecard);
         group.MapPost("/", (SaveIndicatorRequest r, HospitalDbContext db, CancellationToken ct) => Save(null, r, db, ct)).WithValidation<SaveIndicatorRequest>();
-        group.MapPut("/{id:guid}", (Guid id, SaveIndicatorRequest r, HospitalDbContext db, CancellationToken ct) => Save(id, r, db, ct)).WithValidation<SaveIndicatorRequest>();
+        group.MapPut("/{id:guid}", (Guid id, SaveIndicatorRequest r, HospitalDbContext db, CancellationToken ct) => Save(id, r, db, ct)).WithValidation<SaveIndicatorRequest>().RequireVersion();
         group.MapGet("/{id:guid}/values", Values);
-        group.MapPut("/{id:guid}/values", RecordValue).WithValidation<RecordIndicatorValueRequest>();
+        group.MapPut("/{id:guid}/values", RecordValue).WithValidation<RecordIndicatorValueRequest>().FirstSaveCreates();
         group.MapDelete("/values/{valueId:guid}", DeleteValue);
         group.MapGet("/{id:guid}/trend", Trend);
     }
@@ -138,6 +138,8 @@ internal static class IndicatorEndpoints
             db.Add(existing);
         }
 
+        db.SetExpectedVersion(existing, request.Version);
+
         existing.Numerator = request.Numerator;
         existing.Denominator = request.Denominator;
         existing.Value = value;
@@ -201,5 +203,5 @@ internal static class IndicatorEndpoints
     }
 
     private static IndicatorValueDto ToDto(IndicatorValue v, IndicatorFrequency frequency) =>
-        new(v.Id, v.PeriodStart, IndicatorMath.PeriodLabel(v.PeriodStart, frequency), v.Numerator, v.Denominator, v.Value, v.MeetsTarget, v.Notes);
+        new(v.Id, v.PeriodStart, IndicatorMath.PeriodLabel(v.PeriodStart, frequency), v.Numerator, v.Denominator, v.Value, v.MeetsTarget, v.Notes, v.Version);
 }

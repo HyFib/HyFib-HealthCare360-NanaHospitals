@@ -279,6 +279,7 @@ const NOMINEE: NomineeView = {
     email: null,
     recordedVia: 'Portal',
     updatedAt: '2026-09-01T06:00:00Z',
+    version: 7,
   },
 };
 

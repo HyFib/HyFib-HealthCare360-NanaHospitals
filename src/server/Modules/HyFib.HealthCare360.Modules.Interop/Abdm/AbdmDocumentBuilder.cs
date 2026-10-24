@@ -122,8 +122,8 @@ internal static partial class AbdmDocumentBuilder
     /// A printed PDF as the same page always prints. The PDF is made again at every export, and two PDFs of the same page
     /// differ only in what the browser numbers as it goes: the creation and modification dates, the time it was made,
     /// which become <paramref name="date"/> (in UTC); and in a tagged PDF the ids of table header cells, named after their
-    /// DOM nodes (<c>(node00000070)</c>) by a counter the browser tab keeps from one page to the next, which are numbered
-    /// again from zero in the same order. The rest of the file is left byte for byte as it is: each date and id keeps its
+    /// DOM nodes (<c>(node00000070)</c>) by a counter the browser keeps from one page to the next, which are numbered
+    /// again 0, 1, 2… in the same order. The rest of the file is left byte for byte as it is: each date and id keeps its
     /// length, so the file's cross-reference offsets still hold, and the ids their order, so the structure tree's sorted
     /// IDTree still holds.
     /// </summary>
@@ -142,8 +142,10 @@ internal static partial class AbdmDocumentBuilder
         var nodes = PdfNodeId().Matches(printed);
         if (nodes.Count > 0)
         {
-            var first = nodes.Min(Node);
-            printed = PdfNodeId().Replace(printed, m => $"(node{(Node(m) - first).ToString("D8", CultureInfo.InvariantCulture)})");
+            // Each id becomes its place among them: the gaps between them are other nodes the browser numbered meanwhile,
+            // in this page or in another it was printing at the same time, and differ from one print to the next.
+            var rank = nodes.Select(Node).Distinct().Order().Select((n, i) => (n, i)).ToDictionary(p => p.n, p => p.i);
+            printed = PdfNodeId().Replace(printed, m => $"(node{rank[Node(m)].ToString("D8", CultureInfo.InvariantCulture)})");
         }
 
         return string.Equals(printed, text, StringComparison.Ordinal) ? pdf : Encoding.Latin1.GetBytes(printed);

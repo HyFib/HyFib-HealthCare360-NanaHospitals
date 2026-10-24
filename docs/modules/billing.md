@@ -406,7 +406,8 @@ Source keys in use: `inpatient.bed` / `inpatient.nursing` (`{admissionId}:{yyyy-
   individually by Billing.
 * `GetOutstandingAsync(patientId)` → the patient's unpaid share of finalized bills (all facilities).
 * `GetDischargeClearanceAsync(admissionId)` → cleared when every IP charge is on a finalized bill, the final bill exists
-  and the patient's share is paid, or management approved discharge with dues.
+  and the patient's share is paid, or management approved discharge with dues (for the discharge under way: a revoked
+  discharge withdraws the approval).
 
 ### `IPayerDirectory` (implemented by `PayerDirectory`)
 * `GetCoverageAsync(patientId, payerId)` → `PayerCoverageSummary {payerName, policyNumber, validUntil}`, for the patient
@@ -444,7 +445,7 @@ Handled (all inside the raising transaction; handlers stage changes and never sa
 | `PatientAdmitted` | Opens the IP account (payer, tariff, policy, bed class); re-prices charges staged earlier in the same transaction |
 | `PatientTransferred` | Follows the bed class for later pricing |
 | `DischargeInitiated` | Drafts the final bill (package vs actuals, payer split) and alerts the IP desk |
-| `DischargeRevoked` | Opens the account again (no settlement while the patient is in) and tells the IP desk what becomes of the final bill |
+| `DischargeRevoked` | Opens the account again (no settlement while the patient is in), withdraws an approval to discharge with dues (audited as `billing.discharge_with_dues.withdrawn`: it was for that discharge, and the dues grow with the stay, so the next discharge needs a new one), and tells the IP desk what becomes of the final bill |
 | `PatientDischarged` | Closes a settled account or alerts billing about dues |
 | `PatientsMerged` | Re-points every billing row (incl. advances, policies, claims) to the surviving UHID |
 | `AppointmentPaymentCaptured` (Scheduling) | Queues `billing.appointment.prepayment` (outbox) |

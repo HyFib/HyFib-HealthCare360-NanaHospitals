@@ -34,6 +34,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { followIfUnchanged, useBaseVersion } from '@/lib/baseVersion';
 import {
   CONTAINER_TYPES,
   LAB_SECTIONS,
@@ -216,7 +217,8 @@ export function TestDrawer({
 }) {
   const detail = useQuery({ ...labQueries.test(testId ?? ''), enabled: testId !== null, staleTime: 0 });
 
-  if (testId && !detail.data) {
+  // Filled from the test as read now, not from an older copy kept from before (REL-04).
+  if (testId && (!detail.isFetchedAfterMount || !detail.data)) {
     return (
       <OverlayDrawer open position="end" size="large" onOpenChange={(_, data) => !data.open && onClose()}>
         <DrawerHeader>
@@ -253,6 +255,16 @@ function TestEditor({
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabId>('details');
   const [rangesChanged, setRangesChanged] = useState(false);
+  // The test as read after this user saved its ranges or analytes: that changes the test's version too (REL-04).
+  const [ownChange, setOwnChange] = useState<LabTestDetail | null>(null);
+  // The test as the details were filled, then as this user saved them: what the details' values are based on.
+  const [base, setBase] = useState(test);
+  // Its version goes with the save. The test is read again in the background, and a version read so must never be sent
+  // with these values. The details follow this user's ranges or analytes while the test read after that save still
+  // holds the details as they were based.
+  const [version, setVersion] = useBaseVersion(test?.version ?? null, ownChange, (returned) =>
+    followIfUnchanged(defaults(base), defaults(returned)),
+  );
   const referralLabs = useQuery(labQueries.referralLabs());
   const form = useForm<TestValues>({ resolver: zodResolver(schema), defaultValues: defaults(test) });
   useLoincNameFollowsCode(form);
@@ -262,8 +274,20 @@ function TestEditor({
   });
 
   const save = useMutation({
-    mutationFn: (values: TestValues) => labApi.saveTest(test?.id ?? null, toRequest(values, test?.version ?? null)),
-    onSuccess: (result) => {
+    mutationFn: async (values: TestValues) => {
+      const result = await labApi.saveTest(test?.id ?? null, toRequest(values, version));
+      // A change answers with nothing: the details are filled again from the test read after it, version included.
+      const fresh = test
+        ? await queryClient.fetchQuery({ ...labQueries.test(test.id), staleTime: 0 }).catch(() => null)
+        : null;
+      return { result, fresh };
+    },
+    onSuccess: ({ result, fresh }) => {
+      if (fresh) {
+        form.reset(defaults(fresh));
+        setBase(fresh);
+        setVersion(fresh.version);
+      }
       void queryClient.invalidateQueries({ queryKey: labKeys.masters });
       if (!test && result?.id) {
         notify.success('Test created', isPanel ? 'Now add its analytes.' : 'Now add its reference ranges.');
@@ -500,8 +524,10 @@ function TestEditor({
               </section>
             )}
           </div>
-          {test && tab === 'ranges' && !test.isPanel && <RangesEditor test={test} onChanged={setRangesChanged} />}
-          {test && tab === 'components' && test.isPanel && <ComponentsEditor test={test} />}
+          {test && tab === 'ranges' && !test.isPanel && (
+            <RangesEditor test={test} onChanged={setRangesChanged} onSaved={setOwnChange} />
+          )}
+          {test && tab === 'components' && test.isPanel && <ComponentsEditor test={test} onSaved={setOwnChange} />}
         </DrawerBody>
         {tab === 'details' && (
           <DrawerFooter>

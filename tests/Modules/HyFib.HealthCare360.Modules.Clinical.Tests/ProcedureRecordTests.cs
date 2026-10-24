@@ -98,7 +98,7 @@ public sealed class ProcedureRecordTests
     {
         var validator = new CorrectProcedureRequestValidator(new FixedClock(Now));
 
-        validator.Validate(new CorrectProcedureRequest(Now, null, "Suturing", null, null, ProcedureSide.Left, null, null, null, ""))
+        validator.Validate(new CorrectProcedureRequest(Now, null, "Suturing", null, null, ProcedureSide.Left, null, null, null, "", Version: 7))
             .Errors.ShouldContain(e => e.PropertyName == "Reason");
     }
 

@@ -122,7 +122,7 @@ internal sealed class DscTrustHealthWarnings(HospitalDbContext db, DscTrustStore
                 $"Doctors sign prescriptions with their DSC, but HC360 cannot read the DSC trust folder ({folder}): {problem} DSC signing is "
                 + "refused, and signatures already made are not shown or printed as DSC signatures"
                 + (policy == PrescriptionSignaturePolicy.Required ? ", so those prescriptions cannot be printed or shared" : string.Empty)
-                + ". Let the HC360 service's account read the folder and its files (DEPLOYMENT.md, section 4, step 7)."));
+                + ". Let the HC360 service's account read the folder and its files (DEPLOYMENT.md, section 4, step 8)."));
             return warnings;
         }
 
@@ -132,7 +132,7 @@ internal sealed class DscTrustHealthWarnings(HospitalDbContext db, DscTrustStore
                 $"Doctors sign prescriptions with their DSC, but the DSC trust folder ({folder}) holds no CCA India root certificate. DSC signing "
                 + "is refused, and signatures already made are not shown or printed as DSC signatures"
                 + (policy == PrescriptionSignaturePolicy.Required ? ", so those prescriptions cannot be printed or shared" : string.Empty)
-                + ". Install the CCA India roots there (DEPLOYMENT.md, section 4, step 7)."));
+                + ". Install the CCA India roots there (DEPLOYMENT.md, section 4, step 8)."));
         }
 
         if (anchors.Problems.Count > 0)

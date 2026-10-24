@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -208,11 +209,26 @@ internal sealed class LoadRunner(LoadTestOptions options, Func<bool, HttpMessage
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             request.Headers.AcceptEncoding.ParseAdd("br, gzip");
             using var response = await raw.SendAsync(request, cancellationToken);
-            var bytes = (await response.Content.ReadAsByteArrayAsync(cancellationToken)).LongLength;
-            sizes.Add(new ListSize(name, bytes, response.Content.Headers.ContentEncoding.FirstOrDefault(), (int)response.StatusCode));
+            var body = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            var encoding = response.Content.Headers.ContentEncoding.FirstOrDefault();
+            sizes.Add(new ListSize(name, body.LongLength, encoding, (int)response.StatusCode, response.IsSuccessStatusCode ? Rows(body, encoding) : 0));
         }
 
         return sizes;
+    }
+
+    /// <summary>How many rows a page held (its <c>items</c>), read from the page as sent.</summary>
+    internal static int Rows(byte[] body, string? encoding)
+    {
+        using var sent = new MemoryStream(body);
+        using Stream page = encoding switch
+        {
+            "br" => new BrotliStream(sent, CompressionMode.Decompress),
+            "gzip" => new GZipStream(sent, CompressionMode.Decompress),
+            _ => sent,
+        };
+        using var json = JsonDocument.Parse(page);
+        return json.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array ? items.GetArrayLength() : 0;
     }
 
     private async Task ReportProgressAsync(ConcurrentQueue<Sample> samples, TimeSpan start, TimeSpan measureFrom, CancellationToken cancellationToken)

@@ -16,7 +16,7 @@ internal static class NoteEndpoints
         group.MapGet("/patients/{patientId:guid}/notes", List).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapPost("/patients/{patientId:guid}/notes", Write).RequirePermission(ClinicalPermissions.EmrWrite).WithValidation<WriteNoteRequest>();
         group.MapPut("/notes/{id:guid}", Edit).RequirePermission(ClinicalPermissions.EmrWrite).WithValidation<EditNoteRequest>();
-        group.MapPost("/notes/{id:guid}/sign", Sign).RequirePermission(ClinicalPermissions.EncountersSign);
+        group.MapPost("/notes/{id:guid}/sign", Sign).RequirePermission(ClinicalPermissions.EncountersSign).WithValidation<SignNoteRequest>();
         group.MapPost("/notes/{id:guid}/addendum", Addendum).RequirePermission(ClinicalPermissions.EmrWrite).WithValidation<AddendumRequest>();
     }
 

@@ -28,7 +28,7 @@ import {
   LockClosedRegular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatDateTime } from '@hc360/core';
+import { formatDateTime, isApiError } from '@hc360/core';
 import { applyServerErrors, DataTable, ErrorState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -408,7 +408,7 @@ function RetentionDrawer({ rule, onClose }: { rule: RetentionRuleDto; onClose: (
     defaultValues: { value: rule.value ?? rule.defaultValue },
   });
   const save = useMutation({
-    mutationFn: (value: number) => privacyApi.updateRetention(rule.key, value),
+    mutationFn: (value: number) => privacyApi.updateRetention(rule.key, value, rule.version),
     onSuccess: () => {
       notify.success(
         'Retention period saved',
@@ -420,6 +420,10 @@ function RetentionDrawer({ rule, onClose }: { rule: RetentionRuleDto; onClose: (
     onError: (error) => {
       if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not save the period');
+        if (isApiError(error) && error.code === 'concurrency') {
+          // Opened again, the drawer shows the period saved meanwhile.
+          void queryClient.invalidateQueries({ queryKey: privacyKeys.retention });
+        }
       }
     },
   });

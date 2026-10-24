@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net.Http.Json;
 using System.Net.Security;
 using System.Security.Cryptography;
@@ -28,6 +29,11 @@ public sealed class OptionsTests
         options.Think.ShouldBe(TimeSpan.FromSeconds(3), "the default");
         options.Targets.ShouldBe(TargetMode.Report);
     }
+
+    [Fact]
+    public void Payload_budgets_alone_can_be_enforced() =>
+        LoadTestOptions.Parse(["run", "--server", "https://hc360-srv:7360/", "--accounts", "loadtest01", "--test-server", "--targets", "payloads"], WithPassword)
+            .Options.ShouldNotBeNull().Targets.ShouldBe(TargetMode.Payloads);
 
     [Theory]
     [InlineData("--server https://hc360-srv:7360/ --accounts admin", "--test-server")]
@@ -130,11 +136,54 @@ public sealed class ResultsTests
         var report = Results.Markdown(result);
 
         report.ShouldContain("| Search patients by name | 500 ms (PERF-02) | 1,000 | 2 | 120 | 640 | 900 | 1,200 | **no** |");
-        report.ShouldContain("| Visits | 40.0 KB | br | yes |");
+        report.ShouldContain("| Visits | 0 | 40.0 KB | br | yes |");
         report.ShouldContain("500: 2");
         report.ShouldContain("Some SRS 7.3 targets are missed");
         result.FewFailures.ShouldBeTrue("0.2% failed");
         result.TargetsMet.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("enforce", 640, 40, true, false)]
+    [InlineData("report", 640, 120, true, true)]
+    [InlineData("payloads", 640, 40, true, true)]
+    [InlineData("payloads", 200, 120, true, false)]
+    [InlineData("payloads", 200, 40, false, false)]
+    [InlineData("enforce", 200, 40, true, true)]
+    public void A_run_passes_on_the_targets_it_holds_to(string targets, double searchP95, long listKilobytes, bool fewFailures, bool passed)
+    {
+        var mode = Enum.Parse<TargetMode>(targets, ignoreCase: true);
+        // CI's runners hold a run to its pages' sizes (PERF-05), the same on any machine, and only report its timings.
+        var result = new LoadTestResult(
+            new Uri("https://hc360-srv:7360/"), 75, TimeSpan.FromMinutes(5),
+            [new("Search patients by name", OperationKind.Search, 1000, 0, 120, searchP95, 900, 1200, 500)],
+            [new ListSize("Patients", listKilobytes * 1024, "br", 200)],
+            Requests: 1000, Failures: fewFailures ? 0 : 50, new Dictionary<int, int>());
+
+        result.Passed(mode).ShouldBe(passed);
+    }
+
+    [Theory]
+    [InlineData("br")]
+    [InlineData("gzip")]
+    [InlineData(null)]
+    public void A_pages_rows_are_counted_as_it_was_sent(string? encoding)
+    {
+        var page = System.Text.Encoding.UTF8.GetBytes("{\"items\":[{\"id\":1},{\"id\":2},{\"id\":3}],\"totalCount\":42}");
+        using var sent = new MemoryStream();
+        if (encoding is null)
+        {
+            sent.Write(page);
+        }
+        else
+        {
+            using Stream writer = encoding == "br"
+                ? new BrotliStream(sent, CompressionLevel.Fastest, leaveOpen: true)
+                : new GZipStream(sent, CompressionLevel.Fastest, leaveOpen: true);
+            writer.Write(page);
+        }
+
+        LoadRunner.Rows(sent.ToArray(), encoding).ShouldBe(3);
     }
 }
 

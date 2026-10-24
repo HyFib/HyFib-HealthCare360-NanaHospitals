@@ -8,8 +8,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// REL-04: a change to a setting, a print template or a feature switch carries the version it was made to, and is
-/// refused (409) when someone saved in between, so the last writer does not silently undo the other's change. A change
-/// without a version saves as before. Each test puts back what it changed.
+/// refused (409) when someone saved in between, so the last writer does not silently undo the other's change. Only the
+/// save that creates the value has no version to send; one without a version over a saved value is refused the same way.
+/// Each test puts back what it changed.
 /// </summary>
 public sealed class ConcurrentEditTests(HospitalServer server)
 {
@@ -20,6 +21,7 @@ public sealed class ConcurrentEditTests(HospitalServer server)
         var key = "tests.rel04." + Guid.NewGuid().ToString("N")[..12];
         var path = $"/api/v1/admin/settings/{key}";
 
+        // The first save creates the setting: there was no version to load.
         await admin.PutAsync(path, new SaveSettingRequest(JsonValue.Create(1), null, false, null));
         var first = await LoadAsync(admin, key);
 
@@ -35,9 +37,13 @@ public sealed class ConcurrentEditTests(HospitalServer server)
 
         (await LoadAsync(admin, key)).Value!.GetValue<int>().ShouldBe(2);
 
-        // Without a version, as older clients send it, the save goes through.
-        await admin.PutAsync(path, new SaveSettingRequest(JsonValue.Create(4), null, false, null));
-        (await LoadAsync(admin, key)).Value!.GetValue<int>().ShouldBe(4);
+        // Without a version, the change was made without seeing the saved value: it is refused too.
+        using (var unseen = await admin.SendRawAsync(HttpMethod.Put, path, new SaveSettingRequest(JsonValue.Create(4), null, false, null)))
+        {
+            unseen.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
+
+        (await LoadAsync(admin, key)).Value!.GetValue<int>().ShouldBe(2);
     }
 
     [Fact]
@@ -68,7 +74,7 @@ public sealed class ConcurrentEditTests(HospitalServer server)
             }
             else
             {
-                await admin.PutAsync(path, new SavePrintTemplateRequest(bills.Facility, true));
+                await admin.PutAsync(path, new SavePrintTemplateRequest(bills.Facility, true, (await BillsAsync(admin)).FacilityVersion));
             }
         }
     }
@@ -100,7 +106,8 @@ public sealed class ConcurrentEditTests(HospitalServer server)
         }
         finally
         {
-            await admin.PutAsync<FeatureDto>(path, new SetFeatureRequest(feature.Enabled));
+            var now = (await admin.GetAsync<List<FeatureDto>>("/api/v1/admin/features")).Single(f => f.Key == feature.Key);
+            await admin.PutAsync<FeatureDto>(path, new SetFeatureRequest(feature.Enabled, now.Version));
         }
     }
 

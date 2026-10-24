@@ -13,6 +13,7 @@ import {
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import { useForm, type Control } from 'react-hook-form';
 import { useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
@@ -28,7 +29,8 @@ import { useEditorGuard } from './useEditorGuard';
 /** Add a service to the catalogue (`serviceId` null), or change one. */
 export function ServiceEditorDrawer({ serviceId, onClose }: { serviceId: string | null; onClose: () => void }) {
   const existing = useQuery({ ...mastersQueries.service(serviceId ?? ''), enabled: serviceId !== null });
-  if (serviceId !== null && !existing.data) {
+  // Filled from the service as read now, not from an older copy kept from before (REL-04).
+  if (serviceId !== null && (!existing.isFetchedAfterMount || !existing.data)) {
     return <LoadingDrawer error={existing.error} what="service" onClose={onClose} />;
   }
   return <ServiceEditor service={existing.data ?? null} onClose={onClose} />;
@@ -43,8 +45,11 @@ function ServiceEditor({ service, onClose }: { service: ServiceItemDto | null; o
     defaultValues: toServiceForm(service),
     mode: 'onTouched',
   });
+  // The version the form was filled from, not a newer one read since (REL-04).
+  const [loadedVersion] = useState(service?.version ?? null);
   const save = useMutation({
-    mutationFn: (values: ServiceForm) => mastersApi.saveService(service?.id ?? null, toServiceRequest(values, service)),
+    mutationFn: (values: ServiceForm) =>
+      mastersApi.saveService(service?.id ?? null, toServiceRequest(values, service, loadedVersion)),
     onSuccess: () => {
       notify.success(service ? 'Service saved' : 'Service added', 'New bills and orders use it from now on.');
       refreshAfterMasterChange(queryClient);

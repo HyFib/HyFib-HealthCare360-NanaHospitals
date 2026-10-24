@@ -142,7 +142,11 @@ public sealed record SaveRadiologyReportRequest(
     uint? Version);
 
 /// <summary>Sign-off; <see cref="CriticalCall"/> is required for a critical finding without a documented call.</summary>
-public sealed record SignReportRequest(CriticalCallDetails? CriticalCall, bool Release = true);
+/// <param name="Version">The version of the report the radiologist read (REL-04): 409 when it was changed since.</param>
+public sealed record SignReportRequest(CriticalCallDetails? CriticalCall, uint Version, bool Release = true);
+
+/// <param name="Version">The version of the report as it was written and read (REL-04): 409 when it was changed since.</param>
+public sealed record SubmitReportRequest(uint Version);
 
 public sealed record AddAddendumRequest(string Text, string? Reason, bool IsCriticalFinding, CriticalCallDetails? CriticalCall);
 
@@ -288,8 +292,16 @@ public sealed class SaveRadiologyReportRequestValidator : AbstractValidator<Save
 
 public sealed class SignReportRequestValidator : AbstractValidator<SignReportRequest>
 {
-    public SignReportRequestValidator() =>
+    public SignReportRequestValidator()
+    {
         RuleFor(x => x.CriticalCall!).SetValidator(new CriticalCallDetailsValidator()).When(x => x.CriticalCall is not null);
+        RuleFor(x => x.Version).SeenVersion();
+    }
+}
+
+public sealed class SubmitReportRequestValidator : AbstractValidator<SubmitReportRequest>
+{
+    public SubmitReportRequestValidator() => RuleFor(x => x.Version).SeenVersion();
 }
 
 public sealed class AddAddendumRequestValidator : AbstractValidator<AddAddendumRequest>

@@ -14,7 +14,7 @@ import { useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { errorMessage } from '../common/errors';
-import { labApi, labKeys, type LabTestDetail } from '../api';
+import { labApi, labKeys, labQueries, type LabTestDetail } from '../api';
 import { TestLookup } from '../TestLookup';
 
 const useStyles = makeStyles({
@@ -40,30 +40,50 @@ interface ComponentRow {
   groupName: string;
 }
 
+function toRows(test: LabTestDetail): ComponentRow[] {
+  return [...test.components]
+    .sort((a, b) => a.displayOrder - b.displayOrder)
+    .map((c) => ({ testId: c.testId, code: c.code, name: c.name, groupName: c.groupName ?? '' }));
+}
+
 /**
  * Analytes of a panel in print order, with optional group headings ("Differential count"). A panel cannot contain
  * itself, directly or through another panel; the server refuses such cycles.
  */
-export function ComponentsEditor({ test }: { test: LabTestDetail }) {
+export function ComponentsEditor({
+  test,
+  onSaved,
+}: {
+  test: LabTestDetail;
+  /** The test as read after saving the analytes, which changes its version: for the drawer's other editors (REL-04). */
+  onSaved?: (fresh: LabTestDetail) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const [rows, setRows] = useState<ComponentRow[]>(() =>
-    [...test.components]
-      .sort((a, b) => a.displayOrder - b.displayOrder)
-      .map((c) => ({ testId: c.testId, code: c.code, name: c.name, groupName: c.groupName ?? '' })),
-  );
+  const [rows, setRows] = useState<ComponentRow[]>(() => toRows(test));
+  // The panel as the rows were filled from it, then as this user saved them: its version goes with the save. The test
+  // is read again in the background, and a version read so must never be sent with these rows (REL-04).
+  const [version, setVersion] = useState(test.version);
   const [dirty, setDirty] = useState(false);
 
   const save = useMutation({
-    mutationFn: () =>
-      labApi.setComponents(
+    mutationFn: async () => {
+      await labApi.setComponents(
         test.id,
         rows.map((row) => ({ testId: row.testId, groupName: row.groupName.trim() || null })),
-        test.version,
-      ),
-    onSuccess: () => {
+        version,
+      );
+      // The save answers with nothing: the rows are filled again from the test read after it, version included.
+      return queryClient.fetchQuery({ ...labQueries.test(test.id), staleTime: 0 }).catch(() => null);
+    },
+    onSuccess: (fresh) => {
       setDirty(false);
+      if (fresh) {
+        setRows(toRows(fresh));
+        setVersion(fresh.version);
+        onSaved?.(fresh);
+      }
       notify.success('Panel saved', 'New orders of this panel get these analytes.');
       void queryClient.invalidateQueries({ queryKey: labKeys.masters });
     },

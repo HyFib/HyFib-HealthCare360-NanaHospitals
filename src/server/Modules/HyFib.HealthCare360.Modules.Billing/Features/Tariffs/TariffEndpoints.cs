@@ -24,9 +24,10 @@ internal static class TariffEndpoints
         group.MapGet("/", List).RequireAnyPermission(Readers);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(Readers);
         group.MapPost("/", Create).RequirePermission(BillingPermissions.TariffsManage).WithValidation<SaveTariffPlanRequest>();
-        group.MapPut("/{id:guid}", Update).RequirePermission(BillingPermissions.TariffsManage).WithValidation<SaveTariffPlanRequest>();
+        group.MapPut("/{id:guid}", Update).RequirePermission(BillingPermissions.TariffsManage).WithValidation<SaveTariffPlanRequest>().RequireVersion();
         group.MapGet("/{id:guid}/prices", Prices).RequireAnyPermission(Readers);
-        group.MapPut("/{id:guid}/prices", SavePrice).RequirePermission(BillingPermissions.TariffsManage).WithValidation<SaveTariffPriceRequest>();
+        group.MapPut("/{id:guid}/prices", SavePrice).RequirePermission(BillingPermissions.TariffsManage).WithValidation<SaveTariffPriceRequest>()
+            .FirstSaveCreates();
         group.MapPost("/{id:guid}/prices/bulk", SavePrices).RequirePermission(BillingPermissions.TariffsManage).WithValidation<BulkTariffPricesRequest>();
         group.MapDelete("/{id:guid}/prices/{priceId:guid}", DeletePrice).RequirePermission(BillingPermissions.TariffsManage);
         group.MapGet("/quote", Quote).RequireAnyPermission(Readers);
@@ -132,13 +133,13 @@ internal static class TariffEndpoints
 
     private static async Task<IResult> SavePrice(Guid id, SaveTariffPriceRequest request, HospitalDbContext db, CancellationToken ct)
     {
-        var outcome = await UpsertPricesAsync(db, id, [request], ct);
+        var outcome = await UpsertPricesAsync(db, id, [request], checkVersions: true, ct);
         return outcome.IsSuccess ? TypedResults.Ok(outcome.Value) : outcome.Error!.ToProblem();
     }
 
     private static async Task<IResult> SavePrices(Guid id, BulkTariffPricesRequest request, HospitalDbContext db, CancellationToken ct)
     {
-        var outcome = await UpsertPricesAsync(db, id, request.Prices, ct);
+        var outcome = await UpsertPricesAsync(db, id, request.Prices, checkVersions: false, ct);
         return outcome.IsSuccess ? TypedResults.Ok(outcome.Value) : outcome.Error!.ToProblem();
     }
 
@@ -238,7 +239,7 @@ internal static class TariffEndpoints
     /// it starts, so revisions never overlap and history is kept.
     /// </summary>
     private static async Task<Result<BulkTariffPricesResult>> UpsertPricesAsync(
-        HospitalDbContext db, Guid planId, IReadOnlyList<SaveTariffPriceRequest> requests, CancellationToken ct)
+        HospitalDbContext db, Guid planId, IReadOnlyList<SaveTariffPriceRequest> requests, bool checkVersions, CancellationToken ct)
     {
         if (!await db.Set<TariffPlan>().AnyAsync(p => p.Id == planId, ct))
         {
@@ -258,6 +259,11 @@ internal static class TariffEndpoints
             var same = existing.FirstOrDefault(p => p.ServiceItemId == request.ServiceItemId && p.EffectiveFrom == request.EffectiveFrom);
             if (same is not null)
             {
+                if (checkVersions)
+                {
+                    db.SetExpectedVersion(same, request.Version);
+                }
+
                 same.Price = request.Price;
                 same.EffectiveTo = request.EffectiveTo;
                 updated++;

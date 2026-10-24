@@ -101,7 +101,8 @@ public sealed class RedisBackplaneTests
             await using var client = await ConnectOnceRedisIsBackAsync(second);
             var hub = first.Services.GetRequiredService<IHubContext<GroupHub>>();
 
-            await hub.Clients.All.SendAsync("event", "to every client", Ct);
+            // Each node's connection comes back on its own retry schedule: the first may not have it yet when the second does.
+            await SendOnceConnectedAsync(first, "to every client");
             (await client.ReceiveAsync(IsEvent)).GetProperty("arguments")[0].GetString().ShouldBe("to every client");
 
             var room = "room:" + Guid.NewGuid().ToString("N");

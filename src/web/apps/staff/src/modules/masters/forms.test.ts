@@ -89,7 +89,7 @@ describe('facility form', () => {
   it('keeps the address together for the server and sends empty text as nothing', () => {
     const values = { ...toFacilityForm(facility), legalName: '  ', letterheadNote: ' NABH accredited hospital ' };
 
-    const request = toFacilityRequest(values, facility);
+    const request = toFacilityRequest(values, facility, facility.version);
 
     expect(request.address).toEqual({
       line1: '12 Anna Salai',
@@ -108,8 +108,16 @@ describe('facility form', () => {
 
   it('sends a new facility code in capitals, and an existing one unchanged', () => {
     const values = { ...toFacilityForm(null), code: 'nh', name: 'Nana Hospitals' };
-    expect(toFacilityRequest(values, null).code).toBe('NH');
-    expect(toFacilityRequest({ ...values, code: 'xx' }, facility).code).toBe('NH');
+    expect(toFacilityRequest(values, null, null).code).toBe('NH');
+    expect(toFacilityRequest({ ...values, code: 'xx' }, facility, facility.version).code).toBe('NH');
+  });
+
+  it('sends the version the form was filled from, not a newer one read since (REL-04)', () => {
+    const values = toFacilityForm(facility);
+    const reread = { ...facility, name: 'Nana Hospitals (renamed elsewhere)', version: 8 };
+
+    expect(toFacilityRequest(values, reread, facility.version).version).toBe(7);
+    expect(toFacilityRequest({ ...values, code: 'NH' }, null, null).version).toBeNull();
   });
 
   it('previews the letterhead from what is being typed, logo included', () => {
@@ -176,6 +184,7 @@ describe('department form', () => {
     const request = toDepartmentRequest(
       { ...toDepartmentForm(department), tokenPrefix: 'gm', location: ' ' },
       department,
+      department.version,
     );
     expect(request.tokenPrefix).toBe('GM');
     expect(request.location).toBeNull();
@@ -206,10 +215,13 @@ describe('practitioner form', () => {
   it('consults at every facility, or at least one chosen', () => {
     const values = { ...toPractitionerForm(doctor), allFacilities: false, facilityIds: [] };
     expect(practitionerSchema.safeParse(values).error?.issues[0]?.path).toEqual(['facilityIds']);
-    expect(toPractitionerRequest({ ...values, facilityIds: ['f2'] }, doctor).facilityIds).toEqual(['f2']);
-    expect(toPractitionerRequest({ ...values, allFacilities: true, facilityIds: ['f2'] }, doctor).facilityIds).toEqual(
-      [],
-    );
+    expect(toPractitionerRequest({ ...values, facilityIds: ['f2'] }, doctor, doctor.version).facilityIds).toEqual([
+      'f2',
+    ]);
+    expect(
+      toPractitionerRequest({ ...values, allFacilities: true, facilityIds: ['f2'] }, doctor, doctor.version)
+        .facilityIds,
+    ).toEqual([]);
   });
 
   it('reads languages as a list, each once', () => {
@@ -228,7 +240,9 @@ describe('practitioner form', () => {
   });
 
   it('sends no title when "None" was chosen', () => {
-    expect(toPractitionerRequest({ ...toPractitionerForm(doctor), title: null }, doctor).title).toBe('');
+    expect(toPractitionerRequest({ ...toPractitionerForm(doctor), title: null }, doctor, doctor.version).title).toBe(
+      '',
+    );
   });
 });
 
@@ -253,7 +267,7 @@ describe('service form', () => {
   it('round-trips the GST rate through the picker', () => {
     const values = toServiceForm(service);
     expect(values.taxRate).toBe('0');
-    expect(toServiceRequest({ ...values, taxRate: '18' }, service).taxRate).toBe(18);
+    expect(toServiceRequest({ ...values, taxRate: '18' }, service, service.version).taxRate).toBe(18);
   });
 
   it('checks the SAC code and the code', () => {

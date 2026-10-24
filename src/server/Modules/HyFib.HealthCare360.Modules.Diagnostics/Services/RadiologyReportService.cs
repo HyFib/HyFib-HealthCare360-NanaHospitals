@@ -58,9 +58,9 @@ internal sealed class RadiologyReportService(
             report = new RadiologyReport { FacilityId = study.FacilityId, ImagingStudyId = study.Id, PatientId = study.PatientId, Status = DiagnosticReportStatus.Draft };
             db.Add(report);
         }
-        else if (request.Version is { } version)
+        else
         {
-            db.SetExpectedVersion(report, version);
+            db.SetExpectedVersion(report, request.Version);
         }
 
         var saved = report.Save(new RadiologyReportContent(
@@ -76,7 +76,7 @@ internal sealed class RadiologyReportService(
         return await ToDtoAsync(report, ct);
     }
 
-    public async Task<Result<RadiologyReportDto>> SubmitAsync(Guid studyId, CancellationToken ct)
+    public async Task<Result<RadiologyReportDto>> SubmitAsync(Guid studyId, uint version, CancellationToken ct)
     {
         var (study, report, error) = await LoadAsync(studyId, ct);
         if (error is not null)
@@ -84,6 +84,7 @@ internal sealed class RadiologyReportService(
             return error;
         }
 
+        db.SetExpectedVersion(report!, version);
         var now = time.GetUtcNow();
         var submitted = report!.Submit(currentUser.UserId, now);
         if (submitted.IsFailure)
@@ -105,6 +106,7 @@ internal sealed class RadiologyReportService(
             return error;
         }
 
+        db.SetExpectedVersion(report!, request.Version);
         var now = time.GetUtcNow();
         if (report!.IsCriticalFinding && !await db.Set<CriticalCallLog>().AnyAsync(c => c.ImagingStudyId == study!.Id, ct))
         {

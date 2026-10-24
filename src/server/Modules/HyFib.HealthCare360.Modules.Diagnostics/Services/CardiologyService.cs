@@ -194,9 +194,9 @@ internal sealed class CardiologyService(
             };
             db.Add(report);
         }
-        else if (request.Version is { } version)
+        else
         {
-            db.SetExpectedVersion(report, version);
+            db.SetExpectedVersion(report, request.Version);
         }
 
         var saved = report.Save(new CardiologyReportContent(
@@ -212,7 +212,7 @@ internal sealed class CardiologyService(
         return (await DetailAsync(studyId, ct))!;
     }
 
-    public async Task<Result<CardiologyStudyDetail>> SubmitReportAsync(Guid studyId, CancellationToken ct)
+    public async Task<Result<CardiologyStudyDetail>> SubmitReportAsync(Guid studyId, uint version, CancellationToken ct)
     {
         var (study, report, error) = await LoadAsync(studyId, ct);
         if (error is not null)
@@ -220,6 +220,7 @@ internal sealed class CardiologyService(
             return error;
         }
 
+        db.SetExpectedVersion(report!, version);
         var now = time.GetUtcNow();
         var submitted = report!.Submit(currentUser.UserId, now);
         if (submitted.IsFailure)
@@ -242,6 +243,7 @@ internal sealed class CardiologyService(
             return error;
         }
 
+        db.SetExpectedVersion(report!, request.Version);
         var now = time.GetUtcNow();
         if (report!.IsCriticalFinding && !await db.Set<CriticalCallLog>().AnyAsync(c => c.CardiologyStudyId == study!.Id, ct))
         {

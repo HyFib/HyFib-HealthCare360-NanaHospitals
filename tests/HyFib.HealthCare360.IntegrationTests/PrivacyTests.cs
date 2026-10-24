@@ -87,6 +87,22 @@ public sealed class PrivacyTests(HospitalServer server)
             new PortalNomineeRequest(patient.Id, "Ravi Rao", "Husband", "98" + Digits(8), null));
         var nominee = await portal.GetAsync<JsonElement>($"/api/v1/portal/privacy/nominee?patientId={patient.Id}");
         nominee.GetProperty("nominee").GetProperty("name").GetString().ShouldBe("Ravi Rao");
+
+        // REL-04: the nominee is named once; replacing them, in the portal or at the desk, says which nominee is replaced.
+        var named = nominee.GetProperty("nominee").GetProperty("version").GetUInt32();
+        using (var unseen = await portal.SendRawAsync(HttpMethod.Put, "/api/v1/portal/privacy/nominee",
+                   new PortalNomineeRequest(patient.Id, "Someone else", "Friend", "97" + Digits(8), null)))
+        {
+            unseen.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
+
+        var desk = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        await desk.PutAsync($"/api/v1/privacy/patients/{patient.Id}/nominee", new SaveNomineeRequest("Ravi Rao", "Husband", "98" + Digits(8), null, named));
+        using (var stale = await portal.SendRawAsync(HttpMethod.Put, "/api/v1/portal/privacy/nominee",
+                   new PortalNomineeRequest(patient.Id, "Someone else", "Friend", "97" + Digits(8), null, named)))
+        {
+            stale.StatusCode.ShouldBe(HttpStatusCode.Conflict, "The desk replaced the nominee the portal was showing.");
+        }
         var created = await portal.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", new PortalDataRequestCreate(
             patient.Id, DataRequestType.Erasure, RequesterRelation.Self, null, "Please erase my data.", null));
         var feedbackLink = await InviteToFeedbackAsync(patient.Id);
@@ -264,17 +280,23 @@ public sealed class PrivacyTests(HospitalServer server)
             chartId = chart.Id;
         }
 
+        var path = $"/api/v1/privacy/retention/{RetentionSchedule.OutpatientRecords}";
         try
         {
-            await admin.PutAsync($"/api/v1/privacy/retention/{RetentionSchedule.OutpatientRecords}", new UpdateRetentionRequest(7));
+            await admin.PutAsync(path, new UpdateRetentionRequest(7, await RetentionVersionAsync(admin)));
             (await RetainUntilAsync(chartId)).ShouldBe(today.AddYears(7));
 
-            using var tooShort = await admin.SendRawAsync(HttpMethod.Put, $"/api/v1/privacy/retention/{RetentionSchedule.OutpatientRecords}", new UpdateRetentionRequest(2));
+            using var tooShort = await admin.SendRawAsync(HttpMethod.Put, path, new UpdateRetentionRequest(2, await RetentionVersionAsync(admin)));
             tooShort.StatusCode.ShouldBe(HttpStatusCode.BadRequest, "The SRS keeps out-patient records at least 3 years.");
+
+            // REL-04: a period changed without seeing the one saved is refused, and the charts are not moved.
+            using var unseen = await admin.SendRawAsync(HttpMethod.Put, path, new UpdateRetentionRequest(9));
+            unseen.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            (await RetainUntilAsync(chartId)).ShouldBe(today.AddYears(7));
         }
         finally
         {
-            await admin.PutAsync($"/api/v1/privacy/retention/{RetentionSchedule.OutpatientRecords}", new UpdateRetentionRequest(3));
+            await admin.PutAsync(path, new UpdateRetentionRequest(3, await RetentionVersionAsync(admin)));
         }
 
         (await RetainUntilAsync(chartId)).ShouldBe(today.AddYears(3));
@@ -291,17 +313,28 @@ public sealed class PrivacyTests(HospitalServer server)
 
         try
         {
-            await admin.PutAsync("/api/v1/privacy/settings",
-                new SavePrivacySettingsRequest("Grievance Officer", "Dr. Meera Iyer", "privacy@nana.example.in", null, null, 45));
+            var loaded = (await admin.GetAsync<PrivacySettingsView>("/api/v1/privacy/settings")).Settings;
+            await admin.PutAsync("/api/v1/privacy/settings", new SavePrivacySettingsRequest(
+                "Grievance Officer", "Dr. Meera Iyer", "privacy@nana.example.in", null, null, 45, loaded.Version, loaded.ResponseDaysVersion));
             var updated = await anonymous.GetAsync<PublicPrivacyInfo>("/api/v1/public/privacy");
             updated.ResponseDays.ShouldBe(45);
             updated.Contact.Name.ShouldBe("Dr. Meera Iyer");
             updated.Contact.Email.ShouldBe("privacy@nana.example.in");
+
+            // REL-04: a second officer still looking at the settings as they were is refused, and nothing of theirs is saved.
+            using (var stale = await admin.SendRawAsync(HttpMethod.Put, "/api/v1/privacy/settings", new SavePrivacySettingsRequest(
+                       "Grievance Officer", "Dr. Someone Else", null, null, null, 60, loaded.Version, loaded.ResponseDaysVersion)))
+            {
+                stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            }
+
+            (await anonymous.GetAsync<PublicPrivacyInfo>("/api/v1/public/privacy")).ResponseDays.ShouldBe(45);
         }
         finally
         {
-            await admin.PutAsync("/api/v1/privacy/settings",
-                new SavePrivacySettingsRequest("Grievance Officer", null, null, null, null, PrivacySettings.DefaultResponseDays));
+            var now = (await admin.GetAsync<PrivacySettingsView>("/api/v1/privacy/settings")).Settings;
+            await admin.PutAsync("/api/v1/privacy/settings", new SavePrivacySettingsRequest(
+                "Grievance Officer", null, null, null, null, PrivacySettings.DefaultResponseDays, now.Version, now.ResponseDaysVersion));
         }
 
         // The front desk records a request for a walk-in patient, but only an officer answers it.
@@ -377,6 +410,9 @@ public sealed class PrivacyTests(HospitalServer server)
             .ToListAsync(TestContext.Current.CancellationToken);
         return [.. messages.Select(m => m.Read<NotificationDelivery>()).Where(d => d.To == Phone.Normalize(phone)).Select(d => d.TemplateKey)];
     }
+
+    private static async Task<uint?> RetentionVersionAsync(ApiClient admin) =>
+        (await admin.GetAsync<List<RetentionRuleDto>>("/api/v1/privacy/retention")).Single(r => r.Key == RetentionSchedule.OutpatientRecords).Version;
 
     private async Task<DateOnly?> RetainUntilAsync(Guid chartId)
     {

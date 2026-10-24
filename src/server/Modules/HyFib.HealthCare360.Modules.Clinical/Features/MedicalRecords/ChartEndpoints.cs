@@ -24,7 +24,7 @@ internal static class ChartEndpoints
 
         group.MapGet("/record-requests", ListRequests).RequirePermission(ClinicalPermissions.MrdRecords);
         group.MapPost("/record-requests", CreateRequest).RequirePermission(ClinicalPermissions.MrdRecords).WithValidation<CreateRecordRequestRequest>();
-        group.MapPost("/record-requests/{id:guid}/issue", Issue).RequirePermission(ClinicalPermissions.MrdRecords);
+        group.MapPost("/record-requests/{id:guid}/issue", Issue).RequirePermission(ClinicalPermissions.MrdRecords).WithValidation<IssueRecordRequest>();
         group.MapPost("/record-requests/{id:guid}/return", Return).RequirePermission(ClinicalPermissions.MrdRecords);
         group.MapPost("/record-requests/{id:guid}/cancel", CancelRequest).RequirePermission(ClinicalPermissions.MrdRecords).WithValidation<CancelRecordRequest>();
     }

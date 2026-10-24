@@ -3,9 +3,10 @@ using HyFib.HealthCare360.Modules.Privacy.Domain;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Services;
 
-public sealed record NomineeDto(string Name, string Relationship, string? Phone, string? Email, DataRequestChannel RecordedVia, DateTimeOffset UpdatedAt);
+public sealed record NomineeDto(string Name, string Relationship, string? Phone, string? Email, DataRequestChannel RecordedVia, DateTimeOffset UpdatedAt, uint Version);
 
-public sealed record SaveNomineeRequest(string Name, string Relationship, string? Phone, string? Email);
+/// <param name="Version">The version of the nominee as loaded (REL-04); none when the patient had none.</param>
+public sealed record SaveNomineeRequest(string Name, string Relationship, string? Phone, string? Email, uint? Version = null);
 
 public sealed class SaveNomineeRequestValidator : AbstractValidator<SaveNomineeRequest>
 {
@@ -42,7 +43,7 @@ public sealed class NomineeService(HospitalDbContext db, IAuditLogger audit)
     public async Task<NomineeDto?> GetAsync(Guid patientId, CancellationToken ct) =>
         await db.Set<Nominee>().AsNoTracking()
             .Where(n => n.PatientId == patientId)
-            .Select(n => new NomineeDto(n.Name, n.Relationship, n.Phone, n.Email, n.RecordedVia, n.UpdatedAt ?? n.CreatedAt))
+            .Select(n => new NomineeDto(n.Name, n.Relationship, n.Phone, n.Email, n.RecordedVia, n.UpdatedAt ?? n.CreatedAt, n.Version))
             .FirstOrDefaultAsync(ct);
 
     public async Task<Result> SaveAsync(Guid patientId, SaveNomineeRequest request, DataRequestChannel via, CancellationToken ct)
@@ -58,6 +59,8 @@ public sealed class NomineeService(HospitalDbContext db, IAuditLogger audit)
             nominee = new Nominee { PatientId = patientId };
             db.Add(nominee);
         }
+
+        db.SetExpectedVersion(nominee, request.Version);
 
         nominee.Name = request.Name.Trim();
         nominee.Relationship = request.Relationship.Trim();

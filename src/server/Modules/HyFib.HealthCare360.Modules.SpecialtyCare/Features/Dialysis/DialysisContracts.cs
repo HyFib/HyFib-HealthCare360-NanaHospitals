@@ -36,7 +36,7 @@ public sealed record DialysisReasonRequest(string Reason);
 
 public sealed record ScheduleDialysisRequest(Guid PatientId, DateOnly ScheduledDate, DialysisShift Shift, Guid? MachineId, Guid? VisitId, Guid? AdmissionId);
 
-public sealed record AssignDialysisMachineRequest(Guid MachineId);
+public sealed record AssignDialysisMachineRequest(Guid MachineId, uint Version);
 
 public sealed record PreDialysisRequest(decimal WeightKg, int Systolic, int Diastolic, int Pulse, decimal? TemperatureC, int? TargetUfMl);
 
@@ -52,7 +52,8 @@ public sealed record CancelDialysisRequest(string Reason, bool PatientDidNotCome
 
 public sealed record DialysisSessionListItem(
     Guid Id, string SessionNumber, Guid PatientId, string Uhid, string PatientName, DateOnly ScheduledDate, DialysisShift Shift,
-    DialysisSessionStatus Status, Guid? MachineId, string? MachineCode, DateTimeOffset? StartedAt, DateTimeOffset? EndedAt, ChargeStatus ChargeStatus);
+    DialysisSessionStatus Status, Guid? MachineId, string? MachineCode, DateTimeOffset? StartedAt, DateTimeOffset? EndedAt, ChargeStatus ChargeStatus,
+    uint Version);
 
 public sealed record DialysisSessionDetail(
     Guid Id, string SessionNumber, Guid PatientId, string Uhid, string PatientName, SeroStatus? SeroStatus, decimal? DryWeightKg, Guid? VisitId,

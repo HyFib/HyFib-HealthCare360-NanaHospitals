@@ -117,6 +117,7 @@ internal static class FollowUpEndpoints
         Guid id,
         HospitalDbContext db,
         PatientAccessGuard guard,
+        PatientContactAccess contacts,
         IAuditLogger audit,
         TimeProvider time,
         CancellationToken ct)
@@ -139,7 +140,7 @@ internal static class FollowUpEndpoints
         await audit.PatientRecordAccessedAsync(task.PatientId, "Opened a CRM follow-up call", ct);
 
         return TypedResults.Ok(new FollowUpDetail(
-            task.Id, task.PatientId, patient.Uhid, patient.FullName, patient.Phone, task.VisitId, task.AdmissionId, task.Type, task.DueDate, task.Status,
+            task.Id, task.PatientId, patient.Uhid, patient.FullName, PatientContacts.Phone(patient.Phone, await contacts.FullAsync(ct)), task.VisitId, task.AdmissionId, task.Type, task.DueDate, task.Status,
             task.Priority, task.AssigneeUserId, task.Notes, task.Attempts, task.Outcome, task.OutcomeNotes, task.CompletedAt, task.Source,
             task.IsOverdue(time.Today()), task.ReminderSentAt, task.Version));
     }

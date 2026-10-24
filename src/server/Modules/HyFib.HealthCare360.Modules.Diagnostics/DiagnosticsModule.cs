@@ -12,9 +12,11 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Verification;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics;
 
@@ -109,8 +111,16 @@ public sealed class DiagnosticsModule : IModule
         services.AddScoped<LabResultService>();
         services.AddScoped<ImagingService>();
         services.AddScoped<StudyImageService>();
-        services.Configure<RateLimiterOptions>(options =>
-            options.AddPolicy(RadiologyImageLimits.Policy, RadiologyImageLimits.Partition));
+        services.AddOptions<ConcurrencyLimit>(RadiologyImageLimits.Policy)
+            .Configure(RadiologyImageLimits.Defaults)
+            .Bind(configuration.GetSection(RadiologyImageLimits.SectionName))
+            .Validate(RadiologyImageLimits.IsValid, $"{RadiologyImageLimits.SectionName} needs a PermitLimit of 1 or more and a QueueLimit of 0 or more.")
+            .ValidateOnStart();
+        services.AddOptions<RateLimiterOptions>().Configure<IOptionsMonitor<ConcurrencyLimit>>((options, limits) =>
+        {
+            var limit = limits.Get(RadiologyImageLimits.Policy);
+            options.AddPolicy(RadiologyImageLimits.Policy, http => RadiologyImageLimits.Partition(http, limit));
+        });
         services.AddScoped<RadiologyReportService>();
         services.AddScoped<CardiologyService>();
 

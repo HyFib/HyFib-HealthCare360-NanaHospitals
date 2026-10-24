@@ -22,6 +22,7 @@ public sealed class HealthCheckupService(
     IChargePoster charges,
     IPayerDirectory payers,
     ICurrentUser currentUser,
+    PatientContactAccess contacts,
     TimeProvider time)
 {
     private readonly PackageBilling billing = new(charges);
@@ -272,9 +273,13 @@ public sealed class HealthCheckupService(
         ChangeAsync(id, b => Task.FromResult(b.SkipStop(itemId, currentUser.UserId, reason, time.GetUtcNow())), ct);
 
     public Task<Result<BookingDto>> RecordSummaryAsync(Guid id, CheckupSummaryRequest request, CancellationToken ct) =>
-        ChangeAsync(id, b => Task.FromResult(currentUser.PractitionerId is { } practitionerId
-            ? b.RecordSummary(request.Summary, request.Recommendations, practitionerId, time.GetUtcNow())
-            : Error.Rule("practitioner.required", "Only a doctor linked to a practitioner record can write the checkup summary.")), ct);
+        ChangeAsync(id, b =>
+        {
+            db.SetExpectedVersion(b, request.Version);
+            return Task.FromResult(currentUser.PractitionerId is { } practitionerId
+                ? b.RecordSummary(request.Summary, request.Recommendations, practitionerId, time.GetUtcNow())
+                : Error.Rule("practitioner.required", "Only a doctor linked to a practitioner record can write the checkup summary."));
+        }, ct);
 
     /// <summary>Completes the check-up, and the health check-up visit its check-in opened for the company.</summary>
     public Task<Result<BookingDto>> CompleteAsync(Guid id, CancellationToken ct) =>
@@ -333,7 +338,7 @@ public sealed class HealthCheckupService(
             return Error.NotFound(nameof(PackageBooking), id);
         }
 
-        var patients = await PatientQueries.SummariesAsync(db, [booking.PatientId], time.Today(), ct);
+        var patients = await PatientQueries.SummariesAsync(db, [booking.PatientId], time.Today(), await contacts.FullAsync(ct), ct);
         var order = booking.OrderId is { } orderId
             ? await db.Set<ClinicalOrder>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == orderId, ct)
             : null;

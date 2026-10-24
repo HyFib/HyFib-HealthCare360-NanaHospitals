@@ -262,6 +262,8 @@ export interface SaveDiscountLimitRequest {
   maxPercent: number;
   maxAmount: number | null;
   notes: string | null;
+  /** The limit as it was shown; none for a user without one. A limit changed or set meanwhile is not overwritten (REL-04). */
+  version?: number;
 }
 
 export interface BillFilters {

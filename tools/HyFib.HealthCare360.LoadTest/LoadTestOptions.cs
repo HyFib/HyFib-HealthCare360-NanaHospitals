@@ -7,6 +7,12 @@ internal enum TargetMode
 {
     Enforce,
     Report,
+
+    /// <summary>
+    /// The list budgets (PERF-05) fail the run and the timings are only reported: a page's size is the same on any
+    /// machine, its time is not (CI's shared runners).
+    /// </summary>
+    Payloads,
 }
 
 /// <summary>One run of the load test, from the command line (see <see cref="Usage"/>).</summary>
@@ -47,7 +53,7 @@ internal sealed record LoadTestOptions
 
           run --server <https://host:7360/> --accounts <user1,user2,...> --test-server
               [--ca <hospital-ca.crt>] [--users 75] [--ramp 1m] [--duration 5m] [--think 3s]
-              [--targets enforce|report] [--report <file.md>] [--json <file.json>]
+              [--targets enforce|report|payloads] [--report <file.md>] [--json <file.json>]
 
         Virtual users sign in with the staff accounts given (shared between them), search, open and register patients,
         and list visits and appointments, pausing between steps as staff do. Then the figures are compared with SRS 7.3:
@@ -55,8 +61,9 @@ internal sealed record LoadTestOptions
         lists paginated and compressed under 100 KB (PERF-05). It registers patients, so run it only against a test
         server, and say so with --test-server. The accounts' password is read from HC360_LOADTEST_PASSWORD.
 
-        Exit code 0 when every target is met (or --targets report), 1 when one is missed or more than 1% of requests
-        fail, 2 for a mistake in the command.
+        Exit code 0 when every target is met (with --targets report, whatever the targets; with --targets payloads, when
+        the lists are within their budget, whatever the timings), 1 when one is missed or more than 1% of requests fail,
+        2 for a mistake in the command.
         """;
 
     /// <summary>The options in <paramref name="args"/>, or why they are not usable.</summary>
@@ -137,8 +144,11 @@ internal sealed record LoadTestOptions
                 case "think" when ParseDuration(value) is { } think:
                     options = options with { Think = think };
                     break;
-                case "targets" when value is "enforce" or "report":
-                    options = options with { Targets = value == "report" ? TargetMode.Report : TargetMode.Enforce };
+                case "targets" when value is "enforce" or "report" or "payloads":
+                    options = options with
+                    {
+                        Targets = value switch { "report" => TargetMode.Report, "payloads" => TargetMode.Payloads, _ => TargetMode.Enforce },
+                    };
                     break;
                 case "server" or "accounts" or "ca" or "report" or "json":
                     break;

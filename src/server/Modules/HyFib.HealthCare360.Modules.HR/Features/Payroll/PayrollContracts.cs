@@ -28,19 +28,25 @@ public sealed record SaveSalaryComponentRequest(
 
 public sealed record ProfessionalTaxBandDto(decimal IncomeFrom, decimal? IncomeTo, decimal Amount, decimal? FebruaryAmount);
 
+/// <param name="Version">The version of the slabs, which are saved together (REL-04).</param>
 public sealed record ProfessionalTaxScheduleDto(
     string StateCode,
     string StateName,
     ProfessionalTaxFrequency Frequency,
     IReadOnlyList<int> DeductionMonths,
-    IReadOnlyList<ProfessionalTaxBandDto> Bands);
+    IReadOnlyList<ProfessionalTaxBandDto> Bands,
+    uint Version);
 
-/// <summary>Replaces a state's whole slab table (rates change by notification, never one band at a time).</summary>
+/// <summary>
+/// Replaces a state's whole slab table (rates change by notification, never one band at a time). <see cref="Version"/> is
+/// the version of the table as loaded (REL-04); none for a state that has none yet.
+/// </summary>
 public sealed record SaveProfessionalTaxRequest(
     string StateName,
     ProfessionalTaxFrequency Frequency,
     IReadOnlyList<int> DeductionMonths,
-    IReadOnlyList<ProfessionalTaxBandDto> Bands);
+    IReadOnlyList<ProfessionalTaxBandDto> Bands,
+    uint? Version = null);
 
 public sealed record SalaryStructureLineInput(Guid SalaryComponentId, decimal Value);
 

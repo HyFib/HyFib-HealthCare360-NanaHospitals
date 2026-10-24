@@ -250,6 +250,7 @@ function PhysioWorklistPage() {
         <RescheduleDialog
           sessionId={moving.sessionId}
           scheduledAt={moving.scheduledAt}
+          version={moving.version}
           onClose={() => setMoving(null)}
         />
       )}

@@ -19,7 +19,7 @@ internal static class BookingEndpoints
         group.MapGet("/bookings", List).RequireAnyPermission(ClinicalPermissions.HealthCheckManage, ClinicalPermissions.EmrRead);
         group.MapPost("/bookings", Book).RequirePermission(ClinicalPermissions.HealthCheckManage).WithValidation<BookCheckupRequest>();
         group.MapGet("/bookings/{id:guid}", Get).RequireAnyPermission(ClinicalPermissions.HealthCheckManage, ClinicalPermissions.EmrRead);
-        group.MapPost("/bookings/{id:guid}/check-in", CheckIn).RequirePermission(ClinicalPermissions.HealthCheckManage);
+        group.MapPost("/bookings/{id:guid}/check-in", CheckIn).RequirePermission(ClinicalPermissions.HealthCheckManage).WithValidation<CheckInCheckupRequest>();
         group.MapPost("/bookings/{id:guid}/itinerary/{itemId:guid}/complete", CompleteStop).RequireAnyPermission(stations).WithValidation<CompleteStopRequest>();
         group.MapPost("/bookings/{id:guid}/itinerary/{itemId:guid}/skip", SkipStop).RequireAnyPermission(stations).WithValidation<SkipStopRequest>();
         group.MapPut("/bookings/{id:guid}/summary", Summary).RequirePermission(ClinicalPermissions.EmrWrite).WithValidation<CheckupSummaryRequest>();

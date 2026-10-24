@@ -148,6 +148,30 @@ describe('useFormDraft', () => {
     expect(openNote().result.current.draft.saved).toBeNull();
   });
 
+  it('keeps what was typed as a draft when the form is filled again from the server after a conflict (REL-04)', () => {
+    const note = openNote();
+    type(note, 'BP 150/95');
+    // Saved before the next 4-second save, and refused: someone else changed the note meanwhile. Theirs is shown.
+    act(() => note.result.current.draft.keep());
+    act(() => note.result.current.form.reset({ category: 'General', note: 'BP 140/90, repeat at 6 pm' }));
+    wait(8_000);
+
+    expect(note.result.current.draft.saved?.value.note).toBe('BP 150/95');
+    expect(stored('asha')?.value.note).toBe('BP 150/95');
+    act(() => note.result.current.draft.restore());
+    expect(note.result.current.form.getValues('note')).toBe('BP 150/95');
+    expect(note.result.current.form.formState.defaultValues?.note).toBe('BP 140/90, repeat at 6 pm');
+  });
+
+  it('keeps nothing from a form left as it was filled', () => {
+    const note = openNote();
+
+    act(() => note.result.current.draft.keep());
+
+    expect(note.result.current.draft.saved).toBeNull();
+    expect(stored('asha')).toBeNull();
+  });
+
   it('is wiped when its user signs out, and not offered after the next sign-in', async () => {
     const note = openNote();
     type(note, 'Wound dressing changed');

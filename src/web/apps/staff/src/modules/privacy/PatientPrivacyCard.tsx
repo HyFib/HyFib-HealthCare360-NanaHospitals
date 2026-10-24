@@ -241,11 +241,14 @@ function NomineeBody({
     resolver: zodResolver(nomineeSchema),
     defaultValues: nomineeDefaults(nominee),
   });
+  // The nominee as the form was filled: the card reads it again in the background, and a nominee named meanwhile (in
+  // the portal, say) must not be replaced unseen (REL-04).
+  const [loadedVersion] = useState(nominee?.version);
 
   const submit = async (values: NomineeValues) => {
     setBusy(true);
     try {
-      await privacyApi.saveNominee(patientId, toSaveNominee(values));
+      await privacyApi.saveNominee(patientId, toSaveNominee(values, loadedVersion));
       notify.success(nominee ? 'Nominee replaced' : 'Nominee recorded');
       void queryClient.invalidateQueries({ queryKey: privacyKeys.nominee(patientId) });
       void queryClient.invalidateQueries({ queryKey: ['privacy', 'summary'] });
@@ -253,6 +256,10 @@ function NomineeBody({
     } catch (error) {
       if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not save the nominee');
+        if (isApiError(error) && error.code === 'concurrency') {
+          // Opened again, the form shows the nominee on record now.
+          void queryClient.invalidateQueries({ queryKey: privacyKeys.nominee(patientId) });
+        }
       }
     } finally {
       setBusy(false);

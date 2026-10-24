@@ -309,6 +309,12 @@ describe('setting names', () => {
     expect(warning).toMatch(/share one Windows\s+login/);
     expect(settingWarning('ui.idleLockMinutes')).toBeNull();
   });
+
+  it('warns that letting browsers administer leaves an administrator password as the only lock (SRS SEC-08)', () => {
+    const warning = settingWarning('security.administrationRequiresDesktop');
+    expect(warning).toMatch(/administration opens in any browser/);
+    expect(warning).toMatch(/password is then enough/);
+  });
 });
 
 describe('AI settings', () => {

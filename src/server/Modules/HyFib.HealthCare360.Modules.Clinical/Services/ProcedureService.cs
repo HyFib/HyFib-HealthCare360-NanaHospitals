@@ -59,6 +59,7 @@ public sealed class ProcedureService(HospitalDbContext db, ICurrentUser user, Ti
             return details.Error!;
         }
 
+        db.SetExpectedVersion(record, request.Version);
         var corrected = record.Correct(details.Value!, request.Reason, user.UserId, time.GetUtcNow());
         if (corrected.IsFailure)
         {
@@ -174,5 +175,5 @@ public sealed class ProcedureService(HospitalDbContext db, ICurrentUser user, Ti
     private static ProcedureDto ToDto(ProcedureRecord p, IReadOnlyDictionary<Guid, string> practitioners) => new(
         p.Id, p.PatientId, p.EncounterId, p.AdmissionId, p.PerformedAt, p.Code, p.CodeSystem, p.Display, p.PerformerPractitionerId,
         p.PerformerPractitionerId is { } id && practitioners.TryGetValue(id, out var name) ? name : p.PerformerName,
-        p.Side, p.BodySite, p.Outcome, p.Notes, p.Source, p.Status, p.StatusReason, p.StatusChangedAt);
+        p.Side, p.BodySite, p.Outcome, p.Notes, p.Source, p.Status, p.StatusReason, p.StatusChangedAt, p.Version);
 }

@@ -24,7 +24,7 @@ internal static class BedEndpoints
 
         group.MapPost("/", Create).RequirePermission(InpatientPermissions.MastersManage).WithValidation<SaveBedRequest>();
         group.MapPost("/bulk", CreateMany).RequirePermission(InpatientPermissions.MastersManage).WithValidation<CreateBedsRequest>();
-        group.MapPut("/{id:guid}", Update).RequirePermission(InpatientPermissions.MastersManage).WithValidation<SaveBedRequest>();
+        group.MapPut("/{id:guid}", Update).RequirePermission(InpatientPermissions.MastersManage).WithValidation<SaveBedRequest>().RequireVersion();
 
         group.MapPost("/{id:guid}/reserve", async (Guid id, ReserveBedRequest r, BedService beds, CancellationToken ct) => (await beds.ReserveAsync(id, r, ct)).ToOk())
             .RequirePermission(InpatientPermissions.BedsManage).WithValidation<ReserveBedRequest>();

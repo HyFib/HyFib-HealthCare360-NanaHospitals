@@ -185,6 +185,7 @@ function EditorForm({
         findings: values.findings.trim() || null,
         recommendations: values.recommendations.trim() || null,
         investigatorUserIds: values.investigators.map((i) => i.id),
+        version: investigation?.version,
       });
       notify.success('Analysis saved');
       // What the form shows is saved now: leaving does not ask (SRS UX-08).

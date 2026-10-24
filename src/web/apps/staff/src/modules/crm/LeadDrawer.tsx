@@ -101,6 +101,8 @@ export function LeadDrawer({ lead, onClose }: { lead: LeadDetail | null; onClose
       nextFollowUpAt: toIstInput(lead?.nextFollowUpAt),
     },
   });
+  // The version the form was filled from, not a newer one read since (REL-04).
+  const [loadedVersion] = useState(lead?.version ?? null);
 
   const save = async (v: Values, confirmedNotDuplicate: boolean) => {
     setBusy(true);
@@ -121,7 +123,7 @@ export function LeadDrawer({ lead, onClose }: { lead: LeadDetail | null; onClose
       ownerUserId: v.owner?.id ?? null,
       nextFollowUpAt: fromIstInput(v.nextFollowUpAt),
       confirmedNotDuplicate,
-      version: lead?.version ?? null,
+      version: loadedVersion,
     };
     try {
       if (lead) {

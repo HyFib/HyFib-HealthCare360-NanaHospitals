@@ -16,7 +16,9 @@ internal static class PosSettlementEndpoints
         var group = app.MapGroup("/api/v1/billing/pos/settlements").WithTags("Billing - Card and UPI reconciliation")
             .RequirePermission(BillingPermissions.GatewayReconcile);
         group.MapGet("/summary", Summary);
-        group.MapPost("/imports", Import).DisableAntiforgery();
+        // Bearer-token API (no cookie authentication), so antiforgery does not apply. A report larger than a file can be is
+        // refused before it is read.
+        group.MapPost("/imports", Import).DisableAntiforgery().WithMetadata(new RequestSizeLimitAttribute(PosSettlementFile.MaxBytes + (64 * 1024)));
         group.MapGet("/imports", Imports);
         group.MapGet("/days", Days);
         group.MapGet("/lines", Lines);

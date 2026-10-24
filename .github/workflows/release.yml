@@ -56,6 +56,37 @@ jobs:
           & artifacts/server/HyFib.HealthCare360.Server.exe desktop verify --package $env:DESKTOP_PACKAGE
           if ($LASTEXITCODE -ne 0) { throw 'The signed HC360 Desktop package does not verify with the release keys built into this version (ReleaseKeys.cs).' }
 
+      # SRS SEC-11: no release while an advisory is past its patch window, or is reported but not recorded in
+      # .github/security-advisories.json (docs/security/SECURITY.md, "Patching security advisories"). The NuGet audit
+      # already ran in every restore of the publish; npm's runs here, on the lockfile.
+      - name: Check the security patch windows
+        shell: pwsh
+        run: |
+          $nuget = Join-Path $env:RUNNER_TEMP 'nuget-audit.json'
+          $npm = Join-Path $env:RUNNER_TEMP 'npm-audit.json'
+          dotnet list HyFib.HealthCare360.slnx package --vulnerable --include-transitive --format json --no-restore > $nuget
+          Push-Location src/web
+          pnpm audit --json > $npm
+          Pop-Location
+          python .github/scripts/patch_windows.py --nuget $nuget --npm $npm
+          if ($LASTEXITCODE -ne 0) { throw 'A security advisory is past its patch window, not recorded, or could not be checked (see above).' }
+
+      # The SBOMs (CycloneDX) of what this release ships, beside the packages and in SHA256SUMS.txt: one per package (the
+      # server's with the staff app and portal it serves) and one per web app (.github/scripts/sbom.mjs; the tools at their
+      # pinned versions; docs/security/SECURITY.md, "SBOMs").
+      - name: Make the SBOMs
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          if ($LASTEXITCODE -ne 0) { throw 'The CycloneDX .NET tool could not be installed.' }
+          npm ci --prefix .github/sbom --ignore-scripts --omit=optional --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'cdxgen could not be installed.' }
+          node .github/scripts/sbom.mjs --output artifacts
+          if ($LASTEXITCODE -ne 0) { throw 'The SBOMs could not be made.' }
+          Get-ChildItem artifacts -Filter '*.cdx.json' | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          } | Add-Content artifacts/SHA256SUMS.txt -Encoding ascii
+
       - name: Attach packages to the GitHub release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
@@ -63,4 +94,5 @@ jobs:
             artifacts/*.zip
             artifacts/*.manifest.json
             artifacts/*.manifest.sig
+            artifacts/*.cdx.json
             artifacts/SHA256SUMS.txt

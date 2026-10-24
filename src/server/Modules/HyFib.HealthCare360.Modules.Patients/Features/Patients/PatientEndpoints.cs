@@ -14,9 +14,11 @@ internal static class PatientEndpoints
         group.MapGet("/{id:guid}", Get).RequirePermission(PatientsPermissions.Read);
         group.MapGet("/{id:guid}/summary", GetSummary).RequirePermission(PatientsPermissions.Read);
         group.MapGet("/by-uhid/{uhid}", GetByUhid).RequirePermission(PatientsPermissions.Read);
-        group.MapPost("/duplicates", CheckDuplicates).RequirePermission(PatientsPermissions.Register);
+        group.MapPost("/duplicates", CheckDuplicates).RequirePermission(PatientsPermissions.Register).WithValidation<DuplicateCheckRequest>();
         group.MapPost("/", Register).RequirePermission(PatientsPermissions.Register).WithValidation<RegisterPatientRequest>();
-        group.MapPut("/{id:guid}", Update).RequirePermission(PatientsPermissions.Register).WithValidation<UpdatePatientRequest>();
+        // Who edits a patient's details sees them in full first (SRS PRV-03): a masked number saved back would replace the real one.
+        group.MapPut("/{id:guid}", Update).RequirePermission(PatientsPermissions.Register).RequirePermission(PatientsPermissions.ContactRead)
+            .WithValidation<UpdatePatientRequest>();
         group.MapPost("/{id:guid}/merge", Merge).RequirePermission(PatientsPermissions.Merge).WithValidation<MergePatientRequest>();
         group.MapPost("/{id:guid}/break-glass", BreakGlass).RequirePermission(PatientsPermissions.BreakGlass).WithValidation<BreakGlassRequest>();
 
@@ -27,8 +29,9 @@ internal static class PatientEndpoints
 
     private static async Task<IResult> PortalProfiles(PortalPatientScope scope, HospitalDbContext db, TimeProvider time, CancellationToken ct)
     {
+        // The patient's own records and their family's, which share the patient's verified mobile number.
         var ids = await scope.AccessiblePatientIdsAsync(ct);
-        var summaries = await PatientQueries.SummariesAsync(db, ids, time.Today(), ct);
+        var summaries = await PatientQueries.SummariesAsync(db, ids, time.Today(), fullContacts: true, ct);
         return TypedResults.Ok(ids.Where(summaries.ContainsKey).Select(id => summaries[id]).ToList());
     }
 
@@ -83,7 +86,14 @@ internal static class PatientEndpoints
             Phone.Mask(p.Phone), p.Category, p.IsVip, p.IsDeceased, p.RegisteredAt, p.LastVisitAt)));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Get(
+        Guid id,
+        HospitalDbContext db,
+        PatientAccessGuard guard,
+        PatientContactAccess contacts,
+        IAuditLogger audit,
+        TimeProvider time,
+        CancellationToken ct)
     {
         var access = await guard.EnsureCanOpenAsync(id, ct);
         if (access.IsFailure)
@@ -99,15 +109,24 @@ internal static class PatientEndpoints
 
         await audit.PatientRecordAccessedAsync(id, "Viewed demographics", ct);
         var today = time.Today();
+        var full = await contacts.FullAsync(ct);
         return TypedResults.Ok(new PatientDetail(
             p.Id, p.Uhid, p.Title, p.FirstName, p.MiddleName, p.LastName, p.FullName, p.Gender, p.DateOfBirth, p.IsDateOfBirthEstimated,
-            p.AgeDisplay(today), p.BloodGroup, p.MaritalStatus, p.Phone, p.AlternatePhone, p.Email, p.Address, p.GuardianName, p.GuardianRelation,
-            p.EmergencyContactName, p.EmergencyContactPhone, p.EmergencyContactRelation, p.Occupation, p.Religion, p.Nationality,
-            p.PreferredLanguage, p.Category, p.AbhaNumberMasked, p.AbhaAddress, p.AadhaarLast4, p.PhotoFileId, p.RegisteredFacilityId,
-            p.RegisteredAt, p.IsVip, p.IsDeceased, p.DeceasedAt, p.MergedIntoPatientId, p.Notes, p.IsActive, p.Version));
+            p.AgeDisplay(today), p.BloodGroup, p.MaritalStatus, PatientContacts.Phone(p.Phone, full), PatientContacts.Phone(p.AlternatePhone, full),
+            PatientContacts.Email(p.Email, full), PatientContacts.Address(p.Address, full), p.GuardianName, p.GuardianRelation,
+            p.EmergencyContactName, PatientContacts.Phone(p.EmergencyContactPhone, full), p.EmergencyContactRelation, p.Occupation, p.Religion,
+            p.Nationality, p.PreferredLanguage, p.Category, p.AbhaNumberMasked, p.AbhaAddress, p.AadhaarLast4, p.PhotoFileId,
+            p.RegisteredFacilityId, p.RegisteredAt, p.IsVip, p.IsDeceased, p.DeceasedAt, p.MergedIntoPatientId, p.Notes, p.IsActive, p.Version,
+            ContactsMasked: !full));
     }
 
-    private static async Task<IResult> GetSummary(Guid id, HospitalDbContext db, PatientAccessGuard guard, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> GetSummary(
+        Guid id,
+        HospitalDbContext db,
+        PatientAccessGuard guard,
+        PatientContactAccess contacts,
+        TimeProvider time,
+        CancellationToken ct)
     {
         var access = await guard.EnsureCanOpenAsync(id, ct);
         if (access.IsFailure)
@@ -115,11 +134,17 @@ internal static class PatientEndpoints
             return access.Error!.ToProblem();
         }
 
-        var summaries = await PatientQueries.SummariesAsync(db, [id], time.Today(), ct);
+        var summaries = await PatientQueries.SummariesAsync(db, [id], time.Today(), await contacts.FullAsync(ct), ct);
         return summaries.TryGetValue(id, out var summary) ? TypedResults.Ok(summary) : Error.NotFound(nameof(Patient), id).ToProblem();
     }
 
-    private static async Task<IResult> GetByUhid(string uhid, HospitalDbContext db, PatientAccessGuard guard, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> GetByUhid(
+        string uhid,
+        HospitalDbContext db,
+        PatientAccessGuard guard,
+        PatientContactAccess contacts,
+        TimeProvider time,
+        CancellationToken ct)
     {
         var normalized = uhid.Trim().ToUpperInvariant();
         var id = await db.Set<Patient>().Where(p => p.Uhid == normalized).Select(p => (Guid?)p.Id).FirstOrDefaultAsync(ct);
@@ -128,7 +153,7 @@ internal static class PatientEndpoints
             return Error.NotFound(nameof(Patient), normalized).ToProblem();
         }
 
-        return await GetSummary(id.Value, db, guard, time, ct);
+        return await GetSummary(id.Value, db, guard, contacts, time, ct);
     }
 
     private static async Task<IResult> CheckDuplicates(DuplicateCheckRequest request, PatientRegistrationService registration, CancellationToken ct) =>

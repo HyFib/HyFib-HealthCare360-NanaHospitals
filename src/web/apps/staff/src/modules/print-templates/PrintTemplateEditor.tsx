@@ -21,7 +21,7 @@ import {
 } from '@fluentui/react-components';
 import { ArrowResetRegular, DismissRegular, DocumentSearchRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { MAX_CLOSING_NOTE_LENGTH, MAX_PRINT_SPACE_MM } from '@hc360/core';
+import { isApiError, MAX_CLOSING_NOTE_LENGTH, MAX_PRINT_SPACE_MM } from '@hc360/core';
 import {
   applyServerErrors,
   ChoiceField,
@@ -108,6 +108,9 @@ function PrintTemplateEditor({
     resolver: zodResolver(printTemplateFormSchema),
     defaultValues: toForm(item, initialScope(item, list)),
   });
+  // The templates as the form was (last) filled from them, with their versions: the list is read again in the
+  // background, and a template saved meanwhile must be refused, not replaced unseen (REL-04).
+  const [loaded, setLoaded] = useState(item);
   const facility = list.facilityName ?? 'this facility';
 
   const changed = (title: string, detail: string) => {
@@ -119,7 +122,7 @@ function PrintTemplateEditor({
   };
 
   const save = useMutation({
-    mutationFn: (values: PrintTemplateForm) => printTemplatesApi.save(item.key, toSaveRequest(values, item)),
+    mutationFn: (values: PrintTemplateForm) => printTemplatesApi.save(item.key, toSaveRequest(values, loaded)),
     onSuccess: (_, values) =>
       changed(
         'Print template saved',
@@ -130,6 +133,10 @@ function PrintTemplateEditor({
     onError: (error) => {
       if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not save the print template');
+        if (isApiError(error) && error.code === 'concurrency') {
+          // Opened again, the editor shows the template saved meanwhile.
+          void queryClient.invalidateQueries({ queryKey: printTemplateKeys.all });
+        }
       }
     },
   });
@@ -163,7 +170,10 @@ function PrintTemplateEditor({
             control={form.control}
             item={item}
             list={list}
-            onScopeChange={(scope) => form.reset(toForm(item, scope))}
+            onScopeChange={(scope) => {
+              setLoaded(item);
+              form.reset(toForm(item, scope));
+            }}
           />
           {item.facility !== null && list.facilityId !== null && (
             <div className={styles.restore}>

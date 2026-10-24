@@ -97,7 +97,7 @@ internal static class VendorEndpoints
         group.MapPost("/", (SaveVendorRequest r, HospitalDbContext db, CancellationToken ct) => Save(null, r, db, ct))
             .RequirePermission(SupplyChainPermissions.PurchaseManage).WithValidation<SaveVendorRequest>();
         group.MapPut("/{id:guid}", (Guid id, SaveVendorRequest r, HospitalDbContext db, CancellationToken ct) => Save(id, r, db, ct))
-            .RequirePermission(SupplyChainPermissions.PurchaseManage).WithValidation<SaveVendorRequest>();
+            .RequirePermission(SupplyChainPermissions.PurchaseManage).WithValidation<SaveVendorRequest>().RequireVersion();
     }
 
     private static async Task<IResult> List([AsParameters] PageQuery query, bool? includeInactive, HospitalDbContext db, TimeProvider time, CancellationToken ct)

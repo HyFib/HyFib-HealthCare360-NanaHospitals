@@ -18,7 +18,10 @@ public sealed class RosterService(HospitalDbContext db)
             plan.Conflicts);
     }
 
-    public async Task<Result<RosterSaveResult>> SaveAsync(SaveRosterRequest request, CancellationToken ct)
+    /// <param name="checkVersions">
+    /// The planner's own changes: each entry replaced must be one the grid showed, at the version it showed (REL-04).
+    /// </param>
+    public async Task<Result<RosterSaveResult>> SaveAsync(SaveRosterRequest request, bool checkVersions, CancellationToken ct)
     {
         var plan = await PlanAsync(request, ct);
         if (plan.Conflicts.Any(c => c.Severity == ConflictSeverity.Error))
@@ -32,8 +35,19 @@ public sealed class RosterService(HospitalDbContext db)
             return Error.Conflict("roster.warnings", "Review the warnings and confirm to save the roster anyway.", warnings);
         }
 
+        var seen = (request.Replacing ?? []).ToDictionary(e => e.Id, e => e.Version);
         foreach (var replaced in plan.Replaced)
         {
+            if (checkVersions)
+            {
+                if (!seen.TryGetValue(replaced.Id, out var version))
+                {
+                    return Error.ConcurrencyConflict;
+                }
+
+                db.SetExpectedVersion(replaced, version);
+            }
+
             db.Remove(replaced);
         }
 
@@ -73,7 +87,7 @@ public sealed class RosterService(HospitalDbContext db)
         }
 
         var assignments = cells.Select(c => new RosterAssignmentInput(c.EmployeeId, c.Date.AddDays(shift), c.ShiftId, c.IsWeekOff, c.Notes)).ToList();
-        return await SaveAsync(new SaveRosterRequest(assignments, ReplaceExisting: true, request.AcknowledgeWarnings), ct);
+        return await SaveAsync(new SaveRosterRequest(assignments, ReplaceExisting: true, request.AcknowledgeWarnings), checkVersions: false, ct);
     }
 
     private sealed record Plan(

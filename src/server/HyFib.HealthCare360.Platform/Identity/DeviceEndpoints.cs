@@ -1,3 +1,4 @@
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
@@ -15,13 +16,54 @@ namespace HyFib.HealthCare360.Platform.Identity;
 
 public sealed record CreateEnrollmentCodeRequest(DeviceKind Kind, Guid? FacilityId, string? Note, int? ValidMinutes);
 
+public sealed class CreateEnrollmentCodeRequestValidator : AbstractValidator<CreateEnrollmentCodeRequest>
+{
+    public CreateEnrollmentCodeRequestValidator()
+    {
+        RuleFor(r => r.Kind).IsInEnum().WithMessage("Choose what kind of device this is.");
+        RuleFor(r => r.FacilityId).OptionalId();
+        RuleFor(r => r.Note).SafeText(256);
+        RuleFor(r => r.ValidMinutes).InclusiveBetween(DeviceEnrollment.MinValidMinutes, DeviceEnrollment.MaxValidMinutes)
+            .WithMessage($"A code is valid for {DeviceEnrollment.MinValidMinutes} minutes to {DeviceEnrollment.MaxValidMinutes / 60} hours.");
+    }
+}
+
 public sealed record EnrollmentCodeResponse(string Code, DateTimeOffset ExpiresAt);
 
 public sealed record EnrollDeviceRequest(string Code, string Name, string? MachineName, string? OsVersion, string? AppVersion);
 
+/// <summary>What HC360 Desktop sends when it enrols, held to the columns it is kept in.</summary>
+public sealed class EnrollDeviceRequestValidator : AbstractValidator<EnrollDeviceRequest>
+{
+    public EnrollDeviceRequestValidator()
+    {
+        RuleFor(r => r.Code).NotEmpty().WithMessage("Enter the enrolment code.").MaximumLength(32);
+        RuleFor(r => r.Name).NotEmpty().WithMessage(DeviceEnrollment.NameMessage).SafeText(128).WithMessage(DeviceEnrollment.NameMessage);
+        RuleFor(r => r.MachineName).SafeText(128);
+        RuleFor(r => r.OsVersion).SafeText(128);
+        RuleFor(r => r.AppVersion).SafeText(32);
+    }
+}
+
 public sealed record EnrollDeviceResponse(Guid DeviceId, string DeviceSecret, string ServerName, string? CaFingerprint);
 
 public sealed record DeviceHeartbeatRequest(Guid DeviceId, string DeviceSecret, string? AppVersion, string? WifiSsid, int? WifiSignal);
+
+/// <summary>
+/// The device's id and secret, and what it reports: Windows gives the WiFi signal as 0–100. A network's name (SSID) may
+/// be any 32 bytes, so it is held to its length only.
+/// </summary>
+public sealed class DeviceHeartbeatRequestValidator : AbstractValidator<DeviceHeartbeatRequest>
+{
+    public DeviceHeartbeatRequestValidator()
+    {
+        RuleFor(r => r.DeviceId).NotEmpty();
+        RuleFor(r => r.DeviceSecret).NotEmpty().MaximumLength(IdentityRules.MaxDeviceSecretLength);
+        RuleFor(r => r.AppVersion).SafeText(32);
+        RuleFor(r => r.WifiSsid).MaximumLength(64);
+        RuleFor(r => r.WifiSignal).InclusiveBetween(0, 100);
+    }
+}
 
 public sealed record DeviceDto(
     Guid Id,
@@ -43,6 +85,25 @@ public sealed record DeviceDto(
 
 public sealed record UpdateDeviceRequest(string Name, Guid? DepartmentId, string? Location, uint Version);
 
+public sealed class UpdateDeviceRequestValidator : AbstractValidator<UpdateDeviceRequest>
+{
+    public UpdateDeviceRequestValidator()
+    {
+        RuleFor(r => r.Name).NotEmpty().WithMessage("Name is required.").SafeText(128);
+        RuleFor(r => r.DepartmentId).OptionalId();
+        RuleFor(r => r.Location).SafeText(128);
+        RuleFor(r => r.Version).SeenVersion();
+    }
+}
+
+/// <summary>The limits on enrolment codes and device names.</summary>
+public static class DeviceEnrollment
+{
+    public const int MinValidMinutes = 5;
+    public const int MaxValidMinutes = 24 * 60;
+    public const string NameMessage = "Enter a device name (up to 128 characters).";
+}
+
 /// <summary>
 /// Workstation enrolment (DED-05, SEC-08): an administrator issues a short-lived one-time code; HC360 Desktop
 /// exchanges it for a device secret (stored with DPAPI on the workstation) and pins the hospital CA.
@@ -52,15 +113,17 @@ internal static class DeviceEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
     {
+        // Administration works only on an enrolled desktop (SEC-08); a browser enrols the first one from this page.
         var admin = app.MapGroup("/api/v1/admin/devices").WithTags("Administration");
-        admin.MapGet("/", ListDevices).RequirePermission(PlatformPermissions.DevicesManage);
-        admin.MapPost("/enrollment-codes", CreateEnrollmentCode).RequirePermission(PlatformPermissions.DevicesManage);
-        admin.MapPut("/{id:guid}", UpdateDevice).RequirePermission(PlatformPermissions.DevicesManage);
+        admin.MapGet("/", ListDevices).RequirePermission(PlatformPermissions.DevicesManage).AllowedForFirstDesktopEnrolment();
+        admin.MapPost("/enrollment-codes", CreateEnrollmentCode).RequirePermission(PlatformPermissions.DevicesManage).AllowedForFirstDesktopEnrolment()
+            .WithValidation<CreateEnrollmentCodeRequest>();
+        admin.MapPut("/{id:guid}", UpdateDevice).RequirePermission(PlatformPermissions.DevicesManage).WithValidation<UpdateDeviceRequest>();
         admin.MapPost("/{id:guid}/revoke", RevokeDevice).RequirePermission(PlatformPermissions.DevicesManage);
 
         var devices = app.MapGroup("/api/v1/devices").WithTags("Devices");
-        devices.MapPost("/enroll", Enroll).AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Public);
-        devices.MapPost("/heartbeat", Heartbeat).AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Public);
+        devices.MapPost("/enroll", Enroll).AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Public).WithValidation<EnrollDeviceRequest>();
+        devices.MapPost("/heartbeat", Heartbeat).AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Public).WithValidation<DeviceHeartbeatRequest>();
     }
 
     private static async Task<IResult> ListDevices(HospitalDbContext db, CancellationToken ct) =>
@@ -73,7 +136,7 @@ internal static class DeviceEndpoints
     private static async Task<IResult> CreateEnrollmentCode(CreateEnrollmentCodeRequest request, HospitalDbContext db, ICurrentUser current, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var now = time.GetUtcNow();
-        var minutes = Math.Clamp(request.ValidMinutes ?? 30, 5, 24 * 60);
+        var minutes = request.ValidMinutes ?? 30;
         var code = SecretTokens.NewReadableCode(8);
         db.Add(new DeviceEnrollmentCode
         {
@@ -116,19 +179,14 @@ internal static class DeviceEndpoints
             return Error.Rule("device.invalid_code", "The enrolment code is invalid or has expired. Ask your administrator for a new code.").ToProblem();
         }
 
-        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 128)
-        {
-            return Error.Field("name", "Enter a device name (up to 128 characters).").ToProblem();
-        }
-
         var secret = SecretTokens.NewOpaqueToken(32);
         var device = new Device
         {
             Name = request.Name.Trim(),
-            MachineName = Truncate(request.MachineName, 128),
+            MachineName = request.MachineName?.Trim(),
             Kind = enrollment.Kind,
-            OsVersion = Truncate(request.OsVersion, 128),
-            AppVersion = Truncate(request.AppVersion, 32),
+            OsVersion = request.OsVersion?.Trim(),
+            AppVersion = request.AppVersion?.Trim(),
             SecretHash = SecretTokens.Hash(secret),
             EnrolledAt = now,
             LastSeenAt = now,
@@ -163,9 +221,9 @@ internal static class DeviceEndpoints
 
         device.LastSeenAt = time.GetUtcNow();
         device.LastIpAddress = http.Connection.RemoteIpAddress?.ToString();
-        device.AppVersion = Truncate(request.AppVersion, 32) ?? device.AppVersion;
-        device.LastWifiSsid = Truncate(request.WifiSsid, 64);
-        device.LastWifiSignal = request.WifiSignal is { } s ? Math.Clamp(s, 0, 100) : null;
+        device.AppVersion = request.AppVersion?.Trim() ?? device.AppVersion;
+        device.LastWifiSsid = request.WifiSsid?.Trim();
+        device.LastWifiSignal = request.WifiSignal;
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
     }
@@ -178,15 +236,10 @@ internal static class DeviceEndpoints
             return Error.NotFound(nameof(Device), id).ToProblem();
         }
 
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            return Error.Field("name", "Name is required.").ToProblem();
-        }
-
         db.SetExpectedVersion(device, request.Version);
         device.Name = request.Name.Trim();
         device.DepartmentId = request.DepartmentId;
-        device.Location = Truncate(request.Location, 128);
+        device.Location = request.Location?.Trim();
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
     }
@@ -225,6 +278,4 @@ internal static class DeviceEndpoints
 
         return TypedResults.NoContent();
     }
-
-    private static string? Truncate(string? value, int max) => value is null || value.Length <= max ? value?.Trim() : value[..max].Trim();
 }

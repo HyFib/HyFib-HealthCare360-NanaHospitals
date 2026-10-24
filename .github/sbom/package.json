@@ -1,0 +1,8 @@
+{
+  "name": "hc360-sbom-tools",
+  "private": true,
+  "description": "cdxgen, which .github/scripts/sbom.mjs runs to read the web apps' pnpm-lock.yaml, pinned with its whole tree in package-lock.json. Install with: npm ci --prefix .github/sbom --ignore-scripts --omit=optional --no-audit --no-fund",
+  "dependencies": {
+    "@cyclonedx/cdxgen": "12.8.5"
+  }
+}

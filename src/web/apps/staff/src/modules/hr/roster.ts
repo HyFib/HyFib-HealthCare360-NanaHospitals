@@ -1,5 +1,5 @@
 /** Pure roster-grid logic (painting cells, working out what to save or delete, day coverage). */
-import type { RosterAssignmentInput, RosterConflictDto, RosterEntryDto } from './api';
+import type { RosterAssignmentInput, RosterConflictDto, RosterEntryDto, RosterEntryVersion } from './api';
 
 /** One duty in a cell: a shift or a week off. Two shifts in one cell are a double duty. */
 export interface CellItem {
@@ -43,6 +43,47 @@ export function entryIdsByCell(entries: RosterEntryDto[]): Record<string, string
     (ids[cellKey(entry.employeeId, entry.date)] ??= []).push(entry.id);
   }
   return ids;
+}
+
+/** The saved entries in the cells a save changes, as the grid showed them: the server refuses to replace others. */
+export function replacedEntries(entries: RosterEntryDto[], keys: string[]): RosterEntryVersion[] {
+  const changed = new Set(keys);
+  return entries
+    .filter((entry) => changed.has(cellKey(entry.employeeId, entry.date)))
+    .map((entry) => ({ id: entry.id, version: entry.version }));
+}
+
+/** The saved entries of each cell the planner has changed, as they were when the planner first changed it. */
+export type SeenCells = Record<string, RosterEntryDto[]>;
+
+/**
+ * Notes a cell's saved entries the first time the planner changes it. The roster read again later does not move them,
+ * so a save replaces only what the planner saw there, and is refused if someone else changed the cell since (REL-04).
+ */
+export function noteCell(seen: SeenCells, entries: RosterEntryDto[], key: string): SeenCells {
+  if (key in seen) {
+    return seen;
+  }
+  return { ...seen, [key]: entries.filter((entry) => cellKey(entry.employeeId, entry.date) === key) };
+}
+
+export interface RosterChanges extends RosterDiff {
+  /** The entries in the changed cells as the planner first saw them, with the versions seen then. */
+  replacing: RosterEntryVersion[];
+  /** The entries of the cells the planner cleared, as first seen. */
+  deleteIds: string[];
+}
+
+/** What saving the planner's edits sends, worked out against the cells as the planner first saw them. */
+export function rosterChanges(seen: SeenCells, draft: Cells): RosterChanges {
+  const entries = Object.values(seen).flat();
+  const diff = diffRoster(cellsFromEntries(entries), draft);
+  const ids = entryIdsByCell(entries);
+  return {
+    ...diff,
+    replacing: replacedEntries(entries, diff.changedKeys),
+    deleteIds: diff.clearedKeys.flatMap((key) => ids[key] ?? []),
+  };
 }
 
 function itemKey(item: CellItem): string {

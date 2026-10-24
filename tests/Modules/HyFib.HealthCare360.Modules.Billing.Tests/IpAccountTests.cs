@@ -91,6 +91,33 @@ public sealed class IpAccountTests
         account.Status.ShouldBe(IpAccountStatus.Discharged);
     }
 
+    /// <summary>
+    /// An approval to discharge with dues was given for the discharge that was revoked: the dues grow with the stay, so the
+    /// next discharge needs one of its own.
+    /// </summary>
+    [Fact]
+    public void A_revoked_discharge_withdraws_the_approval_to_discharge_with_dues()
+    {
+        var account = Admit();
+        account.ApproveDischargeWithDues(Guid.CreateVersion7(), "Patient to pay after claim settlement", TestData.Now).IsSuccess.ShouldBeTrue();
+        account.MarkDischargeInitiated(TestData.Now);
+
+        account.ReopenAfterRevokedDischarge().ShouldBeTrue();
+        (account.DischargeWithDuesApproved, account.DischargeApprovedBy, account.DischargeApprovalReason, account.DischargeApprovedAt)
+            .ShouldBe((false, (Guid?)null, (string?)null, (DateTimeOffset?)null));
+
+        // Revoked again with nothing approved: nothing is withdrawn.
+        account.MarkDischargeInitiated(TestData.Now.AddDays(1));
+        account.ReopenAfterRevokedDischarge().ShouldBeFalse();
+
+        // Approved for the next discharge, which is completed: a late revocation withdraws nothing.
+        account.ApproveDischargeWithDues(Guid.CreateVersion7(), "Claim pending with the insurer", TestData.Now.AddDays(2)).IsSuccess.ShouldBeTrue();
+        account.MarkDischargeInitiated(TestData.Now.AddDays(2));
+        account.MarkDischarged(TestData.Now.AddDays(2).AddHours(1), "Normal");
+        account.ReopenAfterRevokedDischarge().ShouldBeFalse();
+        account.DischargeWithDuesApproved.ShouldBeTrue();
+    }
+
     [Fact]
     public void Packages_change_only_during_the_stay()
     {

@@ -13,7 +13,7 @@ import {
   useNotify,
 } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { EditorDrawer } from '@/modules/hr/shared/EditorDrawer';
@@ -75,6 +75,9 @@ export function IndicatorDrawer({
       isActive: indicator?.isActive ?? true,
     },
   });
+  // The version the form was filled from: the indicator page reads the indicator again in the background, and a newer
+  // version must not be sent with these values (REL-04).
+  const [loadedVersion] = useState(indicator?.version ?? null);
   const unit = useWatch({ control: form.control, name: 'unit' });
 
   const submit = async (v: Values) => {
@@ -83,7 +86,7 @@ export function IndicatorDrawer({
         ...v,
         code: v.code.toUpperCase(),
         nabhReference: v.nabhReference || null,
-        version: indicator?.version ?? null,
+        version: loadedVersion,
       });
       notify.success('Indicator saved');
       void queryClient.invalidateQueries({ queryKey: qualityKeys.indicators });
@@ -93,6 +96,10 @@ export function IndicatorDrawer({
         form.setError('code', { type: 'server', message: error.userMessage });
       } else if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not save the indicator');
+        if (isApiError(error) && error.code === 'concurrency') {
+          // Someone else changed it meanwhile: opened again, the form shows their version.
+          void queryClient.invalidateQueries({ queryKey: qualityKeys.indicators });
+        }
       }
     }
   };

@@ -151,6 +151,15 @@ public sealed record BillPackageSummary(Guid PackageId, string Code, string Name
 /// <summary>Bills an OP draft at a package, or no longer (<c>null</c>).</summary>
 public sealed record SetBillPackageRequest(Guid? PackageId, uint Version);
 
+public sealed class SetBillPackageRequestValidator : AbstractValidator<SetBillPackageRequest>
+{
+    public SetBillPackageRequestValidator()
+    {
+        RuleFor(x => x.PackageId).OptionalId();
+        RuleFor(x => x.Version).SeenVersion();
+    }
+}
+
 /// <summary>Draft an OP bill from a visit's unbilled charges (or a patient's charges without a visit).</summary>
 public sealed record CreateBillRequest(Guid? VisitId, Guid? PatientId, IReadOnlyList<Guid>? ChargeIds);
 
@@ -164,6 +173,12 @@ public sealed record AddBillLineRequest(
     uint Version);
 
 public sealed record BillVersionRequest(uint Version);
+
+/// <summary>Refreshing or finalizing a bill says which version of it was on screen.</summary>
+public sealed class BillVersionRequestValidator : AbstractValidator<BillVersionRequest>
+{
+    public BillVersionRequestValidator() => RuleFor(x => x.Version).SeenVersion();
+}
 
 public sealed record LineDiscountInput(Guid LineId, decimal? Percent, decimal? Amount);
 
@@ -185,7 +200,7 @@ public sealed record IssueCreditNoteRequest(CreditNoteKind Kind, decimal Amount,
 
 public sealed record DiscountLimitDto(Guid Id, Guid UserId, string? UserName, decimal MaxPercent, decimal? MaxAmount, string? Notes, uint Version);
 
-public sealed record SaveDiscountLimitRequest(Guid UserId, decimal MaxPercent, decimal? MaxAmount, string? Notes);
+public sealed record SaveDiscountLimitRequest(Guid UserId, decimal MaxPercent, decimal? MaxAmount, string? Notes, uint? Version = null);
 
 public sealed class CreateBillRequestValidator : AbstractValidator<CreateBillRequest>
 {

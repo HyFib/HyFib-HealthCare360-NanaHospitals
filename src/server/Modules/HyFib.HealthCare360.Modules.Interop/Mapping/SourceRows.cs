@@ -288,14 +288,15 @@ internal sealed record LabReportRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
-/// <summary>A radiologist's addendum to a signed report.</summary>
-internal sealed record RadiologyAddendumRow(string Text, string? Reason, DateTimeOffset AddedAt);
+/// <summary>A radiologist's addendum to a signed report, with the user who added it.</summary>
+internal sealed record RadiologyAddendumRow(string Text, string? Reason, DateTimeOffset AddedAt, Guid? AddedBy = null);
 
 /// <summary>Released radiology report with its imaging study.</summary>
 internal sealed record RadiologyReportRow
 {
     public required Guid Id { get; init; }
     public required Guid PatientId { get; init; }
+    public Guid ImagingStudyId { get; init; }
     public Guid? VisitId { get; init; }
     public string AccessionNumber { get; init; } = string.Empty;
     public string ServiceCode { get; init; } = string.Empty;
@@ -303,7 +304,28 @@ internal sealed record RadiologyReportRow
     public Modality Modality { get; init; }
     public string? BodyPart { get; init; }
     public DateTimeOffset OrderedAt { get; init; }
+
+    /// <summary>When the patient was on the table, when the radiographer recorded it.</summary>
+    public DateTimeOffset? StartedAt { get; init; }
+
     public DateTimeOffset? AcquiredAt { get; init; }
+
+    /// <summary>
+    /// The study instance UID PACS holds the images under, once the study is linked with PACS; null before, when it is
+    /// only the UID the worklist proposed.
+    /// </summary>
+    public string? StudyInstanceUid { get; init; }
+
+    public int? SeriesCount { get; init; }
+    public int? InstanceCount { get; init; }
+
+    /// <summary>The user who submitted the report for sign-off.</summary>
+    public Guid? ReportedBy { get; init; }
+
+    /// <summary>The user who signed it off, and when.</summary>
+    public Guid? VerifiedBy { get; init; }
+
+    public DateTimeOffset? VerifiedAt { get; init; }
     public DateTimeOffset? ReleasedAt { get; init; }
     public string? Technique { get; init; }
     public string? ClinicalHistory { get; init; }
@@ -316,11 +338,12 @@ internal sealed record RadiologyReportRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
-/// <summary>Released cardiology report with its study.</summary>
+/// <summary>Released cardiology report with its study, and who wrote it and signed it off (user ids).</summary>
 internal sealed record CardiologyReportRow
 {
     public required Guid Id { get; init; }
     public required Guid PatientId { get; init; }
+    public Guid CardiologyStudyId { get; init; }
     public Guid? VisitId { get; init; }
     public string AccessionNumber { get; init; } = string.Empty;
     public string ServiceCode { get; init; } = string.Empty;
@@ -337,6 +360,9 @@ internal sealed record CardiologyReportRow
     public string? Conclusion { get; init; }
     public string? Recommendations { get; init; }
     public bool IsCriticalFinding { get; init; }
+    public Guid? ReportedBy { get; init; }
+    public Guid? VerifiedBy { get; init; }
+    public DateTimeOffset? VerifiedAt { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }

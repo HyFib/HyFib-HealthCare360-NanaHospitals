@@ -110,17 +110,29 @@ export function isFeatureSettingKey(key: string): boolean {
 
 /**
  * What an administrator must know before changing a setting, shown as a warning beside it (null for most settings).
- * Unlocking with Windows Hello (`ui.biometricUnlock`, off unless true) is the case: Windows Hello proves who owns the
- * Windows login, not who owns the HC360 account (SRS UX-11).
+ * Unlocking with Windows Hello (`ui.biometricUnlock`, off unless true) is one: Windows Hello proves who owns the Windows
+ * login, not who owns the HC360 account (SRS UX-11). Letting browsers administer (`security.administrationRequiresDesktop`
+ * false) is the other: an administrator's password alone then opens administration anywhere (SRS SEC-08).
  */
 export function settingWarning(key: string): string | null {
-  return key === 'ui.biometricUnlock'
-    ? 'Turn this on only where every staff member signs in to Windows with their own account. Windows Hello answers ' +
+  switch (key) {
+    case 'ui.biometricUnlock':
+      return (
+        'Turn this on only where every staff member signs in to Windows with their own account. Windows Hello answers ' +
         'for whoever owns the Windows login, not for the HC360 user: on a computer where staff share one Windows ' +
         "login, as at many nursing stations and counters, anyone who knows that login's Windows Hello PIN, or whose " +
         "finger or face is set up on it, could unlock a colleague's locked screen. For a facility with shared logins, " +
         'leave it off there (false for that facility).'
-    : null;
+      );
+    case 'security.administrationRequiresDesktop':
+      return (
+        'Set to false, administration opens in any browser on the hospital network that signs in as an administrator: ' +
+        'a stolen or guessed administrator password is then enough, without one of the computers IT enrolled. ' +
+        'Leave it on unless no computer can run HC360 Desktop.'
+      );
+    default:
+      return null;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------- ids

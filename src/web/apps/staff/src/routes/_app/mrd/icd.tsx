@@ -152,6 +152,7 @@ function IcdForm({ code, onClose }: { code: IcdCodeDto | null; onClose: () => vo
         keywords: v.keywords.trim() || null,
         fromOnlineLookup: false,
         isActive: v.isActive,
+        version: code?.version,
       }),
     onSuccess: (saved) => {
       notify.success(`${saved.code} saved`);

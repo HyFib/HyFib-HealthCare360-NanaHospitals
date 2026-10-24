@@ -19,22 +19,25 @@ public sealed record IcdCodeDto(
     string? Keywords,
     string? IncludedTerms,
     CodeSource Source,
-    bool IsActive);
+    bool IsActive,
+    uint Version);
 
 public sealed record IcdBlockDto(string Range, string Title);
 
 public sealed record IcdChapterDto(string Number, string Title, string Range, IReadOnlyList<IcdBlockDto> Blocks);
 
-public sealed record ProcedureCodeDto(Guid Id, string Code, string Title, string System, string? Category, string? Keywords, CodeSource Source, bool IsActive);
+public sealed record ProcedureCodeDto(
+    Guid Id, string Code, string Title, string System, string? Category, string? Keywords, CodeSource Source, bool IsActive, uint Version);
 
 /// <summary>
 /// Adds a code to the local catalogue (manual entry or caching a code found through the online ICD service).
 /// <see cref="Release"/> is ICD-10 2019 (the default) or ICD-11 MMS, in any label <see cref="CodeReleases.Normalize"/>
 /// accepts, so a result of the WHO online search can be saved as it came ("ICD-11 MMS 2025-01").
 /// </summary>
-public sealed record SaveIcdCodeRequest(string Code, string Title, string? Release, bool IsBillable, string? Keywords, bool FromOnlineLookup, bool IsActive);
+public sealed record SaveIcdCodeRequest(
+    string Code, string Title, string? Release, bool IsBillable, string? Keywords, bool FromOnlineLookup, bool IsActive, uint? Version = null);
 
-public sealed record SaveProcedureCodeRequest(string Code, string Title, string? System, string? Category, string? Keywords, bool IsActive);
+public sealed record SaveProcedureCodeRequest(string Code, string Title, string? System, string? Category, string? Keywords, bool IsActive, uint? Version = null);
 
 public sealed record OnlineIcdResult(string Code, string Title, string Release, string? Chapter, bool IsLeaf, bool IsCachedLocally);
 

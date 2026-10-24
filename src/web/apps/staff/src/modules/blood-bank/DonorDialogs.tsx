@@ -55,7 +55,7 @@ import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { fromIstInput, istDate } from '@/modules/ot/shared/datetime';
-import { applyFormErrors } from '@/modules/ot/shared/errors';
+import { applyFormErrors, isConcurrencyConflict } from '@/modules/ot/shared/errors';
 import { ActionError } from '@/modules/ot/shared/feedback';
 import { DateTimeField } from '@/modules/ot/shared/fields';
 import { useNow } from '@/modules/ot/shared/hooks';
@@ -184,6 +184,9 @@ export function DonorDrawer({
       isActive: donor?.isActive ?? true,
     },
   });
+  // The version the form was filled from: the donor page reads the donor again in the background, and a newer version
+  // must not be sent with these values (REL-04).
+  const [loadedVersion] = useState(donor?.version ?? null);
 
   const save = useMutation({
     mutationFn: (v: DonorValues) =>
@@ -207,7 +210,7 @@ export function DonorDrawer({
         consentToNotify: v.consentToNotify,
         notes: v.notes || null,
         isActive: v.isActive,
-        version: donor?.version ?? null,
+        version: loadedVersion,
       }),
     onSuccess: (id) => {
       notify.success(donor ? 'Donor details saved' : 'Donor registered');
@@ -217,6 +220,10 @@ export function DonorDrawer({
     },
     onError: (error) => {
       applyFormErrors(error, form.setError);
+      if (isConcurrencyConflict(error)) {
+        // Someone else changed the donor meanwhile: opened again, the form shows their version.
+        void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
+      }
     },
   });
 

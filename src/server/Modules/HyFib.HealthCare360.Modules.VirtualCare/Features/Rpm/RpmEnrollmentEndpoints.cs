@@ -20,7 +20,7 @@ internal static class RpmEnrollmentEndpoints
         group.MapPost("/programs", (SaveRpmProgramRequest request, HospitalDbContext db, CancellationToken ct) => SaveProgram(null, request, db, ct))
             .RequirePermission(VirtualCarePermissions.RpmManage).WithValidation<SaveRpmProgramRequest>();
         group.MapPut("/programs/{id:guid}", (Guid id, SaveRpmProgramRequest request, HospitalDbContext db, CancellationToken ct) => SaveProgram(id, request, db, ct))
-            .RequirePermission(VirtualCarePermissions.RpmManage).WithValidation<SaveRpmProgramRequest>();
+            .RequirePermission(VirtualCarePermissions.RpmManage).WithValidation<SaveRpmProgramRequest>().RequireVersion();
 
         group.MapGet("/enrollments", ListEnrollments).RequirePermission(VirtualCarePermissions.RpmRead);
         group.MapGet("/enrollments/{id:guid}", GetEnrollment).RequirePermission(VirtualCarePermissions.RpmRead);

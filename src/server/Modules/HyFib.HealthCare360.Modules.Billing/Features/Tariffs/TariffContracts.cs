@@ -59,7 +59,8 @@ public sealed record TariffPriceDto(
     DateOnly? EffectiveTo,
     uint Version);
 
-public sealed record SaveTariffPriceRequest(Guid ServiceItemId, decimal Price, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
+/// <param name="Version">The version of the price being changed (REL-04); none for a new start date, and none in a bulk import.</param>
+public sealed record SaveTariffPriceRequest(Guid ServiceItemId, decimal Price, DateOnly EffectiveFrom, DateOnly? EffectiveTo, uint? Version = null);
 
 public sealed record BulkTariffPricesRequest(IReadOnlyList<SaveTariffPriceRequest> Prices);
 

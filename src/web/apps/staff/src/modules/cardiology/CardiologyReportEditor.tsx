@@ -42,6 +42,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
 import { useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
+import { useBaseVersion } from '@/lib/baseVersion';
 import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
@@ -53,6 +54,7 @@ import {
   CARDIOLOGY_PERMISSIONS,
   cardiologyApi,
   cardiologyKeys,
+  cardiologyQueries,
   cardiologyReportDocument,
   TMT_RESULTS,
   type CardiologyReportDto,
@@ -401,15 +403,30 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
   const watched = useWatch({ control: form.control });
   const type = study.studyType;
   const ageYears = parseAgeYears(study.age);
-  const latestVersion = () =>
-    queryClient.getQueryData<CardiologyStudyDetail>(studyKey)?.report?.version ?? study.report?.version ?? null;
+  // The report as the form was filled, then as this user saved it: its version goes with every save. The study is read
+  // again in the background, and a version read so must never be sent with these values (REL-04).
+  const [version, setVersion] = useState(study.report?.version ?? null);
 
+  /** Saves the typed report (always, so the server has exactly what is on screen) and returns it. */
   const persist = async (values: ReportValues) => {
-    const saved = await cardiologyApi.saveReport(study.id, toRequest(study, values, latestVersion()));
+    const saved = await cardiologyApi.saveReport(study.id, toRequest(study, values, version));
+    setVersion(saved.report.version);
     queryClient.setQueryData(studyKey, saved);
     form.reset(values);
     draft.clear();
     return saved;
+  };
+
+  /** The report as saved now fills the form; what was typed waits as a draft, to restore once theirs has been read. */
+  const reload = async () => {
+    draft.keep();
+    try {
+      const fresh = await queryClient.fetchQuery({ ...cardiologyQueries.study(study.id), staleTime: 0 });
+      form.reset(toValues(fresh.report));
+      setVersion(fresh.report?.version ?? null);
+    } catch {
+      // The server was not reached: the form keeps what was typed, and its save is refused until the report is read.
+    }
   };
 
   const handleError = (error: unknown, fallback: string) => {
@@ -418,7 +435,7 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
         'The report was changed by someone else',
         'It has been reloaded. Check it and make your changes again.',
       );
-      void queryClient.invalidateQueries({ queryKey: studyKey });
+      void reload();
       return;
     }
     if (!applyServerErrors(error, form.setError)) {
@@ -434,11 +451,12 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
     onError: (error) => handleError(error, 'Could not save the report'),
   });
   const submit = useMutation({
-    mutationFn: async (values: ReportValues) => {
-      await persist(values);
-      return cardiologyApi.submitReport(study.id);
-    },
-    onSuccess: () => {
+    // Submitted on the version its own save returned: a change made after it is refused, not sent for sign-off unread.
+    mutationFn: async (values: ReportValues) =>
+      cardiologyApi.submitReport(study.id, (await persist(values)).report.version),
+    onSuccess: (submitted) => {
+      // Submitting changes the report too; the form stays open for the cardiologist who signs it.
+      setVersion(submitted.report?.version ?? null);
       notify.success('Report submitted for sign-off');
       invalidate();
     },
@@ -446,10 +464,10 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
   });
   const sign = useMutation({
     mutationFn: async ({ values, call }: { values: ReportValues; call: CriticalCallDetails | null }) => {
-      if (form.formState.isDirty || !study.report) {
-        await persist(values);
-      }
-      return cardiologyApi.verifyReport(study.id, call, release);
+      // Signed on the version the form holds, or on the one its own save returned when there was something to save. A
+      // change someone else saved since is refused and the report reloaded, rather than signed unread (REL-04).
+      const signing = form.formState.isDirty || version === null ? (await persist(values)).report.version : version;
+      return cardiologyApi.verifyReport(study.id, call, signing, release);
     },
     onSuccess: (detail) => {
       setCalling(false);
@@ -967,9 +985,11 @@ function SignedReport({
   const unsigned = report.status === 'Draft' || report.status === 'Reported';
   const rows = measurementRows(study.studyType, report);
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: cardiologyKeys.all });
+  // The report as this view first showed it: signing it is refused once someone else changed it since (REL-04).
+  const [version, setVersion] = useBaseVersion(report.version);
 
   const sign = useMutation({
-    mutationFn: (call: CriticalCallDetails | null) => cardiologyApi.verifyReport(study.id, call, true),
+    mutationFn: (call: CriticalCallDetails | null) => cardiologyApi.verifyReport(study.id, call, version, true),
     onSuccess: () => {
       setCalling(false);
       notify.success('Report signed and released');
@@ -981,6 +1001,14 @@ function SignedReport({
         return;
       }
       setCalling(false);
+      if (isApiError(error) && error.isConflict) {
+        notify.warning('The report was changed by someone else', 'It has been reloaded. Check it, then sign it again.');
+        void queryClient
+          .fetchQuery({ ...cardiologyQueries.study(study.id), staleTime: 0 })
+          .then((fresh) => fresh.report && setVersion(fresh.report.version))
+          .catch(() => undefined);
+        return;
+      }
       notify.error(error, 'Could not sign the report');
     },
   });

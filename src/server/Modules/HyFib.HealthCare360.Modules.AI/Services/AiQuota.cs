@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using HyFib.HealthCare360.Modules.AI.Domain;
+using HyFib.HealthCare360.Platform.Hosting;
 
 namespace HyFib.HealthCare360.Modules.AI.Services;
 
@@ -33,21 +34,33 @@ internal sealed class AiQuota(HospitalDbContext db, AiSettingsReader settings, I
 }
 
 /// <summary>
-/// Burst limiter for the AI endpoints: 20 requests per minute per signed-in user (sliding window), so a stuck
-/// push-to-talk button or a script cannot flood the provider. Longer-term quotas are enforced by <see cref="AiQuota"/>.
+/// Burst limiter for the AI endpoints: by default 20 requests per minute per signed-in user (sliding window), so a stuck
+/// push-to-talk button or a script cannot flood the provider; set in <see cref="SectionName"/> (SRS MNT-04). Longer-term
+/// quotas are enforced by <see cref="AiQuota"/>.
 /// </summary>
 internal static class AiRateLimits
 {
     public const string Policy = "ai";
 
-    public static RateLimitPartition<string> Partition(HttpContext http) =>
+    public const string SectionName = RateLimitOptions.SectionName + ":Ai";
+
+    public static void Defaults(SlidingWindowLimit limit)
+    {
+        limit.PermitLimit = 20;
+        limit.Window = TimeSpan.FromMinutes(1);
+        limit.SegmentsPerWindow = 4;
+    }
+
+    public static bool IsValid(SlidingWindowLimit limit) => limit.PermitLimit > 0 && limit.Window > TimeSpan.Zero && limit.SegmentsPerWindow > 0;
+
+    public static RateLimitPartition<string> Partition(HttpContext http, SlidingWindowLimit limit) =>
         RateLimitPartition.GetSlidingWindowLimiter(
             http.User.FindFirst(HcClaims.UserId)?.Value ?? RateLimitPolicies.ClientKey(http),
             _ => new SlidingWindowRateLimiterOptions
             {
-                PermitLimit = 20,
-                Window = TimeSpan.FromMinutes(1),
-                SegmentsPerWindow = 4,
+                PermitLimit = limit.PermitLimit,
+                Window = limit.Window,
+                SegmentsPerWindow = limit.SegmentsPerWindow,
                 QueueLimit = 0,
             });
 }

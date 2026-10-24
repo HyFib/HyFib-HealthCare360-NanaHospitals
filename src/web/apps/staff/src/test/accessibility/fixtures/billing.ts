@@ -214,7 +214,7 @@ const line = (overrides: Partial<BillLineDto> & Pick<BillLineDto, 'id' | 'descri
   ...overrides,
 });
 
-const DRAFT: BillDetail = {
+export const DRAFT: BillDetail = {
   id: DRAFT_ID,
   billNumber: null,
   type: 'OutPatient',

@@ -17,7 +17,7 @@ internal static class QcEndpoints
         qc.MapPost("/lots", (SaveQcLotRequest request, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct) => SaveLot(null, request, db, user, time, ct))
             .RequirePermission(DiagnosticsPermissions.LabQcManage).WithValidation<SaveQcLotRequest>();
         qc.MapPut("/lots/{id:guid}", (Guid id, SaveQcLotRequest request, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct) => SaveLot(id, request, db, user, time, ct))
-            .RequirePermission(DiagnosticsPermissions.LabQcManage).WithValidation<SaveQcLotRequest>();
+            .RequirePermission(DiagnosticsPermissions.LabQcManage).WithValidation<SaveQcLotRequest>().RequireVersion();
         qc.MapGet("/lots/{id:guid}/levey-jennings", LeveyJennings).RequireAnyPermission(DiagnosticsPermissions.LabQcManage, DiagnosticsPermissions.LabResultsVerify);
         qc.MapGet("/runs", ListRuns).RequireAnyPermission(DiagnosticsPermissions.LabQcManage, DiagnosticsPermissions.LabResultsVerify);
         qc.MapPost("/runs", RecordRun).RequirePermission(DiagnosticsPermissions.LabQcManage).WithValidation<RecordQcRunRequest>();

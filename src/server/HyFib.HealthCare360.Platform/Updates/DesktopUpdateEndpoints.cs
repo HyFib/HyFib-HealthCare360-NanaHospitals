@@ -53,7 +53,8 @@ internal static class DesktopUpdateEndpoints
 
         app.MapGet("/api/v1/admin/devices/desktop-update", GetState)
             .WithTags("Administration")
-            .RequirePermission(PlatformPermissions.DevicesManage);
+            .RequirePermission(PlatformPermissions.DevicesManage)
+            .AllowedForFirstDesktopEnrolment();
     }
 
     /// <summary>

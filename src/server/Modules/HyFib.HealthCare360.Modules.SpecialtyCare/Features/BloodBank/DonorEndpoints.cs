@@ -25,7 +25,7 @@ internal static class DonorEndpoints
                 (await s.RegisterAsync(r, ct)).ToHttpResult(id => TypedResults.Created($"/api/v1/blood-bank/donors/{id}", new { id })))
             .RequirePermission(SpecialtyCarePermissions.BloodBankDonors).WithValidation<SaveDonorRequest>();
         group.MapPut("/donors/{id:guid}", async (Guid id, SaveDonorRequest r, DonorService s, CancellationToken ct) => (await s.UpdateAsync(id, r, ct)).ToNoContent())
-            .RequirePermission(SpecialtyCarePermissions.BloodBankDonors).WithValidation<SaveDonorRequest>();
+            .RequirePermission(SpecialtyCarePermissions.BloodBankDonors).WithValidation<SaveDonorRequest>().RequireVersion();
         group.MapPost("/donors/{id:guid}/defer", async (Guid id, DeferDonorRequest r, DonorService s, CancellationToken ct) => (await s.DeferAsync(id, r, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.BloodBankDonors).WithValidation<DeferDonorRequest>();
         group.MapPost("/donors/{id:guid}/screenings", async (Guid id, ScreenDonorRequest r, DonorService s, CancellationToken ct) =>

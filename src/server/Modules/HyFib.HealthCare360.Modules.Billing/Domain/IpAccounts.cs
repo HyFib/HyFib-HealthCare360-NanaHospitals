@@ -138,15 +138,25 @@ public sealed class IpAccount : AuditableEntity, IFacilityScoped
 
     /// <summary>
     /// The discharge was revoked: the stay goes on, so the account is open again (and not settled while the patient is
-    /// in a bed). A discharged, closed or cancelled account is left as it is.
+    /// in a bed), and an approval to discharge with dues is withdrawn: it was given for that discharge, and the dues grow
+    /// with the stay, so the next discharge needs one of its own. A discharged, closed or cancelled account is left as it
+    /// is. True when an approval was withdrawn.
     /// </summary>
-    public void ReopenAfterRevokedDischarge()
+    public bool ReopenAfterRevokedDischarge()
     {
-        if (Status == IpAccountStatus.DischargeInitiated)
+        if (Status != IpAccountStatus.DischargeInitiated)
         {
-            Status = IpAccountStatus.Open;
-            DischargeInitiatedAt = null;
+            return false;
         }
+
+        Status = IpAccountStatus.Open;
+        DischargeInitiatedAt = null;
+        var withdrawn = DischargeWithDuesApproved;
+        DischargeWithDuesApproved = false;
+        DischargeApprovedBy = null;
+        DischargeApprovalReason = null;
+        DischargeApprovedAt = null;
+        return withdrawn;
     }
 
     public void MarkDischarged(DateTimeOffset at, string? dischargeType)

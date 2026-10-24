@@ -8,7 +8,8 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 /// Discharge summaries keyed by admission (EHR-01, PP-02): draft, sign, amend with reason, prefill from the structured
 /// record, and print with letterhead. Signing closes the MRD "missing discharge summary" deficiency of the chart.
 /// </summary>
-public sealed class DischargeSummaryService(HospitalDbContext db, ClinicalAccess access, ICurrentUser currentUser, TimeProvider time)
+public sealed class DischargeSummaryService(
+    HospitalDbContext db, ClinicalAccess access, ICurrentUser currentUser, PatientContactAccess contacts, TimeProvider time)
 {
     public async Task<Result<DischargeSummaryDto>> SaveDraftAsync(Guid admissionId, SaveDischargeSummaryRequest request, CancellationToken ct)
     {
@@ -145,7 +146,7 @@ public sealed class DischargeSummaryService(HospitalDbContext db, ClinicalAccess
             return Error.NotFound(nameof(DischargeSummary), id);
         }
 
-        var patients = await PatientQueries.SummariesAsync(db, [summary.PatientId], time.Today(), ct);
+        var patients = await PatientQueries.SummariesAsync(db, [summary.PatientId], time.Today(), await contacts.FullAsync(ct), ct);
         var consultantId = summary.SignedByPractitionerId ?? summary.PractitionerId;
         return new DischargeSummaryPrint(
             await ToDtoAsync(summary, ct),

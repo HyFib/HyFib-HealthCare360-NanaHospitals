@@ -25,7 +25,7 @@ internal static class PortalPrivacyEndpoints
         group.MapPost("/requests", Create).WithValidation<PortalDataRequestCreate>();
         group.MapPost("/requests/{id:guid}/withdraw", Withdraw);
         group.MapGet("/nominee", GetNominee);
-        group.MapPut("/nominee", SaveNominee).WithValidation<PortalNomineeRequest>();
+        group.MapPut("/nominee", SaveNominee).WithValidation<PortalNomineeRequest>().FirstSaveCreates();
         group.MapDelete("/nominee", RemoveNominee);
         group.MapGet("/notices", Notices);
         group.MapGet("/notices/{id:guid}", Notice);
@@ -155,7 +155,7 @@ internal static class PortalPrivacyEndpoints
         var access = await scope.EnsureAccessAsync(r.PatientId, ct);
         return access.IsFailure
             ? access.Error!.ToProblem()
-            : (await nominees.SaveAsync(r.PatientId, new SaveNomineeRequest(r.Name, r.Relationship, r.Phone, r.Email), DataRequestChannel.Portal, ct)).ToNoContent();
+            : (await nominees.SaveAsync(r.PatientId, new SaveNomineeRequest(r.Name, r.Relationship, r.Phone, r.Email, r.Version), DataRequestChannel.Portal, ct)).ToNoContent();
     }
 
     private static async Task<IResult> RemoveNominee(Guid patientId, PortalPatientScope scope, NomineeService nominees, CancellationToken ct)

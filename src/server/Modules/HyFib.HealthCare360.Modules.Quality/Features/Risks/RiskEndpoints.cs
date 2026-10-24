@@ -26,7 +26,7 @@ internal static class RiskEndpoints
         group.MapGet("/matrix", Matrix);
         group.MapGet("/{id:guid}", Get);
         group.MapPost("/", Create).WithValidation<SaveRiskRequest>();
-        group.MapPut("/{id:guid}", Update).WithValidation<SaveRiskRequest>();
+        group.MapPut("/{id:guid}", Update).WithValidation<SaveRiskRequest>().RequireVersion();
         group.MapPost("/{id:guid}/review", Review).WithValidation<ReviewRiskRequest>();
     }
 

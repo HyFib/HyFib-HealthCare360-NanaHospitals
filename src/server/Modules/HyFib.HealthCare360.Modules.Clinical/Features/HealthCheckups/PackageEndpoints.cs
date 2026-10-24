@@ -16,7 +16,7 @@ internal static class PackageEndpoints
         group.MapPost("/", (SavePackageRequest r, HealthCheckupService s, CancellationToken ct) => Save(null, r, s, ct))
             .RequirePermission(ClinicalPermissions.HealthCheckManage).WithValidation<SavePackageRequest>();
         group.MapPut("/{id:guid}", (Guid id, SavePackageRequest r, HealthCheckupService s, CancellationToken ct) => Save(id, r, s, ct))
-            .RequirePermission(ClinicalPermissions.HealthCheckManage).WithValidation<SavePackageRequest>();
+            .RequirePermission(ClinicalPermissions.HealthCheckManage).WithValidation<SavePackageRequest>().RequireVersion();
     }
 
     private static async Task<IResult> List(string? search, bool? includeInactive, HospitalDbContext db, CancellationToken ct)

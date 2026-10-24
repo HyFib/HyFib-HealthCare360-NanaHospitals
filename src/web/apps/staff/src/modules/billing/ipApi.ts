@@ -232,6 +232,7 @@ export const ipApi = {
   prepareFinalBill: (id: string) => api.post<BillDetail>(`/api/v1/billing/ip-accounts/${id}/final-bill`),
   settle: (id: string, idempotencyKey?: string) =>
     api.post<SettlementResult>(`/api/v1/billing/ip-accounts/${id}/settle`, undefined, { idempotencyKey }),
-  approveDischargeWithDues: (id: string, reason: string) =>
-    api.post<void>(`/api/v1/billing/ip-accounts/${id}/discharge-approval`, { reason }),
+  /** Made on the account as it was read (`version`): refused (409) if the account changed since, e.g. a discharge revoked. */
+  approveDischargeWithDues: (id: string, reason: string, version: number) =>
+    api.post<void>(`/api/v1/billing/ip-accounts/${id}/discharge-approval`, { reason, version }),
 };

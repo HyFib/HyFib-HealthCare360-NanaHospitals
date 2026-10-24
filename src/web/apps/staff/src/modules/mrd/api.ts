@@ -25,6 +25,7 @@ export interface IcdCodeDto {
   includedTerms: string | null;
   source: CodeSource;
   isActive: boolean;
+  version: number;
 }
 
 export interface ProcedureCodeDto {
@@ -36,6 +37,7 @@ export interface ProcedureCodeDto {
   keywords: string | null;
   source: CodeSource;
   isActive: boolean;
+  version: number;
 }
 
 export interface OnlineIcdResult {
@@ -55,6 +57,8 @@ export interface SaveIcdCodeRequest {
   keywords: string | null;
   fromOnlineLookup: boolean;
   isActive: boolean;
+  /** The code as shown, when changing one: a change saved meanwhile is not overwritten (REL-04). */
+  version?: number;
 }
 
 export interface IcdChapter {

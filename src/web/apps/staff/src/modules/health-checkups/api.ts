@@ -257,8 +257,9 @@ export const checkupApi = {
     api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/itinerary/${itemId}/complete`, { notes }),
   skipStop: (id: string, itemId: string, reason: string) =>
     api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/itinerary/${itemId}/skip`, { reason }),
-  saveSummary: (id: string, summary: string, recommendations: string | null) =>
-    api.put<BookingDto>(`/api/v1/health-checkups/bookings/${id}/summary`, { summary, recommendations }),
+  /** `version`: the booking as the doctor saw it; one changed meanwhile is not written over (REL-04). */
+  saveSummary: (id: string, summary: string, recommendations: string | null, version: number) =>
+    api.put<BookingDto>(`/api/v1/health-checkups/bookings/${id}/summary`, { summary, recommendations, version }),
   complete: (id: string) => api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/complete`),
   cancel: (id: string, reason: string) =>
     api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/cancel`, { reason }),

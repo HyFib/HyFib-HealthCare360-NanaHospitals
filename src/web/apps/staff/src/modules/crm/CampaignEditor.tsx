@@ -23,7 +23,7 @@ import { useMemo, useState } from 'react';
 import { useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { MainAside, Stack } from '@/modules/hr/shared/layout';
-import { crmApi, crmKeys, type CampaignDetail, type SegmentInput } from './api';
+import { crmApi, crmKeys, crmQueries, type CampaignDetail, type SegmentInput } from './api';
 import { CAMPAIGN_TEMPLATE_KEY, CRM_PERMISSIONS, type CampaignChannel } from './labels';
 import { smsLength, SMS_CAMPAIGN_MAX } from './rules';
 
@@ -129,6 +129,9 @@ export function CampaignEditor({
   const departments = useDepartments('Clinical');
   const canManage = usePermission(CRM_PERMISSIONS.campaignsManage);
   const [draft, setDraft] = useState<Draft>(() => toDraft(campaign));
+  // The campaign as the editor was filled, then as this user saved it: its version goes with the save. The page reads
+  // it again in the background, and a version read so must never be sent with this draft (REL-04).
+  const [loaded, setLoaded] = useState(campaign);
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const errors = touched ? problems(draft) : {};
@@ -145,6 +148,17 @@ export function CampaignEditor({
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((prev) => ({ ...prev, [key]: value }));
 
+  /** The save answers with nothing: the editor is filled again from the campaign read after it, version included. */
+  const refill = async (id: string) => {
+    try {
+      const saved = await queryClient.fetchQuery({ ...crmQueries.campaign(id), staleTime: 0 });
+      setLoaded(saved);
+      setDraft(toDraft(saved));
+    } catch {
+      // Not read: the editor keeps the version it had, so its next save is refused rather than saved over a change.
+    }
+  };
+
   const save = async () => {
     setTouched(true);
     if (Object.keys(problems(draft)).length > 0) {
@@ -154,17 +168,18 @@ export function CampaignEditor({
     const request = {
       name: draft.name.trim(),
       channel: draft.channel,
-      templateKey: campaign?.templateKey ?? CAMPAIGN_TEMPLATE_KEY,
+      templateKey: loaded?.templateKey ?? CAMPAIGN_TEMPLATE_KEY,
       message: draft.message.trim(),
       segment: toSegment(draft),
-      version: campaign?.version ?? null,
+      version: loaded?.version ?? null,
     };
     try {
-      if (campaign) {
-        await crmApi.updateCampaign(campaign.id, request);
+      if (loaded) {
+        await crmApi.updateCampaign(loaded.id, request);
         notify.success('Draft saved');
+        await refill(loaded.id);
         void queryClient.invalidateQueries({ queryKey: crmKeys.campaigns });
-        onSaved(campaign.id);
+        onSaved(loaded.id);
       } else {
         const id = await crmApi.createCampaign(request);
         notify.success('Campaign saved as a draft', 'Schedule it when the audience and message are right.');
@@ -186,7 +201,7 @@ export function CampaignEditor({
   useHotkey('mod+s', () => void save(), { allowInInputs: true, enabled: !busy && canManage });
 
   // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
-  useLeaveGuard({ dirty: !sameValues(draft, toDraft(campaign)), busy });
+  useLeaveGuard({ dirty: !sameValues(draft, toDraft(loaded)), busy });
 
   return (
     <MainAside>

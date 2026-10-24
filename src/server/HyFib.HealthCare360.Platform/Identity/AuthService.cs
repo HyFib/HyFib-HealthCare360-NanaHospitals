@@ -20,7 +20,32 @@ namespace HyFib.HealthCare360.Platform.Identity;
 
 public sealed record LoginRequest(string UserName, string Password, Guid? FacilityId = null, Guid? DeviceId = null, string? DeviceSecret = null);
 
+/// <summary>
+/// A user name and password of the lengths they can have. A request that could never sign in is answered before any
+/// account is read, so it neither costs a password check nor counts as a failed sign-in.
+/// </summary>
+public sealed class LoginRequestValidator : AbstractValidator<LoginRequest>
+{
+    public LoginRequestValidator()
+    {
+        RuleFor(r => r.UserName).NotEmpty().WithMessage("Enter your user name.").MaximumLength(64);
+        RuleFor(r => r.Password).GivenPassword("Enter your password.");
+        RuleFor(r => r.FacilityId).OptionalId();
+        RuleFor(r => r.DeviceId).OptionalId();
+        RuleFor(r => r.DeviceSecret).MaximumLength(IdentityRules.MaxDeviceSecretLength);
+    }
+}
+
 public sealed record MfaVerifyRequest(Guid ChallengeId, string Code);
+
+public sealed class MfaVerifyRequestValidator : AbstractValidator<MfaVerifyRequest>
+{
+    public MfaVerifyRequestValidator()
+    {
+        RuleFor(r => r.ChallengeId).NotEmpty();
+        RuleFor(r => r.Code).SixDigitCode(IdentityRules.AuthenticatorCodeMessage);
+    }
+}
 
 public sealed record OtpRequest(string Phone);
 
@@ -33,19 +58,84 @@ public sealed class OtpRequestValidator : AbstractValidator<OtpRequest>
 
 public sealed record OtpVerifyRequest(Guid ChallengeId, string Code);
 
+/// <summary>A code of the shape sent, checked before the proof of work, so a mistyped one neither spends it nor counts as a guess.</summary>
+public sealed class OtpVerifyRequestValidator : AbstractValidator<OtpVerifyRequest>
+{
+    public OtpVerifyRequestValidator()
+    {
+        RuleFor(r => r.ChallengeId).NotEmpty();
+        RuleFor(r => r.Code).SixDigitCode("Enter the 6-digit code sent to your mobile.");
+    }
+}
+
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+/// <summary>The rest of the password policy needs the account (<see cref="PasswordPolicy.Validate"/>).</summary>
+public sealed class ChangePasswordRequestValidator : AbstractValidator<ChangePasswordRequest>
+{
+    public ChangePasswordRequestValidator()
+    {
+        RuleFor(r => r.CurrentPassword).GivenPassword("Enter your current password.");
+        RuleFor(r => r.NewPassword).NotEmpty().WithMessage("Choose a new password.")
+            .MaximumLength(PasswordPolicy.MaxLength).WithMessage($"Use at most {PasswordPolicy.MaxLength} characters.");
+    }
+}
 
 public sealed record SetPinRequest(string Pin, string Password);
 
+/// <summary>A quick-unlock PIN of 4–6 digits that are not all the same or in sequence, as the lock screen asks for it.</summary>
+public sealed class SetPinRequestValidator : AbstractValidator<SetPinRequest>
+{
+    public SetPinRequestValidator()
+    {
+        RuleFor(r => r.Pin).Must(IdentityRules.IsAcceptablePin).WithMessage("Use 4–6 digits that are not all the same or in sequence.");
+        RuleFor(r => r.Password).GivenPassword("Enter your password.");
+    }
+}
+
 public sealed record UnlockRequest(string? Pin, string? Password);
+
+/// <summary>
+/// The PIN or the password. A PIN not of the shape one is set in, or neither, is answered without counting a failed try:
+/// it could not have unlocked the screen.
+/// </summary>
+public sealed class UnlockRequestValidator : AbstractValidator<UnlockRequest>
+{
+    public UnlockRequestValidator()
+    {
+        RuleFor(r => r.Pin).Matches("^[0-9]{4,6}$").WithMessage("Enter your PIN of 4–6 digits.").When(r => !string.IsNullOrEmpty(r.Pin));
+        RuleFor(r => r.Password).NotEmpty().WithMessage("Enter your PIN or password.").When(r => string.IsNullOrEmpty(r.Pin));
+        RuleFor(r => r.Password).MaximumLength(PasswordPolicy.MaxLength).WithMessage(IdentityRules.PasswordTooLongMessage);
+    }
+}
 
 public sealed record SwitchFacilityRequest(Guid FacilityId);
 
+public sealed class SwitchFacilityRequestValidator : AbstractValidator<SwitchFacilityRequest>
+{
+    public SwitchFacilityRequestValidator() => RuleFor(r => r.FacilityId).NotEmpty().WithMessage("Choose a facility.");
+}
+
 public sealed record MfaSetupRequest(string Password);
+
+public sealed class MfaSetupRequestValidator : AbstractValidator<MfaSetupRequest>
+{
+    public MfaSetupRequestValidator() => RuleFor(r => r.Password).GivenPassword("Enter your password.");
+}
 
 public sealed record MfaEnableRequest(string Code);
 
+public sealed class MfaEnableRequestValidator : AbstractValidator<MfaEnableRequest>
+{
+    public MfaEnableRequestValidator() => RuleFor(r => r.Code).SixDigitCode(IdentityRules.AuthenticatorCodeMessage);
+}
+
 public sealed record MfaDisableRequest(string Password);
+
+public sealed class MfaDisableRequestValidator : AbstractValidator<MfaDisableRequest>
+{
+    public MfaDisableRequestValidator() => RuleFor(r => r.Password).GivenPassword("Enter your password.");
+}
 
 public sealed record MfaSetupResponse(string Secret, string OtpAuthUri);
 
@@ -68,7 +158,8 @@ public sealed record AuthUser(
     bool MustChangePassword,
     string? Restriction,
     bool PasswordBreached = false,
-    bool BiometricUnlock = false);
+    bool BiometricUnlock = false,
+    bool AdministrationNeedsDesktop = false);
 
 public sealed record AuthResult(
     string? AccessToken,
@@ -95,6 +186,35 @@ public sealed record SessionInfo(
 /// <summary>The signed-in user's password, asked again before sessions are ended (ASVS V7.5.2).</summary>
 public sealed record ReauthenticateRequest(string Password);
 
+public sealed class ReauthenticateRequestValidator : AbstractValidator<ReauthenticateRequest>
+{
+    public ReauthenticateRequestValidator() => RuleFor(r => r.Password).GivenPassword("Enter your password.");
+}
+
+/// <summary>What the sign-in requests have in common.</summary>
+public static class IdentityRules
+{
+    public const string AuthenticatorCodeMessage = "Enter the 6-digit code from your authenticator app.";
+
+    public static readonly string PasswordTooLongMessage = $"Passwords here have at most {PasswordPolicy.MaxLength} characters.";
+
+    /// <summary>A device secret is 32 random bytes in base64url (43 characters); this leaves room and no more.</summary>
+    public const int MaxDeviceSecretLength = 128;
+
+    /// <summary>A password typed to prove who someone is: given, and no longer than one can be set (<see cref="PasswordPolicy.MaxLength"/>).</summary>
+    public static IRuleBuilderOptions<T, string?> GivenPassword<T>(this IRuleBuilder<T, string?> rule, string message) =>
+        rule.NotEmpty().WithMessage(message).MaximumLength(PasswordPolicy.MaxLength).WithMessage(PasswordTooLongMessage);
+
+    /// <summary>The six digits of an authenticator or text-message code; spaces around them are ignored, as when they are checked.</summary>
+    public static IRuleBuilderOptions<T, string?> SixDigitCode<T>(this IRuleBuilder<T, string?> rule, string message) =>
+        rule.NotEmpty().WithMessage(message).Matches(@"^\s*[0-9]{6}\s*$").WithMessage(message);
+
+    /// <summary>4–6 digits, not all the same and not a run up or down such as 1234 or 9876.</summary>
+    public static bool IsAcceptablePin(string? pin) =>
+        pin is { Length: >= 4 and <= 6 } && pin.All(char.IsAsciiDigit) && pin.Distinct().Count() > 1
+        && !"0123456789".Contains(pin, StringComparison.Ordinal) && !"9876543210".Contains(pin, StringComparison.Ordinal);
+}
+
 public sealed record SessionsEnded(int Ended);
 
 /// <summary>
@@ -109,6 +229,8 @@ public sealed class AuthService(
     PasswordPolicy passwordPolicy,
     IFieldProtector protector,
     IPermissionService permissions,
+    PermissionRegistry permissionRegistry,
+    IAdministrationDesktops administrationDesktops,
     ISessionValidator sessionValidator,
     IAuditLogger audit,
     INotificationService notifications,
@@ -584,7 +706,7 @@ public sealed class AuthService(
         SetRefreshCookie(http, session.ClientType, next.Raw, next.Entity.ExpiresAt);
         var restriction = RestrictionFor(user, roles, session);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
     }
 
     public async Task<Result> LogoutAsync(HttpContext http, CancellationToken ct)
@@ -640,7 +762,7 @@ public sealed class AuthService(
         var roles = RoleNames(user);
         var locked = currentUser.SessionId is { } sessionId
                      && await db.Set<UserSession>().AnyAsync(s => s.Id == sessionId && s.LockedAt != null, ct);
-        return await BuildAuthUserAsync(user, roles, currentUser.FacilityId, RestrictionFor(user, roles) ?? (locked ? RestrictionLocked : null), ct);
+        return await BuildAuthUserAsync(user, roles, currentUser.FacilityId, currentUser.DeviceId, RestrictionFor(user, roles) ?? (locked ? RestrictionLocked : null), ct);
     }
 
     public async Task<Result<AuthResult>> SwitchFacilityAsync(SwitchFacilityRequest request, CancellationToken ct)
@@ -664,7 +786,7 @@ public sealed class AuthService(
 
         var restriction = RestrictionFor(user, roles);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
     }
 
     public async Task<Result<AuthResult>> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken ct)
@@ -715,7 +837,7 @@ public sealed class AuthService(
         var roles = RoleNames(user);
         var restriction = RestrictionFor(user, roles);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
     }
 
     // ---------------------------------------------------------------- idle lock screen
@@ -733,14 +855,7 @@ public sealed class AuthService(
             return Error.Field("password", "Password is incorrect.");
         }
 
-        var pin = request.Pin ?? string.Empty;
-        if (pin.Length is < 4 or > 6 || !pin.All(char.IsAsciiDigit) || pin.Distinct().Count() == 1 || "0123456789".Contains(pin, StringComparison.Ordinal)
-            || "9876543210".Contains(pin, StringComparison.Ordinal))
-        {
-            return Error.Field("pin", "Use 4–6 digits that are not all the same or in sequence.");
-        }
-
-        user.PinHash = hashing.Hash(pin);
+        user.PinHash = hashing.Hash(request.Pin);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.pin_set", "Quick-unlock PIN set") { UserId = user.Id });
         await db.SaveChangesAsync(ct);
         return Result.Success();
@@ -846,7 +961,7 @@ public sealed class AuthService(
             var roles = RoleNames(user);
             var restriction = RestrictionFor(user, roles);
             var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-            return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, restriction, ct), Restriction: restriction);
+            return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
         }
 
         session.FailedUnlockAttempts++;
@@ -934,7 +1049,7 @@ public sealed class AuthService(
         var roles = RoleNames(user);
         var restriction = RestrictionFor(user, roles);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
     }
 
     public async Task<Result> DisableMfaAsync(MfaDisableRequest request, CancellationToken ct)
@@ -1134,7 +1249,7 @@ public sealed class AuthService(
 
         SetRefreshCookie(http, clientType, refresh.Raw, refresh.Entity.ExpiresAt);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, facility?.Id, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, facility?.Id, deviceId, restriction, ct), Restriction: restriction);
     }
 
     private (string Raw, RefreshToken Entity) CreateRefreshToken(UserSession session, DateTimeOffset now)
@@ -1165,13 +1280,18 @@ public sealed class AuthService(
         roles,
         restriction);
 
-    private async Task<AuthUser> BuildAuthUserAsync(User user, IReadOnlyList<string> roles, Guid? facilityId, string? restriction, CancellationToken ct)
+    private async Task<AuthUser> BuildAuthUserAsync(User user, IReadOnlyList<string> roles, Guid? facilityId, Guid? deviceId, string? restriction, CancellationToken ct)
     {
         // A locked session's screens stay as they were behind the lock screen, so its user keeps the permissions; the
         // server refuses the requests themselves (SessionLock).
-        IReadOnlyCollection<string> granted = restriction is null or RestrictionLocked
-            ? (await permissions.GetPermissionsAsync(user.Id, ct)).ToArray()
-            : [];
+        var held = restriction is null or RestrictionLocked ? await permissions.GetPermissionsAsync(user.Id, ct) : new HashSet<string>();
+
+        // The app is given what the server allows the session: administration only on an enrolled workstation or tablet
+        // (SRS SEC-08).
+        var granted = held.Any(PlatformPermissions.IsAdministrative) && await administrationDesktops.RequiredAsync(ct)
+                      && !await administrationDesktops.AdministersFromAsync(deviceId, ct)
+            ? AdministrationOnDesktop.Elsewhere(held, permissionRegistry, firstEnrolment: !await administrationDesktops.EnrolledAsync(ct))
+            : held;
         var facilities = await AllowedFacilitiesAsync(user, roles, ct);
 
         return new AuthUser(
@@ -1191,7 +1311,8 @@ public sealed class AuthService(
             user.MustChangePassword,
             restriction,
             user.MustChangePassword && user.PasswordBreachedAt is not null,
-            user.Type == UserType.Staff && await BiometricUnlockAllowedAsync(facilityId, ct));
+            user.Type == UserType.Staff && await BiometricUnlockAllowedAsync(facilityId, ct),
+            held.Any(p => PlatformPermissions.IsAdministrative(p) && !granted.Contains(p)));
     }
 
     /// <summary>

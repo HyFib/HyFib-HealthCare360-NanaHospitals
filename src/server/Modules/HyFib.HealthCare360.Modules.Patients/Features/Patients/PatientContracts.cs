@@ -57,7 +57,8 @@ public sealed record PatientDetail(
     Guid? MergedIntoPatientId,
     string? Notes,
     bool IsActive,
-    uint Version);
+    uint Version,
+    bool ContactsMasked = false);
 
 /// <summary>Compact identity used by banners, pickers and other modules.</summary>
 public sealed record PatientSummary(
@@ -152,6 +153,22 @@ public sealed record UpdatePatientRequest(
 public sealed record PatientCreated(Guid Id, string Uhid);
 
 public sealed record DuplicateCheckRequest(string? FirstName, string? LastName, DateOnly? DateOfBirth, string? Phone, string? AbhaNumber, string? AadhaarNumber);
+
+/// <summary>
+/// The registration form asks while it is being filled in, so a detail half typed is not an error here: each is held to
+/// the length the patient's record keeps, and a search with none of them finds nobody.
+/// </summary>
+public sealed class DuplicateCheckRequestValidator : AbstractValidator<DuplicateCheckRequest>
+{
+    public DuplicateCheckRequestValidator()
+    {
+        RuleFor(x => x.FirstName).SafeText(100);
+        RuleFor(x => x.LastName).SafeText(100);
+        RuleFor(x => x.Phone).SafeText(20);
+        RuleFor(x => x.AbhaNumber).SafeText(20);
+        RuleFor(x => x.AadhaarNumber).SafeText(20);
+    }
+}
 
 public sealed record DuplicateCandidate(Guid Id, string Uhid, string FullName, Gender Gender, string? Age, string? PhoneMasked, int Score, string Reason);
 

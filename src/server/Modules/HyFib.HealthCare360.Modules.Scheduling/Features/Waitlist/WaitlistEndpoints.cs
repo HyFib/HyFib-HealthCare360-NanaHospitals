@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Appointments;
 using HyFib.HealthCare360.Modules.Scheduling.Services;
@@ -75,6 +76,7 @@ internal static class WaitlistEndpoints
         IPermissionService permissions,
         ICurrentUser user,
         HospitalDbContext db,
+        PatientContactAccess contacts,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -101,7 +103,7 @@ internal static class WaitlistEndpoints
             Overbook = request.Overbook,
             WaitlistEntryId = entry.Id,
         };
-        return await AppointmentEndpoints.ToDetailResultAsync(await booking.BookAsync(command, ct), db, time, created: true, ct);
+        return await AppointmentEndpoints.ToDetailResultAsync(await booking.BookAsync(command, ct), db, contacts, time, created: true, ct);
     }
 
     /// <summary>

@@ -141,7 +141,8 @@ internal static class SurgeryEndpoints
             r.SurgeonId is { } s ? names.GetValueOrDefault(s) : null, r.AnaesthesiaType, r.SignIn, r.TimeOut, r.SignOut, r.ChargeStatus)));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Get(
+        Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var booking = await db.Set<SurgeryBooking>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
         if (booking is null)
@@ -156,7 +157,7 @@ internal static class SurgeryEndpoints
         }
 
         await audit.PatientRecordAccessedAsync(booking.PatientId, $"Viewed surgery {booking.BookingNumber}", ct);
-        var patients = await PatientQueries.SummariesAsync(db, [booking.PatientId], time.Today(), ct);
+        var patients = await PatientQueries.SummariesAsync(db, [booking.PatientId], time.Today(), await contacts.FullAsync(ct), ct);
         var names = await SpecialtyLookups.PractitionerNamesAsync(db, [booking.SurgeonId, booking.AnaesthetistId], ct);
         var theatre = booking.TheatreId is { } theatreId
             ? await db.Set<OperationTheatre>().AsNoTracking().Where(t => t.Id == theatreId).Select(t => t.Name).FirstOrDefaultAsync(ct)

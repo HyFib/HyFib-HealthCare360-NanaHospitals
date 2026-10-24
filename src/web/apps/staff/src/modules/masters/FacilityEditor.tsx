@@ -30,7 +30,8 @@ import { useEditorGuard } from './useEditorGuard';
 /** Add a facility, or change one: `facilityId` null adds. The record is read afresh, so its version is current. */
 export function FacilityEditorDrawer({ facilityId, onClose }: { facilityId: string | null; onClose: () => void }) {
   const existing = useQuery({ ...mastersQueries.facility(facilityId ?? ''), enabled: facilityId !== null });
-  if (facilityId !== null && !existing.data) {
+  // Filled from the facility as read now, not from an older copy kept from before (REL-04).
+  if (facilityId !== null && (!existing.isFetchedAfterMount || !existing.data)) {
     return <LoadingDrawer error={existing.error} what="facility" size="large" onClose={onClose} />;
   }
   return <FacilityEditor facility={existing.data ?? null} onClose={onClose} />;
@@ -45,9 +46,11 @@ function FacilityEditor({ facility, onClose }: { facility: FacilityDto | null; o
     defaultValues: toFacilityForm(facility),
     mode: 'onTouched',
   });
+  // The version the form was filled from, not a newer one read since (REL-04).
+  const [loadedVersion] = useState(facility?.version ?? null);
   const save = useMutation({
     mutationFn: (values: FacilityForm) =>
-      mastersApi.saveFacility(facility?.id ?? null, toFacilityRequest(values, facility)),
+      mastersApi.saveFacility(facility?.id ?? null, toFacilityRequest(values, facility, loadedVersion)),
     onSuccess: () => {
       notify.success(facility ? 'Facility saved' : 'Facility added', 'Documents print the new details from now on.');
       refreshAfterMasterChange(queryClient);

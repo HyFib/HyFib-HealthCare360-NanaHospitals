@@ -24,7 +24,23 @@ public sealed record QueueEntry(
 
 public sealed record CallTokenRequest(string? Room);
 
+/// <summary>The room the patient is called to, as the waiting-area board shows it.</summary>
+public sealed class CallTokenRequestValidator : AbstractValidator<CallTokenRequest>
+{
+    public CallTokenRequestValidator() => RuleFor(x => x.Room).SafeText(32);
+}
+
 public sealed record CallNextRequest(Guid DepartmentId, Guid? PractitionerId, string? Room);
+
+public sealed class CallNextRequestValidator : AbstractValidator<CallNextRequest>
+{
+    public CallNextRequestValidator()
+    {
+        RuleFor(x => x.DepartmentId).NotEmpty().WithMessage("Choose the department.");
+        RuleFor(x => x.PractitionerId).OptionalId();
+        RuleFor(x => x.Room).SafeText(32);
+    }
+}
 
 public sealed record DisplayToken(string Label, string MaskedName, string? Room, DateTimeOffset? CalledAt);
 
@@ -40,10 +56,12 @@ internal static class QueueEndpoints
         group.MapGet("/", List).RequirePermission(PatientsPermissions.VisitsRead);
         group.MapPost("/call-next", async (CallNextRequest r, VisitService visits, CancellationToken ct) =>
                 (await visits.CallNextAsync(r.DepartmentId, r.PractitionerId, r.Room, ct)).ToOk())
-            .RequirePermission(PatientsPermissions.QueueManage);
+            .RequirePermission(PatientsPermissions.QueueManage)
+            .WithValidation<CallNextRequest>();
         group.MapPost("/{id:guid}/call", async (Guid id, CallTokenRequest r, VisitService visits, CancellationToken ct) =>
                 (await visits.CallAsync(id, r.Room, ct)).ToOk())
-            .RequirePermission(PatientsPermissions.QueueManage);
+            .RequirePermission(PatientsPermissions.QueueManage)
+            .WithValidation<CallTokenRequest>();
         group.MapPost("/{id:guid}/start", async (Guid id, VisitService visits, CancellationToken ct) => (await visits.StartAsync(id, ct)).ToOk())
             .RequirePermission(PatientsPermissions.QueueManage);
         group.MapPost("/{id:guid}/complete", async (Guid id, VisitService visits, CancellationToken ct) => (await visits.FinishAsync(id, ct)).ToOk())

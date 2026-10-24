@@ -32,13 +32,13 @@ import {
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Controller, useFieldArray, useForm, useWatch, type FieldValues, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import { searchPractitioners } from '@/lib/lookups';
 import { LATERALITIES } from '@/modules/ot/api';
 import { fromIstInput, nowIstInput, toIstInput } from '@/modules/ot/shared/datetime';
-import { applyFormErrors } from '@/modules/ot/shared/errors';
+import { applyFormErrors, isConcurrencyConflict } from '@/modules/ot/shared/errors';
 import { ActionError } from '@/modules/ot/shared/feedback';
 import { CheckboxGroupField, DateTimeField } from '@/modules/ot/shared/fields';
 import { PatientPicker } from '@/modules/patients/PatientPicker';
@@ -553,6 +553,9 @@ export function TreatmentPlanDialog({ referral, onClose }: { referral: PhysioRef
       goals: plan?.goals ?? referral.assessments.at(-1)?.goals ?? '',
     },
   });
+  // The plan's version when the form was filled: the referral is read again in the background, and a newer version must
+  // not be sent with these values (REL-04).
+  const [loadedVersion] = useState(plan?.version ?? null);
   const [sessionsPlanned] = useWatch({ control: form.control, name: ['sessionsPlanned'] });
 
   const save = useMutation({
@@ -566,7 +569,7 @@ export function TreatmentPlanDialog({ referral, onClose }: { referral: PhysioRef
         startDate: v.startDate ?? todayIso(),
         precautions: v.precautions || null,
         goals: v.goals || null,
-        version: plan?.version ?? null,
+        version: loadedVersion,
       }),
     onSuccess: () => {
       notify.success(plan ? 'Treatment plan revised' : 'Treatment plan saved');
@@ -575,6 +578,10 @@ export function TreatmentPlanDialog({ referral, onClose }: { referral: PhysioRef
     },
     onError: (error) => {
       applyFormErrors(error, form.setError);
+      if (isConcurrencyConflict(error)) {
+        // Someone else changed the plan meanwhile: opened again, the form shows their version.
+        void queryClient.invalidateQueries({ queryKey: physioKeys.all });
+      }
     },
   });
 
@@ -868,10 +875,12 @@ type RescheduleValues = z.infer<typeof rescheduleSchema>;
 export function RescheduleDialog({
   sessionId,
   scheduledAt,
+  version,
   onClose,
 }: {
   sessionId: string;
   scheduledAt: string;
+  version: number;
   onClose: () => void;
 }) {
   const notify = useNotify();
@@ -881,7 +890,7 @@ export function RescheduleDialog({
     defaultValues: { scheduledAt: toIstInput(scheduledAt) || nowIstInput() },
   });
   const move = useMutation({
-    mutationFn: (v: RescheduleValues) => physioApi.reschedule(sessionId, fromIstInput(v.scheduledAt) ?? ''),
+    mutationFn: (v: RescheduleValues) => physioApi.reschedule(sessionId, fromIstInput(v.scheduledAt) ?? '', version),
     onSuccess: () => {
       notify.success('Session moved');
       void queryClient.invalidateQueries({ queryKey: physioKeys.all });

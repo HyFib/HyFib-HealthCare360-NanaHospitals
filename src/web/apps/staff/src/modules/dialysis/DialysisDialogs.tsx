@@ -27,7 +27,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { applyFormErrors } from '@/modules/ot/shared/errors';
+import { applyFormErrors, isConcurrencyConflict } from '@/modules/ot/shared/errors';
 import { ActionError } from '@/modules/ot/shared/feedback';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 import { dialysisApi, dialysisKeys, dialysisQueries, DIALYSIS_SHIFTS, type DialysisShift } from './api';
@@ -265,6 +265,7 @@ export function AssignMachineDialog({
     scheduledDate: string;
     shift: DialysisShift;
     machineId: string | null;
+    version: number;
   };
   onClose: () => void;
 }) {
@@ -274,15 +275,24 @@ export function AssignMachineDialog({
   const profile = useQuery(dialysisQueries.profile(session.patientId));
   const board = useQuery(dialysisQueries.board(session.scheduledDate));
   const [machineId, setMachineId] = useState<string | null>(session.machineId);
+  // The session as the dialog opened: the session page reads it again in the background, and a session changed
+  // meanwhile must be refused, not overwritten (REL-04).
+  const [loadedVersion] = useState(session.version);
   const sero = profile.data?.seroStatus ?? null;
   const choices = machineChoices(board.data, sero, session.shift, 'assign', session.id);
 
   const assign = useMutation({
-    mutationFn: () => dialysisApi.assignMachine(session.id, machineId ?? ''),
+    mutationFn: () => dialysisApi.assignMachine(session.id, machineId ?? '', loadedVersion),
     onSuccess: () => {
       notify.success('Machine assigned');
       void queryClient.invalidateQueries({ queryKey: dialysisKeys.all });
       onClose();
+    },
+    onError: (error) => {
+      if (isConcurrencyConflict(error)) {
+        // Opened again, the dialog shows the session as it is now.
+        void queryClient.invalidateQueries({ queryKey: dialysisKeys.all });
+      }
     },
   });
 

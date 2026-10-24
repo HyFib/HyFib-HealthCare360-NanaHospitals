@@ -132,6 +132,12 @@ public sealed record DeviceKeyIssued(Guid DeviceId, string SerialNumber, string 
 
 public sealed record AssignDeviceRequest(Guid? EnrollmentId);
 
+/// <summary>The enrolment the device now reports for, or none to take it back.</summary>
+public sealed class AssignDeviceRequestValidator : AbstractValidator<AssignDeviceRequest>
+{
+    public AssignDeviceRequestValidator() => RuleFor(x => x.EnrollmentId).OptionalId();
+}
+
 public sealed record RpmAlertDto(
     Guid Id,
     Guid EnrollmentId,

@@ -79,7 +79,7 @@ internal static class FeatureEndpoints
                     .Where(s => s.Key == feature.Key && s.FacilityId == null).Select(s => (uint?)s.Version).FirstOrDefaultAsync(ct);
                 return TypedResults.Ok(Dto(feature, enabled, version));
             })
-            .WithValidation<SetFeatureRequest>();
+            .WithValidation<SetFeatureRequest>().FirstSaveCreates();
     }
 
     private static FeatureDto Dto(FeatureDefinition feature, bool enabled, uint? version) =>

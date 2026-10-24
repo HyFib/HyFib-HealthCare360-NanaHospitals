@@ -176,12 +176,20 @@ public sealed class CorporateCheckupTests(HospitalServer server)
 
         // Seen at every station and summarised by the doctor: his check-up is complete, and so is the visit opened for it.
         var checkedIn = await frontOffice.PostAsync<BookingDto>(CheckIn(bookings[examined]), new CheckInCheckupRequest(null));
+        var current = checkedIn;
         foreach (var stop in checkedIn.Itinerary)
         {
-            await frontOffice.PostAsync<BookingDto>($"{Booking(checkedIn)}/itinerary/{stop.Id}/complete", new CompleteStopRequest(null));
+            current = await frontOffice.PostAsync<BookingDto>($"{Booking(checkedIn)}/itinerary/{stop.Id}/complete", new CompleteStopRequest(null));
         }
 
-        await doctor.PutAsync<BookingDto>($"{Booking(checkedIn)}/summary", new CheckupSummaryRequest("Fit. No abnormality detected.", null));
+        // The summary is written to the booking as the doctor saw it: a second doctor still looking at that version is
+        // refused rather than overwriting the first one's summary (REL-04).
+        await doctor.PutAsync<BookingDto>($"{Booking(checkedIn)}/summary", new CheckupSummaryRequest("Fit. No abnormality detected.", null, current.Version));
+        using (var stale = await doctor.SendRawAsync(HttpMethod.Put, $"{Booking(checkedIn)}/summary", new CheckupSummaryRequest("Unfit.", null, current.Version)))
+        {
+            stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
+
         (await frontOffice.PostAsync<BookingDto>($"{Booking(checkedIn)}/complete")).Status.ShouldBe(BookingStatus.Completed);
         (await VisitStatusAsync(frontOffice, checkedIn)).ShouldBe(VisitStatus.Completed);
 

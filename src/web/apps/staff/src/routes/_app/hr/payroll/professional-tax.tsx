@@ -193,6 +193,7 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
         frequency,
         deductionMonths: frequency === 'HalfYearly' ? months : [],
         bands: withUpperLimits(bands),
+        version: schedule?.stateCode === stateCode ? schedule.version : undefined,
       });
       notify.success(
         'Professional tax saved',

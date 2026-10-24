@@ -244,7 +244,7 @@ internal static class OrganizationEndpoints
         masters.MapPost("/facilities", (SaveFacilityRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveFacility(null, r, db, u, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveFacilityRequest>();
         masters.MapPut("/facilities/{id:guid}", (Guid id, SaveFacilityRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveFacility(id, r, db, u, ct))
-            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveFacilityRequest>();
+            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveFacilityRequest>().RequireVersion();
         masters.MapPost("/facilities/letterhead-preview", PreviewLetterhead)
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<LetterheadPreviewRequest>();
 
@@ -257,7 +257,7 @@ internal static class OrganizationEndpoints
         masters.MapPost("/departments", (SaveDepartmentRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveDepartment(null, r, db, u, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveDepartmentRequest>();
         masters.MapPut("/departments/{id:guid}", (Guid id, SaveDepartmentRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveDepartment(id, r, db, u, ct))
-            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveDepartmentRequest>();
+            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveDepartmentRequest>().RequireVersion();
 
         masters.MapGet("/specialties", async (HospitalDbContext db, CancellationToken ct) =>
                 TypedResults.Ok(await db.Set<Specialty>().OrderBy(s => s.Name).Select(ToSpecialtyDto).ToListAsync(ct)))
@@ -270,7 +270,7 @@ internal static class OrganizationEndpoints
         masters.MapPost("/specialties", (SaveSpecialtyRequest r, HospitalDbContext db, CancellationToken ct) => SaveSpecialty(null, r, db, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveSpecialtyRequest>();
         masters.MapPut("/specialties/{id:guid}", (Guid id, SaveSpecialtyRequest r, HospitalDbContext db, CancellationToken ct) => SaveSpecialty(id, r, db, ct))
-            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveSpecialtyRequest>();
+            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveSpecialtyRequest>().RequireVersion();
 
         masters.MapGet("/practitioners", ListPractitioners).RequirePermission(PlatformPermissions.MastersRead);
         masters.MapGet("/practitioners/{id:guid}", async (Guid id, HospitalDbContext db, CancellationToken ct) =>
@@ -281,7 +281,7 @@ internal static class OrganizationEndpoints
         masters.MapPost("/practitioners", (SavePractitionerRequest r, HospitalDbContext db, CancellationToken ct) => SavePractitioner(null, r, db, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>();
         masters.MapPut("/practitioners/{id:guid}", (Guid id, SavePractitionerRequest r, HospitalDbContext db, CancellationToken ct) => SavePractitioner(id, r, db, ct))
-            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>();
+            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>().RequireVersion();
 
         masters.MapGet("/services", ListServices).RequirePermission(PlatformPermissions.MastersRead);
         masters.MapGet("/services/{id:guid}", async (Guid id, HospitalDbContext db, CancellationToken ct) =>
@@ -292,7 +292,7 @@ internal static class OrganizationEndpoints
         masters.MapPost("/services", (SaveServiceItemRequest r, HospitalDbContext db, CancellationToken ct) => SaveService(null, r, db, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveServiceItemRequest>();
         masters.MapPut("/services/{id:guid}", (Guid id, SaveServiceItemRequest r, HospitalDbContext db, CancellationToken ct) => SaveService(id, r, db, ct))
-            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveServiceItemRequest>();
+            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveServiceItemRequest>().RequireVersion();
 
         var lookups = masters.MapGroup("/lookups");
         lookups.MapGet("/departments", async (DepartmentKind? kind, HospitalDbContext db, CancellationToken ct) =>

@@ -36,6 +36,11 @@ export interface AuthUser {
    * `ui.biometricUnlock` setting). The PIN and the password work either way.
    */
   biometricUnlock?: boolean;
+  /**
+   * The user holds Administration permissions that this session cannot use: administration works only in HC360 Desktop
+   * on a computer IT has enrolled (SRS SEC-08). `permissions` already leaves them out; the app says where they are.
+   */
+  administrationNeedsDesktop?: boolean;
 }
 
 export interface AuthResult {

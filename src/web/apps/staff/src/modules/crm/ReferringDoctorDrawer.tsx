@@ -89,6 +89,8 @@ function DoctorForm({
       isActive: doctor?.isActive ?? true,
     },
   });
+  // The version the form was filled from, not a newer one read since (REL-04).
+  const [loadedVersion] = useState(doctor?.version ?? null);
 
   const submit = async (v: Values) => {
     try {
@@ -103,7 +105,7 @@ function DoctorForm({
         alternateNames: v.alternateNames,
         notes: v.notes.trim() || null,
         isActive: v.isActive,
-        version: doctor?.version ?? null,
+        version: loadedVersion,
       });
       notify.success('Referring doctor saved', 'Referral counts are worked out again from visit records.');
       void queryClient.invalidateQueries({ queryKey: crmKeys.referrals });
@@ -113,6 +115,10 @@ function DoctorForm({
         form.setError('registrationNumber', { type: 'server', message: error.userMessage });
       } else if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not save the doctor');
+        if (isApiError(error) && error.code === 'concurrency') {
+          // Someone else changed the doctor meanwhile: opened again, the form shows their version.
+          void queryClient.invalidateQueries({ queryKey: crmKeys.referrals });
+        }
       }
     }
   };

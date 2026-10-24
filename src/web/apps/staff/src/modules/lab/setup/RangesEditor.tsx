@@ -17,7 +17,7 @@ import { useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { errorMessage, indexedFieldErrors } from '../common/errors';
-import { labApi, labKeys, type LabTestDetail, type ReferenceRangeDto } from '../api';
+import { labApi, labKeys, labQueries, type LabTestDetail, type ReferenceRangeDto } from '../api';
 import {
   emptyRange,
   fromDays,
@@ -141,16 +141,22 @@ const UNITS: { value: AgeUnit; label: string }[] = [
 export function RangesEditor({
   test,
   onChanged,
+  onSaved,
 }: {
   test: LabTestDetail;
   /** Whether the ranges have unsaved changes, for the drawer they are in (its own question on closing). */
   onChanged?: (changed: boolean) => void;
+  /** The test as read after saving the ranges, which changes its version: for the drawer's other editors (REL-04). */
+  onSaved?: (fresh: LabTestDetail) => void;
 }) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const numeric = test.resultType === 'Numeric';
   const [rows, setRows] = useState<RangeRow[]>(() => sortRanges(test.ranges).map(toRow));
+  // The test as the rows were filled from it, then as this user saved them: its version goes with the save. The test is
+  // read again in the background, and a version read so must never be sent with these rows (REL-04).
+  const [version, setVersion] = useState(test.version);
   const [dirty, setDirty] = useState(false);
 
   const ids = new Map(test.ranges.map((range) => [range.id ?? '', range.id]));
@@ -169,9 +175,18 @@ export function RangesEditor({
   const valid = problems.every((problem) => problem === null);
 
   const save = useMutation({
-    mutationFn: () => labApi.setRanges(test.id, converted as ReferenceRangeDto[], test.version),
-    onSuccess: () => {
+    mutationFn: async () => {
+      await labApi.setRanges(test.id, converted as ReferenceRangeDto[], version);
+      // The save answers with nothing: the rows are filled again from the test read after it, version included.
+      return queryClient.fetchQuery({ ...labQueries.test(test.id), staleTime: 0 }).catch(() => null);
+    },
+    onSuccess: (fresh) => {
       setDirty(false);
+      if (fresh) {
+        setRows(sortRanges(fresh.ranges).map(toRow));
+        setVersion(fresh.version);
+        onSaved?.(fresh);
+      }
       notify.success(
         'Reference ranges saved',
         'New results use them straight away; results already entered keep their flags.',

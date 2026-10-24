@@ -28,14 +28,14 @@ internal static class PhysioEndpoints
             .RequirePermission(SpecialtyCarePermissions.PhysioTreatment).WithValidation<RecordPhysioAssessmentRequest>();
         group.MapPut("/referrals/{id:guid}/plan", async (Guid id, SaveTreatmentPlanRequest r, PhysioService s, CancellationToken ct) =>
                 (await s.SavePlanAsync(id, r, ct)).ToHttpResult(p => TypedResults.Ok(new { id = p })))
-            .RequirePermission(SpecialtyCarePermissions.PhysioTreatment).WithValidation<SaveTreatmentPlanRequest>();
+            .RequirePermission(SpecialtyCarePermissions.PhysioTreatment).WithValidation<SaveTreatmentPlanRequest>().FirstSaveCreates();
         group.MapPost("/referrals/{id:guid}/sessions", async (Guid id, SchedulePhysioSessionsRequest r, PhysioService s, CancellationToken ct) =>
                 (await s.ScheduleSessionsAsync(id, r, ct)).ToOk())
             .RequirePermission(SpecialtyCarePermissions.PhysioTreatment).WithValidation<SchedulePhysioSessionsRequest>();
 
         group.MapGet("/sessions", Worklist).RequirePermission(SpecialtyCarePermissions.PhysioRead);
         group.MapPut("/sessions/{id:guid}", async (Guid id, ReschedulePhysioSessionRequest r, PhysioService s, CancellationToken ct) =>
-                (await s.RescheduleAsync(id, r.ScheduledAt, ct)).ToNoContent())
+                (await s.RescheduleAsync(id, r.ScheduledAt, r.Version, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.PhysioTreatment).WithValidation<ReschedulePhysioSessionRequest>();
         group.MapPost("/sessions/{id:guid}/attend", async (Guid id, AttendPhysioSessionRequest r, PhysioService s, CancellationToken ct) =>
                 (await s.AttendAsync(id, r, ct)).ToNoContent())
@@ -84,7 +84,8 @@ internal static class PhysioEndpoints
             i.r.ReferredByPractitionerId is { } by ? names.GetValueOrDefault(by) : null, i.r.AssignedTherapistName, i.r.AdmissionId is not null)));
     }
 
-    private static async Task<IResult> GetReferral(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> GetReferral(
+        Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var referral = await db.Set<PhysioReferral>().AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
         if (referral is null)
@@ -102,7 +103,7 @@ internal static class PhysioEndpoints
         var assessments = await db.Set<PhysioAssessment>().AsNoTracking().Where(a => a.ReferralId == id).OrderBy(a => a.AssessedAt).ToListAsync(ct);
         var plan = await db.Set<TreatmentPlan>().AsNoTracking().FirstOrDefaultAsync(p => p.ReferralId == id, ct);
         var sessions = await db.Set<PhysioSession>().AsNoTracking().Where(s => s.ReferralId == id).OrderBy(s => s.SessionNumber).ToListAsync(ct);
-        var patients = await PatientQueries.SummariesAsync(db, [referral.PatientId], time.Today(), ct);
+        var patients = await PatientQueries.SummariesAsync(db, [referral.PatientId], time.Today(), await contacts.FullAsync(ct), ct);
         var names = await SpecialtyLookups.PractitionerNamesAsync(db, [referral.ReferredByPractitionerId], ct);
 
         return TypedResults.Ok(new PhysioReferralDetail(
@@ -130,12 +131,12 @@ internal static class PhysioEndpoints
                 where s.ScheduledAt >= start && s.ScheduledAt < end && (status == null || s.Status == status)
                 orderby s.ScheduledAt
                 select new PhysioWorklistItem(s.Id, s.ReferralId, s.PatientId, p.Uhid, p.FullName, s.SessionNumber, t != null ? t.SessionsPlanned : null,
-                    s.ScheduledAt, s.Status, s.TherapistName))
+                    s.ScheduledAt, s.Status, s.TherapistName, s.Version))
             .ToListAsync(ct);
         return TypedResults.Ok(rows);
     }
 
     private static PhysioSessionDto ToDto(PhysioSession s) => new(
         s.Id, s.ReferralId, s.PatientId, s.SessionNumber, s.ScheduledAt, s.Status, s.ModalitiesGiven, s.ProgressNote, s.PainBefore, s.PainAfter,
-        s.DurationMinutes, s.AttendedAt, s.TherapistName, s.MissedReason, s.ChargeStatus, s.ChargeError);
+        s.DurationMinutes, s.AttendedAt, s.TherapistName, s.MissedReason, s.ChargeStatus, s.ChargeError, s.Version);
 }

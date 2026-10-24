@@ -154,6 +154,41 @@ A protected value opens only on the machine that protected it. When the server m
 values in plain text on the new machine and protect them there (Install-HC360Server.ps1 does this for the database).
 Administration › System health warns while a secret in the file is in plain text.
 
+### Request limits
+
+The server refuses requests over these limits with 429 Too Many Requests (SRS SEC-06). They are settings, in
+`HealthCare360:RateLimits` in `hc360.settings.json`; the server starts with these defaults, and refuses to start with a
+limit of zero or a window of zero. Change one and restart the `HC360Server` service.
+
+| Setting | Default | Counts |
+|---|---|---|
+| `SignIn:PermitLimit`, `SignIn:Window` | 10 in `00:01:00` | Signing in, second factors, one-time codes, unlocking, a password given again: per address, for the hospital when there are several servers |
+| `OneTimeCode:PermitLimit`, `OneTimeCode:Window` | 5 in `00:15:00` | Asking for a portal sign-in code: per address, as above |
+| `Public:PermitLimit`, `Public:Window` | 60 in `00:01:00` | Links, QR codes, webhooks, workstation enrolment: per address |
+| `Device:TokenLimit`, `Device:TokensPerPeriod`, `Device:ReplenishmentPeriod` | 120, 60 every `00:00:30` | RPM gateways and biometric terminals: per device |
+| `DesktopUpdate:PermitLimit`, `DesktopUpdate:Window` | 30 in `00:15:00` | HC360 Desktop's self-update: per workstation |
+| `PerUser:TokenLimit`, `PerUser:TokensPerPeriod`, `PerUser:ReplenishmentPeriod` | 400, 200 every `00:00:10` | Every request: per signed-in user, or per address before signing in |
+| `Ai:PermitLimit`, `Ai:Window`, `Ai:SegmentsPerWindow` | 20 in `00:01:00`, 4 | The AI assistant, dictation and note structuring: per user |
+| `RadiologyImages:PermitLimit`, `RadiologyImages:QueueLimit` | 6 at once, 32 waiting | PACS thumbnails and images: per user |
+
+Raise the sign-in limit when many workstations reach the server through one address (a NAT router), and the per-user
+limits for a load test. Lowering them below the defaults is rarely needed: the per-account lockout and the portal's proof
+of work already stop guessing.
+
+### Reading the server log
+
+The server writes its log to `%ProgramData%\HyFib\HealthCare360\logs\hc360-server-<date>.json`, one event per line as a
+JSON object (SRS OBS-01), and keeps 60 days. Each line has the time (`@t`), the level (`@l`), the message (`@m`), the
+error (`@x`), the part of the server that wrote it (`SourceContext`) and the request's correlation id (`CorrelationId`),
+the "Reference" an error message in HC360 shows. Phone, Aadhaar and ABHA numbers, e-mail addresses and secrets
+are masked. Errors also go to Windows Event Viewer › Application (source *HyFib HealthCare360*). To list today's errors in
+PowerShell:
+
+```powershell
+Get-Content "$env:ProgramData\HyFib\HealthCare360\logs\hc360-server-$(Get-Date -Format yyyyMMdd).json" |
+  ConvertFrom-Json | Where-Object { $_.'@l' -in 'Error', 'Fatal' } | Format-List '@t', '@m', '@x', CorrelationId
+```
+
 ### How the server signs in to the database
 
 The `HC360Server` service signs in to PostgreSQL with its own Windows account, `NT SERVICE\HC360Server`, through
@@ -255,20 +290,24 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    managers and anyone with an administrative permission must use it.
 2. Check that `%ProgramData%\HyFib\HealthCare360\initial-admin-password.txt` is gone: HC360 deletes it once `admin`
    has a new password. If it is still there, delete it.
-3. **Administration › Backups › Recovery key › Make a new key** (see "A new backup recovery key" above): write down
+3. **Enrol the first HC360 Desktop.** Administration works only in HC360 Desktop on a computer IT enrolled (SRS
+   SEC-08); until one workstation is, this browser can open only Administration › Devices. There, **Enrol a device**
+   (a workstation), install HC360 Desktop on IT's computer, or on this one, with the code (section 5), and sign in there
+   as `admin`. Do the steps below in HC360 Desktop.
+4. **Administration › Backups › Recovery key › Make a new key** (see "A new backup recovery key" above): write down
    the key and its ID, type the key back from your copy, and store the copy in the hospital safe. Until then System
    health warns that nobody holds the key, and backups cannot be restored on new hardware.
-4. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
+5. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
    refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
    password works for 72 hours; after that, reset the password to give out a new one.
-5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
+6. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server's WiFi drops, its WiFi adapter disappears, it
    starts without the WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure).
    System health warns while the adapter is missing; on a server moved to Ethernet on purpose, restart the
    `HC360Server` service to clear the warning.
    Set `alerts.oncallWhatsApp` to `true` to have those alerts on WhatsApp too, once the hospital's WhatsApp provider
    has approved the `system_alert` template. A failed backup is told to the administrators in the app, not by SMS.
-6. **Documents and the messages that carry them** (reports, prescriptions, bills):
+7. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a
      document embeds). *Preview letterhead* shows the result before saving. Doctors' signatures are uploaded in
@@ -288,7 +327,7 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - To stop sending report PDFs by e-mail and WhatsApp, set `diagnostics.reports.sendPdf` to `false`, and use a
      WhatsApp template without a document header (untick "Document header"). A template with a header can't go
      without its PDF, so those WhatsApp messages would be skipped; the SMS and e-mail still go.
-7. **Doctors' DSC signatures on prescriptions** (ERX-04; only where the hospital sets
+8. **Doctors' DSC signatures on prescriptions** (ERX-04; only where the hospital sets
    `clinical.prescriptions.signature` to `"optional"` or `"required"`, docs/modules/clinical.md): HC360 accepts a
    doctor's DSC only from a certificate that chains to a CCA India root in the server's **DSC trust folder**, and HC360
    does not ship those roots. Download the CCA India root certificates from cca.gov.in, check their thumbprints against
@@ -308,11 +347,16 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    hand may not): a folder it cannot read counts as an empty one, and System health says why
    (`prescriptions.dsc_trust_unreadable`). In **Hospital setup › Doctors and clinical staff**, write each doctor's name
    in full as it is on their DSC: a DSC is accepted only from the doctor it is issued to.
-8. **Administration › System health**: everything should be green, and the WiFi signal above 60%. It also shows each
-   integration set up in step 6 as Administration › Integrations does, and when the hospital CA and the server
+9. **Administration › System health**: everything should be green, and the WiFi signal above 60%. It also shows each
+   integration set up in step 7 as Administration › Integrations does, and when the hospital CA and the server
    certificate expire.
 
 ## 5. Install HC360 Desktop on workstations
+
+Administration works only in HC360 Desktop on an enrolled workstation or tablet (SRS SEC-08), not on a kiosk or queue display. Until the first workstation or tablet
+is enrolled, a browser signed in as an administrator can open Administration › Devices and make its code, and nothing
+else of administration: enrol IT's own workstation first, and set up the rest of the hospital from it. Once one is
+enrolled, browsers keep everything but administration.
 
 Create one-time enrolment codes in **Administration › Devices › Enrol a device**, then on each workstation run
 (Administrator PowerShell, from the extracted desktop package):
@@ -680,7 +724,7 @@ it.
      the restore. Workstations then trust the new server as they trusted the old one, and find it on the network.
      Otherwise re-run HC360 Desktop setup on each (Change server…) and compare the new fingerprint.
   4. Where doctors sign prescriptions with their DSC, copy the CCA India root certificates back into
-     `%ProgramData%\HyFib\HealthCare360\certs\dsc-trust` (section 4, step 7): they are not in the backup. Until then
+     `%ProgramData%\HyFib\HealthCare360\certs\dsc-trust` (section 4, step 8): they are not in the backup. Until then
      DSC signing is refused and DSC-signed prescriptions are not printed as such (where the DSC is required, not at all);
      System health warns.
 
@@ -707,7 +751,7 @@ What the standby has, and what comes from elsewhere on a failover:
 | The hospital CA | Imported once, at set-up | Workstations trust the standby, and find it on the network |
 | The data encryption keys, stored documents (`files\`) | Not streamed: they are not in the database | Put back from the latest backup |
 | Settings added to `hc360.settings.json` by hand | Not copied | Add them on the standby too, at set-up |
-| The DSC trust folder (`certs\dsc-trust`: the CCA India roots, section 4 step 7) | Not copied: it is not in the database or the backups | Copy the roots there at set-up (step 6), so they are already there |
+| The DSC trust folder (`certs\dsc-trust`: the CCA India roots, section 4 step 8) | Not copied: it is not in the database or the backups | Copy the roots there at set-up (step 6), so they are already there |
 
 Documents uploaded after the latest backup are only on the old primary: copy them from its disk if it can still be read
 (below). After rotating the data encryption key, make a backup at once (Administration › Backups › **Back up now**): the
@@ -905,7 +949,7 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    (step 6), every workstation must be set up again: Change server…, and compare the new fingerprint.
 6. **Check**: System health; and that the records made just before the failure are there. Where doctors sign
    prescriptions with their DSC, System health warns (`prescriptions.dsc_trust_empty`) if the standby's DSC trust
-   folder is empty: copy the CCA India roots there (section 4, step 7).
+   folder is empty: copy the CCA India roots there (section 4, step 8).
 
 ### Making the old primary the new standby
 
@@ -1146,7 +1190,7 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | At busy times staff on some workstations are told to wait before signing in again | Do those workstations reach the server over internet (global) IPv6 addresses from another subnet than the server's? Sign-in limits count such an address by its /64, which the whole subnet shares. List the hospital's IPv6 networks in `HealthCare360:Network:LocalNetworks` in `hc360.settings.json` (for example `[ "2001:db8:12::/48" ]`) and restart the `HC360Server` service: addresses there count one by one, as on the server's own subnet |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
 | "HC360 stopped: the server could not be verified" | Something answered for the server with a certificate that is not from the hospital CA; the screen shows its issuer. A proxy or security product that inspects HTTPS: exempt the HC360 server from it. The server was reinstalled with a new CA: re-run setup (Change server…) and compare the fingerprint. Also check the workstation's date and time |
-| Service will not start | `%ProgramData%\HyFib\HealthCare360\logs\`, then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
+| Service will not start | The newest `hc360-server-<date>.json` in `%ProgramData%\HyFib\HealthCare360\logs\` (see "Reading the server log"), then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
 | A restore says "This backup opens with recovery key …, not with the key entered" | Each backup opens with the key in use when it was made. Use the copy whose ID the message names; the Backups list names every backup's key |
 | A restore says "The recovery key has a mistake in it" | A character was copied or typed wrong. The key has no letters I, L, O or U; an I or L is read as 1, and an O as 0 |
 | Service will not start, and the log says `SSPI authentication failed for user "hc360_app"` or `No password has been provided but the backend requires one` | PostgreSQL no longer has HC360's sign-in rules, for example after it was reinstalled or upgraded to a new version with a new data folder. Run `Install-HC360Server.ps1` again: it writes them again. To sign in with a password instead, run it with `-DatabaseSignIn Password` |

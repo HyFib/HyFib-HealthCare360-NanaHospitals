@@ -474,9 +474,12 @@ export const radiologyApi = {
 
   saveReport: (id: string, request: SaveRadiologyReportRequest) =>
     api.put<RadiologyReportDto>(`${study(id)}/report`, request),
-  submitReport: (id: string) => api.post<RadiologyReportDto>(`${study(id)}/report/submit`),
-  verifyReport: (id: string, criticalCall: CriticalCallDetails | null, release: boolean) =>
-    api.post<RadiologyReportDto>(`${study(id)}/report/verify`, { criticalCall, release }),
+  /** `version`: the report as the radiologist last saved or read it; refused once it changed since (REL-04). */
+  submitReport: (id: string, version: number) =>
+    api.post<RadiologyReportDto>(`${study(id)}/report/submit`, { version }),
+  /** `version`: the report as the radiologist signing it last saved or read it; refused once it changed since (REL-04). */
+  verifyReport: (id: string, criticalCall: CriticalCallDetails | null, version: number, release: boolean) =>
+    api.post<RadiologyReportDto>(`${study(id)}/report/verify`, { criticalCall, version, release }),
   releaseReport: (id: string) => api.post<RadiologyReportDto>(`${study(id)}/report/release`),
   addAddendum: (id: string, request: AddAddendumRequest) =>
     api.post<RadiologyReportDto>(`${study(id)}/report/addenda`, request),

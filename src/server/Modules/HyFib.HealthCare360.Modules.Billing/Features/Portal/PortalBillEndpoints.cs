@@ -43,7 +43,7 @@ internal static class PortalBillEndpoints
             .OrderByDescending(b => b.FinalizedAt)
             .Select(b => new { b.Id, b.BillNumber, b.Type, b.Status, b.PatientId, b.FinalizedAt, b.NetAmount, b.PatientAmount, b.PaidAmount, b.RefundedAmount, b.DueAmount })
             .ToPagedResultAsync(page, ct);
-        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(b => b.PatientId), BillingTime.Today(time), ct);
+        var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(b => b.PatientId), BillingTime.Today(time), fullContacts: true, ct);
         return TypedResults.Ok(result.Map(b => new PortalBillListItem(
             b.Id, b.BillNumber, b.Type, b.Status, b.PatientId, patients.GetValueOrDefault(b.PatientId)?.FullName, b.FinalizedAt, b.NetAmount, b.PatientAmount,
             b.PaidAmount - b.RefundedAmount, b.DueAmount)));
@@ -58,7 +58,7 @@ internal static class PortalBillEndpoints
         }
 
         var b = bill.Value;
-        var patient = (await PatientQueries.SummariesAsync(db, [b.PatientId], BillingTime.Today(time), ct)).GetValueOrDefault(b.PatientId);
+        var patient = (await PatientQueries.SummariesAsync(db, [b.PatientId], BillingTime.Today(time), fullContacts: true, ct)).GetValueOrDefault(b.PatientId);
         var receipts = await db.Set<Receipt>().AsNoTracking().Include(r => r.Payments)
             .Where(r => r.BillId == id && r.Purpose != ReceiptPurpose.PayerSettlement)
             .OrderBy(r => r.ReceivedAt)

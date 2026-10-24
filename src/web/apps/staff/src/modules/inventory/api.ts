@@ -859,8 +859,14 @@ export const inventoryApi = {
   rejectAdjustment: (id: string, reason: string) => api.post<void>(`${BASE}/adjustments/${id}/reject`, { reason }),
 
   startCount: (body: StartCountRequest) => api.post<DocumentCreated>(`${BASE}/counts`, body),
-  recordCounts: (id: string, lines: { lineId: string; countedQuantity: number; remarks: string | null }[]) =>
-    api.put<void>(`${BASE}/counts/${id}/lines`, { lines }),
-  submitCount: (id: string) => api.post<{ adjustmentId: string | null }>(`${BASE}/counts/${id}/submit`),
+  /** `version`: the count sheet as it was shown; counts saved on it meanwhile are not written over (REL-04). */
+  recordCounts: (
+    id: string,
+    version: number,
+    lines: { lineId: string; countedQuantity: number; remarks: string | null }[],
+  ) => api.put<void>(`${BASE}/counts/${id}/lines`, { lines, version }),
+  /** `version`: the count sheet as it was shown, or as this user's own save left it; refused once it changed since. */
+  submitCount: (id: string, version: number) =>
+    api.post<{ adjustmentId: string | null }>(`${BASE}/counts/${id}/submit`, { version }),
   cancelCount: (id: string) => api.post<void>(`${BASE}/counts/${id}/cancel`),
 };

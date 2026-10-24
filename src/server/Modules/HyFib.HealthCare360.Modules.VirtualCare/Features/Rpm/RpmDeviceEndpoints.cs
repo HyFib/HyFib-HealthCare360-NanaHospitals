@@ -13,7 +13,7 @@ internal static class RpmDeviceEndpoints
         group.MapGet("/", List).RequirePermission(VirtualCarePermissions.RpmRead);
         group.MapPost("/", Register).RequirePermission(VirtualCarePermissions.RpmManage).WithValidation<RegisterDeviceRequest>();
         group.MapPost("/{id:guid}/rotate-key", RotateKey).RequirePermission(VirtualCarePermissions.RpmManage);
-        group.MapPost("/{id:guid}/assign", Assign).RequirePermission(VirtualCarePermissions.RpmManage);
+        group.MapPost("/{id:guid}/assign", Assign).RequirePermission(VirtualCarePermissions.RpmManage).WithValidation<AssignDeviceRequest>();
         group.MapPost("/{id:guid}/deactivate", Deactivate).RequirePermission(VirtualCarePermissions.RpmManage);
     }
 

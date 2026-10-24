@@ -10,6 +10,11 @@ public sealed record SaveCodingRequest(IReadOnlyList<CodingLineRequest> Entries,
 
 public sealed record VerifyCodingRequest(uint Version);
 
+public sealed class VerifyCodingRequestValidator : AbstractValidator<VerifyCodingRequest>
+{
+    public VerifyCodingRequestValidator() => RuleFor(x => x.Version).SeenVersion();
+}
+
 public sealed record CodingEntryDto(Guid Id, CodingEntryKind Kind, string Code, string Title, bool IsPrimary, int Sequence);
 
 public sealed record CodingDto(

@@ -17,7 +17,7 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { formatDate, formatDateOnly } from '@hc360/core';
+import { formatDate, formatDateOnly, isApiError } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -73,6 +73,9 @@ export function PreAuthDialog({
   const [procedures, setProcedures] = useState(preAuth?.procedureCodes ?? '');
   const [summary, setSummary] = useState(preAuth?.clinicalSummary ?? '');
   const [documents, setDocuments] = useState<string[]>(preAuth?.documentFileIds ?? []);
+  // The version the fields were filled from: the pre-authorisation page reads it again in the background, and a newer
+  // version must not be sent with these values (REL-04).
+  const [loadedVersion] = useState(preAuth?.version ?? null);
 
   const policies = useQuery({ ...insuranceQueries.policies(patient?.id ?? ''), enabled: patient !== null });
   const patientDetail = useQuery({
@@ -102,7 +105,7 @@ export function PreAuthDialog({
         clinicalSummary: summary.trim() || null,
         expectedStayDays: stayDays,
         documentFileIds: documents,
-        version: preAuth?.version ?? null,
+        version: loadedVersion,
       };
       if (preAuth) {
         await insuranceApi.updatePreAuth(preAuth.id, request);
@@ -117,6 +120,12 @@ export function PreAuthDialog({
       );
       void queryClient.invalidateQueries({ queryKey: insuranceKeys.preAuths });
       onSaved(id);
+    },
+    onError: (error) => {
+      if (isApiError(error) && error.code === 'concurrency') {
+        // Someone else changed it meanwhile: opened again, the form shows their version.
+        void queryClient.invalidateQueries({ queryKey: insuranceKeys.preAuths });
+      }
     },
   });
 

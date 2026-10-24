@@ -12,7 +12,7 @@ This document describes how HC360 is built. It covers the runtime topology on th
 | Persistence | PostgreSQL + EF Core + Npgsql (snake_case naming, `xmin` optimistic concurrency) | PostgreSQL 17, EF Core 10 |
 | Validation | FluentValidation | 12 |
 | Jobs | Hosted services + Quartz.NET (cron schedules) | Quartz 4 |
-| Observability | Serilog (file + Windows Event Log), OpenTelemetry (OTLP optional) | — |
+| Observability | Serilog (a rolling file of JSON events + Windows Event Log for errors), OpenTelemetry (OTLP optional) | — |
 | Interop | HL7 FHIR R4 (Firely SDK), fo-dicom (DICOM modality worklist server), DICOMweb (QIDO-RS, WADO-RS), HL7 v2 + ASTM parsers | fo-dicom 5 |
 | Desktop | WPF shell + Microsoft Edge **WebView2** (same model as the new Microsoft Teams/Outlook) | .NET 10, WebView2 1.0.4191+ |
 | UI | React + TypeScript + **Fluent UI v9** (Fluent 2 / Windows 11 design), TanStack Router & Query, React Hook Form + Zod, ECharts | React 19.3, TS 6.0, Vite 8 |
@@ -163,7 +163,7 @@ HyFib.HealthCare360.Modules.<Name>/
 
 * **One PostgreSQL database, one schema per module** (`patients`, `clinical`, `billing`, …), with a single `HospitalDbContext` composed from every module's configurations. Cross-module joins are possible for reporting, but only in the allowed dependency direction.
 * **Identifiers:** time-ordered `Guid` v7 primary keys, which index well and are safe to generate on the client or server. An entity gets its `Id` when it is constructed, and `ModelConventions` tells EF Core the key is never generated, so a new child row added to a loaded aggregate (a claim's settlement, a shift's closing totals) is inserted rather than taken for an existing row. Human-facing numbers (UHID, bill no., accession no.) come from `platform.number_series`, which is allocated transactionally (gap-free, facility- and period-aware formats such as `NH-UH-2600123`).
-* **Base types:** `Entity` (Id) → `AuditableEntity` (created/updated by/at UTC, soft delete, `Version` mapped to PostgreSQL `xmin` for optimistic concurrency; edits send back the version they loaded and get 409 when it has moved on, settings, print templates and feature switches included, REL-04). `IFacilityScoped` entities carry `FacilityId` and get a named EF Core global query filter.
+* **Base types:** `Entity` (Id) → `AuditableEntity` (created/updated by/at UTC, soft delete, `Version` mapped to PostgreSQL `xmin` for optimistic concurrency; every edit sends back the version it loaded and gets 409 when it has moved on, REL-04: `.RequireVersion()` refuses an edit without one, `.FirstSaveCreates()` marks a record its first save creates, and an architecture test fails the build for a PUT or PATCH with neither). `IFacilityScoped` entities carry `FacilityId` and get a named EF Core global query filter.
 * **Time:** all instants are `timestamptz` (UTC). Dates of birth and similar use `date`. The UI renders in the facility time zone (default `Asia/Kolkata`).
 * **Money:** `numeric(18,2)` with `MidpointRounding.AwayFromZero`. Currency is a facility setting (INR).
 * **Sensitive identifiers** (Aadhaar, ABHA, policy numbers): AES-256-GCM encrypted columns plus an HMAC-SHA256 blind index for exact-match search. Lists show masked values. A blind index comes from the current data key and moves with it after a rotation (`IsBlindIndexOf` names the encrypted column it is computed again from); searches look up every key's index (`BlindIndexes`). Aadhaar, kept only as its last four digits, uses `FixedBlindIndex` on the original key.

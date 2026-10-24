@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { LookupItem } from '@hc360/core';
 import { FormGrid, FullRow, LookupField, NumberField, SelectField, SwitchField, TextField, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useForm, type Control } from 'react-hook-form';
 import { searchPractitioners } from '@/lib/lookups';
 import { mastersApi, mastersQueries, refreshAfterMasterChange, type DepartmentDto, type SpecialtyDto } from './api';
@@ -33,7 +34,12 @@ export function DepartmentEditorDrawer({
   const existing = useQuery({ ...mastersQueries.department(departmentId ?? ''), enabled: departmentId !== null });
   const headId = existing.data?.headPractitionerId ?? null;
   const head = useQuery({ ...mastersQueries.practitioner(headId ?? ''), enabled: headId !== null });
-  if (departmentId !== null && (!existing.data || (headId !== null && head.isLoading))) {
+  // Filled from the department as read now, not from an older copy kept from before: the form keeps the version it was
+  // filled from (REL-04).
+  if (
+    departmentId !== null &&
+    (!existing.isFetchedAfterMount || !existing.data || (headId !== null && head.isLoading))
+  ) {
     return <LoadingDrawer error={existing.error} what="department" onClose={onClose} />;
   }
   const currentHead = head.data ? { id: head.data.id, code: head.data.code, name: head.data.displayName } : null;
@@ -66,9 +72,12 @@ function DepartmentEditor({
     defaultValues: toDepartmentForm(department, nextOrder),
     mode: 'onTouched',
   });
+  // The version the form was filled from: the record is read again on focus, and a newer version must not be sent with
+  // these values (REL-04). Closing and opening the editor again fills it afresh.
+  const [loadedVersion] = useState(department?.version ?? null);
   const save = useMutation({
     mutationFn: (values: DepartmentForm) =>
-      mastersApi.saveDepartment(department?.id ?? null, toDepartmentRequest(values, department)),
+      mastersApi.saveDepartment(department?.id ?? null, toDepartmentRequest(values, department, loadedVersion)),
     onSuccess: () => {
       notify.success(department ? 'Department saved' : 'Department added');
       refreshAfterMasterChange(queryClient);

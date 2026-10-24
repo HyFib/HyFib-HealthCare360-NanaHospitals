@@ -14,12 +14,12 @@ internal sealed record AbdmExport(R4.Bundle Bundle, string FileName);
 /// record's type. The record must be complete (signed or released) and in the caller's facility; a restricted (VIP)
 /// record needs <c>patients.restricted.read</c> or a break-the-glass grant (EHR-07), as when it is opened on screen,
 /// and that is checked before anything about the record is told (that it is a draft, or that its patient was deleted);
-/// a refusal is audited as a security event. A record still kept under a duplicate UHID that was merged (a lab report:
-/// the Diagnostics module keeps its records where they are) is exported as the surviving patient's, and a discharge
-/// summary holds the stay's lab reports kept under such a duplicate, once every patient on the way may be opened; a
-/// record of a deleted patient is not exported. A prescription the hospital's DSC rule does not let it issue is not
-/// exported either: it is a copy of the prescription like the printout (<see cref="PrescriptionFinalCopies"/>). Every
-/// export is audited as an access to the patient's record.
+/// a refusal is audited as a security event. A record still kept under a duplicate UHID that was merged (a lab or
+/// radiology report: the Diagnostics module keeps its records where they are) is exported as the surviving patient's,
+/// and a discharge summary holds the stay's lab reports kept under such a duplicate, once every patient on the way may be
+/// opened; a record of a deleted patient is not exported. A prescription the hospital's DSC rule does not let it issue
+/// is not exported either: it is a copy of the prescription like the printout (<see cref="PrescriptionFinalCopies"/>).
+/// Every export is audited as an access to the patient's record.
 /// <para>
 /// The export is a staff download, like the printed document: it does not need the patient's record-sharing consent
 /// of the FHIR read API. Sending a document to ABDM is a separate step that ABDM itself authorises with the patient's
@@ -128,6 +128,8 @@ internal sealed class AbdmBundleService(
     {
         AbdmRecordType.DischargeSummary => "discharge summary",
         AbdmRecordType.LabReport => "lab report",
+        AbdmRecordType.RadiologyReport => "radiology report",
+        AbdmRecordType.CardiologyReport => "cardiology report",
         AbdmRecordType.OpConsultation => "consultation note",
         _ => "prescription",
     };

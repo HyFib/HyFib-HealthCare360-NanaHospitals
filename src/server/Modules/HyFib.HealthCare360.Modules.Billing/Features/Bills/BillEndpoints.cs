@@ -37,11 +37,11 @@ internal static class BillEndpoints
         group.MapPost("/", Create).RequirePermission(BillingPermissions.OpCreate).WithValidation<CreateBillRequest>();
         group.MapPost("/{id:guid}/lines", AddLine).RequirePermission(BillingPermissions.OpCreate).WithValidation<AddBillLineRequest>();
         group.MapDelete("/{id:guid}/lines/{lineId:guid}", RemoveLine).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
-        group.MapPut("/{id:guid}/package", SetPackage).RequirePermission(BillingPermissions.OpCreate);
-        group.MapPost("/{id:guid}/refresh", Refresh).RequirePermission(BillingPermissions.OpCreate);
+        group.MapPut("/{id:guid}/package", SetPackage).RequirePermission(BillingPermissions.OpCreate).WithValidation<SetBillPackageRequest>();
+        group.MapPost("/{id:guid}/refresh", Refresh).RequirePermission(BillingPermissions.OpCreate).WithValidation<BillVersionRequest>();
         group.MapPost("/{id:guid}/discount", ApplyDiscount).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage)
             .WithValidation<ApplyDiscountRequest>();
-        group.MapPost("/{id:guid}/finalize", FinalizeBill).RequirePermission(BillingPermissions.BillsFinalize);
+        group.MapPost("/{id:guid}/finalize", FinalizeBill).RequirePermission(BillingPermissions.BillsFinalize).WithValidation<BillVersionRequest>();
         group.MapPost("/{id:guid}/cancel", Cancel).RequirePermission(BillingPermissions.BillsCancel).WithValidation<CancelBillRequest>();
         group.MapDelete("/{id:guid}", Discard).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
         group.MapPost("/{id:guid}/send-whatsapp", SendOnWhatsApp)

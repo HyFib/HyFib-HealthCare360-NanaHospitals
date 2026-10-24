@@ -69,6 +69,14 @@ internal sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
         b.HasIndex(x => new { x.FirstName, x.DateOfBirth });
         // Fuzzy name search (PERF-02): trigram GIN index.
         b.HasIndex(x => x.FullName).HasMethod("gin").HasOperators("gin_trgm_ops");
+
+        // The other searches the front desk types (PERF-02, PatientQueries.Search), each matched by an index: a mobile
+        // number may be the alternate one, a UHID is typed in full or by its start, and a few last digits are a UHID's or
+        // a mobile number's. Over a million patients any of them without its index reads the whole register.
+        b.HasIndex(x => x.AlternatePhone);
+        b.HasIndex(x => x.Uhid, "UhidPrefix").HasOperators("varchar_pattern_ops").HasDatabaseName("ix_patients_uhid_prefix");
+        b.HasIndex(x => x.Uhid, "UhidTrigram").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_patients_uhid_trigram");
+        b.HasIndex(x => x.Phone, "PhoneTrigram").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_patients_phone_trigram");
     }
 }
 

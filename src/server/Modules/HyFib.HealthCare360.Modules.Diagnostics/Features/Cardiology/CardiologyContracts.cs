@@ -114,7 +114,11 @@ public sealed record SaveCardiologyReportRequest(
     uint? Version);
 
 /// <summary>Cardiologist sign-off; <see cref="CriticalCall"/> is required for a critical finding without a documented call.</summary>
-public sealed record SignCardiologyReportRequest(CriticalCallDetails? CriticalCall, bool Release = true);
+/// <param name="Version">The version of the report the cardiologist read (REL-04): 409 when it was changed since.</param>
+public sealed record SignCardiologyReportRequest(CriticalCallDetails? CriticalCall, uint Version, bool Release = true);
+
+/// <param name="Version">The version of the report as it was written and read (REL-04): 409 when it was changed since.</param>
+public sealed record SubmitCardiologyReportRequest(uint Version);
 
 public sealed record CardiologyReportView(
     Guid ReportId,
@@ -169,8 +173,16 @@ public sealed class AttachDeviceFilesRequestValidator : AbstractValidator<Attach
 
 public sealed class SignCardiologyReportRequestValidator : AbstractValidator<SignCardiologyReportRequest>
 {
-    public SignCardiologyReportRequestValidator() =>
+    public SignCardiologyReportRequestValidator()
+    {
         RuleFor(x => x.CriticalCall!).SetValidator(new CriticalCallDetailsValidator()).When(x => x.CriticalCall is not null);
+        RuleFor(x => x.Version).SeenVersion();
+    }
+}
+
+public sealed class SubmitCardiologyReportRequestValidator : AbstractValidator<SubmitCardiologyReportRequest>
+{
+    public SubmitCardiologyReportRequestValidator() => RuleFor(x => x.Version).SeenVersion();
 }
 
 public sealed class CompleteCardiologyRequestValidator : AbstractValidator<CompleteCardiologyRequest>

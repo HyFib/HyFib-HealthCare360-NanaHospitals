@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Abdm;
@@ -56,6 +57,18 @@ internal sealed record PrescriptionData(
 
 /// <summary>A released lab report (its result ids, test names and collection time filled in) and its released results.</summary>
 internal sealed record LabReportData(AbdmContext Context, LabReportRow Report, IReadOnlyList<LabResultRow> Results);
+
+/// <summary>
+/// A released radiology report with its imaging study and addenda, and the doctors of the users who wrote it, signed it
+/// off and added the addenda (user id to practitioner id: a user who is not a doctor is not in it).
+/// </summary>
+internal sealed record RadiologyReportData(AbdmContext Context, RadiologyReportRow Report, IReadOnlyDictionary<Guid, Guid> Doctors);
+
+/// <summary>
+/// A released cardiology report with its study, and the doctors of the users who wrote it and signed it off (user id to
+/// practitioner id: a user who is not a doctor is not in it).
+/// </summary>
+internal sealed record CardiologyReportData(AbdmContext Context, CardiologyReportRow Report, IReadOnlyDictionary<Guid, Guid> Doctors);
 
 /// <summary>The signed consultation note of a clinician's encounter.</summary>
 internal sealed record ConsultationNote
@@ -301,6 +314,81 @@ internal static class AbdmRecords
             Custodian = laboratory,
             Sections = [new AbdmSection(AbdmCodes.LaboratoryReport, "Laboratory report", [], entries)],
             Supporting = [.. results, .. people.All],
+        };
+    }
+
+    /// <summary>
+    /// A released radiology report (DiagnosticReportRecord, the report a DiagnosticReportImaging): the report with its
+    /// imaging study, and the printed PDF. The hospital performed the study and issues the report; the radiologists who
+    /// wrote it, signed it off and added addenda interpret it, and the one who signed it off is the author and attests it.
+    /// An addendum added after the release amends the document, as an amendment does a note: the radiologist who added the
+    /// latest one is an author of that version too and attests it, from then (no one does when that user is not a
+    /// doctor). An addendum added before the release is part of the report as it was first released.
+    /// </summary>
+    public static AbdmDocument RadiologyReport(RadiologyReportData d)
+    {
+        var row = d.Report;
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        var released = row.ReleasedAt ?? row.VerifiedAt ?? row.CreatedAt;
+        var addenda = row.Addenda.OrderBy(a => a.AddedAt).ToList();
+        var latest = addenda.LastOrDefault(a => a.AddedAt > released);
+        var date = latest?.AddedAt ?? released;
+        var status = latest is null ? R4.CompositionStatus.Final : R4.CompositionStatus.Amended;
+
+        Guid? DoctorOf(Guid? user) => user is { } id && d.Doctors.TryGetValue(id, out var practitioner) ? practitioner : null;
+        var signer = people.Find(DoctorOf(row.VerifiedBy));
+        var amender = latest is null ? null : people.Find(DoctorOf(latest.AddedBy));
+
+        // Whoever wrote the report, signed it off or added to it interpreted the study: each once, in that order.
+        List<R4.ResourceReference> interpreters =
+        [
+            .. new[] { row.ReportedBy, row.VerifiedBy }.Concat(addenda.Select(a => a.AddedBy)).Select(DoctorOf).OfType<Guid>().Distinct()
+                .Select(id => people.Names.Practitioner(id)).OfType<R4.ResourceReference>(),
+        ];
+
+        var study = Study(row, interpreters);
+        var report = AbdmProfiler.ImagingReport(DiagnosticReportMapper.FromRadiology(row), AbdmCodes.RadiologyService,
+            people.Names.Organization(d.Context.FacilityId)!, interpreters,
+            new R4.ResourceReference($"ImagingStudy/{study.Id}") { Type = "ImagingStudy", Display = row.StudyName });
+
+        // This version was issued when the report was released, or amended by its latest addendum, and its text is as of then.
+        report.Issued = FhirTime.ToMilliseconds(date);
+        foreach (var form in report.PresentedForm)
+        {
+            form.Creation = FhirTime.DateTime(date);
+        }
+
+        List<R4.Resource> entries = [report];
+        if (d.Context.Pdf is { } pdf)
+        {
+            entries.Add(PdfDocument(FhirIds.Of(FhirIds.Radiology, row.Id), d.Context.Patient.Id, pdf,
+                FhirElements.Concept(FhirSystems.Loinc, DiagnosticReportMapper.ImagingStudyLoinc, "Diagnostic imaging study", "Radiology report"),
+                status, date, people.Names.Organization(d.Context.FacilityId), Reference(d.Context)));
+        }
+
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.RadiologyReport,
+            FileName = AbdmFiles.Name("radiology-report", row.AccessionNumber),
+            SourceId = row.Id,
+            Profile = AbdmProfiles.DiagnosticReportRecord,
+            DocumentType = AbdmCodes.DiagnosticStudiesReport,
+            Title = "Radiology report",
+            Status = status,
+            Date = date,
+
+            // An addendum is a row of its own: adding one leaves the report's row as it was.
+            RecordUpdated = FhirElements.Latest(row.CreatedAt, [row.UpdatedAt, .. addenda.Select(a => (DateTimeOffset?)a.AddedAt)]),
+            Patient = Patient(d.Context, people, [row.PatientId]),
+            Encounter = Encounter(d.Context, people),
+            Author = (R4.Resource?)signer ?? (R4.Resource?)people.Find(DoctorOf(row.ReportedBy)) ?? hospital,
+            AmendedBy = amender,
+            Attester = latest is null ? signer : amender,
+            AttestedAt = latest is null ? row.VerifiedAt : date,
+            Custodian = hospital,
+            Sections = [new AbdmSection(AbdmCodes.ImagingReport, "Radiology report", [], entries)],
+            Supporting = [study, .. people.All],
         };
     }
 
@@ -575,6 +663,136 @@ internal static class AbdmRecords
         var report = AbdmProfiler.LabReport(DiagnosticReportMapper.FromLab(row), laboratory, observations);
         return (report, observations);
     }
+
+    /// <summary>
+    /// A released cardiology report (DiagnosticReportRecord): an ECG, echo, TMT, Holter or ABPM report as the IG's
+    /// DiagnosticReportImaging, which it gives to cardiology as to radiology, with the cardiology department's service
+    /// section and the LOINC study it is of where LOINC names one (<see cref="DiagnosticReportMapper.CardiologyStudyCoding"/>);
+    /// the measurements are in its text, as on the printed report. An ECG, a TMT or a Holter is a recording, not an imaging
+    /// study, and HC360 keeps no echo series UIDs, so the report names no ImagingStudy. The hospital performed the study and
+    /// issues the report; the cardiologists who wrote it and signed it off interpret it, and the one who signed it off is
+    /// the author and attests it. A released cardiology report is not changed afterwards, so the document is final.
+    /// </summary>
+    public static AbdmDocument CardiologyReport(CardiologyReportData d)
+    {
+        var row = d.Report;
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        var date = row.ReleasedAt ?? row.VerifiedAt ?? row.CreatedAt;
+
+        Guid? DoctorOf(Guid? user) => user is { } id && d.Doctors.TryGetValue(id, out var practitioner) ? practitioner : null;
+        var signer = people.Find(DoctorOf(row.VerifiedBy));
+
+        // Whoever wrote the report or signed it off interpreted the study: each once, in that order.
+        List<R4.ResourceReference> interpreters =
+        [
+            .. new[] { row.ReportedBy, row.VerifiedBy }.Select(DoctorOf).OfType<Guid>().Distinct()
+                .Select(id => people.Names.Practitioner(id)).OfType<R4.ResourceReference>(),
+        ];
+
+        var report = AbdmProfiler.ImagingReport(DiagnosticReportMapper.FromCardiology(row), AbdmCodes.CardiologyService,
+            people.Names.Organization(d.Context.FacilityId)!, interpreters, study: null);
+        report.Issued = FhirTime.ToMilliseconds(date);
+        foreach (var form in report.PresentedForm)
+        {
+            form.Creation = FhirTime.DateTime(date);
+        }
+
+        List<R4.Resource> entries = [report];
+        if (d.Context.Pdf is { } pdf)
+        {
+            var study = DiagnosticReportMapper.CardiologyStudyCoding(row.StudyType, row.StudyName);
+            entries.Add(PdfDocument(FhirIds.Of(FhirIds.Cardiology, row.Id), d.Context.Patient.Id, pdf,
+                study is null
+                    ? FhirElements.Concept(FhirSystems.Loinc, CardiologyStudiesLoinc, "Cardiology studies (set)", "Cardiology report")
+                    : FhirElements.Concept(FhirSystems.Loinc, study.Code!, study.Display, "Cardiology report"),
+                R4.CompositionStatus.Final, date, people.Names.Organization(d.Context.FacilityId), Reference(d.Context)));
+        }
+
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.CardiologyReport,
+            FileName = AbdmFiles.Name("cardiology-report", row.AccessionNumber),
+            SourceId = row.Id,
+            Profile = AbdmProfiles.DiagnosticReportRecord,
+            DocumentType = AbdmCodes.DiagnosticStudiesReport,
+            Title = "Cardiology report",
+            Status = R4.CompositionStatus.Final,
+            Date = date,
+            RecordUpdated = FhirElements.Latest(row.CreatedAt, [row.UpdatedAt]),
+            Patient = Patient(d.Context, people, [row.PatientId]),
+            Encounter = Encounter(d.Context, people),
+            Author = (R4.Resource?)signer ?? (R4.Resource?)people.Find(DoctorOf(row.ReportedBy)) ?? hospital,
+            Attester = signer,
+            AttestedAt = row.VerifiedAt,
+            Custodian = hospital,
+            Sections = [new AbdmSection(AbdmCodes.ImagingReport, "Cardiology report", [], entries)],
+            Supporting = [.. people.All],
+        };
+    }
+
+    /// <summary>LOINC's document type for cardiology studies, for the printed copy of one LOINC names no study for.</summary>
+    private const string CardiologyStudiesLoinc = "26441-6";
+
+    /// <summary>
+    /// The study a radiology report is of (the IG's ImagingStudy): its accession number and, once PACS holds its images,
+    /// their study instance UID and how many series and images there are; its modality as HC360's worklist sends it; the
+    /// radiologists who interpreted it. A series needs the UID PACS gave it, which HC360 does not keep, so the body part,
+    /// which DICOM records per series, is in the narrative. It carries no change time: a change to the study's row that
+    /// does not show in it (its charge, a technician's note) is not a new version of the report.
+    /// </summary>
+    private static R4.ImagingStudy Study(RadiologyReportRow row, IReadOnlyList<R4.ResourceReference> interpreters)
+    {
+        var study = new R4.ImagingStudy
+        {
+            Id = FhirIds.Of(FhirIds.Radiology, row.ImagingStudyId),
+            Meta = new R4.Meta { Profile = [AbdmProfiles.ImagingStudy] },
+            Status = R4.ImagingStudy.ImagingStudyStatus.Available,
+            Modality = DicomModality(row.Modality) is { } modality ? [modality] : [],
+            Subject = FhirReferences.Patient(row.PatientId),
+            Encounter = row.VisitId is { } visit ? FhirReferences.Encounter(FhirIds.Visit, visit) : null,
+            Started = (row.StartedAt ?? row.AcquiredAt) is { } started ? FhirTime.DateTime(started) : null,
+            Interpreter = [.. interpreters.Select(i => R4.BaseExtensions.DeepCopy(i))],
+            NumberOfSeries = row.SeriesCount,
+            NumberOfInstances = row.InstanceCount,
+            Description = row.StudyName,
+        };
+
+        if (DicomUid(row.StudyInstanceUid) is { } uid)
+        {
+            study.Identifier.Add(new R4.Identifier(AbdmSystems.DicomUid, "urn:oid:" + uid));
+        }
+
+        study.Identifier.Add(FhirElements.Identifier(FhirSystems.AccessionNumber, row.AccessionNumber, "ACSN", "Accession ID"));
+        var images = row.SeriesCount is { } series && row.InstanceCount is { } instances
+            ? $"In the hospital's PACS: {series} series, {instances} image{(instances == 1 ? string.Empty : "s")}"
+            : null;
+        study.Text = AbdmNarrative.Generated(
+            Lines(row.StudyName, Field("Modality", DiagnosticReportMapper.ModalityName(row.Modality)), Field("Body part", row.BodyPart),
+                Field("Accession number", row.AccessionNumber), images),
+            R4.Narrative.NarrativeStatus.Additional);
+        return study;
+    }
+
+    /// <summary>
+    /// The modality as a DICOM code, with DICOM's name for it, as HC360's worklist sends it: a conventional X-ray as CR,
+    /// computed radiography. None for a modality DICOM's acquisition modalities do not name.
+    /// </summary>
+    private static R4.Coding? DicomModality(Modality modality) => modality switch
+    {
+        Modality.XR => new(AbdmSystems.Dicom, "CR", "Computed Radiography"),
+        Modality.CT => new(AbdmSystems.Dicom, "CT", "Computed Tomography"),
+        Modality.MR => new(AbdmSystems.Dicom, "MR", "Magnetic Resonance"),
+        Modality.US => new(AbdmSystems.Dicom, "US", "Ultrasound"),
+        Modality.MG => new(AbdmSystems.Dicom, "MG", "Mammography"),
+        Modality.RF => new(AbdmSystems.Dicom, "RF", "Radiofluoroscopy"),
+        Modality.DX => new(AbdmSystems.Dicom, "DX", "Digital Radiography"),
+        _ => null,
+    };
+
+    /// <summary>A study instance UID as DICOM writes one (numbers joined by dots, at most 64 characters), else none.</summary>
+    private static string? DicomUid(string? uid) =>
+        uid is { Length: > 0 and <= 64 } && uid.Split('.').All(part => part.Length > 0 && part.All(char.IsAsciiDigit)) ? uid : null;
 
     private static R4.Attachment PdfAttachment(AbdmPdf pdf, string title, DateTimeOffset? created) => new()
     {

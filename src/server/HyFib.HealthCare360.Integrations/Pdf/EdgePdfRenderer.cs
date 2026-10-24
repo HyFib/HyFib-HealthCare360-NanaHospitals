@@ -267,6 +267,21 @@ internal sealed class EdgePdfRenderer : IPdfRenderer, IAsyncDisposable
                 await loaded.Task.WaitAsync(cancellationToken);
             }
 
+            // And for the document's own fonts (the Devanagari face, a data: URI that decodes asynchronously): the load
+            // event can come first, and a page printed then has its Hindi in a fallback font, a different PDF from the
+            // next print of the same page. DevTools evaluates this even though the page's own scripts are disabled.
+            var fonts = await _pipe.SendAsync("Runtime.evaluate", new JsonObject
+            {
+                ["expression"] = "document.fonts.ready.then(() => document.fonts.status)",
+                ["awaitPromise"] = true,
+                ["returnByValue"] = true,
+            }, _sessionId, cancellationToken);
+            if (fonts.TryGetProperty("exceptionDetails", out _)
+                || !fonts.TryGetProperty("result", out var result) || !result.TryGetProperty("value", out var status) || status.GetString() != "loaded")
+            {
+                throw new DevToolsException($"The PDF browser could not wait for the document's fonts: {fonts.GetRawText()}");
+            }
+
             // The document's own @page rules give the size, margins and running footer (CSS margin boxes), as when it
             // is printed from the browser. The margins here apply only to a page that sets none.
             var print = new JsonObject

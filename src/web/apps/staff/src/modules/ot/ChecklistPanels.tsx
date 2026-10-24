@@ -17,7 +17,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, CircleRegular, LockClosedRegular, SubtractCircleRegular } from '@fluentui/react-icons';
-import { formatTime } from '@hc360/core';
+import { formatTime, isApiError } from '@hc360/core';
 import { useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -118,6 +118,8 @@ export function PreOpChecklistPanel({
   const gate = preOpGate(booking);
   const editable = gate.allowed && canRecord;
   const [edits, setEdits] = useState<Record<string, PreOpEdit>>({});
+  // The booking as it was when the first unsaved tick was made: the save is refused if it changed since (REL-04).
+  const [baseVersion, setBaseVersion] = useState<number | null>(null);
 
   const items = booking.preOpChecklist;
   const valueOf = (item: ChecklistItemDto): PreOpEdit =>
@@ -133,13 +135,23 @@ export function PreOpChecklistPanel({
 
   const willComplete = items.every((item) => valueOf(item).state !== 'Pending');
   const save = useMutation({
-    mutationFn: (inputs: ChecklistInput[]) => otApi.recordPreOp(booking.id, inputs),
+    mutationFn: (inputs: ChecklistInput[]) => otApi.recordPreOp(booking.id, inputs, baseVersion ?? booking.version),
     onSuccess: () => {
       setEdits({});
+      setBaseVersion(null);
       notify.success(willComplete ? 'Pre-operative checklist complete' : 'Pre-operative checklist saved');
       void queryClient.invalidateQueries({ queryKey: otKeys.booking(booking.id) });
       if (willComplete) {
         onComplete?.();
+      }
+    },
+    onError: (error) => {
+      if (isApiError(error) && error.code === 'concurrency') {
+        // Someone else changed the checklist: show it as it is now, and let the ticks be made on that.
+        setEdits({});
+        setBaseVersion(null);
+        notify.warning('The checklist changed meanwhile', 'It has been reloaded. Check it and tick the items again.');
+        void queryClient.invalidateQueries({ queryKey: otKeys.booking(booking.id) });
       }
     },
   });
@@ -153,8 +165,10 @@ export function PreOpChecklistPanel({
       })),
     );
 
-  const setItem = (item: ChecklistItemDto, next: Partial<PreOpEdit>) =>
+  const setItem = (item: ChecklistItemDto, next: Partial<PreOpEdit>) => {
+    setBaseVersion((base) => base ?? booking.version);
     setEdits((current) => ({ ...current, [item.key]: { ...valueOf(item), ...next } }));
+  };
 
   // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
   useLeaveGuard({ dirty: Object.keys(edits).length > 0, busy: save.isPending });

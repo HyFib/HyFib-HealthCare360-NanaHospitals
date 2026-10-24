@@ -20,7 +20,7 @@ internal static class DialysisSessionEndpoints
                 (await s.ScheduleAsync(r, ct)).ToHttpResult(id => TypedResults.Created($"/api/v1/dialysis/sessions/{id}", new { id })))
             .RequirePermission(SpecialtyCarePermissions.DialysisSessions).WithValidation<ScheduleDialysisRequest>();
         group.MapPut("/sessions/{id:guid}/machine", async (Guid id, AssignDialysisMachineRequest r, DialysisService s, CancellationToken ct) =>
-                (await s.AssignMachineAsync(id, r.MachineId, ct)).ToNoContent())
+                (await s.AssignMachineAsync(id, r.MachineId, r.Version, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.DialysisSessions).WithValidation<AssignDialysisMachineRequest>();
         group.MapPost("/sessions/{id:guid}/pre-assessment", async (Guid id, PreDialysisRequest r, DialysisService s, CancellationToken ct) =>
                 (await s.RecordPreAssessmentAsync(id, r, ct)).ToNoContent())
@@ -165,5 +165,5 @@ internal static class DialysisSessionEndpoints
         from m in machines.DefaultIfEmpty()
         select new DialysisSessionListItem(
             s.Id, s.SessionNumber, s.PatientId, p.Uhid, p.FullName, s.ScheduledDate, s.Shift, s.Status, s.MachineId, m != null ? m.Code : null,
-            s.StartedAt, s.EndedAt, s.ChargeStatus);
+            s.StartedAt, s.EndedAt, s.ChargeStatus, s.Version);
 }

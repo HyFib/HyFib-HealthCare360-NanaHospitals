@@ -29,7 +29,8 @@ public sealed record RetentionRuleDto(
     int MaximumValue,
     bool Editable,
     int? LastRemoved,
-    DateTimeOffset? LastRunAt);
+    DateTimeOffset? LastRunAt,
+    uint? Version);
 
 public sealed record RetentionRunDto(
     Guid Id,
@@ -86,7 +87,8 @@ public sealed class RetentionService(
         {
             var removed = lastRun?.Results.FirstOrDefault(r => r.Key == rule.Key)?.Removed;
             rules.Add(new RetentionRuleDto(rule.Key, rule.Title, rule.Description, rule.Basis, rule.Action, rule.Unit, await ValueAsync(rule, ct),
-                rule.DefaultValue, rule.MinimumValue, rule.MaximumValue, rule.Editable, removed, removed is null ? null : lastRun!.FinishedAt));
+                rule.DefaultValue, rule.MinimumValue, rule.MaximumValue, rule.Editable, removed, removed is null ? null : lastRun!.FinishedAt,
+                await SettingVersions.OfAsync(db, rule.SettingKey, null, ct)));
         }
 
         return rules;
@@ -101,7 +103,7 @@ public sealed class RetentionService(
     /// Changes a period, within the range the law allows. Changing a medical records period also moves the retention
     /// date of every chart already completed (Clinical does that in the same transaction).
     /// </summary>
-    public async Task<Result> UpdateAsync(string key, int value, CancellationToken ct)
+    public async Task<Result> UpdateAsync(string key, int value, uint? version, CancellationToken ct)
     {
         if (RetentionSchedule.Find(key) is not { } rule)
         {
@@ -139,7 +141,7 @@ public sealed class RetentionService(
             Details = new { rule.Key, previous, value },
         });
 
-        await settings.SetAsync(rule.SettingKey, value, null, false, ct);
+        await settings.SetAsync(rule.SettingKey, value, null, false, version, ct);
         await transaction.CommitAsync(ct);
         return Result.Success();
     }

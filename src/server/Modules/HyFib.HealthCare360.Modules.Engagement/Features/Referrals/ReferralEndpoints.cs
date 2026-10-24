@@ -25,7 +25,7 @@ internal static class ReferralEndpoints
         });
         group.MapGet("/referrals/unmatched", Unmatched);
         group.MapPost("/referring-doctors", Create).WithValidation<SaveReferringDoctorRequest>();
-        group.MapPut("/referring-doctors/{id:guid}", Update).WithValidation<SaveReferringDoctorRequest>();
+        group.MapPut("/referring-doctors/{id:guid}", Update).WithValidation<SaveReferringDoctorRequest>().RequireVersion();
     }
 
     private static async Task<IResult> List(

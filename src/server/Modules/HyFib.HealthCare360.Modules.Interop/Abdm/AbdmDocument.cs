@@ -3,7 +3,7 @@ using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Abdm;
 
-/// <summary>The four ABDM health record types HC360 exports (the IG's Composition profiles).</summary>
+/// <summary>The ABDM health record types HC360 exports (the IG's Composition profiles).</summary>
 public enum AbdmRecordType
 {
     /// <summary>A signed or amended discharge summary (DischargeSummaryRecord).</summary>
@@ -17,6 +17,12 @@ public enum AbdmRecordType
 
     /// <summary>A signed e-prescription (PrescriptionRecord).</summary>
     Prescription,
+
+    /// <summary>A released radiology report (DiagnosticReportRecord, its report a DiagnosticReportImaging).</summary>
+    RadiologyReport,
+
+    /// <summary>A released ECG, echo, TMT, Holter or ABPM report (DiagnosticReportRecord, its report a DiagnosticReportImaging).</summary>
+    CardiologyReport,
 }
 
 /// <summary>
@@ -39,13 +45,17 @@ internal sealed record AbdmDocument
 {
     public required AbdmRecordType Type { get; init; }
 
-    /// <summary>The HC360 record the document is made from (discharge summary, lab report, encounter, prescription).</summary>
+    /// <summary>
+    /// The HC360 record the document is made from (discharge summary, lab report, radiology report, encounter,
+    /// prescription).
+    /// </summary>
     public required Guid SourceId { get; init; }
 
     /// <summary>
     /// The name to save it under, as its PDF is named: <c>prescription-NHRX260000123-abdm.json</c>,
-    /// <c>lab-report-LR2600042-abdm.json</c>, <c>consultation-NH-000123-2026-09-25-abdm.json</c>,
-    /// <c>discharge-summary-NH-000123-2026-09-25-abdm.json</c> (the UHID and the day in IST).
+    /// <c>lab-report-LR2600042-abdm.json</c>, <c>radiology-report-NHRD260000042-abdm.json</c> (the accession number),
+    /// <c>consultation-NH-000123-2026-09-25-abdm.json</c>, <c>discharge-summary-NH-000123-2026-09-25-abdm.json</c> (the
+    /// UHID and the day in IST).
     /// </summary>
     public required string FileName { get; init; }
 
@@ -68,10 +78,16 @@ internal sealed record AbdmDocument
     public required R4.Patient Patient { get; init; }
     public R4.Encounter? Encounter { get; init; }
 
-    /// <summary>Who wrote it: the doctor, or for a laboratory report the laboratory.</summary>
+    /// <summary>
+    /// Who wrote it: the doctor (for a radiology report the radiologist who signed it off), or for a laboratory report
+    /// the laboratory.
+    /// </summary>
     public required R4.Resource Author { get; init; }
 
-    /// <summary>The doctor who amended it, when it was amended by a doctor: an author of the version too.</summary>
+    /// <summary>
+    /// The doctor who amended it (for a radiology report, added the latest addendum after its release), when it was
+    /// amended by a doctor: an author of the version too.
+    /// </summary>
     public R4.Practitioner? AmendedBy { get; init; }
 
     /// <summary>

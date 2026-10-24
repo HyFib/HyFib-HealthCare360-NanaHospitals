@@ -19,8 +19,9 @@ public sealed class NotificationTemplateTests(HospitalServer server)
         var created = await admin.PostAsync<Created>("/api/v1/admin/notification-templates", new SaveNotificationTemplateRequest(
             key, NotificationChannel.Sms, "en", null, null, "Dear {{name}}, your appointment is confirmed.", null, null, null, true, null));
 
+        var loaded = (await admin.GetAsync<List<NotificationTemplateDto>>($"/api/v1/admin/notification-templates?key={key}")).Single();
         using var response = await admin.SendRawAsync(HttpMethod.Put, $"/api/v1/admin/notification-templates/{created.Id}", new SaveNotificationTemplateRequest(
-            key, NotificationChannel.Email, "en", null, null, new string('a', 1500), null, null, null, true, null));
+            key, NotificationChannel.Email, "en", null, null, new string('a', 1500), null, null, null, true, loaded.Version));
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync(Ct)).ShouldContain("SMS templates must be at most 1000 characters");

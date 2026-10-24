@@ -68,6 +68,7 @@ const useStyles = makeStyles({
   actions: { display: 'flex', alignItems: 'center', gap: '2px' },
   body: { display: 'flex', minHeight: 0 },
   nav: { height: '100%' },
+  navNote: { display: 'block', padding: '4px 12px 8px', color: tokens.colorNeutralForeground3 },
   main: { flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', outline: 'none' },
   skip: {
     position: 'absolute',
@@ -129,10 +130,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   useHotkey('mod+k', () => setPaletteOpen(true), { allowInInputs: true });
   useHotkey('mod+shift+l', () => setLocked(true), { allowInInputs: true, overDialogs: true });
 
+  // Administration this session cannot use (SRS SEC-08) is left out, and its place in the navigation says where it is.
+  const administrationElsewhere = user?.administrationNeedsDesktop === true;
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
     modules: modules.filter((m) => m.section === section.id),
-  })).filter((section) => section.modules.length > 0);
+  })).filter((section) => section.modules.length > 0 || (section.id === 'admin' && administrationElsewhere));
 
   return (
     <div className={styles.root}>
@@ -219,6 +222,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                     </NavCategory>
                   );
                 })}
+                {section.id === 'admin' && administrationElsewhere && (
+                  <Caption1 className={styles.navNote}>
+                    Users, roles, settings, devices, backups, integrations and the audit log open in HC360 Desktop on a
+                    computer IT has enrolled.
+                  </Caption1>
+                )}
               </div>
             ))}
           </NavDrawerBody>

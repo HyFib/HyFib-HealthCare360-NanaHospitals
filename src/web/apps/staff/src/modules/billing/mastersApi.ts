@@ -74,6 +74,11 @@ export interface SaveTariffPriceRequest {
   price: number;
   effectiveFrom: string;
   effectiveTo: string | null;
+  /**
+   * The price being changed, as it was shown; none for a new start date. A price changed or added for that date
+   * meanwhile is not overwritten (REL-04). The bulk import sends none: it replaces prices on purpose.
+   */
+  version?: number;
 }
 
 export interface BulkTariffPricesResult {

@@ -36,7 +36,7 @@ public sealed record SaveTreatmentPlanRequest(
 /// <summary>Books <see cref="Count"/> sessions from <see cref="FirstSessionAt"/>, spaced by the plan frequency unless an interval is given.</summary>
 public sealed record SchedulePhysioSessionsRequest(DateTimeOffset FirstSessionAt, int Count, int? IntervalDays);
 
-public sealed record ReschedulePhysioSessionRequest(DateTimeOffset ScheduledAt);
+public sealed record ReschedulePhysioSessionRequest(DateTimeOffset ScheduledAt, uint Version);
 
 public sealed record AttendPhysioSessionRequest(
     IReadOnlyList<PhysioModality> Modalities, string ProgressNote, int? PainBefore, int? PainAfter, int? DurationMinutes);
@@ -60,7 +60,7 @@ public sealed record TreatmentPlanDto(
 public sealed record PhysioSessionDto(
     Guid Id, Guid ReferralId, Guid PatientId, int SessionNumber, DateTimeOffset ScheduledAt, PhysioSessionStatus Status,
     IReadOnlyList<PhysioModality> ModalitiesGiven, string? ProgressNote, int? PainBefore, int? PainAfter, int? DurationMinutes, DateTimeOffset? AttendedAt,
-    string? TherapistName, string? MissedReason, ChargeStatus ChargeStatus, string? ChargeError);
+    string? TherapistName, string? MissedReason, ChargeStatus ChargeStatus, string? ChargeError, uint Version);
 
 public sealed record PhysioReferralDetail(
     Guid Id, PatientSummary? Patient, Guid PatientId, Guid? VisitId, Guid? AdmissionId, Guid? OrderItemId, string? OrderNumber, string? ServiceName,
@@ -71,7 +71,7 @@ public sealed record PhysioReferralDetail(
 /// <summary>Row of the physiotherapy day list.</summary>
 public sealed record PhysioWorklistItem(
     Guid SessionId, Guid ReferralId, Guid PatientId, string Uhid, string PatientName, int SessionNumber, int? SessionsPlanned, DateTimeOffset ScheduledAt,
-    PhysioSessionStatus Status, string? TherapistName);
+    PhysioSessionStatus Status, string? TherapistName, uint Version);
 
 public sealed class CreatePhysioReferralRequestValidator : AbstractValidator<CreatePhysioReferralRequest>
 {

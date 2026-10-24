@@ -22,7 +22,7 @@ internal static class EmployeeEndpoints
         group.MapGet("/", List).RequirePermission(HRPermissions.EmployeesRead);
         group.MapGet("/{id:guid}", Get).RequirePermission(HRPermissions.EmployeesRead);
         group.MapPost("/", Create).RequirePermission(HRPermissions.EmployeesManage).WithValidation<SaveEmployeeRequest>();
-        group.MapPut("/{id:guid}", Update).RequirePermission(HRPermissions.EmployeesManage).WithValidation<SaveEmployeeRequest>();
+        group.MapPut("/{id:guid}", Update).RequirePermission(HRPermissions.EmployeesManage).WithValidation<SaveEmployeeRequest>().RequireVersion();
         group.MapPut("/{id:guid}/bank-details", UpdateBank).RequirePermission(HRPermissions.EmployeesManage).WithValidation<UpdateBankDetailsRequest>();
         group.MapPost("/{id:guid}/separate", Separate).RequirePermission(HRPermissions.EmployeesManage).WithValidation<SeparateEmployeeRequest>();
     }
