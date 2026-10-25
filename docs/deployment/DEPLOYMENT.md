@@ -326,6 +326,9 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    registration: until then Form F cannot be recorded, and those scans cannot start. Mark each obstetric ultrasound
    procedure "Ultrasound in pregnancy" under Radiology › Procedures and templates; the seeded obstetric and anomaly
    scans already are.
+   A facility approved for terminations of pregnancy sets `mtp.approvalNumber` (for that facility) to its certificate of
+   approval (MTP Rules, Form B): until then no MTP case can be opened. No clinical role may certify a termination out of
+   the box: grant `mtp.certify` and `patients.sensitive.mtp` to the gynaecologists the approval names.
 8. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a

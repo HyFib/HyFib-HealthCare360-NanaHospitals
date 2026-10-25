@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Mtp;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Dialysis;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
@@ -8,7 +9,8 @@ using HyFib.HealthCare360.Platform.Numbering;
 namespace HyFib.HealthCare360.Modules.SpecialtyCare;
 
 /// <summary>
-/// Operation theatre, dialysis, physiotherapy and blood bank (SRS OT-01..07, DIA-01..05, PHY-01..04, BB-01..07).
+/// Operation theatre, dialysis, physiotherapy, blood bank and termination of pregnancy (SRS OT-01..07, DIA-01..05, PHY-01..04,
+/// BB-01..07; the MTP Act).
 /// Order and admission event handlers, validators and the seeder are discovered automatically from this assembly.
 /// </summary>
 public sealed class SpecialtyCareModule : IModule
@@ -31,6 +33,7 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<DonorService>();
         services.AddScoped<TransfusionService>();
         services.AddScoped<BloodInventoryService>();
+        services.AddScoped<MtpService>();
 
         // Daily expiry housekeeping; it checks PlatformOptions.RunsJobs itself so API-only nodes stay idle.
         services.AddHostedService<BloodUnitExpiryJob>();
@@ -48,5 +51,6 @@ public sealed class SpecialtyCareModule : IModule
         DonorEndpoints.Map(endpoints);
         InventoryEndpoints.Map(endpoints);
         TransfusionEndpoints.Map(endpoints);
+        MtpEndpoints.Map(endpoints);
     }
 }

@@ -300,6 +300,11 @@ and grants nothing.
   - The FHIR API does not list these patients to clients that may not open restricted records.
   - The upgrade puts records that already carry such a diagnosis into its category; a merge carries the duplicate's
     categories to the surviving record. A doctor manages the categories without being able to open the chart.
+- **Terminations of pregnancy** (MTP Act s.5A): an MTP case opens only to `mtp.read` and `mtp.certify` (medical records
+  reads; certifying is granted to the gynaecologists), the register and the monthly report only to `mtp.register`.
+  Opening a case puts the record in the MTP category; every view of a case, the list and the register, every print and
+  every export is audited. A restricted (VIP) patient's row in the list and the register shows her initials only to
+  staff who may not open her record, and the data summary does not count MTP cases.
 - **Who may look patients up.** Patient search and visits are for staff who see patients: the canteen, CSSD,
   biomedical, HR, store, purchase and MIS roles do not get `patients.read` or `visits.read` by default. An upgrade takes
   a default grant back from a role that no longer has it (`identity.seeded_grants` records what the seeder gave), and

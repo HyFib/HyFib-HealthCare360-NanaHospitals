@@ -1,7 +1,7 @@
 namespace HyFib.HealthCare360.Modules.SpecialtyCare;
 
 /// <summary>
-/// Permissions of the SpecialtyCare module (<c>ot.*</c>, <c>dialysis.*</c>, <c>physio.*</c>, <c>bloodbank.*</c>).
+/// Permissions of the SpecialtyCare module (<c>ot.*</c>, <c>dialysis.*</c>, <c>physio.*</c>, <c>bloodbank.*</c>, <c>mtp.*</c>).
 /// Reading is separated from acting so that, for example, ward nurses can see the OT list or blood availability
 /// without being able to schedule surgery or issue blood.
 /// </summary>
@@ -38,10 +38,16 @@ public static class SpecialtyCarePermissions
     public const string BloodBankReactions = "bloodbank.reactions.report";
     public const string BloodBankReactionsInvestigate = "bloodbank.reactions.investigate";
 
+    // ------------------------------------------------------------------ termination of pregnancy (MTP Act; gap R-2c)
+    public const string MtpRead = "mtp.read";
+    public const string MtpCertify = "mtp.certify";
+    public const string MtpRegister = "mtp.register";
+
     private const string Ot = "Operation Theatre";
     private const string Dialysis = "Dialysis";
     private const string Physio = "Physiotherapy";
     private const string BloodBank = "Blood Bank";
+    private const string Mtp = "Termination of pregnancy";
 
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
@@ -71,5 +77,11 @@ public static class SpecialtyCarePermissions
         new(BloodBankIssue, BloodBank, "Issue blood units and accept returns", [SystemRoles.BloodBankOfficer]),
         new(BloodBankReactions, BloodBank, "Report transfusion reactions", [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.BloodBankOfficer]),
         new(BloodBankReactionsInvestigate, BloodBank, "Investigate and close transfusion reaction reports", [SystemRoles.BloodBankOfficer]),
+
+        // MTP Act s.5A: no one but a person authorised may learn of a termination. No clinical role holds these by default:
+        // grant mtp.certify, with patients.sensitive.mtp, to the gynaecologists the place's approval names.
+        new(MtpRead, Mtp, "View termination of pregnancy cases (confidential under the MTP Act)", [SystemRoles.MrdOfficer]),
+        new(MtpCertify, Mtp, "Record the woman's consent (Form C), the doctors' opinion (Form I) and the termination (Form III)"),
+        new(MtpRegister, Mtp, "View and export the MTP admission register (Form III) and the monthly report (Form II)", [SystemRoles.MrdOfficer]),
     ];
 }

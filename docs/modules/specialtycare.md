@@ -1,7 +1,7 @@
-# SpecialtyCare module — Operation Theatre, Dialysis, Physiotherapy, Blood Bank
+# SpecialtyCare module — Operation Theatre, Dialysis, Physiotherapy, Blood Bank, Termination of Pregnancy
 
 Project `src/server/Modules/HyFib.HealthCare360.Modules.SpecialtyCare` · schema `specialtycare` · layer 6 (references Patients and SupplyChain)
-· SRS **OT-01..07, DIA-01..05, PHY-01..04, BB-01..07**.
+· SRS **OT-01..07, DIA-01..05, PHY-01..04, BB-01..07**; MTP Act 1971 (amended 2021) and MTP Regulations 2003.
 
 All times are UTC `timestamptz`; `date` query parameters are hospital-local (IST) calendar dates. Money is INR.
 Enums are stored as text, so lists never sort on an enum column directly: priorities, shifts, sero categories, component types and
@@ -25,6 +25,7 @@ and write a PHI-access audit entry. Donor detail views write a `donor.accessed` 
 | Cold chain: a returned unit is restocked only if it comes back within 30 min with temperature maintained. Thawed FFP/cryo are never restocked. | `ColdChain` | `BloodComponentTests` |
 | Shelf life from collection: WB 35 d, PRBC 35 d, FFP 365 d, platelets 5 d, cryo 365 d. Plasma and platelets must be separated within 8 h. | `ComponentShelfLife` | `ComponentShelfLifeTests` |
 | Blood-bank grouping of the patient sample is used for compatibility, never the group from registration. A second grouping that disagrees is refused (possible wrong blood in tube). | `BloodRequest.RecordGrouping` | `IssueCompatibilityTests` |
+| A termination of pregnancy (MTP Act s.3) needs the woman's written consent, or her guardian's when she is under 18 or mentally ill; the opinion of one doctor up to 20 weeks, of two from 20 to 24 weeks for a woman in a rule 3B category; beyond 24 weeks only a substantial foetal abnormality, with the Medical Board's opinion. A contraceptive failure is a ground up to 20 weeks only. Once the termination is recorded the case cannot change. | `MtpCase.Certify/Terminate` | `MtpCaseTests`, `MtpTests` |
 
 ## Endpoints
 
@@ -129,6 +130,25 @@ unit number as Code 128 for scanning at issue and at the bedside, expiry and sto
 screening is labelled QUARANTINE / NOT FOR ISSUE in white on black. On a ZPL or TSPL printer the server writes the
 label (`blood-units`); otherwise the label page prints. See [integrations.md](integrations.md#barcode-labels-int-bar).
 
+### Termination of pregnancy — `/api/v1/mtp` (tag *Termination of pregnancy*)
+Under s.5A of the MTP Act no one but a person authorised by law may learn of a termination, so every case opens only to
+the MTP permissions below; opening a case puts the patient's record in the MTP sensitive category (R-4), which closes the
+rest of her chart to staff without `patients.sensitive.mtp`. A case is opened only once the facility's
+`mtp.approvalNumber` (the place's certificate of approval, Form B) is set (422 `mtp.not_approved`). Every opening of a
+case, its print and the register export are audited.
+
+| Method | Path | Permission | Request → Response |
+|---|---|---|---|
+| GET | `/cases?patientId=&status=` · `/cases/{id}` | `mtp.read` or `mtp.certify` | → `MtpCaseListItem[]` / `MtpCaseDto`; guard; audit "Viewed MTP case …" |
+| POST | `/cases` | `mtp.certify` | `SaveMtpCaseRequest` (patient, age, mentally ill, consent by Woman/Guardian with name and relation, consent date and scan, weeks, grounds, rule 3B category, Medical Board reference, opinions[{doctorName, registrationNumber, opinionOn}]) → `MtpCaseDto` (Certified, with the Form III serial number); flags the record MTP |
+| PUT | `/cases/{id}` | `mtp.certify` | `SaveMtpCaseRequest` with `version` → `MtpCaseDto`; 422 `mtp.terminated` / `mtp.cancelled` once closed |
+| POST | `/cases/{id}/termination` | `mtp.certify` | `RecordMtpTerminationRequest` (date, method, performed by, discharge date, result, remarks, version) → `MtpCaseDto` (Terminated) |
+| POST | `/cases/{id}/cancel` | `mtp.certify` | `CancelMtpCaseRequest` (reason, version) → `MtpCaseDto` (Cancelled; stays out of the register) |
+| GET | `/cases/{id}/document` · `/pdf` | as GET | → Form C, Form I and the Form III entry, marked confidential / its PDF; audited |
+| GET | `/register?year=&month=` | `mtp.register` | → `MtpRegister` (Form III: terminations done in the month and cases certified in it not yet done) |
+| GET | `/register/export?year=&month=` | `mtp.register` | → CSV of the register; audited `mtp.register.exported` |
+| GET | `/monthly-report?year=&month=` | `mtp.register` | → `MtpMonthlyReport` (Form II: terminations by gestation, religion, ground, method and age) |
+
 ## Permissions and default roles
 | Permission | Default roles |
 |---|---|
@@ -148,6 +168,8 @@ label (`blood-units`); otherwise the label page prints. See [integrations.md](in
 | `bloodbank.read` | BloodBankOfficer, Doctor, Nurse, HospitalAdmin |
 | `bloodbank.donors.manage`, `bloodbank.inventory.manage`, `bloodbank.crossmatch.perform`, `bloodbank.units.issue`, `bloodbank.reactions.investigate` | BloodBankOfficer |
 | `bloodbank.requests.create`, `bloodbank.reactions.report` | Doctor, Nurse, BloodBankOfficer |
+| `mtp.read`, `mtp.register` | MrdOfficer |
+| `mtp.certify` | none: grant it, with `patients.sensitive.mtp`, to the gynaecologists the place's approval names |
 
 ## Events
 **Raised:** `SurgeryCompleted` (Platform) by `SurgeryBooking.Complete`, when the patient leaves the theatre after the WHO
@@ -187,6 +209,7 @@ charges the session and the dialyzer, a session reusing it charges the session o
 | `blood-request` | `{FAC}BR{YY}{SEQ:6}` | yearly, per facility |
 | `blood-bag` | `{FAC}BB{YY}{SEQ:6}` (when no pre-printed bag barcode is scanned) | yearly, per facility |
 | `blood-donor` | `{FAC}DN{SEQ:6}` | never (group-wide) |
+| `mtp-register` | `{FAC}MTP{YY}{SEQ:4}` (the Form III serial number) | yearly, per facility |
 
 ## Notifications and real time
 - **In-app** (`NotifyPermissionHoldersAsync`, no SMS templates): emergency blood request → `bloodbank.units.issue`; reactive TTI (donor recall) → `bloodbank.donors.manage`; transfusion reaction → `bloodbank.reactions.investigate`; daily expired / expiring-in-3-days summary → `bloodbank.inventory.manage`.
@@ -206,4 +229,5 @@ With `SeedDemoData`: theatres OT-1 (Major), OT-2 (Ortho), OT-3 (Minor); dialysis
 `theatres`, `surgery_bookings` (pre-op and WHO checklists as `jsonb`), `anaesthesia_records` (vitals, drugs and fluids as `jsonb`), `operation_notes`,
 `surgery_materials`, `dialysis_machines`, `dialysis_profiles`, `dialyzers`, `dialysis_sessions` (filtered unique indexes: one active session per
 machine per shift and per patient per shift), `physio_referrals`, `physio_assessments`, `physio_treatment_plans`, `physio_sessions`, `donors`,
-`donor_screenings`, `donations`, `blood_components`, `blood_requests`, `crossmatches`, `blood_issues`, `transfusion_reactions`, `admissions`.
+`donor_screenings`, `donations`, `blood_components`, `blood_requests`, `crossmatches`, `blood_issues`, `transfusion_reactions`, `admissions`,
+`mtp_cases` (opinions as `jsonb`).
