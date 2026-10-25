@@ -71,6 +71,7 @@ internal sealed class ImagingService(
             Priority = placed.Priority,
             OrderingPractitionerId = placed.OrderingPractitionerId,
             ClinicalNotes = TextLimits.ClipOrNull(placed.ClinicalNotes, 1000),
+            RequiresFormF = procedure?.RequiresFormF ?? false,
             OrderedAt = placed.OrderedAt,
             Status = ImagingStudyStatus.Ordered,
 
@@ -119,14 +120,26 @@ internal sealed class ImagingService(
     public Task<Result<ImagingStudyDetail>> ArriveAsync(Guid id, CancellationToken ct) =>
         UpdateAsync(id, (study, now) => study.Arrive(now), ct);
 
-    public Task<Result<ImagingStudyDetail>> StartAsync(Guid id, CancellationToken ct) =>
-        UpdateAsync(id, (study, now) => study.Start(currentUser.UserId, now), ct);
+    public async Task<Result<ImagingStudyDetail>> StartAsync(Guid id, CancellationToken ct) =>
+        await FormFDeclaredAsync(id, ct) is { } missing ? missing : await UpdateAsync(id, (study, now) => study.Start(currentUser.UserId, now), ct);
 
-    public Task<Result<ImagingStudyDetail>> AcquireAsync(Guid id, AcquireStudyRequest request, CancellationToken ct) =>
-        UpdateAsync(id, (study, now) => study.Acquire(
-            new AcquisitionDetails(request.ContrastUsed, request.ContrastAgent, request.ContrastVolumeMl, request.DoseNote, request.Notes),
-            currentUser.UserId,
-            now), ct);
+    public async Task<Result<ImagingStudyDetail>> AcquireAsync(Guid id, AcquireStudyRequest request, CancellationToken ct) =>
+        await FormFDeclaredAsync(id, ct) is { } missing
+            ? missing
+            : await UpdateAsync(id, (study, now) => study.Acquire(
+                new AcquisitionDetails(request.ContrastUsed, request.ContrastAgent, request.ContrastVolumeMl, request.DoseNote, request.Notes),
+                currentUser.UserId,
+                now), ct);
+
+    /// <summary>
+    /// An ultrasound in pregnancy is not performed before the woman's Form F declaration is recorded (PCPNDT Form F,
+    /// Section D): the refusal, or null when the study may go ahead.
+    /// </summary>
+    private async Task<Error?> FormFDeclaredAsync(Guid studyId, CancellationToken ct) =>
+        await db.Set<ImagingStudy>().AnyAsync(s => s.Id == studyId && s.RequiresFormF, ct)
+        && !await db.Set<FormF>().AnyAsync(f => f.ImagingStudyId == studyId, ct)
+            ? Error.Rule("form_f.required", "This is an ultrasound in pregnancy: record the woman's Form F details and declaration before the scan.")
+            : null;
 
     public Task<Result<ImagingStudyDetail>> RecordRepeatAsync(Guid id, RecordRepeatRequest request, CancellationToken ct) =>
         UpdateAsync(id, (study, now) => study.RecordRepeat(request.Reason, request.Note, now), ct);
@@ -459,6 +472,7 @@ internal sealed class ImagingService(
             .Where(p => p.ServiceItemId == s.ServiceItemId || p.Code == s.ServiceCode)
             .Select(p => p.PatientPreparation)
             .FirstOrDefaultAsync(ct);
+        var formF = await db.Set<FormF>().AsNoTracking().Where(f => f.ImagingStudyId == s.Id).Select(f => (FormFStatus?)f.Status).FirstOrDefaultAsync(ct);
 
         return new ImagingStudyDetail(
             s.Id, s.AccessionNumber, s.PatientId, patient?.Uhid ?? string.Empty, patient?.FullName ?? string.Empty, patient?.Gender ?? Gender.Unknown,
@@ -470,7 +484,9 @@ internal sealed class ImagingService(
             DicomConventions.AccessionFitsDicom(s.AccessionNumber), DicomConventions.ProcedureId(s.AccessionNumber, s.Id), s.PacsLinkedAt, s.SeriesCount,
             s.InstanceCount, s.ReportedAt, s.VerifiedAt, s.ReleasedAt, s.CancelReason, s.ChargeError, s.PackageBookingId, s.Quantity, preparation,
             s.Repeats.OrderBy(r => r.RecordedAt).Select(r => new ImagingRepeatDto(r.Id, r.Reason, r.Note, r.RecordedAt)).ToList(),
-            s.Version);
+            s.Version,
+            s.RequiresFormF,
+            formF);
     }
 
     internal static Error PacsNotConfigured =>

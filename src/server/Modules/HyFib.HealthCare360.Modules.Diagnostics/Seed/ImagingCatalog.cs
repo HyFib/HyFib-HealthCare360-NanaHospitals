@@ -3,7 +3,8 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 namespace HyFib.HealthCare360.Modules.Diagnostics.Seed;
 
 internal sealed record ImagingProcedureSeed(
-    string Code, string Name, string ShortName, decimal Price, Modality Modality, string BodyPart, int DurationMinutes, bool RequiresContrast, string? Preparation);
+    string Code, string Name, string ShortName, decimal Price, Modality Modality, string BodyPart, int DurationMinutes, bool RequiresContrast, string? Preparation,
+    bool RequiresFormF = false);
 
 internal sealed record CardiologyServiceSeed(string Code, string Name, string ShortName, decimal Price);
 
@@ -26,6 +27,10 @@ internal static class ImagingCatalog
             "Fast for 6 hours. Drink 4–5 glasses of water an hour before the scan and do not pass urine (full bladder)."),
         new("RAD-USG-PELVIS", "Ultrasound pelvis", "USG PELVIS", 1000m, Modality.US, "Pelvis", 20, false,
             "Full bladder: drink 4–5 glasses of water an hour before the scan and do not pass urine."),
+        new("RAD-USG-OBS", "Ultrasound obstetric (pregnancy)", "USG OBSTETRIC", 1200m, Modality.US, "Obstetric", 20, false,
+            "Bring your earlier scan reports. In early pregnancy, drink 4–5 glasses of water an hour before the scan.", RequiresFormF: true),
+        new("RAD-USG-ANOMALY", "Ultrasound foetal anomaly scan (level II)", "USG ANOMALY", 2500m, Modality.US, "Obstetric", 30, false,
+            "Bring your earlier scan reports.", RequiresFormF: true),
         new("RAD-CT-HEAD", "CT brain (plain)", "CT BRAIN", 3000m, Modality.CT, "Head", 15, false,
             "Remove hair pins, earrings and other metal objects."),
         new("RAD-CT-ABD", "CT abdomen and pelvis with contrast (CECT)", "CECT ABD", 6500m, Modality.CT, "Abdomen", 30, true,

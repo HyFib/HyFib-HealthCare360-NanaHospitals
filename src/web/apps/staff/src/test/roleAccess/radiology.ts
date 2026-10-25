@@ -1,6 +1,8 @@
 import { todayIso } from '@hc360/core';
 import type {
   AiFindingDto,
+  FormFDto,
+  FormFRegister,
   ImagingProcedureDto,
   ImagingStudyDetail,
   ImagingStudyListItem,
@@ -146,6 +148,9 @@ const STUDY: ImagingStudyDetail = {
   patientPreparation: 'Fasting 4 hours; serum creatinine 0.8 mg/dL.',
   repeats: [],
   version: 5,
+  // Flagged as needing Form F so the check opens the Form F panel too (its fields are the same on any study).
+  requiresFormF: true,
+  formFStatus: 'Declared',
 };
 
 const REPORT: RadiologyReportDto = {
@@ -225,6 +230,7 @@ const PROCEDURES: ImagingProcedureDto[] = [
     patientPreparation: 'Fasting 4 hours; serum creatinine within 30 days.',
     isActive: true,
     version: 2,
+    requiresFormF: false,
   },
   {
     id: id('5f02'),
@@ -238,6 +244,7 @@ const PROCEDURES: ImagingProcedureDto[] = [
     patientPreparation: null,
     isActive: true,
     version: 1,
+    requiresFormF: false,
   },
 ];
 
@@ -280,7 +287,76 @@ const TAT: RadiologyTatReport = {
   ],
 };
 
+const FORM_F: FormFDto = {
+  id: id('5f31'),
+  formNumber: 'NHFF26000012',
+  studyId: RECORD_ID,
+  accessionNumber: 'RAD2600871',
+  patientId: ASHA.patientId,
+  uhid: ASHA.uhid,
+  patientName: ASHA.patientName,
+  status: 'Declared',
+  registrationNumber: 'PNDT/TN/2026/0042',
+  ageYears: 27,
+  husbandOrFatherName: 'Suresh Kumar',
+  address: '12, Gandhi Street, Madurai 625001',
+  phone: '9876543210',
+  livingSons: 0,
+  livingDaughters: 1,
+  lastMenstrualPeriod: null,
+  weeksOfPregnancy: 10,
+  referral: 'Doctor',
+  referringDoctorName: 'Dr. Kavitha Raman',
+  referringDoctorAddress: 'Raman Clinic, Anna Nagar, Madurai',
+  indications: ['IntraUterineOrEctopicPregnancy', 'GestationalAge'],
+  otherIndication: null,
+  signedFormFileId: null,
+  declaredAt: minutesAgo(40),
+  declarationRecordedBy: 'Radiographer',
+  procedureDate: null,
+  result: null,
+  resultConveyedTo: null,
+  resultConveyedOn: null,
+  mtpIndicated: false,
+  mtpIndication: null,
+  doctorName: null,
+  completedAt: null,
+  version: 2,
+};
+
+const FORM_F_REGISTER: FormFRegister = {
+  year: 2026,
+  month: 10,
+  registrationNumber: 'PNDT/TN/2026/0042',
+  rows: [
+    {
+      id: FORM_F.id,
+      formNumber: FORM_F.formNumber,
+      studyId: RECORD_ID,
+      accessionNumber: FORM_F.accessionNumber,
+      uhid: FORM_F.uhid,
+      patientName: FORM_F.patientName,
+      ageYears: 27,
+      husbandOrFatherName: 'Suresh Kumar',
+      livingSons: 0,
+      livingDaughters: 1,
+      weeksOfPregnancy: 10,
+      lastMenstrualPeriod: null,
+      referredBy: 'Dr. Kavitha Raman, Raman Clinic, Anna Nagar, Madurai',
+      indications: FORM_F.indications,
+      procedureDate: null,
+      result: null,
+      mtpIndicated: false,
+      doctorName: null,
+      status: 'Declared',
+    },
+  ],
+  incomplete: 1,
+};
+
 export const ANSWERS: FakeAnswers = {
+  [`GET /api/v1/radiology/studies/${RECORD_ID}/form-f`]: { form: FORM_F },
+  'GET /api/v1/radiology/form-f/register': FORM_F_REGISTER,
   'GET /api/v1/radiology/studies': paged(STUDIES),
   [`GET /api/v1/radiology/studies/${RECORD_ID}`]: STUDY,
   [`GET /api/v1/radiology/studies/${RECORD_ID}/report`]: REPORT,

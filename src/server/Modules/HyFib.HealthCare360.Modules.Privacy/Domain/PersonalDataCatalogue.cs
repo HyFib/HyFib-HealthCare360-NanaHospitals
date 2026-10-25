@@ -111,6 +111,7 @@ public static class PersonalDataCatalogue
                 new("diagnostics.lab_reports", "Laboratory reports"),
                 new("diagnostics.imaging_studies", "X-rays and scans"),
                 new("diagnostics.radiology_reports", "X-ray and scan reports"),
+                new("diagnostics.form_f", "Pregnancy ultrasound forms (PCPNDT Form F)"),
                 new("diagnostics.cardiology_studies", "Heart tests (ECG, echo, TMT)"),
                 new("diagnostics.cardiology_reports", "Heart test reports"),
                 new("diagnostics.critical_call_logs", "Calls about urgent results"),

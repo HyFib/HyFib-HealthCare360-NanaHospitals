@@ -86,7 +86,8 @@ internal static class RadiologyMasterEndpoints
             .Where(p => (includeInactive == true || p.IsActive) && (modality == null || p.Modality == modality))
             .OrderBy(p => p.Modality).ThenBy(p => p.Name)
             .Select(p => new ImagingProcedureDto(
-                p.Id, p.Code, p.Name, p.Modality, p.BodyPart, p.ServiceItemId, p.DurationMinutes, p.RequiresContrast, p.PatientPreparation, p.IsActive, p.Version))
+                p.Id, p.Code, p.Name, p.Modality, p.BodyPart, p.ServiceItemId, p.DurationMinutes, p.RequiresContrast, p.PatientPreparation, p.IsActive, p.Version,
+                p.RequiresFormF))
             .ToListAsync(ct));
 
     private static async Task<IResult> SaveProcedure(Guid? id, SaveImagingProcedureRequest request, HospitalDbContext db, CancellationToken ct)
@@ -133,6 +134,9 @@ internal static class RadiologyMasterEndpoints
         procedure.RequiresContrast = request.RequiresContrast;
         procedure.PatientPreparation = string.IsNullOrWhiteSpace(request.PatientPreparation) ? null : request.PatientPreparation.Trim();
         procedure.IsActive = request.IsActive;
+
+        // Only an ultrasound can be one in pregnancy (PCPNDT Form F).
+        procedure.RequiresFormF = request.RequiresFormF && request.Modality == Modality.US;
         await db.SaveChangesAsync(ct);
         return id is null ? TypedResults.Created($"/api/v1/radiology/procedures/{procedure.Id}", new { procedure.Id }) : TypedResults.NoContent();
     }

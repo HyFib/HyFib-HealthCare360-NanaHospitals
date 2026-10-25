@@ -5,6 +5,7 @@ const READ = 'radiology.studies.read';
 const WORKLIST = 'radiology.worklist';
 const WRITE = 'radiology.reports.write';
 const VERIFY = 'radiology.reports.verify';
+const FORM_F_REGISTER = 'radiology.form_f.register';
 
 const manifest: ModuleManifest = {
   id: 'radiology',
@@ -30,6 +31,12 @@ const manifest: ModuleManifest = {
       to: '/radiology/tat',
       permission: [READ, VERIFY],
       keywords: ['tat', 'repeat rate', 'reject analysis'],
+    },
+    {
+      label: 'PCPNDT Form F register',
+      to: '/radiology/form-f',
+      permission: FORM_F_REGISTER,
+      keywords: ['pcpndt', 'form f', 'pndt', 'obstetric ultrasound', 'appropriate authority'],
     },
     {
       label: 'Procedures and templates',

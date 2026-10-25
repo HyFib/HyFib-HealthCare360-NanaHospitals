@@ -39,6 +39,13 @@ public sealed class ImagingStudy : AuditableEntity, IFacilityScoped
     public Guid? OrderingPractitionerId { get; set; }
     public string? ReferringDoctorName { get; set; }
     public string? ClinicalNotes { get; set; }
+
+    /// <summary>
+    /// An ultrasound in pregnancy (from its procedure when ordered): it is not started until the woman's Form F declaration
+    /// is recorded, and its report is not signed until the Form F is completed (PCPNDT Act; <see cref="FormF"/>).
+    /// </summary>
+    public bool RequiresFormF { get; set; }
+
     public DateTimeOffset OrderedAt { get; set; }
     public ImagingStudyStatus Status { get; set; }
 

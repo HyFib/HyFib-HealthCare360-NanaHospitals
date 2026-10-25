@@ -322,6 +322,10 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    Set `privacy.noticeVersion` to the version of the privacy notice the desk hands out (default `1`), and change it
    when the notice changes. A lab with more than one pathologist can set `lab.separateVerifier` to `true` for its
    facility, so whoever entered a result does not also verify it.
+   A facility that does ultrasounds in pregnancy sets `pcpndt.registrationNumber` (for that facility) to its PCPNDT
+   registration: until then Form F cannot be recorded, and those scans cannot start. Mark each obstetric ultrasound
+   procedure "Ultrasound in pregnancy" under Radiology › Procedures and templates; the seeded obstetric and anomaly
+   scans already are.
 8. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a

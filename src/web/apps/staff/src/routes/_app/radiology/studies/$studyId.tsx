@@ -28,6 +28,7 @@ import { useDiagnosticsLive } from '@/modules/lab/common/live';
 import { RADIOLOGY_PERMISSIONS, radiologyQueries, type ImagingStudyDetail } from '@/modules/radiology/api';
 import { ModalityBadge, StudyStatusBadge } from '@/modules/radiology/badges';
 import { modalityLabel, repeatReasonLabel } from '@/modules/radiology/labels';
+import { FormFPanel } from '@/modules/radiology/FormFPanel';
 import { RadiologyReportPanel } from '@/modules/radiology/ReportEditor';
 import { StudyImages } from '@/modules/radiology/StudyImages';
 import { useStudyActions } from '@/modules/radiology/useStudyActions';
@@ -245,6 +246,7 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
         />
       )}
 
+      <FormFPanel study={study} />
       <RadiologyReportPanel study={study} />
       {actions.dialogs}
     </Page>

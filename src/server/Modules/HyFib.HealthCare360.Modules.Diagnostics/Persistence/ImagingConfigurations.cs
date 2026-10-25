@@ -126,3 +126,30 @@ internal sealed class ImagingAiFindingConfiguration : IEntityTypeConfiguration<I
         b.HasIndex(x => new { x.ImagingStudyId, x.Status });
     }
 }
+
+internal sealed class FormFConfiguration : IEntityTypeConfiguration<FormF>
+{
+    public void Configure(EntityTypeBuilder<FormF> b)
+    {
+        b.ToTable("form_f", DiagnosticsSchema.Name);
+        b.Property(x => x.FormNumber).HasMaxLength(24);
+        b.Property(x => x.RegistrationNumber).HasMaxLength(64);
+        b.Property(x => x.HusbandOrFatherName).HasMaxLength(200);
+        b.Property(x => x.Address).HasMaxLength(500);
+        b.Property(x => x.Phone).HasMaxLength(20);
+        b.Property(x => x.ReferringDoctorName).HasMaxLength(200);
+        b.Property(x => x.ReferringDoctorAddress).HasMaxLength(500);
+        b.Property(x => x.OtherIndication).HasMaxLength(500);
+        b.Property(x => x.ResultText).HasMaxLength(2000);
+        b.Property(x => x.ResultConveyedTo).HasMaxLength(200);
+        b.Property(x => x.MtpIndication).HasMaxLength(1000);
+        b.Property(x => x.DoctorName).HasMaxLength(200);
+        b.Ignore(x => x.IsCompleted);
+        b.HasOne<ImagingStudy>().WithMany().HasForeignKey(x => x.ImagingStudyId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.ImagingStudyId).IsUnique();
+        b.HasIndex(x => x.FormNumber).IsUnique();
+        b.HasIndex(x => new { x.FacilityId, x.Status, x.CompletedAt });
+        b.HasIndex(x => x.PatientId);
+    }
+}

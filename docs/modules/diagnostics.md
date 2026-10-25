@@ -34,6 +34,9 @@ to that run, or once QC passes again).
 | `radiology.reports.write` | Draft and submit radiology reports | Radiologist |
 | `radiology.reports.verify` | Sign off, release, addenda; report templates | Radiologist |
 | `radiology.images.view` | A study's images from PACS, in HC360 and in the PACS viewer | Doctor, Radiographer, Radiologist (not Nurse: nurses act on the report) |
+| `radiology.form_f.record` | Record the woman's PCPNDT Form F details and declaration before an ultrasound in pregnancy | Radiographer, Radiologist |
+| `radiology.form_f.sign` | Complete Form F with the result and the performing doctor's declaration (grant it to gynaecologists who scan) | Radiologist |
+| `radiology.form_f.register` | The month's Form F register and its CSV for the Appropriate Authority | Radiologist, HospitalAdmin |
 | `cardiology.studies.read` | Cardiology studies and released reports | Doctor, Nurse, CardiologyTechnician |
 | `cardiology.studies.manage` | Perform ECG/Echo/TMT/Holter/ABPM, upload device output | CardiologyTechnician |
 | `cardiology.reports.verify` | Report and sign off cardiology studies | Cardiologist (give cardiologists the Doctor role too; grant this to Doctor where physicians report ECGs) |
@@ -171,7 +174,25 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | GET | `/templates?modality&bodyPart&includeInactive` | reports.write or reports.verify | → `ReportTemplateDto[]` (matching body part first) |
 | POST · PUT | `/templates` · `/templates/{id}` | `radiology.reports.verify` | `SaveReportTemplateRequest` → 201 / 204 |
 | GET | `/procedures?modality&includeInactive` | studies.read, worklist or reports.verify | → `ImagingProcedureDto[]` |
-| POST · PUT | `/procedures` · `/procedures/{id}` | reports.verify or `masters.manage` | `SaveImagingProcedureRequest` (code, modality, bodyPart, serviceItemId, durationMinutes, requiresContrast, patientPreparation) → 201 / 204 |
+| POST · PUT | `/procedures` · `/procedures/{id}` | reports.verify or `masters.manage` | `SaveImagingProcedureRequest` (code, modality, bodyPart, serviceItemId, durationMinutes, requiresContrast, patientPreparation, requiresFormF — kept only for an ultrasound) → 201 / 204 |
+
+### PCPNDT Form F — `/api/v1/radiology`
+
+Every ultrasound in pregnancy needs Form F (PCPNDT Act s.29; Rules 9 and 10). A procedure marked `requiresFormF` (the
+seeded `RAD-USG-OBS` and `RAD-USG-ANOMALY`) passes the flag to each study ordered from it. Such a study is not started or
+acquired until the woman's details and her declaration are recorded (422 `form_f.required`), and its report is not signed
+until the form is completed (422 `form_f.incomplete`). A completed form cannot change (422 `form_f.completed`). A form is
+recorded only once the facility's `pcpndt.registrationNumber` is set (422 `form_f.not_registered`), and only for an
+ultrasound of a woman.
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/studies/{id}/form-f` | form_f.record, .sign or .register | → `StudyFormF { form: FormFDto \| null }`; guard; audit "Viewed PCPNDT Form F …" |
+| PUT | `/studies/{id}/form-f` | form_f.record or .sign | `SaveFormFDeclarationRequest` (age, husband or father, address, phone, living sons and daughters, LMP or weeks, referral and referring doctor, indications, womanDeclared = true, version: null on the first save) → `FormFDto` |
+| POST | `/studies/{id}/form-f/complete` | `radiology.form_f.sign` | `CompleteFormFRequest` (result, conveyedTo, conveyedOn, mtpIndicated, mtpIndication, doctorDeclared = true, version) → `FormFDto`; only once the study is acquired; the signer is recorded as the performing doctor |
+| GET | `/studies/{id}/form-f/document` · `/pdf` | as GET | → the printable Form F (Sections A, B and D) / its PDF; audited |
+| GET | `/form-f/register?year&month` | `radiology.form_f.register` | → `FormFRegister` (completed forms by date of the ultrasound, and the month's forms not yet completed) |
+| GET | `/form-f/register/export?year&month` | `radiology.form_f.register` | → CSV; audited as a PHI export (`radiology.form_f.exported`) |
 
 ### Cardiology — `/api/v1/cardiology`
 | Method | Path | Permission | Request → response |
@@ -405,6 +426,7 @@ Only released content is ever made into these PDFs.
 | `lab.deltaCheckPercent` | `50` | Facility delta threshold when the test has none |
 | `lab.deltaCheckWindowDays` | `30` | How far back the previous result is looked for |
 | `radiology.pacs.autoLink` | `true` | Link the facility's new imaging studies with PACS every five minutes (`PacsLinkJob`) |
+| `pcpndt.registrationNumber` | none | The facility's PCPNDT registration (Form B), printed on every Form F. Until it is set, no Form F is recorded and ultrasounds in pregnancy cannot start |
 | `diagnostics.reports.sendPdf` | `true` | Send the report's PDF with the "report ready" e-mail, and with the WhatsApp message when its template has a document header. When `false`, patients are told the report is ready and open it on the portal. Use a WhatsApp template without a document header then: a template with one can't go without its PDF, so the WhatsApp message is skipped (the notification log says why) while the SMS and e-mail still go |
 
 ## Number series
@@ -415,6 +437,7 @@ Only released content is ever made into these PDFs.
 | `lab.sample` | `{SEQ:9}` (barcode) | Never | Global (analysers look samples up by barcode only) |
 | `radiology.accession` | `{FAC}RD{YY}{SEQ:7}` | Yearly | Facility |
 | `cardiology.accession` | `{FAC}CD{YY}{SEQ:7}` | Yearly | Facility |
+| `radiology.form-f` | `{FAC}FF{YY}{SEQ:6}` | Yearly | Facility |
 
 ## Seed data
 
