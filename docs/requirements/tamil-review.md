@@ -355,3 +355,8 @@ Points we would most like checked:
 | 95 | `message.field.patient` | Choose a registered patient. | பதிவு செய்யப்பட்ட ஒரு நோயாளியைத் தேர்ந்தெடுங்கள். | |
 | 96 | `message.field.patient_merged` | This record was merged into another one. Choose the patient's current record. | இந்தப் பதிவு வேறொரு பதிவுடன் இணைக்கப்பட்டுவிட்டது. நோயாளியின் தற்போதைய பதிவைத் தேர்ந்தெடுங்கள். | |
 | 97 | `message.field.practitioner` | Choose an active doctor. | செயலில் உள்ள ஒரு மருத்துவரைத் தேர்ந்தெடுங்கள். | |
+| 98 | `doc.bill.place_of_supply` | Place of supply: {state} | வழங்கல் இடம்: {state} | |
+| 99 | `doc.bill.irn` | IRN | விலைப்பட்டியல் குறிப்பு எண் (IRN) | |
+| 100 | `doc.bill.ack_no` | Ack no. | ஒப்புகை எண் | |
+| 101 | `doc.bill.ack_date` | Ack date | ஒப்புகை தேதி | |
+| 102 | `doc.bill.einvoice_qr` | Signed QR code of the e-invoice | மின்-விலைப்பட்டியலின் கையொப்பமிட்ட QR குறியீடு | |

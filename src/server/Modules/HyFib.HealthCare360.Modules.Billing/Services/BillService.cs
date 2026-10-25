@@ -383,6 +383,12 @@ public sealed class BillService(
             return Error.Rule("billing.bill_has_claim", "An insurance claim is open on this bill. Settle or reject the claim first.");
         }
 
+        if (await db.Set<EInvoice>().AnyAsync(e => e.Source == "bill" && e.SourceId == billId && e.Status == EInvoiceStatus.Registered, ct))
+        {
+            return Error.Rule("einvoice.active",
+                "This bill has an IRN. Cancel the IRN on the portal within 24 hours and record it in the e-invoice register, or issue a credit note.");
+        }
+
         db.GuardVersion(bill, request.Version);
         var reason = request.Reason.Trim();
         var now = time.GetUtcNow();

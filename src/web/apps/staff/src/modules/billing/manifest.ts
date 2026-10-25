@@ -53,6 +53,12 @@ const manifest: ModuleManifest = {
       keywords: ['deposit', 'advance', 'ip advance'],
     },
     {
+      label: 'GST e-invoices',
+      to: '/billing/einvoices',
+      permission: 'billing.einvoice',
+      keywords: ['e-invoice', 'IRN', 'IRP', 'B2B invoice', 'signed QR code', 'GST'],
+    },
+    {
       label: 'Refunds',
       to: '/billing/refunds',
       permission: ['billing.refunds.request', 'billing.refunds.approve', 'billing.charges.read'],

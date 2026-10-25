@@ -343,3 +343,8 @@ Points we would most like checked:
 | 95 | `message.request.check_failed` | We could not complete this request. Please try again. | हम आपका अनुरोध पूरा नहीं कर सके। कृपया फिर से कोशिश करें। | |
 | 96 | `message.prescription.dsc_not_signed` | Your doctor has not digitally signed this prescription yet. | आपके डॉक्टर ने अभी इस पर्चे पर डिजिटल हस्ताक्षर नहीं किए हैं। | |
 | 97 | `message.prescription.cannot_issue` | This prescription cannot be issued right now. Please contact the hospital. | यह पर्चा अभी जारी नहीं किया जा सकता। कृपया अस्पताल से संपर्क करें। | |
+| 98 | `doc.bill.place_of_supply` | Place of supply: {state} | आपूर्ति का स्थान: {state} | |
+| 99 | `doc.bill.irn` | IRN | बीजक संदर्भ संख्या (IRN) | |
+| 100 | `doc.bill.ack_no` | Ack no. | पावती सं. | |
+| 101 | `doc.bill.ack_date` | Ack date | पावती दिनांक | |
+| 102 | `doc.bill.einvoice_qr` | Signed QR code of the e-invoice | ई-इनवॉइस का हस्ताक्षरित QR कोड | |

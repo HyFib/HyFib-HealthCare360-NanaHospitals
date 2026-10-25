@@ -138,6 +138,13 @@ export function buildReceiptHtml(
               .join('')}</table>`
           : ''
       }
+      ${
+        sale.eInvoice
+          ? `<div class="dash"></div><div class="center"><img src="${escapeHtml(sale.eInvoice.qrCodeSvg)}" alt="Signed QR code of the e-invoice" style="width:32mm;height:32mm"></div>
+      <div class="small" style="word-break:break-all">IRN ${escapeHtml(sale.eInvoice.irn)}</div>
+      <div class="small">Ack no. ${escapeHtml(sale.eInvoice.ackNo)} · ${escapeHtml(formatDateTime(sale.eInvoice.ackDate))}</div>`
+          : ''
+      }
       ${substituted.length > 0 ? `<div class="small muted">* Substituted with the prescriber's consent for: ${substituted.map((i) => escapeHtml(i.prescribedDrugName ?? '')).join(', ')}</div>` : ''}
       ${sale.counsellingNotes ? `<div class="dash"></div><div class="small"><b>Advice:</b> ${escapeHtml(sale.counsellingNotes)}</div>` : ''}
       <div class="dash"></div>

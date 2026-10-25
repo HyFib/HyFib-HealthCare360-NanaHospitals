@@ -2,6 +2,7 @@ import type { PagedResult, PayerType } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { DiscountAuthority } from './billTotals';
+import type { EInvoiceStamp } from './einvoiceApi';
 import type {
   BillStatus,
   BillType,
@@ -213,6 +214,8 @@ export interface BillDetail {
   pendingDiscount: DiscountApprovalDto | null;
   package: BillPackageSummary | null;
   version: number;
+  /** The IRN the e-invoice portal gave this B2B tax invoice, printed with its signed QR code. */
+  eInvoice?: EInvoiceStamp | null;
 }
 
 export interface CreateBillRequest {

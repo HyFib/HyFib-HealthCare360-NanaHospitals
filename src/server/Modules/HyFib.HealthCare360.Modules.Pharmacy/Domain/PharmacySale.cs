@@ -61,6 +61,9 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
 
     public string? BuyerLegalName { get; private set; }
 
+    /// <summary>The buyer's address with its PIN code, which the e-invoice needs.</summary>
+    public string? BuyerAddress { get; private set; }
+
     /// <summary>The state of supply as its GST code: where the goods are delivered (the counter's own state when handed over there).</summary>
     public string? PlaceOfSupply { get; private set; }
 
@@ -70,10 +73,11 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     /// The buyer and the place of supply, before the items are priced: goods handed over at the counter are supplied in
     /// the facility's state; goods dispatched to another state are an inter-state supply, taxed as IGST.
     /// </summary>
-    public void SetSupply(string? buyerGstin, string? buyerLegalName, string? facilityState, string? deliveryState)
+    public void SetSupply(string? buyerGstin, string? buyerLegalName, string? facilityState, string? deliveryState, string? buyerAddress = null)
     {
         BuyerGstin = buyerGstin;
         BuyerLegalName = buyerLegalName;
+        BuyerAddress = buyerAddress;
         PlaceOfSupply = deliveryState ?? facilityState;
         IsInterState = deliveryState is not null && facilityState is not null && deliveryState != facilityState;
     }

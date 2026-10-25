@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.DoctorFees;
+using HyFib.HealthCare360.Modules.Billing.Features.EInvoices;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
 using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
@@ -51,6 +52,9 @@ public sealed class BillingModule : IModule
         services.AddScoped<ClaimService>();
         services.AddScoped<DoctorFeeService>();
         services.AddScoped<TallyService>();
+        services.AddScoped<EInvoiceService>();
+        services.AddScoped<IEInvoiceSource, BillEInvoiceSource>();
+        services.AddScoped<IEInvoiceRegister, EInvoiceRegisterLookup>();
         services.AddScoped<TallyReconciliationService>();
 
         // Gateway reconciliation (INT-PG): settlements, exceptions, follow-up of payments and refunds.
@@ -95,6 +99,7 @@ public sealed class BillingModule : IModule
         ClaimEndpoints.Map(endpoints);
         DoctorFeeEndpoints.Map(endpoints);
         TallyEndpoints.Map(endpoints);
+        EInvoiceEndpoints.Map(endpoints);
         PortalBillEndpoints.Map(endpoints);
     }
 }

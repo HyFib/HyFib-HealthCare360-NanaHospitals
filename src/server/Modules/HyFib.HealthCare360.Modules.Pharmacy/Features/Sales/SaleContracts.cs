@@ -12,8 +12,9 @@ public sealed record CounterSaleLine(Guid ItemId, decimal Quantity, Guid? BatchI
 /// <summary>
 /// A buyer registered for GST (a clinic, a nursing home). <paramref name="DeliveryState"/>: the GST state code the goods
 /// are dispatched to, when not handed over at the counter; another state's makes the supply inter-state (IGST).
+/// <paramref name="Address"/>: the buyer's address with its PIN code, which the e-invoice needs.
 /// </summary>
-public sealed record B2bBuyer(string Gstin, string LegalName, string? DeliveryState);
+public sealed record B2bBuyer(string Gstin, string LegalName, string? DeliveryState, string? Address = null);
 
 /// <param name="PatientId">Registered patient (enables credit and the medication history); walk-in customers leave it empty.</param>
 /// <param name="Prescription">Required for Schedule H/H1/X medicines.</param>
@@ -109,7 +110,9 @@ public sealed record PharmacySaleDetail(
     string? CancelReason,
     IReadOnlyList<PharmacySaleItemDto> Items,
     IReadOnlyList<PharmacyPaymentDto> Payments,
-    uint Version);
+    uint Version,
+    string? BuyerAddress = null,
+    EInvoiceStamp? EInvoice = null);
 
 public sealed record CollectPaymentRequest(PaymentMode Mode, decimal Amount, string? Reference);
 
@@ -180,6 +183,7 @@ public sealed class CounterSaleRequestValidator : AbstractValidator<CounterSaleR
         RuleForEach(x => x.Payments).SetValidator(new SalePaymentValidator());
         RuleFor(x => x.Buyer!.Gstin).Must(Gstin.IsValid).WithMessage("Check the buyer's GSTIN: it is not a valid number.").When(x => x.Buyer is not null);
         RuleFor(x => x.Buyer!.LegalName).NotEmpty().SafeText(200).When(x => x.Buyer is not null);
+        RuleFor(x => x.Buyer!.Address).SafeText(300).When(x => x.Buyer?.Address is not null);
         RuleFor(x => x.Buyer!.DeliveryState).Must(s => s is null || Gstin.States.ContainsKey(s)).WithMessage("Choose the state the goods are delivered to.")
             .When(x => x.Buyer is not null);
     }

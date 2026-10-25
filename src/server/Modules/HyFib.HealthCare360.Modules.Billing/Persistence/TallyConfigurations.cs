@@ -42,3 +42,28 @@ internal sealed class TallyVoucherRecordConfiguration : IEntityTypeConfiguration
         b.HasIndex(x => new { x.FacilityId, x.Date });
     }
 }
+
+internal sealed class EInvoiceConfiguration : IEntityTypeConfiguration<EInvoice>
+{
+    public void Configure(EntityTypeBuilder<EInvoice> b)
+    {
+        b.ToTable("einvoices", BillingSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Source).HasMaxLength(16);
+        b.Property(x => x.DocumentNumber).HasMaxLength(24);
+        b.Property(x => x.BuyerGstin).HasMaxLength(15);
+        b.Property(x => x.InvoiceValue).HasPrecision(18, 2);
+        b.Property(x => x.Irn).HasMaxLength(64);
+        b.Property(x => x.AckNo).HasMaxLength(20);
+        b.Property(x => x.SignedQrCode).HasMaxLength(8000);
+        b.Property(x => x.RecordedByName).HasMaxLength(200);
+        b.Property(x => x.Status).HasMaxLength(16);
+        b.Property(x => x.CancelReason).HasMaxLength(24);
+        b.Property(x => x.CancelRemark).HasMaxLength(100);
+        b.HasIndex(x => x.Irn).IsUnique();
+
+        // One live IRN per invoice; cancelled ones stay as history.
+        b.HasIndex(x => new { x.Source, x.SourceId }).IsUnique().HasFilter("status = 'Registered' AND is_deleted = false");
+        b.HasIndex(x => new { x.FacilityId, x.DocumentDate });
+    }
+}

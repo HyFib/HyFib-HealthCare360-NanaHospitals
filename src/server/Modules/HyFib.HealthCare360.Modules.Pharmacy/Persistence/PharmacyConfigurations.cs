@@ -76,6 +76,7 @@ internal sealed class PharmacySaleConfiguration : IEntityTypeConfiguration<Pharm
         b.Property(x => x.CounsellingNotes).HasMaxLength(2000);
         b.Property(x => x.BuyerGstin).HasMaxLength(15);
         b.Property(x => x.BuyerLegalName).HasMaxLength(200);
+        b.Property(x => x.BuyerAddress).HasMaxLength(300);
         b.Property(x => x.PlaceOfSupply).HasMaxLength(2);
         b.Property(x => x.DiscountPercent).IsPercent();
         b.Property(x => x.CancelReason).HasMaxLength(300);

@@ -151,7 +151,8 @@ internal static class SaleEndpoints
     }
 
     private static async Task<IResult> Get(
-        Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, CancellationToken ct)
+        Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, IEInvoiceRegister einvoices,
+        CancellationToken ct)
     {
         var sale = await db.Set<PharmacySale>().AsNoTracking().Include(s => s.Items).Include(s => s.Payments).FirstOrDefaultAsync(s => s.Id == id, ct);
         if (sale is null)
@@ -186,7 +187,9 @@ internal static class SaleEndpoints
                 i.GrossAmount, i.DiscountAmount, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.IgstAmount, i.NetAmount, i.ReturnedQuantity, i.IsSubstitution,
                 i.PrescribedDrugName, i.SubstitutionReason)).ToList(),
             sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund)).ToList(),
-            sale.Version));
+            sale.Version,
+            sale.BuyerAddress,
+            sale.BuyerGstin is null ? null : await einvoices.FindAsync(PharmacyEInvoiceSource.Key, sale.Id, ct)));
     }
 
     private static async Task<IResult> Returns(Guid id, HospitalDbContext db, CancellationToken ct)
