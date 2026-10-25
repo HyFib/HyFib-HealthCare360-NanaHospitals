@@ -32,7 +32,7 @@ internal static class FlagEndpoints
 
     private static async Task<IResult> ListAllergies(Guid patientId, bool? includeInactive, ClinicalAccess access, HospitalDbContext db, CancellationToken ct)
     {
-        var opened = await access.OpenAsync(patientId, "Viewed allergies", ct);
+        var opened = await access.OpenSafetyFactsAsync(patientId, "Viewed allergies", ct);
         if (opened.IsFailure)
         {
             return opened.Error!.ToProblem();
@@ -87,7 +87,7 @@ internal static class FlagEndpoints
     /// <summary>Recorded, "no known allergies" or not recorded: the banner claims NKA only when it was recorded (EHR-03).</summary>
     private static async Task<IResult> AllergyStatusOf(Guid patientId, ClinicalAccess access, HospitalDbContext db, CancellationToken ct)
     {
-        var opened = await access.OpenAsync(patientId, "Viewed allergy status", ct);
+        var opened = await access.OpenSafetyFactsAsync(patientId, "Viewed allergy status", ct);
         if (opened.IsFailure)
         {
             return opened.Error!.ToProblem();
@@ -213,7 +213,7 @@ internal static class FlagEndpoints
     private static async Task<IResult> ListAlerts(Guid patientId, bool? includeInactive, ClinicalAccess access, HospitalDbContext db, TimeProvider time,
         CancellationToken ct)
     {
-        var opened = await access.OpenAsync(patientId, "Viewed patient alerts", ct);
+        var opened = await access.OpenSafetyFactsAsync(patientId, "Viewed patient alerts", ct);
         if (opened.IsFailure)
         {
             return opened.Error!.ToProblem();

@@ -22,6 +22,18 @@ public static class PatientsPermissions
     /// </summary>
     public const string ContactRead = "patients.contact.read";
     public const string BreakGlass = "patients.break_glass";
+
+    /// <summary>Open the clinical record of a patient in the HIV category (<see cref="Domain.SensitiveCategory"/>).</summary>
+    public const string SensitiveHiv = "patients.sensitive.hiv";
+
+    /// <summary>Open the clinical record of a patient in the mental health category.</summary>
+    public const string SensitiveMentalHealth = "patients.sensitive.mental_health";
+
+    /// <summary>Open the clinical record of a patient in the MTP category. Medical records officers hold it by default: grant it to gynaecologists.</summary>
+    public const string SensitiveMtp = "patients.sensitive.mtp";
+
+    /// <summary>Put a patient's record in a sensitive category, or take it out, with a reason.</summary>
+    public const string SensitiveManage = "patients.sensitive.manage";
     public const string Consents = "patients.consents";
     public const string Documents = "patients.documents";
     public const string IdentityVerify = "patients.identity.verify";
@@ -51,6 +63,10 @@ public static class PatientsPermissions
             SystemRoles.MrdOfficer,
         ]),
         new(BreakGlass, "Patients", "Emergency access to restricted records (audited)", Clinical),
+        new(SensitiveHiv, "Patients", "Open the clinical record of patients in the HIV category", [.. Clinical, SystemRoles.MrdOfficer]),
+        new(SensitiveMentalHealth, "Patients", "Open the clinical record of patients in the mental health category", [.. Clinical, SystemRoles.MrdOfficer]),
+        new(SensitiveMtp, "Patients", "Open the clinical record of patients in the termination-of-pregnancy (MTP) category", [SystemRoles.MrdOfficer]),
+        new(SensitiveManage, "Patients", "Put a patient's record in a sensitive category (HIV, mental health, MTP) or take it out", [SystemRoles.Doctor]),
         new(Consents, "Patients", "Capture and revoke patient consents", [.. Desk, .. Clinical]),
         new(Documents, "Patients", "Attach and view patient documents", [.. Desk, .. Clinical, SystemRoles.MrdOfficer, SystemRoles.InsuranceDesk]),
         new(IdentityVerify, "Patients", "Check a patient's identity with their Aadhaar fingerprint (UIDAI)", Desk),

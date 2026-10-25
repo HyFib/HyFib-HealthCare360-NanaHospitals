@@ -20160,6 +20160,13 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("religion");
 
+                    b.Property<int>("SensitiveCategories")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("sensitive_categories");
+
                     b.Property<string>("Title")
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")

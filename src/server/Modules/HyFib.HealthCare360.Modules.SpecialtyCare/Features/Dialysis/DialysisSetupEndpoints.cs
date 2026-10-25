@@ -133,7 +133,7 @@ internal static class DialysisSetupEndpoints
 
     private static async Task<IResult> GetProfile(Guid patientId, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
-        var access = await guard.EnsureCanOpenAsync(patientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(patientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();

@@ -521,6 +521,15 @@ export interface VerifyIdentityRequest {
   consent: boolean;
 }
 
+/** Confidential kinds of record (gap R-4, server `SensitiveCategory`). */
+export const SENSITIVE_CATEGORIES = ['Hiv', 'MentalHealth', 'Mtp'] as const;
+export type SensitiveCategory = (typeof SENSITIVE_CATEGORIES)[number];
+
+export interface SensitiveCategoriesDto {
+  categories: SensitiveCategory[];
+  version: number;
+}
+
 export const patientKeys = {
   all: ['patients'] as const,
   search: (params: PatientSearchParams) => ['patients', 'search', params] as const,
@@ -536,9 +545,17 @@ export const patientKeys = {
   photo: (fileId: string) => ['patients', 'photo', fileId] as const,
   identityChecks: (id: string) => ['patients', 'identity-checks', id] as const,
   identitySetup: ['patients', 'identity-setup'] as const,
+  sensitive: (id: string) => ['patients', 'sensitive', id] as const,
 };
 
 export const patientQueries = {
+  /** The sensitive categories of the record (needs `patients.sensitive.manage` and access to the chart). */
+  sensitive: (id: string) =>
+    queryOptions({
+      queryKey: patientKeys.sensitive(id),
+      queryFn: ({ signal }) =>
+        api.get<SensitiveCategoriesDto>(`/api/v1/patients/${id}/sensitive-categories`, { signal }),
+    }),
   search: (params: PatientSearchParams) =>
     queryOptions({
       queryKey: patientKeys.search(params),
@@ -626,6 +643,9 @@ export const patientApi = {
   breakGlass: (id: string, reason: string) =>
     api.post<{ patientId: string; expiresAt: string }>(`/api/v1/patients/${id}/break-glass`, { reason }),
   createVisit: (request: CreateVisitRequest) => api.post<VisitDetail>('/api/v1/visits', request),
+  /** Puts the record in exactly these categories (none takes it out of all), with the reason kept in the audit trail. */
+  setSensitive: (id: string, categories: SensitiveCategory[], reason: string, version: number) =>
+    api.put<SensitiveCategoriesDto>(`/api/v1/patients/${id}/sensitive-categories`, { categories, reason, version }),
 };
 
 /** Recording and withdrawing consents needs `patients.consents`; a restricted record answers 403 `patient.restricted`. */

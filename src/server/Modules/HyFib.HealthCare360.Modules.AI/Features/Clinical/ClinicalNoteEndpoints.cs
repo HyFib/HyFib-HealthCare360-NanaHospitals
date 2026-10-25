@@ -29,7 +29,7 @@ internal static class ClinicalNoteEndpoints
         if (request.PatientId is { } patientId)
         {
             // Restricted (VIP) records need the same access here as anywhere else in the EMR.
-            var access = await guard.EnsureCanOpenAsync(patientId, ct);
+            var access = await guard.EnsureCanOpenChartAsync(patientId, ct);
             if (access.IsFailure)
             {
                 return access.Error!.ToProblem();

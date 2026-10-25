@@ -23,6 +23,8 @@ internal sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
 
     public void Configure(EntityTypeBuilder<Patient> b)
     {
+        // A set of flags, so a number: enums are stored by name elsewhere, which cannot hold a combination.
+        b.Property(x => x.SensitiveCategories).HasConversion<int>().HasDefaultValue(SensitiveCategory.None).HasSentinel(SensitiveCategory.None);
         b.ToTable("patients", PatientsSchema.Name);
         b.Property(x => x.Uhid).HasMaxLength(20);
         b.Property(x => x.Title).HasMaxLength(16);

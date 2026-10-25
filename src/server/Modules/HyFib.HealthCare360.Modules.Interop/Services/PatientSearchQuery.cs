@@ -107,7 +107,8 @@ internal static class PatientSearchQuery
             .Where(RecordSharingConsent.IsGranted(consents));
         if (!includeRestricted)
         {
-            query = query.Where(p => !p.IsVip);
+            // Restricted (VIP) records, and records in a sensitive category (R-4), are not listed to clients that may not open them.
+            query = query.Where(p => !p.IsVip && p.SensitiveCategories == SensitiveCategory.None);
         }
 
         foreach (var ids in criteria.Ids)

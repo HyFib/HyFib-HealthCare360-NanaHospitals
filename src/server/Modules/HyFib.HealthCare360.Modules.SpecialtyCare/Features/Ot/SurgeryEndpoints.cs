@@ -150,7 +150,7 @@ internal static class SurgeryEndpoints
             return Error.NotFound(nameof(SurgeryBooking), id).ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(booking.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(booking.PatientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();
@@ -168,7 +168,7 @@ internal static class SurgeryEndpoints
     private static async Task<IResult> ForPatient(
         Guid patientId, [AsParameters] PageQuery query, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
     {
-        var access = await guard.EnsureCanOpenAsync(patientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(patientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();

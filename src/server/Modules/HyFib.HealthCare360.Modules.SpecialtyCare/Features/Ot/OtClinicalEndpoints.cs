@@ -94,7 +94,7 @@ internal static class OtClinicalEndpoints
     /// <summary>Restricted-record guard plus PHI access audit; returns a problem result when access is refused.</summary>
     private static async Task<IResult?> OpenAsync(Guid patientId, string what, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
     {
-        var access = await guard.EnsureCanOpenAsync(patientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(patientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();

@@ -89,7 +89,7 @@ internal static class TelehealthEndpoints
             return Error.NotFound(nameof(TelehealthSession), id).ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(detail.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(detail.PatientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();
@@ -126,7 +126,7 @@ internal static class TelehealthEndpoints
             return Error.NotFound(nameof(TelehealthSession), id).ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(patientId.Value, ct);
+        var access = await guard.EnsureCanOpenChartAsync(patientId.Value, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();

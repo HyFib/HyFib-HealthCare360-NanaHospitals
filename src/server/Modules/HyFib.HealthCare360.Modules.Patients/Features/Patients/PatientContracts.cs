@@ -308,3 +308,20 @@ public sealed class BreakGlassRequestValidator : AbstractValidator<BreakGlassReq
         RuleFor(x => x.Reason).NotEmpty().MinimumLength(15).MaximumLength(500).WithMessage("Describe the emergency (at least 15 characters).");
     }
 }
+
+/// <summary>The sensitive categories a patient's record is in (R-4), with the patient's version for the next change.</summary>
+public sealed record SensitiveCategoriesDto(IReadOnlyList<SensitiveCategory> Categories, uint Version);
+
+/// <param name="Categories">Every category the record is in after the change; empty takes it out of all of them.</param>
+/// <param name="Reason">Why: the diagnosis, or the patient's request; kept in the audit trail.</param>
+public sealed record SetSensitiveCategoriesRequest(IReadOnlyList<SensitiveCategory> Categories, string Reason, uint Version);
+
+public sealed class SetSensitiveCategoriesRequestValidator : AbstractValidator<SetSensitiveCategoriesRequest>
+{
+    public SetSensitiveCategoriesRequestValidator()
+    {
+        RuleFor(x => x.Categories).NotNull();
+        RuleForEach(x => x.Categories).IsInEnum().NotEqual(SensitiveCategory.None);
+        RuleFor(x => x.Reason).NotEmpty().MinimumLength(10).MaximumLength(500).WithMessage("Give the reason (at least 10 characters).");
+    }
+}

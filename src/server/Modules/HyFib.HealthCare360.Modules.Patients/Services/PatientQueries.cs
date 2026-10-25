@@ -105,6 +105,10 @@ public sealed class PatientAccessGuard(
 {
     private static readonly TimeSpan GrantDuration = TimeSpan.FromMinutes(30);
 
+    /// <summary>
+    /// Whether the user may serve the patient: see their details, bills, orders, results in the departments. Only a
+    /// restricted (VIP) record is closed here; sensitive categories close the clinical record (<see cref="EnsureCanOpenChartAsync"/>).
+    /// </summary>
     public async Task<Result> EnsureCanOpenAsync(Guid patientId, CancellationToken ct)
     {
         var isVip = await db.Set<Patient>().Where(p => p.Id == patientId).Select(p => (bool?)p.IsVip).FirstOrDefaultAsync(ct);
@@ -115,6 +119,97 @@ public sealed class PatientAccessGuard(
             true => await CheckRestrictedAsync(patientId, ct),
         };
     }
+
+    /// <summary>
+    /// Whether the user may open the patient's clinical record (notes, diagnoses, care, documents): closed for a restricted
+    /// (VIP) record as <see cref="EnsureCanOpenAsync"/> is, and for a record in a sensitive category (HIV, mental health,
+    /// MTP) unless the user holds the permission of each category it is in (R-4). Break-the-glass opens both.
+    /// </summary>
+    public async Task<Result> EnsureCanOpenChartAsync(Guid patientId, CancellationToken ct)
+    {
+        var patient = await db.Set<Patient>().Where(p => p.Id == patientId).Select(p => new { p.IsVip, p.SensitiveCategories }).FirstOrDefaultAsync(ct);
+        if (patient is null)
+        {
+            return Error.NotFound(nameof(Patient), patientId);
+        }
+
+        if (patient.IsVip)
+        {
+            return await CheckRestrictedAsync(patientId, ct);
+        }
+
+        if (patient.SensitiveCategories == SensitiveCategory.None)
+        {
+            return Result.Success();
+        }
+
+        if (currentUser.UserId is { } userId && await HoldsCategoriesAsync(userId, patient.SensitiveCategories, ct))
+        {
+            return Result.Success();
+        }
+
+        var restricted = await CheckRestrictedAsync(patientId, ct);
+        return restricted.IsSuccess
+            ? restricted
+            : new Error("patient.restricted",
+                $"This record is confidential ({SensitiveCategories.Describe(patient.SensitiveCategories)}). Request emergency access (break-the-glass) if it is clinically necessary.",
+                ErrorType.Forbidden)
+            {
+                Data = new { breakGlassAvailable = true },
+            };
+    }
+
+    // Files are documents of the clinical record (reports, scans, letters): the chart's rules apply to them.
+    Task<Result> IPatientRecordAccess.EnsureCanOpenAsync(Guid patientId, CancellationToken cancellationToken) =>
+        EnsureCanOpenChartAsync(patientId, cancellationToken);
+
+    /// <summary>
+    /// Puts the record in the categories of a diagnosis (<see cref="SensitiveCategories.FromIcd"/>), as the diagnosis is
+    /// recorded; nothing for an ordinary one. The change is saved with the caller's unit of work and audited.
+    /// </summary>
+    public async Task FlagFromDiagnosisAsync(Guid patientId, string? icdCode, CancellationToken ct)
+    {
+        var category = SensitiveCategories.FromIcd(icdCode);
+        if (category == SensitiveCategory.None)
+        {
+            return;
+        }
+
+        var patient = await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == patientId, ct);
+        if (patient is null || patient.SensitiveCategories.HasFlag(category))
+        {
+            return;
+        }
+
+        patient.SensitiveCategories |= category;
+        audit.Add(new AuditEntry(AuditCategories.Security, "patient.sensitive_flagged",
+            $"Record put in the {SensitiveCategories.Describe(category)} category by a diagnosis ({icdCode!.Trim().ToUpperInvariant()})")
+        {
+            PatientId = patientId,
+            EntityType = nameof(Patient),
+            EntityId = patientId.ToString(),
+        });
+    }
+
+    private async Task<bool> HoldsCategoriesAsync(Guid userId, SensitiveCategory categories, CancellationToken ct)
+    {
+        foreach (var (category, permission) in CategoryPermissions)
+        {
+            if (categories.HasFlag(category) && !await permissions.HasPermissionAsync(userId, permission, ct))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    internal static readonly (SensitiveCategory Category, string Permission)[] CategoryPermissions =
+    [
+        (SensitiveCategory.Hiv, PatientsPermissions.SensitiveHiv),
+        (SensitiveCategory.MentalHealth, PatientsPermissions.SensitiveMentalHealth),
+        (SensitiveCategory.Mtp, PatientsPermissions.SensitiveMtp),
+    ];
 
     public async Task<Result<BreakGlassGrant>> BreakGlassAsync(Guid patientId, string reason, CancellationToken ct)
     {

@@ -287,6 +287,19 @@ and grants nothing.
     and safety flags stay, so the patient is still seen to.
   - Their stored files (documents, photos, reports) follow the same rules: opening a file, or its details, by its id
     is refused (403 `patient.restricted`) until the user may open the record, so knowing a file's id is not a way in.
+- **Sensitive categories** (HIV, mental health, termination of pregnancy; HIV/AIDS Act 2017, Mental Healthcare Act 2017,
+  MTP Act s.5A):
+  - An HIV (B20–B24, Z21), mental-illness (F20–F69) or medical-abortion (O04) diagnosis puts the record in the category;
+    a doctor (`patients.sensitive.manage`) can add or remove one with a reason, audited as a security event.
+  - The clinical record (notes, diagnoses, encounters, prescriptions written, nursing and MAR, OT, dialysis, teleconsults,
+    files) then opens only to staff holding the category: `patients.sensitive.hiv` and `.mental_health` (doctors, nurses,
+    medical records), `patients.sensitive.mtp` (medical records; grant it to gynaecologists), to those who may open
+    restricted records, or through break-the-glass, which is audited as for VIP records.
+  - The patient's details, bills, pharmacy, lab and radiology orders, appointments, allergies and alerts are not closed,
+    so the desk and the departments keep serving the patient; the categories themselves show only to doctors.
+  - The FHIR API does not list these patients to clients that may not open restricted records.
+  - The upgrade puts records that already carry such a diagnosis into its category; a merge carries the duplicate's
+    categories to the surviving record. A doctor manages the categories without being able to open the chart.
 - **Who may look patients up.** Patient search and visits are for staff who see patients: the canteen, CSSD,
   biomedical, HR, store, purchase and MIS roles do not get `patients.read` or `visits.read` by default. An upgrade takes
   a default grant back from a role that no longer has it (`identity.seeded_grants` records what the seeder gave), and

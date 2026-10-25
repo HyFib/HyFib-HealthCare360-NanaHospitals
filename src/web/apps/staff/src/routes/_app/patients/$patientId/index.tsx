@@ -44,6 +44,7 @@ import { IdentityChecksPanel } from '@/modules/patients/IdentityChecksPanel';
 import { MergePatientDialog } from '@/modules/patients/MergePatientDialog';
 import { PortalAccessPanel } from '@/modules/patients/PortalAccessPanel';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
+import { SensitiveCategoriesCard } from '@/modules/patients/SensitiveCategoriesCard';
 
 type TabId = 'overview' | 'visits' | 'consents' | 'identity' | 'portal' | 'documents';
 
@@ -250,6 +251,7 @@ function PatientProfilePage() {
       </Section>
 
       <PatientPrivacyCard patient={p} />
+      <SensitiveCategoriesCard patientId={p.id} />
 
       <CheckInDialog
         patient={{ id: p.id, uhid: p.uhid, fullName: p.fullName }}

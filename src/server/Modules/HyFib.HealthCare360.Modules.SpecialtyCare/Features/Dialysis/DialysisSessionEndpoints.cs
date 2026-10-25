@@ -142,7 +142,7 @@ internal static class DialysisSessionEndpoints
             return Error.NotFound(nameof(DialysisSession), id).ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(row.s.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(row.s.PatientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();

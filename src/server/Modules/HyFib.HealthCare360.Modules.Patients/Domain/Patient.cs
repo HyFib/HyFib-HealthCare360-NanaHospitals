@@ -93,6 +93,9 @@ public sealed class Patient : AuditableEntity
     /// <summary>Restricted record: opening it requires a permission or an audited break-the-glass reason.</summary>
     public bool IsVip { get; set; }
 
+    /// <summary>Confidential kinds of record in the chart (HIV, mental health, MTP): see <see cref="SensitiveCategory"/>.</summary>
+    public SensitiveCategory SensitiveCategories { get; set; }
+
     public bool IsDeceased { get; set; }
     public DateTimeOffset? DeceasedAt { get; set; }
     public Guid? MergedIntoPatientId { get; set; }

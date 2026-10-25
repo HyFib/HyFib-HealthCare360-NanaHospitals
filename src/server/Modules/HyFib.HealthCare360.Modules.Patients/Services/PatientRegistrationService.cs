@@ -289,6 +289,9 @@ public sealed class PatientRegistrationService(
 
         await MovePortalFamilyLinksAsync(source, target, ct);
 
+        // The duplicate's clinical record moves to the surviving one, and so do the categories that keep it confidential (R-4).
+        target.SensitiveCategories |= source.SensitiveCategories;
+
         // The surviving record takes the duplicate's ABHA number when it has none: a link made by the merge, audited as
         // every link of a national health ID is.
         if (target.AbhaNumberCipher is null && source.AbhaNumberCipher is not null)

@@ -93,7 +93,7 @@ internal static class PhysioEndpoints
             return Error.NotFound(nameof(PhysioReferral), id).ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(referral.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(referral.PatientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();

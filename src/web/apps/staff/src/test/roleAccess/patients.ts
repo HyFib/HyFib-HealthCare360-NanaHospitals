@@ -237,6 +237,7 @@ const RAVI_PAYER: PatientPayer = {
 export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/patients/${RAVI_ID}/payer`]: { current: RAVI_PAYER },
   [`GET /api/v1/patients/${RECORD_ID}`]: PATIENT,
+  [`GET /api/v1/patients/${RECORD_ID}/sensitive-categories`]: { categories: ['Hiv'], version: 4 },
   [`GET /api/v1/patients/${RECORD_ID}/visits`]: paged(VISITS),
   [`GET /api/v1/patients/${RECORD_ID}/payer`]: { current: PAYER },
   'GET /api/v1/patients/0192a000-0000-7000-8000-000000000006/payer': { current: PAYER },
