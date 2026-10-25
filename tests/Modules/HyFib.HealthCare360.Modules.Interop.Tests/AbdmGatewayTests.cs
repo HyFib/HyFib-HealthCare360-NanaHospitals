@@ -90,10 +90,6 @@ public sealed class AbdmGatewayTests
     }
 
     [Fact]
-    public void Fidelius_is_not_available() =>
-        new UnavailableFideliusCipher().Encrypt("x", "{}", new AbdmKeyMaterial("ECDH", "Curve25519", "k", "n")).Error!.Code.ShouldBe(DisabledAbdmGatewayClient.Code);
-
-    [Fact]
     public void The_client_secret_is_kept_in_a_secret_setting() => SecretSettingKeys.IsSecret(AbdmGatewaySettingKeys.Secret).ShouldBeTrue();
 
     /// <summary>Hospital-wide settings in memory, as JSON (the store's own deserialisation).</summary>

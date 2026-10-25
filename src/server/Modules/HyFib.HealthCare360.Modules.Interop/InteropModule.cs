@@ -37,7 +37,7 @@ public sealed class InteropModule : IModule
         services.AddScoped<AbdmBundleService>();
         services.AddScoped<AbdmGatewayConfiguration>();
         services.AddScoped<IAbdmGatewayClient, DisabledAbdmGatewayClient>();
-        services.AddSingleton<IFideliusCipher, UnavailableFideliusCipher>();
+        services.AddSingleton<IFideliusCipher, FideliusCipher>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

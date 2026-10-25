@@ -103,6 +103,6 @@ public sealed class InteropModuleTests
         var services = Services();
 
         services.Single(d => d.ServiceType == typeof(IAbdmGatewayClient)).ImplementationType.ShouldBe(typeof(DisabledAbdmGatewayClient));
-        services.Single(d => d.ServiceType == typeof(IFideliusCipher)).ImplementationType.ShouldBe(typeof(UnavailableFideliusCipher));
+        services.Single(d => d.ServiceType == typeof(IFideliusCipher)).ImplementationType.ShouldBe(typeof(FideliusCipher));
     }
 }
