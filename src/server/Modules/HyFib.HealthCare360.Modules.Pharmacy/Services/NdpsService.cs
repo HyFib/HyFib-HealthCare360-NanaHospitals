@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Ndps;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
@@ -12,7 +13,7 @@ namespace HyFib.HealthCare360.Modules.Pharmacy.Services;
 /// every movement of a narcotic with its running balance: each drug's day in a store (Form 3H), a patient's record
 /// (Form 3E), the year's return and next year's estimate (Form 3J); and the two-person count at a change of shift.
 /// </summary>
-internal sealed class NdpsService(HospitalDbContext db, IOutbox outbox, ICurrentUser currentUser, TimeProvider time)
+internal sealed class NdpsService(HospitalDbContext db, IOutbox outbox, ICurrentUser currentUser, PatientContactAccess contacts, TimeProvider time)
 {
     internal const string AlertType = "pharmacy.ndps-alert";
 
@@ -102,7 +103,9 @@ internal sealed class NdpsService(HospitalDbContext db, IOutbox outbox, ICurrent
         var today = HospitalClock.Today(time);
         int? age = patient.DateOfBirth is { } dob ? today.Year - dob.Year - (today < dob.AddYears(today.Year - dob.Year) ? 1 : 0) : null;
         return new NdpsPatientRecord(
-            patient.Id, patient.FullName, patient.Uhid, patient.Gender.ToString(), age, patient.Address.ToString(),
+            patient.Id, patient.FullName, patient.Uhid, patient.Gender.ToString(), age,
+            // The street and PIN code only for staff who see patients' contact details (SRS PRV-03).
+            PatientContacts.Address(patient.Address, await contacts.FullAsync(ct)).ToString(),
             lines.Select(r => new NdpsPatientLine(
                 r.OccurredAt, r.ItemName, r.BatchNumber, r.QuantityOut - r.QuantityIn, r.MovementType, r.PrescriberName, r.PrescriberRegistrationNumber,
                 r.PrescriptionNumber, r.ReferenceNumber)).ToList());
