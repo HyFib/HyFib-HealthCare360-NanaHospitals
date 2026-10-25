@@ -170,11 +170,18 @@ public sealed class PatientAccessGuard(
     public async Task FlagFromDiagnosisAsync(Guid patientId, string? icdCode, CancellationToken ct)
     {
         var category = SensitiveCategories.FromIcd(icdCode);
-        if (category == SensitiveCategory.None)
+        if (category != SensitiveCategory.None)
         {
-            return;
+            await FlagAsync(patientId, category, $"a diagnosis ({icdCode!.Trim().ToUpperInvariant()})", ct);
         }
+    }
 
+    /// <summary>
+    /// Puts the record in <paramref name="category"/> because of <paramref name="source"/> ("an MTP case"), if it is not
+    /// already. The change is saved with the caller's unit of work and audited.
+    /// </summary>
+    public async Task FlagAsync(Guid patientId, SensitiveCategory category, string source, CancellationToken ct)
+    {
         var patient = await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == patientId, ct);
         if (patient is null || patient.SensitiveCategories.HasFlag(category))
         {
@@ -183,7 +190,7 @@ public sealed class PatientAccessGuard(
 
         patient.SensitiveCategories |= category;
         audit.Add(new AuditEntry(AuditCategories.Security, "patient.sensitive_flagged",
-            $"Record put in the {SensitiveCategories.Describe(category)} category by a diagnosis ({icdCode!.Trim().ToUpperInvariant()})")
+            $"Record put in the {SensitiveCategories.Describe(category)} category by {source}")
         {
             PatientId = patientId,
             EntityType = nameof(Patient),

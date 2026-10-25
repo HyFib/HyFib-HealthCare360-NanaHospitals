@@ -9,13 +9,14 @@ public sealed class SpecialtyCareModuleTests
     public void Module_uses_its_schema_name_as_key() => new SpecialtyCareModule().Name.ShouldBe("specialtycare");
 
     [Fact]
-    public void Permissions_are_unique_and_scoped_to_the_four_areas()
+    public void Permissions_are_unique_and_scoped_to_the_five_areas()
     {
         var names = new SpecialtyCareModule().Permissions.Select(p => p.Name).ToList();
 
         names.ShouldBeUnique();
         names.ShouldAllBe(n => n.StartsWith("ot.", StringComparison.Ordinal) || n.StartsWith("dialysis.", StringComparison.Ordinal)
-                               || n.StartsWith("physio.", StringComparison.Ordinal) || n.StartsWith("bloodbank.", StringComparison.Ordinal));
+                               || n.StartsWith("physio.", StringComparison.Ordinal) || n.StartsWith("bloodbank.", StringComparison.Ordinal)
+                               || n.StartsWith("mtp.", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -24,7 +25,9 @@ public sealed class SpecialtyCareModuleTests
         var roles = SystemRoles.All.Select(r => r.Name).ToHashSet();
         var permissions = new SpecialtyCareModule().Permissions.ToList();
 
-        permissions.ShouldAllBe(p => p.DefaultRoles != null && p.DefaultRoles.Length > 0 && p.DefaultRoles.All(r => roles.Contains(r)));
+        // Certifying a termination is granted by the administrator to the gynaecologists the place's approval names (MTP Act s.5A).
+        permissions.Where(p => p.Name != SpecialtyCarePermissions.MtpCertify)
+            .ShouldAllBe(p => p.DefaultRoles != null && p.DefaultRoles.Length > 0 && p.DefaultRoles.All(r => roles.Contains(r)));
         Grants(permissions, SpecialtyCarePermissions.OtSurgery).ShouldContain(SystemRoles.Doctor);
         Grants(permissions, SpecialtyCarePermissions.OtBookingsManage).ShouldContain(SystemRoles.OtCoordinator);
         Grants(permissions, SpecialtyCarePermissions.DialysisSessions).ShouldContain(SystemRoles.DialysisTechnician);
@@ -36,6 +39,16 @@ public sealed class SpecialtyCareModuleTests
     [Fact]
     public void Donor_records_are_restricted_to_the_blood_bank() =>
         Grants(new SpecialtyCareModule().Permissions.ToList(), SpecialtyCarePermissions.BloodBankDonors).ShouldBe([SystemRoles.BloodBankOfficer]);
+
+    [Fact]
+    public void No_clinical_role_learns_of_a_termination_by_default()
+    {
+        var permissions = new SpecialtyCareModule().Permissions.ToList();
+
+        Grants(permissions, SpecialtyCarePermissions.MtpCertify).ShouldBeEmpty();
+        Grants(permissions, SpecialtyCarePermissions.MtpRead).ShouldBe([SystemRoles.MrdOfficer]);
+        Grants(permissions, SpecialtyCarePermissions.MtpRegister).ShouldBe([SystemRoles.MrdOfficer]);
+    }
 
     [Fact]
     public void Local_calendar_days_convert_to_ist_midnight()

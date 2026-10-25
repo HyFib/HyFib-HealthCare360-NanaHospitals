@@ -128,6 +128,9 @@ import { Route as AppMrdIcdRouteImport } from './routes/_app/mrd/icd'
 import { Route as AppMrdMorbidityRouteImport } from './routes/_app/mrd/morbidity'
 import { Route as AppMrdProcedureCodesRouteImport } from './routes/_app/mrd/procedure-codes'
 import { Route as AppMrdRequestsRouteImport } from './routes/_app/mrd/requests'
+import { Route as AppMtpIndexRouteImport } from './routes/_app/mtp/index'
+import { Route as AppMtpCaseIdRouteImport } from './routes/_app/mtp/$caseId'
+import { Route as AppMtpRegisterRouteImport } from './routes/_app/mtp/register'
 import { Route as AppNursingIndexRouteImport } from './routes/_app/nursing/index'
 import { Route as AppOtIndexRouteImport } from './routes/_app/ot/index'
 import { Route as AppOtBookRouteImport } from './routes/_app/ot/book'
@@ -911,6 +914,21 @@ const AppMrdProcedureCodesRoute = AppMrdProcedureCodesRouteImport.update({
 const AppMrdRequestsRoute = AppMrdRequestsRouteImport.update({
   id: '/mrd/requests',
   path: '/mrd/requests',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMtpIndexRoute = AppMtpIndexRouteImport.update({
+  id: '/mtp/',
+  path: '/mtp/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMtpCaseIdRoute = AppMtpCaseIdRouteImport.update({
+  id: '/mtp/$caseId',
+  path: '/mtp/$caseId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMtpRegisterRoute = AppMtpRegisterRouteImport.update({
+  id: '/mtp/register',
+  path: '/mtp/register',
   getParentRoute: () => AppRoute,
 } as any)
 const AppNursingIndexRoute = AppNursingIndexRouteImport.update({
@@ -1999,6 +2017,8 @@ export interface FileRoutesByFullPath {
   '/mrd/morbidity': typeof AppMrdMorbidityRoute
   '/mrd/procedure-codes': typeof AppMrdProcedureCodesRoute
   '/mrd/requests': typeof AppMrdRequestsRoute
+  '/mtp/$caseId': typeof AppMtpCaseIdRoute
+  '/mtp/register': typeof AppMtpRegisterRoute
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
@@ -2056,6 +2076,7 @@ export interface FileRoutesByFullPath {
   '/inventory/': typeof AppInventoryIndexRoute
   '/lab/': typeof AppLabIndexRoute
   '/mrd/': typeof AppMrdIndexRoute
+  '/mtp/': typeof AppMtpIndexRoute
   '/nursing/': typeof AppNursingIndexRoute
   '/ot/': typeof AppOtIndexRoute
   '/patients/': typeof AppPatientsIndexRoute
@@ -2304,6 +2325,8 @@ export interface FileRoutesByTo {
   '/mrd/morbidity': typeof AppMrdMorbidityRoute
   '/mrd/procedure-codes': typeof AppMrdProcedureCodesRoute
   '/mrd/requests': typeof AppMrdRequestsRoute
+  '/mtp/$caseId': typeof AppMtpCaseIdRoute
+  '/mtp/register': typeof AppMtpRegisterRoute
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
@@ -2361,6 +2384,7 @@ export interface FileRoutesByTo {
   '/inventory': typeof AppInventoryIndexRoute
   '/lab': typeof AppLabIndexRoute
   '/mrd': typeof AppMrdIndexRoute
+  '/mtp': typeof AppMtpIndexRoute
   '/nursing': typeof AppNursingIndexRoute
   '/ot': typeof AppOtIndexRoute
   '/patients': typeof AppPatientsIndexRoute
@@ -2611,6 +2635,8 @@ export interface FileRoutesById {
   '/_app/mrd/morbidity': typeof AppMrdMorbidityRoute
   '/_app/mrd/procedure-codes': typeof AppMrdProcedureCodesRoute
   '/_app/mrd/requests': typeof AppMrdRequestsRoute
+  '/_app/mtp/$caseId': typeof AppMtpCaseIdRoute
+  '/_app/mtp/register': typeof AppMtpRegisterRoute
   '/_app/ot/book': typeof AppOtBookRoute
   '/_app/ot/implants': typeof AppOtImplantsRoute
   '/_app/ot/theatres': typeof AppOtTheatresRoute
@@ -2668,6 +2694,7 @@ export interface FileRoutesById {
   '/_app/inventory/': typeof AppInventoryIndexRoute
   '/_app/lab/': typeof AppLabIndexRoute
   '/_app/mrd/': typeof AppMrdIndexRoute
+  '/_app/mtp/': typeof AppMtpIndexRoute
   '/_app/nursing/': typeof AppNursingIndexRoute
   '/_app/ot/': typeof AppOtIndexRoute
   '/_app/patients/': typeof AppPatientsIndexRoute
@@ -2918,6 +2945,8 @@ export interface FileRouteTypes {
     | '/mrd/morbidity'
     | '/mrd/procedure-codes'
     | '/mrd/requests'
+    | '/mtp/$caseId'
+    | '/mtp/register'
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
@@ -2975,6 +3004,7 @@ export interface FileRouteTypes {
     | '/inventory/'
     | '/lab/'
     | '/mrd/'
+    | '/mtp/'
     | '/nursing/'
     | '/ot/'
     | '/patients/'
@@ -3223,6 +3253,8 @@ export interface FileRouteTypes {
     | '/mrd/morbidity'
     | '/mrd/procedure-codes'
     | '/mrd/requests'
+    | '/mtp/$caseId'
+    | '/mtp/register'
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
@@ -3280,6 +3312,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/lab'
     | '/mrd'
+    | '/mtp'
     | '/nursing'
     | '/ot'
     | '/patients'
@@ -3529,6 +3562,8 @@ export interface FileRouteTypes {
     | '/_app/mrd/morbidity'
     | '/_app/mrd/procedure-codes'
     | '/_app/mrd/requests'
+    | '/_app/mtp/$caseId'
+    | '/_app/mtp/register'
     | '/_app/ot/book'
     | '/_app/ot/implants'
     | '/_app/ot/theatres'
@@ -3586,6 +3621,7 @@ export interface FileRouteTypes {
     | '/_app/inventory/'
     | '/_app/lab/'
     | '/_app/mrd/'
+    | '/_app/mtp/'
     | '/_app/nursing/'
     | '/_app/ot/'
     | '/_app/patients/'
@@ -4576,6 +4612,27 @@ declare module '@tanstack/react-router' {
       path: '/mrd/requests'
       fullPath: '/mrd/requests'
       preLoaderRoute: typeof AppMrdRequestsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mtp/': {
+      id: '/_app/mtp/'
+      path: '/mtp'
+      fullPath: '/mtp/'
+      preLoaderRoute: typeof AppMtpIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mtp/$caseId': {
+      id: '/_app/mtp/$caseId'
+      path: '/mtp/$caseId'
+      fullPath: '/mtp/$caseId'
+      preLoaderRoute: typeof AppMtpCaseIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mtp/register': {
+      id: '/_app/mtp/register'
+      path: '/mtp/register'
+      fullPath: '/mtp/register'
+      preLoaderRoute: typeof AppMtpRegisterRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/nursing/': {
@@ -5972,6 +6029,8 @@ interface AppRouteChildren {
   AppMrdMorbidityRoute: typeof AppMrdMorbidityRoute
   AppMrdProcedureCodesRoute: typeof AppMrdProcedureCodesRoute
   AppMrdRequestsRoute: typeof AppMrdRequestsRoute
+  AppMtpCaseIdRoute: typeof AppMtpCaseIdRoute
+  AppMtpRegisterRoute: typeof AppMtpRegisterRoute
   AppOtBookRoute: typeof AppOtBookRoute
   AppOtImplantsRoute: typeof AppOtImplantsRoute
   AppOtTheatresRoute: typeof AppOtTheatresRoute
@@ -6029,6 +6088,7 @@ interface AppRouteChildren {
   AppInventoryIndexRoute: typeof AppInventoryIndexRoute
   AppLabIndexRoute: typeof AppLabIndexRoute
   AppMrdIndexRoute: typeof AppMrdIndexRoute
+  AppMtpIndexRoute: typeof AppMtpIndexRoute
   AppNursingIndexRoute: typeof AppNursingIndexRoute
   AppOtIndexRoute: typeof AppOtIndexRoute
   AppPatientsIndexRoute: typeof AppPatientsIndexRoute
@@ -6276,6 +6336,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppMrdMorbidityRoute: AppMrdMorbidityRoute,
   AppMrdProcedureCodesRoute: AppMrdProcedureCodesRoute,
   AppMrdRequestsRoute: AppMrdRequestsRoute,
+  AppMtpCaseIdRoute: AppMtpCaseIdRoute,
+  AppMtpRegisterRoute: AppMtpRegisterRoute,
   AppOtBookRoute: AppOtBookRoute,
   AppOtImplantsRoute: AppOtImplantsRoute,
   AppOtTheatresRoute: AppOtTheatresRoute,
@@ -6333,6 +6395,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppInventoryIndexRoute: AppInventoryIndexRoute,
   AppLabIndexRoute: AppLabIndexRoute,
   AppMrdIndexRoute: AppMrdIndexRoute,
+  AppMtpIndexRoute: AppMtpIndexRoute,
   AppNursingIndexRoute: AppNursingIndexRoute,
   AppOtIndexRoute: AppOtIndexRoute,
   AppPatientsIndexRoute: AppPatientsIndexRoute,

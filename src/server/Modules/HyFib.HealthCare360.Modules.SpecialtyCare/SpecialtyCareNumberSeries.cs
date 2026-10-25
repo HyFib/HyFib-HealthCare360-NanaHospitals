@@ -22,5 +22,9 @@ public static class SpecialtyCareNumberSeries
     public static NumberSeriesDefinition DialysisSession { get; } =
         new("dialysis-session", "Dialysis session", "Dialysis", "{FAC}DL{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
-    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [BloodRequest, BloodDonor, BloodBag, SurgeryBooking, DialysisSession];
+    /// <summary>The serial number of the MTP admission register (Form III), from 1 each calendar year.</summary>
+    public static NumberSeriesDefinition MtpRegister { get; } =
+        new("mtp-register", "MTP admission register", "Termination of pregnancy", "{FAC}MTP{YY}{SEQ:4}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [BloodRequest, BloodDonor, BloodBag, SurgeryBooking, DialysisSession, MtpRegister];
 }

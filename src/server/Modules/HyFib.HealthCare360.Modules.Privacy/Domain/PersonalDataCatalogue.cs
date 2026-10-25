@@ -153,6 +153,7 @@ public static class PersonalDataCatalogue
                 new("specialtycare.physio_assessments", "Physiotherapy assessments", Counted: false),
                 new("specialtycare.physio_treatment_plans", "Physiotherapy plans", Counted: false),
                 new("specialtycare.physio_sessions", "Physiotherapy sessions", Counted: false),
+                new("specialtycare.mtp_cases", "Terminations of pregnancy (MTP)"),
             ]),
         new("support", "Meals and support services",
             "Your diet orders and meals, canteen purchases, and the sterile instrument sets used for you.",

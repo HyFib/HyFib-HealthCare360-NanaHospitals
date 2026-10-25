@@ -27014,6 +27014,199 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("dialyzers", "specialtycare");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Mtp.MtpCase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AdmissionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("admission_id");
+
+                    b.Property<int>("AgeYears")
+                        .HasColumnType("integer")
+                        .HasColumnName("age_years");
+
+                    b.Property<string>("ApprovalNumber")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("approval_number");
+
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("cancel_reason");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("category");
+
+                    b.Property<DateTimeOffset>("CertifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("certified_at");
+
+                    b.Property<Guid?>("CertifiedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("certified_by");
+
+                    b.Property<string>("ConsentBy")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("consent_by");
+
+                    b.Property<Guid?>("ConsentFileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("consent_file_id");
+
+                    b.Property<DateOnly>("ConsentOn")
+                        .HasColumnType("date")
+                        .HasColumnName("consent_on");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<DateOnly?>("DischargedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("discharged_on");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.PrimitiveCollection<int[]>("Grounds")
+                        .IsRequired()
+                        .HasColumnType("integer[]")
+                        .HasColumnName("grounds");
+
+                    b.Property<string>("GuardianName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("guardian_name");
+
+                    b.Property<string>("GuardianRelation")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("guardian_relation");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("MedicalBoardReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("medical_board_reference");
+
+                    b.Property<bool>("MentallyIll")
+                        .HasColumnType("boolean")
+                        .HasColumnName("mentally_ill");
+
+                    b.Property<string>("Method")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("method");
+
+                    b.Property<string>("Opinions")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("opinions");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("outcome");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("PerformedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("performed_by");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("remarks");
+
+                    b.Property<string>("SerialNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("serial_number");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<DateOnly?>("TerminatedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("terminated_on");
+
+                    b.Property<DateTimeOffset?>("TerminationRecordedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("termination_recorded_at");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("WeeksOfGestation")
+                        .HasColumnType("integer")
+                        .HasColumnName("weeks_of_gestation");
+
+                    b.HasKey("Id")
+                        .HasName("pk_mtp_cases");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_mtp_cases_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_mtp_cases_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_mtp_cases_patient_id");
+
+                    b.HasIndex("SerialNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_mtp_cases_serial_number");
+
+                    b.HasIndex("FacilityId", "Status", "TerminatedOn")
+                        .HasDatabaseName("ix_mtp_cases_facility_id_status_terminated_on");
+
+                    b.ToTable("mtp_cases", "specialtycare");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre.AnaesthesiaRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -39159,6 +39352,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_dialyzers_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Mtp.MtpCase", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_mtp_cases_patients_patient_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre.AnaesthesiaRecord", b =>
