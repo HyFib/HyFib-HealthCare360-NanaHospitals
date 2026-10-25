@@ -223,3 +223,22 @@ export function gstStateName(gstin: string | null | undefined): string | null {
   const code = gstStateCode(gstin);
   return code ? `${GST_STATES[code] ?? 'State'} (${code})` : null;
 }
+
+const GSTIN_CHARACTERS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+/**
+ * A GSTIN as GSTN issues it, check character included (mod 36, as the server's `Gstin.IsValid` computes it): what a new
+ * B2B buyer's number must be, so a mistyped digit is caught before it reaches an invoice.
+ */
+export function isValidGstin(value: string | null | undefined): boolean {
+  const gstin = value?.replace(/\s/g, '').toUpperCase() ?? '';
+  if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gstin) || !(gstin.slice(0, 2) in GST_STATES)) {
+    return false;
+  }
+  let total = 0;
+  for (let i = 0; i < 14; i++) {
+    const product = GSTIN_CHARACTERS.indexOf(gstin[i]!) * (i % 2 === 0 ? 1 : 2);
+    total += Math.floor(product / 36) + (product % 36);
+  }
+  return GSTIN_CHARACTERS[(36 - (total % 36)) % 36] === gstin[14];
+}

@@ -10,6 +10,7 @@ import {
   type Letterhead,
   type PrintTemplateKey,
 } from '@hc360/core';
+import { gstStateName } from '../inventory/gst';
 import type { BillDetail, DayEndReport, ReceiptDto, ReceiptPaymentDto, RefundDto } from './api';
 import type { RunningBill } from './ipApi';
 import {
@@ -120,7 +121,12 @@ function totalsRows(bill: BillDetail): [string, number, boolean?][] {
     rows.push([`Less: discount${bill.discountReason ? ` (${bill.discountReason})` : ''}`, -staff]);
   }
   if (bill.isTaxInvoice) {
-    rows.push(['Taxable value', bill.taxableAmount], ['CGST', bill.cgstAmount], ['SGST', bill.sgstAmount]);
+    rows.push(['Taxable value', bill.taxableAmount]);
+    if (bill.igstAmount !== 0) {
+      rows.push(['IGST', bill.igstAmount]);
+    } else {
+      rows.push(['CGST', bill.cgstAmount], ['SGST', bill.sgstAmount]);
+    }
   }
   if (bill.roundOffAmount !== 0) {
     rows.push(['Round off', bill.roundOffAmount]);
@@ -150,10 +156,15 @@ function totalsRows(bill: BillDetail): [string, number, boolean?][] {
 }
 
 function billMeta(bill: BillDetail): [string, string][] {
-  return [
+  const meta: [string, string][] = [
     ['Bill no.', bill.billNumber ?? 'Draft'],
     ['Date', formatDateTime(bill.finalizedAt ?? bill.createdAt)],
   ];
+  const supply = bill.isTaxInvoice ? gstStateName(bill.placeOfSupply) : null;
+  if (supply) {
+    meta.push(['Place of supply', supply]);
+  }
+  return meta;
 }
 
 /** Compact bill for the counter's 80 mm receipt printer (the A4 bill is made by the server). */

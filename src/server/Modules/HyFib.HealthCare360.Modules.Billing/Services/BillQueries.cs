@@ -62,7 +62,7 @@ internal static class BillQueries
         var lines = bill.Lines.OrderBy(l => l.SortOrder).Select(l => new BillLineDto(
             l.Id, l.ChargeId, l.ServiceItemId, l.ServiceCode, l.Description, l.Category, l.SacCode, l.Quantity, l.UnitPrice, l.GrossAmount,
             l.PackageCoveredAmount, l.TariffDiscountAmount, l.LineDiscountAmount, l.BillDiscountShare, l.TaxRate, l.TaxableAmount, l.CgstAmount,
-            l.SgstAmount, l.NetAmount, l.IsDiscountAllowed, l.IsPayerPayable, l.PractitionerId,
+            l.SgstAmount, l.IgstAmount, l.NetAmount, l.IsDiscountAllowed, l.IsPayerPayable, l.PractitionerId,
             l.PractitionerId is { } pid ? practitioners.GetValueOrDefault(pid) : null, l.DepartmentId, l.ServiceDate, IsReturn: l.GrossAmount < 0)).ToList();
 
         return new BillDetail(
@@ -70,7 +70,8 @@ internal static class BillQueries
             bill.VisitId, bill.AdmissionId, bill.IpAccountId, bill.PayerType, bill.PayerId, payerName, bill.TariffPlanId, planName, bill.PolicyId,
             bill.PreAuthorizationId, bill.CoPayPercent, bill.PayerCoverageLimit, bill.BillDiscountPercent, bill.BillDiscountValue, bill.DiscountReason,
             bill.ApprovedDiscountAmount, bill.GrossAmount, bill.PackageCoveredAmount, bill.TariffDiscountAmount, bill.LineDiscountAmount,
-            bill.BillDiscountAmount, bill.DiscountAmount, bill.TaxableAmount, bill.CgstAmount, bill.SgstAmount, bill.TaxAmount, bill.RoundOffAmount,
+            bill.BillDiscountAmount, bill.DiscountAmount, bill.TaxableAmount, bill.CgstAmount, bill.SgstAmount, bill.IgstAmount,
+            bill.PlaceOfSupply, bill.TaxAmount, bill.RoundOffAmount,
             bill.NetAmount, bill.PayerAmount, bill.PatientAmount, bill.CoPayAmount, bill.NonPayableAmount, bill.PaidAmount, bill.RefundedAmount,
             bill.CreditAmount, bill.DueAmount, bill.RefundableAmount, bill.PayerSettledAmount, bill.PayerDisallowedAmount,
             IsTaxInvoice: bill.Lines.Any(l => l.TaxAmount > 0), bill.CreatedAt, bill.FinalizedAt, bill.CancelledAt, bill.CancelReason, bill.Notes, lines,

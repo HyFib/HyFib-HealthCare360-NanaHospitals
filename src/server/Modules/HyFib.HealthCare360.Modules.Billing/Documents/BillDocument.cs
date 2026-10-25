@@ -9,7 +9,7 @@ namespace HyFib.HealthCare360.Modules.Billing.Documents;
 internal sealed record BillTotalRow(string Label, decimal Amount, bool Strong = false);
 
 /// <summary>The GST of a tax invoice for one SAC code and rate. CGST and SGST are each charged at half the rate.</summary>
-internal sealed record GstSummaryRow(string Sac, decimal Rate, decimal Taxable, decimal Cgst, decimal Sgst);
+internal sealed record GstSummaryRow(string Sac, decimal Rate, decimal Taxable, decimal Cgst, decimal Sgst, decimal Igst = 0);
 
 /// <summary>
 /// The A4 bill (MB-05, OPB, IPB): a tax invoice when any line carries GST, otherwise a bill of supply (most healthcare
@@ -164,8 +164,15 @@ internal static class BillDocument
         if (bill.IsTaxInvoice)
         {
             rows.Add(new(text["doc.bill.taxable_value"], bill.TaxableAmount));
-            rows.Add(new("CGST", bill.CgstAmount));
-            rows.Add(new("SGST", bill.SgstAmount));
+            if (IsInterState(bill))
+            {
+                rows.Add(new("IGST", bill.IgstAmount));
+            }
+            else
+            {
+                rows.Add(new("CGST", bill.CgstAmount));
+                rows.Add(new("SGST", bill.SgstAmount));
+            }
         }
 
         if (bill.RoundOffAmount != 0)
@@ -207,8 +214,11 @@ internal static class BillDocument
             .GroupBy(l => (Sac: l.SacCode ?? "", l.TaxRate))
             .Select(g => new GstSummaryRow(
                 g.Key.Sac.Length > 0 ? g.Key.Sac : DocumentFormat.Missing, g.Key.TaxRate, g.Sum(l => l.TaxableAmount), g.Sum(l => l.CgstAmount),
-                g.Sum(l => l.SgstAmount)))
+                g.Sum(l => l.SgstAmount), g.Sum(l => l.IgstAmount)))
             .ToList();
+
+    /// <summary>A supply to a payer registered in another state: the whole GST is IGST.</summary>
+    public static bool IsInterState(BillDetail bill) => bill.IgstAmount != 0 || bill.Lines.Any(l => l.IgstAmount != 0);
 
     /// <summary>
     /// The bill's own header (not the reports' letterhead): logo, name, address, contact, tax ids and registration on the
@@ -315,7 +325,10 @@ internal static class BillDocument
         var package = bill.Lines.Any(l => l.PackageCoveredAmount != 0);
         var tax = bill.IsTaxInvoice;
         var packageHead = package ? Html.Of($"<th class=\"num\">{text["doc.bill.package"]}</th>") : Html.Empty;
-        var taxHead = tax ? Html.Of($"<th class=\"num\">{text["doc.bill.taxable"]}</th><th class=\"num\">GST</th><th class=\"num\">CGST</th><th class=\"num\">SGST</th>") : Html.Empty;
+        var igst = IsInterState(bill);
+        var taxHead = !tax ? Html.Empty
+            : igst ? Html.Of($"<th class=\"num\">{text["doc.bill.taxable"]}</th><th class=\"num\">GST</th><th class=\"num\">IGST</th>")
+            : Html.Of($"<th class=\"num\">{text["doc.bill.taxable"]}</th><th class=\"num\">GST</th><th class=\"num\">CGST</th><th class=\"num\">SGST</th>");
         var rows = bill.Lines.Select((line, index) => Html.Of($"""
             <tr>
               <td>{index + 1}</td>
@@ -326,7 +339,7 @@ internal static class BillDocument
               <td class="num">{DocumentFormat.Money(line.GrossAmount)}</td>
               {(package ? Html.Of($"<td class=\"num\">{DocumentFormat.Money(line.PackageCoveredAmount)}</td>") : Html.Empty)}
               <td class="num">{DocumentFormat.Money(line.TariffDiscountAmount + line.LineDiscountAmount + line.BillDiscountShare)}</td>
-              {(tax ? TaxCells(line, text) : Html.Empty)}
+              {(tax ? TaxCells(line, text, igst) : Html.Empty)}
               <td class="num">{DocumentFormat.Money(line.NetAmount)}</td>
             </tr>
             """));
@@ -338,8 +351,11 @@ internal static class BillDocument
             """);
     }
 
-    private static Html TaxCells(BillLineDto line, DocumentText text) => Html.Of(
-        $"<td class=\"num\">{DocumentFormat.Money(line.TaxableAmount)}</td><td class=\"num\">{(line.TaxRate > 0 ? Percent(line.TaxRate) : text["doc.bill.exempt"])}</td><td class=\"num\">{DocumentFormat.Money(line.CgstAmount)}</td><td class=\"num\">{DocumentFormat.Money(line.SgstAmount)}</td>");
+    private static Html TaxCells(BillLineDto line, DocumentText text, bool igst) => igst
+        ? Html.Of(
+            $"<td class=\"num\">{DocumentFormat.Money(line.TaxableAmount)}</td><td class=\"num\">{(line.TaxRate > 0 ? Percent(line.TaxRate) : text["doc.bill.exempt"])}</td><td class=\"num\">{DocumentFormat.Money(line.IgstAmount)}</td>")
+        : Html.Of(
+            $"<td class=\"num\">{DocumentFormat.Money(line.TaxableAmount)}</td><td class=\"num\">{(line.TaxRate > 0 ? Percent(line.TaxRate) : text["doc.bill.exempt"])}</td><td class=\"num\">{DocumentFormat.Money(line.CgstAmount)}</td><td class=\"num\">{DocumentFormat.Money(line.SgstAmount)}</td>");
 
     private static Html TotalsTable(BillDetail bill, DocumentText text)
     {
@@ -352,6 +368,20 @@ internal static class BillDocument
     private static Html GstTable(BillDetail bill, DocumentText text)
     {
         var rows = bill.IsTaxInvoice ? GstSummary(bill.Lines) : [];
+        if (rows.Count > 0 && IsInterState(bill))
+        {
+            var state = bill.PlaceOfSupply is { } code ? $"{Gstin.States.GetValueOrDefault(code, code)} ({code})" : DocumentFormat.Missing;
+            return Html.Of($"""
+                <section class="keep">
+                  <h3>{text["doc.bill.gst_summary"]} · Place of supply: {state}</h3>
+                  <table class="lines">
+                    <thead><tr><th>SAC</th><th class="num">{text["doc.bill.taxable_value"]}</th><th class="num">IGST %</th><th class="num">IGST</th></tr></thead>
+                    <tbody>{rows.Select(g => Html.Of($"<tr><td>{g.Sac}</td><td class=\"num\">{DocumentFormat.Money(g.Taxable)}</td><td class=\"num\">{Percent(g.Rate)}</td><td class=\"num\">{DocumentFormat.Money(g.Igst)}</td></tr>"))}</tbody>
+                  </table>
+                </section>
+                """);
+        }
+
         return rows.Count == 0
             ? Html.Empty
             : Html.Of($"""

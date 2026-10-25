@@ -1,5 +1,6 @@
 import { Caption1, Divider, makeStyles, mergeClasses, Text, tokens } from '@fluentui/react-components';
 import { formatInr } from '@hc360/core';
+import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatPercent } from '@/modules/inventory/format';
 import type { SaleTotals } from './pricing';
 
@@ -23,10 +24,13 @@ export function BillSummary({
   totals,
   discountPercent,
   label = 'To collect',
+  interState = false,
 }: {
   totals: SaleTotals;
   discountPercent: number;
   label?: string;
+  /** Dispatched to a buyer in another state: the same GST, as IGST. */
+  interState?: boolean;
 }) {
   const styles = useStyles();
   return (
@@ -43,10 +47,21 @@ export function BillSummary({
         <>
           <Caption1 className={styles.muted}>Taxable value</Caption1>
           <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.taxable)}</Caption1>
-          <Caption1 className={styles.muted}>CGST (included)</Caption1>
-          <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.cgst)}</Caption1>
-          <Caption1 className={styles.muted}>SGST (included)</Caption1>
-          <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.sgst)}</Caption1>
+          {interState ? (
+            <>
+              <Caption1 className={styles.muted}>IGST (included)</Caption1>
+              <Caption1 className={mergeClasses(styles.muted, styles.right)}>
+                {formatInr(toNumber(sum([dec(totals.cgst ?? 0), dec(totals.sgst ?? 0)])))}
+              </Caption1>
+            </>
+          ) : (
+            <>
+              <Caption1 className={styles.muted}>CGST (included)</Caption1>
+              <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.cgst)}</Caption1>
+              <Caption1 className={styles.muted}>SGST (included)</Caption1>
+              <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.sgst)}</Caption1>
+            </>
+          )}
         </>
       ) : (
         <Caption1 className={styles.muted} style={{ gridColumn: '1 / -1' }}>

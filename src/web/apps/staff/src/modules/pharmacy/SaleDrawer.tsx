@@ -49,6 +49,7 @@ import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatPercent, formatQty, istDateOf, parseNumber } from '@/modules/inventory/format';
+import { gstStateName } from '@/modules/inventory/gst';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { Detail, DetailGrid, ExpiryText, ScheduleBadge } from '@/modules/inventory/StockBits';
 import {
@@ -210,7 +211,11 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
                   priority: 'low',
                   render: (i) => (
                     <Tooltip
-                      content={`Taxable ${formatInr(i.taxableAmount)} · CGST ${formatInr(i.cgstAmount)} · SGST ${formatInr(i.sgstAmount)}`}
+                      content={
+                        i.igstAmount !== 0
+                          ? `Taxable ${formatInr(i.taxableAmount)} · IGST ${formatInr(i.igstAmount)}`
+                          : `Taxable ${formatInr(i.taxableAmount)} · CGST ${formatInr(i.cgstAmount)} · SGST ${formatInr(i.sgstAmount)}`
+                      }
                       relationship="description"
                     >
                       <span>{formatPercent(i.gstRate)}</span>
@@ -225,8 +230,20 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
               <Detail label="MRP value">{formatInr(s.grossAmount)}</Detail>
               <Detail label={`Discount (${formatPercent(s.discountPercent)})`}>{formatInr(s.discountAmount)}</Detail>
               <Detail label="Taxable value">{formatInr(s.taxableAmount)}</Detail>
-              <Detail label="CGST">{formatInr(s.cgstAmount)}</Detail>
-              <Detail label="SGST">{formatInr(s.sgstAmount)}</Detail>
+              {s.igstAmount !== 0 ? (
+                <Detail label="IGST">{formatInr(s.igstAmount)}</Detail>
+              ) : (
+                <>
+                  <Detail label="CGST">{formatInr(s.cgstAmount)}</Detail>
+                  <Detail label="SGST">{formatInr(s.sgstAmount)}</Detail>
+                </>
+              )}
+              {s.buyerGstin && (
+                <Detail label="B2B buyer">
+                  {s.buyerLegalName} · GSTIN {s.buyerGstin}
+                  {s.placeOfSupply ? ` · place of supply ${gstStateName(s.placeOfSupply) ?? s.placeOfSupply}` : ''}
+                </Detail>
+              )}
               <Detail label="Round off">{formatInr(s.roundOff)}</Detail>
               <div>
                 <Caption1 className={styles.muted}>Net amount</Caption1>

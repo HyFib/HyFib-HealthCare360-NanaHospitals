@@ -17,6 +17,7 @@ import {
   MessageBarTitle,
   Radio,
   RadioGroup,
+  Select,
   Spinner,
   Switch,
   Text,
@@ -41,6 +42,7 @@ import { usePermission } from '@/lib/permissions';
 import { PatientFlagsStrip } from '@/modules/emr/PatientFlagsStrip';
 import { sumNumbers } from '@/modules/inventory/decimal';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
+import { GST_STATES, gstStateCode, isValidGstin } from '@/modules/inventory/gst';
 import { requiresRegister } from '@/modules/inventory/labels';
 import { LineTable } from '@/modules/inventory/LineTable';
 import { WorkingStorePicker, StoreProblem } from '@/modules/inventory/StorePicker';
@@ -69,6 +71,7 @@ import { PaymentPanel } from '@/modules/pharmacy/PaymentPanel';
 import { checkPayments, defaultPayments, resolvePayments, type PaymentDraft } from '@/modules/pharmacy/payments';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 import { priceSaleLine, saleTotals } from '@/modules/pharmacy/pricing';
+import { useFacilityGstin } from '@/modules/purchase/hooks';
 import { printReceipt } from '@/modules/pharmacy/print';
 
 export const Route = createFileRoute('/_app/pharmacy/sale')({
@@ -128,6 +131,7 @@ function CounterSalePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const letterhead = useLetterhead();
+  const facilityGstin = useFacilityGstin();
   const [prefs, setPrefs] = useCounterPrefs();
   const canSell = usePermission(P.sales);
   const canReturn = usePermission([P.sales, P.returns]);
@@ -144,6 +148,10 @@ function CounterSalePage() {
   const [rx, setRx] = useState<Rx>(EMPTY_RX);
   const [discount, setDiscount] = useState('');
   const [confirmControlled, setConfirmControlled] = useState(false);
+  const [b2b, setB2b] = useState(false);
+  const [buyerGstin, setBuyerGstin] = useState('');
+  const [buyerLegalName, setBuyerLegalName] = useState('');
+  const [dispatchState, setDispatchState] = useState('');
   const [payments, setPayments] = useState<PaymentDraft[]>(defaultPayments);
   const [sessionKey, setSessionKey] = useState(0);
   const [done, setDone] = useState<PharmacySaleCreated | null>(null);
@@ -185,6 +193,10 @@ function CounterSalePage() {
   const resolved = resolvePayments(totals.net, payments);
   const paymentCheck = checkPayments(totals.net, resolved, creditAllowed);
   const phoneInvalid = customerKind === 'walk-in' && customerPhone.trim() !== '' && !isIndianMobile(customerPhone);
+  const b2bShown = customerKind === 'walk-in' && b2b;
+  const gstinInvalid = b2bShown && buyerGstin.trim() !== '' && !isValidGstin(buyerGstin);
+  const facilityState = gstStateCode(facilityGstin);
+  const interState = b2bShown && dispatchState !== '' && facilityState !== null && dispatchState !== facilityState;
 
   const blockers: string[] = [];
   if (cart.length === 0) {
@@ -218,6 +230,9 @@ function CounterSalePage() {
   }
   if (discountInvalid) {
     blockers.push('The discount must be between 0 and 100%.');
+  }
+  if (b2bShown && (!isValidGstin(buyerGstin) || !buyerLegalName.trim())) {
+    blockers.push("Enter the buyer's GSTIN and legal name for the B2B invoice.");
   }
   const pending = lines.some((l) => l.plan.pending);
   const ready = canSell && Boolean(storeId) && blockers.length === 0 && !pending && paymentCheck.ok;
@@ -263,6 +278,10 @@ function CounterSalePage() {
     setCustomerKind('walk-in');
     setCustomerName('');
     setCustomerPhone('');
+    setB2b(false);
+    setBuyerGstin('');
+    setBuyerLegalName('');
+    setDispatchState('');
     setWithRx(false);
     setRx(EMPTY_RX);
     setDiscount('');
@@ -301,6 +320,13 @@ function CounterSalePage() {
           .filter((p) => p.amount > 0)
           .map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference })),
         confirmControlledDrugs: registerItems.length > 0 && confirmControlled,
+        buyer: b2bShown
+          ? {
+              gstin: buyerGstin.replace(/\s/g, '').toUpperCase(),
+              legalName: buyerLegalName.trim(),
+              deliveryState: dispatchState || null,
+            }
+          : null,
       }),
     onSuccess: (sale) => {
       setDone(sale);
@@ -551,6 +577,51 @@ function CounterSalePage() {
                   </Field>
                 </div>
               )}
+              {customerKind === 'walk-in' && (
+                <Switch
+                  checked={b2b}
+                  onChange={(_, d) => setB2b(d.checked)}
+                  label="B2B invoice (the buyer is registered for GST)"
+                />
+              )}
+              {b2bShown && (
+                <>
+                  <div className={styles.grid2}>
+                    <Field
+                      label="Buyer GSTIN"
+                      required
+                      validationState={gstinInvalid ? 'error' : 'none'}
+                      validationMessage={gstinInvalid ? 'Not a valid GSTIN: check each character' : undefined}
+                    >
+                      <Input
+                        value={buyerGstin}
+                        maxLength={15}
+                        onChange={(_, d) => setBuyerGstin(d.value.toUpperCase())}
+                      />
+                    </Field>
+                    <Field label="Legal name" required>
+                      <Input value={buyerLegalName} maxLength={200} onChange={(_, d) => setBuyerLegalName(d.value)} />
+                    </Field>
+                  </div>
+                  <Field
+                    label="Dispatched to"
+                    hint={
+                      interState
+                        ? 'Another state: the invoice charges IGST.'
+                        : 'Handed over here, or sent within the state: CGST and SGST.'
+                    }
+                  >
+                    <Select value={dispatchState} onChange={(_, d) => setDispatchState(d.value)}>
+                      <option value="">Handed over at the counter</option>
+                      {Object.entries(GST_STATES).map(([code, name]) => (
+                        <option key={code} value={code}>
+                          {name} ({code})
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </>
+              )}
             </div>
           </Section>
 
@@ -639,7 +710,7 @@ function CounterSalePage() {
                   onChange={(_, d) => setDiscount(d.value)}
                 />
               </Field>
-              <BillSummary totals={totals} discountPercent={discountPercent} />
+              <BillSummary totals={totals} discountPercent={discountPercent} interState={interState} />
               <PaymentPanel
                 key={sessionKey}
                 bill={totals.net}

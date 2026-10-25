@@ -13,6 +13,7 @@ import {
 import { printLabelJob } from '@/lib/labelPrinting';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatExpiry, formatPercent, formatQty } from '@/modules/inventory/format';
+import { gstStateName } from '@/modules/inventory/gst';
 import type { IpIssueDetail, PharmacySaleDetail } from './api';
 import { paymentModeLabel } from './api';
 
@@ -21,11 +22,18 @@ export interface GstRateSummary {
   taxable: number;
   cgst: number;
   sgst: number;
+  igst: number;
 }
 
 /** GST summary by rate from the invoice lines exactly as the server priced them (no recalculation). */
 export function gstSummaryByRate(
-  items: readonly { gstRate: number; taxableAmount: number; cgstAmount: number; sgstAmount: number }[],
+  items: readonly {
+    gstRate: number;
+    taxableAmount: number;
+    cgstAmount: number;
+    sgstAmount: number;
+    igstAmount?: number;
+  }[],
 ): GstRateSummary[] {
   const rates = Array.from(new Set(items.map((i) => i.gstRate))).sort((a, b) => a - b);
   return rates.map((rate) => {
@@ -36,6 +44,7 @@ export function gstSummaryByRate(
       taxable: add((i) => i.taxableAmount),
       cgst: add((i) => i.cgstAmount),
       sgst: add((i) => i.sgstAmount),
+      igst: add((i) => i.igstAmount ?? 0),
     };
   });
 }
@@ -62,9 +71,11 @@ export function buildReceiptHtml(
   options: { copyLabel?: string } = {},
 ): string {
   const template = templateFor(letterhead, 'sales-invoice');
-  const customer = sale.customerName
-    ? `${escapeHtml(sale.customerName)}${sale.patientUhid ? ` (${escapeHtml(sale.patientUhid)})` : ''}`
-    : 'Walk-in customer';
+  const customer = sale.buyerLegalName
+    ? escapeHtml(sale.buyerLegalName)
+    : sale.customerName
+      ? `${escapeHtml(sale.customerName)}${sale.patientUhid ? ` (${escapeHtml(sale.patientUhid)})` : ''}`
+      : 'Walk-in customer';
   const rows = sale.items
     .map(
       (item) => `
@@ -76,6 +87,7 @@ export function buildReceiptHtml(
     .join('');
   const substituted = sale.items.filter((i) => i.isSubstitution);
   const gst = gstSummaryByRate(sale.items);
+  const interState = sale.igstAmount !== 0;
   const payments = sale.payments
     .map(
       (p) =>
@@ -91,7 +103,9 @@ export function buildReceiptHtml(
       <table class="small">
         <tr><td>Invoice</td><td class="right"><b>${escapeHtml(sale.invoiceNumber)}</b></td></tr>
         <tr><td>Date</td><td class="right">${escapeHtml(formatDateTime(sale.soldAt))}</td></tr>
-        <tr><td>Patient</td><td class="right">${customer}</td></tr>
+        <tr><td>${sale.buyerGstin ? 'Buyer' : 'Patient'}</td><td class="right">${customer}</td></tr>
+        ${sale.buyerGstin ? `<tr><td>Buyer GSTIN</td><td class="right">${escapeHtml(sale.buyerGstin)}</td></tr>` : ''}
+        ${sale.placeOfSupply ? `<tr><td>Place of supply</td><td class="right">${escapeHtml(gstStateName(sale.placeOfSupply) ?? sale.placeOfSupply)}</td></tr>` : ''}
         ${sale.prescriberName ? `<tr><td>Prescriber</td><td class="right">${escapeHtml(sale.prescriberName)}${sale.prescriberRegistrationNumber ? ` (Reg. ${escapeHtml(sale.prescriberRegistrationNumber)})` : ''}</td></tr>` : ''}
         ${sale.prescriptionNumber ? `<tr><td>Prescription</td><td class="right">${escapeHtml(sale.prescriptionNumber)}</td></tr>` : ''}
       </table>
@@ -102,8 +116,12 @@ export function buildReceiptHtml(
         <tr><td>MRP value</td><td class="right">${escapeHtml(formatInr(sale.grossAmount))}</td></tr>
         ${sale.discountAmount ? `<tr><td>Discount (${escapeHtml(formatPercent(sale.discountPercent))})</td><td class="right">−${escapeHtml(formatInr(sale.discountAmount))}</td></tr>` : ''}
         <tr><td>Taxable value</td><td class="right">${escapeHtml(formatInr(sale.taxableAmount))}</td></tr>
-        <tr><td>CGST</td><td class="right">${escapeHtml(formatInr(sale.cgstAmount))}</td></tr>
-        <tr><td>SGST</td><td class="right">${escapeHtml(formatInr(sale.sgstAmount))}</td></tr>
+        ${
+          interState
+            ? `<tr><td>IGST</td><td class="right">${escapeHtml(formatInr(sale.igstAmount))}</td></tr>`
+            : `<tr><td>CGST</td><td class="right">${escapeHtml(formatInr(sale.cgstAmount))}</td></tr>
+        <tr><td>SGST</td><td class="right">${escapeHtml(formatInr(sale.sgstAmount))}</td></tr>`
+        }
         ${sale.roundOff ? `<tr><td>Round off</td><td class="right">${escapeHtml(formatInr(sale.roundOff))}</td></tr>` : ''}
         <tr class="net"><td>Net amount</td><td class="right">${escapeHtml(formatInr(sale.netAmount))}</td></tr>
         ${payments}
@@ -112,10 +130,10 @@ export function buildReceiptHtml(
       </table>
       ${
         gst.length > 0
-          ? `<div class="dash"></div><table class="gst"><tr><th>GST</th><th>Taxable</th><th>CGST</th><th>SGST</th></tr>${gst
+          ? `<div class="dash"></div><table class="gst"><tr><th>GST</th><th>Taxable</th>${interState ? '<th>IGST</th>' : '<th>CGST</th><th>SGST</th>'}</tr>${gst
               .map(
                 (g) =>
-                  `<tr><td>${escapeHtml(formatPercent(g.rate))}</td><td>${escapeHtml(formatInr(g.taxable))}</td><td>${escapeHtml(formatInr(g.cgst))}</td><td>${escapeHtml(formatInr(g.sgst))}</td></tr>`,
+                  `<tr><td>${escapeHtml(formatPercent(g.rate))}</td><td>${escapeHtml(formatInr(g.taxable))}</td>${interState ? `<td>${escapeHtml(formatInr(g.igst))}</td>` : `<td>${escapeHtml(formatInr(g.cgst))}</td><td>${escapeHtml(formatInr(g.sgst))}</td>`}</tr>`,
               )
               .join('')}</table>`
           : ''

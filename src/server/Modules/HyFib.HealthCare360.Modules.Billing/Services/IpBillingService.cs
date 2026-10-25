@@ -457,6 +457,7 @@ public sealed class IpBillingService(
         }
 
         var bill = Bill.Draft(account.FacilityId, BillType.InPatient, false, account.PatientId, account.VisitId, account.AdmissionId, account.Id, terms);
+        await BillPlaceOfSupply.ApplyAsync(db, bill, ct);
         db.Add(bill);
         await bills.AttachAsync(bill, available, ct);
         await db.SaveChangesAsync(ct);
@@ -493,6 +494,7 @@ public sealed class IpBillingService(
                 account.FacilityId, BillType.InPatient, false, account.PatientId, account.VisitId, account.AdmissionId, account.Id,
                 BillPayerTerms.SelfPay(account.PayerType, account.TariffPlanId));
             bill.Notes = "Supplementary bill for services charged after the final bill.";
+            await BillPlaceOfSupply.ApplyAsync(db, bill, ct);
             db.Add(bill);
             await bills.AttachAsync(bill, late, ct);
         }
@@ -657,6 +659,7 @@ public sealed class IpBillingService(
             }
         }
 
+        await BillPlaceOfSupply.ApplyAsync(db, bill, ct);
         var packageCharge = await StagePackageChargeAsync(account, ct);
         await bills.AttachAsync(bill, await AvailableChargesAsync(account.AdmissionId, null, ct), ct);
         await ApplyPackageAsync(bill, account, packageCharge, ct);

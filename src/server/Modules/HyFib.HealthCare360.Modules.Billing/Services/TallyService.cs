@@ -113,7 +113,7 @@ public sealed class TallyService(
                 var department = l.DepartmentId is { } d ? departments.GetValueOrDefault(d) : null;
                 return new TallySaleLine(
                     department?.Code, department?.Name, l.GrossAmount - l.PackageCoveredAmount, l.TariffDiscountAmount + l.LineDiscountAmount + l.BillDiscountShare,
-                    l.CgstAmount, l.SgstAmount);
+                    l.CgstAmount, l.SgstAmount, l.IgstAmount);
             }).ToList();
             var sale = new TallySale(
                 bill.BillNumber!, date, bill.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null, bill.PatientAmount, bill.PayerAmount,

@@ -1079,6 +1079,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("gross_amount");
 
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
+
                     b.Property<Guid?>("IpAccountId")
                         .HasColumnType("uuid")
                         .HasColumnName("ip_account_id");
@@ -1090,6 +1095,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<bool>("IsFinalBill")
                         .HasColumnType("boolean")
                         .HasColumnName("is_final_bill");
+
+                    b.Property<bool>("IsInterState")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_inter_state");
 
                     b.Property<decimal>("LineDiscountAmount")
                         .HasPrecision(18, 2)
@@ -1163,6 +1172,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("payer_type");
+
+                    b.Property<string>("PlaceOfSupply")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("place_of_supply");
 
                     b.Property<Guid?>("PolicyId")
                         .HasColumnType("uuid")
@@ -1333,6 +1347,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("gross_amount");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
 
                     b.Property<bool>("IsDiscountAllowed")
                         .HasColumnType("boolean")
@@ -22786,6 +22805,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("BuyerGstin")
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)")
+                        .HasColumnName("buyer_gstin");
+
+                    b.Property<string>("BuyerLegalName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("buyer_legal_name");
+
                     b.Property<string>("CancelReason")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)")
@@ -22855,6 +22884,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("gross_amount");
 
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
+
                     b.Property<string>("InvoiceNumber")
                         .IsRequired()
                         .HasMaxLength(24)
@@ -22864,6 +22898,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
+
+                    b.Property<bool>("IsInterState")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_inter_state");
 
                     b.Property<decimal>("NetAmount")
                         .HasPrecision(18, 2)
@@ -22878,6 +22916,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
+
+                    b.Property<string>("PlaceOfSupply")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("place_of_supply");
 
                     b.Property<Guid?>("PractitionerId")
                         .HasColumnType("uuid")
@@ -23046,6 +23089,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(8)
                         .HasColumnType("character varying(8)")
                         .HasColumnName("hsn_code");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
 
                     b.Property<bool>("IsControlled")
                         .HasColumnType("boolean")

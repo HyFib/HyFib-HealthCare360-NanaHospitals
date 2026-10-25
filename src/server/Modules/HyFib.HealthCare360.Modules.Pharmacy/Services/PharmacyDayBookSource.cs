@@ -29,6 +29,12 @@ internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSale
         var rates = await db.Set<PharmacySaleItem>().AsNoTracking()
             .Where(i => returnedItems.Contains(i.Id))
             .ToDictionaryAsync(i => i.Id, i => i.GstRate, cancellationToken);
+        var interState = (await (
+                from i in db.Set<PharmacySaleItem>().AsNoTracking()
+                join s in db.Set<PharmacySale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on i.PharmacySaleId equals s.Id
+                where returnedItems.Contains(i.Id) && s.IsInterState
+                select i.Id)
+            .ToListAsync(cancellationToken)).ToHashSet();
 
         // Balances on account paid at the counter on the day: payments after the sale, of invoices still standing.
         var collected = await (
@@ -39,7 +45,7 @@ internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSale
                 select new PharmacyCollection(payment.Mode, payment.Amount))
             .ToListAsync(cancellationToken);
 
-        return PharmacyDayBook.Day(date, sales, returns, rates, collected);
+        return PharmacyDayBook.Day(date, sales, returns, rates, collected, interState);
     }
 }
 
@@ -64,12 +70,13 @@ internal static class PharmacyDayBook
         IReadOnlyList<PharmacySale> sales,
         IReadOnlyList<PharmacySaleReturn> returns,
         IReadOnlyDictionary<Guid, decimal> returnedItemRates,
-        IReadOnlyList<PharmacyCollection> collected)
+        IReadOnlyList<PharmacyCollection> collected,
+        IReadOnlySet<Guid>? interStateItems = null)
     {
         var standing = sales.Where(s => s.Status != SaleStatus.Cancelled).ToList();
         var sold = new CounterDocuments(
             standing.Count,
-            Tax(standing.SelectMany(s => s.Items).Select(i => (i.GstRate, i.TaxableAmount, i.CgstAmount, i.SgstAmount))),
+            Tax(standing.SelectMany(s => s.Items).Select(i => (i.GstRate, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.IgstAmount))),
             standing.Sum(s => s.RoundOff),
             ByMode(standing.SelectMany(s => s.Payments.Where(p => !p.IsRefund && p.Mode != PaymentMode.Credit && p.ReceivedAt == s.SoldAt))
                 .Select(p => (p.Mode, p.Amount))));
@@ -79,8 +86,8 @@ internal static class PharmacyDayBook
             Tax(returns.SelectMany(r => r.Items).Select(i =>
             {
                 var rate = returnedItemRates.GetValueOrDefault(i.SaleItemId);
-                var split = GstCalculator.FromInclusive(i.RefundAmount, rate);
-                return (rate, split.Taxable, split.Cgst, split.Sgst);
+                var split = GstCalculator.FromInclusive(i.RefundAmount, rate, interStateItems?.Contains(i.SaleItemId) == true);
+                return (rate, split.Taxable, split.Cgst, split.Sgst, split.Igst);
             })),
             0m,
             ByMode(returns.Where(r => r.CashRefund > 0).Select(r => (r.RefundMode == PaymentMode.Credit ? PaymentMode.Cash : r.RefundMode, r.CashRefund))));
@@ -88,10 +95,10 @@ internal static class PharmacyDayBook
         return new CounterSalesDay(PharmacyDayBookSource.Key, date, sold, returned, ByMode(collected.Select(c => (c.Mode, c.Amount))));
     }
 
-    private static List<CounterTaxLine> Tax(IEnumerable<(decimal Rate, decimal Taxable, decimal Cgst, decimal Sgst)> lines) =>
+    private static List<CounterTaxLine> Tax(IEnumerable<(decimal Rate, decimal Taxable, decimal Cgst, decimal Sgst, decimal Igst)> lines) =>
         lines.GroupBy(l => l.Rate)
             .OrderBy(g => g.Key)
-            .Select(g => new CounterTaxLine(g.Key, g.Sum(l => l.Taxable), g.Sum(l => l.Cgst), g.Sum(l => l.Sgst)))
+            .Select(g => new CounterTaxLine(g.Key, g.Sum(l => l.Taxable), g.Sum(l => l.Cgst), g.Sum(l => l.Sgst), g.Sum(l => l.Igst)))
             .ToList();
 
     private static List<CounterMoney> ByMode(IEnumerable<(PaymentMode Mode, decimal Amount)> payments) =>

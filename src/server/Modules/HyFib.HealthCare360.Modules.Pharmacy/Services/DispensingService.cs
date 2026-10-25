@@ -37,7 +37,7 @@ internal static class PharmacyLookups
     public static RegisterParty Party(PatientSnapshot? patient, string? customerName, string? prescriber, string? registration, string? prescriptionNumber) =>
         new(patient?.Id, patient?.Name ?? customerName, patient?.Uhid, patient?.Address.ToString(), prescriber, registration, prescriptionNumber);
 
-    public static PharmacySaleItem SaleItem(Guid saleId, ItemSummary item, StockMovement moved, decimal discountPercent)
+    public static PharmacySaleItem SaleItem(Guid saleId, ItemSummary item, StockMovement moved, decimal discountPercent, bool interState = false)
     {
         var line = new PharmacySaleItem
         {
@@ -57,7 +57,7 @@ internal static class PharmacyLookups
             // GST in force on the day of sale (the item master), not the rate on the purchase invoice.
             GstRate = item.GstRate,
         };
-        line.Price(discountPercent);
+        line.Price(discountPercent, interState);
         return line;
     }
 
@@ -318,6 +318,16 @@ public sealed class DispensingService(
             DiscountPercent = request.DiscountPercent,
         };
         sale.InvoiceNumber = await numbers.NextAsync(PharmacyNumberSeries.Invoice, sale.FacilityId, ct);
+        if (request.Buyer is { } buyer)
+        {
+            var facilityGstin = await db.Set<Facility>().Where(f => f.Id == sale.FacilityId).Select(f => f.Gstin).FirstOrDefaultAsync(ct);
+            if (Gstin.StateCode(facilityGstin) is not { } facilityState)
+            {
+                return Error.Rule("gst.facility_gstin", "Enter the hospital's GSTIN under Hospital setup before raising a B2B invoice.");
+            }
+
+            sale.SetSupply(Gstin.Normalize(buyer.Gstin), buyer.LegalName.Trim(), facilityState, buyer.DeliveryState);
+        }
 
         var reference = new StockReference(PharmacyStockReferences.CounterSale, sale.Id, sale.InvoiceNumber);
         var issued = await stock.IssueAsync(
@@ -331,7 +341,7 @@ public sealed class DispensingService(
 
         foreach (var moved in issued.Value.Movements)
         {
-            sale.Items.Add(PharmacyLookups.SaleItem(sale.Id, items[moved.ItemId], moved, request.DiscountPercent));
+            sale.Items.Add(PharmacyLookups.SaleItem(sale.Id, items[moved.ItemId], moved, request.DiscountPercent, sale.IsInterState));
         }
 
         var completed = sale.Complete(request.Payments, creditAllowed: patient is not null, now, currentUser.UserId);

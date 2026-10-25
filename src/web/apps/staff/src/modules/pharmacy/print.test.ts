@@ -24,6 +24,10 @@ const sale: PharmacySaleDetail = {
   taxableAmount: 162.15,
   cgstAmount: 5.14,
   sgstAmount: 5.13,
+  igstAmount: 0,
+  buyerGstin: null,
+  buyerLegalName: null,
+  placeOfSupply: null,
   roundOff: -0.42,
   netAmount: 172,
   paidAmount: 172,
@@ -50,6 +54,7 @@ const sale: PharmacySaleDetail = {
       taxableAmount: 19.93,
       cgstAmount: 1.2,
       sgstAmount: 1.19,
+      igstAmount: 0,
       netAmount: 22.32,
       returnedQuantity: 0,
       isSubstitution: true,
@@ -73,6 +78,7 @@ const sale: PharmacySaleDetail = {
       taxableAmount: 11.03,
       cgstAmount: 0.66,
       sgstAmount: 0.66,
+      igstAmount: 0,
       netAmount: 12.35,
       returnedQuantity: 0,
       isSubstitution: false,
@@ -88,7 +94,29 @@ const sale: PharmacySaleDetail = {
 
 describe('pharmacy prints', () => {
   it('sums GST by rate from the server lines', () => {
-    expect(gstSummaryByRate(sale.items)).toEqual([{ rate: 12, taxable: 30.96, cgst: 1.86, sgst: 1.85 }]);
+    expect(gstSummaryByRate(sale.items)).toEqual([{ rate: 12, taxable: 30.96, cgst: 1.86, sgst: 1.85, igst: 0 }]);
+  });
+
+  it('prints a B2B invoice to another state with the buyer, the place of supply and IGST', () => {
+    const html = buildReceiptHtml(
+      {
+        ...sale,
+        buyerGstin: '32AAACH7409R1ZA',
+        buyerLegalName: 'Sree Clinic',
+        placeOfSupply: '32',
+        cgstAmount: 0,
+        sgstAmount: 0,
+        igstAmount: 3.71,
+        items: sale.items.map((i) => ({ ...i, igstAmount: i.cgstAmount + i.sgstAmount, cgstAmount: 0, sgstAmount: 0 })),
+      },
+      { name: 'Nana Hospitals', gstin: '33AABCN1234F1Z3' },
+    );
+    expect(html).toContain('Sree Clinic');
+    expect(html).toContain('32AAACH7409R1ZA');
+    expect(html).toContain('Kerala (32)');
+    expect(html).toContain('<td>IGST</td>');
+    expect(html).toContain('<th>IGST</th>');
+    expect(html).not.toContain('<td>CGST</td>');
   });
 
   it('prints an escaped GST invoice with CGST/SGST, payments and the substitution note', () => {

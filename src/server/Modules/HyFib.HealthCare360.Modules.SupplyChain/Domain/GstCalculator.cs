@@ -47,11 +47,11 @@ public static class GstCalculator
     }
 
     /// <summary>Retail line at MRP: quantity × unit MRP, less discount; GST is carved out of what remains.</summary>
-    public static PricedLine PriceInclusive(decimal quantity, decimal unitMrp, decimal discountPercent, decimal gstRate)
+    public static PricedLine PriceInclusive(decimal quantity, decimal unitMrp, decimal discountPercent, decimal gstRate, bool interState = false)
     {
         var gross = Money.Round(quantity * unitMrp);
         var discount = Money.PercentOf(gross, discountPercent);
-        return new PricedLine(gross, discount, FromInclusive(gross - discount, gstRate));
+        return new PricedLine(gross, discount, FromInclusive(gross - discount, gstRate, interState));
     }
 
     /// <summary>Rounds an invoice total to the nearest rupee; Indian invoices print the difference as "round off".</summary>

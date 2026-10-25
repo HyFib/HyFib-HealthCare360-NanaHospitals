@@ -178,11 +178,12 @@ internal static class SaleEndpoints
             sale.Id, sale.InvoiceNumber, sale.Type, sale.StoreId, storeName, sale.PatientId, uhid, sale.CustomerName,
             PatientContacts.Phone(sale.CustomerPhone, await contacts.FullAsync(ct)),
             sale.PrescriptionNumber, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.SoldAt, soldBy, sale.CounsellingNotes,
-            sale.DiscountPercent, sale.GrossAmount, sale.DiscountAmount, sale.TaxableAmount, sale.CgstAmount, sale.SgstAmount, sale.RoundOff,
+            sale.DiscountPercent, sale.GrossAmount, sale.DiscountAmount, sale.TaxableAmount, sale.CgstAmount, sale.SgstAmount, sale.IgstAmount,
+            sale.BuyerGstin, sale.BuyerLegalName, sale.PlaceOfSupply, sale.RoundOff,
             sale.NetAmount, sale.PaidAmount, sale.DueAmount, sale.ReturnedAmount, sale.RefundedAmount, sale.Status, sale.CancelReason,
             sale.Items.OrderBy(i => i.ItemName).Select(i => new PharmacySaleItemDto(
                 i.Id, i.ItemId, i.ItemName, i.GenericName, i.HsnCode, i.Schedule, i.BatchNumber, i.ExpiryDate, i.Quantity, i.UnitMrp, i.GstRate,
-                i.GrossAmount, i.DiscountAmount, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.NetAmount, i.ReturnedQuantity, i.IsSubstitution,
+                i.GrossAmount, i.DiscountAmount, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.IgstAmount, i.NetAmount, i.ReturnedQuantity, i.IsSubstitution,
                 i.PrescribedDrugName, i.SubstitutionReason)).ToList(),
             sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund)).ToList(),
             sale.Version));
