@@ -8571,6 +8571,254 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("icd_codes", "clinical");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Idsp.IdspWeeklyReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("CaseCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("case_count");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("Form")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("form");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reference");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at");
+
+                    b.Property<Guid?>("ReportedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reported_by");
+
+                    b.Property<DateOnly>("ReportedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("reported_on");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("Week")
+                        .HasColumnType("integer")
+                        .HasColumnName("week");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("integer")
+                        .HasColumnName("year");
+
+                    b.HasKey("Id")
+                        .HasName("pk_idsp_weekly_reports");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_idsp_weekly_reports_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_idsp_weekly_reports_is_deleted");
+
+                    b.HasIndex("FacilityId", "Year", "Week", "Form")
+                        .IsUnique()
+                        .HasDatabaseName("ix_idsp_weekly_reports_facility_id_year_week_form");
+
+                    b.ToTable("idsp_weekly_reports", "clinical");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Idsp.NotifiableCase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AlertedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("alerted_at");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<int?>("ConfirmedWeek")
+                        .HasColumnType("integer")
+                        .HasColumnName("confirmed_week");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid?>("DiagnosisId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("diagnosis_id");
+
+                    b.Property<string>("DiscardReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("discard_reason");
+
+                    b.Property<DateTimeOffset?>("DiscardedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("discarded_at");
+
+                    b.Property<Guid?>("DiscardedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("discarded_by");
+
+                    b.Property<string>("DiseaseCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("disease_code");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("IcdCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("icd_code");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid?>("LabResultId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lab_result_id");
+
+                    b.Property<DateOnly?>("OnsetDate")
+                        .HasColumnType("date")
+                        .HasColumnName("onset_date");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateTimeOffset?>("PresumedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("presumed_at");
+
+                    b.Property<int?>("PresumedWeek")
+                        .HasColumnType("integer")
+                        .HasColumnName("presumed_week");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TestName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("test_name");
+
+                    b.Property<string>("TestResult")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("test_result");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notifiable_cases");
+
+                    b.HasIndex("DiagnosisId")
+                        .HasDatabaseName("ix_notifiable_cases_diagnosis_id");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_notifiable_cases_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_notifiable_cases_is_deleted");
+
+                    b.HasIndex("LabResultId")
+                        .HasDatabaseName("ix_notifiable_cases_lab_result_id");
+
+                    b.HasIndex("FacilityId", "ConfirmedWeek")
+                        .HasDatabaseName("ix_notifiable_cases_facility_id_confirmed_week");
+
+                    b.HasIndex("FacilityId", "PresumedWeek")
+                        .HasDatabaseName("ix_notifiable_cases_facility_id_presumed_week");
+
+                    b.HasIndex("PatientId", "DiseaseCode")
+                        .HasDatabaseName("ix_notifiable_cases_patient_id_disease_code");
+
+                    b.ToTable("notifiable_cases", "clinical");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Immunization", b =>
                 {
                     b.Property<Guid>("Id")
@@ -38326,6 +38574,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_health_package_items_health_packages_package_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Idsp.NotifiableCase", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_notifiable_cases_patients_patient_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Immunization", b =>

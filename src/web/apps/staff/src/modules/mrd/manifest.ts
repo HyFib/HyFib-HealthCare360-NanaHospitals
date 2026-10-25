@@ -63,6 +63,12 @@ const manifest: ModuleManifest = {
       permission: ['mrd.deaths.certify', 'mrd.vital.register'],
       keywords: ['death register', 'death certificate', 'mccd', 'form 4', 'cause of death', 'crs', 'registrar'],
     },
+    {
+      label: 'Notifiable diseases',
+      to: '/mrd/idsp',
+      permission: 'mrd.idsp.report',
+      keywords: ['idsp', 'ihip', 'surveillance', 'p form', 'l form', 'outbreak', 'notifiable', 'epidemic'],
+    },
   ],
   quickActions: [
     {

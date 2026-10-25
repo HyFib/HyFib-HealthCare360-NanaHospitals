@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Diagnostics.Documents;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
@@ -20,6 +21,7 @@ internal sealed class LabReportService(
     CriticalValueNotifier critical,
     DiagnosticsLookups lookups,
     DiagnosticsRealtime realtime,
+    NotifiableDiseases notifiable,
     INotificationService notifications,
     IAuditLogger audit,
     ICurrentUser currentUser,
@@ -159,6 +161,7 @@ internal sealed class LabReportService(
             }
         }
 
+        await NotifyAsync(results, now, amended: true, ct);
         var affected = results.Select(r => items[r.LabOrderItemId]).Distinct().ToList();
         var recorded = report.Amend(order, request.Reason.Trim(), string.Join("; ", changes), affected, criticalResults.Count > 0, currentUser.UserId, now);
         if (recorded.IsFailure)
@@ -202,10 +205,43 @@ internal sealed class LabReportService(
             return released.Error!;
         }
 
+        var releasedItems = released.Value.Select(i => i.Id).ToHashSet();
+        await NotifyAsync(db.Set<LabResult>().Local.Where(r => releasedItems.Contains(r.LabOrderItemId) && r.Status == LabResultStatus.Verified), report.ReleasedAt!.Value,
+            amended: false, ct);
         await delivery.QueueReportReadyAsync(
             order.PatientId, order.AccessionNumber, new NotificationDocument(LabReportDocumentSource.DocumentKind, report.Id), order.FacilityId, ct);
         return new ReleaseOutcome(report.Id, released.Value.Select(i => i.Id).ToList(), report.IsPartial, report.VerificationCode);
     }
+
+    /// <summary>
+    /// A released positive result of a test that confirms a notifiable disease goes on the week's IDSP L form, in the
+    /// caller's save; a confirming result amended to negative takes the case off it.
+    /// </summary>
+    private async Task NotifyAsync(IEnumerable<LabResult> results, DateTimeOffset at, bool amended, CancellationToken ct)
+    {
+        var list = results.ToList();
+        var testIds = list.Select(r => r.LabTestId).Distinct().ToList();
+        var loinc = await db.Set<LabTest>().AsNoTracking().Where(t => testIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Loinc, ct);
+        foreach (var result in list)
+        {
+            if (IsPositive(result))
+            {
+                await notifiable.FromLabResultAsync(
+                    new NotifiableLabFinding(
+                        result.FacilityId, result.PatientId, result.Id, result.TestCode, loinc.GetValueOrDefault(result.LabTestId), result.TestName,
+                        result.Describe(), result.Organism, at),
+                    ct);
+            }
+            else if (amended)
+            {
+                await notifiable.WithdrawLabResultAsync(result.Id, at, ct);
+            }
+        }
+    }
+
+    /// <summary>Flagged outside the normal answers, or a culture that grew an organism.</summary>
+    internal static bool IsPositive(LabResult result) =>
+        result.Flag is not null and not ResultFlag.Normal || (result.ResultType == LabResultType.Culture && !string.IsNullOrWhiteSpace(result.Organism));
 
     /// <summary>The doctor may already have acted on the earlier value, so a correction is always pushed to them.</summary>
     private async Task NotifyOrderingDoctorAsync(LabOrder order, LabReport report, CancellationToken ct)

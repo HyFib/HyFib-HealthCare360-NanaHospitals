@@ -73,6 +73,7 @@ public static class PersonalDataCatalogue
                 new("clinical.birth_records", "Births you gave", Column: "mother_patient_id"),
                 new("clinical.birth_records", "Your birth in the hospital", Counted: false, Column: "baby_patient_id"),
                 new("clinical.death_records", "Death certificate", Counted: false),
+                new("clinical.notifiable_cases", "Notifiable-disease reports to public health (IDSP)"),
                 new("clinical.allergies", "Allergies"),
                 new("clinical.no_known_allergies", "No-known-allergy statements", Counted: false),
                 new("clinical.immunizations", "Vaccinations"),

@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Features.Idsp;
 using HyFib.HealthCare360.Modules.Clinical.Features.VitalRegistration;
 using HyFib.HealthCare360.Modules.Clinical.Documents;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
@@ -60,6 +61,8 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<HealthCheckupService>();
         services.AddScoped<ProcedureService>();
         services.AddScoped<VitalRegistrationService>();
+        services.AddScoped<NotifiableDiseases>();
+        services.AddScoped<IdspService>();
 
         // The ICD-10 and ICD-10-PCS catalogues: imports of the hospital's WHO and CMS files, and the chapters and blocks in use.
         services.AddScoped<IcdClassificationProvider>();
@@ -89,6 +92,7 @@ public sealed class ClinicalModule : IModule
         PrescriptionVerificationEndpoints.Map(endpoints);
         DischargeSummaryEndpoints.Map(endpoints);
         VitalRegistrationEndpoints.Map(endpoints);
+        IdspEndpoints.Map(endpoints);
         CodeCatalogueEndpoints.Map(endpoints);
         CatalogueEndpoints.Map(endpoints);
         CodingEndpoints.Map(endpoints);

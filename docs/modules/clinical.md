@@ -46,6 +46,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `mrd.births.record` | Record births in the hospital (Form 1; Form 3 for a still birth) | Doctor, Nurse, MrdOfficer |
 | `mrd.deaths.certify` | Certify the cause of death (MCCD, Form 4) | Doctor |
 | `mrd.vital.register` | The births and deaths registers, and reporting them to the Registrar | MrdOfficer, HospitalAdmin |
+| `mrd.idsp.report` | Notifiable diseases (IDSP): the cases, the weekly P and L forms to IHIP, the outbreak alerts | MrdOfficer, QualityManager |
 | `mrd.catalogue.import` | Import the WHO ICD-10 and CMS ICD-10-PCS catalogue files (changes every user's code lists) | HospitalAdmin |
 | `healthcheck.manage` | Packages, bookings, corporate batches | HospitalAdmin, FrontOffice |
 
@@ -473,6 +474,34 @@ are audited; the registers' CSV export is audited.
 | POST · PUT | `/mrd/deaths` · `/mrd/deaths/{id}` | mrd.deaths.certify | `SaveDeathRequest` (patient, time of death, age when no date of birth, causes, other conditions, manner, medico-legal, pregnancy, registration number; PUT with `version`). 409 `death.exists` for a second certificate |
 | POST | `/mrd/{births\|deaths}/{id}/report` | mrd.vital.register | `ReportToRegistrarRequest{reportedOn, registrationNumber, version}` |
 | POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back |
+
+#### Notifiable diseases (IDSP, `/idsp`, tag Disease Surveillance, permission `mrd.idsp.report`)
+A diagnosis (not a differential) whose ICD-10 code is on the IDSP list (`IdspDiseases`) opens a case on the week's
+presumptive (P) form, in the same save as the diagnosis. A released lab result that is positive (flagged outside the
+normal answers, or a culture that grew an organism) of a test that confirms a listed disease, by its lab-master code,
+its LOINC, or the organism grown, confirms the case on the laboratory (L) form, in the same save as the release. The
+same disease in the same patient within 30 days is the same case, so a diagnosis and its confirming test are one case,
+on both forms, each in the week it happened. A confirming result amended to negative takes the case off the L form (a
+case opened by that result alone is discarded). Outbreak-prone diseases (cholera, measles, diphtheria, AES, meningitis,
+AFP, plague, anthrax, rabies, mpox) alert every holder of `mrd.idsp.report` at once, through the outbox, after the save,
+with no patient details in the alert. The week runs Monday to Sunday by the date in India, numbered as ISO 8601 numbers
+weeks; its forms are due the Monday after. The officer uploads the line list to IHIP and records the report here, with
+no cases too (a nil report), once the week is over; cases that come in after the report show as not reported, and the
+form is reported again. A case the system cannot catch (AFP, a disease diagnosed without a code, a result from an outside
+laboratory) is added by hand; a case ruled out is discarded with its reason. Rows show contact details as PRV-03 lets the
+user see them, and a restricted patient's row initials only to a user who may not open the record; every view and
+export is audited. Not built: sending to IHIP (the line list is uploaded by hand), the S (syndromic) form, which is for
+health workers in the community, and tuberculosis, which is notified on Ni-kshay.
+
+| Method | Path | Permission | Request → Response |
+|---|---|---|---|
+| GET | `/idsp/diseases` | mrd.idsp.report | → `IdspDiseaseDto[]` (code, name, outbreak-prone, ICD-10 codes) |
+| GET | `/idsp/weeks` | mrd.idsp.report | → `IdspOverview` (this week and the eight before it, with P and L counts, reported, overdue; outbreak-prone cases of the last two weeks) |
+| GET | `/idsp/weeks/{year}/{week}` · `/export?form=Presumptive\|Laboratory` | mrd.idsp.report | → `IdspWeekDto` (both forms' cases and reports, the discarded cases) / the line list CSV |
+| PUT | `/idsp/weeks/{year}/{week}/{form}` | mrd.idsp.report | `ReportIdspWeekRequest{reportedOn, reference, version?}`: the form as sent; 422 `idsp.week_not_over` before the week ends |
+| GET | `/idsp/cases/{id}` | mrd.idsp.report | → `IdspCaseRow` |
+| POST | `/idsp/cases` | mrd.idsp.report | `AddIdspCaseRequest{patientId, diseaseCode, onsetDate, testName, testResult}`; 409 `idsp.case_exists` within 30 days |
+| POST | `/idsp/cases/{id}/discard` | mrd.idsp.report | `DiscardIdspCaseRequest{reason, version}` |
 
 #### Coding for insurance claims
 

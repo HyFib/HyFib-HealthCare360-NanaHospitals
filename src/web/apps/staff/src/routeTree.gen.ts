@@ -125,6 +125,7 @@ import { Route as AppLabTatRouteImport } from './routes/_app/lab/tat'
 import { Route as AppLabWorklistRouteImport } from './routes/_app/lab/worklist'
 import { Route as AppMrdIndexRouteImport } from './routes/_app/mrd/index'
 import { Route as AppMrdIcdRouteImport } from './routes/_app/mrd/icd'
+import { Route as AppMrdIdspRouteImport } from './routes/_app/mrd/idsp'
 import { Route as AppMrdMorbidityRouteImport } from './routes/_app/mrd/morbidity'
 import { Route as AppMrdProcedureCodesRouteImport } from './routes/_app/mrd/procedure-codes'
 import { Route as AppMrdRequestsRouteImport } from './routes/_app/mrd/requests'
@@ -903,6 +904,11 @@ const AppMrdIndexRoute = AppMrdIndexRouteImport.update({
 const AppMrdIcdRoute = AppMrdIcdRouteImport.update({
   id: '/mrd/icd',
   path: '/mrd/icd',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMrdIdspRoute = AppMrdIdspRouteImport.update({
+  id: '/mrd/idsp',
+  path: '/mrd/idsp',
   getParentRoute: () => AppRoute,
 } as any)
 const AppMrdMorbidityRoute = AppMrdMorbidityRouteImport.update({
@@ -2038,6 +2044,7 @@ export interface FileRoutesByFullPath {
   '/lab/tat': typeof AppLabTatRoute
   '/lab/worklist': typeof AppLabWorklistRoute
   '/mrd/icd': typeof AppMrdIcdRoute
+  '/mrd/idsp': typeof AppMrdIdspRoute
   '/mrd/morbidity': typeof AppMrdMorbidityRoute
   '/mrd/procedure-codes': typeof AppMrdProcedureCodesRoute
   '/mrd/requests': typeof AppMrdRequestsRoute
@@ -2350,6 +2357,7 @@ export interface FileRoutesByTo {
   '/lab/tat': typeof AppLabTatRoute
   '/lab/worklist': typeof AppLabWorklistRoute
   '/mrd/icd': typeof AppMrdIcdRoute
+  '/mrd/idsp': typeof AppMrdIdspRoute
   '/mrd/morbidity': typeof AppMrdMorbidityRoute
   '/mrd/procedure-codes': typeof AppMrdProcedureCodesRoute
   '/mrd/requests': typeof AppMrdRequestsRoute
@@ -2664,6 +2672,7 @@ export interface FileRoutesById {
   '/_app/lab/tat': typeof AppLabTatRoute
   '/_app/lab/worklist': typeof AppLabWorklistRoute
   '/_app/mrd/icd': typeof AppMrdIcdRoute
+  '/_app/mrd/idsp': typeof AppMrdIdspRoute
   '/_app/mrd/morbidity': typeof AppMrdMorbidityRoute
   '/_app/mrd/procedure-codes': typeof AppMrdProcedureCodesRoute
   '/_app/mrd/requests': typeof AppMrdRequestsRoute
@@ -2978,6 +2987,7 @@ export interface FileRouteTypes {
     | '/lab/tat'
     | '/lab/worklist'
     | '/mrd/icd'
+    | '/mrd/idsp'
     | '/mrd/morbidity'
     | '/mrd/procedure-codes'
     | '/mrd/requests'
@@ -3290,6 +3300,7 @@ export interface FileRouteTypes {
     | '/lab/tat'
     | '/lab/worklist'
     | '/mrd/icd'
+    | '/mrd/idsp'
     | '/mrd/morbidity'
     | '/mrd/procedure-codes'
     | '/mrd/requests'
@@ -3603,6 +3614,7 @@ export interface FileRouteTypes {
     | '/_app/lab/tat'
     | '/_app/lab/worklist'
     | '/_app/mrd/icd'
+    | '/_app/mrd/idsp'
     | '/_app/mrd/morbidity'
     | '/_app/mrd/procedure-codes'
     | '/_app/mrd/requests'
@@ -4639,6 +4651,13 @@ declare module '@tanstack/react-router' {
       path: '/mrd/icd'
       fullPath: '/mrd/icd'
       preLoaderRoute: typeof AppMrdIcdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mrd/idsp': {
+      id: '/_app/mrd/idsp'
+      path: '/mrd/idsp'
+      fullPath: '/mrd/idsp'
+      preLoaderRoute: typeof AppMrdIdspRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/mrd/morbidity': {
@@ -6102,6 +6121,7 @@ interface AppRouteChildren {
   AppLabTatRoute: typeof AppLabTatRoute
   AppLabWorklistRoute: typeof AppLabWorklistRoute
   AppMrdIcdRoute: typeof AppMrdIcdRoute
+  AppMrdIdspRoute: typeof AppMrdIdspRoute
   AppMrdMorbidityRoute: typeof AppMrdMorbidityRoute
   AppMrdProcedureCodesRoute: typeof AppMrdProcedureCodesRoute
   AppMrdRequestsRoute: typeof AppMrdRequestsRoute
@@ -6413,6 +6433,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppLabTatRoute: AppLabTatRoute,
   AppLabWorklistRoute: AppLabWorklistRoute,
   AppMrdIcdRoute: AppMrdIcdRoute,
+  AppMrdIdspRoute: AppMrdIdspRoute,
   AppMrdMorbidityRoute: AppMrdMorbidityRoute,
   AppMrdProcedureCodesRoute: AppMrdProcedureCodesRoute,
   AppMrdRequestsRoute: AppMrdRequestsRoute,
