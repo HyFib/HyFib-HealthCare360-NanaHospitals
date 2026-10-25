@@ -40,9 +40,16 @@ internal sealed class MtpService(
 
         var cases = await query.OrderByDescending(c => c.CertifiedAt).Take(200).ToListAsync(ct);
         var patients = await PatientsAsync(cases.Select(c => c.PatientId), ct);
-        return [.. cases.Select(c => new MtpCaseListItem(
-            c.Id, c.SerialNumber, c.PatientId, patients.GetValueOrDefault(c.PatientId)?.Uhid ?? string.Empty,
-            patients.GetValueOrDefault(c.PatientId)?.FullName ?? string.Empty, c.Status, c.WeeksOfGestation, c.CertifiedAt, c.TerminatedOn))];
+        var hidden = await HiddenAsync(patients.Values, ct);
+        return [.. cases.Select(c =>
+        {
+            var patient = patients.GetValueOrDefault(c.PatientId);
+            var masked = hidden.Contains(c.PatientId);
+            return new MtpCaseListItem(
+                c.Id, c.SerialNumber, c.PatientId, masked ? Restricted : patient?.Uhid ?? string.Empty,
+                masked ? PatientNames.Restricted(patient!.FullName) : patient?.FullName ?? string.Empty, c.Status, c.WeeksOfGestation, c.CertifiedAt,
+                c.TerminatedOn);
+        })];
     }
 
     public async Task<MtpCaseDto?> GetAsync(Guid id, CancellationToken ct)
@@ -183,15 +190,17 @@ internal sealed class MtpService(
             .ToListAsync(ct);
         var patients = await PatientsAsync(cases.Select(c => c.PatientId), ct);
         var admissions = await AdmissionsAsync(cases, ct);
+        var hidden = await HiddenAsync(patients.Values, ct);
         var rows = cases.Select(c =>
         {
             var patient = patients.GetValueOrDefault(c.PatientId);
+            var masked = hidden.Contains(c.PatientId);
             return new MtpRegisterRow(
                 c.Id, c.SerialNumber,
                 admissions.TryGetValue(c.AdmissionId ?? Guid.Empty, out var admitted) ? SpecialtyClock.ToLocalDate(admitted) : SpecialtyClock.ToLocalDate(c.CertifiedAt),
-                patient?.FullName ?? string.Empty, patient?.Uhid ?? string.Empty, patient?.GuardianName, c.AgeYears, patient?.Religion,
-                patient?.Address.ToString() ?? string.Empty, c.WeeksOfGestation, c.Grounds, c.Category, c.TerminatedOn, c.Method, c.DischargedOn,
-                c.Outcome, OpinionBy(c), c.PerformedBy, c.Remarks);
+                masked ? PatientNames.Restricted(patient!.FullName) : patient?.FullName ?? string.Empty, masked ? Restricted : patient?.Uhid ?? string.Empty,
+                masked ? null : patient?.GuardianName, c.AgeYears, patient?.Religion, masked ? Restricted : patient?.Address.ToString() ?? string.Empty,
+                c.WeeksOfGestation, c.Grounds, c.Category, c.TerminatedOn, c.Method, c.DischargedOn, c.Outcome, OpinionBy(c), c.PerformedBy, c.Remarks);
         }).ToList();
         return new MtpRegister(year, month, await CurrentApprovalAsync(ct), rows, cases.Count(c => c.Status == MtpCaseStatus.Certified));
     }
@@ -252,6 +261,24 @@ internal sealed class MtpService(
     {
         var first = new DateOnly(year, month, 1);
         return (first, first.AddMonths(1).AddDays(-1));
+    }
+
+    private const string Restricted = "Restricted";
+
+    /// <summary>
+    /// The restricted (VIP) patients among <paramref name="patients"/> the user may not open: their rows show initials,
+    /// not the name, UHID or address (R-3), as a case of theirs opens only to those who may open the record.
+    /// </summary>
+    private async Task<IReadOnlySet<Guid>> HiddenAsync(IEnumerable<Patient> patients, CancellationToken ct)
+    {
+        var vip = patients.Where(p => p.IsVip).Select(p => p.Id).ToList();
+        if (vip.Count == 0)
+        {
+            return new HashSet<Guid>();
+        }
+
+        var openable = await guard.OpenableAsync(vip, ct);
+        return vip.Where(id => !openable.Contains(id)).ToHashSet();
     }
 
     private async Task<string> CurrentApprovalAsync(CancellationToken ct) =>

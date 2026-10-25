@@ -35,14 +35,22 @@ internal static class MtpEndpoints
         group.MapGet("/monthly-report", MonthlyReport).RequirePermission(SpecialtyCarePermissions.MtpRegister);
     }
 
-    private static async Task<IResult> List(Guid? patientId, MtpCaseStatus? status, MtpService mtp, PatientAccessGuard guard, CancellationToken ct)
+    private static async Task<IResult> List(
+        Guid? patientId, MtpCaseStatus? status, MtpService mtp, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
     {
         if (patientId is { } patient && await guard.EnsureCanOpenAsync(patient, ct) is { IsFailure: true } refused)
         {
             return refused.Error!.ToProblem();
         }
 
-        return TypedResults.Ok(await mtp.ListAsync(patientId, status, ct));
+        // The list names the women whose terminations are recorded: who saw it, and whom it showed, is PHI access (s.5A).
+        var cases = await mtp.ListAsync(patientId, status, ct);
+        await audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, "mtp.cases.viewed", $"Listed MTP cases ({cases.Count})")
+        {
+            PatientId = patientId,
+            Details = new { status, shown = cases.Select(c => c.Id) },
+        }, ct);
+        return TypedResults.Ok(cases);
     }
 
     private static async Task<IResult> Get(Guid id, MtpService mtp, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
@@ -88,10 +96,21 @@ internal static class MtpEndpoints
         return problem ?? await document!.ToPdfAsync(renderer, ct);
     }
 
-    private static async Task<IResult> Register(int? year, int? month, MtpService mtp, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Register(int? year, int? month, MtpService mtp, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var (y, m) = Month(year, month, time);
-        return m is < 1 or > 12 ? Error.Field("month", "Choose a month from 1 to 12.").ToProblem() : TypedResults.Ok(await mtp.RegisterAsync(y, m, ct));
+        if (m is < 1 or > 12)
+        {
+            return Error.Field("month", "Choose a month from 1 to 12.").ToProblem();
+        }
+
+        var register = await mtp.RegisterAsync(y, m, ct);
+        await audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, "mtp.register.viewed",
+            string.Create(CultureInfo.InvariantCulture, $"Viewed the MTP admission register ({y}-{m:00}, {register.Rows.Count} cases)"))
+        {
+            Details = new { shown = register.Rows.Select(r => r.Id) },
+        }, ct);
+        return TypedResults.Ok(register);
     }
 
     private static async Task<IResult> MonthlyReport(int? year, int? month, MtpService mtp, TimeProvider time, CancellationToken ct)

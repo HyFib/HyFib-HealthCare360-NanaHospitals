@@ -49,7 +49,9 @@ public sealed class MtpTests(HospitalServer server)
             using (var oneDoctor = await admin.SendRawAsync(HttpMethod.Post, "/api/v1/mtp/cases",
                        Case(patient.Id, today) with
                        {
-                           WeeksOfGestation = 22, Grounds = [MtpGround.InjuryToMentalHealth], Category = MtpRule3BCategory.ChangeOfMaritalStatus,
+                           WeeksOfGestation = 22,
+                           Grounds = [MtpGround.InjuryToMentalHealth],
+                           Category = MtpRule3BCategory.ChangeOfMaritalStatus,
                        }))
             {
                 oneDoctor.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
@@ -137,7 +139,10 @@ public sealed class MtpTests(HospitalServer server)
 
             var minor = await admin.PostAsync<MtpCaseDto>("/api/v1/mtp/cases", Case(patient.Id, today) with
             {
-                AgeYears = 16, ConsentBy = MtpConsentBy.Guardian, GuardianName = "Selvi", GuardianRelation = "Mother",
+                AgeYears = 16,
+                ConsentBy = MtpConsentBy.Guardian,
+                GuardianName = "Selvi",
+                GuardianRelation = "Mother",
             });
             minor.GuardianName.ShouldBe("Selvi");
 
@@ -145,6 +150,41 @@ public sealed class MtpTests(HospitalServer server)
             (cancelled.Status, cancelled.CancelReason).ShouldBe((MtpCaseStatus.Cancelled, "Withdrew consent"));
             (await admin.GetAsync<MtpRegister>($"/api/v1/mtp/register?year={today.Year}&month={today.Month}")).Rows
                 .ShouldNotContain(r => r.SerialNumber == minor.SerialNumber);
+        }
+        finally
+        {
+            await settings.RemoveAsync(MtpService.ApprovalSetting, facilityId, Ct);
+        }
+    }
+
+    [Fact]
+    public async Task A_restricted_patients_case_shows_in_the_list_and_register_with_her_initials_only()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId.ShouldNotBeNull();
+        var patient = await RegisterWomanAsync(admin, vip: true);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5.5));
+
+        await using var scope = server.Services.CreateAsyncScope();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+        await settings.SetAsync(MtpService.ApprovalSetting, Approval, facilityId, false, Ct);
+        try
+        {
+            var opened = await admin.PostAsync<MtpCaseDto>("/api/v1/mtp/cases", Case(patient.Id, today));
+
+            // Medical records may not open a restricted record: the list and the register keep her name, UHID and address back.
+            var listed = (await mrd.GetAsync<List<MtpCaseListItem>>("/api/v1/mtp/cases")).Single(c => c.Id == opened.Id);
+            (listed.Uhid, listed.PatientName).ShouldBe(("Restricted", PatientNames.Restricted(opened.PatientName)));
+            var row = (await mrd.GetAsync<MtpRegister>($"/api/v1/mtp/register?year={today.Year}&month={today.Month}")).Rows.Single(r => r.Id == opened.Id);
+            (row.Uhid, row.Address).ShouldBe(("Restricted", "Restricted"));
+            using (var closed = await mrd.SendRawAsync(HttpMethod.Get, $"/api/v1/mtp/cases/{opened.Id}"))
+            {
+                closed.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            }
+
+            // Those who may open it see her as she is.
+            (await admin.GetAsync<List<MtpCaseListItem>>("/api/v1/mtp/cases")).Single(c => c.Id == opened.Id).Uhid.ShouldBe(patient.Uhid);
         }
         finally
         {
@@ -164,7 +204,7 @@ public sealed class MtpTests(HospitalServer server)
         return (await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString();
     }
 
-    private static Task<PatientCreated> RegisterWomanAsync(ApiClient api) =>
+    private static Task<PatientCreated> RegisterWomanAsync(ApiClient api, bool vip = false) =>
         api.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
             Title: "Mrs.", FirstName: TestPatients.FirstName("Anitha"), MiddleName: null,
             LastName: "Mtp" + string.Concat(Enumerable.Range(0, 8).Select(_ => (char)('a' + Random.Shared.Next(26)))), Gender: Gender.Female,
@@ -172,6 +212,6 @@ public sealed class MtpTests(HospitalServer server)
             Phone: "9" + Random.Shared.Next(100_000_000, 999_999_999).ToString(System.Globalization.CultureInfo.InvariantCulture), AlternatePhone: null,
             Email: null, Address: null, BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null, EmergencyContactName: null,
             EmergencyContactPhone: null, EmergencyContactRelation: null, Occupation: null, Religion: "Hindu", Nationality: null, PreferredLanguage: null,
-            Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
+            Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: vip, Notes: null,
             ConfirmedNotDuplicate: true));
 }
