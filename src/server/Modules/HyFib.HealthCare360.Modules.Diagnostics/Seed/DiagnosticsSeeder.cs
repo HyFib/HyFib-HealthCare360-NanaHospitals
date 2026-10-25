@@ -193,6 +193,7 @@ internal sealed class DiagnosticsSeeder : ISeeder
                 DurationMinutes = procedure.DurationMinutes,
                 RequiresContrast = procedure.RequiresContrast,
                 PatientPreparation = procedure.Preparation,
+                RequiresFormF = procedure.RequiresFormF,
             });
         }
 

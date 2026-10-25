@@ -148,6 +148,11 @@ internal static partial class AbdmDocumentBuilder
             // Where each one comes in the file, which follows the page, does not.
             var rank = nodes.Select(Node).Distinct().Select((n, i) => (n, i)).ToDictionary(p => p.n, p => p.i);
             printed = PdfNodeId().Replace(printed, m => $"(node{rank[Node(m)].ToString("D8", CultureInfo.InvariantCulture)})");
+
+            // The IDTree lists the ids in sorted order, with the first and last as its limits. The new numbers can come in
+            // another order than the browser's (Windows CI printed node00000002 first), so each list is sorted again and
+            // its limits set from it. The same entries in another order keep the list's length, and the offsets with it.
+            printed = PdfIdTree().Replace(printed, SortIdTree);
         }
 
         return string.Equals(printed, text, StringComparison.Ordinal) ? pdf : Encoding.Latin1.GetBytes(printed);
@@ -158,6 +163,42 @@ internal static partial class AbdmDocumentBuilder
     /// <summary>A date of the PDF's document information: <c>/CreationDate (D:20261021005544+00'00')</c>.</summary>
     [GeneratedRegex(@"(?<key>/(?:CreationDate|ModDate)\s*\(D:)\d{14}(?<zone>Z|[+-]\d\d'\d\d'?)?(?=\))", RegexOptions.CultureInvariant)]
     private static partial Regex PdfDate();
+
+    /// <summary>One leaf of a tagged PDF's IDTree: <c>/Limits [(node00000017) (node00000019)] /Names [(node00000017) 27 0 R …]</c>.</summary>
+    [GeneratedRegex(@"(?:/Limits\s*\[\(node(?<first>\d{8})\)\s+\(node(?<last>\d{8})\)\]\s*)?/Names\s*\[(?<entries>(?:\s*\(node\d{8}\)\s+\d+\s+\d+\s+R)+)\s*\]",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex PdfIdTree();
+
+    [GeneratedRegex(@"\(node(?<n>\d{8})\)\s+\d+\s+\d+\s+R", RegexOptions.CultureInvariant)]
+    private static partial Regex PdfIdTreeEntry();
+
+    /// <summary>
+    /// An IDTree leaf with its entries in order of id and its limits the first and last of them. Each entry and each
+    /// limit goes where one was, so the spaces between them, and the leaf's length, stay as they were.
+    /// </summary>
+    private static string SortIdTree(Match leaf)
+    {
+        var list = leaf.Groups["entries"];
+        var entries = PdfIdTreeEntry().Matches(list.Value);
+        var sorted = entries.OrderBy(e => e.Groups["n"].Value, StringComparer.Ordinal).ToList();
+
+        // From the end, so the indexes still to come stay where they were.
+        var text = new StringBuilder(leaf.Value);
+        for (var i = entries.Count - 1; i >= 0; i--)
+        {
+            Put(list.Index + entries[i].Index, entries[i].Length, sorted[i].Value);
+        }
+
+        if (leaf.Groups["last"].Success)
+        {
+            Put(leaf.Groups["last"].Index, 8, sorted[^1].Groups["n"].Value);
+            Put(leaf.Groups["first"].Index, 8, sorted[0].Groups["n"].Value);
+        }
+
+        return text.ToString();
+
+        void Put(int index, int length, string value) => text.Remove(index - leaf.Index, length).Insert(index - leaf.Index, value);
+    }
 
     /// <summary>The id a tagged PDF gives a table header cell, in its structure element and the cells' headers: <c>(node00000017)</c>.</summary>
     [GeneratedRegex(@"\(node(?<n>\d{8})\)", RegexOptions.CultureInvariant)]

@@ -87,6 +87,8 @@ const study: ImagingStudyDetail = {
   patientPreparation: null,
   repeats: [],
   version: 4,
+  requiresFormF: false,
+  formFStatus: null,
 };
 
 /** Version 3 of the draft report, as the form is filled from it. */

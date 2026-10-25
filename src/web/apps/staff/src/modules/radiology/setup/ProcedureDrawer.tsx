@@ -23,7 +23,7 @@ import {
   useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { ServiceLookup } from '@/modules/lab/common/ServiceLookup';
 import { MODALITIES, radiologyApi, radiologyKeys, type ImagingProcedureDto } from '../api';
@@ -42,6 +42,7 @@ const schema = z.object({
   serviceItemId: z.string().nullable(),
   durationMinutes: z.number().int('Whole minutes.').min(5, '5 to 240 minutes').max(240, '5 to 240 minutes').nullable(),
   requiresContrast: z.boolean(),
+  requiresFormF: z.boolean(),
   patientPreparation: z.string().trim().max(1000),
   isActive: z.boolean(),
 });
@@ -71,10 +72,13 @@ export function ProcedureDrawer({
       serviceItemId: procedure?.serviceItemId ?? null,
       durationMinutes: procedure?.durationMinutes ?? 15,
       requiresContrast: procedure?.requiresContrast ?? false,
+      requiresFormF: procedure?.requiresFormF ?? false,
       patientPreparation: procedure?.patientPreparation ?? '',
       isActive: procedure?.isActive ?? true,
     },
   });
+
+  const modality = useWatch({ control: form.control, name: 'modality' });
 
   const save = useMutation({
     mutationFn: (values: ProcedureValues) =>
@@ -86,6 +90,7 @@ export function ProcedureDrawer({
         serviceItemId: values.serviceItemId,
         durationMinutes: values.durationMinutes ?? 15,
         requiresContrast: values.requiresContrast,
+        requiresFormF: values.modality === 'US' && values.requiresFormF,
         patientPreparation: values.patientPreparation || null,
         isActive: values.isActive,
         version: procedure?.version ?? null,
@@ -143,6 +148,14 @@ export function ProcedureDrawer({
                 max={240}
               />
               <SwitchField control={form.control} name="requiresContrast" label="Usually needs contrast" />
+              {modality === 'US' && (
+                <SwitchField
+                  control={form.control}
+                  name="requiresFormF"
+                  label="Ultrasound in pregnancy (needs PCPNDT Form F)"
+                  hint="The scan starts only after the woman's Form F declaration, and its report is signed only with the form completed."
+                />
+              )}
               <FullRow>
                 <Controller
                   control={form.control}

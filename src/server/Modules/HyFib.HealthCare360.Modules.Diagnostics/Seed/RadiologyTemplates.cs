@@ -46,6 +46,14 @@ internal static class RadiologyTemplates
             + "No adnexal mass. No free fluid in the pouch of Douglas. Urinary bladder is well distended with a normal wall.",
             "Normal pelvic ultrasound."),
 
+        // No part of an obstetric report states or hints at the sex of the foetus (PCPNDT Act s.5(2)).
+        new("TPL-US-OBS", "Ultrasound obstetric — normal", Modality.US, "Obstetric",
+            "Transabdominal ultrasound of the gravid uterus.",
+            "Single live intrauterine gestation. Cardiac activity present, foetal heart rate __ bpm.\n"
+            + "Biometry: BPD __ mm, HC __ mm, AC __ mm, FL __ mm, corresponding to __ weeks __ days. Estimated foetal weight __ g.\n"
+            + "Placenta: __, grade __, not low lying. Liquor adequate (AFI __ cm). Cervix closed, length __ cm.",
+            "Single live intrauterine gestation of __ weeks __ days, growth appropriate for the period of amenorrhoea."),
+
         new("TPL-CT-HEAD", "CT brain (plain) — normal", Modality.CT, "Head",
             "Non-contrast axial CT of the brain from the skull base to the vertex, reviewed in brain and bone windows.",
             "No intra-axial or extra-axial haemorrhage. No acute infarct or mass lesion. Grey-white matter differentiation is preserved. "

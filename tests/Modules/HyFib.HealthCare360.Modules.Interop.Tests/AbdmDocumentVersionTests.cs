@@ -225,6 +225,29 @@ public sealed class AbdmDocumentVersionTests
     }
 
     [Fact]
+    public void A_tagged_pdfs_id_tree_is_sorted_again_once_its_ids_are_numbered_by_where_they_come()
+    {
+        // The headers come in the file before the IDTree, so they are numbered first: node00000009 becomes 0 and
+        // node00000005 becomes 1, and the tree, sorted by the browser's numbers, would list 1 before 0.
+        var pdf = Encoding.Latin1.GetBytes("""
+            <</ID (node00000009)>>
+            <</ID (node00000005)>>
+            <</Limits [(node00000005) (node00000009)]
+            /Names [(node00000005) 131 0 R (node00000009) 27 0 R]>>
+            """);
+
+        var printed = AbdmDocumentBuilder.PdfAsOf(pdf, TestData.Now);
+
+        printed.Length.ShouldBe(pdf.Length, "the cross-reference offsets after the tree must still hold");
+        Encoding.Latin1.GetString(printed).ShouldBe("""
+            <</ID (node00000000)>>
+            <</ID (node00000001)>>
+            <</Limits [(node00000000) (node00000001)]
+            /Names [(node00000000) 27 0 R (node00000001) 131 0 R]>>
+            """);
+    }
+
+    [Fact]
     public void A_pdf_made_again_is_the_same_document_and_one_that_prints_otherwise_is_a_new_version()
     {
         // Two PDFs of the same page differ in the time they were made, which becomes the document's date.

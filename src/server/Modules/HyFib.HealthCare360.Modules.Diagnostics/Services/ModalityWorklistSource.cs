@@ -33,7 +33,10 @@ internal sealed class ModalityWorklistSource(HospitalDbContext db, DiagnosticsLo
             .Where(s => s.FacilityId == query.FacilityId)
             .Where(s => s.Status == ImagingStudyStatus.Ordered || s.Status == ImagingStudyStatus.Scheduled
                         || s.Status == ImagingStudyStatus.Arrived || s.Status == ImagingStudyStatus.InProgress)
-            .Where(StartsWithin(first, last, query.FromTime, query.ToTime));
+            .Where(StartsWithin(first, last, query.FromTime, query.ToTime))
+
+            // An ultrasound in pregnancy reaches the machine only once the woman's Form F declaration is recorded.
+            .Where(s => !s.RequiresFormF || db.Set<FormF>().Any(f => f.ImagingStudyId == s.Id && f.Status == FormFStatus.Declared));
         if (modalities.Count > 0)
         {
             studies = studies.Where(s => modalities.Contains(s.Modality));

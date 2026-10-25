@@ -42,6 +42,18 @@ public static class DiagnosticsPermissions
     /// </summary>
     public const string RadiologyImages = "radiology.images.view";
 
+    /// <summary>Record the woman's PCPNDT Form F details and declaration before an ultrasound in pregnancy.</summary>
+    public const string FormFRecord = "radiology.form_f.record";
+
+    /// <summary>
+    /// Complete a Form F with the result and the declaration of the doctor who performed the ultrasound. Radiologists hold it;
+    /// grant it to gynaecologists who scan, under Roles.
+    /// </summary>
+    public const string FormFSign = "radiology.form_f.sign";
+
+    /// <summary>The month's Form F register and its export for the Appropriate Authority.</summary>
+    public const string FormFRegister = "radiology.form_f.register";
+
     public const string CardiologyRead = "cardiology.studies.read";
     public const string CardiologyStudiesManage = "cardiology.studies.manage";
     public const string CardiologyReportsVerify = "cardiology.reports.verify";
@@ -64,6 +76,9 @@ public static class DiagnosticsPermissions
         new(RadiologyReportsWrite, "Radiology", "Write radiology reports", [SystemRoles.Radiologist]),
         new(RadiologyReportsVerify, "Radiology", "Sign off, release and add addenda to radiology reports; manage templates", [SystemRoles.Radiologist]),
         new(RadiologyImages, "Radiology", "View radiology images from PACS, in HC360 and in the PACS viewer", [SystemRoles.Doctor, SystemRoles.Radiographer, SystemRoles.Radiologist]),
+        new(FormFRecord, "Radiology", "Record the woman's PCPNDT Form F details and declaration before an ultrasound in pregnancy", [SystemRoles.Radiographer, SystemRoles.Radiologist]),
+        new(FormFSign, "Radiology", "Complete PCPNDT Form F with the result and the performing doctor's declaration", [SystemRoles.Radiologist]),
+        new(FormFRegister, "Radiology", "View and export the monthly PCPNDT Form F register for the Appropriate Authority", [SystemRoles.Radiologist, SystemRoles.HospitalAdmin]),
         new(CardiologyRead, "Cardiology", "View cardiology studies and released reports", [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.CardiologyTechnician, SystemRoles.Cardiologist]),
         new(CardiologyStudiesManage, "Cardiology", "Perform ECG/Echo/TMT/Holter/ABPM studies and upload device output", [SystemRoles.CardiologyTechnician]),
 
@@ -122,6 +137,7 @@ public sealed class DiagnosticsModule : IModule
             options.AddPolicy(RadiologyImageLimits.Policy, http => RadiologyImageLimits.Partition(http, limit));
         });
         services.AddScoped<RadiologyReportService>();
+        services.AddScoped<FormFService>();
         services.AddScoped<CardiologyService>();
 
         // Lab-equipment gateway (Integrations) hands analyser results and host queries to the LIS.
@@ -147,6 +163,7 @@ public sealed class DiagnosticsModule : IModule
         RadiologyEndpoints.Map(endpoints);
         RadiologyReportEndpoints.Map(endpoints);
         RadiologyMasterEndpoints.Map(endpoints);
+        FormFEndpoints.Map(endpoints);
         CardiologyEndpoints.Map(endpoints);
         PortalReportEndpoints.Map(endpoints);
         ReportVerificationEndpoints.Map(endpoints);

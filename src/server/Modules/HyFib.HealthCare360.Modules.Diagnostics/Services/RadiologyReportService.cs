@@ -107,6 +107,13 @@ internal sealed class RadiologyReportService(
         }
 
         db.SetExpectedVersion(report!, request.Version);
+
+        // The report of an ultrasound in pregnancy is signed only with its completed Form F (PCPNDT Act s.29).
+        if (study!.RequiresFormF && !await db.Set<FormF>().AnyAsync(f => f.ImagingStudyId == study.Id && f.Status == FormFStatus.Completed, ct))
+        {
+            return Error.Rule("form_f.incomplete", "Complete the PCPNDT Form F with the result and your declaration before signing this report.");
+        }
+
         var now = time.GetUtcNow();
         if (report!.IsCriticalFinding && !await db.Set<CriticalCallLog>().AnyAsync(c => c.ImagingStudyId == study!.Id, ct))
         {

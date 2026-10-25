@@ -11158,6 +11158,222 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("critical_call_logs", "diagnostics");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.FormF", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("address");
+
+                    b.Property<int>("AgeYears")
+                        .HasColumnType("integer")
+                        .HasColumnName("age_years");
+
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("cancel_reason");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid?>("DeclarationRecordedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("declaration_recorded_by");
+
+                    b.Property<DateTimeOffset>("DeclaredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("declared_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("DoctorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("doctor_name");
+
+                    b.Property<Guid?>("DoctorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("doctor_user_id");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("FormNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("form_number");
+
+                    b.Property<string>("HusbandOrFatherName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("husband_or_father_name");
+
+                    b.Property<Guid>("ImagingStudyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("imaging_study_id");
+
+                    b.PrimitiveCollection<int[]>("Indications")
+                        .IsRequired()
+                        .HasColumnType("integer[]")
+                        .HasColumnName("indications");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<DateOnly?>("LastMenstrualPeriod")
+                        .HasColumnType("date")
+                        .HasColumnName("last_menstrual_period");
+
+                    b.Property<int>("LivingDaughters")
+                        .HasColumnType("integer")
+                        .HasColumnName("living_daughters");
+
+                    b.Property<int>("LivingSons")
+                        .HasColumnType("integer")
+                        .HasColumnName("living_sons");
+
+                    b.Property<bool>("MtpIndicated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("mtp_indicated");
+
+                    b.Property<string>("MtpIndication")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("mtp_indication");
+
+                    b.Property<string>("OtherIndication")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("other_indication");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("phone");
+
+                    b.Property<DateOnly?>("ProcedureDate")
+                        .HasColumnType("date")
+                        .HasColumnName("procedure_date");
+
+                    b.Property<string>("Referral")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("referral");
+
+                    b.Property<string>("ReferringDoctorAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("referring_doctor_address");
+
+                    b.Property<string>("ReferringDoctorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("referring_doctor_name");
+
+                    b.Property<string>("RegistrationNumber")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("registration_number");
+
+                    b.Property<DateOnly?>("ResultConveyedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("result_conveyed_on");
+
+                    b.Property<string>("ResultConveyedTo")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("result_conveyed_to");
+
+                    b.Property<string>("ResultText")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("result_text");
+
+                    b.Property<Guid?>("SignedFormFileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("signed_form_file_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int?>("WeeksOfPregnancy")
+                        .HasColumnType("integer")
+                        .HasColumnName("weeks_of_pregnancy");
+
+                    b.HasKey("Id")
+                        .HasName("pk_form_f");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_form_f_facility_id");
+
+                    b.HasIndex("FormNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_form_f_form_number");
+
+                    b.HasIndex("ImagingStudyId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_form_f_imaging_study_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_form_f_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_form_f_patient_id");
+
+                    b.HasIndex("FacilityId", "Status", "CompletedAt")
+                        .HasDatabaseName("ix_form_f_facility_id_status_completed_at");
+
+                    b.ToTable("form_f", "diagnostics");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.ImagingAiFinding", b =>
                 {
                     b.Property<Guid>("Id")
@@ -11336,6 +11552,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<bool>("RequiresContrast")
                         .HasColumnType("boolean")
                         .HasColumnName("requires_contrast");
+
+                    b.Property<bool>("RequiresFormF")
+                        .HasColumnType("boolean")
+                        .HasColumnName("requires_form_f");
 
                     b.Property<Guid?>("ServiceItemId")
                         .HasColumnType("uuid")
@@ -11598,6 +11818,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<DateTimeOffset?>("ReportedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("reported_at");
+
+                    b.Property<bool>("RequiresFormF")
+                        .HasColumnType("boolean")
+                        .HasColumnName("requires_form_f");
 
                     b.Property<string>("Room")
                         .HasMaxLength(64)
@@ -37725,6 +37949,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_critical_call_logs_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.FormF", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.ImagingStudy", null)
+                        .WithMany()
+                        .HasForeignKey("ImagingStudyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_form_f_imaging_study_imaging_study_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_form_f_patients_patient_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.ImagingAiFinding", b =>

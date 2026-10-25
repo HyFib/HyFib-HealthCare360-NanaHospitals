@@ -42,6 +42,36 @@ export type ImageRepeatReason = (typeof REPEAT_REASONS)[number];
 
 export type AiFindingStatus = 'Preliminary' | 'Acknowledged' | 'Dismissed';
 
+/** Form F Section B's indications for an ultrasound in pregnancy, in the form's order (server `FormFIndication`). */
+export const FORM_F_INDICATIONS = [
+  'IntraUterineOrEctopicPregnancy',
+  'GestationalAge',
+  'NumberOfFoetusesAndChorionicity',
+  'PregnancyWithIucdOrContraceptiveFailure',
+  'VaginalBleedingOrLeaking',
+  'FollowUpOfAbortion',
+  'CervicalCanalAndInternalOs',
+  'UterineSizeDiscrepancy',
+  'AdnexalOrUterinePathology',
+  'ChromosomalOrStructuralAbnormalities',
+  'FoetalPresentationAndPosition',
+  'LiquorAmnii',
+  'PretermLabourOrRupturedMembranes',
+  'PlacentalEvaluation',
+  'UmbilicalCordEvaluation',
+  'PreviousCaesareanScars',
+  'FoetalGrowthAndWellBeing',
+  'ColourFlowAndDoppler',
+  'GuidedProcedures',
+  'AdjunctToInvasiveInterventions',
+  'IntraPartumEvents',
+  'ConditionsComplicatingPregnancy',
+  'Research',
+] as const;
+export type FormFIndication = (typeof FORM_F_INDICATIONS)[number];
+export type FormFStatus = 'Declared' | 'Completed' | 'Cancelled';
+export type FormFReferral = 'Doctor' | 'Self';
+
 // ------------------------------------------------------------------------------------------------ studies
 
 export interface ImagingStudyListItem {
@@ -125,6 +155,109 @@ export interface ImagingStudyDetail {
   patientPreparation: string | null;
   repeats: ImagingRepeatDto[];
   version: number;
+  /** An ultrasound in pregnancy: scanned only after the woman's Form F declaration, reported only with the form completed. */
+  requiresFormF: boolean;
+  /** How far its PCPNDT Form F is; null when none is recorded yet. */
+  formFStatus: FormFStatus | null;
+}
+
+/** A study's PCPNDT Form F (server `FormFDto`). */
+export interface FormFDto {
+  id: string;
+  formNumber: string;
+  studyId: string;
+  accessionNumber: string;
+  patientId: string;
+  uhid: string;
+  patientName: string;
+  status: FormFStatus;
+  registrationNumber: string;
+  ageYears: number;
+  husbandOrFatherName: string;
+  address: string;
+  phone: string | null;
+  livingSons: number;
+  livingDaughters: number;
+  lastMenstrualPeriod: string | null;
+  weeksOfPregnancy: number | null;
+  referral: FormFReferral;
+  referringDoctorName: string | null;
+  referringDoctorAddress: string | null;
+  indications: FormFIndication[];
+  otherIndication: string | null;
+  signedFormFileId: string | null;
+  declaredAt: string;
+  declarationRecordedBy: string | null;
+  procedureDate: string | null;
+  result: string | null;
+  resultConveyedTo: string | null;
+  resultConveyedOn: string | null;
+  mtpIndicated: boolean;
+  mtpIndication: string | null;
+  doctorName: string | null;
+  completedAt: string | null;
+  cancelReason: string | null;
+  version: number;
+}
+
+export interface SaveFormFDeclarationRequest {
+  ageYears: number;
+  husbandOrFatherName: string;
+  address: string;
+  phone: string | null;
+  livingSons: number;
+  livingDaughters: number;
+  lastMenstrualPeriod: string | null;
+  weeksOfPregnancy: number | null;
+  referral: FormFReferral;
+  referringDoctorName: string | null;
+  referringDoctorAddress: string | null;
+  indications: FormFIndication[];
+  otherIndication: string | null;
+  signedFormFileId: string | null;
+  womanDeclared: boolean;
+  /** The form as it was read; null on the first save, which creates it (REL-04). */
+  version: number | null;
+}
+
+export interface CompleteFormFRequest {
+  result: string;
+  conveyedTo: string;
+  conveyedOn: string;
+  mtpIndicated: boolean;
+  mtpIndication: string | null;
+  doctorDeclared: boolean;
+  version: number;
+}
+
+export interface FormFRegisterRow {
+  id: string;
+  formNumber: string;
+  studyId: string;
+  accessionNumber: string;
+  uhid: string;
+  patientName: string;
+  ageYears: number;
+  husbandOrFatherName: string;
+  livingSons: number;
+  livingDaughters: number;
+  weeksOfPregnancy: number | null;
+  lastMenstrualPeriod: string | null;
+  referredBy: string;
+  indications: FormFIndication[];
+  procedureDate: string | null;
+  result: string | null;
+  mtpIndicated: boolean;
+  doctorName: string | null;
+  status: FormFStatus;
+}
+
+export interface FormFRegister {
+  year: number;
+  month: number;
+  registrationNumber: string;
+  rows: FormFRegisterRow[];
+  incomplete: number;
 }
 
 export interface ScheduleStudyRequest {
@@ -262,6 +395,8 @@ export interface ImagingProcedureDto {
   patientPreparation: string | null;
   isActive: boolean;
   version: number;
+  /** An ultrasound in pregnancy: each study needs a PCPNDT Form F. */
+  requiresFormF: boolean;
 }
 
 export type SaveImagingProcedureRequest = Omit<ImagingProcedureDto, 'id' | 'version'> & { version: number | null };
@@ -325,6 +460,8 @@ export const radiologyKeys = {
   reportStudy: (reportId: string) => ['radiology', 'report-study', reportId] as const,
   masters: ['radiology', 'masters'] as const,
   images: (studyId: string) => ['radiology', 'images', studyId] as const,
+  formF: (studyId: string) => ['radiology', 'form-f', studyId] as const,
+  formFRegister: (year: number, month: number) => ['radiology', 'form-f-register', year, month] as const,
 };
 
 const images = (studyId: string) => `/api/v1/radiology/studies/${studyId}/images`;
@@ -349,6 +486,20 @@ export const radiologyQueries = {
     queryOptions({
       queryKey: radiologyKeys.study(id),
       queryFn: ({ signal }) => api.get<ImagingStudyDetail>(`/api/v1/radiology/studies/${id}`, { signal }),
+    }),
+  /** The study's Form F, or null when none is recorded yet. */
+  formF: (studyId: string) =>
+    queryOptions({
+      queryKey: radiologyKeys.formF(studyId),
+      queryFn: async ({ signal }) =>
+        (await api.get<{ form: FormFDto | null }>(`/api/v1/radiology/studies/${studyId}/form-f`, { signal })).form,
+    }),
+  formFRegister: (year: number, month: number) =>
+    queryOptions({
+      queryKey: radiologyKeys.formFRegister(year, month),
+      queryFn: ({ signal }) =>
+        api.get<FormFRegister>('/api/v1/radiology/form-f/register', { query: { year, month }, signal }),
+      placeholderData: keepPreviousData,
     }),
   reportingWorklist: (modality?: Modality, page?: number) =>
     queryOptions({
@@ -488,11 +639,21 @@ export const radiologyApi = {
     id
       ? api.put<undefined>(`/api/v1/radiology/templates/${id}`, request)
       : api.post<{ id: string }>('/api/v1/radiology/templates', request),
+  saveFormF: (id: string, request: SaveFormFDeclarationRequest) => api.put<FormFDto>(`${study(id)}/form-f`, request),
+  completeFormF: (id: string, request: CompleteFormFRequest) =>
+    api.post<FormFDto>(`${study(id)}/form-f/complete`, request),
+  /** The month's Form F register as CSV, for the Appropriate Authority (the download is audited). */
+  exportFormFRegister: (year: number, month: number) =>
+    api.blob('/api/v1/radiology/form-f/register/export', { query: { year, month } }),
+
   saveProcedure: (id: string | null, request: SaveImagingProcedureRequest): Promise<{ id: string } | undefined> =>
     id
       ? api.put<undefined>(`/api/v1/radiology/procedures/${id}`, request)
       : api.post<{ id: string }>('/api/v1/radiology/procedures', request),
 };
+
+/** A study's PCPNDT Form F as the server prints it and makes its PDF (see `@/lib/documents`). */
+export const formFDocument = (studyId: string) => `${study(studyId)}/form-f`;
 
 /** The A4 radiology report as the server prints it and makes its PDF (see `@/lib/documents`). */
 export const radiologyReportDocument = (studyId: string) => `${study(studyId)}/report`;
@@ -508,6 +669,12 @@ export const RADIOLOGY_PERMISSIONS = {
   mastersManage: 'masters.manage',
   /** See a study's images, in HC360 and in the PACS viewer (doctors, radiographers and radiologists). */
   images: 'radiology.images.view',
+  /** Record the woman's Form F details and declaration (radiographers and radiologists). */
+  formFRecord: 'radiology.form_f.record',
+  /** Complete Form F with the result and the performing doctor's declaration. */
+  formFSign: 'radiology.form_f.sign',
+  /** The month's Form F register and its export. */
+  formFRegister: 'radiology.form_f.register',
 } as const;
 
 /** Who may open imaging studies and resolve a report id to its study (server `RadiologyEndpoints.StudyReaders`). */

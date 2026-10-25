@@ -34,5 +34,9 @@ public static class DiagnosticsNumberSeries
             LockedReason = "Barcode scanners on the diagnostics screens recognise cardiology accession numbers by their shape, so the format cannot change.",
         };
 
-    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [LabAccession, LabSample, RadiologyAccession, CardiologyAccession];
+    /// <summary>PCPNDT Form F, numbered in the order the forms are made, as the register the Appropriate Authority inspects.</summary>
+    public static NumberSeriesDefinition FormF { get; } =
+        new("radiology.form-f", "PCPNDT Form F", "Radiology", "{FAC}FF{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [LabAccession, LabSample, RadiologyAccession, CardiologyAccession, FormF];
 }

@@ -82,7 +82,11 @@ public sealed record ImagingStudyDetail(
     int Quantity,
     string? PatientPreparation,
     IReadOnlyList<ImagingRepeatDto> Repeats,
-    uint Version);
+    uint Version,
+
+    // An ultrasound in pregnancy, and how far its PCPNDT Form F is (null: none yet).
+    bool RequiresFormF = false,
+    FormFStatus? FormFStatus = null);
 
 public sealed record ScheduleStudyRequest(DateTimeOffset ScheduledAt, string? Room, string? StationAeTitle);
 
@@ -194,7 +198,8 @@ public sealed record ImagingProcedureDto(
     bool RequiresContrast,
     string? PatientPreparation,
     bool IsActive,
-    uint Version);
+    uint Version,
+    bool RequiresFormF = false);
 
 public sealed record SaveImagingProcedureRequest(
     string Code,
@@ -206,7 +211,8 @@ public sealed record SaveImagingProcedureRequest(
     bool RequiresContrast,
     string? PatientPreparation,
     bool IsActive,
-    uint? Version);
+    uint? Version,
+    bool RequiresFormF = false);
 
 public sealed record AiFindingDto(
     Guid Id,

@@ -28,7 +28,7 @@ public sealed class DiagnosticsModelTests
         "lab_order_items", "lab_samples", "lab_results", "lab_result_susceptibilities", "lab_reports", "lab_report_amendments",
         "critical_call_logs", "qc_lots", "qc_runs", "qc_overrides", "imaging_studies", "imaging_repeats", "radiology_reports",
         "radiology_addenda", "report_templates", "imaging_procedures", "imaging_ai_findings", "cardiology_studies",
-        "cardiology_reports", "cardiology_pacs_objects",
+        "cardiology_reports", "cardiology_pacs_objects", "form_f",
     ];
 
     [Fact]

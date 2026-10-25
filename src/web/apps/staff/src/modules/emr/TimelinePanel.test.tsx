@@ -135,6 +135,8 @@ const XRAY: ImagingStudyDetail = {
   patientPreparation: null,
   repeats: [],
   version: 7,
+  requiresFormF: false,
+  formFStatus: null,
 };
 
 const XRAY_REPORT_DTO: RadiologyReportDto = {

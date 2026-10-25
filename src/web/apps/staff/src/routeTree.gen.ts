@@ -152,6 +152,7 @@ import { Route as AppQualityMyReportsRouteImport } from './routes/_app/quality/m
 import { Route as AppQualityReportRouteImport } from './routes/_app/quality/report'
 import { Route as AppQualityRisksRouteImport } from './routes/_app/quality/risks'
 import { Route as AppRadiologyIndexRouteImport } from './routes/_app/radiology/index'
+import { Route as AppRadiologyFormFRouteImport } from './routes/_app/radiology/form-f'
 import { Route as AppRadiologyReportingRouteImport } from './routes/_app/radiology/reporting'
 import { Route as AppRadiologySetupRouteImport } from './routes/_app/radiology/setup'
 import { Route as AppRadiologyTatRouteImport } from './routes/_app/radiology/tat'
@@ -1030,6 +1031,11 @@ const AppQualityRisksRoute = AppQualityRisksRouteImport.update({
 const AppRadiologyIndexRoute = AppRadiologyIndexRouteImport.update({
   id: '/radiology/',
   path: '/radiology/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRadiologyFormFRoute = AppRadiologyFormFRouteImport.update({
+  id: '/radiology/form-f',
+  path: '/radiology/form-f',
   getParentRoute: () => AppRoute,
 } as any)
 const AppRadiologyReportingRoute = AppRadiologyReportingRouteImport.update({
@@ -2008,6 +2014,7 @@ export interface FileRoutesByFullPath {
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
   '/quality/risks': typeof AppQualityRisksRoute
+  '/radiology/form-f': typeof AppRadiologyFormFRoute
   '/radiology/reporting': typeof AppRadiologyReportingRoute
   '/radiology/setup': typeof AppRadiologySetupRoute
   '/radiology/tat': typeof AppRadiologyTatRoute
@@ -2312,6 +2319,7 @@ export interface FileRoutesByTo {
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
   '/quality/risks': typeof AppQualityRisksRoute
+  '/radiology/form-f': typeof AppRadiologyFormFRoute
   '/radiology/reporting': typeof AppRadiologyReportingRoute
   '/radiology/setup': typeof AppRadiologySetupRoute
   '/radiology/tat': typeof AppRadiologyTatRoute
@@ -2618,6 +2626,7 @@ export interface FileRoutesById {
   '/_app/quality/my-reports': typeof AppQualityMyReportsRoute
   '/_app/quality/report': typeof AppQualityReportRoute
   '/_app/quality/risks': typeof AppQualityRisksRoute
+  '/_app/radiology/form-f': typeof AppRadiologyFormFRoute
   '/_app/radiology/reporting': typeof AppRadiologyReportingRoute
   '/_app/radiology/setup': typeof AppRadiologySetupRoute
   '/_app/radiology/tat': typeof AppRadiologyTatRoute
@@ -2924,6 +2933,7 @@ export interface FileRouteTypes {
     | '/quality/my-reports'
     | '/quality/report'
     | '/quality/risks'
+    | '/radiology/form-f'
     | '/radiology/reporting'
     | '/radiology/setup'
     | '/radiology/tat'
@@ -3228,6 +3238,7 @@ export interface FileRouteTypes {
     | '/quality/my-reports'
     | '/quality/report'
     | '/quality/risks'
+    | '/radiology/form-f'
     | '/radiology/reporting'
     | '/radiology/setup'
     | '/radiology/tat'
@@ -3533,6 +3544,7 @@ export interface FileRouteTypes {
     | '/_app/quality/my-reports'
     | '/_app/quality/report'
     | '/_app/quality/risks'
+    | '/_app/radiology/form-f'
     | '/_app/radiology/reporting'
     | '/_app/radiology/setup'
     | '/_app/radiology/tat'
@@ -4732,6 +4744,13 @@ declare module '@tanstack/react-router' {
       path: '/radiology'
       fullPath: '/radiology/'
       preLoaderRoute: typeof AppRadiologyIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/radiology/form-f': {
+      id: '/_app/radiology/form-f'
+      path: '/radiology/form-f'
+      fullPath: '/radiology/form-f'
+      preLoaderRoute: typeof AppRadiologyFormFRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/radiology/reporting': {
@@ -5968,6 +5987,7 @@ interface AppRouteChildren {
   AppQualityMyReportsRoute: typeof AppQualityMyReportsRoute
   AppQualityReportRoute: typeof AppQualityReportRoute
   AppQualityRisksRoute: typeof AppQualityRisksRoute
+  AppRadiologyFormFRoute: typeof AppRadiologyFormFRoute
   AppRadiologyReportingRoute: typeof AppRadiologyReportingRoute
   AppRadiologySetupRoute: typeof AppRadiologySetupRoute
   AppRadiologyTatRoute: typeof AppRadiologyTatRoute
@@ -6271,6 +6291,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppQualityMyReportsRoute: AppQualityMyReportsRoute,
   AppQualityReportRoute: AppQualityReportRoute,
   AppQualityRisksRoute: AppQualityRisksRoute,
+  AppRadiologyFormFRoute: AppRadiologyFormFRoute,
   AppRadiologyReportingRoute: AppRadiologyReportingRoute,
   AppRadiologySetupRoute: AppRadiologySetupRoute,
   AppRadiologyTatRoute: AppRadiologyTatRoute,

@@ -17,6 +17,10 @@ public sealed class ImagingProcedure : AuditableEntity
     public int DurationMinutes { get; set; } = 15;
     public bool RequiresContrast { get; set; }
     public string? PatientPreparation { get; set; }
+
+    /// <summary>An ultrasound in pregnancy: each one needs a PCPNDT Form F (<see cref="FormF"/>).</summary>
+    public bool RequiresFormF { get; set; }
+
     public bool IsActive { get; set; } = true;
 }
 
