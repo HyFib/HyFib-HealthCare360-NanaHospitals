@@ -131,7 +131,9 @@ public sealed class PharmacyStockReportTests(HospitalServer server)
         await storeKeeper.PostAsync($"/api/v1/purchase/orders/{order.Id}/submit");
         (await ReorderAsync(pharmacist, store, ours)).Select(r => r.ItemId).ShouldBe([adrenaline, ceftriaxone, vitamin]);
 
-        await storeKeeper.PostAsync($"/api/v1/purchase/orders/{order.Id}/approve");
+        // Someone other than whoever raised the order approves it.
+        var approver = await server.SignInAsync(HospitalServer.Users.Admin);
+        await approver.PostAsync($"/api/v1/purchase/orders/{order.Id}/approve");
         (await ReorderAsync(pharmacist, store, ours)).Select(r => r.ItemId).ShouldBe([adrenaline, vitamin]);
 
         // In the other store, which holds none of them, all four are due at their full top-up; the order is for the first

@@ -126,6 +126,7 @@ function RegisterPatientPage() {
       patientApi.register({
         ...toPatientPayload(values),
         whatsAppOptIn: whatsAppOptInOf(values),
+        privacyNoticeGiven: values.privacyNoticeGiven,
         confirmedNotDuplicate: confirmed,
       }),
     onSuccess: (result, { values }) => {

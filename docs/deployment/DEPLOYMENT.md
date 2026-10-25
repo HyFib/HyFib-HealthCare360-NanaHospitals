@@ -306,6 +306,9 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
      when it is more than a second off or no time server answers; a hospital with its own time server that follows
      them lists it under `HealthCare360:TimeSync:Servers`.
    - The server keeps its log files 180 days in `logs`; leave room for them on the data drive.
+   - **Privacy › Settings › CERT-In point of contact**: name the person CERT-In writes to and who reports an incident
+     within the 6 hours, with an e-mail address and a phone number (direction (iii)). System health warns until it is
+     set.
 6. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
    refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
    password works for 72 hours; after that, reset the password to give out a new one.
@@ -316,6 +319,9 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    `HC360Server` service to clear the warning.
    Set `alerts.oncallWhatsApp` to `true` to have those alerts on WhatsApp too, once the hospital's WhatsApp provider
    has approved the `system_alert` template. A failed backup is told to the administrators in the app, not by SMS.
+   Set `privacy.noticeVersion` to the version of the privacy notice the desk hands out (default `1`), and change it
+   when the notice changes. A lab with more than one pathologist can set `lab.separateVerifier` to `true` for its
+   facility, so whoever entered a result does not also verify it.
 8. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a

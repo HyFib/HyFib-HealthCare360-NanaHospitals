@@ -64,7 +64,7 @@ public sealed class ConsentTests
         ConsentType[] standing =
         [
             ConsentType.DataSharing, ConsentType.SmsWhatsAppUpdates, ConsentType.MarketingCommunication, ConsentType.Telehealth,
-            ConsentType.Research, ConsentType.Photography,
+            ConsentType.Research, ConsentType.Photography, ConsentType.PrivacyNotice,
         ];
         ConsentType[] oneEpisode = [ConsentType.GeneralTreatment, ConsentType.HighRiskProcedure, ConsentType.Anaesthesia, ConsentType.BloodTransfusion];
 

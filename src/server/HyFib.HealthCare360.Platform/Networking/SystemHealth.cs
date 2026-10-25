@@ -133,6 +133,7 @@ public sealed class SystemHealthService(
     IEnumerable<IHealthWarningSource> moduleWarnings,
     ServerNodeBoard servers,
     ServerClock clock,
+    IAdministrationDesktops administrationDesktops,
     TimeProvider time)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
@@ -194,7 +195,7 @@ public sealed class SystemHealthService(
 
         messageWarnings.AddRange(IntegrationWarnings(integrations));
 
-        var keyWarnings = new List<HealthWarning>();
+        var keyWarnings = new List<HealthWarning>(await SecurityControlWarningsAsync(ct));
         if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
         {
             keyWarnings.Add(new("keys.signing_due", "info", "The sign-in token key is over a year old. Rotate it under Encryption keys."));
@@ -227,6 +228,34 @@ public sealed class SystemHealthService(
         var everyServer = await EveryServerAsync(own.ToNode(now), ct);
         List<HealthWarning> all = [.. databaseWarnings, .. backupWarnings, .. messageWarnings, .. keyWarnings, .. ServerWarnings(everyServer)];
         return new SystemHealthReport(own.Server, own.Network, database, own.Storage, backup, outbox, own.Certificate, own.Power, integrations, all, now, everyServer);
+    }
+
+    /// <summary>
+    /// The two controls a hospital may switch off for a development machine, said loudly when they are off anywhere else
+    /// (R-8): two-step sign-in for administrators, and administration only from an enrolled HC360 Desktop.
+    /// </summary>
+    private async Task<IReadOnlyList<HealthWarning>> SecurityControlWarningsAsync(CancellationToken ct) =>
+        environment.IsDevelopment()
+            ? []
+            : SecurityControlWarnings(options.Value.Security.EnforceMfa, await administrationDesktops.RequiredAsync(ct));
+
+    /// <summary>The warnings for a server that is not a development machine, from the two controls' states.</summary>
+    public static IReadOnlyList<HealthWarning> SecurityControlWarnings(bool enforceMfa, bool administrationRequiresDesktop)
+    {
+        var warnings = new List<HealthWarning>();
+        if (!enforceMfa)
+        {
+            warnings.Add(new("security.mfa_off", "critical",
+                "Two-step sign-in is switched off for administrators (Security:EnforceMfa in the server's settings file). Switch it back on."));
+        }
+
+        if (!administrationRequiresDesktop)
+        {
+            warnings.Add(new("security.desktop_admin_off", "critical",
+                "Administration works from any browser: the rule that it works only in HC360 Desktop is switched off. Switch it back on under Administration › Settings."));
+        }
+
+        return warnings;
     }
 
     /// <summary>What this server reports of itself to the other servers of several (<see cref="ServerNodeSharing"/>).</summary>

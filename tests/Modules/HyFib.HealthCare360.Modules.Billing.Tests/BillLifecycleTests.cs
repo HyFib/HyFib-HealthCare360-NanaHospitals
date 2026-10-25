@@ -208,6 +208,19 @@ public sealed class BillLifecycleTests
     }
 
     [Fact]
+    public void Whoever_finalized_a_bill_cannot_cancel_it_too()
+    {
+        var cashier = Guid.CreateVersion7();
+        var bill = DraftBill(null, Charge(1_000m));
+        bill.Finalize("NHOB260000002", cashier, Now).IsSuccess.ShouldBeTrue();
+
+        bill.Cancel("Billed to the wrong patient", cashier, Now).Error!.Code.ShouldBe("billing.cancel_own_bill");
+        bill.Status.ShouldBe(BillStatus.Finalized);
+
+        bill.Cancel("Billed to the wrong patient", Guid.CreateVersion7(), Now).IsSuccess.ShouldBeTrue();
+    }
+
+    [Fact]
     public void Drafts_are_discarded_not_cancelled_and_a_bill_is_cancelled_only_once()
     {
         DraftBill(null, Charge(100m)).Cancel("x", null, Now).Error!.Code.ShouldBe("billing.discard_draft");

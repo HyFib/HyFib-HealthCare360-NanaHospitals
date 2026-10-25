@@ -186,6 +186,8 @@ export const patientFormSchema = z
     notes: z.string().max(2000, 'Use at most 2000 characters.'),
     /** Registration only: the patient agreed to WhatsApp messages on the mobile number (INT-WA). */
     whatsAppOptIn: z.boolean(),
+    /** Registration only: the desk gave the patient the privacy notice (DPDP s.5). */
+    privacyNoticeGiven: z.boolean(),
   })
   .superRefine((v, ctx) => {
     const abhaAddressChanged = v.abhaAddress.toLowerCase() !== v.abhaAddressOnFile.trim().toLowerCase();
@@ -248,6 +250,7 @@ export const emptyPatientForm: PatientFormValues = {
   isVip: false,
   notes: '',
   whatsAppOptIn: false,
+  privacyNoticeGiven: false,
 };
 
 const orNull = (value: string): string | null => (value.trim() ? value.trim() : null);

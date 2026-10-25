@@ -14,6 +14,18 @@ public sealed record PrivacySettingsView(PrivacySettingsDto Settings, PrivacyCon
 public sealed record SavePrivacySettingsRequest(
     string? Title, string? Name, string? Email, string? Phone, string? Address, int ResponseDays, uint? Version = null, uint? ResponseDaysVersion = null);
 
+public sealed class CertInContactValidator : AbstractValidator<CertInContact>
+{
+    public CertInContactValidator()
+    {
+        RuleFor(x => x.Name).NotEmpty().WithMessage("Name the person CERT-In should contact.").SafeText(200);
+        RuleFor(x => x.Designation).SafeText(100);
+        RuleFor(x => x.Email).NotEmpty().WithMessage("CERT-In writes to this address: enter it.").MaximumLength(200).EmailAddress();
+        RuleFor(x => x.Phone).NotEmpty().WithMessage("Enter a phone number CERT-In can call at any hour.").PhoneNumber();
+        RuleFor(x => x.Address).SafeText(500);
+    }
+}
+
 public sealed class SavePrivacySettingsRequestValidator : AbstractValidator<SavePrivacySettingsRequest>
 {
     public SavePrivacySettingsRequestValidator()
@@ -29,7 +41,8 @@ public sealed class SavePrivacySettingsRequestValidator : AbstractValidator<Save
 }
 
 /// <summary>
-/// /api/v1/privacy/settings (the grievance officer's contact and the response period), and the public
+/// /api/v1/privacy/settings (the grievance officer's contact and the response period; /cert-in, the point of contact designated
+/// to CERT-In), and the public
 /// /api/v1/public/privacy the portal's privacy notice reads without sign-in (DPDP Rules 2025, rules 9 and 14).
 /// </summary>
 internal static class PrivacySettingsEndpoints
@@ -46,6 +59,15 @@ internal static class PrivacySettingsEndpoints
                 return TypedResults.NoContent();
             })
             .WithValidation<SavePrivacySettingsRequest>().FirstSaveCreates();
+
+        // The point of contact designated to CERT-In (CERT-In Directions 2022, (iii)).
+        group.MapGet("/cert-in", async (PrivacySettings privacy, CancellationToken ct) => TypedResults.Ok(await privacy.CertInContactAsync(ct)));
+        group.MapPut("/cert-in", async (CertInContact contact, PrivacySettings privacy, CancellationToken ct) =>
+            {
+                await privacy.SaveCertInContactAsync(contact, ct);
+                return TypedResults.NoContent();
+            })
+            .WithValidation<CertInContact>().FirstSaveCreates();
 
         // Public: the privacy notice names the grievance officer for everyone, signed in or not.
         app.MapGet("/api/v1/public/privacy", async (PrivacySettings privacy, HospitalDbContext db, CancellationToken ct) =>

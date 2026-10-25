@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 
@@ -432,7 +433,7 @@ internal static class FrontOfficeEndpoints
     }
 
     private static async Task<IResult> CaptureConsent(Guid patientId, CaptureConsentRequest request, HospitalDbContext db, PatientAccessGuard guard,
-        ICurrentUser user, TimeProvider time, CancellationToken ct)
+        ICurrentUser user, ISettingsService settings, TimeProvider time, CancellationToken ct)
     {
         var access = await guard.EnsureCanOpenAsync(patientId, ct);
         if (access.IsFailure)
@@ -444,7 +445,10 @@ internal static class FrontOfficeEndpoints
         {
             PatientId = patientId,
             Type = request.Type,
-            ConsentVersion = string.IsNullOrWhiteSpace(request.ConsentVersion) ? "1.0" : request.ConsentVersion.Trim(),
+            // Without a version of its own, a consent is given against the privacy notice in force (DPDP s.5).
+            ConsentVersion = string.IsNullOrWhiteSpace(request.ConsentVersion)
+                ? await PrivacyNotice.CurrentVersionAsync(settings, user.FacilityId, ct)
+                : request.ConsentVersion.Trim(),
             Granted = request.Granted,
             CapturedAt = time.GetUtcNow(),
             CapturedByUserId = user.UserId,

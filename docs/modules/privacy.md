@@ -219,6 +219,19 @@ GET → `PrivacySettingsView {settings {contact {title, name, email, phone, addr
 PUT `SavePrivacySettingsRequest {title?, name?, email?, phone?, address?, responseDays (1–90)}`. Stored as
 `privacy.contact` and `privacy.responseDays`.
 
+`/cert-in`: the point of contact the hospital designates to CERT-In (Directions of 28 April 2022, direction (iii)), who
+CERT-In writes to and who reports an incident within the 6 hours. GET and PUT `CertInContact {name, designation?,
+email, phone, address?, version?}`; name, e-mail and phone are required. Stored as `privacy.certInContact`. Until it is
+complete, System health shows the warning `privacy.cert_in_contact_missing`. The page is Privacy › Settings.
+
+### Privacy notice at registration
+
+The registration form records that the desk gave the patient the privacy notice (DPDP Act s.5; Rules r3) as a
+`PrivacyNotice` consent with the notice's version, the setting `privacy.noticeVersion` (default `1`, at most 16
+characters). Change the setting when the notice changes: notices given from then on carry the new version. A consent
+captured on the consents screen without a version also takes it. The notice is a standing consent, like data sharing:
+withdrawing it ends the earlier ones.
+
 ## Notifications
 
 | Template | Channels | Values |

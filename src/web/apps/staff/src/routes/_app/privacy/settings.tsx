@@ -25,6 +25,7 @@ import { Detail, DetailGrid } from '@/modules/hr/shared/DetailGrid';
 import { MainAside, Stack } from '@/modules/hr/shared/layout';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { privacyApi, privacyKeys, privacyQueries, type PrivacySettingsView } from '@/modules/privacy/api';
+import { CertInContactSection } from '@/modules/privacy/CertInContactSection';
 import { DEFAULT_OFFICER_TITLE, MAX_RESPONSE_DAYS, PRIVACY_PERMISSIONS as P } from '@/modules/privacy/labels';
 
 export const Route = createFileRoute('/_app/privacy/settings')({
@@ -159,69 +160,72 @@ function SettingsForm({ view }: { view: PrivacySettingsView }) {
 
   return (
     <MainAside>
-      <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate>
-        <Stack>
-          <Section
-            title="Grievance officer"
-            description="The person patients contact about their personal data: the grievance officer, or the Data Protection Officer where the hospital has one."
-          >
-            <Stack>
+      <Stack>
+        <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate>
+          <Stack>
+            <Section
+              title="Grievance officer"
+              description="The person patients contact about their personal data: the grievance officer, or the Data Protection Officer where the hospital has one."
+            >
+              <Stack>
+                <FormGrid columns={2} minColumnWidth={220}>
+                  <TextField
+                    control={form.control}
+                    name="title"
+                    label="Title"
+                    autoFocus
+                    maxLength={100}
+                    hint={`For example ${DEFAULT_OFFICER_TITLE} or Data Protection Officer.`}
+                  />
+                  <TextField control={form.control} name="name" label="Name" maxLength={200} autoComplete="off" />
+                  <TextField
+                    control={form.control}
+                    name="email"
+                    label="E-mail address"
+                    type="email"
+                    maxLength={200}
+                    autoComplete="off"
+                  />
+                  <TextField
+                    control={form.control}
+                    name="phone"
+                    label="Phone number"
+                    type="tel"
+                    maxLength={20}
+                    autoComplete="off"
+                  />
+                </FormGrid>
+                <TextAreaField control={form.control} name="address" label="Postal address" rows={3} maxLength={500} />
+              </Stack>
+            </Section>
+            <Section title="Response period">
               <FormGrid columns={2} minColumnWidth={220}>
-                <TextField
+                <NumberField
                   control={form.control}
-                  name="title"
-                  label="Title"
-                  autoFocus
-                  maxLength={100}
-                  hint={`For example ${DEFAULT_OFFICER_TITLE} or Data Protection Officer.`}
-                />
-                <TextField control={form.control} name="name" label="Name" maxLength={200} autoComplete="off" />
-                <TextField
-                  control={form.control}
-                  name="email"
-                  label="E-mail address"
-                  type="email"
-                  maxLength={200}
-                  autoComplete="off"
-                />
-                <TextField
-                  control={form.control}
-                  name="phone"
-                  label="Phone number"
-                  type="tel"
-                  maxLength={20}
-                  autoComplete="off"
+                  name="responseDays"
+                  label="Answer requests within (days)"
+                  required
+                  min={1}
+                  max={MAX_RESPONSE_DAYS}
+                  hint={`The DPDP Rules 2025 allow at most ${MAX_RESPONSE_DAYS} days; 30 is typical. It sets the reply-by date of requests received from now on.`}
                 />
               </FormGrid>
-              <TextAreaField control={form.control} name="address" label="Postal address" rows={3} maxLength={500} />
-            </Stack>
-          </Section>
-          <Section title="Response period">
-            <FormGrid columns={2} minColumnWidth={220}>
-              <NumberField
-                control={form.control}
-                name="responseDays"
-                label="Answer requests within (days)"
-                required
-                min={1}
-                max={MAX_RESPONSE_DAYS}
-                hint={`The DPDP Rules 2025 allow at most ${MAX_RESPONSE_DAYS} days; 30 is typical. It sets the reply-by date of requests received from now on.`}
-              />
-            </FormGrid>
-          </Section>
-          <div className={styles.footer}>
-            {!form.formState.isDirty && <Caption1 className={styles.muted}>No changes to save.</Caption1>}
-            <Button
-              type="submit"
-              appearance="primary"
-              icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
-              disabled={save.isPending || !form.formState.isDirty}
-            >
-              Save
-            </Button>
-          </div>
-        </Stack>
-      </form>
+            </Section>
+            <div className={styles.footer}>
+              {!form.formState.isDirty && <Caption1 className={styles.muted}>No changes to save.</Caption1>}
+              <Button
+                type="submit"
+                appearance="primary"
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
+                disabled={save.isPending || !form.formState.isDirty}
+              >
+                Save
+              </Button>
+            </div>
+          </Stack>
+        </form>
+        <CertInContactSection />
+      </Stack>
       <Section title="What patients see" description="In the privacy notice, the patient portal and every reply.">
         <div className={styles.published}>
           <DetailGrid minColumnWidth={160}>

@@ -75,6 +75,10 @@ public sealed record PatientSummary(
     bool IsDeceased,
     Guid? PhotoFileId);
 
+/// <param name="PrivacyNoticeGiven">
+/// The desk gave the patient the privacy notice (DPDP s.5): recorded as a <see cref="ConsentType.PrivacyNotice"/> consent
+/// with the notice's current version (<see cref="PrivacyNotice"/>).
+/// </param>
 /// <param name="WhatsAppOptIn">
 /// The patient agreed at the desk to get reminders and updates on WhatsApp on <paramref name="Phone"/> (INT-WA); recorded
 /// as a registration-desk opt-in with the registering user.
@@ -111,7 +115,8 @@ public sealed record RegisterPatientRequest(
     bool IsVip,
     string? Notes,
     bool ConfirmedNotDuplicate,
-    bool WhatsAppOptIn = false);
+    bool WhatsAppOptIn = false,
+    bool PrivacyNoticeGiven = false);
 
 public sealed record UpdatePatientRequest(
     string? Title,

@@ -17,6 +17,7 @@ const CONSENT_LABELS: Record<ConsentType, string> = {
   HighRiskProcedure: 'High-risk procedure',
   Anaesthesia: 'Anaesthesia',
   BloodTransfusion: 'Blood transfusion',
+  PrivacyNotice: 'Privacy notice given',
 };
 
 function isKnownType(type: string): type is ConsentType {
@@ -31,11 +32,15 @@ export function consentTypeLabel(type: string, fallback: (value: string) => stri
 /** The record dialog's choices, grouped so related consents sit together. */
 export const CONSENT_GROUPS: readonly { label: string; types: readonly ConsentType[] }[] = [
   { label: 'Treatment', types: ['GeneralTreatment', 'HighRiskProcedure', 'Anaesthesia', 'BloodTransfusion'] },
-  { label: 'Records and messages', types: ['DataSharing', 'SmsWhatsAppUpdates', 'MarketingCommunication'] },
+  {
+    label: 'Records and messages',
+    types: ['PrivacyNotice', 'DataSharing', 'SmsWhatsAppUpdates', 'MarketingCommunication'],
+  },
   { label: 'Other', types: ['Telehealth', 'Photography', 'Research'] },
 ];
 
 const TYPE_HINTS: Partial<Record<ConsentType, string>> = {
+  PrivacyNotice: 'Records that the patient was given the hospital’s privacy notice, at the version now in force.',
   DataSharing: 'HC360 shares the patient’s records with other care providers only while this consent is given.',
   SmsWhatsAppUpdates: 'Covers feedback requests and follow-up reminders, not appointment or report messages.',
   MarketingCommunication: 'Covers health-offer campaigns.',
@@ -149,6 +154,10 @@ const WITHDRAWAL: Record<ConsentType, WithdrawalEffect> = {
     effect: 'Tell the treating doctor. Blood must not be transfused without a new consent.',
     next: 'Tell the treating doctor now. Blood must not be transfused without a new consent.',
   },
+  PrivacyNotice: {
+    effect: 'HC360 records that the acknowledgement was withdrawn. Give the patient the notice again.',
+    next: 'Give the patient the privacy notice again.',
+  },
 };
 
 const UNKNOWN_WITHDRAWAL: WithdrawalEffect = {
@@ -169,6 +178,7 @@ const STANDING_PERMISSIONS: readonly ConsentType[] = [
   'Telehealth',
   'Research',
   'Photography',
+  'PrivacyNotice',
 ];
 
 export function isStandingPermission(type: string): boolean {

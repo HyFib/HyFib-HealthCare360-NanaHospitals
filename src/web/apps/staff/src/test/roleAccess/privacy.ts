@@ -2,6 +2,7 @@ import type {
   AffectedPatientItem,
   BreachDetail,
   BreachListItem,
+  CertInContact,
   DataRequestDetail,
   DataRequestListItem,
   NomineeDto,
@@ -391,6 +392,15 @@ const SETTINGS: PrivacySettingsView = {
   published: CONTACT,
 };
 
+const CERT_IN: CertInContact = {
+  name: 'Priya Raman',
+  designation: 'Chief Information Security Officer',
+  email: 'ciso@nanahospitals.in',
+  phone: '+919876543210',
+  address: null,
+  version: 1,
+};
+
 export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/privacy/patients/${RECORD_ID}/nominee`]: { nominee: NOMINEE },
   'GET /api/v1/privacy/overview': OVERVIEW,
@@ -406,4 +416,5 @@ export const ANSWERS: FakeAnswers = {
   'GET /api/v1/privacy/retention/preview': RESULTS,
   'GET /api/v1/privacy/retention/review': RETENTION_REVIEW,
   'GET /api/v1/privacy/settings': SETTINGS,
+  'GET /api/v1/privacy/settings/cert-in': CERT_IN,
 };

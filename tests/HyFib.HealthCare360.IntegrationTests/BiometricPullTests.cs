@@ -118,16 +118,32 @@ public sealed class BiometricPullTests(HospitalServer server)
             response.StatusCode.ShouldBe(HttpStatusCode.BadRequest, address);
         }
 
+        // A terminal that pushes is known by the serial number printed on it, so it is registered with its address too, and a
+        // push from any other address is refused (R-5).
+        using (var anywhere = await hr.SendRawAsync(HttpMethod.Post, "/api/v1/hr/biometric-devices", Terminal(Serial(), BiometricConnection.Push, null, pushesFrom: null)))
+        {
+            anywhere.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            (await anywhere.Content.ReadAsStringAsync(Ct)).ShouldContain("Enter the terminal's IP address");
+        }
+
         // A terminal that pushes is not read; a cashier cannot read terminals.
         var serial = Serial();
         var pushing = await hr.PostAsync<DeviceKeyIssued>("/api/v1/hr/biometric-devices", Terminal(serial, BiometricConnection.Push, null));
         pushing.ApiKey.ShouldNotBeNullOrEmpty();
         (await ReadAsync(hr, pushing.DeviceId)).Error.ShouldBe("This terminal sends its punches; HC360 does not read it.");
+        (await server.Anonymous().Http.GetAsync($"/iclock/cdata?SN={serial}&options=all", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden,
+            "the test client does not post from 10.20.30.99");
         var cashier = await server.SignInAsync(HospitalServer.Users.Billing);
         using var forbidden = await cashier.SendRawAsync(HttpMethod.Post, $"/api/v1/hr/biometric-devices/{pushing.DeviceId}/read");
         forbidden.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
 
-        // Once it is set to be read, punches pushed in its name are refused, even with the key it had while it pushed.
+        // Once it is set to be read, punches pushed in its name are refused, even with the key it had while it pushed. The test
+        // client calls from no address, so the terminal is first made one registered before addresses were required.
+        await using (var legacy = server.Services.CreateAsyncScope())
+        {
+            await Devices(legacy).Where(d => d.Id == pushing.DeviceId).ExecuteUpdateAsync(s => s.SetProperty(d => d.AllowedIpAddress, (string?)null), Ct);
+        }
+
         var anonymous = server.Anonymous().Http;
         using (var accepted = await PushAsync(anonymous, serial, pushing.ApiKey!))
         {
@@ -147,8 +163,11 @@ public sealed class BiometricPullTests(HospitalServer server)
             .Where(l => l.Integration == "biometric" && l.Reference == serial && l.Operation == "device.refused")
             .Select(l => l.Error)
             .ToListAsync(Ct);
-        refusals.Count.ShouldBe(2);
-        refusals.ShouldAllBe(e => e == "The terminal is set to be read by HC360, so it may not push.");
+        refusals.ShouldBe([
+            "Device inactive or request from a non-allowed address.",
+            "The terminal is set to be read by HC360, so it may not push.",
+            "The terminal is set to be read by HC360, so it may not push.",
+        ], ignoreOrder: true);
     }
 
     private static Task<HttpResponseMessage> PushAsync(HttpClient http, string serial, string key)
@@ -163,11 +182,35 @@ public sealed class BiometricPullTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_terminal_registered_without_an_address_is_pinned_to_the_first_one_it_calls_from()
+    {
+        var hr = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var serial = Serial();
+        var registered = await hr.PostAsync<DeviceKeyIssued>("/api/v1/hr/biometric-devices", Terminal(serial, BiometricConnection.Push, null));
+        await using var scope = server.Services.CreateAsyncScope();
+        await Devices(scope).Where(d => d.Id == registered.DeviceId).ExecuteUpdateAsync(s => s.SetProperty(d => d.AllowedIpAddress, (string?)null), Ct);
+
+        var ingestion = scope.ServiceProvider.GetRequiredService<BiometricIngestionService>();
+        (await ingestion.FindDeviceAsync(serial, IPAddress.Parse("10.20.30.41"), Ct)).ShouldNotBeNull();
+        (await Devices(scope).AsNoTracking().SingleAsync(d => d.Id == registered.DeviceId, Ct)).AllowedIpAddress.ShouldBe("10.20.30.41");
+
+        // A device on another address posting under the printed serial number is refused from then on.
+        (await ingestion.FindDeviceAsync(serial, IPAddress.Parse("10.20.30.66"), Ct)).ShouldBeNull();
+        (await ingestion.FindDeviceAsync(serial, IPAddress.Parse("10.20.30.41"), Ct)).ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task A_terminal_that_goes_quiet_is_reported_to_HR_once_and_cleared_when_it_calls_again()
     {
         var hr = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var serial = Serial();
         var registered = await hr.PostAsync<DeviceKeyIssued>("/api/v1/hr/biometric-devices", Terminal(serial, BiometricConnection.Push, null) with { Name = $"Gate {serial}" });
+
+        // The test client calls from no address, so the terminal is one registered before addresses were required.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await Devices(scope).Where(d => d.Id == registered.DeviceId).ExecuteUpdateAsync(s => s.SetProperty(d => d.AllowedIpAddress, (string?)null), Ct);
+        }
 
         // The terminal calls (an ADMS command poll), then nothing is heard from it for 40 minutes.
         var anonymous = server.Anonymous().Http;
@@ -219,8 +262,10 @@ public sealed class BiometricPullTests(HospitalServer server)
     private static IQueryable<BiometricDevice> Devices(AsyncServiceScope scope) =>
         scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<BiometricDevice>().IgnoreQueryFilters();
 
-    private static SaveBiometricDeviceRequest Terminal(string serial, BiometricConnection connection, string? address) =>
-        new(serial, $"Terminal {serial}", "Main gate", null, "SpeedFace V5L", null, true, null, connection, address, null, BiometricDevice.MaxPullMinutes);
+    /// <summary>A terminal to register; one that pushes posts from <paramref name="pushesFrom"/>.</summary>
+    private static SaveBiometricDeviceRequest Terminal(string serial, BiometricConnection connection, string? address, string? pushesFrom = "10.20.30.99") =>
+        new(serial, $"Terminal {serial}", "Main gate", null, "SpeedFace V5L", connection == BiometricConnection.Push ? pushesFrom : null, true, null,
+            connection, address, null, BiometricDevice.MaxPullMinutes);
 
     private static string Serial() => "TST" + Random.Shared.NextInt64(1_000_000_000, 9_999_999_999).ToString(CultureInfo.InvariantCulture);
 

@@ -32,6 +32,11 @@ public sealed class PurchaseRequisition : AuditableEntity, IFacilityScoped
             return Error.Rule("requisition.not_pending", "Only submitted requisitions can be approved.");
         }
 
+        if (userId is not null && userId == RequestedByUserId)
+        {
+            return Error.Rule("requisition.approve_own", "You raised this requisition, so someone else must approve it.");
+        }
+
         Status = RequisitionStatus.Approved;
         DecidedByUserId = userId;
         DecidedAt = now;
@@ -191,6 +196,12 @@ public sealed class PurchaseOrder : AuditableEntity, IFacilityScoped
         if (Status != PurchaseOrderStatus.Submitted)
         {
             return Error.Rule("po.not_submitted", "Only submitted purchase orders can be approved.");
+        }
+
+        // Maker-checker (R-7): the person who raised the order does not also approve it.
+        if (userId is not null && userId == CreatedBy)
+        {
+            return Error.Rule("po.approve_own", "You raised this purchase order, so someone else must approve it.");
         }
 
         Status = PurchaseOrderStatus.Approved;

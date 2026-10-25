@@ -48,8 +48,9 @@ public sealed class BiometricPullTests
         validator.Validate(Request("192.168.1.201", null, 0)).Errors.ShouldContain(e => e.PropertyName == "PullEveryMinutes");
         validator.Validate(Request("192.168.1.201", null, BiometricDevice.MaxPullMinutes + 1)).IsValid.ShouldBeFalse();
 
-        // A terminal that pushes needs none of it.
-        validator.Validate(Request(null) with { Connection = BiometricConnection.Push }).IsValid.ShouldBeTrue();
+        // A terminal that pushes needs none of it, only the address it pushes from (R-5).
+        validator.Validate(Request(null) with { Connection = BiometricConnection.Push, AllowedIpAddress = "192.168.1.201" }).IsValid.ShouldBeTrue();
+        validator.Validate(Request(null) with { Connection = BiometricConnection.Push }).Errors.ShouldContain(e => e.PropertyName == "AllowedIpAddress");
     }
 
     [Fact]

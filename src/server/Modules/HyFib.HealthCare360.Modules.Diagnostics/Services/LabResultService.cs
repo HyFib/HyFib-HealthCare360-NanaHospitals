@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 
@@ -22,8 +23,15 @@ internal sealed class LabResultService(
     AnalyserOrders analyserOrders,
     IAuditLogger audit,
     ICurrentUser currentUser,
+    ISettingsService settings,
     TimeProvider time)
 {
+    /// <summary>
+    /// Facility setting: a second person verifies what one entered (true), or the pathologist who entered a result may
+    /// verify it too (false, the default, for a lab with one pathologist).
+    /// </summary>
+    public const string SeparateVerifierSetting = "lab.separateVerifier";
+
     public async Task<Result<ResultSheet>> SheetAsync(Guid sampleId, CancellationToken ct)
     {
         var tube = await db.Set<LabSample>().AsNoTracking().FirstOrDefaultAsync(s => s.Id == sampleId, ct);
@@ -121,6 +129,17 @@ internal sealed class LabResultService(
             if (editable.IsFailure)
             {
                 return editable.Error!;
+            }
+        }
+
+        // Maker-checker where the facility asks for it (R-6): whoever entered a value does not also verify it.
+        foreach (var facility in toVerify.GroupBy(r => r.FacilityId))
+        {
+            var own = facility.Where(r => r.EnteredBy is not null && r.EnteredBy == currentUser.UserId).ToList();
+            if (own.Count > 0 && await settings.GetAsync<bool?>(SeparateVerifierSetting, facility.Key, ct) == true)
+            {
+                return Error.Rule("lab.verify_own_result",
+                    $"You entered {string.Join(", ", own.Select(r => r.TestName))}, so another pathologist must verify it.");
             }
         }
 

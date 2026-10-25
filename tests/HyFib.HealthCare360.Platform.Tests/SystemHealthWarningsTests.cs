@@ -13,6 +13,15 @@ public sealed class SystemHealthWarningsTests
     private static readonly DateTimeOffset Now = new(2026, 10, 16, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void Administrator_two_step_sign_in_or_desktop_only_administration_switched_off_is_critical()
+    {
+        SystemHealthService.SecurityControlWarnings(enforceMfa: true, administrationRequiresDesktop: true).ShouldBeEmpty();
+
+        SystemHealthService.SecurityControlWarnings(enforceMfa: false, administrationRequiresDesktop: false)
+            .Select(w => (w.Code, w.Severity)).ShouldBe([("security.mfa_off", "critical"), ("security.desktop_admin_off", "critical")]);
+    }
+
+    [Fact]
     public void Certificates_far_from_expiry_raise_nothing()
     {
         SystemHealthService.CertificateWarnings(Certificate(server: Now.AddDays(300), ca: Now.AddYears(9)), Now).ShouldBeEmpty();

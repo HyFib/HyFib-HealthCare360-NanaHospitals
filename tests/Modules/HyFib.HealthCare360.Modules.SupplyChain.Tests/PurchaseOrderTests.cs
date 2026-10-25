@@ -22,6 +22,22 @@ public sealed class PurchaseOrderTests
     }
 
     [Fact]
+    public void Whoever_raised_an_order_or_a_requisition_cannot_approve_it()
+    {
+        var buyer = Guid.CreateVersion7();
+        var order = Order();
+        order.CreatedBy = buyer;
+        order.Submit(Now).IsSuccess.ShouldBeTrue();
+        order.Approve(buyer, Now).Error!.Code.ShouldBe("po.approve_own");
+        order.Approve(Guid.CreateVersion7(), Now).IsSuccess.ShouldBeTrue();
+
+        var requisition = new PurchaseRequisition { RequestedByUserId = buyer };
+        requisition.Lines.Add(new PurchaseRequisitionLine { ItemName = "Syringe 5 ml", Quantity = 10 });
+        requisition.Approve(buyer, Now).Error!.Code.ShouldBe("requisition.approve_own");
+        requisition.Approve(Guid.CreateVersion7(), Now).IsSuccess.ShouldBeTrue();
+    }
+
+    [Fact]
     public void Totals_split_gst_and_round_the_order_to_the_rupee()
     {
         var order = Order();

@@ -493,6 +493,19 @@ export interface PrivacySettingsView {
   published: PrivacyContact;
 }
 
+/**
+ * The point of contact the hospital designates to CERT-In (CERT-In Directions 2022, (iii)): who CERT-In writes to
+ * about an incident. `version` is null until first saved (REL-04).
+ */
+export interface CertInContact {
+  name: string | null;
+  designation: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  version: number | null;
+}
+
 export interface SavePrivacySettingsRequest {
   title: string | null;
   name: string | null;
@@ -528,6 +541,7 @@ export const privacyKeys = {
   affected: (id: string) => ['privacy', 'breaches', 'affected', id] as const,
   retention: ['privacy', 'retention'] as const,
   settings: ['privacy', 'settings'] as const,
+  certInContact: ['privacy', 'settings', 'cert-in'] as const,
 };
 
 export const privacyQueries = {
@@ -674,6 +688,11 @@ export const privacyQueries = {
       queryKey: privacyKeys.settings,
       queryFn: ({ signal }) => api.get<PrivacySettingsView>(`${BASE}/settings`, { signal }),
     }),
+  certInContact: () =>
+    queryOptions({
+      queryKey: privacyKeys.certInContact,
+      queryFn: ({ signal }) => api.get<CertInContact>(`${BASE}/settings/cert-in`, { signal }),
+    }),
 };
 
 // ------------------------------------------------------------------ commands
@@ -719,6 +738,8 @@ export const privacyApi = {
   runRetention: () => api.post<void>(`${BASE}/retention/run`),
 
   saveSettings: (request: SavePrivacySettingsRequest) => api.put<void>(`${BASE}/settings`, request),
+
+  saveCertInContact: (contact: CertInContact) => api.put<void>(`${BASE}/settings/cert-in`, contact),
 
   saveNominee: (patientId: string, request: SaveNomineeRequest) =>
     api.put<void>(`${BASE}/patients/${patientId}/nominee`, request),

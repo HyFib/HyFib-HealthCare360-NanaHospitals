@@ -163,6 +163,8 @@ export interface RegisterPatientRequest extends PatientFormPayload {
   confirmedNotDuplicate: boolean;
   /** The patient agreed at the desk to get reminders and updates on WhatsApp on `phone` (INT-WA). */
   whatsAppOptIn?: boolean;
+  /** The desk gave the patient the privacy notice (DPDP s.5); recorded with the notice's current version. */
+  privacyNoticeGiven?: boolean;
 }
 
 export interface UpdatePatientRequest extends PatientFormPayload {
@@ -319,6 +321,7 @@ export const CONSENT_TYPES = [
   'HighRiskProcedure',
   'Anaesthesia',
   'BloodTransfusion',
+  'PrivacyNotice',
 ] as const;
 export type ConsentType = (typeof CONSENT_TYPES)[number];
 

@@ -280,12 +280,27 @@ and grants nothing.
   - They need an extra permission or **break-the-glass** access.
   - Break-the-glass requires a written reason, expires, and is flagged for review. The grant is a row in the database
     (`patients.break_glass_grants`), so it holds, and expires, on every server alike.
-  - Lists don't name them unless the user may open restricted records. The bed board, the doctor's worklist and the
+  - Lists don't name them unless the user may open restricted records, or has break-the-glass access to that one. Patient
+    search shows the initials, "R. K. S. (restricted)", so the desk can tell two results apart. The bed board, the doctor's worklist and the
     ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
     result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
     and safety flags stay, so the patient is still seen to.
   - Their stored files (documents, photos, reports) follow the same rules: opening a file, or its details, by its id
     is refused (403 `patient.restricted`) until the user may open the record, so knowing a file's id is not a way in.
+- **Who may look patients up.** Patient search and visits are for staff who see patients: the canteen, CSSD,
+  biomedical, HR, store, purchase and MIS roles do not get `patients.read` or `visits.read` by default. An upgrade takes
+  a default grant back from a role that no longer has it (`identity.seeded_grants` records what the seeder gave), and
+  leaves alone any grant an administrator gave by hand.
+- **Separation of duties.** No one approves or undoes their own work:
+  - whoever finalised a bill cannot cancel it (`billing.cancel_own_bill`), as refunds and discounts already need a
+    second person;
+  - whoever raised a purchase requisition or order cannot approve it (`requisition.approve_own`, `po.approve_own`);
+  - a lab that sets `lab.separateVerifier` (per facility, off by default for a lab with one pathologist) refuses
+    verification of a result by whoever entered it (`lab.verify_own_result`).
+- **Attendance terminals that push** are registered with the IP address they push from, and punches from any other
+  address are refused. A terminal registered before the address was required is held to the first address it calls from.
+- **Switched-off controls are shown.** Outside development, System health shows a critical warning while two-step sign-in
+  (`security.mfa_off`) or administration only from an enrolled desktop (`security.desktop_admin_off`) is off.
 - **Patient portal scope.** A portal account sees the patients registered with the mobile number it signed in with,
   and family members on other numbers only through a family link in force (PP-01):
   - A link is made at the front desk, after staff check both people's identity documents and record who agreed, or in
