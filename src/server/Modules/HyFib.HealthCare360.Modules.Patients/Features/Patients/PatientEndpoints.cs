@@ -212,7 +212,9 @@ internal static class PatientEndpoints
 
     private static async Task<IResult> GetSensitive(Guid id, PatientAccessGuard guard, HospitalDbContext db, CancellationToken ct)
     {
-        var access = await guard.EnsureCanOpenChartAsync(id, ct);
+        // Managing the categories is not opening the chart: a doctor who may not open an MTP chart can still correct a
+        // category recorded in error. A restricted (VIP) record stays closed.
+        var access = await guard.EnsureCanOpenAsync(id, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();
@@ -226,7 +228,7 @@ internal static class PatientEndpoints
     private static async Task<IResult> SetSensitive(
         Guid id, SetSensitiveCategoriesRequest request, PatientAccessGuard guard, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
     {
-        var access = await guard.EnsureCanOpenChartAsync(id, ct);
+        var access = await guard.EnsureCanOpenAsync(id, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();

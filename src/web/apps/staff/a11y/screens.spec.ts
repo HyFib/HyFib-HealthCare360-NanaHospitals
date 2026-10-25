@@ -76,6 +76,7 @@ const SCREENS: Screen[] = [
       'GET /api/v1/masters/lookups/departments': [OPD],
       [`GET /api/v1/privacy/patients/${ASHA.id}/nominee`]: { nominee: null },
       'GET /api/v1/privacy/requests': paged([]),
+      [`GET /api/v1/patients/${ASHA.id}/sensitive-categories`]: { categories: [], version: 1 },
     },
     ready: (page) => page.getByText('Penicillin', { exact: false }).first(),
   },

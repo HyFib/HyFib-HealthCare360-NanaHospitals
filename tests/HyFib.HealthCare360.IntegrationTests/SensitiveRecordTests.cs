@@ -77,5 +77,31 @@ public sealed class SensitiveRecordTests(HospitalServer server)
         {
             doctorClosed.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         }
+
+        // The doctor may not open the MTP chart, but can still correct a category recorded in error.
+        var current = await doctor.GetAsync<SensitiveCategoriesDto>(categories);
+        current.Categories.ShouldBe([SensitiveCategory.Hiv, SensitiveCategory.Mtp], ignoreOrder: true);
+        (await doctor.PutAsync<SensitiveCategoriesDto>(categories,
+            new SetSensitiveCategoriesRequest([SensitiveCategory.Hiv], "MTP category recorded on the wrong patient", current.Version))).Categories
+            .ShouldBe([SensitiveCategory.Hiv]);
+        (await doctor.GetAsync<List<DiagnosisDto>>(chart)).Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_merged_duplicate_brings_its_categories_to_the_surviving_record()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var kept = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var duplicate = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var flagged = await admin.GetAsync<SensitiveCategoriesDto>($"/api/v1/patients/{duplicate.Id}/sensitive-categories");
+        await admin.PutAsync<SensitiveCategoriesDto>($"/api/v1/patients/{duplicate.Id}/sensitive-categories",
+            new SetSensitiveCategoriesRequest([SensitiveCategory.MentalHealth], "Psychiatric admission recorded on paper", flagged.Version));
+
+        await mrd.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+
+        (await admin.GetAsync<SensitiveCategoriesDto>($"/api/v1/patients/{kept.Id}/sensitive-categories")).Categories
+            .ShouldBe([SensitiveCategory.MentalHealth]);
     }
 }

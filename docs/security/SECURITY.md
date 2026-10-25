@@ -298,6 +298,8 @@ and grants nothing.
   - The patient's details, bills, pharmacy, lab and radiology orders, appointments, allergies and alerts are not closed,
     so the desk and the departments keep serving the patient; the categories themselves show only to doctors.
   - The FHIR API does not list these patients to clients that may not open restricted records.
+  - The upgrade puts records that already carry such a diagnosis into its category; a merge carries the duplicate's
+    categories to the surviving record. A doctor manages the categories without being able to open the chart.
 - **Who may look patients up.** Patient search and visits are for staff who see patients: the canteen, CSSD,
   biomedical, HR, store, purchase and MIS roles do not get `patients.read` or `visits.read` by default. An upgrade takes
   a default grant back from a role that no longer has it (`identity.seeded_grants` records what the seeder gave), and
