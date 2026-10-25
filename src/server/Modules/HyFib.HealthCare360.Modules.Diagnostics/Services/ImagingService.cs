@@ -108,6 +108,7 @@ internal sealed class ImagingService(
         }
 
         await charges.CancelImagingAsync(study, reason, ct);
+        await CancelFormFAsync(study, ct);
         realtime.PublishAfterCommit(study.FacilityId, "radiology.study.changed", new { study.Id, study.Status });
         return true;
     }
@@ -141,6 +142,15 @@ internal sealed class ImagingService(
             ? Error.Rule("form_f.required", "This is an ultrasound in pregnancy: record the woman's Form F details and declaration before the scan.")
             : null;
 
+    /// <summary>A cancelled scan closes its declared Form F as cancelled, so the month's register does not wait for it.</summary>
+    private async Task CancelFormFAsync(ImagingStudy study, CancellationToken ct)
+    {
+        if (study.RequiresFormF && await db.Set<FormF>().FirstOrDefaultAsync(f => f.ImagingStudyId == study.Id, ct) is { } form)
+        {
+            form.Cancel(study.CancelReason ?? "The scan was cancelled.", time.GetUtcNow());
+        }
+    }
+
     public Task<Result<ImagingStudyDetail>> RecordRepeatAsync(Guid id, RecordRepeatRequest request, CancellationToken ct) =>
         UpdateAsync(id, (study, now) => study.RecordRepeat(request.Reason, request.Note, now), ct);
 
@@ -158,6 +168,7 @@ internal sealed class ImagingService(
             return cancelled.Error!;
         }
 
+        await CancelFormFAsync(study, ct);
         await charges.CancelImagingAsync(study, reason.Trim(), ct);
         await db.SaveChangesAsync(ct);
         await realtime.PublishAsync(study.FacilityId, "radiology.study.changed", new { study.Id, study.Status }, ct);
@@ -177,6 +188,11 @@ internal sealed class ImagingService(
         if (study is null)
         {
             return Error.NotFound(nameof(ImagingStudy), id);
+        }
+
+        if (await FormFDeclaredAsync(study.Id, ct) is { } missing)
+        {
+            return missing;
         }
 
         var found = await FindInPacsAsync(pacs, study, ct);
@@ -250,8 +266,11 @@ internal sealed class ImagingService(
             return PacsLinkOutcome.None;
         }
 
+        // An ultrasound in pregnancy without its Form F declaration is not linked: images in PACS must not move it on as
+        // scanned, as if the declaration had been made (PCPNDT Form F, Section D).
         var studies = await db.Set<ImagingStudy>()
             .Where(s => s.FacilityId == facilityId && studyIds.Contains(s.Id))
+            .Where(s => !s.RequiresFormF || db.Set<FormF>().Any(f => f.ImagingStudyId == s.Id))
             .ToListAsync(ct);
 
         var messages = new List<string>();

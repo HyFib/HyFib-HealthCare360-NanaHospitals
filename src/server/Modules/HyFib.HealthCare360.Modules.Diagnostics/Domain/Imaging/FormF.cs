@@ -47,6 +47,9 @@ public enum FormFStatus
 
     /// <summary>The result and the doctor's declaration are recorded. The form can no longer change.</summary>
     Completed,
+
+    /// <summary>The scan was cancelled before it was done: the declared form is kept, as a record, but never completed.</summary>
+    Cancelled,
 }
 
 /// <summary>What the clinic records about the woman before the ultrasound (Form F Sections A and D, her declaration).</summary>
@@ -124,14 +127,20 @@ public sealed class FormF : AuditableEntity, IFacilityScoped
     public string? DoctorName { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
 
+    /// <summary>Why the scan was not done, for a <see cref="FormFStatus.Cancelled"/> form.</summary>
+    public string? CancelReason { get; private set; }
+
     public bool IsCompleted => Status == FormFStatus.Completed;
+
+    /// <summary>Completed or cancelled: the form can no longer change.</summary>
+    public bool IsClosed => Status is FormFStatus.Completed or FormFStatus.Cancelled;
 
     /// <summary>Records the woman's details and declaration, or corrects them before the form is completed.</summary>
     public Result Declare(FormFDeclaration declaration, Guid? by, DateTimeOffset now)
     {
-        if (IsCompleted)
+        if (IsClosed)
         {
-            return Completed();
+            return Closed();
         }
 
         var invalid = Check(declaration);
@@ -168,11 +177,11 @@ public sealed class FormF : AuditableEntity, IFacilityScoped
     /// Records the result and the doctor's declaration. Only the doctor who performed the ultrasound completes the form, and
     /// only once the images are acquired.
     /// </summary>
-    public Result Complete(FormFResult result, Guid doctorUserId, string doctorName, DateOnly procedureDate, DateTimeOffset now)
+    public Result Complete(FormFResult result, Guid doctorUserId, string doctorName, DateOnly procedureDate, DateOnly today, DateTimeOffset now)
     {
-        if (IsCompleted)
+        if (IsClosed)
         {
-            return Completed();
+            return Closed();
         }
 
         if (string.IsNullOrWhiteSpace(result.Result))
@@ -188,6 +197,11 @@ public sealed class FormF : AuditableEntity, IFacilityScoped
         if (result.ConveyedOn < procedureDate)
         {
             return Error.Field("conveyedOn", "The result cannot have been given before the ultrasound was done.");
+        }
+
+        if (result.ConveyedOn > today)
+        {
+            return Error.Field("conveyedOn", "The result cannot have been given on a date still to come.");
         }
 
         if (result.MtpIndicated && string.IsNullOrWhiteSpace(result.MtpIndication))
@@ -206,6 +220,19 @@ public sealed class FormF : AuditableEntity, IFacilityScoped
         CompletedAt = now;
         Status = FormFStatus.Completed;
         return Result.Success();
+    }
+
+    /// <summary>The scan was cancelled before it was done: a declared form is closed as cancelled; a completed one stays.</summary>
+    public void Cancel(string reason, DateTimeOffset now)
+    {
+        if (Status != FormFStatus.Declared)
+        {
+            return;
+        }
+
+        Status = FormFStatus.Cancelled;
+        CancelReason = reason.Trim();
+        CompletedAt = now;
     }
 
     private static Error? Check(FormFDeclaration d)
@@ -253,8 +280,9 @@ public sealed class FormF : AuditableEntity, IFacilityScoped
         return null;
     }
 
-    private static Error Completed() =>
-        Error.Rule("form_f.completed", "This Form F is completed and signed, so it cannot be changed.");
+    private Error Closed() => Status == FormFStatus.Cancelled
+        ? Error.Rule("form_f.cancelled", "The scan was cancelled, so this Form F is closed.")
+        : Error.Rule("form_f.completed", "This Form F is completed and signed, so it cannot be changed.");
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

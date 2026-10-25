@@ -36,14 +36,34 @@ public sealed class FormFTests
         form.Indications.ShouldBe([FormFIndication.IntraUterineOrEctopicPregnancy, FormFIndication.GestationalAge], "once each, in the form's order");
 
         var doctor = Guid.NewGuid();
-        form.Complete(Result() with { ConveyedOn = Today.AddDays(-1) }, doctor, "Dr. Meera", Today, Now).Error!.Fields!.Keys.ShouldBe(["conveyedOn"]);
-        form.Complete(Result() with { MtpIndicated = true, MtpIndication = null }, doctor, "Dr. Meera", Today, Now).Error!.Fields!.Keys.ShouldBe(["mtpIndication"]);
+        form.Complete(Result() with { ConveyedOn = Today.AddDays(-1) }, doctor, "Dr. Meera", Today, Today, Now).Error!.Fields!.Keys.ShouldBe(["conveyedOn"]);
+        form.Complete(Result() with { ConveyedOn = Today.AddDays(1) }, doctor, "Dr. Meera", Today, Today, Now).Error!.Fields!.Keys.ShouldBe(["conveyedOn"]);
+        form.Complete(Result() with { MtpIndicated = true, MtpIndication = null }, doctor, "Dr. Meera", Today, Today, Now).Error!.Fields!.Keys.ShouldBe(["mtpIndication"]);
 
-        form.Complete(Result(), doctor, " Dr. Meera ", Today, Now).IsSuccess.ShouldBeTrue();
+        form.Complete(Result(), doctor, " Dr. Meera ", Today, Today, Now).IsSuccess.ShouldBeTrue();
         (form.Status, form.DoctorUserId, form.DoctorName, form.ProcedureDate, form.CompletedAt).ShouldBe((FormFStatus.Completed, (Guid?)doctor, "Dr. Meera", (DateOnly?)Today, (DateTimeOffset?)Now));
 
         form.Declare(Declaration(), null, Now).Error!.Code.ShouldBe("form_f.completed");
-        form.Complete(Result(), doctor, "Dr. Meera", Today, Now).Error!.Code.ShouldBe("form_f.completed");
+        form.Complete(Result(), doctor, "Dr. Meera", Today, Today, Now).Error!.Code.ShouldBe("form_f.completed");
+    }
+
+    [Fact]
+    public void A_declared_form_closes_with_the_cancelled_scan_and_then_cannot_be_completed()
+    {
+        var form = new FormF();
+        form.Declare(Declaration(), null, Now).IsSuccess.ShouldBeTrue();
+
+        form.Cancel("Patient left before the scan", Now);
+        (form.Status, form.CancelReason, form.IsClosed).ShouldBe((FormFStatus.Cancelled, "Patient left before the scan", true));
+        form.Complete(Result(), Guid.NewGuid(), "Dr. Meera", Today, Today, Now).Error!.Code.ShouldBe("form_f.cancelled");
+        form.Declare(Declaration(), null, Now).Error!.Code.ShouldBe("form_f.cancelled");
+
+        // A completed form keeps its result: cancelling the study afterwards changes nothing.
+        var completed = new FormF();
+        completed.Declare(Declaration(), null, Now).IsSuccess.ShouldBeTrue();
+        completed.Complete(Result(), Guid.NewGuid(), "Dr. Meera", Today, Today, Now).IsSuccess.ShouldBeTrue();
+        completed.Cancel("Cancelled in error", Now);
+        completed.Status.ShouldBe(FormFStatus.Completed);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
+using HyFib.HealthCare360.Modules.Diagnostics.Services;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 
@@ -37,7 +38,8 @@ public sealed record FormFDto(
     string? MtpIndication,
     string? DoctorName,
     DateTimeOffset? CompletedAt,
-    uint Version);
+    uint Version,
+    string? CancelReason = null);
 
 /// <summary>The woman's details and her declaration, recorded before the ultrasound. <paramref name="Version"/>: when correcting it.</summary>
 public sealed record SaveFormFDeclarationRequest(
@@ -122,10 +124,11 @@ public sealed class SaveFormFDeclarationRequestValidator : AbstractValidator<Sav
 
 public sealed class CompleteFormFRequestValidator : AbstractValidator<CompleteFormFRequest>
 {
-    public CompleteFormFRequestValidator()
+    public CompleteFormFRequestValidator(TimeProvider time)
     {
         RuleFor(x => x.Result).NotEmpty().WithMessage("Enter the result of the ultrasound.").MaximumLength(2000);
         RuleFor(x => x.ConveyedTo).NotEmpty().WithMessage("Enter whom the result was given to.").MaximumLength(200);
+        RuleFor(x => x.ConveyedOn).Must(d => d <= DiagnosticsTime.Today(time)).WithMessage("The result cannot have been given on a date still to come.");
         RuleFor(x => x.MtpIndication).NotEmpty().When(x => x.MtpIndicated)
             .WithMessage("Describe the abnormality that indicates a termination of pregnancy.").MaximumLength(1000);
         RuleFor(x => x.DoctorDeclared).Equal(true)

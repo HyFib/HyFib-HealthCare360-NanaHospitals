@@ -321,6 +321,7 @@ const FORM_F: FormFDto = {
   mtpIndication: null,
   doctorName: null,
   completedAt: null,
+  cancelReason: null,
   version: 2,
 };
 

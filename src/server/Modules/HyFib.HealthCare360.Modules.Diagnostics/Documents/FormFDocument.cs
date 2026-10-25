@@ -26,7 +26,12 @@ internal static class FormFDocument
         var body = Html.Of($"""
             {DocumentParts.Letterhead(letterhead)}
             {DocumentParts.Title("FORM F — Pre-Natal Diagnosis (ultrasonography)")}
-            {DocumentParts.Banner(completed ? null : "NOT COMPLETED — the result and the doctor's declaration are not yet recorded")}
+            {DocumentParts.Banner(form.Status switch
+        {
+            FormFStatus.Completed => null,
+            FormFStatus.Cancelled => $"SCAN CANCELLED — {form.CancelReason}",
+            _ => "NOT COMPLETED — the result and the doctor's declaration are not yet recorded",
+        })}
             {DocumentParts.Fields([
                 ("PCPNDT registration no.", form.RegistrationNumber),
                 ("Form no.", form.FormNumber),

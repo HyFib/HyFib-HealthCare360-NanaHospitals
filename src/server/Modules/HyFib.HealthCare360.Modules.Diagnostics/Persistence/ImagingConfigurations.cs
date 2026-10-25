@@ -144,7 +144,9 @@ internal sealed class FormFConfiguration : IEntityTypeConfiguration<FormF>
         b.Property(x => x.ResultConveyedTo).HasMaxLength(200);
         b.Property(x => x.MtpIndication).HasMaxLength(1000);
         b.Property(x => x.DoctorName).HasMaxLength(200);
+        b.Property(x => x.CancelReason).HasMaxLength(300);
         b.Ignore(x => x.IsCompleted);
+        b.Ignore(x => x.IsClosed);
         b.HasOne<ImagingStudy>().WithMany().HasForeignKey(x => x.ImagingStudyId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.ImagingStudyId).IsUnique();

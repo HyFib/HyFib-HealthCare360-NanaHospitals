@@ -52,6 +52,13 @@ internal sealed class FormFService(
         }
 
         var form = await db.Set<FormF>().FirstOrDefaultAsync(f => f.ImagingStudyId == studyId, ct);
+        if (form is null && study.AcquiredAt is not null)
+        {
+            // The declaration comes before the scan: one recorded after it would not be the woman's declaration.
+            return Error.Rule("form_f.after_scan",
+                "This ultrasound was done without a Form F declaration. Report it to the clinic's PCPNDT in-charge; a declaration cannot be recorded afterwards.");
+        }
+
         if (form is null)
         {
             var registration = await RegistrationAsync(study.FacilityId, ct);
@@ -118,6 +125,7 @@ internal sealed class FormFService(
             doctor,
             currentUser.DisplayName ?? currentUser.UserName ?? "Doctor",
             DiagnosticsTime.LocalDate(acquiredAt),
+            DiagnosticsTime.Today(time),
             time.GetUtcNow());
         if (completed.IsFailure)
         {
@@ -136,7 +144,7 @@ internal sealed class FormFService(
         var (start, end) = (DiagnosticsTime.StartOfDayUtc(first), DiagnosticsTime.StartOfDayUtc(last.AddDays(1)));
         var forms = await db.Set<FormF>().AsNoTracking()
             .Where(f => (f.Status == FormFStatus.Completed && f.ProcedureDate >= first && f.ProcedureDate <= last)
-                        || (f.Status == FormFStatus.Declared && f.DeclaredAt >= start && f.DeclaredAt < end))
+                        || (f.Status != FormFStatus.Completed && f.DeclaredAt >= start && f.DeclaredAt < end))
             .OrderBy(f => f.FormNumber)
             .ToListAsync(ct);
         var studies = await StudiesAsync(forms, ct);
@@ -147,7 +155,7 @@ internal sealed class FormFService(
             f.AgeYears, f.HusbandOrFatherName, f.LivingSons, f.LivingDaughters, f.WeeksOfPregnancy, f.LastMenstrualPeriod, ReferredBy(f),
             f.Indications, f.ProcedureDate, f.ResultText, f.MtpIndicated, f.DoctorName, f.Status)).ToList();
         var registration = currentUser.FacilityId is { } facility ? await RegistrationAsync(facility, ct) : null;
-        return new FormFRegister(year, month, registration ?? string.Empty, rows, rows.Count(r => r.Status != FormFStatus.Completed));
+        return new FormFRegister(year, month, registration ?? string.Empty, rows, rows.Count(r => r.Status == FormFStatus.Declared));
     }
 
     public static string ReferredBy(FormF form) => form.Referral == FormFReferral.Self
@@ -173,6 +181,6 @@ internal sealed class FormFService(
             f.RegistrationNumber, f.AgeYears, f.HusbandOrFatherName, f.Address, f.Phone, f.LivingSons, f.LivingDaughters, f.LastMenstrualPeriod,
             f.WeeksOfPregnancy, f.Referral, f.ReferringDoctorName, f.ReferringDoctorAddress, f.Indications, f.OtherIndication, f.SignedFormFileId,
             f.DeclaredAt, f.DeclarationRecordedBy is { } by ? users.GetValueOrDefault(by) : null, f.ProcedureDate, f.ResultText, f.ResultConveyedTo,
-            f.ResultConveyedOn, f.MtpIndicated, f.MtpIndication, f.DoctorName, f.CompletedAt, f.Version);
+            f.ResultConveyedOn, f.MtpIndicated, f.MtpIndication, f.DoctorName, f.CompletedAt, f.Version, f.CancelReason);
     }
 }

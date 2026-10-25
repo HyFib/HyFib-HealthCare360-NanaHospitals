@@ -124,7 +124,11 @@ function FormFRegisterPage() {
                     {r.formNumber}
                   </Link>
                   <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>
-                    {r.procedureDate ? formatDate(r.procedureDate) : 'Not completed'}
+                    {r.procedureDate
+                      ? formatDate(r.procedureDate)
+                      : r.status === 'Cancelled'
+                        ? 'Scan cancelled'
+                        : 'Not completed'}
                   </Caption1>
                 </span>
               ),

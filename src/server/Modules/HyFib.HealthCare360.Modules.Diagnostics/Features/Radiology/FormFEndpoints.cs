@@ -107,7 +107,7 @@ internal static class FormFEndpoints
                 r.LivingSons.ToString(CultureInfo.InvariantCulture), r.LivingDaughters.ToString(CultureInfo.InvariantCulture),
                 r.WeeksOfPregnancy?.ToString(CultureInfo.InvariantCulture), Date(r.LastMenstrualPeriod), r.ReferredBy,
                 string.Join("; ", r.Indications.Select(FormFDocument.Indication)), r.Result, r.MtpIndicated ? "Yes" : "No", r.DoctorName,
-                r.Status == FormFStatus.Completed ? "Completed" : "Not completed"))
+                r.Status switch { FormFStatus.Completed => "Completed", FormFStatus.Cancelled => "Scan cancelled", _ => "Not completed" }))
             .Prepend(Row("Form", "Date of ultrasound", "Woman", "UHID", "Age", "Husband/father", "Sons", "Daughters", "Weeks", "LMP", "Referred by",
                 "Indications", "Result", "MTP indicated", "Doctor", "Status"));
         return TypedResults.File(Build(lines), "text/csv; charset=utf-8", string.Create(CultureInfo.InvariantCulture, $"form-f-register-{y}-{m:00}.csv"));

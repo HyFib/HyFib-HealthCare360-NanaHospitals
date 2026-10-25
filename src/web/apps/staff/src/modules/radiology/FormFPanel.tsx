@@ -93,7 +93,8 @@ export function FormFPanel({ study }: { study: ImagingStudyDetail }) {
   }
 
   const data = form.data ?? null;
-  const editable = study.status !== 'Cancelled' && data?.status !== 'Completed';
+  // The woman's details are recorded before the scan and corrected until the form is completed or cancelled.
+  const editable = study.status !== 'Cancelled' && (data ? data.status === 'Declared' : !study.acquiredAt);
   const scanned = Boolean(study.acquiredAt);
   return (
     <Section
@@ -111,6 +112,16 @@ export function FormFPanel({ study }: { study: ImagingStudyDetail }) {
               <MessageBarBody>
                 <MessageBarTitle>Form F not recorded</MessageBarTitle>
                 The scan cannot start until the woman&apos;s details and her declaration are recorded.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          {data?.status === 'Cancelled' && (
+            <MessageBar intent="info">
+              <MessageBarBody>
+                <MessageBarTitle>Scan cancelled</MessageBarTitle>
+                {data.cancelReason
+                  ? `The form was closed with the scan: ${data.cancelReason}`
+                  : 'The form was closed with the scan.'}
               </MessageBarBody>
             </MessageBar>
           )}

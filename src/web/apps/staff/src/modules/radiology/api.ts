@@ -69,7 +69,7 @@ export const FORM_F_INDICATIONS = [
   'Research',
 ] as const;
 export type FormFIndication = (typeof FORM_F_INDICATIONS)[number];
-export type FormFStatus = 'Declared' | 'Completed';
+export type FormFStatus = 'Declared' | 'Completed' | 'Cancelled';
 export type FormFReferral = 'Doctor' | 'Self';
 
 // ------------------------------------------------------------------------------------------------ studies
@@ -196,6 +196,7 @@ export interface FormFDto {
   mtpIndication: string | null;
   doctorName: string | null;
   completedAt: string | null;
+  cancelReason: string | null;
   version: number;
 }
 

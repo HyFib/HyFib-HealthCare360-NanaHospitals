@@ -37,14 +37,7 @@ public sealed class FormFTests(HospitalServer server)
         var radiographer = await server.SignInAsync(HospitalServer.Users.Radiographer);
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId.ShouldNotBeNull();
         var patient = await RegisterWomanAsync(admin);
-        var scan = (await admin.GetAsync<List<ServiceItemDto>>("/api/v1/masters/lookups/services?category=Radiology&search=RAD-USG-OBS"))
-            .Single(s => s.Code == "RAD-USG-OBS");
-        await admin.PostAsync<OrderDto>("/api/v1/clinical/orders", new PlaceOrderRequest(
-            patient.Id, EncounterId: null, VisitId: null, AdmissionId: null, OrderPriority.Routine, "Amenorrhoea 10 weeks",
-            [new OrderLineRequest(scan.Id, Notes: null)], OrderSetId: null, ConfirmDuplicates: false));
-        var studyId = (await admin.GetAsync<PagedResult<ImagingStudyListItem>>($"/api/v1/radiology/studies?patientId={patient.Id}")).Items
-            .ShouldHaveSingleItem().Id;
-        var study = $"/api/v1/radiology/studies/{studyId}";
+        var study = $"/api/v1/radiology/studies/{await OrderScanAsync(admin, patient)}";
         var form = $"{study}/form-f";
 
         var detail = await admin.GetAsync<ImagingStudyDetail>(study);
@@ -87,6 +80,11 @@ public sealed class FormFTests(HospitalServer server)
                 notTheDoctor.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
             }
 
+            using (var notYet = await admin.SendRawAsync(HttpMethod.Post, $"{form}/complete", result with { ConveyedOn = result.ConveyedOn.AddDays(2) }))
+            {
+                notYet.StatusCode.ShouldBe(HttpStatusCode.BadRequest, "the result cannot have been given on a date still to come");
+            }
+
             using (var undeclaredDoctor = await admin.SendRawAsync(HttpMethod.Post, $"{form}/complete", result with { DoctorDeclared = false }))
             {
                 undeclaredDoctor.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
@@ -127,6 +125,62 @@ public sealed class FormFTests(HospitalServer server)
         {
             await settings.RemoveAsync(FormFService.RegistrationSetting, facilityId, Ct);
         }
+    }
+
+    [Fact]
+    public async Task An_ultrasound_without_its_form_f_does_not_reach_the_machine_and_a_cancelled_one_closes_its_form()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId.ShouldNotBeNull();
+        var patient = await RegisterWomanAsync(admin);
+        var studyId = await OrderScanAsync(admin, patient);
+        var study = $"/api/v1/radiology/studies/{studyId}";
+        var accession = (await admin.GetAsync<ImagingStudyDetail>(study)).AccessionNumber;
+
+        await using var scope = server.Services.CreateAsyncScope();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+        await settings.SetAsync(FormFService.RegistrationSetting, Registration, facilityId, false, Ct);
+        try
+        {
+            // The modality worklist offers the scan only once the woman's declaration is recorded.
+            var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5.5));
+            async Task<int> OnTheWorklistAsync()
+            {
+                await using var query = server.Services.CreateAsyncScope();
+                var worklist = query.ServiceProvider.GetRequiredService<IModalityWorklistSource>();
+                return (await worklist.FindAsync(new ModalityWorklistQuery(facilityId, today.AddDays(-1), today.AddDays(1), [], AccessionNumber: accession), Ct))
+                    .Count(i => i.StudyId == studyId);
+            }
+
+            (await OnTheWorklistAsync()).ShouldBe(0);
+            var declared = await admin.PutAsync<FormFDto>($"{study}/form-f", Declaration(womanDeclared: true));
+            (await OnTheWorklistAsync()).ShouldBe(1);
+
+            // Cancelling the scan closes the form as cancelled: it cannot be completed, and the register lists it as
+            // cancelled rather than waiting for a result.
+            await admin.PostAsync($"{study}/cancel", new CancelStudyRequest("Patient left before the scan"));
+            var cancelled = (await admin.GetAsync<StudyFormF>($"{study}/form-f")).Form.ShouldNotBeNull();
+            (cancelled.Status, cancelled.CancelReason).ShouldBe((FormFStatus.Cancelled, "Patient left before the scan"));
+            var day = DateOnly.FromDateTime(declared.DeclaredAt.ToOffset(TimeSpan.FromHours(5.5)).DateTime);
+            var register = await admin.GetAsync<FormFRegister>($"/api/v1/radiology/form-f/register?year={day.Year}&month={day.Month}");
+            register.Rows.Single(r => r.FormNumber == declared.FormNumber).Status.ShouldBe(FormFStatus.Cancelled);
+            register.Incomplete.ShouldBe(register.Rows.Count(r => r.Status == FormFStatus.Declared));
+        }
+        finally
+        {
+            await settings.RemoveAsync(FormFService.RegistrationSetting, facilityId, Ct);
+        }
+    }
+
+    private static async Task<Guid> OrderScanAsync(ApiClient admin, PatientCreated patient)
+    {
+        var scan = (await admin.GetAsync<List<ServiceItemDto>>("/api/v1/masters/lookups/services?category=Radiology&search=RAD-USG-OBS"))
+            .Single(s => s.Code == "RAD-USG-OBS");
+        await admin.PostAsync<OrderDto>("/api/v1/clinical/orders", new PlaceOrderRequest(
+            patient.Id, EncounterId: null, VisitId: null, AdmissionId: null, OrderPriority.Routine, "Amenorrhoea 10 weeks",
+            [new OrderLineRequest(scan.Id, Notes: null)], OrderSetId: null, ConfirmDuplicates: false));
+        return (await admin.GetAsync<PagedResult<ImagingStudyListItem>>($"/api/v1/radiology/studies?patientId={patient.Id}")).Items
+            .ShouldHaveSingleItem().Id;
     }
 
     private static SaveFormFDeclarationRequest Declaration(bool womanDeclared) => new(
