@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Dashboard;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Inpatient;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Ndps;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Refills;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Registers;
@@ -23,6 +24,9 @@ public static class PharmacyPermissions
     public const string Registers = "pharmacy.registers";
     public const string Refills = "pharmacy.refills";
 
+    /// <summary>Count the essential narcotic drugs at a change of shift, and witness another's count (NDPS).</summary>
+    public const string NdpsCount = "pharmacy.ndps.count";
+
     /// <summary>Anyone working a pharmacy counter (stock pickers, queue, batch lists).</summary>
     internal static readonly string[] CounterStaff = [QueueRead, Dispense, Sales, IpIssue];
 
@@ -38,6 +42,8 @@ public static class PharmacyPermissions
         new(IpIndent, "Pharmacy", "Raise ward indents for admitted patients", [.. Pharmacy, SystemRoles.Nurse]),
         new(Registers, "Pharmacy", "View and export the Schedule H/H1/X and narcotic registers", Pharmacy),
         new(Refills, "Pharmacy", "Authorise, approve and reject prescription refills", Pharmacy),
+        new(NdpsCount, "Pharmacy", "Count the narcotic drugs at a change of shift, and witness another's count",
+            [SystemRoles.Pharmacist, SystemRoles.Nurse]),
     ];
 }
 
@@ -58,6 +64,7 @@ public sealed class PharmacyModule : IModule
         services.AddScoped<InpatientPharmacyService>();
         services.AddScoped<ControlledDrugRegisterService>();
         services.AddScoped<RefillService>();
+        services.AddScoped<NdpsService>();
         services.AddScoped<PharmacyRealtime>();
 
         // The pharmacy counter's day for Billing's Tally day book (Billing reads it without referencing this module).
@@ -71,6 +78,7 @@ public sealed class PharmacyModule : IModule
         SaleEndpoints.Map(endpoints);
         InpatientEndpoints.Map(endpoints);
         RegisterEndpoints.Map(endpoints);
+        NdpsEndpoints.Map(endpoints);
         RefillEndpoints.Map(endpoints);
         DashboardEndpoints.Map(endpoints);
     }

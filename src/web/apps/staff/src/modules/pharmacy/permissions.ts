@@ -8,6 +8,7 @@ export const PHARMACY_PERMISSIONS = {
   ipIndent: 'pharmacy.ip.indent',
   registers: 'pharmacy.registers',
   refills: 'pharmacy.refills',
+  ndpsCount: 'pharmacy.ndps.count',
 } as const;
 
 /** "Counter staff" in the module doc: stock look-ups and batch lists at the pharmacy counters. */
