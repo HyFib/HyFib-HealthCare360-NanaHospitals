@@ -51,6 +51,18 @@ const manifest: ModuleManifest = {
       permission: 'mrd.records',
       keywords: ['disease index', 'statistics', 'mis'],
     },
+    {
+      label: 'Births',
+      to: '/mrd/births',
+      permission: ['mrd.births.record', 'mrd.vital.register'],
+      keywords: ['birth register', 'birth report', 'form 1', 'form 3', 'still birth', 'crs', 'registrar'],
+    },
+    {
+      label: 'Deaths',
+      to: '/mrd/deaths',
+      permission: ['mrd.deaths.certify', 'mrd.vital.register'],
+      keywords: ['death register', 'death certificate', 'mccd', 'form 4', 'cause of death', 'crs', 'registrar'],
+    },
   ],
   quickActions: [
     {

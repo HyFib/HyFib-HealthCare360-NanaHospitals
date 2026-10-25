@@ -96,6 +96,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<PatientRegistrationService>();
         services.AddScoped<Seed.LoadTestPatients>();
         services.AddScoped<PatientAccessGuard>();
+        services.AddScoped<PatientDeaths>();
         services.AddScoped<PatientContactAccess>();
         services.AddScoped<IPatientRecordAccess>(sp => sp.GetRequiredService<PatientAccessGuard>());
         services.AddScoped<VisitService>();
