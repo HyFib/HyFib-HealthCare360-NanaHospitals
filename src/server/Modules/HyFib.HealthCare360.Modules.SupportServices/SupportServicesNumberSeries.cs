@@ -19,5 +19,13 @@ public static class SupportServicesNumberSeries
     public static NumberSeriesDefinition CanteenBill { get; } =
         new("canteen-bill", "Canteen bill", "Canteen", "{FAC}CN{YY}{SEQ:7}", NumberResetPolicy.Yearly, MaxLength: 24);
 
-    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [CssdRequest, WashCycle, SterilisationCycle, CanteenBill];
+    /// <summary>The bar code on each bag of bio-medical waste, printed where it is weighed (BMW Rules 2016, as amended in 2018).</summary>
+    public static NumberSeriesDefinition WasteBag { get; } =
+        new("bmw-bag", "Bio-medical waste bag", "Bio-medical waste", "{FAC}BW{YY}{SEQ:7}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    /// <summary>A handover of bags to the common bio-medical waste treatment facility's vehicle.</summary>
+    public static NumberSeriesDefinition WasteHandover { get; } =
+        new("bmw-handover", "Bio-medical waste handover", "Bio-medical waste", "{FAC}BH{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [CssdRequest, WashCycle, SterilisationCycle, CanteenBill, WasteBag, WasteHandover];
 }

@@ -11,7 +11,7 @@ public sealed class SupportServicesModuleTests
         var names = new SupportServicesModule().Permissions.Select(p => p.Name).ToList();
 
         names.ShouldBeUnique();
-        names.ShouldAllBe(n => n.StartsWith("cssd.") || n.StartsWith("dietary.") || n.StartsWith("canteen."));
+        names.ShouldAllBe(n => n.StartsWith("cssd.") || n.StartsWith("dietary.") || n.StartsWith("canteen.") || n.StartsWith("bmw."));
     }
 
     [Fact]
