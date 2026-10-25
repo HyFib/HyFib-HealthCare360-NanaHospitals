@@ -67,6 +67,15 @@ public static class ClinicalPermissions
     /// <summary>Enter a medico-legal case in the MLC register and record the police intimation.</summary>
     public const string ErMlc = "clinical.er.mlc";
 
+    /// <summary>
+    /// Approve or reject restricted antibiotics and review courses: the antimicrobial stewardship team (a clinical
+    /// microbiologist by default; grant it to the infectious-diseases physician and the clinical pharmacist the hospital names).
+    /// </summary>
+    public const string AmsApprove = "clinical.ams.approve";
+
+    /// <summary>The stewardship queue and report: who waits for approval or review.</summary>
+    public const string AmsRead = "clinical.ams.read";
+
     /// <summary>The MLC register, for medical records and the administration that answer the police and the courts.</summary>
     public const string MlcRegister = "mrd.mlc.register";
 
@@ -76,6 +85,7 @@ public static class ClinicalPermissions
     private const string Checkups = "Health Checkups";
     private const string Surveillance = "Disease Surveillance";
     private const string Emergency = "Emergency";
+    private const string Stewardship = "Antimicrobial Stewardship";
 
     /// <summary>Everyone who treats, tests, feeds or supplies the patient, and so must see allergies and alerts.</summary>
     private static readonly string[] ClinicalStaff =
@@ -119,6 +129,9 @@ public static class ClinicalPermissions
         new(ErTriage, Emergency, "Triage emergency patients on the Emergency Severity Index", [SystemRoles.Nurse, SystemRoles.Doctor]),
         new(ErDisposition, Emergency, "See emergency patients and decide where they go: discharge, admit, refer, LAMA", [SystemRoles.Doctor]),
         new(ErMlc, Emergency, "Enter medico-legal cases in the MLC register and record the police intimation", [SystemRoles.Doctor]),
+        new(AmsApprove, Stewardship, "Approve or reject restricted antibiotics and review antibiotic courses", [SystemRoles.Pathologist]),
+        new(AmsRead, Stewardship, "The antimicrobial stewardship queue and report",
+            [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.Pharmacist, SystemRoles.Pathologist, SystemRoles.QualityManager]),
         new(MlcRegister, Records, "The medico-legal case register", [SystemRoles.MrdOfficer, SystemRoles.HospitalAdmin]),
         new(HealthCheckManage, Checkups, "Maintain health packages, book and run health checkups (including corporate batches)",
             [SystemRoles.HospitalAdmin, SystemRoles.FrontOffice]),

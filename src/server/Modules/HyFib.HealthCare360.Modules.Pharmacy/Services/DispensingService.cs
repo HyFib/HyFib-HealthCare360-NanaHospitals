@@ -79,6 +79,7 @@ public sealed class DispensingService(
     PharmacyRealtime realtime,
     PatientAccessGuard guard,
     ISettingsService settings,
+    IAntimicrobialStewardship stewardship,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -150,6 +151,12 @@ public sealed class DispensingService(
             }
 
             planned.Add(new PlannedLine(Guid.CreateVersion7(), line, input, item, substitution.Value));
+        }
+
+        // A restricted antibiotic goes out for its first doses only while it waits for stewardship approval.
+        if (await stewardship.IssueRefusalAsync(planned.Select(p => p.Line.PrescriptionLineId).ToList(), ct) is { } refusal)
+        {
+            return Error.Rule("ams.approval_required", refusal);
         }
 
         var candidates = planned.Select(p => new SaleCandidate(p.Item.Name, p.Item.Schedule, p.Item.IsControlled || p.Line.IsControlledDrug)).ToList();

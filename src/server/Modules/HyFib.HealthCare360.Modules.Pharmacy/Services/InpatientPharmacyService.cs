@@ -23,6 +23,7 @@ public sealed class InpatientPharmacyService(
     ControlledDrugRegisterService register,
     PharmacyRealtime realtime,
     PatientAccessGuard guard,
+    IAntimicrobialStewardship stewardship,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -220,6 +221,13 @@ public sealed class InpatientPharmacyService(
             }
 
             planned.Add(new PlannedLine(Guid.CreateVersion7(), input, item, indentLine, queueLine));
+        }
+
+        // A restricted antibiotic goes out for its first doses only while it waits for stewardship approval.
+        var prescriptionLines = planned.Where(p => p.QueueLine is not null).Select(p => p.QueueLine!.PrescriptionLineId).ToList();
+        if (await stewardship.IssueRefusalAsync(prescriptionLines, ct) is { } refusal)
+        {
+            return Error.Rule("ams.approval_required", refusal);
         }
 
         var confirmed = SchedulePolicy.CheckControlledConfirmation(

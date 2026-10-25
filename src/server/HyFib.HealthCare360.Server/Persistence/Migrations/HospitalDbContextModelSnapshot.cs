@@ -11266,6 +11266,219 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("result_reviews", "clinical");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Stewardship.AntimicrobialApproval", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AdmissionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("admission_id");
+
+                    b.Property<string>("Antimicrobial")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("antimicrobial");
+
+                    b.Property<int?>("ApprovedDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("approved_days");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("CultureReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("culture_released_at");
+
+                    b.Property<Guid?>("CultureResultId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("culture_result_id");
+
+                    b.Property<bool?>("CultureSent")
+                        .HasColumnType("boolean")
+                        .HasColumnName("culture_sent");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at");
+
+                    b.Property<string>("DecidedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("decided_by_name");
+
+                    b.Property<string>("DecisionNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("decision_notes");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("Dose")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("dose");
+
+                    b.Property<string>("DrugName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("drug_name");
+
+                    b.Property<int>("DurationDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_days");
+
+                    b.Property<bool?>("Empirical")
+                        .HasColumnType("boolean")
+                        .HasColumnName("empirical");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("Group")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("group");
+
+                    b.Property<string>("Indication")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("indication");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Organism")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("organism");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateTimeOffset>("PrescribedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("prescribed_at");
+
+                    b.Property<string>("PrescribedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("prescribed_by_name");
+
+                    b.Property<Guid?>("PrescribedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("prescribed_by_user_id");
+
+                    b.Property<Guid>("PrescriptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("prescription_id");
+
+                    b.Property<Guid>("PrescriptionLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("prescription_line_id");
+
+                    b.Property<string>("PrescriptionNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("prescription_number");
+
+                    b.Property<string>("ReviewDecision")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("review_decision");
+
+                    b.Property<string>("ReviewNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("review_notes");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<string>("ReviewedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("reviewed_by_name");
+
+                    b.Property<string>("Route")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("route");
+
+                    b.Property<string>("Site")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("site");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Susceptibility")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("susceptibility");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_antimicrobial_approvals");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_antimicrobial_approvals_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_antimicrobial_approvals_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_antimicrobial_approvals_patient_id");
+
+                    b.HasIndex("PrescriptionLineId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_antimicrobial_approvals_prescription_line_id");
+
+                    b.HasIndex("FacilityId", "Status")
+                        .HasDatabaseName("ix_antimicrobial_approvals_facility_id_status");
+
+                    b.ToTable("antimicrobial_approvals", "clinical");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.TemplateMedication", b =>
                 {
                     b.Property<Guid>("Id")
@@ -39937,6 +40150,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_result_reviews_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Stewardship.AntimicrobialApproval", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_antimicrobial_approvals_patients_patient_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.TemplateMedication", b =>

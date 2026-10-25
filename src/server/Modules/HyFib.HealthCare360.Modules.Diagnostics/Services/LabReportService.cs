@@ -22,6 +22,7 @@ internal sealed class LabReportService(
     DiagnosticsLookups lookups,
     DiagnosticsRealtime realtime,
     NotifiableDiseases notifiable,
+    AntimicrobialCultureReview stewardship,
     INotificationService notifications,
     IAuditLogger audit,
     ICurrentUser currentUser,
@@ -231,6 +232,15 @@ internal sealed class LabReportService(
                         result.FacilityId, result.PatientId, result.Id, result.TestCode, loinc.GetValueOrDefault(result.LabTestId), result.TestName,
                         result.Describe(), result.Organism, at),
                     ct);
+                if (result.ResultType == LabResultType.Culture && !string.IsNullOrWhiteSpace(result.Organism))
+                {
+                    // A culture that grew something: the patient's restricted antibiotics fall due for review, with the antibiogram.
+                    var antibiogram = await db.Set<LabSusceptibility>().AsNoTracking().Where(s => s.LabResultId == result.Id)
+                        .Select(s => new { s.Antibiotic, s.Interpretation }).ToListAsync(ct);
+                    await stewardship.CultureReleasedAsync(
+                        result.FacilityId, result.PatientId, result.Id, result.Organism,
+                        antibiogram.Select(s => (s.Antibiotic, s.Interpretation.ToString())).ToList(), at, ct);
+                }
             }
             else if (amended)
             {

@@ -51,6 +51,8 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `clinical.er.triage` | Triage emergency patients on the ESI | Nurse, Doctor |
 | `clinical.er.disposition` | See emergency patients and decide where they go | Doctor |
 | `clinical.er.mlc` | Enter medico-legal cases in the MLC register and record the police intimation | Doctor |
+| `clinical.ams.approve` | Approve or reject restricted antibiotics and review antibiotic courses (grant it to the ID physician and clinical pharmacist the hospital names) | Pathologist |
+| `clinical.ams.read` | The stewardship queue and report | Doctor, Nurse, Pharmacist, Pathologist, QualityManager |
 | `mrd.mlc.register` | The MLC register | MrdOfficer, HospitalAdmin |
 | `mrd.catalogue.import` | Import the WHO ICD-10 and CMS ICD-10-PCS catalogue files (changes every user's code lists) | HospitalAdmin |
 | `healthcheck.manage` | Packages, bookings, corporate batches | HospitalAdmin, FrontOffice |
@@ -650,6 +652,30 @@ the user may not open shows initials.
   (`clinical.er.mlc` or `mrd.mlc.register`).
 * **Not built:** ER bed allocation and a tracking display for the waiting area; trauma scores beyond ESI; the wound
   certificate and the formal MLC report to the court.
+
+## Antimicrobial stewardship
+Antibiotics are classified on the WHO AWaRe list (2023) by their generic name (`Aware`; a combination needs every part,
+and the most specific name wins). The hospital's restricted-antibiotic policy needs the stewardship team's approval for
+every Reserve antibiotic and, by default, for carbapenems, piperacillin–tazobactam, cefoperazone–sulbactam, vancomycin
+and teicoplanin; the facility setting `ams.restricted.extra` (comma-separated names) adds others.
+
+* **Approval.** Signing a prescription with a restricted antibiotic opens an `AntimicrobialApproval` per line, in the
+  prescriber's transaction, and alerts the `clinical.ams.approve` holders. The prescriber gives the justification
+  (`POST /api/v1/ams/approvals/{id}/justification`: site, indication, empirical or targeted, culture sent). Someone other
+  than the prescriber approves it for 1–42 days or rejects it with the alternative (`/decision`).
+* **The pharmacy.** First doses go out while the approval waits, for 24 hours from prescribing; after that, and always
+  once rejected, the OP dispense and the IP issue against the prescription are refused with 422
+  `ams.approval_required` (the Platform contract `IAntimicrobialStewardship`).
+* **Review.** A course falls due for review 72 hours after prescribing (the antibiotic time-out) or as soon as a
+  culture result is released for the patient (the laboratory calls `AntimicrobialCultureReview` on release), with the
+  isolate and the antibiotic's result on its antibiogram. The team or the prescriber records the decision: continue,
+  narrow, broaden, switch to oral or stop; a change names the new antibiotic, and continuing one the isolate resists
+  needs a reason.
+* **Report** (`GET /api/v1/ams/report?from&to`): restricted antibiotics by AWaRe group, approved, rejected and
+  waiting; the median hours to a decision and the decisions made late; the share with a culture sent; the reviews by
+  decision.
+* **Not built:** a time-out for antibiotics that are not restricted; days of therapy per 1000 patient-days (it needs
+  the MAR's administrations); IV route of fosfomycin and minocycline (Reserve only intravenously) is not distinguished.
 
 ## The doctor's worklist (EMR-01)
 
