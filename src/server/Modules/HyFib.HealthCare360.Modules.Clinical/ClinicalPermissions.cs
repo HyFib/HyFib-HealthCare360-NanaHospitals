@@ -55,11 +55,27 @@ public static class ClinicalPermissions
     /// <summary>The IDSP register: notifiable-disease cases, the weekly P and L forms to IHIP, and the outbreak alerts.</summary>
     public const string IdspReport = "mrd.idsp.report";
 
+    /// <summary>The ER board: the patients in the emergency department, most urgent first, with their waits.</summary>
+    public const string ErBoard = "clinical.er.board";
+
+    /// <summary>Triage an emergency patient on the Emergency Severity Index (the triage vitals go to the chart).</summary>
+    public const string ErTriage = "clinical.er.triage";
+
+    /// <summary>See an emergency patient as their doctor, and decide where they go (discharge, admit, refer…).</summary>
+    public const string ErDisposition = "clinical.er.disposition";
+
+    /// <summary>Enter a medico-legal case in the MLC register and record the police intimation.</summary>
+    public const string ErMlc = "clinical.er.mlc";
+
+    /// <summary>The MLC register, for medical records and the administration that answer the police and the courts.</summary>
+    public const string MlcRegister = "mrd.mlc.register";
+
     private const string Emr = "EMR / Physician Desktop";
     private const string Prescribing = "E-Prescribing";
     private const string Records = "Medical Records";
     private const string Checkups = "Health Checkups";
     private const string Surveillance = "Disease Surveillance";
+    private const string Emergency = "Emergency";
 
     /// <summary>Everyone who treats, tests, feeds or supplies the patient, and so must see allergies and alerts.</summary>
     private static readonly string[] ClinicalStaff =
@@ -98,6 +114,12 @@ public static class ClinicalPermissions
             [SystemRoles.MrdOfficer, SystemRoles.HospitalAdmin]),
         new(IdspReport, Surveillance, "Notifiable diseases (IDSP): the cases, the weekly P and L forms to IHIP, and the outbreak alerts",
             [SystemRoles.MrdOfficer, SystemRoles.QualityManager]),
+        new(ErBoard, Emergency, "The ER board: patients in the emergency department, most urgent first, with their waits",
+            [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.FrontOffice, SystemRoles.HospitalAdmin]),
+        new(ErTriage, Emergency, "Triage emergency patients on the Emergency Severity Index", [SystemRoles.Nurse, SystemRoles.Doctor]),
+        new(ErDisposition, Emergency, "See emergency patients and decide where they go: discharge, admit, refer, LAMA", [SystemRoles.Doctor]),
+        new(ErMlc, Emergency, "Enter medico-legal cases in the MLC register and record the police intimation", [SystemRoles.Doctor]),
+        new(MlcRegister, Records, "The medico-legal case register", [SystemRoles.MrdOfficer, SystemRoles.HospitalAdmin]),
         new(HealthCheckManage, Checkups, "Maintain health packages, book and run health checkups (including corporate batches)",
             [SystemRoles.HospitalAdmin, SystemRoles.FrontOffice]),
     ];
