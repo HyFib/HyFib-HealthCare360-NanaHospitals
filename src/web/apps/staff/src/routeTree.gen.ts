@@ -128,6 +128,7 @@ import { Route as AppLabReceiveRouteImport } from './routes/_app/lab/receive'
 import { Route as AppLabSetupRouteImport } from './routes/_app/lab/setup'
 import { Route as AppLabTatRouteImport } from './routes/_app/lab/tat'
 import { Route as AppLabWorklistRouteImport } from './routes/_app/lab/worklist'
+import { Route as AppMortuaryIndexRouteImport } from './routes/_app/mortuary/index'
 import { Route as AppMrdIndexRouteImport } from './routes/_app/mrd/index'
 import { Route as AppMrdIcdRouteImport } from './routes/_app/mrd/icd'
 import { Route as AppMrdIdspRouteImport } from './routes/_app/mrd/idsp'
@@ -926,6 +927,11 @@ const AppLabTatRoute = AppLabTatRouteImport.update({
 const AppLabWorklistRoute = AppLabWorklistRouteImport.update({
   id: '/lab/worklist',
   path: '/lab/worklist',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMortuaryIndexRoute = AppMortuaryIndexRouteImport.update({
+  id: '/mortuary/',
+  path: '/mortuary/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppMrdIndexRoute = AppMrdIndexRouteImport.update({
@@ -2155,6 +2161,7 @@ export interface FileRoutesByFullPath {
   '/insurance/': typeof AppInsuranceIndexRoute
   '/inventory/': typeof AppInventoryIndexRoute
   '/lab/': typeof AppLabIndexRoute
+  '/mortuary/': typeof AppMortuaryIndexRoute
   '/mrd/': typeof AppMrdIndexRoute
   '/mtp/': typeof AppMtpIndexRoute
   '/nursing/': typeof AppNursingIndexRoute
@@ -2475,6 +2482,7 @@ export interface FileRoutesByTo {
   '/insurance': typeof AppInsuranceIndexRoute
   '/inventory': typeof AppInventoryIndexRoute
   '/lab': typeof AppLabIndexRoute
+  '/mortuary': typeof AppMortuaryIndexRoute
   '/mrd': typeof AppMrdIndexRoute
   '/mtp': typeof AppMtpIndexRoute
   '/nursing': typeof AppNursingIndexRoute
@@ -2797,6 +2805,7 @@ export interface FileRoutesById {
   '/_app/insurance/': typeof AppInsuranceIndexRoute
   '/_app/inventory/': typeof AppInventoryIndexRoute
   '/_app/lab/': typeof AppLabIndexRoute
+  '/_app/mortuary/': typeof AppMortuaryIndexRoute
   '/_app/mrd/': typeof AppMrdIndexRoute
   '/_app/mtp/': typeof AppMtpIndexRoute
   '/_app/nursing/': typeof AppNursingIndexRoute
@@ -3119,6 +3128,7 @@ export interface FileRouteTypes {
     | '/insurance/'
     | '/inventory/'
     | '/lab/'
+    | '/mortuary/'
     | '/mrd/'
     | '/mtp/'
     | '/nursing/'
@@ -3439,6 +3449,7 @@ export interface FileRouteTypes {
     | '/insurance'
     | '/inventory'
     | '/lab'
+    | '/mortuary'
     | '/mrd'
     | '/mtp'
     | '/nursing'
@@ -3760,6 +3771,7 @@ export interface FileRouteTypes {
     | '/_app/insurance/'
     | '/_app/inventory/'
     | '/_app/lab/'
+    | '/_app/mortuary/'
     | '/_app/mrd/'
     | '/_app/mtp/'
     | '/_app/nursing/'
@@ -4756,6 +4768,13 @@ declare module '@tanstack/react-router' {
       path: '/lab/worklist'
       fullPath: '/lab/worklist'
       preLoaderRoute: typeof AppLabWorklistRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mortuary/': {
+      id: '/_app/mortuary/'
+      path: '/mortuary'
+      fullPath: '/mortuary/'
+      preLoaderRoute: typeof AppMortuaryIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/mrd/': {
@@ -6323,6 +6342,7 @@ interface AppRouteChildren {
   AppInsuranceIndexRoute: typeof AppInsuranceIndexRoute
   AppInventoryIndexRoute: typeof AppInventoryIndexRoute
   AppLabIndexRoute: typeof AppLabIndexRoute
+  AppMortuaryIndexRoute: typeof AppMortuaryIndexRoute
   AppMrdIndexRoute: typeof AppMrdIndexRoute
   AppMtpIndexRoute: typeof AppMtpIndexRoute
   AppNursingIndexRoute: typeof AppNursingIndexRoute
@@ -6642,6 +6662,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppInsuranceIndexRoute: AppInsuranceIndexRoute,
   AppInventoryIndexRoute: AppInventoryIndexRoute,
   AppLabIndexRoute: AppLabIndexRoute,
+  AppMortuaryIndexRoute: AppMortuaryIndexRoute,
   AppMrdIndexRoute: AppMrdIndexRoute,
   AppMtpIndexRoute: AppMtpIndexRoute,
   AppNursingIndexRoute: AppNursingIndexRoute,

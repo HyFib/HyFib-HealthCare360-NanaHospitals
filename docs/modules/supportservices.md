@@ -6,7 +6,7 @@ SRS **CSSD-01..05**, **DIET-01..05**, **CAN-01..04**.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.SupportServices` (references Patients and Inpatient — layer 6 → 5,
 for the admission's current ward and bed). Schema `supportservices`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (143 unit tests), and the end-to-end `DietChargeTests`
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (156 unit tests), and the end-to-end `DietChargeTests`
 in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill with the setting on, and none with it off).
 
 ## Permissions
@@ -30,6 +30,8 @@ in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill wit
 | `canteen.credit.manage` | Staff credit balances, statements, payroll export and settlement | CanteenManager, HrManager, HospitalAdmin |
 | `bmw.record` | Weigh and bar-code bags of bio-medical waste where it is generated | Nurse, LabTechnician, CssdTechnician, OtCoordinator, QualityManager, HospitalAdmin |
 | `bmw.manage` | Hand waste over to the treatment facility, the register and the annual report (Form IV) | QualityManager, HospitalAdmin |
+| `mortuary.manage` | Receive and release bodies, the mortuary register and the release slip | Nurse, HospitalAdmin |
+| `mortuary.configure` | Set up the cold-storage slots | HospitalAdmin |
 
 ## CSSD — `/api/v1/cssd`
 | Method | Path | Permission | Request → response |
@@ -174,6 +176,33 @@ Administration › Settings, are for the annual report (Form IV) due to the Stat
 Not built: printing the bar-code label (the number is shown to write or print on the bag), liquid waste and the Form I
 accident report.
 
+## Mortuary — `/api/v1/mortuary`
+The administrator sets up the cold-storage slots (a label per chamber door; a slot holding a body cannot be taken out of
+use). A body is received into a free slot (`mortuary-body` number) with who brought it, its identification marks and
+the belongings that came with it. A patient who died in the hospital comes in only once the death is on record (the
+cause of death certified, or the stay discharged as expired); their name, sex, age and time of death are the patient's,
+and the body is medico-legal if their last visit was. A body brought dead or by the police is described (an
+unidentified one as "Unknown male, about 40"), and a medico-legal or police body names its police station. A body kept
+beyond 72 hours unreleased is shown as unclaimed, for the police to be told.
+
+A body leaves to someone named, on the authority its case needs: relatives with their relationship and identity proof,
+and only an identified body; a medico-legal body to relatives only on the police's clearance (the inquest or post-mortem
+reference); the police for a post-mortem on the officer's name, number and station; the municipality, for an unclaimed
+body, on the police's clearance; a medical college for body donation, never a medico-legal body. The release frees the
+slot, keeps the slot it was in for the register, and prints the release slip with the belongings handed over.
+
+| Method | Path | Permission | Request → Response |
+|---|---|---|---|
+| GET | `/slots` | `mortuary.manage` or `mortuary.configure` | → `MortuarySlotDto[]` (who is in each, `unclaimed`) |
+| PUT | `/slots` | `mortuary.configure` | `SaveSlotsRequest{slots: [{id?, code, chamber?, isActive, version?}]}` (new slots without an id; changed ones with their version); 422 `mortuary.slot_occupied` |
+| GET | `/bodies?status&from&to` | `mortuary.manage` | → `BodyDto[]`: in storage, or received in the period (at most a year; default the last 30 days) |
+| POST | `/bodies` | `mortuary.manage` | `ReceiveBodyRequest{source, patientId?, name?, identified, sex?, ageYears?, diedAt?, broughtBy?, isMlc, mlcNumber?, policeStation?, identificationMarks?, belongings?, slotId}`; 422 `mortuary.death_not_recorded`, 409 `mortuary.slot_occupied` / `mortuary.already_in` |
+| GET | `/bodies/{id}` | `mortuary.manage` | → `BodyDto` (a patient's body through the patient access guard) |
+| POST | `/bodies/{id}/release` | `mortuary.manage` | `ReleaseBodyRequest{to, receivedBy, relationship?, idProof?, policeClearance?, belongingsHandedOver, notes?, version}`; 422 `mortuary.released`, `mortuary.unidentified`, `mortuary.mlc_donation` |
+| GET | `/bodies/{id}/slip` | `mortuary.manage` | → the release slip (`PrintableDocumentDto`), audited for a patient |
+
+Not built: embalming, the post-mortem itself, freezer temperature logging, and mortuary charges.
+
 ## Integration events
 | Event | Direction | Notes |
 |---|---|---|
@@ -191,7 +220,7 @@ No integration events are raised.
 
 ## Settings, numbers, notifications, jobs, seed
 * Settings: `supportservices.diet.chargesEnabled` (bool, default false; explained on the staff app's Settings page), `supportservices.canteen.staffCreditLimit` (decimal, default 3000; 0 = no limit).
-* Number series (yearly): `cssd-wash` → `{FAC}CW{YY}{SEQ:6}`, `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`.
+* Number series (yearly): `cssd-wash` → `{FAC}CW{YY}{SEQ:6}`, `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`, `mortuary-body` → `{FAC}MB{YY}{SEQ:5}`.
 * Notifications: in-app only — CSSD recall (critical) and count discrepancy (warning) to `cssd.recalls`; urgent request (warning) to `cssd.process`.
 * Job: `DailyMealPlanJob` — at start-up and hourly when `PlatformOptions.RunsJobs`: generates/refreshes today's and tomorrow's plans for every facility and posts today's diet charges when enabled.
 * Seed `SupportServicesSeeder` (Order 170, every installation, idempotent by code): service items `DIET-STD` (Rs. 300/day), `DIET-THER` (Rs. 450/day), `DIET-ENT` (Rs. 400/day); 13 diet types (NORMAL, SOFT, SEMI-SOLID, LIQUID, CLEAR-LIQUID, DIABETIC, RENAL, CARDIAC, HIGH-PROTEIN, LOW-FAT, BLAND, RT-FEED, NPO); 8 instrument sets for the default facility (MAJOR-TRAY, MINOR-TRAY, LSCS-SET, DELIVERY-SET, DRESSING-SET, SUTURE-SET, CATH-SET, LAPARO-SET); a 28-item canteen menu (idli, dosa, meals, thali, biryani, tea, coffee, snacks, juices, sweets, packaged water and biscuits with tracked stock; HSN 220190 for water, 190531 for biscuits and 080119 for tender coconut, SAC 996333 for everything made in the canteen).
@@ -199,6 +228,9 @@ No integration events are raised.
 ## Tables (schema `supportservices`)
 
 Bio-medical waste: `waste_bags` (unique `barcode`), `waste_handovers` (unique `number`).
+
+Mortuary: `mortuary_slots` (unique `code` per facility), `body_records` (unique `number` per facility; one body in
+storage per slot).
 
 `instrument_sets`, `instrument_set_items`, `cssd_requests`, `cssd_request_lines`, `soiled_receipts`,
 `soiled_receipt_lines`, `wash_cycles`, `wash_cycle_trays`, `sterilization_loads`, `sterile_packs` (with

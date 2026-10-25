@@ -174,6 +174,7 @@ public static class PersonalDataCatalogue
                 new("supportservices.planned_meals", "Planned meals", Counted: false),
                 new("supportservices.canteen_sales", "Canteen purchases", Counted: false),
                 new("supportservices.set_issues", "Sterile instrument sets", Counted: false),
+                new("supportservices.body_records", "Mortuary register", Counted: false),
             ]),
         new("billing", "Bills, payments and insurance",
             "Your bills, payments, refunds, deposits, insurance policies and claims.",
