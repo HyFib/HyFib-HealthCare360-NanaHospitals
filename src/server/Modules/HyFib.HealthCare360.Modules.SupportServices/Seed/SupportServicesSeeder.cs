@@ -5,7 +5,7 @@ using HyFib.HealthCare360.Modules.SupportServices.Domain.Dietary;
 namespace HyFib.HealthCare360.Modules.SupportServices.Seed;
 
 /// <summary>
-/// Idempotent reference data (checked by code on every start): diet-charge services in the service catalogue, the diet
+/// Idempotent reference data (checked by code on every start): diet-charge and ambulance services in the service catalogue, the diet
 /// master, and — for the default facility — common instrument sets and a canteen menu. These are starting masters, not
 /// demo transactions, so they are seeded in every installation.
 /// </summary>
@@ -17,6 +17,7 @@ internal sealed class SupportServicesSeeder : ISeeder
     {
         await SeedDietServicesAsync(db, cancellationToken);
         await SeedDietTypesAsync(db, cancellationToken);
+        await SeedAmbulanceServicesAsync(db, cancellationToken);
 
         var facility = await db.Set<Facility>().OrderBy(f => f.CreatedAt).FirstOrDefaultAsync(cancellationToken);
         if (facility is null)
@@ -44,6 +45,19 @@ internal sealed class SupportServicesSeeder : ISeeder
                 DepartmentId = dietDepartment,
                 SacCode = "999312",
             });
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task SeedAmbulanceServicesAsync(HospitalDbContext db, CancellationToken ct)
+    {
+        var codes = SeedCatalog.AmbulanceServices.Select(s => s.Code).ToList();
+        var existing = await db.Set<ServiceItem>().Where(s => codes.Contains(s.Code)).Select(s => s.Code).ToListAsync(ct);
+        foreach (var service in SeedCatalog.AmbulanceServices.Where(s => !existing.Contains(s.Code)))
+        {
+            // SAC 999315: ambulance services, exempt from GST (Notification 12/2017-CT(R), entry 74).
+            db.Add(new ServiceItem { Code = service.Code, Name = service.Name, Category = ServiceCategory.Ambulance, BasePrice = service.Price, SacCode = "999315" });
         }
 
         await db.SaveChangesAsync(ct);

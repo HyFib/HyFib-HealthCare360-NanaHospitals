@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.SupportServices.Features.Ambulance;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Canteen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Cssd;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Dietary;
@@ -40,6 +41,12 @@ public static class SupportServicesPermissions
     /// <summary>Set the mortuary's cold-storage slots.</summary>
     public const string MortuaryConfigure = "mortuary.configure";
 
+    /// <summary>Take ambulance calls, send vehicles and record each trip.</summary>
+    public const string AmbulanceDispatch = "ambulance.dispatch";
+
+    /// <summary>Keep the ambulance fleet and its certificates.</summary>
+    public const string AmbulanceFleet = "ambulance.fleet";
+
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(CssdRead, "CSSD", "View instrument sets, loads, packs, issues and CSSD reports",
@@ -74,13 +81,17 @@ public static class SupportServicesPermissions
         new(MortuaryManage, "Mortuary", "Receive bodies into the mortuary, release them and keep the register",
             [SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
         new(MortuaryConfigure, "Mortuary", "Set the mortuary's cold-storage slots", [SystemRoles.HospitalAdmin]),
+
+        new(AmbulanceDispatch, "Ambulance", "Take ambulance calls, send vehicles and record each trip",
+            [SystemRoles.FrontOffice, SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
+        new(AmbulanceFleet, "Ambulance", "Keep the ambulance fleet and its certificates", [SystemRoles.HospitalAdmin]),
     ];
 }
 
 /// <summary>
 /// Support services: CSSD with sterilizer loads, issue with expiry and recall by load (CSSD-01..05); dietary orders,
 /// ward-wise meal plans, kitchen production and delivery tracking with optional diet charges (DIET-01..05); and the
-/// canteen POS with GST, staff credit and payroll deduction (CAN-01..04); bio-medical waste; and the mortuary.
+/// canteen POS with GST, staff credit and payroll deduction (CAN-01..04); bio-medical waste; the mortuary; and the ambulance fleet.
 /// </summary>
 public sealed class SupportServicesModule : IModule
 {
@@ -101,6 +112,7 @@ public sealed class SupportServicesModule : IModule
         services.AddScoped<StaffCreditService>();
         services.AddScoped<WasteService>();
         services.AddScoped<MortuaryService>();
+        services.AddScoped<AmbulanceService>();
 
         // The canteen's day for Billing's Tally day book (Billing reads it without referencing this module).
         services.AddScoped<ICounterSalesSource, CanteenDayBookSource>();
@@ -118,5 +130,6 @@ public sealed class SupportServicesModule : IModule
         StaffCreditEndpoints.Map(endpoints);
         WasteEndpoints.Map(endpoints);
         MortuaryEndpoints.Map(endpoints);
+        AmbulanceEndpoints.Map(endpoints);
     }
 }

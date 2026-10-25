@@ -6,7 +6,7 @@ SRS **CSSD-01..05**, **DIET-01..05**, **CAN-01..04**.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.SupportServices` (references Patients and Inpatient — layer 6 → 5,
 for the admission's current ward and bed). Schema `supportservices`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (156 unit tests), and the end-to-end `DietChargeTests`
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (167 unit tests), and the end-to-end `DietChargeTests`
 in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill with the setting on, and none with it off).
 
 ## Permissions
@@ -32,6 +32,8 @@ in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill wit
 | `bmw.manage` | Hand waste over to the treatment facility, the register and the annual report (Form IV) | QualityManager, HospitalAdmin |
 | `mortuary.manage` | Receive and release bodies, the mortuary register and the release slip | Nurse, HospitalAdmin |
 | `mortuary.configure` | Set up the cold-storage slots | HospitalAdmin |
+| `ambulance.dispatch` | Take ambulance calls, send vehicles and record each trip; the trip log | FrontOffice, Nurse, HospitalAdmin |
+| `ambulance.fleet` | Keep the ambulance fleet and its certificates | HospitalAdmin |
 
 ## CSSD — `/api/v1/cssd`
 | Method | Path | Permission | Request → response |
@@ -203,6 +205,31 @@ slot, keeps the slot it was in for the register, and prints the release slip wit
 
 Not built: embalming, the post-mortem itself, freezer temperature logging, and mortuary charges.
 
+## Ambulance — `/api/v1/ambulance`
+The administrator keeps the fleet: each vehicle's registration, kind (basic or advanced life support, patient transport,
+hearse), the dates its fitness certificate, insurance and pollution certificate run to, and its odometer, which only goes
+forward. A call is taken with the caller, the pickup and, for anything but an emergency, where the trip goes; a
+registered patient is linked (a body transport only for a patient whose death is on record). A vehicle is sent only
+while all three certificates are on record and in force, only if it suits the trip (an emergency needs BLS or ALS, a body
+goes only in the hearse, the hearse carries no patient), only while it is not out on another trip, and with a technician
+or paramedic for an emergency or a transfer. The crew's steps follow in order: reached the pickup, patient on board,
+back, when the odometer gives the kilometres run. A completed trip for a registered patient is charged on their bill in
+the same save: the base fare for the vehicle's kind (`AMB-BLS`, `AMB-ALS`, `AMB-PTS`, `AMB-HEARSE`) covers the first 10
+km, and `AMB-KM` each kilometre beyond; a trip can be left uncharged with a reason (a free scheme transfer, say). The
+trip log gives the period's trips, kilometres, and the median call-to-dispatch and call-to-patient times of emergencies.
+
+| Method | Path | Permission | Request → Response |
+|---|---|---|---|
+| GET · POST | `/vehicles` | `ambulance.dispatch` or `ambulance.fleet` · `ambulance.fleet` | → `AmbulanceVehicleDto[]` (with `lapsed` certificates and the trip it is out on) / `SaveVehicleRequest{id?, registrationNumber, kind, fitnessValidUntil?, insuranceValidUntil?, pollutionValidUntil?, odometerKm, isActive, version?}`; 409 `ambulance.duplicate` |
+| GET · POST | `/trips` | `ambulance.dispatch` | → open trips, oldest call first / `RequestTripRequest{purpose, patientId?, patientName?, callerName, callerPhone, pickupAddress, dropAddress?, complaint?}` |
+| POST | `/trips/{id}/dispatch` | `ambulance.dispatch` | `DispatchRequest{vehicleId, driverName, crewName?, version}`; 422 `ambulance.papers_lapsed`, 409 `ambulance.vehicle_busy` |
+| POST | `/trips/{id}/at-scene` · `/left-scene` | `ambulance.dispatch` | `TripStepRequest{version}`; 422 `ambulance.out_of_order` |
+| POST | `/trips/{id}/complete` | `ambulance.dispatch` | `CompleteTripRequest{endOdometerKm, waiveReason?, version}`: posts the charges; 422 `ambulance.no_tariff` when a fare is missing from the catalogue |
+| POST | `/trips/{id}/cancel` | `ambulance.dispatch` | `CancelTripRequest{reason, version}`; not once the patient is on board |
+| GET | `/trips/log?from&to` | `ambulance.dispatch` | → `TripLog` (at most 92 days; default the last week) |
+
+Not built: GPS tracking, the crew's patient care record, fuel and maintenance logs.
+
 ## Integration events
 | Event | Direction | Notes |
 |---|---|---|
@@ -216,18 +243,21 @@ No integration events are raised.
 ## Charges (via `IChargePoster`)
 | SourceModule | SourceReference | When |
 |---|---|---|
+| `supportservices.ambulance` | `{tripId}:base`, `{tripId}:km` | when a trip for a registered patient is completed and not waived: the base fare for the vehicle's kind, and `AMB-KM` × kilometres beyond the first 10 |
 | `supportservices.diet` | `{dietOrderId}:{yyyy-MM-dd}` | once per admission per day when facility setting `supportservices.diet.chargesEnabled` is true and the diet type has a charge service; a day already charged under an earlier order of the same admission is skipped, also when that order was superseded the same day (checked with `IBillingStatusProvider.GetStatesAsync`). Posted and saved when the day's plan is generated (`DailyMealPlanJob` or `POST /meal-plans/generate`) |
 
 ## Settings, numbers, notifications, jobs, seed
 * Settings: `supportservices.diet.chargesEnabled` (bool, default false; explained on the staff app's Settings page), `supportservices.canteen.staffCreditLimit` (decimal, default 3000; 0 = no limit).
-* Number series (yearly): `cssd-wash` → `{FAC}CW{YY}{SEQ:6}`, `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`, `mortuary-body` → `{FAC}MB{YY}{SEQ:5}`.
+* Number series (yearly): `cssd-wash` → `{FAC}CW{YY}{SEQ:6}`, `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`, `mortuary-body` → `{FAC}MB{YY}{SEQ:5}`, `ambulance-trip` → `{FAC}AT{YY}{SEQ:6}`.
 * Notifications: in-app only — CSSD recall (critical) and count discrepancy (warning) to `cssd.recalls`; urgent request (warning) to `cssd.process`.
 * Job: `DailyMealPlanJob` — at start-up and hourly when `PlatformOptions.RunsJobs`: generates/refreshes today's and tomorrow's plans for every facility and posts today's diet charges when enabled.
-* Seed `SupportServicesSeeder` (Order 170, every installation, idempotent by code): service items `DIET-STD` (Rs. 300/day), `DIET-THER` (Rs. 450/day), `DIET-ENT` (Rs. 400/day); 13 diet types (NORMAL, SOFT, SEMI-SOLID, LIQUID, CLEAR-LIQUID, DIABETIC, RENAL, CARDIAC, HIGH-PROTEIN, LOW-FAT, BLAND, RT-FEED, NPO); 8 instrument sets for the default facility (MAJOR-TRAY, MINOR-TRAY, LSCS-SET, DELIVERY-SET, DRESSING-SET, SUTURE-SET, CATH-SET, LAPARO-SET); a 28-item canteen menu (idli, dosa, meals, thali, biryani, tea, coffee, snacks, juices, sweets, packaged water and biscuits with tracked stock; HSN 220190 for water, 190531 for biscuits and 080119 for tender coconut, SAC 996333 for everything made in the canteen).
+* Seed `SupportServicesSeeder` (Order 170, every installation, idempotent by code): service items `DIET-STD` (Rs. 300/day), `DIET-THER` (Rs. 450/day), `DIET-ENT` (Rs. 400/day), and the ambulance fares `AMB-BLS` (Rs. 1,000), `AMB-ALS` (Rs. 2,500), `AMB-PTS` (Rs. 800), `AMB-HEARSE` (Rs. 1,200) and `AMB-KM` (Rs. 25 a km), SAC 999315; 13 diet types (NORMAL, SOFT, SEMI-SOLID, LIQUID, CLEAR-LIQUID, DIABETIC, RENAL, CARDIAC, HIGH-PROTEIN, LOW-FAT, BLAND, RT-FEED, NPO); 8 instrument sets for the default facility (MAJOR-TRAY, MINOR-TRAY, LSCS-SET, DELIVERY-SET, DRESSING-SET, SUTURE-SET, CATH-SET, LAPARO-SET); a 28-item canteen menu (idli, dosa, meals, thali, biryani, tea, coffee, snacks, juices, sweets, packaged water and biscuits with tracked stock; HSN 220190 for water, 190531 for biscuits and 080119 for tender coconut, SAC 996333 for everything made in the canteen).
 
 ## Tables (schema `supportservices`)
 
 Bio-medical waste: `waste_bags` (unique `barcode`), `waste_handovers` (unique `number`).
+
+Ambulance: `ambulance_vehicles` (unique registration), `ambulance_trips` (unique `number` per facility; one open trip per vehicle).
 
 Mortuary: `mortuary_slots` (unique `code` per facility), `body_records` (unique `number` per facility; one body in
 storage per slot).

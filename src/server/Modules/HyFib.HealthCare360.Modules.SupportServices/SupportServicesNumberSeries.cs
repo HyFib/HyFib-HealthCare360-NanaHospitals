@@ -31,6 +31,9 @@ public static class SupportServicesNumberSeries
     public static NumberSeriesDefinition MortuaryBody { get; } =
         new("mortuary-body", "Mortuary register", "Mortuary", "{FAC}MB{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
 
+    public static NumberSeriesDefinition AmbulanceTrip { get; } =
+        new("ambulance-trip", "Ambulance trip", "Ambulance", "{FAC}AT{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+
     internal static IEnumerable<NumberSeriesDefinition> All { get; } =
-        [CssdRequest, WashCycle, SterilisationCycle, CanteenBill, WasteBag, WasteHandover, MortuaryBody];
+        [CssdRequest, WashCycle, SterilisationCycle, CanteenBill, WasteBag, WasteHandover, MortuaryBody, AmbulanceTrip];
 }
