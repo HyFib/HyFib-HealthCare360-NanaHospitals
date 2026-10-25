@@ -52,10 +52,14 @@ public static class ClinicalPermissions
     /// <summary>The births and deaths registers, and reporting each event to the Registrar.</summary>
     public const string VitalRegister = "mrd.vital.register";
 
+    /// <summary>The IDSP register: notifiable-disease cases, the weekly P and L forms to IHIP, and the outbreak alerts.</summary>
+    public const string IdspReport = "mrd.idsp.report";
+
     private const string Emr = "EMR / Physician Desktop";
     private const string Prescribing = "E-Prescribing";
     private const string Records = "Medical Records";
     private const string Checkups = "Health Checkups";
+    private const string Surveillance = "Disease Surveillance";
 
     /// <summary>Everyone who treats, tests, feeds or supplies the patient, and so must see allergies and alerts.</summary>
     private static readonly string[] ClinicalStaff =
@@ -92,6 +96,8 @@ public static class ClinicalPermissions
         new(DeathsCertify, Records, "Certify the cause of death (MCCD, Form 4)", [SystemRoles.Doctor]),
         new(VitalRegister, Records, "The births and deaths registers, and reporting them to the Registrar within 21 days",
             [SystemRoles.MrdOfficer, SystemRoles.HospitalAdmin]),
+        new(IdspReport, Surveillance, "Notifiable diseases (IDSP): the cases, the weekly P and L forms to IHIP, and the outbreak alerts",
+            [SystemRoles.MrdOfficer, SystemRoles.QualityManager]),
         new(HealthCheckManage, Checkups, "Maintain health packages, book and run health checkups (including corporate batches)",
             [SystemRoles.HospitalAdmin, SystemRoles.FrontOffice]),
     ];

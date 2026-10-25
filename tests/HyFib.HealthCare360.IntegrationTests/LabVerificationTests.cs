@@ -199,14 +199,15 @@ public sealed class LabVerificationTests(HospitalServer server)
     }
 
     /// <summary>A walk-in order for one test, its tube collected and received in the lab (the counter's payment gate waived).</summary>
-    internal static async Task<CreatedSample> ReceivedSampleAsync(HospitalServer server, string testCode)
+    /// <summary>A received tube of the test, for <paramref name="patientId"/> or a new patient.</summary>
+    internal static async Task<CreatedSample> ReceivedSampleAsync(HospitalServer server, string testCode, Guid? patientId = null)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
-        var patient = await RegisterPatientAsync(server);
+        var patient = patientId ?? (await RegisterPatientAsync(server)).Id;
         var test = (await lab.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={testCode}")).Items.Single(t => t.Code == testCode);
         var order = await lab.PostAsync<LabOrderCreated>("/api/v1/lab/orders", new CreateLabOrderRequest(
-            patient.Id, null, [test.Id], OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
+            patient, null, [test.Id], OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
         var tube = order.Samples.ShouldHaveSingleItem();
 
         // A walk-in test is drawn only once paid; these tests are about the sign-off, so the counter waives that here.

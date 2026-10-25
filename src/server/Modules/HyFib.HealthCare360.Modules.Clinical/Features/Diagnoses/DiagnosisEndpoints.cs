@@ -40,8 +40,8 @@ internal static class DiagnosisEndpoints
         return TypedResults.Ok(rows.Select(ToDto).ToList());
     }
 
-    private static async Task<IResult> Add(Guid encounterId, AddDiagnosisRequest request, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
-        TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Add(Guid encounterId, AddDiagnosisRequest request, ClinicalAccess access, NotifiableDiseases notifiable,
+        HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var encounter = await db.Set<Encounter>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(e => e.Id == encounterId, ct);
         if (encounter is null)
@@ -94,6 +94,9 @@ internal static class DiagnosisEndpoints
 
         // An HIV, mental-illness or abortion diagnosis makes the record confidential (R-4), in the same save.
         await access.FlagSensitiveAsync(encounter.PatientId, code, ct);
+
+        // A notifiable disease (IDSP) goes on the week's P form, in the same save.
+        await notifiable.FromDiagnosisAsync(encounter.FacilityId, diagnosis, ct);
         await db.SaveChangesAsync(ct);
         return TypedResults.Created($"/api/v1/emr/patients/{encounter.PatientId}/diagnoses", ToDto(diagnosis));
     }
