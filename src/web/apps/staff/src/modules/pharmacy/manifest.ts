@@ -53,6 +53,12 @@ const manifest: ModuleManifest = {
       keywords: ['schedule h', 'h1', 'narcotic', 'ndps', 'controlled'],
     },
     {
+      label: 'Adverse drug reactions',
+      to: '/pharmacy/adr',
+      permission: [P.adrReport, P.adrManage],
+      keywords: ['adr', 'pvpi', 'pharmacovigilance', 'side effect', 'reaction', 'amc', 'vigiflow'],
+    },
+    {
       label: 'Narcotic accounts (NDPS)',
       to: '/pharmacy/ndps',
       permission: [P.registers, P.ndpsCount],

@@ -99,6 +99,7 @@ public static class PersonalDataCatalogue
                 new("pharmacy.refill_requests", "Refill requests"),
                 new("pharmacy.ip_issues", "Medicines issued during hospital stays"),
                 new("pharmacy.ward_indents", "Ward medicine requests", Counted: false),
+                new("pharmacy.adr_reports", "Reports of suspected reactions to a medicine (PvPI)"),
                 new("pharmacy.ward_returns", "Ward medicine returns", Counted: false),
                 new("pharmacy.queue_entries", "Pharmacy queue", Counted: false),
                 new("pharmacy.controlled_drug_register", "Controlled-medicine register entries"),

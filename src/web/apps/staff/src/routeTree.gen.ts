@@ -141,6 +141,7 @@ import { Route as AppOtTheatresRouteImport } from './routes/_app/ot/theatres'
 import { Route as AppPatientsIndexRouteImport } from './routes/_app/patients/index'
 import { Route as AppPatientsRegisterRouteImport } from './routes/_app/patients/register'
 import { Route as AppPharmacyIndexRouteImport } from './routes/_app/pharmacy/index'
+import { Route as AppPharmacyAdrRouteImport } from './routes/_app/pharmacy/adr'
 import { Route as AppPharmacyIpIssuesRouteImport } from './routes/_app/pharmacy/ip-issues'
 import { Route as AppPharmacyNdpsRouteImport } from './routes/_app/pharmacy/ndps'
 import { Route as AppPharmacyRefillsRouteImport } from './routes/_app/pharmacy/refills'
@@ -986,6 +987,11 @@ const AppPatientsRegisterRoute = AppPatientsRegisterRouteImport.update({
 const AppPharmacyIndexRoute = AppPharmacyIndexRouteImport.update({
   id: '/pharmacy/',
   path: '/pharmacy/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPharmacyAdrRoute = AppPharmacyAdrRouteImport.update({
+  id: '/pharmacy/adr',
+  path: '/pharmacy/adr',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPharmacyIpIssuesRoute = AppPharmacyIpIssuesRouteImport.update({
@@ -2066,6 +2072,7 @@ export interface FileRoutesByFullPath {
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
   '/patients/register': typeof AppPatientsRegisterRoute
+  '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/pharmacy/ndps': typeof AppPharmacyNdpsRoute
   '/pharmacy/refills': typeof AppPharmacyRefillsRoute
@@ -2381,6 +2388,7 @@ export interface FileRoutesByTo {
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
   '/patients/register': typeof AppPatientsRegisterRoute
+  '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/pharmacy/ndps': typeof AppPharmacyNdpsRoute
   '/pharmacy/refills': typeof AppPharmacyRefillsRoute
@@ -2698,6 +2706,7 @@ export interface FileRoutesById {
   '/_app/ot/implants': typeof AppOtImplantsRoute
   '/_app/ot/theatres': typeof AppOtTheatresRoute
   '/_app/patients/register': typeof AppPatientsRegisterRoute
+  '/_app/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/_app/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/_app/pharmacy/ndps': typeof AppPharmacyNdpsRoute
   '/_app/pharmacy/refills': typeof AppPharmacyRefillsRoute
@@ -3015,6 +3024,7 @@ export interface FileRouteTypes {
     | '/ot/implants'
     | '/ot/theatres'
     | '/patients/register'
+    | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
     | '/pharmacy/ndps'
     | '/pharmacy/refills'
@@ -3330,6 +3340,7 @@ export interface FileRouteTypes {
     | '/ot/implants'
     | '/ot/theatres'
     | '/patients/register'
+    | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
     | '/pharmacy/ndps'
     | '/pharmacy/refills'
@@ -3646,6 +3657,7 @@ export interface FileRouteTypes {
     | '/_app/ot/implants'
     | '/_app/ot/theatres'
     | '/_app/patients/register'
+    | '/_app/pharmacy/adr'
     | '/_app/pharmacy/ip-issues'
     | '/_app/pharmacy/ndps'
     | '/_app/pharmacy/refills'
@@ -4787,6 +4799,13 @@ declare module '@tanstack/react-router' {
       path: '/pharmacy'
       fullPath: '/pharmacy/'
       preLoaderRoute: typeof AppPharmacyIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/pharmacy/adr': {
+      id: '/_app/pharmacy/adr'
+      path: '/pharmacy/adr'
+      fullPath: '/pharmacy/adr'
+      preLoaderRoute: typeof AppPharmacyAdrRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/pharmacy/ip-issues': {
@@ -6169,6 +6188,7 @@ interface AppRouteChildren {
   AppOtImplantsRoute: typeof AppOtImplantsRoute
   AppOtTheatresRoute: typeof AppOtTheatresRoute
   AppPatientsRegisterRoute: typeof AppPatientsRegisterRoute
+  AppPharmacyAdrRoute: typeof AppPharmacyAdrRoute
   AppPharmacyIpIssuesRoute: typeof AppPharmacyIpIssuesRoute
   AppPharmacyNdpsRoute: typeof AppPharmacyNdpsRoute
   AppPharmacyRefillsRoute: typeof AppPharmacyRefillsRoute
@@ -6483,6 +6503,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOtImplantsRoute: AppOtImplantsRoute,
   AppOtTheatresRoute: AppOtTheatresRoute,
   AppPatientsRegisterRoute: AppPatientsRegisterRoute,
+  AppPharmacyAdrRoute: AppPharmacyAdrRoute,
   AppPharmacyIpIssuesRoute: AppPharmacyIpIssuesRoute,
   AppPharmacyNdpsRoute: AppPharmacyNdpsRoute,
   AppPharmacyRefillsRoute: AppPharmacyRefillsRoute,

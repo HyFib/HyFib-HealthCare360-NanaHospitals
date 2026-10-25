@@ -9,6 +9,8 @@ export const PHARMACY_PERMISSIONS = {
   registers: 'pharmacy.registers',
   refills: 'pharmacy.refills',
   ndpsCount: 'pharmacy.ndps.count',
+  adrReport: 'pharmacy.adr.report',
+  adrManage: 'pharmacy.adr.manage',
 } as const;
 
 /** "Counter staff" in the module doc: stock look-ups and batch lists at the pharmacy counters. */
