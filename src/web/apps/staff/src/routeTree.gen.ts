@@ -269,8 +269,12 @@ import { Route as AppLabOrdersNewRouteImport } from './routes/_app/lab/orders/ne
 import { Route as AppLabQcIndexRouteImport } from './routes/_app/lab/qc/index'
 import { Route as AppLabReportsIndexRouteImport } from './routes/_app/lab/reports/index'
 import { Route as AppLabReportsReportIdRouteImport } from './routes/_app/lab/reports/$reportId'
+import { Route as AppMrdBirthsIndexRouteImport } from './routes/_app/mrd/births/index'
+import { Route as AppMrdBirthsBirthIdRouteImport } from './routes/_app/mrd/births/$birthId'
 import { Route as AppMrdCodingIndexRouteImport } from './routes/_app/mrd/coding/index'
 import { Route as AppMrdCodingCodingIdRouteImport } from './routes/_app/mrd/coding/$codingId'
+import { Route as AppMrdDeathsIndexRouteImport } from './routes/_app/mrd/deaths/index'
+import { Route as AppMrdDeathsDeathIdRouteImport } from './routes/_app/mrd/deaths/$deathId'
 import { Route as AppMrdRecordsIndexRouteImport } from './routes/_app/mrd/records/index'
 import { Route as AppMrdRecordsRecordIdRouteImport } from './routes/_app/mrd/records/$recordId'
 import { Route as AppOtBookingsIndexRouteImport } from './routes/_app/ot/bookings/index'
@@ -1660,6 +1664,16 @@ const AppLabReportsReportIdRoute = AppLabReportsReportIdRouteImport.update({
   path: '/lab/reports/$reportId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppMrdBirthsIndexRoute = AppMrdBirthsIndexRouteImport.update({
+  id: '/mrd/births/',
+  path: '/mrd/births/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMrdBirthsBirthIdRoute = AppMrdBirthsBirthIdRouteImport.update({
+  id: '/mrd/births/$birthId',
+  path: '/mrd/births/$birthId',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppMrdCodingIndexRoute = AppMrdCodingIndexRouteImport.update({
   id: '/mrd/coding/',
   path: '/mrd/coding/',
@@ -1668,6 +1682,16 @@ const AppMrdCodingIndexRoute = AppMrdCodingIndexRouteImport.update({
 const AppMrdCodingCodingIdRoute = AppMrdCodingCodingIdRouteImport.update({
   id: '/mrd/coding/$codingId',
   path: '/mrd/coding/$codingId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMrdDeathsIndexRoute = AppMrdDeathsIndexRouteImport.update({
+  id: '/mrd/deaths/',
+  path: '/mrd/deaths/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMrdDeathsDeathIdRoute = AppMrdDeathsDeathIdRouteImport.update({
+  id: '/mrd/deaths/$deathId',
+  path: '/mrd/deaths/$deathId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppMrdRecordsIndexRoute = AppMrdRecordsIndexRouteImport.update({
@@ -2144,7 +2168,9 @@ export interface FileRoutesByFullPath {
   '/lab/orders/$orderId': typeof AppLabOrdersOrderIdRoute
   '/lab/orders/new': typeof AppLabOrdersNewRoute
   '/lab/reports/$reportId': typeof AppLabReportsReportIdRoute
+  '/mrd/births/$birthId': typeof AppMrdBirthsBirthIdRoute
   '/mrd/coding/$codingId': typeof AppMrdCodingCodingIdRoute
+  '/mrd/deaths/$deathId': typeof AppMrdDeathsDeathIdRoute
   '/mrd/records/$recordId': typeof AppMrdRecordsRecordIdRoute
   '/ot/bookings/$id': typeof AppOtBookingsIdRoute
   '/patients/$patientId/edit': typeof AppPatientsPatientIdEditRoute
@@ -2201,7 +2227,9 @@ export interface FileRoutesByFullPath {
   '/lab/orders/': typeof AppLabOrdersIndexRoute
   '/lab/qc/': typeof AppLabQcIndexRoute
   '/lab/reports/': typeof AppLabReportsIndexRoute
+  '/mrd/births/': typeof AppMrdBirthsIndexRoute
   '/mrd/coding/': typeof AppMrdCodingIndexRoute
+  '/mrd/deaths/': typeof AppMrdDeathsIndexRoute
   '/mrd/records/': typeof AppMrdRecordsIndexRoute
   '/ot/bookings/': typeof AppOtBookingsIndexRoute
   '/patients/$patientId/': typeof AppPatientsPatientIdIndexRoute
@@ -2452,7 +2480,9 @@ export interface FileRoutesByTo {
   '/lab/orders/$orderId': typeof AppLabOrdersOrderIdRoute
   '/lab/orders/new': typeof AppLabOrdersNewRoute
   '/lab/reports/$reportId': typeof AppLabReportsReportIdRoute
+  '/mrd/births/$birthId': typeof AppMrdBirthsBirthIdRoute
   '/mrd/coding/$codingId': typeof AppMrdCodingCodingIdRoute
+  '/mrd/deaths/$deathId': typeof AppMrdDeathsDeathIdRoute
   '/mrd/records/$recordId': typeof AppMrdRecordsRecordIdRoute
   '/ot/bookings/$id': typeof AppOtBookingsIdRoute
   '/patients/$patientId/edit': typeof AppPatientsPatientIdEditRoute
@@ -2509,7 +2539,9 @@ export interface FileRoutesByTo {
   '/lab/orders': typeof AppLabOrdersIndexRoute
   '/lab/qc': typeof AppLabQcIndexRoute
   '/lab/reports': typeof AppLabReportsIndexRoute
+  '/mrd/births': typeof AppMrdBirthsIndexRoute
   '/mrd/coding': typeof AppMrdCodingIndexRoute
+  '/mrd/deaths': typeof AppMrdDeathsIndexRoute
   '/mrd/records': typeof AppMrdRecordsIndexRoute
   '/ot/bookings': typeof AppOtBookingsIndexRoute
   '/patients/$patientId': typeof AppPatientsPatientIdIndexRoute
@@ -2762,7 +2794,9 @@ export interface FileRoutesById {
   '/_app/lab/orders/$orderId': typeof AppLabOrdersOrderIdRoute
   '/_app/lab/orders/new': typeof AppLabOrdersNewRoute
   '/_app/lab/reports/$reportId': typeof AppLabReportsReportIdRoute
+  '/_app/mrd/births/$birthId': typeof AppMrdBirthsBirthIdRoute
   '/_app/mrd/coding/$codingId': typeof AppMrdCodingCodingIdRoute
+  '/_app/mrd/deaths/$deathId': typeof AppMrdDeathsDeathIdRoute
   '/_app/mrd/records/$recordId': typeof AppMrdRecordsRecordIdRoute
   '/_app/ot/bookings/$id': typeof AppOtBookingsIdRoute
   '/_app/patients/$patientId/edit': typeof AppPatientsPatientIdEditRoute
@@ -2819,7 +2853,9 @@ export interface FileRoutesById {
   '/_app/lab/orders/': typeof AppLabOrdersIndexRoute
   '/_app/lab/qc/': typeof AppLabQcIndexRoute
   '/_app/lab/reports/': typeof AppLabReportsIndexRoute
+  '/_app/mrd/births/': typeof AppMrdBirthsIndexRoute
   '/_app/mrd/coding/': typeof AppMrdCodingIndexRoute
+  '/_app/mrd/deaths/': typeof AppMrdDeathsIndexRoute
   '/_app/mrd/records/': typeof AppMrdRecordsIndexRoute
   '/_app/ot/bookings/': typeof AppOtBookingsIndexRoute
   '/_app/patients/$patientId/': typeof AppPatientsPatientIdIndexRoute
@@ -3072,7 +3108,9 @@ export interface FileRouteTypes {
     | '/lab/orders/$orderId'
     | '/lab/orders/new'
     | '/lab/reports/$reportId'
+    | '/mrd/births/$birthId'
     | '/mrd/coding/$codingId'
+    | '/mrd/deaths/$deathId'
     | '/mrd/records/$recordId'
     | '/ot/bookings/$id'
     | '/patients/$patientId/edit'
@@ -3129,7 +3167,9 @@ export interface FileRouteTypes {
     | '/lab/orders/'
     | '/lab/qc/'
     | '/lab/reports/'
+    | '/mrd/births/'
     | '/mrd/coding/'
+    | '/mrd/deaths/'
     | '/mrd/records/'
     | '/ot/bookings/'
     | '/patients/$patientId/'
@@ -3380,7 +3420,9 @@ export interface FileRouteTypes {
     | '/lab/orders/$orderId'
     | '/lab/orders/new'
     | '/lab/reports/$reportId'
+    | '/mrd/births/$birthId'
     | '/mrd/coding/$codingId'
+    | '/mrd/deaths/$deathId'
     | '/mrd/records/$recordId'
     | '/ot/bookings/$id'
     | '/patients/$patientId/edit'
@@ -3437,7 +3479,9 @@ export interface FileRouteTypes {
     | '/lab/orders'
     | '/lab/qc'
     | '/lab/reports'
+    | '/mrd/births'
     | '/mrd/coding'
+    | '/mrd/deaths'
     | '/mrd/records'
     | '/ot/bookings'
     | '/patients/$patientId'
@@ -3689,7 +3733,9 @@ export interface FileRouteTypes {
     | '/_app/lab/orders/$orderId'
     | '/_app/lab/orders/new'
     | '/_app/lab/reports/$reportId'
+    | '/_app/mrd/births/$birthId'
     | '/_app/mrd/coding/$codingId'
+    | '/_app/mrd/deaths/$deathId'
     | '/_app/mrd/records/$recordId'
     | '/_app/ot/bookings/$id'
     | '/_app/patients/$patientId/edit'
@@ -3746,7 +3792,9 @@ export interface FileRouteTypes {
     | '/_app/lab/orders/'
     | '/_app/lab/qc/'
     | '/_app/lab/reports/'
+    | '/_app/mrd/births/'
     | '/_app/mrd/coding/'
+    | '/_app/mrd/deaths/'
     | '/_app/mrd/records/'
     | '/_app/ot/bookings/'
     | '/_app/patients/$patientId/'
@@ -5601,6 +5649,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLabReportsReportIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/mrd/births/': {
+      id: '/_app/mrd/births/'
+      path: '/mrd/births'
+      fullPath: '/mrd/births/'
+      preLoaderRoute: typeof AppMrdBirthsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mrd/births/$birthId': {
+      id: '/_app/mrd/births/$birthId'
+      path: '/mrd/births/$birthId'
+      fullPath: '/mrd/births/$birthId'
+      preLoaderRoute: typeof AppMrdBirthsBirthIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/mrd/coding/': {
       id: '/_app/mrd/coding/'
       path: '/mrd/coding'
@@ -5613,6 +5675,20 @@ declare module '@tanstack/react-router' {
       path: '/mrd/coding/$codingId'
       fullPath: '/mrd/coding/$codingId'
       preLoaderRoute: typeof AppMrdCodingCodingIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mrd/deaths/': {
+      id: '/_app/mrd/deaths/'
+      path: '/mrd/deaths'
+      fullPath: '/mrd/deaths/'
+      preLoaderRoute: typeof AppMrdDeathsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mrd/deaths/$deathId': {
+      id: '/_app/mrd/deaths/$deathId'
+      path: '/mrd/deaths/$deathId'
+      fullPath: '/mrd/deaths/$deathId'
+      preLoaderRoute: typeof AppMrdDeathsDeathIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/mrd/records/': {
@@ -6156,7 +6232,9 @@ interface AppRouteChildren {
   AppLabOrdersOrderIdRoute: typeof AppLabOrdersOrderIdRoute
   AppLabOrdersNewRoute: typeof AppLabOrdersNewRoute
   AppLabReportsReportIdRoute: typeof AppLabReportsReportIdRoute
+  AppMrdBirthsBirthIdRoute: typeof AppMrdBirthsBirthIdRoute
   AppMrdCodingCodingIdRoute: typeof AppMrdCodingCodingIdRoute
+  AppMrdDeathsDeathIdRoute: typeof AppMrdDeathsDeathIdRoute
   AppMrdRecordsRecordIdRoute: typeof AppMrdRecordsRecordIdRoute
   AppOtBookingsIdRoute: typeof AppOtBookingsIdRoute
   AppPatientsPatientIdEditRoute: typeof AppPatientsPatientIdEditRoute
@@ -6213,7 +6291,9 @@ interface AppRouteChildren {
   AppLabOrdersIndexRoute: typeof AppLabOrdersIndexRoute
   AppLabQcIndexRoute: typeof AppLabQcIndexRoute
   AppLabReportsIndexRoute: typeof AppLabReportsIndexRoute
+  AppMrdBirthsIndexRoute: typeof AppMrdBirthsIndexRoute
   AppMrdCodingIndexRoute: typeof AppMrdCodingIndexRoute
+  AppMrdDeathsIndexRoute: typeof AppMrdDeathsIndexRoute
   AppMrdRecordsIndexRoute: typeof AppMrdRecordsIndexRoute
   AppOtBookingsIndexRoute: typeof AppOtBookingsIndexRoute
   AppPatientsPatientIdIndexRoute: typeof AppPatientsPatientIdIndexRoute
@@ -6470,7 +6550,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppLabOrdersOrderIdRoute: AppLabOrdersOrderIdRoute,
   AppLabOrdersNewRoute: AppLabOrdersNewRoute,
   AppLabReportsReportIdRoute: AppLabReportsReportIdRoute,
+  AppMrdBirthsBirthIdRoute: AppMrdBirthsBirthIdRoute,
   AppMrdCodingCodingIdRoute: AppMrdCodingCodingIdRoute,
+  AppMrdDeathsDeathIdRoute: AppMrdDeathsDeathIdRoute,
   AppMrdRecordsRecordIdRoute: AppMrdRecordsRecordIdRoute,
   AppOtBookingsIdRoute: AppOtBookingsIdRoute,
   AppPatientsPatientIdEditRoute: AppPatientsPatientIdEditRoute,
@@ -6528,7 +6610,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppLabOrdersIndexRoute: AppLabOrdersIndexRoute,
   AppLabQcIndexRoute: AppLabQcIndexRoute,
   AppLabReportsIndexRoute: AppLabReportsIndexRoute,
+  AppMrdBirthsIndexRoute: AppMrdBirthsIndexRoute,
   AppMrdCodingIndexRoute: AppMrdCodingIndexRoute,
+  AppMrdDeathsIndexRoute: AppMrdDeathsIndexRoute,
   AppMrdRecordsIndexRoute: AppMrdRecordsIndexRoute,
   AppOtBookingsIndexRoute: AppOtBookingsIndexRoute,
   AppPatientsPatientIdIndexRoute: AppPatientsPatientIdIndexRoute,

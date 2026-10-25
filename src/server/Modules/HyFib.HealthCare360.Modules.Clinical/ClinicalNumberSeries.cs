@@ -23,6 +23,14 @@ public static class ClinicalNumberSeries
     public static NumberSeriesDefinition CorporateCheckupBatch { get; } =
         new("healthcheck-batch", "Corporate check-up drive", "Health check-ups", "{FAC}HCB{YY}{SEQ:4}", NumberResetPolicy.Yearly, MaxLength: 24);
 
+    /// <summary>The hospital's register of births, live and still, from 1 each calendar year.</summary>
+    public static NumberSeriesDefinition BirthRegister { get; } =
+        new("birth-register", "Birth register", "Medical records", "{FAC}BRN{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    /// <summary>The hospital's register of deaths, from 1 each calendar year.</summary>
+    public static NumberSeriesDefinition DeathRegister { get; } =
+        new("death-register", "Death register", "Medical records", "{FAC}DTH{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
+
     internal static IEnumerable<NumberSeriesDefinition> All { get; } =
-        [Prescription, ClinicalOrder, RecordRequest, HealthCheckupBooking, CorporateCheckupBatch];
+        [Prescription, ClinicalOrder, RecordRequest, HealthCheckupBooking, CorporateCheckupBatch, BirthRegister, DeathRegister];
 }

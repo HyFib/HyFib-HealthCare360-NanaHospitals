@@ -43,6 +43,9 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `clinical.discharge_summary.write` | Draft/sign/amend discharge summaries | Doctor |
 | `mrd.coding` | Clinical coding and verification | MrdOfficer |
 | `mrd.records` | Charts, deficiencies, record requests, archival, morbidity report | MrdOfficer, HospitalAdmin |
+| `mrd.births.record` | Record births in the hospital (Form 1; Form 3 for a still birth) | Doctor, Nurse, MrdOfficer |
+| `mrd.deaths.certify` | Certify the cause of death (MCCD, Form 4) | Doctor |
+| `mrd.vital.register` | The births and deaths registers, and reporting them to the Registrar | MrdOfficer, HospitalAdmin |
 | `mrd.catalogue.import` | Import the WHO ICD-10 and CMS ICD-10-PCS catalogue files (changes every user's code lists) | HospitalAdmin |
 | `healthcheck.manage` | Packages, bookings, corporate batches | HospitalAdmin, FrontOffice |
 
@@ -447,6 +450,30 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | GET / POST | `/mrd/record-requests` | mrd.records | `CreateRecordRequestRequest{patientId, medicalRecordId?, requestedByName, requestingDepartment, purpose, details}`; status filter `Overdue` supported |
 | POST | `/mrd/record-requests/{id}/issue` / `return` / `cancel` | mrd.records | `IssueRecordRequest{dueBackOn}` / — / `CancelRecordRequest{reason}` |
 
+#### Births and deaths (Registration of Births and Deaths Act 1969, as amended in 2023)
+A birth in the hospital is recorded against the mother (Form 1; Form 3 for a still birth, a foetus of at least 28 weeks
+born dead, with the cause of the foetal death). A death is recorded with its medical certificate of cause of death
+(MCCD, Form 4): Part I, lines (a) to (d), the immediate cause first and the underlying cause last, with the interval of
+each; Part II, other significant conditions; the manner of death (pending investigation only for a medico-legal case);
+and, for a woman aged 15 to 49, whether she was pregnant or within six weeks of the end of a pregnancy. The certifying
+doctor is the signed-in user, with their council registration number. Certifying a death marks the patient deceased,
+and so does an admission discharged as *Expired* (`ExpiredDischargeHandler`, on `PatientDischarged`); a certificate
+entered in error takes that mark back. Each event is to be reported to the Registrar within 21 days (`dueBy`), today
+through the Civil Registration System; medical records enters the registration number it gives, after which the entry
+cannot change here (422 `vital.reported`: a correction goes through the Registrar). Reads go through the chart check and
+are audited; the registers' CSV export is audited.
+
+| Method | Path | Permission | Request → Response |
+|---|---|---|---|
+| GET | `/mrd/births?year&month` · `/mrd/births/export` | mrd.vital.register | → `BirthRegister` (rows with `dueBy`, `overdue`; live and still births) / CSV |
+| GET | `/mrd/births/{id}` · `/document` | mrd.births.record or mrd.vital.register | → `BirthRecordDto` / the printable Form 1 or Form 3 |
+| POST · PUT | `/mrd/births` · `/mrd/births/{id}` | mrd.births.record | `SaveBirthRequest` (mother, baby's record, time of birth, outcome, sex, weight, weeks, method, attendant, names, mother's age, live children, informant, still-birth cause; PUT with `version`) |
+| GET | `/mrd/deaths?year&month` · `/mrd/deaths/export` | mrd.vital.register | → `DeathRegister` (rows with the underlying cause, `dueBy`, `overdue`) / CSV |
+| GET | `/mrd/deaths/{id}` · `/document` | mrd.deaths.certify or mrd.vital.register | → `DeathRecordDto` / the printable MCCD |
+| POST · PUT | `/mrd/deaths` · `/mrd/deaths/{id}` | mrd.deaths.certify | `SaveDeathRequest` (patient, time of death, age when no date of birth, causes, other conditions, manner, medico-legal, pregnancy, registration number; PUT with `version`). 409 `death.exists` for a second certificate |
+| POST | `/mrd/{births\|deaths}/{id}/report` | mrd.vital.register | `ReportToRegistrarRequest{reportedOn, registrationNumber, version}` |
+| POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back |
+
 #### Coding for insurance claims
 
 Once a second coder has verified a coding, Billing's insurance claims use it (MB-03), through the Platform contract
@@ -731,6 +758,8 @@ Real-time (ids only): `clinical.order.placed` / `clinical.order.changed` (facili
 | `healthcheck-booking` | `{FAC}HC{YY}{SEQ:6}` | yearly, per facility |
 | `healthcheck-batch` | `{FAC}HCB{YY}{SEQ:4}` | yearly, per facility |
 | `mrd-request` | `{FAC}RR{YY}{SEQ:6}` | yearly, per facility |
+| `birth-register` | `{FAC}BRN{YY}{SEQ:5}` | yearly, per facility |
+| `death-register` | `{FAC}DTH{YY}{SEQ:5}` | yearly, per facility |
 
 ## Notification templates
 

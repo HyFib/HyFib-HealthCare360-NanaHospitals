@@ -43,6 +43,15 @@ public static class ClinicalPermissions
 
     public const string HealthCheckManage = "healthcheck.manage";
 
+    /// <summary>Record a birth in the hospital (Form 1, or Form 3 for a still birth).</summary>
+    public const string BirthsRecord = "mrd.births.record";
+
+    /// <summary>Certify the cause of a death (MCCD, Form 4): the doctor who attended the patient in the last illness.</summary>
+    public const string DeathsCertify = "mrd.deaths.certify";
+
+    /// <summary>The births and deaths registers, and reporting each event to the Registrar.</summary>
+    public const string VitalRegister = "mrd.vital.register";
+
     private const string Emr = "EMR / Physician Desktop";
     private const string Prescribing = "E-Prescribing";
     private const string Records = "Medical Records";
@@ -78,6 +87,11 @@ public static class ClinicalPermissions
             [SystemRoles.MrdOfficer, SystemRoles.HospitalAdmin]),
         new(CatalogueImport, Records, "Import the WHO ICD-10 and CMS ICD-10-PCS catalogue files (changes every user's code lists)",
             [SystemRoles.HospitalAdmin]),
+        new(BirthsRecord, Records, "Record births in the hospital (Form 1, and Form 3 for a still birth)",
+            [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.MrdOfficer]),
+        new(DeathsCertify, Records, "Certify the cause of death (MCCD, Form 4)", [SystemRoles.Doctor]),
+        new(VitalRegister, Records, "The births and deaths registers, and reporting them to the Registrar within 21 days",
+            [SystemRoles.MrdOfficer, SystemRoles.HospitalAdmin]),
         new(HealthCheckManage, Checkups, "Maintain health packages, book and run health checkups (including corporate batches)",
             [SystemRoles.HospitalAdmin, SystemRoles.FrontOffice]),
     ];
