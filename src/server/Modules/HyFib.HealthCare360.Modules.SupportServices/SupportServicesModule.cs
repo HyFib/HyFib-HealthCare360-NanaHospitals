@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.SupportServices.Features.Ambulance;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Canteen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Cssd;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Dietary;
+using HyFib.HealthCare360.Modules.SupportServices.Features.Linen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Mortuary;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Waste;
 using HyFib.HealthCare360.Modules.SupportServices.Services;
@@ -47,6 +48,12 @@ public static class SupportServicesPermissions
     /// <summary>Keep the ambulance fleet and its certificates.</summary>
     public const string AmbulanceFleet = "ambulance.fleet";
 
+    /// <summary>Send a ward's soiled linen to the laundry and report what it has lost.</summary>
+    public const string LinenWard = "linen.ward";
+
+    /// <summary>The linen store and the laundry: issue, receive, wash and condemn linen, and set ward par levels.</summary>
+    public const string LinenManage = "linen.manage";
+
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(CssdRead, "CSSD", "View instrument sets, loads, packs, issues and CSSD reports",
@@ -85,13 +92,18 @@ public static class SupportServicesPermissions
         new(AmbulanceDispatch, "Ambulance", "Take ambulance calls, send vehicles and record each trip",
             [SystemRoles.FrontOffice, SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
         new(AmbulanceFleet, "Ambulance", "Keep the ambulance fleet and its certificates", [SystemRoles.HospitalAdmin]),
+
+        new(LinenWard, "Linen", "Send a ward's soiled linen to the laundry and report what it has lost",
+            [SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
+        new(LinenManage, "Linen", "Issue, receive, wash and condemn linen, and set ward par levels",
+            [SystemRoles.StoreKeeper, SystemRoles.HospitalAdmin]),
     ];
 }
 
 /// <summary>
 /// Support services: CSSD with sterilizer loads, issue with expiry and recall by load (CSSD-01..05); dietary orders,
 /// ward-wise meal plans, kitchen production and delivery tracking with optional diet charges (DIET-01..05); and the
-/// canteen POS with GST, staff credit and payroll deduction (CAN-01..04); bio-medical waste; the mortuary; and the ambulance fleet.
+/// canteen POS with GST, staff credit and payroll deduction (CAN-01..04); bio-medical waste; the mortuary; the ambulance fleet; and linen and laundry.
 /// </summary>
 public sealed class SupportServicesModule : IModule
 {
@@ -113,6 +125,7 @@ public sealed class SupportServicesModule : IModule
         services.AddScoped<WasteService>();
         services.AddScoped<MortuaryService>();
         services.AddScoped<AmbulanceService>();
+        services.AddScoped<LinenService>();
 
         // The canteen's day for Billing's Tally day book (Billing reads it without referencing this module).
         services.AddScoped<ICounterSalesSource, CanteenDayBookSource>();
@@ -131,5 +144,6 @@ public sealed class SupportServicesModule : IModule
         WasteEndpoints.Map(endpoints);
         MortuaryEndpoints.Map(endpoints);
         AmbulanceEndpoints.Map(endpoints);
+        LinenEndpoints.Map(endpoints);
     }
 }

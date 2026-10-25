@@ -36,6 +36,18 @@ internal static class SeedCatalog
         new("AMB-KM", "Ambulance — each km beyond the first 10", 25m),
     ];
 
+    /// <summary>A starting linen list with the washes each piece usually lasts (hospitals adjust it to their linen).</summary>
+    public static readonly (string Code, string Name, int LifeWashes)[] Linen =
+    [
+        ("BEDSHEET", "Bed sheet", 150),
+        ("DRAWSHEET", "Draw sheet", 150),
+        ("PILLOWCOVER", "Pillow cover", 150),
+        ("GOWN", "Patient gown", 100),
+        ("OTGOWN", "OT gown", 75),
+        ("TOWEL", "Towel", 100),
+        ("BLANKET", "Blanket", 50),
+    ];
+
     public static readonly DietSeed[] Diets =
     [
         new("NORMAL", "Normal diet", DietCategory.Regular, "DIET-STD", MealSlots.Standard, "Regular hospital diet."),

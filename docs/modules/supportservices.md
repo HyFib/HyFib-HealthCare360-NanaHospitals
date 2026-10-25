@@ -6,7 +6,7 @@ SRS **CSSD-01..05**, **DIET-01..05**, **CAN-01..04**.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.SupportServices` (references Patients and Inpatient — layer 6 → 5,
 for the admission's current ward and bed). Schema `supportservices`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (167 unit tests), and the end-to-end `DietChargeTests`
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (174 unit tests), and the end-to-end `DietChargeTests`
 in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill with the setting on, and none with it off).
 
 ## Permissions
@@ -34,6 +34,8 @@ in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill wit
 | `mortuary.configure` | Set up the cold-storage slots | HospitalAdmin |
 | `ambulance.dispatch` | Take ambulance calls, send vehicles and record each trip; the trip log | FrontOffice, Nurse, HospitalAdmin |
 | `ambulance.fleet` | Keep the ambulance fleet and its certificates | HospitalAdmin |
+| `linen.ward` | Send a ward's soiled linen to the laundry and report what it has lost | Nurse, HospitalAdmin |
+| `linen.manage` | Issue, receive, wash and condemn linen; ward par levels; the linen list | StoreKeeper, HospitalAdmin |
 
 ## CSSD — `/api/v1/cssd`
 | Method | Path | Permission | Request → response |
@@ -230,6 +232,27 @@ trip log gives the period's trips, kilometres, and the median call-to-dispatch a
 
 Not built: GPS tracking, the crew's patient care record, fuel and maintenance logs.
 
+## Linen and laundry — `/api/v1/linen`
+Linen is counted in pieces at three places: clean in the linen store, in use on each ward (against the ward's par level,
+the clean pieces it should hold), and soiled at the laundry. Every movement is counted: new linen received into the
+store, issued to a ward, sent back soiled by the ward, washed back to the store, condemned (torn, stained beyond washing
+or worn out, from the store or the laundry), or lost at a ward's count. No place gives up more than it holds
+(`linen.short`). Soiled linen from an isolation room or soaked in blood or body fluids is sent as infected and kept apart
+at the laundry; it is washed only by thermal disinfection, and a batch counts as disinfected only at 71 °C held for 3
+minutes or 65 °C for 10 (HTM 01-04); below that the batch is refused (`linen.not_disinfected`) to be washed again.
+Each item has its expected life in washes; the washes so far per piece in circulation show how near the stock is to it.
+A ward records soiled returns and losses; the rest is the linen store's and the laundry's.
+
+| Method | Path | Permission | Request → Response |
+|---|---|---|---|
+| GET · POST | `/items` | `linen.ward` or `linen.manage` · `linen.manage` | → `LinenItemDto[]` (with average washes) / `SaveLinenItemRequest{id?, code, name, lifeWashes, isActive, version?}` |
+| GET | `/wards` | `linen.ward` or `linen.manage` | → the facility's wards in use |
+| GET | `/stock` | `linen.ward` or `linen.manage` | → `LinenStock` (each item at the store, wards, laundry and infected; each ward against its par) |
+| POST | `/par` | `linen.manage` | `SetParRequest{wardId, lines: [{linenItemId, quantity}]}` |
+| GET · POST | `/movements?from&to&kind` | `linen.ward` or `linen.manage` | → the period's movements (at most 92 days) / `RecordLinenRequest{kind, wardId?, infected, process?, temperatureC?, holdMinutes?, condemnReason?, from?, notes?, lines}`; a ward may record only `SoiledReturn` and `Lost` |
+
+Not built: RFID tags on pieces, an outsourced laundry's challan, linen charges.
+
 ## Integration events
 | Event | Direction | Notes |
 |---|---|---|
@@ -248,16 +271,19 @@ No integration events are raised.
 
 ## Settings, numbers, notifications, jobs, seed
 * Settings: `supportservices.diet.chargesEnabled` (bool, default false; explained on the staff app's Settings page), `supportservices.canteen.staffCreditLimit` (decimal, default 3000; 0 = no limit).
-* Number series (yearly): `cssd-wash` → `{FAC}CW{YY}{SEQ:6}`, `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`, `mortuary-body` → `{FAC}MB{YY}{SEQ:5}`, `ambulance-trip` → `{FAC}AT{YY}{SEQ:6}`.
+* Number series (yearly): `cssd-wash` → `{FAC}CW{YY}{SEQ:6}`, `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`, `mortuary-body` → `{FAC}MB{YY}{SEQ:5}`, `ambulance-trip` → `{FAC}AT{YY}{SEQ:6}`, `linen-movement` → `{FAC}LN{YY}{SEQ:6}`.
 * Notifications: in-app only — CSSD recall (critical) and count discrepancy (warning) to `cssd.recalls`; urgent request (warning) to `cssd.process`.
 * Job: `DailyMealPlanJob` — at start-up and hourly when `PlatformOptions.RunsJobs`: generates/refreshes today's and tomorrow's plans for every facility and posts today's diet charges when enabled.
-* Seed `SupportServicesSeeder` (Order 170, every installation, idempotent by code): service items `DIET-STD` (Rs. 300/day), `DIET-THER` (Rs. 450/day), `DIET-ENT` (Rs. 400/day), and the ambulance fares `AMB-BLS` (Rs. 1,000), `AMB-ALS` (Rs. 2,500), `AMB-PTS` (Rs. 800), `AMB-HEARSE` (Rs. 1,200) and `AMB-KM` (Rs. 25 a km), SAC 999315; 13 diet types (NORMAL, SOFT, SEMI-SOLID, LIQUID, CLEAR-LIQUID, DIABETIC, RENAL, CARDIAC, HIGH-PROTEIN, LOW-FAT, BLAND, RT-FEED, NPO); 8 instrument sets for the default facility (MAJOR-TRAY, MINOR-TRAY, LSCS-SET, DELIVERY-SET, DRESSING-SET, SUTURE-SET, CATH-SET, LAPARO-SET); a 28-item canteen menu (idli, dosa, meals, thali, biryani, tea, coffee, snacks, juices, sweets, packaged water and biscuits with tracked stock; HSN 220190 for water, 190531 for biscuits and 080119 for tender coconut, SAC 996333 for everything made in the canteen).
+* Seed `SupportServicesSeeder` (Order 170, every installation, idempotent by code): service items `DIET-STD` (Rs. 300/day), `DIET-THER` (Rs. 450/day), `DIET-ENT` (Rs. 400/day), and the ambulance fares `AMB-BLS` (Rs. 1,000), `AMB-ALS` (Rs. 2,500), `AMB-PTS` (Rs. 800), `AMB-HEARSE` (Rs. 1,200) and `AMB-KM` (Rs. 25 a km), SAC 999315; 13 diet types (NORMAL, SOFT, SEMI-SOLID, LIQUID, CLEAR-LIQUID, DIABETIC, RENAL, CARDIAC, HIGH-PROTEIN, LOW-FAT, BLAND, RT-FEED, NPO); a linen list for the default facility (bed sheet, draw sheet, pillow cover, patient gown, OT gown, towel, blanket, with their expected washes); 8 instrument sets for the default facility (MAJOR-TRAY, MINOR-TRAY, LSCS-SET, DELIVERY-SET, DRESSING-SET, SUTURE-SET, CATH-SET, LAPARO-SET); a 28-item canteen menu (idli, dosa, meals, thali, biryani, tea, coffee, snacks, juices, sweets, packaged water and biscuits with tracked stock; HSN 220190 for water, 190531 for biscuits and 080119 for tender coconut, SAC 996333 for everything made in the canteen).
 
 ## Tables (schema `supportservices`)
 
 Bio-medical waste: `waste_bags` (unique `barcode`), `waste_handovers` (unique `number`).
 
 Ambulance: `ambulance_vehicles` (unique registration), `ambulance_trips` (unique `number` per facility; one open trip per vehicle).
+
+Linen: `linen_items` (unique `code` per facility), `linen_holdings` (one count per item at each place; never below 0),
+`linen_movements` (unique `number` per facility), `linen_movement_lines`.
 
 Mortuary: `mortuary_slots` (unique `code` per facility), `body_records` (unique `number` per facility; one body in
 storage per slot).

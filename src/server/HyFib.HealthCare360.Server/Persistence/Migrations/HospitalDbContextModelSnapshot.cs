@@ -35937,6 +35937,346 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("planned_meals", "supportservices");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenHolding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("Infected")
+                        .HasColumnType("boolean")
+                        .HasColumnName("infected");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid>("LinenItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("linen_item_id");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("location");
+
+                    b.Property<int>("Par")
+                        .HasColumnType("integer")
+                        .HasColumnName("par");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<Guid?>("WardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ward_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_linen_holdings");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_linen_holdings_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_linen_holdings_is_deleted");
+
+                    b.HasIndex("LinenItemId")
+                        .HasDatabaseName("ix_linen_holdings_linen_item_id");
+
+                    b.HasIndex("WardId")
+                        .HasDatabaseName("ix_linen_holdings_ward_id");
+
+                    b.HasIndex("FacilityId", "LinenItemId", "Location", "WardId", "Infected")
+                        .IsUnique()
+                        .HasDatabaseName("ix_linen_holdings_facility_id_linen_item_id_location_ward_id_i")
+                        .HasFilter("is_deleted = false");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("FacilityId", "LinenItemId", "Location", "WardId", "Infected"), false);
+
+                    b.ToTable("linen_holdings", "supportservices", t =>
+                        {
+                            t.HasCheckConstraint("ck_linen_holdings_quantity", "quantity >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<int>("LifeWashes")
+                        .HasColumnType("integer")
+                        .HasColumnName("life_washes");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("Washes")
+                        .HasColumnType("integer")
+                        .HasColumnName("washes");
+
+                    b.HasKey("Id")
+                        .HasName("pk_linen_items");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_linen_items_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_linen_items_is_deleted");
+
+                    b.HasIndex("FacilityId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_linen_items_facility_id_code")
+                        .HasFilter("is_deleted = false");
+
+                    b.ToTable("linen_items", "supportservices");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<string>("ByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("by_name");
+
+                    b.Property<string>("CondemnReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("condemn_reason");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<int?>("HoldMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("hold_minutes");
+
+                    b.Property<bool>("Infected")
+                        .HasColumnType("boolean")
+                        .HasColumnName("infected");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("notes");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("number");
+
+                    b.Property<string>("Process")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("process");
+
+                    b.Property<int?>("TemperatureC")
+                        .HasColumnType("integer")
+                        .HasColumnName("temperature_c");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<Guid?>("WardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ward_id");
+
+                    b.Property<string>("WardName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ward_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_linen_movements");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_linen_movements_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_linen_movements_is_deleted");
+
+                    b.HasIndex("FacilityId", "At")
+                        .HasDatabaseName("ix_linen_movements_facility_id_at");
+
+                    b.HasIndex("FacilityId", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_linen_movements_facility_id_number");
+
+                    b.ToTable("linen_movements", "supportservices");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenMovementLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ItemName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("item_name");
+
+                    b.Property<Guid>("LinenItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("linen_item_id");
+
+                    b.Property<Guid>("LinenMovementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("linen_movement_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.HasKey("Id")
+                        .HasName("pk_linen_movement_lines");
+
+                    b.HasIndex("LinenItemId")
+                        .HasDatabaseName("ix_linen_movement_lines_linen_item_id");
+
+                    b.HasIndex("LinenMovementId")
+                        .HasDatabaseName("ix_linen_movement_lines_linen_movement_id");
+
+                    b.ToTable("linen_movement_lines", "supportservices");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Mortuary.BodyRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -42648,6 +42988,39 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_planned_meals_diet_orders_diet_order_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenHolding", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenItem", null)
+                        .WithMany()
+                        .HasForeignKey("LinenItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_linen_holdings_linen_item_linen_item_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Inpatient.Domain.Ward", null)
+                        .WithMany()
+                        .HasForeignKey("WardId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_linen_holdings_wards_ward_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenMovementLine", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenItem", null)
+                        .WithMany()
+                        .HasForeignKey("LinenItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_linen_movement_lines_linen_items_linen_item_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenMovement", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("LinenMovementId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_linen_movement_lines_linen_movements_linen_movement_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Mortuary.BodyRecord", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
@@ -43043,6 +43416,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd.WashCycle", b =>
                 {
                     b.Navigation("Trays");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Linen.LinenMovement", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Identity.Role", b =>
