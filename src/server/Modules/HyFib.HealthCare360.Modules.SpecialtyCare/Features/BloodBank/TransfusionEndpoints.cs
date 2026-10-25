@@ -102,7 +102,7 @@ internal static class TransfusionEndpoints
             return Error.NotFound(nameof(BloodRequest), id).ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(row.r.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(row.r.PatientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();

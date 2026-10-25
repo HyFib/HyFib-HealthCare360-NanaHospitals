@@ -13,6 +13,25 @@ public sealed class ClinicalAccess(HospitalDbContext db, PatientAccessGuard guar
     /// <summary>Guard + one PHI-access audit entry. Call once per request that returns clinical data.</summary>
     public async Task<Result> OpenAsync(Guid patientId, string what, CancellationToken ct)
     {
+        var access = await guard.EnsureCanOpenChartAsync(patientId, ct);
+        if (access.IsFailure)
+        {
+            return access;
+        }
+
+        await audit.PatientRecordAccessedAsync(patientId, what, ct);
+        return Result.Success();
+    }
+
+    /// <summary>Puts the record in the sensitive category of a diagnosis being recorded (R-4); saved with the caller's changes.</summary>
+    public Task FlagSensitiveAsync(Guid patientId, string? icdCode, CancellationToken ct) => guard.FlagFromDiagnosisAsync(patientId, icdCode, ct);
+
+    /// <summary>
+    /// Guard + audit for the safety facts every carer must see (allergies, alerts): closed only for a restricted (VIP)
+    /// record, not for a sensitive category, since a physiotherapist or dietitian treating the patient needs them.
+    /// </summary>
+    public async Task<Result> OpenSafetyFactsAsync(Guid patientId, string what, CancellationToken ct)
+    {
         var access = await guard.EnsureCanOpenAsync(patientId, ct);
         if (access.IsFailure)
         {
@@ -24,7 +43,7 @@ public sealed class ClinicalAccess(HospitalDbContext db, PatientAccessGuard guar
     }
 
     /// <summary>Guard only (writes are audited by the data-change audit).</summary>
-    public Task<Result> EnsureCanOpenAsync(Guid patientId, CancellationToken ct) => guard.EnsureCanOpenAsync(patientId, ct);
+    public Task<Result> EnsureCanOpenAsync(Guid patientId, CancellationToken ct) => guard.EnsureCanOpenChartAsync(patientId, ct);
 
     /// <summary>
     /// For new clinical entries: the patient must exist, be active and not merged away (clinical data recorded on a
@@ -46,6 +65,6 @@ public sealed class ClinicalAccess(HospitalDbContext db, PatientAccessGuard guar
             return Error.Rule("patient.merged", "This record was merged into another UHID. Record clinical data on the surviving record.");
         }
 
-        return await guard.EnsureCanOpenAsync(patientId, ct);
+        return await guard.EnsureCanOpenChartAsync(patientId, ct);
     }
 }

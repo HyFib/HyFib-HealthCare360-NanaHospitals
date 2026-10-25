@@ -168,7 +168,7 @@ internal sealed class AbdmBundleService(
     {
         foreach (var patientId in patients)
         {
-            if ((await guard.EnsureCanOpenAsync(patientId, ct)).Error is not { } error)
+            if ((await guard.EnsureCanOpenChartAsync(patientId, ct)).Error is not { } error)
             {
                 continue;
             }

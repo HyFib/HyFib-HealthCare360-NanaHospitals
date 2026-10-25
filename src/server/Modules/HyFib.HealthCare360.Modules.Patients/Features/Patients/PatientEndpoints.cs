@@ -22,6 +22,9 @@ internal static class PatientEndpoints
             .WithValidation<UpdatePatientRequest>();
         group.MapPost("/{id:guid}/merge", Merge).RequirePermission(PatientsPermissions.Merge).WithValidation<MergePatientRequest>();
         group.MapPost("/{id:guid}/break-glass", BreakGlass).RequirePermission(PatientsPermissions.BreakGlass).WithValidation<BreakGlassRequest>();
+        group.MapGet("/{id:guid}/sensitive-categories", GetSensitive).RequirePermission(PatientsPermissions.SensitiveManage);
+        group.MapPut("/{id:guid}/sensitive-categories", SetSensitive).RequirePermission(PatientsPermissions.SensitiveManage)
+            .WithValidation<SetSensitiveCategoriesRequest>();
 
         // Patient Portal: the signed-in patient's own record and family members sharing the verified mobile number.
         app.MapGet("/api/v1/portal/profiles", PortalProfiles).WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal)
@@ -206,4 +209,53 @@ internal static class PatientEndpoints
 
     private static async Task<IResult> BreakGlass(Guid id, BreakGlassRequest request, PatientAccessGuard guard, CancellationToken ct) =>
         (await guard.BreakGlassAsync(id, request.Reason.Trim(), ct)).ToOk();
+
+    private static async Task<IResult> GetSensitive(Guid id, PatientAccessGuard guard, HospitalDbContext db, CancellationToken ct)
+    {
+        var access = await guard.EnsureCanOpenChartAsync(id, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == id).Select(p => new { p.SensitiveCategories, p.Version }).FirstAsync(ct);
+        return TypedResults.Ok(new SensitiveCategoriesDto(Split(patient.SensitiveCategories), patient.Version));
+    }
+
+    /// <summary>A doctor puts the record in sensitive categories or takes it out (R-4), with a reason; audited as a security event.</summary>
+    private static async Task<IResult> SetSensitive(
+        Guid id, SetSensitiveCategoriesRequest request, PatientAccessGuard guard, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
+    {
+        var access = await guard.EnsureCanOpenChartAsync(id, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        var patient = await db.Set<Patient>().FirstAsync(p => p.Id == id, ct);
+        db.SetExpectedVersion(patient, request.Version);
+        var categories = request.Categories.Aggregate(SensitiveCategory.None, (all, c) => all | c);
+        if (categories == patient.SensitiveCategories)
+        {
+            return TypedResults.Ok(new SensitiveCategoriesDto(Split(categories), patient.Version));
+        }
+
+        var before = patient.SensitiveCategories;
+        patient.SensitiveCategories = categories;
+        audit.Add(new AuditEntry(AuditCategories.Security, "patient.sensitive_changed",
+            $"Sensitive categories changed from \"{Describe(before)}\" to \"{Describe(categories)}\": {request.Reason.Trim()}")
+        {
+            PatientId = id,
+            EntityType = nameof(Patient),
+            EntityId = id.ToString(),
+            Severity = AuditSeverity.Warning,
+        });
+        await db.SaveChangesAsync(ct);
+        return TypedResults.Ok(new SensitiveCategoriesDto(Split(categories), patient.Version));
+    }
+
+    private static string Describe(SensitiveCategory categories) => categories == SensitiveCategory.None ? "none" : SensitiveCategories.Describe(categories);
+
+    private static IReadOnlyList<SensitiveCategory> Split(SensitiveCategory categories) =>
+        [.. Enum.GetValues<SensitiveCategory>().Where(c => c != SensitiveCategory.None && categories.HasFlag(c))];
 }

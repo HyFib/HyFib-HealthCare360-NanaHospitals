@@ -38,7 +38,7 @@ internal sealed class PatientSharingService(HospitalDbContext db, PatientAccessG
         var consentGranted = RecordSharingConsent.IsGranted(consents);
 
         // The restricted-record guard is consulted only for consenting patients (it never overrides a missing consent).
-        var canOpen = consentGranted && (await guard.EnsureCanOpenAsync(patientId, ct)).IsSuccess;
+        var canOpen = consentGranted && (await guard.EnsureCanOpenChartAsync(patientId, ct)).IsSuccess;
         return new PatientAccess(PatientSharingRules.Decide(new PatientSharingFacts(true, false, null, consentGranted, canOpen)));
     }
 

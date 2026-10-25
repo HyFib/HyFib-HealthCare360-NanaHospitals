@@ -171,7 +171,7 @@ internal static class RpmEnrollmentEndpoints
         }
 
         var enrollment = row.Enrollment;
-        var access = await guard.EnsureCanOpenAsync(enrollment.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(enrollment.PatientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();
@@ -231,7 +231,7 @@ internal static class RpmEnrollmentEndpoints
             return Error.NotFound(nameof(RpmEnrollment), id).ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(patientId.Value, ct);
+        var access = await guard.EnsureCanOpenChartAsync(patientId.Value, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();
@@ -299,7 +299,7 @@ internal static class RpmEnrollmentEndpoints
             return Error.NotFound(nameof(RpmEnrollment), id).ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(enrollment.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(enrollment.PatientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();
@@ -334,7 +334,7 @@ internal static class RpmEnrollmentEndpoints
             return Error.NotFound(nameof(RpmEnrollment), id).ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(enrollment.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(enrollment.PatientId, ct);
         return access.IsFailure
             ? access.Error!.ToProblem()
             : TypedResults.Ok(await insights.AdherenceAsync(enrollment, days ?? Adherence.DefaultWindowDays, ct));

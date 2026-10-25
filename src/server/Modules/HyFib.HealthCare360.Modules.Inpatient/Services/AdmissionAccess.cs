@@ -24,7 +24,7 @@ public sealed class AdmissionAccess(HospitalDbContext db, PatientAccessGuard gua
             return Error.NotFound(nameof(Admission), admissionId);
         }
 
-        var access = await guard.EnsureCanOpenAsync(admission.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(admission.PatientId, ct);
         if (access.IsFailure)
         {
             return access.Error!;
@@ -42,7 +42,7 @@ public sealed class AdmissionAccess(HospitalDbContext db, PatientAccessGuard gua
             return Error.NotFound(nameof(Admission), admissionId);
         }
 
-        var access = await guard.EnsureCanOpenAsync(admission.PatientId, ct);
+        var access = await guard.EnsureCanOpenChartAsync(admission.PatientId, ct);
         if (access.IsFailure)
         {
             return access.Error!;

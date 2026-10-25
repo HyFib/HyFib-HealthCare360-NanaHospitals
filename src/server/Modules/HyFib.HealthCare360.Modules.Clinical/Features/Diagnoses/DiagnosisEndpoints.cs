@@ -91,6 +91,9 @@ internal static class DiagnosisEndpoints
         };
         diagnosis.ChangeStatus(request.Status, time.Today());
         db.Add(diagnosis);
+
+        // An HIV, mental-illness or abortion diagnosis makes the record confidential (R-4), in the same save.
+        await access.FlagSensitiveAsync(encounter.PatientId, code, ct);
         await db.SaveChangesAsync(ct);
         return TypedResults.Created($"/api/v1/emr/patients/{encounter.PatientId}/diagnoses", ToDto(diagnosis));
     }
