@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.SupportServices.Features.Canteen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Cssd;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Dietary;
+using HyFib.HealthCare360.Modules.SupportServices.Features.Waste;
 using HyFib.HealthCare360.Modules.SupportServices.Services;
 using HyFib.HealthCare360.Platform.Numbering;
 
@@ -25,6 +26,12 @@ public static class SupportServicesPermissions
     public const string CanteenMenu = "canteen.menu.manage";
     public const string CanteenReports = "canteen.reports.read";
     public const string CanteenCredit = "canteen.credit.manage";
+
+    /// <summary>Weigh and bar-code bags of bio-medical waste where it is generated.</summary>
+    public const string WasteRecord = "bmw.record";
+
+    /// <summary>Hand bags over to the treatment facility, and keep the register and the annual report (Form IV).</summary>
+    public const string WasteManage = "bmw.manage";
 
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
@@ -51,6 +58,11 @@ public static class SupportServicesPermissions
         new(CanteenReports, "Canteen", "View canteen sales reports", [SystemRoles.CanteenManager, SystemRoles.HospitalAdmin, SystemRoles.Accountant]),
         new(CanteenCredit, "Canteen", "Staff credit balances, statements, payroll export and settlement",
             [SystemRoles.CanteenManager, SystemRoles.HrManager, SystemRoles.HospitalAdmin]),
+
+        new(WasteRecord, "Bio-medical waste", "Weigh and bar-code bags of bio-medical waste where it is generated",
+            [SystemRoles.Nurse, SystemRoles.LabTechnician, SystemRoles.CssdTechnician, SystemRoles.OtCoordinator, SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
+        new(WasteManage, "Bio-medical waste", "Hand waste over to the treatment facility, the register and the annual report (Form IV)",
+            [SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
     ];
 }
 
@@ -76,6 +88,7 @@ public sealed class SupportServicesModule : IModule
         services.AddScoped<MealPlanService>();
         services.AddScoped<CanteenService>();
         services.AddScoped<StaffCreditService>();
+        services.AddScoped<WasteService>();
 
         // The canteen's day for Billing's Tally day book (Billing reads it without referencing this module).
         services.AddScoped<ICounterSalesSource, CanteenDayBookSource>();
@@ -91,5 +104,6 @@ public sealed class SupportServicesModule : IModule
         MealPlanEndpoints.Map(endpoints);
         CanteenEndpoints.Map(endpoints);
         StaffCreditEndpoints.Map(endpoints);
+        WasteEndpoints.Map(endpoints);
     }
 }

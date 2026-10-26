@@ -28,6 +28,8 @@ in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill wit
 | `canteen.menu.manage` | Menu, prices, stock | CanteenManager, HospitalAdmin |
 | `canteen.reports.read` | Sales reports | CanteenManager, HospitalAdmin, Accountant |
 | `canteen.credit.manage` | Staff credit balances, statements, payroll export and settlement | CanteenManager, HrManager, HospitalAdmin |
+| `bmw.record` | Weigh and bar-code bags of bio-medical waste where it is generated | Nurse, LabTechnician, CssdTechnician, OtCoordinator, QualityManager, HospitalAdmin |
+| `bmw.manage` | Hand waste over to the treatment facility, the register and the annual report (Form IV) | QualityManager, HospitalAdmin |
 
 ## CSSD — `/api/v1/cssd`
 | Method | Path | Permission | Request → response |
@@ -150,6 +152,28 @@ active employees in the HR directory (unknown codes → field error on `employee
 `canteen.employee_inactive`); the bill carries the employee's name from HR, and the outstanding balance must stay within
 `supportservices.canteen.staffCreditLimit`.
 
+## Bio-medical waste — `/api/v1/bmw` (BMW Management Rules 2016, as amended in 2018)
+Each bag or container is weighed and bar-coded where the waste is generated (`bmw-bag` number), in its Schedule I
+colour: yellow (anatomical, soiled, discarded medicines, chemical, lab and cytotoxic), red (contaminated recyclable
+plastics), white (sharps, in translucent puncture-proof containers) or blue (glassware and metallic implants). Bags wait
+in the storage area until the common bio-medical waste treatment facility (CBWTF) collects them; untreated waste is not
+kept beyond 48 hours, so older bags are flagged, and each handover counts the bags that were. A bag labelled in error is
+voided with its reason before it leaves. The month's register (day by category, in kg) is what the hospital publishes on
+its website; the year's totals, with the authorisation (`bmw.authorisationNumber`) and the CBWTF (`bmw.cbwtf`) set under
+Administration › Settings, are for the annual report (Form IV) due to the State Pollution Control Board by 30 June.
+
+| Method | Path | Permission | Request → Response |
+|---|---|---|---|
+| GET | `/bags?from&to` · `/bags/pending` | `bmw.record` or `bmw.manage` | → `WasteBagDto[]` (at most 92 days) / `PendingWaste` (oldest first, totals by colour, `overdue`) |
+| POST | `/bags` | `bmw.record` | `RecordWasteBagRequest{category, departmentId?, source?, weightKg, collectedAt?}` (more than 0, at most 50 kg; not in the future nor over a week old) → the bag with its bar code |
+| POST | `/bags/{id}/void` | `bmw.record` or `bmw.manage` | `VoidWasteBagRequest{reason, version}`; 422 `bmw.bag_not_pending` once handed over |
+| GET · POST | `/handovers` | `bmw.manage` | → the last week's `WasteHandoverDto[]` / `HandOverWasteRequest{barcodes, cbwtf?, vehicleNumber, receivedBy, receiptNumber?}`: every bag must be waiting; the handover counts those kept beyond 48 hours |
+| GET | `/register?year&month` · `/register/export` | `bmw.manage` | → `WasteMonth` / CSV |
+| GET | `/annual?year` | `bmw.manage` | → `WasteYear` (Form IV totals by colour, average a day, handovers, late and voided bags) |
+
+Not built: printing the bar-code label (the number is shown to write or print on the bag), liquid waste and the Form I
+accident report.
+
 ## Integration events
 | Event | Direction | Notes |
 |---|---|---|
@@ -173,6 +197,9 @@ No integration events are raised.
 * Seed `SupportServicesSeeder` (Order 170, every installation, idempotent by code): service items `DIET-STD` (Rs. 300/day), `DIET-THER` (Rs. 450/day), `DIET-ENT` (Rs. 400/day); 13 diet types (NORMAL, SOFT, SEMI-SOLID, LIQUID, CLEAR-LIQUID, DIABETIC, RENAL, CARDIAC, HIGH-PROTEIN, LOW-FAT, BLAND, RT-FEED, NPO); 8 instrument sets for the default facility (MAJOR-TRAY, MINOR-TRAY, LSCS-SET, DELIVERY-SET, DRESSING-SET, SUTURE-SET, CATH-SET, LAPARO-SET); a 28-item canteen menu (idli, dosa, meals, thali, biryani, tea, coffee, snacks, juices, sweets, packaged water and biscuits with tracked stock; HSN 220190 for water, 190531 for biscuits and 080119 for tender coconut, SAC 996333 for everything made in the canteen).
 
 ## Tables (schema `supportservices`)
+
+Bio-medical waste: `waste_bags` (unique `barcode`), `waste_handovers` (unique `number`).
+
 `instrument_sets`, `instrument_set_items`, `cssd_requests`, `cssd_request_lines`, `soiled_receipts`,
 `soiled_receipt_lines`, `wash_cycles`, `wash_cycle_trays`, `sterilization_loads`, `sterile_packs` (with
 `wash_cycle_id`), `set_issues`, `diet_types`, `diet_orders`,

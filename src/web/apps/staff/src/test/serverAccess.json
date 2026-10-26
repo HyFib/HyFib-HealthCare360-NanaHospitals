@@ -165,6 +165,7 @@
       "visits.read"
     ],
     "CssdTechnician": [
+      "bmw.record",
       "cssd.masters.manage",
       "cssd.process",
       "cssd.read",
@@ -361,6 +362,8 @@
       "billing.tally.export",
       "billing.tariffs.manage",
       "bloodbank.read",
+      "bmw.manage",
+      "bmw.record",
       "canteen.credit.manage",
       "canteen.menu.manage",
       "canteen.reports.read",
@@ -515,6 +518,7 @@
       "visits.read"
     ],
     "LabTechnician": [
+      "bmw.record",
       "clinical.flags.read",
       "files.read",
       "files.write",
@@ -583,6 +587,7 @@
       "bloodbank.reactions.report",
       "bloodbank.read",
       "bloodbank.requests.create",
+      "bmw.record",
       "cardiology.studies.read",
       "clinical.alerts.manage",
       "clinical.allergies.manage",
@@ -645,6 +650,7 @@
       "visits.read"
     ],
     "OtCoordinator": [
+      "bmw.record",
       "clinical.flags.read",
       "cssd.read",
       "cssd.recalls",
@@ -739,6 +745,8 @@
     "QualityManager": [
       "admin.audit.read",
       "analytics.clinical.read",
+      "bmw.manage",
+      "bmw.record",
       "cssd.read",
       "cssd.recalls",
       "feedback.complaints.escalations",
@@ -952,6 +960,12 @@
     "/api/v1/blood-bank/requests/{id:guid}/compatible-units bloodbank.crossmatch.perform",
     "/api/v1/blood-bank/units bloodbank.read",
     "/api/v1/blood-bank/units/by-number/{unitNumber} bloodbank.read",
+    "/api/v1/bmw/annual bmw.manage",
+    "/api/v1/bmw/bags bmw.record|bmw.manage",
+    "/api/v1/bmw/bags/pending bmw.record|bmw.manage",
+    "/api/v1/bmw/handovers bmw.manage",
+    "/api/v1/bmw/register bmw.manage",
+    "/api/v1/bmw/register/export bmw.manage",
     "/api/v1/canteen/menu canteen.sales.create|canteen.menu.manage",
     "/api/v1/canteen/reports/daily canteen.reports.read",
     "/api/v1/canteen/sales canteen.sales.create|canteen.reports.read",
@@ -1560,6 +1574,9 @@
     "POST /api/v1/blood-bank/requests/{id:guid}/grouping bloodbank.crossmatch.perform",
     "POST /api/v1/blood-bank/requests/{id:guid}/issues bloodbank.units.issue",
     "POST /api/v1/blood-bank/units/{id:guid}/discard bloodbank.inventory.manage",
+    "POST /api/v1/bmw/bags bmw.record",
+    "POST /api/v1/bmw/bags/{id:guid}/void bmw.record|bmw.manage",
+    "POST /api/v1/bmw/handovers bmw.manage",
     "POST /api/v1/canteen/menu canteen.menu.manage",
     "POST /api/v1/canteen/menu/{id:guid}/stock canteen.menu.manage",
     "POST /api/v1/canteen/sales canteen.sales.create",

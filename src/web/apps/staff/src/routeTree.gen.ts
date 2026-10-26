@@ -49,6 +49,7 @@ import { Route as AppBillingTariffsRouteImport } from './routes/_app/billing/tar
 import { Route as AppBloodBankIndexRouteImport } from './routes/_app/blood-bank/index'
 import { Route as AppBloodBankReactionsRouteImport } from './routes/_app/blood-bank/reactions'
 import { Route as AppBloodBankUnitsRouteImport } from './routes/_app/blood-bank/units'
+import { Route as AppBmwIndexRouteImport } from './routes/_app/bmw/index'
 import { Route as AppCanteenIndexRouteImport } from './routes/_app/canteen/index'
 import { Route as AppCanteenCreditRouteImport } from './routes/_app/canteen/credit'
 import { Route as AppCanteenMenuRouteImport } from './routes/_app/canteen/menu'
@@ -524,6 +525,11 @@ const AppBloodBankReactionsRoute = AppBloodBankReactionsRouteImport.update({
 const AppBloodBankUnitsRoute = AppBloodBankUnitsRouteImport.update({
   id: '/blood-bank/units',
   path: '/blood-bank/units',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBmwIndexRoute = AppBmwIndexRouteImport.update({
+  id: '/bmw/',
+  path: '/bmw/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCanteenIndexRoute = AppCanteenIndexRouteImport.update({
@@ -2097,6 +2103,7 @@ export interface FileRoutesByFullPath {
   '/assets/': typeof AppAssetsIndexRoute
   '/billing/': typeof AppBillingIndexRoute
   '/blood-bank/': typeof AppBloodBankIndexRoute
+  '/bmw/': typeof AppBmwIndexRoute
   '/canteen/': typeof AppCanteenIndexRoute
   '/cardiology/': typeof AppCardiologyIndexRoute
   '/crm/': typeof AppCrmIndexRoute
@@ -2411,6 +2418,7 @@ export interface FileRoutesByTo {
   '/assets': typeof AppAssetsIndexRoute
   '/billing': typeof AppBillingIndexRoute
   '/blood-bank': typeof AppBloodBankIndexRoute
+  '/bmw': typeof AppBmwIndexRoute
   '/canteen': typeof AppCanteenIndexRoute
   '/cardiology': typeof AppCardiologyIndexRoute
   '/crm': typeof AppCrmIndexRoute
@@ -2727,6 +2735,7 @@ export interface FileRoutesById {
   '/_app/assets/': typeof AppAssetsIndexRoute
   '/_app/billing/': typeof AppBillingIndexRoute
   '/_app/blood-bank/': typeof AppBloodBankIndexRoute
+  '/_app/bmw/': typeof AppBmwIndexRoute
   '/_app/canteen/': typeof AppCanteenIndexRoute
   '/_app/cardiology/': typeof AppCardiologyIndexRoute
   '/_app/crm/': typeof AppCrmIndexRoute
@@ -3043,6 +3052,7 @@ export interface FileRouteTypes {
     | '/assets/'
     | '/billing/'
     | '/blood-bank/'
+    | '/bmw/'
     | '/canteen/'
     | '/cardiology/'
     | '/crm/'
@@ -3357,6 +3367,7 @@ export interface FileRouteTypes {
     | '/assets'
     | '/billing'
     | '/blood-bank'
+    | '/bmw'
     | '/canteen'
     | '/cardiology'
     | '/crm'
@@ -3672,6 +3683,7 @@ export interface FileRouteTypes {
     | '/_app/assets/'
     | '/_app/billing/'
     | '/_app/blood-bank/'
+    | '/_app/bmw/'
     | '/_app/canteen/'
     | '/_app/cardiology/'
     | '/_app/crm/'
@@ -4131,6 +4143,13 @@ declare module '@tanstack/react-router' {
       path: '/blood-bank/units'
       fullPath: '/blood-bank/units'
       preLoaderRoute: typeof AppBloodBankUnitsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/bmw/': {
+      id: '/_app/bmw/'
+      path: '/bmw'
+      fullPath: '/bmw/'
+      preLoaderRoute: typeof AppBmwIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/canteen/': {
@@ -6187,6 +6206,7 @@ interface AppRouteChildren {
   AppAssetsIndexRoute: typeof AppAssetsIndexRoute
   AppBillingIndexRoute: typeof AppBillingIndexRoute
   AppBloodBankIndexRoute: typeof AppBloodBankIndexRoute
+  AppBmwIndexRoute: typeof AppBmwIndexRoute
   AppCanteenIndexRoute: typeof AppCanteenIndexRoute
   AppCardiologyIndexRoute: typeof AppCardiologyIndexRoute
   AppCrmIndexRoute: typeof AppCrmIndexRoute
@@ -6500,6 +6520,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAssetsIndexRoute: AppAssetsIndexRoute,
   AppBillingIndexRoute: AppBillingIndexRoute,
   AppBloodBankIndexRoute: AppBloodBankIndexRoute,
+  AppBmwIndexRoute: AppBmwIndexRoute,
   AppCanteenIndexRoute: AppCanteenIndexRoute,
   AppCardiologyIndexRoute: AppCardiologyIndexRoute,
   AppCrmIndexRoute: AppCrmIndexRoute,
