@@ -47,6 +47,11 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `mrd.deaths.certify` | Certify the cause of death (MCCD, Form 4) | Doctor |
 | `mrd.vital.register` | The births and deaths registers, and reporting them to the Registrar | MrdOfficer, HospitalAdmin |
 | `mrd.idsp.report` | Notifiable diseases (IDSP): the cases, the weekly P and L forms to IHIP, the outbreak alerts | MrdOfficer, QualityManager |
+| `clinical.er.board` | The ER board and the cases on it | Doctor, Nurse, FrontOffice, HospitalAdmin |
+| `clinical.er.triage` | Triage emergency patients on the ESI | Nurse, Doctor |
+| `clinical.er.disposition` | See emergency patients and decide where they go | Doctor |
+| `clinical.er.mlc` | Enter medico-legal cases in the MLC register and record the police intimation | Doctor |
+| `mrd.mlc.register` | The MLC register | MrdOfficer, HospitalAdmin |
 | `mrd.catalogue.import` | Import the WHO ICD-10 and CMS ICD-10-PCS catalogue files (changes every user's code lists) | HospitalAdmin |
 | `healthcheck.manage` | Packages, bookings, corporate batches | HospitalAdmin, FrontOffice |
 
@@ -616,6 +621,36 @@ visit's payer as before.
 | GET | `/portal/discharge-summaries/{id}/pdf` | `application/pdf` attachment `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`: the printed discharge summary (signed or amended only, 404 for a draft); audit "Downloaded discharge summary as a PDF (patient portal)"; 503 `pdf.unavailable` |
 | POST | `/portal/record-requests` | `PortalRecordRequest{patientId, purpose, details}` → 201 |
 
+## The emergency department
+Every emergency visit opens a case (`EmergencyCase`, from `VisitCreated` in the visit's own transaction), so the ER
+board (`GET /api/v1/emergency/board`) never misses an arrival. The board lists the open cases, untriaged first, then by
+ESI level and arrival, with the minutes in the department, door to triage and door to doctor, and the MLC flag (red when
+the police have not been told within the hour). It refreshes on the facility event `er.changed`. A restricted patient
+the user may not open shows initials.
+
+* **Triage** (`POST /cases/{id}/triage`, `clinical.er.triage`) follows the Emergency Severity Index, version 4. The
+  nurse answers decision points A (life-saving intervention), B (high-risk situation, new confusion, severe pain or
+  distress) and C (resources expected: none, one, many); the measured vitals add to them: a GCS of 8 or less is
+  unresponsive (A), a GCS under 15 is altered and a pain score of 7 or more is severe (B), a fever of 38 °C in a baby
+  under three months is high risk (B), and for many resources a pulse or breathing rate above the age's danger zone
+  (180/50 under three months, 160/40 to three years, 140/30 to eight, 100/20 above) or SpO2 below 92 % gives
+  "consider level 2" (D). `/triage/preview` shows the level and the reasons as the nurse types. A level other than the
+  algorithm's needs a reason, and both are kept. The triage vitals are written to the patient's vitals chart once.
+  Triage can be repeated; the board shows the latest.
+* **The doctor** (`clinical.er.disposition`) marks when they first see the patient (`/seen`, which starts the visit),
+  and records the disposition (`/disposition`): discharged, admitted, referred to another hospital (named), LAMA,
+  absconded or died (these three with notes). The case leaves the board and the emergency visit closes; an admitted
+  patient's stay goes on as the admission's own visit. A patient must be triaged first, unless they died or absconded.
+* **Medico-legal cases** (`PUT /cases/{id}/mlc`, `clinical.er.mlc`): the doctor enters the case in the MLC register,
+  numbered `mlc-register`: who brought the patient, the alleged cause (road accident, assault, sexual assault, burns,
+  poisoning…), where and when, the injuries as examined, the police station, and the doctor's council registration.
+  The visit is marked MLC with the number (and the chart is kept without a retention limit). The police intimation
+  (`/mlc/intimation`) records when, how, who received it and the GD/DD entry; after it the entry's facts cannot change
+  (422 `mlc.intimated`). `/mlc/document` prints the intimation; `GET /mlc?from&to` is the register
+  (`clinical.er.mlc` or `mrd.mlc.register`).
+* **Not built:** ER bed allocation and a tracking display for the waiting area; trauma scores beyond ESI; the wound
+  certificate and the formal MLC report to the court.
+
 ## The doctor's worklist (EMR-01)
 
 *My worklist* (`/emr`) is the doctor's home screen. The filters (date, department, doctor) apply to every list, and
@@ -791,6 +826,7 @@ Real-time (ids only): `clinical.order.placed` / `clinical.order.changed` (facili
 | `mrd-request` | `{FAC}RR{YY}{SEQ:6}` | yearly, per facility |
 | `birth-register` | `{FAC}BRN{YY}{SEQ:5}` | yearly, per facility |
 | `death-register` | `{FAC}DTH{YY}{SEQ:5}` | yearly, per facility |
+| `mlc-register` | `{FAC}MLC{YY}{SEQ:5}` | yearly, per facility |
 
 ## Notification templates
 

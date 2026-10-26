@@ -31,6 +31,10 @@ public static class ClinicalNumberSeries
     public static NumberSeriesDefinition DeathRegister { get; } =
         new("death-register", "Death register", "Medical records", "{FAC}DTH{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
 
+    /// <summary>The hospital's medico-legal case register, from 1 each calendar year.</summary>
+    public static NumberSeriesDefinition MlcRegister { get; } =
+        new("mlc-register", "Medico-legal case register", "Emergency", "{FAC}MLC{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
+
     internal static IEnumerable<NumberSeriesDefinition> All { get; } =
-        [Prescription, ClinicalOrder, RecordRequest, HealthCheckupBooking, CorporateCheckupBatch, BirthRegister, DeathRegister];
+        [Prescription, ClinicalOrder, RecordRequest, HealthCheckupBooking, CorporateCheckupBatch, BirthRegister, DeathRegister, MlcRegister];
 }

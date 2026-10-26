@@ -79,6 +79,8 @@ import { Route as AppDoctorFeesAccrualsRouteImport } from './routes/_app/doctor-
 import { Route as AppDoctorFeesPayoutsRouteImport } from './routes/_app/doctor-fees/payouts'
 import { Route as AppDoctorFeesRulesRouteImport } from './routes/_app/doctor-fees/rules'
 import { Route as AppDoctorFeesStatementsRouteImport } from './routes/_app/doctor-fees/statements'
+import { Route as AppEmergencyIndexRouteImport } from './routes/_app/emergency/index'
+import { Route as AppEmergencyMlcRouteImport } from './routes/_app/emergency/mlc'
 import { Route as AppEmrIndexRouteImport } from './routes/_app/emr/index'
 import { Route as AppEmrControlledDrugsRouteImport } from './routes/_app/emr/controlled-drugs'
 import { Route as AppEmrDrugSafetyRouteImport } from './routes/_app/emr/drug-safety'
@@ -677,6 +679,16 @@ const AppDoctorFeesRulesRoute = AppDoctorFeesRulesRouteImport.update({
 const AppDoctorFeesStatementsRoute = AppDoctorFeesStatementsRouteImport.update({
   id: '/doctor-fees/statements',
   path: '/doctor-fees/statements',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppEmergencyIndexRoute = AppEmergencyIndexRouteImport.update({
+  id: '/emergency/',
+  path: '/emergency/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppEmergencyMlcRoute = AppEmergencyMlcRouteImport.update({
+  id: '/emergency/mlc',
+  path: '/emergency/mlc',
   getParentRoute: () => AppRoute,
 } as any)
 const AppEmrIndexRoute = AppEmrIndexRouteImport.update({
@@ -2031,6 +2043,7 @@ export interface FileRoutesByFullPath {
   '/doctor-fees/payouts': typeof AppDoctorFeesPayoutsRoute
   '/doctor-fees/rules': typeof AppDoctorFeesRulesRoute
   '/doctor-fees/statements': typeof AppDoctorFeesStatementsRoute
+  '/emergency/mlc': typeof AppEmergencyMlcRoute
   '/emr/controlled-drugs': typeof AppEmrControlledDrugsRoute
   '/emr/drug-safety': typeof AppEmrDrugSafetyRoute
   '/emr/order-sets': typeof AppEmrOrderSetsRoute
@@ -2125,6 +2138,7 @@ export interface FileRoutesByFullPath {
   '/dialysis/': typeof AppDialysisIndexRoute
   '/dietary/': typeof AppDietaryIndexRoute
   '/doctor-fees/': typeof AppDoctorFeesIndexRoute
+  '/emergency/': typeof AppEmergencyIndexRoute
   '/emr/': typeof AppEmrIndexRoute
   '/feedback/': typeof AppFeedbackIndexRoute
   '/front-office/': typeof AppFrontOfficeIndexRoute
@@ -2348,6 +2362,7 @@ export interface FileRoutesByTo {
   '/doctor-fees/payouts': typeof AppDoctorFeesPayoutsRoute
   '/doctor-fees/rules': typeof AppDoctorFeesRulesRoute
   '/doctor-fees/statements': typeof AppDoctorFeesStatementsRoute
+  '/emergency/mlc': typeof AppEmergencyMlcRoute
   '/emr/controlled-drugs': typeof AppEmrControlledDrugsRoute
   '/emr/drug-safety': typeof AppEmrDrugSafetyRoute
   '/emr/order-sets': typeof AppEmrOrderSetsRoute
@@ -2442,6 +2457,7 @@ export interface FileRoutesByTo {
   '/dialysis': typeof AppDialysisIndexRoute
   '/dietary': typeof AppDietaryIndexRoute
   '/doctor-fees': typeof AppDoctorFeesIndexRoute
+  '/emergency': typeof AppEmergencyIndexRoute
   '/emr': typeof AppEmrIndexRoute
   '/feedback': typeof AppFeedbackIndexRoute
   '/front-office': typeof AppFrontOfficeIndexRoute
@@ -2667,6 +2683,7 @@ export interface FileRoutesById {
   '/_app/doctor-fees/payouts': typeof AppDoctorFeesPayoutsRoute
   '/_app/doctor-fees/rules': typeof AppDoctorFeesRulesRoute
   '/_app/doctor-fees/statements': typeof AppDoctorFeesStatementsRoute
+  '/_app/emergency/mlc': typeof AppEmergencyMlcRoute
   '/_app/emr/controlled-drugs': typeof AppEmrControlledDrugsRoute
   '/_app/emr/drug-safety': typeof AppEmrDrugSafetyRoute
   '/_app/emr/order-sets': typeof AppEmrOrderSetsRoute
@@ -2761,6 +2778,7 @@ export interface FileRoutesById {
   '/_app/dialysis/': typeof AppDialysisIndexRoute
   '/_app/dietary/': typeof AppDietaryIndexRoute
   '/_app/doctor-fees/': typeof AppDoctorFeesIndexRoute
+  '/_app/emergency/': typeof AppEmergencyIndexRoute
   '/_app/emr/': typeof AppEmrIndexRoute
   '/_app/feedback/': typeof AppFeedbackIndexRoute
   '/_app/front-office/': typeof AppFrontOfficeIndexRoute
@@ -2986,6 +3004,7 @@ export interface FileRouteTypes {
     | '/doctor-fees/payouts'
     | '/doctor-fees/rules'
     | '/doctor-fees/statements'
+    | '/emergency/mlc'
     | '/emr/controlled-drugs'
     | '/emr/drug-safety'
     | '/emr/order-sets'
@@ -3080,6 +3099,7 @@ export interface FileRouteTypes {
     | '/dialysis/'
     | '/dietary/'
     | '/doctor-fees/'
+    | '/emergency/'
     | '/emr/'
     | '/feedback/'
     | '/front-office/'
@@ -3303,6 +3323,7 @@ export interface FileRouteTypes {
     | '/doctor-fees/payouts'
     | '/doctor-fees/rules'
     | '/doctor-fees/statements'
+    | '/emergency/mlc'
     | '/emr/controlled-drugs'
     | '/emr/drug-safety'
     | '/emr/order-sets'
@@ -3397,6 +3418,7 @@ export interface FileRouteTypes {
     | '/dialysis'
     | '/dietary'
     | '/doctor-fees'
+    | '/emergency'
     | '/emr'
     | '/feedback'
     | '/front-office'
@@ -3621,6 +3643,7 @@ export interface FileRouteTypes {
     | '/_app/doctor-fees/payouts'
     | '/_app/doctor-fees/rules'
     | '/_app/doctor-fees/statements'
+    | '/_app/emergency/mlc'
     | '/_app/emr/controlled-drugs'
     | '/_app/emr/drug-safety'
     | '/_app/emr/order-sets'
@@ -3715,6 +3738,7 @@ export interface FileRouteTypes {
     | '/_app/dialysis/'
     | '/_app/dietary/'
     | '/_app/doctor-fees/'
+    | '/_app/emergency/'
     | '/_app/emr/'
     | '/_app/feedback/'
     | '/_app/front-office/'
@@ -4377,6 +4401,20 @@ declare module '@tanstack/react-router' {
       path: '/doctor-fees/statements'
       fullPath: '/doctor-fees/statements'
       preLoaderRoute: typeof AppDoctorFeesStatementsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/emergency/': {
+      id: '/_app/emergency/'
+      path: '/emergency'
+      fullPath: '/emergency/'
+      preLoaderRoute: typeof AppEmergencyIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/emergency/mlc': {
+      id: '/_app/emergency/mlc'
+      path: '/emergency/mlc'
+      fullPath: '/emergency/mlc'
+      preLoaderRoute: typeof AppEmergencyMlcRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/emr/': {
@@ -6160,6 +6198,7 @@ interface AppRouteChildren {
   AppDoctorFeesPayoutsRoute: typeof AppDoctorFeesPayoutsRoute
   AppDoctorFeesRulesRoute: typeof AppDoctorFeesRulesRoute
   AppDoctorFeesStatementsRoute: typeof AppDoctorFeesStatementsRoute
+  AppEmergencyMlcRoute: typeof AppEmergencyMlcRoute
   AppEmrControlledDrugsRoute: typeof AppEmrControlledDrugsRoute
   AppEmrDrugSafetyRoute: typeof AppEmrDrugSafetyRoute
   AppEmrOrderSetsRoute: typeof AppEmrOrderSetsRoute
@@ -6254,6 +6293,7 @@ interface AppRouteChildren {
   AppDialysisIndexRoute: typeof AppDialysisIndexRoute
   AppDietaryIndexRoute: typeof AppDietaryIndexRoute
   AppDoctorFeesIndexRoute: typeof AppDoctorFeesIndexRoute
+  AppEmergencyIndexRoute: typeof AppEmergencyIndexRoute
   AppEmrIndexRoute: typeof AppEmrIndexRoute
   AppFeedbackIndexRoute: typeof AppFeedbackIndexRoute
   AppFrontOfficeIndexRoute: typeof AppFrontOfficeIndexRoute
@@ -6476,6 +6516,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDoctorFeesPayoutsRoute: AppDoctorFeesPayoutsRoute,
   AppDoctorFeesRulesRoute: AppDoctorFeesRulesRoute,
   AppDoctorFeesStatementsRoute: AppDoctorFeesStatementsRoute,
+  AppEmergencyMlcRoute: AppEmergencyMlcRoute,
   AppEmrControlledDrugsRoute: AppEmrControlledDrugsRoute,
   AppEmrDrugSafetyRoute: AppEmrDrugSafetyRoute,
   AppEmrOrderSetsRoute: AppEmrOrderSetsRoute,
@@ -6570,6 +6611,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDialysisIndexRoute: AppDialysisIndexRoute,
   AppDietaryIndexRoute: AppDietaryIndexRoute,
   AppDoctorFeesIndexRoute: AppDoctorFeesIndexRoute,
+  AppEmergencyIndexRoute: AppEmergencyIndexRoute,
   AppEmrIndexRoute: AppEmrIndexRoute,
   AppFeedbackIndexRoute: AppFeedbackIndexRoute,
   AppFrontOfficeIndexRoute: AppFrontOfficeIndexRoute,
