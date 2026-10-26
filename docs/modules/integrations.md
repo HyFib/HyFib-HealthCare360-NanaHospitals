@@ -1195,6 +1195,36 @@ Permissions:
     C-FIND for modality worklist and C-ECHO only.
   * QIDO-RS searches by patient name, and searches with wildcards, are not offered.
 
+### NHCX message envelope (not live)
+
+Insurance claims go to payers through the National Health Claims Exchange (NHCX), which runs the HCX open protocol.
+Each message is a JWE in compact form (RFC 7516), posted as `{"payload": "<JWE>"}`: its protected header joins the JOSE
+header (`alg`, `enc` A256GCM) and the `x-hcx-*` protocol headers (sender and recipient participant codes, API call id,
+correlation id, optional workflow id, timestamp, status), which the gateway reads to route and audit the message, while
+the FHIR bundle is encrypted so that only the recipient reads it. The content key is wrapped with the recipient's RSA
+public key, from their encryption certificate in the NHCX registry; the payload is AES-256-GCM with the encoded
+protected header as additional authenticated data, so changing a header in transit breaks the tag.
+
+`Nhcx/NhcxEnvelope.cs` seals and opens messages and checks the protocol headers as the HCX reference gateway does
+(`Swasth-Digital-Health-Foundation/hcx-platform`, `api-gateway`): both participant codes present, ids that are UUIDs, a
+status allowed for a request (`request.queued`, `request.dispatched`) or a response (`response.complete`,
+`response.partial`, `response.error`, `response.redirect`), and a timestamp **neither in the future** nor older than the
+allowed age. A server clock running a few seconds fast therefore has every message refused: the server's clock is the
+one HC360 already checks against NIC and NPL.
+
+**Key algorithm.** The HCX protocol specification fixes `RSA-OAEP` (OAEP with SHA-1), its pipeline test data uses it,
+but the HCX reference applications encrypt with `RSA-OAEP-256`. HC360 opens both, choosing by the message's own `alg`,
+and seals with `RSA-OAEP-256` unless told otherwise; which one NHCX's gateway and payers expect is to be confirmed in
+the NHCX sandbox.
+
+**Checked against.** `NhcxEnvelopeTests` opens two messages sealed by node-jose 2.2.0, the library the HCX reference
+applications use (one per algorithm, with a Tamil name in the payload), and checks altered headers and payloads are
+refused. In the other direction, messages sealed here under both algorithms were opened by node-jose 2.2.0 and by jose
+5.9.6 when this was built (a one-off check, as it needs Node).
+
+Not built (they need the NHCX sandbox and the hospital's participant registration): the registry lookups for a
+payer's encryption certificate, the API calls and callbacks, and NHCX's signing of messages, if the sandbox requires it.
+
 ### Not covered yet: payment gateway
 * **PayU** and other gateways: only Razorpay (and the simulator) implement `IPaymentProvider`, settlements and refund
   status included.
