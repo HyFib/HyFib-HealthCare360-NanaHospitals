@@ -1,12 +1,13 @@
 using HyFib.HealthCare360.Modules.SupportServices.Domain.Canteen;
 using HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd;
 using HyFib.HealthCare360.Modules.SupportServices.Domain.Dietary;
+using HyFib.HealthCare360.Modules.SupportServices.Domain.Linen;
 
 namespace HyFib.HealthCare360.Modules.SupportServices.Seed;
 
 /// <summary>
 /// Idempotent reference data (checked by code on every start): diet-charge and ambulance services in the service catalogue, the diet
-/// master, and — for the default facility — common instrument sets and a canteen menu. These are starting masters, not
+/// master, and — for the default facility — common instrument sets, a canteen menu and a linen list. These are starting masters, not
 /// demo transactions, so they are seeded in every installation.
 /// </summary>
 internal sealed class SupportServicesSeeder : ISeeder
@@ -27,6 +28,7 @@ internal sealed class SupportServicesSeeder : ISeeder
 
         await SeedInstrumentSetsAsync(db, facility.Id, cancellationToken);
         await SeedMenuAsync(db, facility.Id, cancellationToken);
+        await SeedLinenAsync(db, facility.Id, cancellationToken);
     }
 
     private static async Task SeedDietServicesAsync(HospitalDbContext db, CancellationToken ct)
@@ -58,6 +60,18 @@ internal sealed class SupportServicesSeeder : ISeeder
         {
             // SAC 999315: ambulance services, exempt from GST (Notification 12/2017-CT(R), entry 74).
             db.Add(new ServiceItem { Code = service.Code, Name = service.Name, Category = ServiceCategory.Ambulance, BasePrice = service.Price, SacCode = "999315" });
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task SeedLinenAsync(HospitalDbContext db, Guid facilityId, CancellationToken ct)
+    {
+        var existing = await db.Set<LinenItem>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Where(i => i.FacilityId == facilityId)
+            .Select(i => i.Code).ToListAsync(ct);
+        foreach (var (code, name, life) in SeedCatalog.Linen.Where(l => !existing.Contains(l.Code)))
+        {
+            db.Add(new LinenItem { FacilityId = facilityId, Code = code, Name = name, LifeWashes = life });
         }
 
         await db.SaveChangesAsync(ct);

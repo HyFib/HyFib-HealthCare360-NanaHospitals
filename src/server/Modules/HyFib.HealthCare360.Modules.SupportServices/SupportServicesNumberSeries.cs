@@ -34,6 +34,9 @@ public static class SupportServicesNumberSeries
     public static NumberSeriesDefinition AmbulanceTrip { get; } =
         new("ambulance-trip", "Ambulance trip", "Ambulance", "{FAC}AT{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
+    public static NumberSeriesDefinition LinenMovement { get; } =
+        new("linen-movement", "Linen movement", "Linen", "{FAC}LN{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+
     internal static IEnumerable<NumberSeriesDefinition> All { get; } =
-        [CssdRequest, WashCycle, SterilisationCycle, CanteenBill, WasteBag, WasteHandover, MortuaryBody, AmbulanceTrip];
+        [CssdRequest, WashCycle, SterilisationCycle, CanteenBill, WasteBag, WasteHandover, MortuaryBody, AmbulanceTrip, LinenMovement];
 }
