@@ -26,7 +26,7 @@ public sealed class PharmacyModelTests
     {
         var entities = Model.Value.GetEntityTypes().Where(e => e.ClrType.Namespace == typeof(PharmacySale).Namespace).ToList();
 
-        entities.Count.ShouldBe(15);
+        entities.Count.ShouldBe(17);
         entities.ShouldAllBe(e => e.GetSchema() == "pharmacy");
     }
 
@@ -57,13 +57,16 @@ public sealed class PharmacyModelTests
     }
 
     [Fact]
-    public void Nurses_can_only_raise_ward_indents_by_default()
+    public void Nurses_can_only_raise_ward_indents_and_count_narcotics_by_default()
     {
         var permissions = new PharmacyModule().Permissions.ToList();
 
-        permissions.Count.ShouldBe(8);
-        permissions.Select(p => p.Name).Distinct().Count().ShouldBe(8);
-        permissions.Where(p => p.DefaultRoles!.Contains("Nurse")).Select(p => p.Name).ShouldBe([PharmacyPermissions.IpIndent]);
-        permissions.ShouldAllBe(p => p.DefaultRoles!.Contains("Pharmacist") && p.DefaultRoles.Contains("HospitalAdmin"));
+        permissions.Count.ShouldBe(9);
+        permissions.Select(p => p.Name).Distinct().Count().ShouldBe(9);
+        permissions.Where(p => p.DefaultRoles!.Contains("Nurse")).Select(p => p.Name).ShouldBe([PharmacyPermissions.IpIndent, PharmacyPermissions.NdpsCount]);
+        permissions.ShouldAllBe(p => p.DefaultRoles!.Contains("Pharmacist"));
+
+        // The shift count is made by those who hold the narcotics, not by the administration.
+        permissions.Where(p => !p.DefaultRoles!.Contains("HospitalAdmin")).Select(p => p.Name).ShouldBe([PharmacyPermissions.NdpsCount]);
     }
 }

@@ -23,7 +23,8 @@ proves them on stock received with chosen batches and expiry dates.
 | `pharmacy.returns` | Sales returns and same-day invoice cancellation | Pharmacist, HospitalAdmin |
 | `pharmacy.ip.issue` | Issue to admitted patients, ward returns, cancel ward indents | Pharmacist, HospitalAdmin |
 | `pharmacy.ip.indent` | Raise ward indents for admitted patients | Pharmacist, HospitalAdmin, **Nurse** |
-| `pharmacy.registers` | View/export the controlled-drug and Schedule H registers | Pharmacist, HospitalAdmin |
+| `pharmacy.registers` | View/export the controlled-drug and Schedule H registers, and the NDPS accounts | Pharmacist, HospitalAdmin |
+| `pharmacy.ndps.count` | Count the narcotics at a change of shift, and witness another's count | Pharmacist, Nurse |
 | `pharmacy.refills` | Authorise refills; approve/reject refill requests | Pharmacist, HospitalAdmin |
 
 **Counter staff** below means any of `pharmacy.queue.read`, `pharmacy.dispense`, `pharmacy.sales`, `pharmacy.ip.issue`.
@@ -117,6 +118,26 @@ The controlled-drug register holds exactly one line per stock-ledger movement (u
 documents write their own lines with the patient and prescriber. Everything else arrives through
 `ControlledStockMoved` (see Events): GRN, transfers, adjustments, write-offs, OT consumption.
 
+### NDPS accounts — `/ndps` (NDPS Rules 52-O to 52-T, as amended in 2015)
+The essential narcotic drugs (`EssentialNarcoticDrugs`: morphine, fentanyl, methadone, oxycodone, codeine and
+hydrocodone, by the item's generic name) are accounted for from the controlled-drug register, which already holds every
+movement with its running balance. Nothing is entered twice: the forms are views of the register.
+
+| Method | Path | Permission | Request → Response |
+|---|---|---|---|
+| GET | `/ndps/stores` | `pharmacy.ndps.count` or `pharmacy.registers` | → the stores that have held an END |
+| GET | `/ndps/daily?storeId&date` · `/ndps/daily/export` | `pharmacy.registers` | → `NdpsDailyAccount` (Form 3H): per drug the opening stock, received, dispensed with each patient's UHID, other movements, closing stock, and `balanced` (the closing stock agrees with the register's balance) / CSV. Both audited |
+| GET | `/ndps/patients/{patientId}` | `pharmacy.registers` | → `NdpsPatientRecord` (Form 3E): the ENDs dispensed to the patient, with the prescriber; restricted records refused (VIP guard), the read audited |
+| GET | `/ndps/annual?year` · `/ndps/annual/export` | `pharmacy.registers` | → `NdpsAnnualReturn`: January to December, all stores together (transfers between them cancel out): opening, received, consumed (less patients' returns), written off, closing, `balanced`, and next year's estimate (Form 3J: consumption plus 10%, in whole units) / CSV |
+| GET | `/ndps/counts?storeId` | `pharmacy.ndps.count` or `pharmacy.registers` | → the last 50 counts with their lines |
+| GET | `/ndps/counts/sheet?storeId` | `pharmacy.ndps.count` | → the drugs to count: names only, so the count is blind to the balance |
+| POST | `/ndps/counts` | `pharmacy.ndps.count` | `RecordNarcoticCountRequest{storeId, lines[{itemId, counted}], explanation}`: the server takes the register balance at that moment; every drug with stock must be counted |
+| POST | `/ndps/counts/{id}/witness` | `pharmacy.ndps.count` | `WitnessNarcoticCountRequest{explanation, version}`: a second user, never the counter (422 `ndps.witness_self`); a difference must be explained (400 `explanation`) and alerts every holder of `pharmacy.registers` after the save |
+
+Not built: the application for recognition (Form 3F) and the certificate (Form 3G), which are paper between the
+hospital and the State Drugs Controller. The annual return's form number and due date are taken from secondary sources
+(Form 3I, before 31 March); check them against the Gazette before relying on them.
+
 ### Refills — `/refills` and the patient portal (PH-05, PP-05)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
@@ -201,7 +222,7 @@ exceed it.
 `queue_entries` (unique `prescription_id` where `refill_of_entry_id IS NULL`), `queue_lines`, `sales` (unique
 `invoice_number`), `sale_items`, `sale_payments`, `sale_returns` (unique `return_number`), `sale_return_items`,
 `ward_indents`, `ward_indent_lines`, `ip_issues`, `ip_issue_lines`, `ward_returns`, `ward_return_lines`,
-`controlled_drug_register` (unique `ledger_entry_id`), `refill_requests`. Queue entries and sales use `xmin`
+`controlled_drug_register` (unique `ledger_entry_id`), `refill_requests`, `narcotic_counts`, `narcotic_count_lines`. Queue entries and sales use `xmin`
 optimistic concurrency. Foreign keys go to the Patients `Patient` table and to the SupplyChain store, item and
 stock-batch tables.
 

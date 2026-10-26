@@ -53,6 +53,21 @@ const manifest: ModuleManifest = {
       keywords: ['schedule h', 'h1', 'narcotic', 'ndps', 'controlled'],
     },
     {
+      label: 'Narcotic accounts (NDPS)',
+      to: '/pharmacy/ndps',
+      permission: [P.registers, P.ndpsCount],
+      keywords: [
+        'ndps',
+        'narcotic',
+        'morphine',
+        'form 3h',
+        'form 3e',
+        'form 3j',
+        'shift count',
+        'essential narcotic drugs',
+      ],
+    },
+    {
       label: 'Refill requests',
       to: '/pharmacy/refills',
       permission: P.refills,

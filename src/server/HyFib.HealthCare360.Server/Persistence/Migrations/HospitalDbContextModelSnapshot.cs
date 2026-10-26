@@ -22160,6 +22160,149 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("ip_issue_lines", "pharmacy");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Pharmacy.Domain.NarcoticCount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CountedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("counted_at");
+
+                    b.Property<Guid?>("CountedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("counted_by");
+
+                    b.Property<string>("CountedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("counted_by_name");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("Explanation")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("explanation");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<DateTimeOffset?>("WitnessedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("witnessed_at");
+
+                    b.Property<Guid?>("WitnessedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("witnessed_by");
+
+                    b.Property<string>("WitnessedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("witnessed_by_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_narcotic_counts");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_narcotic_counts_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_narcotic_counts_is_deleted");
+
+                    b.HasIndex("StoreId")
+                        .HasDatabaseName("ix_narcotic_counts_store_id");
+
+                    b.HasIndex("FacilityId", "StoreId", "CountedAt")
+                        .HasDatabaseName("ix_narcotic_counts_facility_id_store_id_counted_at");
+
+                    b.ToTable("narcotic_counts", "pharmacy");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Pharmacy.Domain.NarcoticCountLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Counted")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("counted");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("ItemName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("item_name");
+
+                    b.Property<Guid>("NarcoticCountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("narcotic_count_id");
+
+                    b.Property<decimal>("RegisterBalance")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("register_balance");
+
+                    b.HasKey("Id")
+                        .HasName("pk_narcotic_count_lines");
+
+                    b.HasIndex("NarcoticCountId")
+                        .HasDatabaseName("ix_narcotic_count_lines_narcotic_count_id");
+
+                    b.ToTable("narcotic_count_lines", "pharmacy");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Pharmacy.Domain.PharmacyPayment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -39538,6 +39681,26 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_ip_issue_lines_items_item_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Pharmacy.Domain.NarcoticCount", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.Store", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_narcotic_counts_stores_store_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Pharmacy.Domain.NarcoticCountLine", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Pharmacy.Domain.NarcoticCount", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("NarcoticCountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_narcotic_count_lines_narcotic_counts_narcotic_count_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Pharmacy.Domain.PharmacyPayment", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Pharmacy.Domain.PharmacySale", null)
@@ -40835,6 +40998,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Pharmacy.Domain.IpIssue", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Pharmacy.Domain.NarcoticCount", b =>
                 {
                     b.Navigation("Lines");
                 });
