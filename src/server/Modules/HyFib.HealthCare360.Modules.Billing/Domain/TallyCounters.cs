@@ -137,6 +137,7 @@ public static class TallyCounters
 
         entries.Credit(map.OutputCgst, part.Tax.Sum(t => t.Cgst));
         entries.Credit(map.OutputSgst, part.Tax.Sum(t => t.Sgst));
+        entries.Credit(map.OutputIgst, part.Tax.Sum(t => t.Igst));
         entries.Credit(map.RoundOff, part.RoundOff);
         return reverse ? entries.Reversed() : entries;
     }
@@ -162,6 +163,7 @@ public static class TallyLedgerMaps
         Discount = map.Discount.Trim(),
         OutputCgst = map.OutputCgst.Trim(),
         OutputSgst = map.OutputSgst.Trim(),
+        OutputIgst = map.OutputIgst.Trim(),
         RoundOff = map.RoundOff.Trim(),
         PatientDebtors = map.PatientDebtors.Trim(),
         PatientAdvances = map.PatientAdvances.Trim(),

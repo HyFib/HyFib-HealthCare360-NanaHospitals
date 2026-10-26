@@ -9,6 +9,12 @@ public sealed record ExternalPrescription(string PrescriberName, string? Prescri
 
 public sealed record CounterSaleLine(Guid ItemId, decimal Quantity, Guid? BatchId);
 
+/// <summary>
+/// A buyer registered for GST (a clinic, a nursing home). <paramref name="DeliveryState"/>: the GST state code the goods
+/// are dispatched to, when not handed over at the counter; another state's makes the supply inter-state (IGST).
+/// </summary>
+public sealed record B2bBuyer(string Gstin, string LegalName, string? DeliveryState);
+
 /// <param name="PatientId">Registered patient (enables credit and the medication history); walk-in customers leave it empty.</param>
 /// <param name="Prescription">Required for Schedule H/H1/X medicines.</param>
 public sealed record CounterSaleRequest(
@@ -20,7 +26,8 @@ public sealed record CounterSaleRequest(
     IReadOnlyList<CounterSaleLine> Lines,
     decimal DiscountPercent,
     IReadOnlyList<SalePayment> Payments,
-    bool ConfirmControlledDrugs);
+    bool ConfirmControlledDrugs,
+    B2bBuyer? Buyer = null);
 
 public sealed record PharmacySaleCreated(Guid Id, string InvoiceNumber, decimal NetAmount, decimal PaidAmount, decimal DueAmount, SaleStatus Status);
 
@@ -56,6 +63,7 @@ public sealed record PharmacySaleItemDto(
     decimal TaxableAmount,
     decimal CgstAmount,
     decimal SgstAmount,
+    decimal IgstAmount,
     decimal NetAmount,
     decimal ReturnedQuantity,
     bool IsSubstitution,
@@ -87,6 +95,10 @@ public sealed record PharmacySaleDetail(
     decimal TaxableAmount,
     decimal CgstAmount,
     decimal SgstAmount,
+    decimal IgstAmount,
+    string? BuyerGstin,
+    string? BuyerLegalName,
+    string? PlaceOfSupply,
     decimal RoundOff,
     decimal NetAmount,
     decimal PaidAmount,
@@ -166,6 +178,10 @@ public sealed class CounterSaleRequestValidator : AbstractValidator<CounterSaleR
         RuleFor(x => x.DiscountPercent).InclusiveBetween(0, 100);
         RuleFor(x => x.Payments).Must(p => p.Count <= 6).WithMessage("Split the bill into at most 6 payments.");
         RuleForEach(x => x.Payments).SetValidator(new SalePaymentValidator());
+        RuleFor(x => x.Buyer!.Gstin).Must(Gstin.IsValid).WithMessage("Check the buyer's GSTIN: it is not a valid number.").When(x => x.Buyer is not null);
+        RuleFor(x => x.Buyer!.LegalName).NotEmpty().SafeText(200).When(x => x.Buyer is not null);
+        RuleFor(x => x.Buyer!.DeliveryState).Must(s => s is null || Gstin.States.ContainsKey(s)).WithMessage("Choose the state the goods are delivered to.")
+            .When(x => x.Buyer is not null);
     }
 }
 

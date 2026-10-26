@@ -333,6 +333,21 @@ public sealed class BillDocumentTests
         html.ShouldContain("font-family: \"Segoe UI\", \"HC360 Devanagari\", \"HC360 Tamil\", \"Nirmala UI\"");
     }
 
+    [Fact]
+    public void A_bill_to_a_payer_in_another_state_shows_igst_and_the_place_of_supply()
+    {
+        var taxed = Taxed();
+        var line = taxed.Lines[0] with { CgstAmount = 0m, SgstAmount = 0m, IgstAmount = 180m };
+        var bill = taxed with { Lines = [line], CgstAmount = 0m, SgstAmount = 0m, IgstAmount = 180m, PlaceOfSupply = "32" };
+
+        BillDocument.Totals(bill).Select(r => r.Label).ShouldContain("IGST");
+        BillDocument.Totals(bill).Select(r => r.Label).ShouldNotContain("CGST");
+        var html = Render(bill);
+        html.ShouldContain("<th class=\"num\">IGST</th>");
+        html.ShouldNotContain("<th class=\"num\">CGST</th>");
+        html.ShouldContain("Place of supply: Kerala (32)");
+    }
+
     private static string Render(BillDetail bill) => BillDocument.Build(bill, Letterhead).ToHtml();
 
     private static BillDetail Taxed()
@@ -360,7 +375,7 @@ public sealed class BillDocumentTests
         PayerType: PayerType.Self, PayerId: null, PayerName: null, TariffPlanId: null, TariffPlanName: "General", PolicyId: null, PreAuthorizationId: null,
         CoPayPercent: 0m, PayerCoverageLimit: null, BillDiscountPercent: null, BillDiscountValue: null, DiscountReason: null, ApprovedDiscountAmount: 0m,
         GrossAmount: 500m, PackageCoveredAmount: 0m, TariffDiscountAmount: 0m, LineDiscountAmount: 0m, BillDiscountAmount: 0m, DiscountAmount: 0m,
-        TaxableAmount: 500m, CgstAmount: 0m, SgstAmount: 0m, TaxAmount: 0m, RoundOffAmount: 0m, NetAmount: 500m, PayerAmount: 0m, PatientAmount: 500m,
+        TaxableAmount: 500m, CgstAmount: 0m, SgstAmount: 0m, IgstAmount: 0m, PlaceOfSupply: "33", TaxAmount: 0m, RoundOffAmount: 0m, NetAmount: 500m, PayerAmount: 0m, PatientAmount: 500m,
         CoPayAmount: 0m, NonPayableAmount: 0m, PaidAmount: 500m, RefundedAmount: 0m, CreditAmount: 0m, DueAmount: 0m, RefundableAmount: 0m,
         PayerSettledAmount: 0m, PayerDisallowedAmount: 0m, IsTaxInvoice: false, CreatedAt: Created, FinalizedAt: Created.AddMinutes(5), CancelledAt: null,
         CancelReason: null, Notes: null, Lines: [Line()], Receipts: [Receipt()], Refunds: [], CreditNotes: [], PendingDiscount: null, Package: null,
@@ -370,7 +385,7 @@ public sealed class BillDocumentTests
         Id: Guid.NewGuid(), ChargeId: Guid.NewGuid(), ServiceItemId: Guid.NewGuid(), ServiceCode: "CONS-NEW", Description: "Consultation",
         Category: ServiceCategory.Consultation, SacCode: "999312", Quantity: 1.000m, UnitPrice: 500m, GrossAmount: 500m, PackageCoveredAmount: 0m,
         TariffDiscountAmount: 0m, LineDiscountAmount: 0m, BillDiscountShare: 0m, TaxRate: 0m, TaxableAmount: 500m, CgstAmount: 0m, SgstAmount: 0m,
-        NetAmount: 500m, IsDiscountAllowed: true, IsPayerPayable: true, PractitionerId: null, PractitionerName: "Dr. Asha Rao", DepartmentId: null,
+        IgstAmount: 0m, NetAmount: 500m, IsDiscountAllowed: true, IsPayerPayable: true, PractitionerId: null, PractitionerName: "Dr. Asha Rao", DepartmentId: null,
         ServiceDate: Created, IsReturn: false);
 
     private static ReceiptSummary Receipt() => new(Guid.NewGuid(), "NHRC260000001", ReceiptPurpose.BillPayment, 500m, "Cash + Upi", Created.AddMinutes(6));

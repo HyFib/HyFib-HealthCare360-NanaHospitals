@@ -40,6 +40,10 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     public decimal TaxableAmount { get; private set; }
     public decimal CgstAmount { get; private set; }
     public decimal SgstAmount { get; private set; }
+
+    /// <summary>GST on goods delivered in another state (<see cref="IsInterState"/>).</summary>
+    public decimal IgstAmount { get; private set; }
+
     public decimal RoundOff { get; private set; }
     public decimal NetAmount { get; private set; }
     public decimal PaidAmount { get; private set; }
@@ -52,6 +56,28 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     public List<PharmacySaleItem> Items { get; set; } = [];
     public List<PharmacyPayment> Payments { get; set; } = [];
 
+    /// <summary>A registered buyer (B2B): the GSTIN and legal name the tax invoice is made out to.</summary>
+    public string? BuyerGstin { get; private set; }
+
+    public string? BuyerLegalName { get; private set; }
+
+    /// <summary>The state of supply as its GST code: where the goods are delivered (the counter's own state when handed over there).</summary>
+    public string? PlaceOfSupply { get; private set; }
+
+    public bool IsInterState { get; private set; }
+
+    /// <summary>
+    /// The buyer and the place of supply, before the items are priced: goods handed over at the counter are supplied in
+    /// the facility's state; goods dispatched to another state are an inter-state supply, taxed as IGST.
+    /// </summary>
+    public void SetSupply(string? buyerGstin, string? buyerLegalName, string? facilityState, string? deliveryState)
+    {
+        BuyerGstin = buyerGstin;
+        BuyerLegalName = buyerLegalName;
+        PlaceOfSupply = deliveryState ?? facilityState;
+        IsInterState = deliveryState is not null && facilityState is not null && deliveryState != facilityState;
+    }
+
     /// <summary>Totals the priced items and records the payment split taken at the counter.</summary>
     public Result Complete(IReadOnlyList<SalePayment> payments, bool creditAllowed, DateTimeOffset now, Guid? userId)
     {
@@ -60,7 +86,7 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
             return Error.Rule("sale.empty", "Nothing was sold.");
         }
 
-        var totals = SalePricing.Total(Items.Select(i => new SaleLinePrice(i.GrossAmount, i.DiscountAmount, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.NetAmount)));
+        var totals = SalePricing.Total(Items.Select(i => new SaleLinePrice(i.GrossAmount, i.DiscountAmount, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.NetAmount, i.IgstAmount)));
         var settled = SalePricing.Settle(totals.Net, payments, creditAllowed);
         if (settled.IsFailure)
         {
@@ -72,6 +98,7 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
         TaxableAmount = totals.Taxable;
         CgstAmount = totals.Cgst;
         SgstAmount = totals.Sgst;
+        IgstAmount = totals.Igst;
         RoundOff = totals.RoundOff;
         NetAmount = totals.Net;
         PaidAmount = settled.Value.Paid;
@@ -221,6 +248,7 @@ public sealed class PharmacySaleItem : Entity
     public decimal TaxableAmount { get; private set; }
     public decimal CgstAmount { get; private set; }
     public decimal SgstAmount { get; private set; }
+    public decimal IgstAmount { get; private set; }
     public decimal NetAmount { get; private set; }
     public decimal ReturnedQuantity { get; private set; }
     public decimal RefundedAmount { get; private set; }
@@ -233,14 +261,15 @@ public sealed class PharmacySaleItem : Entity
 
     public decimal ReturnableQuantity => Quantity - ReturnedQuantity;
 
-    public void Price(decimal discountPercent)
+    public void Price(decimal discountPercent, bool interState = false)
     {
-        var price = SalePricing.PriceLine(UnitMrp, Quantity, GstRate, discountPercent);
+        var price = SalePricing.PriceLine(UnitMrp, Quantity, GstRate, discountPercent, interState);
         GrossAmount = price.Gross;
         DiscountAmount = price.Discount;
         TaxableAmount = price.Taxable;
         CgstAmount = price.Cgst;
         SgstAmount = price.Sgst;
+        IgstAmount = price.Igst;
         NetAmount = price.Net;
     }
 

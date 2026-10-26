@@ -9,6 +9,7 @@ import {
   priceExclusive,
   priceInclusive,
   roundToRupee,
+  isValidGstin,
 } from './gst';
 
 // Expected values are worked out with the server's GstCalculator rules (C# decimal, half away from zero).
@@ -100,5 +101,21 @@ describe('GST calculator mirror', () => {
     expect(isStandardGstRate(0.25)).toBe(true);
     expect(isStandardGstRate(40)).toBe(true);
     expect(isStandardGstRate(10)).toBe(false);
+  });
+});
+
+describe('isValidGstin', () => {
+  it('accepts GSTINs whose check character GSTN computed', () => {
+    for (const gstin of ['27AAPFU0939F1ZV', '29AAGCB7383J1Z4', '33AAACH7409R1Z8', ' 32aaach7409r1za ']) {
+      expect(isValidGstin(gstin)).toBe(true);
+    }
+  });
+
+  it('rejects a mistyped character, a wrong shape and an unknown state', () => {
+    expect(isValidGstin('27AAPFU0939F1ZW')).toBe(false);
+    expect(isValidGstin('27AAPFU0939F1Z')).toBe(false);
+    expect(isValidGstin('99AAPFU0939F1ZV')).toBe(false);
+    expect(isValidGstin('')).toBe(false);
+    expect(isValidGstin(null)).toBe(false);
   });
 });

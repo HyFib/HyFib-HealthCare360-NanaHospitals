@@ -27,6 +27,11 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 
 * `decimal` only; every amount is rounded with `Money.Round` (half away from zero) per line.
 * GST is charged on the discounted value of each line and split into CGST/SGST (`Money.SplitGst`, SGST takes the paisa).
+* **Place of supply** (IGST Act s.12(2)(a)): the state of a payer registered for GST (the first two digits of its
+  GSTIN), else the facility's own state (`BillPlaceOfSupply`, set while the bill is a draft). A payer registered in
+  another state is billed **IGST** for the whole tax instead of CGST and SGST, on every line and in the totals; the bill
+  stores `placeOfSupply` and `igstAmount`. Tally posts IGST to the `Output IGST` ledger. A facility without a GSTIN bills
+  CGST and SGST as before.
 * Only the **patient share** is rounded to the rupee (it is collected in cash); the payer share stays at paise.
 * Every document number is allocated inside the transaction that saves the document, so series are gap-free.
 * Charge posting (per source line), gateway payments, POS transactions and patient advances are idempotent — a WiFi
@@ -355,7 +360,8 @@ language*).
 * Header: logo, legal name, address, phone and e-mail, GSTIN and PAN, registration number; the title, bill number and
   date on the right.
 * Patient, UHID, status, payer, tariff, package and co-pay; every line with service code, doctor, date, SAC code, quantity, rate,
-  package cover (when a package covers anything), discount and, on a tax invoice, taxable value, GST rate, CGST and SGST.
+  package cover (when a package covers anything), discount and, on a tax invoice, taxable value, GST rate, CGST and SGST
+  (or IGST, with the place of supply, for a payer registered in another state).
 * Totals from the gross amount to the net amount, the payer's and the patient's share, credit notes, paid, refunded,
   and the balance due or the refund due; the patient's share in words (Indian system, "Rupees … Only").
 * On a tax invoice, the GST summary by SAC code and rate. Then the payments received (advances adjusted included), the

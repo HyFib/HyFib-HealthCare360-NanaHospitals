@@ -72,6 +72,8 @@ export interface BillLineDto {
   taxableAmount: number;
   cgstAmount: number;
   sgstAmount: number;
+  /** IGST instead of CGST and SGST when the bill's place of supply is another state. */
+  igstAmount: number;
   netAmount: number;
   isDiscountAllowed: boolean;
   isPayerPayable: boolean;
@@ -181,6 +183,9 @@ export interface BillDetail {
   taxableAmount: number;
   cgstAmount: number;
   sgstAmount: number;
+  igstAmount: number;
+  /** GST state code of the place of supply: the payer's registered state, else the facility's. */
+  placeOfSupply: string | null;
   taxAmount: number;
   roundOffAmount: number;
   netAmount: number;

@@ -39,6 +39,7 @@ function billLine(overrides: Partial<BillLineDto> = {}): BillLineDto {
     taxableAmount: 500,
     cgstAmount: 0,
     sgstAmount: 0,
+    igstAmount: 0,
     netAmount: 500,
     isDiscountAllowed: true,
     isPayerPayable: true,
@@ -87,6 +88,8 @@ function bill(overrides: Partial<BillDetail> = {}): BillDetail {
     taxableAmount: 500,
     cgstAmount: 0,
     sgstAmount: 0,
+    igstAmount: 0,
+    placeOfSupply: null,
     taxAmount: 0,
     roundOffAmount: 0,
     netAmount: 500,
@@ -150,6 +153,7 @@ describe('bill prints', () => {
       taxableAmount: 1000,
       cgstAmount: 90,
       sgstAmount: 90,
+      igstAmount: 0,
       netAmount: 1180,
       grossAmount: 1000,
       unitPrice: 1000,
@@ -161,6 +165,32 @@ describe('bill prints', () => {
     expect(html).toContain('GST 18%');
     expect(html).toContain('<td>CGST</td>');
     expect(html).toContain('Tax invoice');
+  });
+
+  it('bills a payer registered in another state IGST, with the place of supply', () => {
+    const taxed = billLine({
+      taxRate: 18,
+      taxableAmount: 1000,
+      cgstAmount: 0,
+      sgstAmount: 0,
+      igstAmount: 180,
+      netAmount: 1180,
+    });
+    const html = buildCounterBillHtml(
+      bill({
+        isTaxInvoice: true,
+        lines: [taxed],
+        cgstAmount: 0,
+        sgstAmount: 0,
+        igstAmount: 180,
+        taxAmount: 180,
+        placeOfSupply: '32',
+      }),
+      facility,
+    );
+    expect(html).toContain('<td>IGST</td>');
+    expect(html).not.toContain('<td>CGST</td>');
+    expect(html).toContain('<td>Place of supply</td><td class="right">Kerala (32)</td>');
   });
 
   it('marks returns and cancelled bills', () => {

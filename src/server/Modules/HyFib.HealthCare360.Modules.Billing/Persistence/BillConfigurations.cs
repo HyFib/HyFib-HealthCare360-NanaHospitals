@@ -39,6 +39,7 @@ internal sealed class BillConfiguration : IEntityTypeConfiguration<Bill>
     {
         b.ToTable("bills", BillingSchema.Name);
         b.Property(x => x.BillNumber).HasMaxLength(24);
+        b.Property(x => x.PlaceOfSupply).HasMaxLength(2);
         b.Property(x => x.DiscountReason).HasMaxLength(300);
         b.Property(x => x.CancelReason).HasMaxLength(300);
         b.Property(x => x.Notes).HasMaxLength(1000);

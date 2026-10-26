@@ -121,6 +121,9 @@ public sealed record TallyLedgerMap
     public string Discount { get; init; } = "Discount Allowed";
     public string OutputCgst { get; init; } = "Output CGST";
     public string OutputSgst { get; init; } = "Output SGST";
+
+    /// <summary>GST on supplies to another state (a payer or buyer registered there).</summary>
+    public string OutputIgst { get; init; } = "Output IGST";
     public string RoundOff { get; init; } = "Round Off";
     public string PatientDebtors { get; init; } = "Patient Receivables";
     public string PatientAdvances { get; init; } = "Patient Advances";
@@ -199,7 +202,7 @@ public sealed record TallyLedgerMap
 }
 
 /// <summary>Income of one bill line: <paramref name="Income"/> excludes the package-covered part; discounts include tariff concessions.</summary>
-public sealed record TallySaleLine(string? DepartmentCode, string? DepartmentName, decimal Income, decimal Discount, decimal Cgst, decimal Sgst);
+public sealed record TallySaleLine(string? DepartmentCode, string? DepartmentName, decimal Income, decimal Discount, decimal Cgst, decimal Sgst, decimal Igst = 0);
 
 public sealed record TallySale(
     string BillNumber, DateOnly Date, string? PayerName, decimal PatientAmount, decimal PayerAmount, decimal RoundOff, IReadOnlyList<TallySaleLine> Lines, bool IsCancellation);
@@ -356,6 +359,7 @@ public static class TallyVoucherBuilder
 
         entries.Credit(map.OutputCgst, sale.Lines.Sum(l => l.Cgst));
         entries.Credit(map.OutputSgst, sale.Lines.Sum(l => l.Sgst));
+        entries.Credit(map.OutputIgst, sale.Lines.Sum(l => l.Igst));
         entries.Credit(map.RoundOff, sale.RoundOff);
 
         // The reversal needs a reference of its own: with the bill's, Tally would alter the sale into the credit note.

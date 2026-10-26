@@ -57,6 +57,12 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
 * **Pricing**: MRP is GST-inclusive. The discount is capped by the facility setting `pharmacy.discount.max_percent`
   (default 10, `pharmacy.discount_limit`). Each line shows taxable value and CGST = SGST (half the rate each), and
   the bill is rounded to the rupee (round-off shown).
+* **B2B invoices**: a counter sale may name a `buyer` registered for GST (GSTIN with a valid check character, legal
+  name, and the state the goods are dispatched to, if any). The hospital's own GSTIN must be set
+  (`gst.facility_gstin`). Goods handed over at the counter are supplied in the hospital's state (IGST Act s.10(1)(a):
+  the movement ends with delivery there); goods dispatched to another state carry **IGST** instead of CGST and SGST.
+  The MRP, and so the amount payable, does not change. The invoice prints the buyer, their GSTIN and the place of
+  supply, and the day book posts the IGST.
 * **Payments** may be split across modes and must add up to the bill (`payment.mismatch`). Credit (a due) is
   allowed only for registered patients (`payment.credit_not_allowed`).
 
@@ -79,7 +85,7 @@ blocked, expired or used up is warned about, not picked. Scanners that type like
 | GET | `/stock/batches?storeId&itemId&includeEmpty` | Counter staff | → `BatchStock[]` (FEFO order) |
 | GET | `/sales?page&from&to&status&type&storeId&withDues` | `pharmacy.sales` or `pharmacy.returns` | → paged `PharmacySaleListItem` |
 | GET | `/sales/{id}` · `/sales/{id}/returns` | same | → `PharmacySaleDetail` (GST invoice: HSN, batch, expiry, CGST/SGST, round-off, payments) · `SaleReturnDto[]` |
-| POST | `/sales/counter` | `pharmacy.sales` | `CounterSaleRequest` (storeId, patientId? or customerName/customerPhone, prescription? {prescriberName, prescriberRegistrationNumber, prescriptionDate, reference}, lines[itemId, quantity, batchId?], discountPercent, payments, confirmControlledDrugs) → 201 `PharmacySaleCreated` |
+| POST | `/sales/counter` | `pharmacy.sales` | `CounterSaleRequest` (storeId, patientId? or customerName/customerPhone, prescription? {prescriberName, prescriberRegistrationNumber, prescriptionDate, reference}, lines[itemId, quantity, batchId?], discountPercent, payments, confirmControlledDrugs, buyer? {gstin, legalName, deliveryState?}) → 201 `PharmacySaleCreated` |
 | POST | `/sales/{id}/payments` | `pharmacy.sales` | `CollectPaymentRequest` (mode, amount, reference) → 204 (`payment.exceeds_due`) |
 | POST | `/sales/{id}/returns` | `pharmacy.returns` | `SaleReturnRequest` (lines[saleItemId, quantity, restock], reason, refundMode, refundReference) → 201 `SaleReturnCreated` (returnNumber, refundAmount, adjustedAgainstDue, cashRefund) |
 | POST | `/sales/{id}/cancel` | `pharmacy.returns` | `PharmacyReasonRequest` → 204. Same local day only and no returns (`sale.cancel_window`, `sale.has_returns`). Stock goes back to the original batches and the queue entry reopens |

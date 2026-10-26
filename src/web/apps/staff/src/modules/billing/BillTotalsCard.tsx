@@ -1,5 +1,6 @@
 import { Caption1, makeStyles, mergeClasses, Text, tokens } from '@fluentui/react-components';
 import { formatInr } from '@hc360/core';
+import { gstStateName } from '../inventory/gst';
 import type { BillDetail } from './api';
 import { formatPercent, fromPaise, toPaise } from './money';
 import { Amount, SummaryList, SummaryRow } from './ui';
@@ -41,6 +42,7 @@ const nonZero = (value: number) => toPaise(value) !== 0n;
 export function BillTotalsCard({ bill }: { bill: BillDetail }) {
   const styles = useStyles();
   const staffDiscount = fromPaise(toPaise(bill.lineDiscountAmount) + toPaise(bill.billDiscountAmount));
+  const supply = gstStateName(bill.placeOfSupply);
   const isDraft = bill.status === 'Draft';
   const cancelled = bill.status === 'Cancelled' || bill.status === 'Refunded';
   const settled = !isDraft && !cancelled && bill.dueAmount === 0;
@@ -98,12 +100,20 @@ export function BillTotalsCard({ bill }: { bill: BillDetail }) {
               <SummaryRow label="Taxable value">
                 <Amount value={bill.taxableAmount} />
               </SummaryRow>
-              <SummaryRow label="CGST">
-                <Amount value={bill.cgstAmount} />
-              </SummaryRow>
-              <SummaryRow label="SGST">
-                <Amount value={bill.sgstAmount} />
-              </SummaryRow>
+              {nonZero(bill.igstAmount) ? (
+                <SummaryRow label="IGST" hint={supply ? `Place of supply ${supply}` : undefined}>
+                  <Amount value={bill.igstAmount} />
+                </SummaryRow>
+              ) : (
+                <>
+                  <SummaryRow label="CGST">
+                    <Amount value={bill.cgstAmount} />
+                  </SummaryRow>
+                  <SummaryRow label="SGST">
+                    <Amount value={bill.sgstAmount} />
+                  </SummaryRow>
+                </>
+              )}
             </SummaryList>
           </div>
         )}
@@ -152,7 +162,9 @@ export function BillTotalsCard({ bill }: { bill: BillDetail }) {
       </SummaryList>
       {bill.isTaxInvoice && (
         <Text className={styles.muted}>
-          GST is charged on the discounted value and split equally into CGST and SGST.
+          {nonZero(bill.igstAmount)
+            ? 'GST is charged on the discounted value as IGST: the payer is registered in another state.'
+            : 'GST is charged on the discounted value and split equally into CGST and SGST.'}
         </Text>
       )}
     </div>

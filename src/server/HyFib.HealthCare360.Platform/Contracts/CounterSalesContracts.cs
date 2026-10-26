@@ -8,10 +8,10 @@ public enum CounterPaymentMode
     Upi,
 }
 
-/// <summary>Taxable value and GST at one rate (an intra-state supply: CGST and SGST).</summary>
-public sealed record CounterTaxLine(decimal GstRate, decimal Taxable, decimal Cgst, decimal Sgst)
+/// <summary>Taxable value and GST at one rate: CGST and SGST within the state, IGST on a supply to another state.</summary>
+public sealed record CounterTaxLine(decimal GstRate, decimal Taxable, decimal Cgst, decimal Sgst, decimal Igst = 0)
 {
-    public decimal Total => Taxable + Cgst + Sgst;
+    public decimal Total => Taxable + Cgst + Sgst + Igst;
 }
 
 public sealed record CounterMoney(CounterPaymentMode Mode, decimal Amount);

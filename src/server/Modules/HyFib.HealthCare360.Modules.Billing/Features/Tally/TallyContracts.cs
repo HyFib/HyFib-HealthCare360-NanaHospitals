@@ -120,6 +120,7 @@ public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
         RuleFor(x => x.Discount).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.OutputCgst).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.OutputSgst).Must(BeALedgerName).WithMessage(LedgerMessage);
+        RuleFor(x => x.OutputIgst).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.RoundOff).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.PatientDebtors).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.PatientAdvances).Must(BeALedgerName).WithMessage(LedgerMessage);

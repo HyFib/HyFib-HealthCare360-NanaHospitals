@@ -23,9 +23,9 @@ public enum SaleStatus
 /// <summary>One payment split at the counter (card/UPI carry the terminal or UPI reference).</summary>
 public sealed record SalePayment(PaymentMode Mode, decimal Amount, string? Reference);
 
-public sealed record SaleLinePrice(decimal Gross, decimal Discount, decimal Taxable, decimal Cgst, decimal Sgst, decimal Net);
+public sealed record SaleLinePrice(decimal Gross, decimal Discount, decimal Taxable, decimal Cgst, decimal Sgst, decimal Net, decimal Igst = 0);
 
-public sealed record SaleTotals(decimal Gross, decimal Discount, decimal Taxable, decimal Cgst, decimal Sgst, decimal RoundOff, decimal Net);
+public sealed record SaleTotals(decimal Gross, decimal Discount, decimal Taxable, decimal Cgst, decimal Sgst, decimal RoundOff, decimal Net, decimal Igst = 0);
 
 public sealed record Settlement(decimal Paid, decimal Due, SaleStatus Status);
 
@@ -36,10 +36,11 @@ public sealed record Settlement(decimal Paid, decimal Due, SaleStatus Status);
 /// </summary>
 public static class SalePricing
 {
-    public static SaleLinePrice PriceLine(decimal unitMrp, decimal quantity, decimal gstRate, decimal discountPercent)
+    /// <summary>A line at MRP; GST in it is IGST when the goods are delivered in another state (IGST Act s.10).</summary>
+    public static SaleLinePrice PriceLine(decimal unitMrp, decimal quantity, decimal gstRate, decimal discountPercent, bool interState = false)
     {
-        var priced = GstCalculator.PriceInclusive(quantity, unitMrp, discountPercent, gstRate);
-        return new SaleLinePrice(priced.Gross, priced.Discount, priced.Tax.Taxable, priced.Tax.Cgst, priced.Tax.Sgst, priced.Net);
+        var priced = GstCalculator.PriceInclusive(quantity, unitMrp, discountPercent, gstRate, interState);
+        return new SaleLinePrice(priced.Gross, priced.Discount, priced.Tax.Taxable, priced.Tax.Cgst, priced.Tax.Sgst, priced.Net, priced.Tax.Igst);
     }
 
     public static SaleTotals Total(IEnumerable<SaleLinePrice> lines)
@@ -48,7 +49,7 @@ public static class SalePricing
         var net = list.Sum(l => l.Net);
         var (rounded, roundOff) = GstCalculator.RoundToRupee(net);
         return new SaleTotals(list.Sum(l => l.Gross), list.Sum(l => l.Discount), list.Sum(l => l.Taxable), list.Sum(l => l.Cgst), list.Sum(l => l.Sgst),
-            roundOff, rounded);
+            roundOff, rounded, list.Sum(l => l.Igst));
     }
 
     /// <summary>

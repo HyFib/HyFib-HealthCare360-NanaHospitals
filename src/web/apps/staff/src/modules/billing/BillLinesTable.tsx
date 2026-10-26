@@ -136,11 +136,17 @@ export function BillLinesTable({
         line.taxRate > 0 ? (
           <Tooltip
             relationship="description"
-            content={`CGST ${formatInr(line.cgstAmount)} + SGST ${formatInr(line.sgstAmount)} on ${formatInr(line.taxableAmount)}`}
+            content={
+              line.igstAmount !== 0
+                ? `IGST ${formatInr(line.igstAmount)} on ${formatInr(line.taxableAmount)}`
+                : `CGST ${formatInr(line.cgstAmount)} + SGST ${formatInr(line.sgstAmount)} on ${formatInr(line.taxableAmount)}`
+            }
           >
             <span>
               {formatPercent(line.taxRate)} ·{' '}
-              <Amount value={fromPaise(toPaise(line.cgstAmount) + toPaise(line.sgstAmount))} />
+              <Amount
+                value={fromPaise(toPaise(line.cgstAmount) + toPaise(line.sgstAmount) + toPaise(line.igstAmount))}
+              />
             </span>
           </Tooltip>
         ) : (

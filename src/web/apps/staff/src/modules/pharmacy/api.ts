@@ -188,6 +188,18 @@ export interface CounterSaleRequest {
   discountPercent: number;
   payments: SalePayment[];
   confirmControlledDrugs: boolean;
+  /** A buyer registered for GST (B2B invoice); omitted for an ordinary sale. */
+  buyer?: B2bBuyer | null;
+}
+
+/**
+ * A buyer registered for GST (a clinic, a nursing home). `deliveryState`: the GST state code the goods are dispatched
+ * to; null when handed over at the counter, which keeps the supply within the state.
+ */
+export interface B2bBuyer {
+  gstin: string;
+  legalName: string;
+  deliveryState: string | null;
 }
 
 export interface PharmacySaleListItem {
@@ -223,6 +235,7 @@ export interface PharmacySaleItemDto {
   taxableAmount: number;
   cgstAmount: number;
   sgstAmount: number;
+  igstAmount: number;
   netAmount: number;
   returnedQuantity: number;
   isSubstitution: boolean;
@@ -261,6 +274,12 @@ export interface PharmacySaleDetail {
   taxableAmount: number;
   cgstAmount: number;
   sgstAmount: number;
+  /** IGST instead of CGST and SGST: medicines dispatched to a buyer in another state. */
+  igstAmount: number;
+  buyerGstin: string | null;
+  buyerLegalName: string | null;
+  /** GST state code of the place of supply; null for an ordinary (B2C) sale. */
+  placeOfSupply: string | null;
   roundOff: number;
   netAmount: number;
   paidAmount: number;

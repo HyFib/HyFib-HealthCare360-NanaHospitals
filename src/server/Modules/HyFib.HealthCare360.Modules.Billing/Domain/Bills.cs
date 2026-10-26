@@ -87,7 +87,17 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public decimal TaxableAmount { get; set; }
     public decimal CgstAmount { get; set; }
     public decimal SgstAmount { get; set; }
+
+    /// <summary>GST on a supply to another state: the payer is registered there (IGST Act s.12(2)(a) for services).</summary>
+    public decimal IgstAmount { get; set; }
+
     public decimal TaxAmount { get; set; }
+
+    /// <summary>The state of supply as its GST code ("33"): the facility's own, or a registered payer's in another state.</summary>
+    public string? PlaceOfSupply { get; private set; }
+
+    public bool IsInterState { get; private set; }
+
     public decimal RoundOffAmount { get; set; }
     public decimal NetAmount { get; set; }
     public decimal PayerAmount { get; set; }
@@ -262,6 +272,21 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         }
     }
 
+    /// <summary>
+    /// Where the services are supplied for GST: the payer's registered state when the payer has a GSTIN, else the
+    /// facility's. A draft only; the next <see cref="Recalculate"/> splits the tax as IGST or CGST and SGST.
+    /// </summary>
+    public void SetPlaceOfSupply(string? facilityState, string? payerState)
+    {
+        if (Status != BillStatus.Draft)
+        {
+            return;
+        }
+
+        PlaceOfSupply = payerState ?? facilityState;
+        IsInterState = payerState is not null && facilityState is not null && payerState != facilityState;
+    }
+
     public BillTotals Recalculate()
     {
         var ordered = Lines.OrderBy(l => l.SortOrder).ToList();
@@ -272,7 +297,7 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
 
         for (var i = 0; i < ordered.Count; i++)
         {
-            ordered[i].Apply(totals.Lines[i]);
+            ordered[i].Apply(totals.Lines[i], IsInterState);
         }
 
         GrossAmount = totals.Gross;
@@ -282,8 +307,9 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         BillDiscountAmount = totals.BillDiscount;
         DiscountAmount = totals.TotalDiscount;
         TaxableAmount = totals.Taxable;
-        CgstAmount = totals.Cgst;
-        SgstAmount = totals.Sgst;
+        CgstAmount = IsInterState ? 0m : totals.Cgst;
+        SgstAmount = IsInterState ? 0m : totals.Sgst;
+        IgstAmount = IsInterState ? totals.Cgst + totals.Sgst : 0m;
         TaxAmount = totals.Tax;
         RoundOffAmount = totals.RoundOff;
         NetAmount = totals.Net;
@@ -501,6 +527,7 @@ public sealed class BillLine : Entity
     public decimal TaxableAmount { get; set; }
     public decimal CgstAmount { get; set; }
     public decimal SgstAmount { get; set; }
+    public decimal IgstAmount { get; set; }
     public decimal TaxAmount { get; set; }
     public decimal NetAmount { get; set; }
     public bool IsDiscountAllowed { get; set; }
@@ -543,14 +570,16 @@ public sealed class BillLine : Entity
     public BillLineInput ToInput() =>
         new(GrossAmount, PackageCoveredAmount, TariffDiscountPercent, LineDiscountAmount, IsDiscountAllowed, TaxRate, IsPayerPayable);
 
-    public void Apply(BillLineResult result)
+    /// <summary>The line's share of the bill's totals; on an inter-state supply the whole GST is IGST.</summary>
+    public void Apply(BillLineResult result, bool interState = false)
     {
         TariffDiscountAmount = result.TariffDiscount;
         LineDiscountAmount = result.LineDiscount;
         BillDiscountShare = result.BillDiscountShare;
         TaxableAmount = result.Taxable;
-        CgstAmount = result.Cgst;
-        SgstAmount = result.Sgst;
+        CgstAmount = interState ? 0m : result.Cgst;
+        SgstAmount = interState ? 0m : result.Sgst;
+        IgstAmount = interState ? result.Cgst + result.Sgst : 0m;
         TaxAmount = result.Tax;
         NetAmount = result.Net;
     }

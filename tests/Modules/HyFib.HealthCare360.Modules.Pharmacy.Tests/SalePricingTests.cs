@@ -138,3 +138,29 @@ public sealed class SalePricingTests
         dispensed.Lines.ShouldHaveSingleItem().Quantity.ShouldBe(20);
     }
 }
+
+/// <summary>Goods dispatched to a buyer in another state: the GST carved out of the MRP is IGST, the price the same.</summary>
+public sealed class InterStateSaleTests
+{
+    [Fact]
+    public void A_line_delivered_in_another_state_carries_igst_at_the_same_price()
+    {
+        var intra = SalePricing.PriceLine(unitMrp: 112m, quantity: 10m, gstRate: 12m, discountPercent: 0m);
+        var inter = SalePricing.PriceLine(unitMrp: 112m, quantity: 10m, gstRate: 12m, discountPercent: 0m, interState: true);
+
+        (inter.Net, inter.Taxable).ShouldBe((intra.Net, intra.Taxable));
+        (inter.Cgst, inter.Sgst, inter.Igst).ShouldBe((0m, 0m, intra.Cgst + intra.Sgst));
+        SalePricing.Total([inter, inter]).Igst.ShouldBe(inter.Igst * 2);
+    }
+
+    [Fact]
+    public void Goods_handed_over_at_the_counter_are_supplied_in_the_hospitals_state_whoever_buys_them()
+    {
+        var sale = new PharmacySale();
+        sale.SetSupply("32AAACH7409R1Z0", "Kochi Clinic", facilityState: "33", deliveryState: null);
+        (sale.PlaceOfSupply, sale.IsInterState).ShouldBe(("33", false));
+
+        sale.SetSupply("32AAACH7409R1Z0", "Kochi Clinic", facilityState: "33", deliveryState: "32");
+        (sale.PlaceOfSupply, sale.IsInterState).ShouldBe(("32", true));
+    }
+}
