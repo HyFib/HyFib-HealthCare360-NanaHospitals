@@ -17,12 +17,13 @@ import {
 import { CheckmarkCircleRegular, DocumentArrowLeftRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatRelative, isApiError, useSession } from '@hc360/core';
 import { applyServerErrors, LEAVE_KEEPING_DRAFT, Page, PageHeader, useNotify } from '@hc360/ui';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
 import { printUhidCard } from '@/lib/print';
 import { useFormDraft } from '@/lib/useFormDraft';
+import { abhaShareApi, abhaShareQueries, formFromShare, tokenLabel } from '@/modules/front-office/abhaShares';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import { patientApi, patientKeys, type DuplicateCandidate } from '@/modules/patients/api';
 import { PatientForm } from '@/modules/patients/PatientForm';
@@ -36,12 +37,15 @@ import {
 interface RegisterSearch {
   name?: string;
   phone?: string;
+  /** An ABHA profile shared at the counter (scan and share): the form is filled in from it. */
+  share?: string;
 }
 
 export const Route = createFileRoute('/_app/patients/register')({
   validateSearch: (search: Record<string, unknown>): RegisterSearch => ({
     name: typeof search.name === 'string' ? search.name : undefined,
     phone: typeof search.phone === 'string' ? search.phone : undefined,
+    share: typeof search.share === 'string' ? search.share : undefined,
   }),
   component: RegisterPatientPage,
 });
@@ -121,6 +125,15 @@ function RegisterPatientPage() {
     phone: search.phone ?? '',
   }));
 
+  // The share as it was when the page opened: registering takes it off the queue, which must not blank the form.
+  const share = useQuery({
+    ...abhaShareQueries.detail(search.share ?? ''),
+    enabled: Boolean(search.share),
+    staleTime: Infinity,
+  });
+  const fromShare = share.data?.status === 'Waiting' ? share.data : undefined;
+  const formDefaults = useMemo(() => (fromShare ? formFromShare(fromShare) : defaults), [fromShare, defaults]);
+
   const register = useMutation({
     mutationFn: ({ values, confirmed }: { values: PatientFormValues; confirmed: boolean }) =>
       patientApi.register({
@@ -142,6 +155,13 @@ function RegisterPatientPage() {
         phone: values.phone || null,
       });
       void queryClient.invalidateQueries({ queryKey: patientKeys.all });
+      if (fromShare) {
+        // The share is done: the patient leaves the scan-and-share queue.
+        abhaShareApi
+          .registered(fromShare.id, result.id)
+          .then(() => queryClient.invalidateQueries({ queryKey: ['abdm', 'shares'], exact: true }))
+          .catch((error: unknown) => notify.error(error, 'Registered, but the ABHA share is still on the queue'));
+      }
     },
     onError: (error, { values }) => {
       if (isApiError(error) && error.code === 'patient.possible_duplicate' && Array.isArray(error.data)) {
@@ -194,22 +214,46 @@ function RegisterPatientPage() {
         </MessageBar>
       )}
 
-      <PatientForm
-        defaultValues={defaults}
-        onSubmit={(values) => register.mutate({ values, confirmed: false })}
-        busy={register.isPending}
-        submitLabel="Register and issue UHID"
-        checkDuplicates
-        askWhatsAppOptIn
-        onOpenCandidate={(c) => void navigate({ to: '/patients/$patientId', params: { patientId: c.id } })}
-        onFormReady={setForm}
-        leaveQuestion={LEAVE_KEEPING_DRAFT}
-        secondaryActions={
-          <Button appearance="subtle" onClick={() => void navigate({ to: '/patients' })}>
-            Cancel
-          </Button>
-        }
-      />
+      {search.share && share.error && (
+        <MessageBar intent="error">
+          <MessageBarBody>The ABHA share could not be opened, so the form is blank.</MessageBarBody>
+        </MessageBar>
+      )}
+      {share.data && !fromShare && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            Token {tokenLabel(share.data.tokenNumber)} has already left the queue, so the form is blank.
+          </MessageBarBody>
+        </MessageBar>
+      )}
+      {fromShare && (
+        <MessageBar intent="info">
+          <MessageBarBody>
+            Filled in from the ABHA shared at token {tokenLabel(fromShare.tokenNumber)} ({fromShare.abhaAddress}). Check
+            the details with the patient before saving.
+          </MessageBarBody>
+        </MessageBar>
+      )}
+
+      {!(search.share && share.isLoading) && (
+        <PatientForm
+          key={fromShare?.id ?? 'blank'}
+          defaultValues={formDefaults}
+          onSubmit={(values) => register.mutate({ values, confirmed: false })}
+          busy={register.isPending}
+          submitLabel="Register and issue UHID"
+          checkDuplicates
+          askWhatsAppOptIn
+          onOpenCandidate={(c) => void navigate({ to: '/patients/$patientId', params: { patientId: c.id } })}
+          onFormReady={setForm}
+          leaveQuestion={LEAVE_KEEPING_DRAFT}
+          secondaryActions={
+            <Button appearance="subtle" onClick={() => void navigate({ to: '/patients' })}>
+              Cancel
+            </Button>
+          }
+        />
+      )}
 
       <Dialog open={duplicates !== null} onOpenChange={(_, d) => !d.open && setDuplicates(null)}>
         <DialogSurface>

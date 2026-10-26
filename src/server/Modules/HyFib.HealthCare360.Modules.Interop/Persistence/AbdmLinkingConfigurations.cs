@@ -113,3 +113,30 @@ internal sealed class AbdmTransferConfiguration : IEntityTypeConfiguration<AbdmT
         b.HasIndex(x => new { x.PatientId, x.RequestedAt });
     }
 }
+
+internal sealed class AbdmProfileShareConfiguration : IEntityTypeConfiguration<AbdmProfileShare>
+{
+    public void Configure(EntityTypeBuilder<AbdmProfileShare> b)
+    {
+        b.ToTable("abdm_profile_shares", InteropSchema.Name);
+        b.Property(x => x.HipId).HasMaxLength(64);
+        b.Property(x => x.Context).HasMaxLength(64);
+        b.Property(x => x.AbhaAddress).HasMaxLength(100);
+        b.Property(x => x.AbhaNumberCipher).HasMaxLength(500).IsProtectedValue();
+        b.Property(x => x.AbhaNumberMasked).HasMaxLength(32);
+        b.Property(x => x.Name).HasMaxLength(200);
+        b.Property(x => x.Gender).HasMaxLength(8);
+        b.Property(x => x.Phone).HasMaxLength(20);
+        b.Property(x => x.AddressLine).HasMaxLength(500);
+        b.Property(x => x.District).HasMaxLength(100);
+        b.Property(x => x.State).HasMaxLength(100);
+        b.Property(x => x.Pincode).HasMaxLength(10);
+        b.Property(x => x.MatchedBy).HasMaxLength(32);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+
+        // Token numbers run per hospital per day; a second share in the same hour reuses its token.
+        b.HasIndex(x => new { x.HipId, x.TokenDate, x.TokenNumber }).IsUnique();
+        b.HasIndex(x => new { x.HipId, x.AbhaAddress, x.Context, x.SharedAt });
+        b.HasIndex(x => new { x.PatientId, x.SharedAt });
+    }
+}

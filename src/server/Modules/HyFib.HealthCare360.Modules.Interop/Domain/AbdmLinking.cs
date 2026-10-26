@@ -288,3 +288,87 @@ internal sealed class AbdmTransfer : AuditableEntity
 
     public string? Error { get; set; }
 }
+
+/// <summary>Where a patient who shared their ABHA profile at a counter has got to.</summary>
+public enum AbdmShareStatus
+{
+    /// <summary>In the counter's queue with their token number.</summary>
+    Waiting,
+
+    /// <summary>Staff registered them, or found their record, from the share.</summary>
+    Registered,
+
+    /// <summary>Staff took them off the queue without registering them (they left, or shared by mistake).</summary>
+    Dismissed,
+}
+
+/// <summary>
+/// A patient's ABHA profile shared at the hospital by scanning its QR code with their PHR app (scan and share, ABDM M1):
+/// the token number they were given for the counter, what their ABHA says about them, and the patient on record it
+/// matches. Staff register the patient from it, or open their record, at the counter. Kept a week, then deleted.
+/// </summary>
+internal sealed class AbdmProfileShare : AuditableEntity
+{
+    /// <summary>A token holds for an hour: the same patient scanning again at the same counter gets the same one.</summary>
+    public static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(1);
+
+    /// <summary>How long shares are kept, for the desk to look back at a busy morning.</summary>
+    public const int KeptDays = 7;
+
+    public string HipId { get; set; } = string.Empty;
+
+    /// <summary>The counter's code in the QR the patient scanned.</summary>
+    public string Context { get; set; } = string.Empty;
+
+    /// <summary>The day the token is for, in India; numbers start again at 1 each day.</summary>
+    public DateOnly TokenDate { get; set; }
+
+    public int TokenNumber { get; set; }
+
+    /// <summary>The ABHA address, lower-case.</summary>
+    public string AbhaAddress { get; set; } = string.Empty;
+
+    /// <summary>The 14-digit ABHA number, encrypted like other identifiers.</summary>
+    public string? AbhaNumberCipher { get; set; }
+
+    public string? AbhaNumberMasked { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>ABDM's code: <c>M</c>, <c>F</c>, <c>O</c> or <c>U</c>.</summary>
+    public string? Gender { get; set; }
+
+    public int? YearOfBirth { get; set; }
+
+    public int? MonthOfBirth { get; set; }
+
+    public int? DayOfBirth { get; set; }
+
+    /// <summary>The mobile number on the ABHA, E.164.</summary>
+    public string? Phone { get; set; }
+
+    public string? AddressLine { get; set; }
+
+    public string? District { get; set; }
+
+    public string? State { get; set; }
+
+    public string? Pincode { get; set; }
+
+    public DateTimeOffset SharedAt { get; set; }
+
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    public AbdmShareStatus Status { get; set; }
+
+    /// <summary>
+    /// While waiting, the patient on record the share matches, if exactly one does (<see cref="MatchedBy"/>); once
+    /// registered, the patient staff registered or chose.
+    /// </summary>
+    public Guid? PatientId { get; set; }
+
+    /// <summary><c>ABHA_ADDRESS</c>, <c>ABHA_NUMBER</c> or <c>MOBILE</c>; null when nothing matched.</summary>
+    public string? MatchedBy { get; set; }
+
+    public DateTimeOffset? HandledAt { get; set; }
+}

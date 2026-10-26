@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Services;
+using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Platform.Documents;
 
 namespace HyFib.HealthCare360.Modules.Interop.Features;
@@ -49,6 +50,18 @@ internal static class AbdmEndpoints
             .WithValidation<AbdmLinkInput>();
         links.MapGet("/{id:guid}", async (Guid id, AbdmLinkingService linking, CancellationToken ct) =>
             (await linking.GetAsync(id, ct)).ToOk());
+
+        // Scan and share: the counter's queue of patients who shared their ABHA profile (AbdmProfileShareService). The desk
+        // registers them from it; the full details (ABHA number, mobile) need the contact permission, as a patient's edit does.
+        var shares = abdm.MapGroup("/shares").RequirePermission(PatientsPermissions.Register);
+        shares.MapGet("", async (AbdmProfileShareService service, CancellationToken ct) => TypedResults.Ok(await service.ListAsync(ct)));
+        shares.MapGet("/{id:guid}", async (Guid id, AbdmProfileShareService service, CancellationToken ct) => (await service.GetAsync(id, ct)).ToOk())
+            .RequirePermission(PatientsPermissions.ContactRead);
+        shares.MapPost("/{id:guid}/registered", async (Guid id, AbdmShareRegisteredInput input, AbdmProfileShareService service, CancellationToken ct) =>
+                (await service.RegisteredAsync(id, input, ct)).ToOk())
+            .WithValidation<AbdmShareRegisteredInput>();
+        shares.MapPost("/{id:guid}/dismiss", async (Guid id, AbdmProfileShareService service, CancellationToken ct) =>
+            (await service.DismissAsync(id, ct)).ToOk());
     }
 
     private static async Task<IResult> ExportAsync(AbdmRecordType type, Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct)

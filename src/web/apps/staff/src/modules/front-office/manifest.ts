@@ -28,6 +28,13 @@ const manifest: ModuleManifest = {
       keywords: ['token', 'call next', 'waiting'],
     },
     {
+      label: 'ABHA scan and share',
+      to: '/front-office/abha-shares',
+      permission: 'patients.register',
+      feature: 'abdm',
+      keywords: ['abdm', 'qr', 'token', 'abha registration'],
+    },
+    {
       label: 'Enquiries',
       to: '/front-office/enquiries',
       permission: 'frontoffice.enquiries',

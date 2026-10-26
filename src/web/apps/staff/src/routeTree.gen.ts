@@ -91,6 +91,7 @@ import { Route as AppEmrTemplatesRouteImport } from './routes/_app/emr/templates
 import { Route as AppFeedbackIndexRouteImport } from './routes/_app/feedback/index'
 import { Route as AppFeedbackResponsesRouteImport } from './routes/_app/feedback/responses'
 import { Route as AppFrontOfficeIndexRouteImport } from './routes/_app/front-office/index'
+import { Route as AppFrontOfficeAbhaSharesRouteImport } from './routes/_app/front-office/abha-shares'
 import { Route as AppFrontOfficeEnquiriesRouteImport } from './routes/_app/front-office/enquiries'
 import { Route as AppFrontOfficeQueueRouteImport } from './routes/_app/front-office/queue'
 import { Route as AppFrontOfficeVisitorsRouteImport } from './routes/_app/front-office/visitors'
@@ -745,6 +746,12 @@ const AppFrontOfficeIndexRoute = AppFrontOfficeIndexRouteImport.update({
   path: '/front-office/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppFrontOfficeAbhaSharesRoute =
+  AppFrontOfficeAbhaSharesRouteImport.update({
+    id: '/front-office/abha-shares',
+    path: '/front-office/abha-shares',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppFrontOfficeEnquiriesRoute = AppFrontOfficeEnquiriesRouteImport.update({
   id: '/front-office/enquiries',
   path: '/front-office/enquiries',
@@ -2073,6 +2080,7 @@ export interface FileRoutesByFullPath {
   '/emr/order-sets': typeof AppEmrOrderSetsRoute
   '/emr/templates': typeof AppEmrTemplatesRoute
   '/feedback/responses': typeof AppFeedbackResponsesRoute
+  '/front-office/abha-shares': typeof AppFrontOfficeAbhaSharesRoute
   '/front-office/enquiries': typeof AppFrontOfficeEnquiriesRoute
   '/front-office/queue': typeof AppFrontOfficeQueueRoute
   '/front-office/visitors': typeof AppFrontOfficeVisitorsRoute
@@ -2396,6 +2404,7 @@ export interface FileRoutesByTo {
   '/emr/order-sets': typeof AppEmrOrderSetsRoute
   '/emr/templates': typeof AppEmrTemplatesRoute
   '/feedback/responses': typeof AppFeedbackResponsesRoute
+  '/front-office/abha-shares': typeof AppFrontOfficeAbhaSharesRoute
   '/front-office/enquiries': typeof AppFrontOfficeEnquiriesRoute
   '/front-office/queue': typeof AppFrontOfficeQueueRoute
   '/front-office/visitors': typeof AppFrontOfficeVisitorsRoute
@@ -2721,6 +2730,7 @@ export interface FileRoutesById {
   '/_app/emr/order-sets': typeof AppEmrOrderSetsRoute
   '/_app/emr/templates': typeof AppEmrTemplatesRoute
   '/_app/feedback/responses': typeof AppFeedbackResponsesRoute
+  '/_app/front-office/abha-shares': typeof AppFrontOfficeAbhaSharesRoute
   '/_app/front-office/enquiries': typeof AppFrontOfficeEnquiriesRoute
   '/_app/front-office/queue': typeof AppFrontOfficeQueueRoute
   '/_app/front-office/visitors': typeof AppFrontOfficeVisitorsRoute
@@ -3046,6 +3056,7 @@ export interface FileRouteTypes {
     | '/emr/order-sets'
     | '/emr/templates'
     | '/feedback/responses'
+    | '/front-office/abha-shares'
     | '/front-office/enquiries'
     | '/front-office/queue'
     | '/front-office/visitors'
@@ -3369,6 +3380,7 @@ export interface FileRouteTypes {
     | '/emr/order-sets'
     | '/emr/templates'
     | '/feedback/responses'
+    | '/front-office/abha-shares'
     | '/front-office/enquiries'
     | '/front-office/queue'
     | '/front-office/visitors'
@@ -3693,6 +3705,7 @@ export interface FileRouteTypes {
     | '/_app/emr/order-sets'
     | '/_app/emr/templates'
     | '/_app/feedback/responses'
+    | '/_app/front-office/abha-shares'
     | '/_app/front-office/enquiries'
     | '/_app/front-office/queue'
     | '/_app/front-office/visitors'
@@ -4533,6 +4546,13 @@ declare module '@tanstack/react-router' {
       path: '/front-office'
       fullPath: '/front-office/'
       preLoaderRoute: typeof AppFrontOfficeIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/front-office/abha-shares': {
+      id: '/_app/front-office/abha-shares'
+      path: '/front-office/abha-shares'
+      fullPath: '/front-office/abha-shares'
+      preLoaderRoute: typeof AppFrontOfficeAbhaSharesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/front-office/enquiries': {
@@ -6280,6 +6300,7 @@ interface AppRouteChildren {
   AppEmrOrderSetsRoute: typeof AppEmrOrderSetsRoute
   AppEmrTemplatesRoute: typeof AppEmrTemplatesRoute
   AppFeedbackResponsesRoute: typeof AppFeedbackResponsesRoute
+  AppFrontOfficeAbhaSharesRoute: typeof AppFrontOfficeAbhaSharesRoute
   AppFrontOfficeEnquiriesRoute: typeof AppFrontOfficeEnquiriesRoute
   AppFrontOfficeQueueRoute: typeof AppFrontOfficeQueueRoute
   AppFrontOfficeVisitorsRoute: typeof AppFrontOfficeVisitorsRoute
@@ -6602,6 +6623,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppEmrOrderSetsRoute: AppEmrOrderSetsRoute,
   AppEmrTemplatesRoute: AppEmrTemplatesRoute,
   AppFeedbackResponsesRoute: AppFeedbackResponsesRoute,
+  AppFrontOfficeAbhaSharesRoute: AppFrontOfficeAbhaSharesRoute,
   AppFrontOfficeEnquiriesRoute: AppFrontOfficeEnquiriesRoute,
   AppFrontOfficeQueueRoute: AppFrontOfficeQueueRoute,
   AppFrontOfficeVisitorsRoute: AppFrontOfficeVisitorsRoute,

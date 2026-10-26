@@ -96,6 +96,7 @@ internal sealed class HttpAbdmGatewayClient(
     public const string OnConsentNotifyPath = "/consent/v3/request/hip/on-notify";
     public const string OnHealthInformationRequestPath = "/data-flow/v3/health-information/hip/on-request";
     public const string TransferNotifyPath = "/data-flow/v3/health-information/notify";
+    public const string OnSharePath = "/patient-share/v3/on-share";
 
     public const string RefusedCode = "abdm.gateway_refused";
     public const string UnreachableCode = "abdm.gateway_unreachable";
@@ -149,6 +150,9 @@ internal sealed class HttpAbdmGatewayClient(
 
     public Task<Result> NotifyTransferAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct) =>
         SendAsync(TransferNotifyPath, notification, Guid.CreateVersion7(), linkToken: null, "report a transfer of health information", ct);
+
+    public Task<Result> AnswerShareAsync(AbdmGatewayMessages.OnShare answer, CancellationToken ct) =>
+        SendAsync(OnSharePath, answer, Guid.CreateVersion7(), linkToken: null, "give a token for a shared profile", ct);
 
     private async Task<Result> SendAsync(string path, object body, Guid requestId, string? linkToken, string what, CancellationToken ct)
     {
