@@ -49,6 +49,7 @@ public sealed class InteropModule : IModule
         services.AddScoped<AbdmUserLinkingService>();
         services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
         services.AddScoped<AbdmDataFlowService>();
+        services.AddScoped<AbdmProfileShareService>();
         services.AddSingleton<IFideliusCipher, FideliusCipher>();
     }
 

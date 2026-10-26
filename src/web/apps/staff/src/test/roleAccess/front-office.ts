@@ -1,3 +1,4 @@
+import type { AbhaShareRow } from '@/modules/front-office/abhaShares';
 import type { DisplayDepartment, EnquiryDto, VisitorPassDto } from '@/modules/front-office/api';
 import type { VisitDetail, VisitListItem } from '@/modules/patients/api';
 import { PATIENTS } from '../accessibility/fixtures/frontOffice';
@@ -200,7 +201,49 @@ const DISPLAY: DisplayDepartment[] = [
   },
 ];
 
+// Scan and share: one new patient waiting to be registered, one matched to their record, one already done.
+const share = (overrides: Partial<AbhaShareRow> & Pick<AbhaShareRow, 'id' | 'tokenNumber'>): AbhaShareRow => ({
+  counter: 'REG-1',
+  name: 'Arjun Rao',
+  gender: 'M',
+  yearOfBirth: 1990,
+  abhaAddress: 'arjun.rao@abdm',
+  abhaNumberMasked: 'xx-xxxx-xxxx-4821',
+  phoneMasked: '+91******3210',
+  status: 'Waiting',
+  sharedAt: minutesAgo(6),
+  expiresAt: minutesAgo(-54),
+  patient: null,
+  matchedBy: null,
+  ...overrides,
+});
+
+const SHARES: AbhaShareRow[] = [
+  share({ id: RECORD_ID, tokenNumber: 7 }),
+  share({
+    id: id('31'),
+    tokenNumber: 8,
+    name: ASHA.fullName,
+    gender: 'F',
+    abhaAddress: 'asha.d@abdm',
+    patient: { id: ASHA.id, uhid: ASHA.uhid, fullName: ASHA.fullName },
+    matchedBy: 'ABHA_ADDRESS',
+  }),
+  share({
+    id: id('32'),
+    tokenNumber: 3,
+    status: 'Registered',
+    name: RAVI.fullName,
+    abhaAddress: 'ravi.k@abdm',
+    sharedAt: minutesAgo(90),
+    patient: { id: RAVI.id, uhid: RAVI.uhid, fullName: RAVI.fullName },
+  }),
+];
+
 export const ANSWERS: FakeAnswers = {
+  // ABDM is off until the hospital turns it on; the hospital in this check has.
+  'GET /api/v1/settings/public': { 'features.abdm': true },
+  'GET /api/v1/abdm/shares': SHARES,
   'GET /api/v1/visits': paged(VISITS),
   [`GET /api/v1/visits/${RECORD_ID}`]: VISIT,
   'GET /api/v1/front-office/enquiries': paged(ENQUIRIES),

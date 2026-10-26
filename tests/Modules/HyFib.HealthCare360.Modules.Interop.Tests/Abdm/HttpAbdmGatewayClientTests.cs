@@ -268,4 +268,33 @@ public sealed class HttpAbdmGatewayClientTests
         status.GetProperty("sessionStatus").GetString().ShouldBe("TRANSFERRED");
         status.GetProperty("statusResponses")[0].GetProperty("hiStatus").GetString().ShouldBe("DELIVERED");
     }
+
+    [Fact]
+    public async Task The_token_for_a_shared_profile_goes_to_the_wrappers_on_share_path()
+    {
+        _gateway.Respond(HttpStatusCode.OK, Session).Respond(HttpStatusCode.Accepted);
+        var client = Client();
+
+        (await client.AnswerShareAsync(new AbdmGatewayMessages.OnShare(
+            new("SUCCESS", "meera.k@sbx", new("REG-1", "0007", "2026-10-26T10:30:00.000Z")), new("gateway-call-3"), null), Ct)).IsSuccess.ShouldBeTrue();
+
+        var answer = _gateway.Requests.Skip(1).ShouldHaveSingleItem();
+        answer.Uri.AbsolutePath.ShouldBe("/api/hiecm/patient-share/v3/on-share");
+        answer.Body.ShouldBe(
+            """{"acknowledgement":{"status":"SUCCESS","abhaAddress":"meera.k@sbx","profile":{"context":"REG-1","tokenNumber":"0007","expiry":"2026-10-26T10:30:00.000Z"}},"response":{"requestId":"gateway-call-3"}}""");
+    }
+
+    [Theory]
+    [InlineData("1990", 1990)]
+    [InlineData("1990 ", null)]
+    [InlineData("", null)]
+    [InlineData("null", null)]
+    public void A_shared_profiles_date_parts_are_read_as_numbers_or_strings(string yearOfBirth, int? expected)
+    {
+        var asString = System.Text.Json.JsonSerializer.Deserialize<AbdmGatewayMessages.SharePatient>(
+            $$$"""{"abhaAddress":"a.b@sbx","yearOfBirth":"{{{yearOfBirth}}}","monthOfBirth":6,"dayOfBirth":{"odd":1}}""", AbdmGatewayMessages.Json)!;
+        asString.YearOfBirth.ShouldBe(expected);
+        asString.MonthOfBirth.ShouldBe(6);
+        asString.DayOfBirth.ShouldBeNull();
+    }
 }

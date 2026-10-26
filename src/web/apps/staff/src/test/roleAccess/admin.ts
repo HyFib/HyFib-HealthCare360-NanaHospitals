@@ -11,7 +11,7 @@ import type {
   UserDetail,
   UserListItem,
 } from '@/modules/admin/api';
-import type { IntegrationStatusDto } from '@/modules/admin/integrationsApi';
+import type { AbdmGatewayStatus, IntegrationStatusDto } from '@/modules/admin/integrationsApi';
 import type { NotificationLogDto, NotificationTemplateDto } from '@/modules/admin/notificationTemplatesApi';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers, type FakeRequest } from '../fakeApi';
 
@@ -576,7 +576,24 @@ const AI_USAGE: AiUsageDto[] = [
   },
 ];
 
+// The ABDM gateway as Integrations shows it while ABDM health records are switched on: set up for NHA's sandbox.
+const ABDM_GATEWAY: AbdmGatewayStatus = {
+  enabled: true,
+  configured: true,
+  live: true,
+  baseUrl: 'https://dev.abdm.gov.in/api/hiecm',
+  hipId: 'IN2710000123',
+  cmId: 'sbx',
+  hasClientId: true,
+  hasClientSecret: true,
+  problems: [],
+  remaining: [
+    "Pass NHA's sandbox functional tests and certification (milestone M2), then switch to the production gateway.",
+  ],
+};
+
 export const ANSWERS: FakeAnswers = {
+  'GET /api/v1/abdm/gateway': ABDM_GATEWAY,
   'GET /api/v1/admin/users': paged(USERS),
   'GET /api/v1/admin/users/*': userById,
   'GET /api/v1/admin/roles': ROLES,

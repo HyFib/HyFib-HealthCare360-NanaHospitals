@@ -115,6 +115,8 @@ internal sealed record AbdmLinkTokenRequest(string AbhaAddress, string Name, str
 /// <item><see cref="AnswerHealthInformationRequestAsync"/>: <c>POST /data-flow/v3/health-information/hip/on-request</c>;
 /// the encrypted documents then go to the HIU's <c>dataPushUrl</c> (<see cref="AbdmDataPush"/>), and
 /// <see cref="NotifyTransferAsync"/> (<c>POST /data-flow/v3/health-information/notify</c>) says what was delivered.</item>
+/// <item><see cref="AnswerShareAsync"/>: <c>POST /patient-share/v3/on-share</c>, the token number given to a patient who
+/// scanned the hospital's QR code and shared their ABHA profile (scan and share, ABDM M1).</item>
 /// </list>
 /// The live client is <see cref="HttpAbdmGatewayClient"/>; every call is refused with <c>abdm.gateway_disabled</c>
 /// while the gateway is switched off or not set up (<see cref="DisabledAbdmGatewayClient"/>).
@@ -146,6 +148,9 @@ internal interface IAbdmGatewayClient
 
     /// <summary>Tells the gateway what a transfer delivered, per care context.</summary>
     Task<Result> NotifyTransferAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct);
+
+    /// <summary>Answers a profile share with the patient's token number, or why not.</summary>
+    Task<Result> AnswerShareAsync(AbdmGatewayMessages.OnShare answer, CancellationToken ct);
 }
 
 /// <summary>
@@ -269,6 +274,8 @@ internal sealed class DisabledAbdmGatewayClient(AbdmGatewayConfiguration configu
         await RefuseAsync(ct);
 
     public async Task<Result> NotifyTransferAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct) => await RefuseAsync(ct);
+
+    public async Task<Result> AnswerShareAsync(AbdmGatewayMessages.OnShare answer, CancellationToken ct) => await RefuseAsync(ct);
 
     /// <summary>The refusal, or null when the gateway is switched on and set up.</summary>
     public async Task<Error?> WhyNotAsync(CancellationToken ct)

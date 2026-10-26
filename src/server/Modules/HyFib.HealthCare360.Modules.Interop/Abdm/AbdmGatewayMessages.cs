@@ -149,6 +149,71 @@ internal static class AbdmGatewayMessages
     /// <summary><c>POST /data-flow/v3/health-information/notify</c>: what was delivered, per care context.</summary>
     public sealed record TransferNotify(TransferNotification Notification);
 
+    /// <summary>The patient's address on their ABHA, as a profile share carries it.</summary>
+    public sealed record ShareAddress(string? Line, string? District, string? State, string? Pincode);
+
+    /// <summary>
+    /// The patient's ABHA profile in a scan-and-share call. The wrapper types the date parts as strings; ABDM may send them
+    /// as numbers or strings, and an empty or odd one is read as missing (<see cref="LenientIntConverter"/>).
+    /// </summary>
+    public sealed record SharePatient(
+        string? AbhaAddress,
+        string? AbhaNumber,
+        string? Name,
+        string? Gender,
+        ShareAddress? Address,
+        [property: JsonConverter(typeof(LenientIntConverter))] int? YearOfBirth,
+        [property: JsonConverter(typeof(LenientIntConverter))] int? DayOfBirth,
+        [property: JsonConverter(typeof(LenientIntConverter))] int? MonthOfBirth,
+        string? PhoneNumber,
+        IReadOnlyList<Identifier>? Identifiers);
+
+    public sealed record ShareProfile(SharePatient? Patient);
+
+    /// <summary>Where the patient scanned the hospital's QR code: <c>context</c> is the counter's code in the QR.</summary>
+    public sealed record ShareMetaData(string? HipId, string? Context, string? HprId, string? Latitude, string? Longitude);
+
+    /// <summary><c>POST /api/v3/hip/patient/share</c>: a patient scanned the hospital's QR code and shared their ABHA profile.</summary>
+    public sealed record ProfileShare(string? Intent, ShareMetaData? MetaData, ShareProfile? Profile);
+
+    /// <summary>The token number the patient is given at the counter, and until when it holds.</summary>
+    public sealed record ShareToken(string Context, string TokenNumber, string Expiry);
+
+    public sealed record ShareAcknowledgement(string Status, string AbhaAddress, ShareToken Profile);
+
+    /// <summary><c>POST /patient-share/v3/on-share</c>: the token for the patient's app, or why not.</summary>
+    public sealed record OnShare(ShareAcknowledgement? Acknowledgement, RespRequest Response, GatewayError? Error);
+
+    /// <summary>Reads a number given as a number or a string; anything else, including an empty string, as null.</summary>
+    public sealed class LenientIntConverter : JsonConverter<int?>
+    {
+        public override int? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => reader.TokenType switch
+        {
+            JsonTokenType.Number when reader.TryGetInt32(out var number) => number,
+            JsonTokenType.String when int.TryParse(reader.GetString(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number) => number,
+            JsonTokenType.StartObject or JsonTokenType.StartArray => Skip(ref reader),
+            _ => null,
+        };
+
+        public override void Write(Utf8JsonWriter writer, int? value, JsonSerializerOptions options)
+        {
+            if (value is { } number)
+            {
+                writer.WriteNumberValue(number);
+            }
+            else
+            {
+                writer.WriteNullValue();
+            }
+        }
+
+        private static int? Skip(ref Utf8JsonReader reader)
+        {
+            reader.Skip();
+            return null;
+        }
+    }
+
     /// <summary>
     /// The gateway's error in an answer body. NHA's wrapper notes the v3 gateway is not consistent: an error comes as
     /// <c>{"error": {...}}</c> or as <c>{"errors": [{"error": {...}}]}</c>, and both are read here.
