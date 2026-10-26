@@ -242,11 +242,30 @@ public sealed class HttpAbdmGatewayClientTests
     }
 
     [Fact]
-    public async Task Consent_and_data_flow_are_still_refused()
+    public async Task Consent_and_data_flow_answers_go_to_the_wrappers_paths()
     {
+        _gateway.Respond(HttpStatusCode.OK, Session).Respond(HttpStatusCode.Accepted).Respond(HttpStatusCode.Accepted).Respond(HttpStatusCode.Accepted);
         var client = Client();
+        var response = new AbdmGatewayMessages.RespRequest("gateway-call-2");
 
-        (await client.AcknowledgeConsentAsync(new AbdmConsentNotification("c", "GRANTED", "r"), Ct)).Error!.Code.ShouldBe(DisabledAbdmGatewayClient.Code);
-        _gateway.Requests.ShouldBeEmpty();
+        (await client.AnswerConsentNotifyAsync(new AbdmGatewayMessages.OnConsentNotify(new("OK", "consent-1"), response, null), Ct)).IsSuccess.ShouldBeTrue();
+        (await client.AnswerHealthInformationRequestAsync(new AbdmGatewayMessages.OnHealthInformationRequest(new("txn-2", "ACKNOWLEDGED"), response, null), Ct))
+            .IsSuccess.ShouldBeTrue();
+        (await client.NotifyTransferAsync(new AbdmGatewayMessages.TransferNotify(new AbdmGatewayMessages.TransferNotification(
+            "consent-1", "txn-2", "2026-10-26T09:30:15.123Z", new("HIP", "IN2710000123"),
+            new("TRANSFERRED", "IN2710000123", [new("op-consultation/1", "DELIVERED", "Delivered")]))), Ct)).IsSuccess.ShouldBeTrue();
+
+        var answers = _gateway.Requests.Skip(1).ToList();
+        answers.Select(r => r.Uri.AbsolutePath).ShouldBe(
+        [
+            "/api/hiecm/consent/v3/request/hip/on-notify",
+            "/api/hiecm/data-flow/v3/health-information/hip/on-request",
+            "/api/hiecm/data-flow/v3/health-information/notify",
+        ]);
+        answers[0].Body.ShouldBe("""{"acknowledgement":{"status":"OK","consentId":"consent-1"},"response":{"requestId":"gateway-call-2"}}""");
+        answers[1].Json().GetProperty("hiRequest").GetProperty("sessionStatus").GetString().ShouldBe("ACKNOWLEDGED");
+        var status = answers[2].Json().GetProperty("notification").GetProperty("statusNotification");
+        status.GetProperty("sessionStatus").GetString().ShouldBe("TRANSFERRED");
+        status.GetProperty("statusResponses")[0].GetProperty("hiStatus").GetString().ShouldBe("DELIVERED");
     }
 }

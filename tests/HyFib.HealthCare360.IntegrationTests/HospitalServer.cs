@@ -136,10 +136,11 @@ public sealed class HospitalServer : IAsyncLifetime
         builder.Services.AddSingleton(new ReleaseTrust([.. ReleaseKeys.Trusted, ReleaseKey.FromSubjectPublicKeyInfo(ReleaseSigningKey.ExportSubjectPublicKeyInfo())]));
         builder.AddServerApplication(certificates);
 
-        // The ABDM gateway is a fake one of this run (AbdmLinkingTests): the gateway client and the key-set fetch send
-        // their requests to it, and nothing goes to the network.
+        // The ABDM gateway is a fake one of this run (AbdmLinkingTests): the gateway client, the key-set fetch and the
+        // pushes to an HIU send their requests to it, and nothing goes to the network.
         builder.Services.AddHttpClient<HttpAbdmGatewayClient>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbdmGatewayKeys>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
+        builder.Services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
 
         _app = builder.Build();
         var platform = _app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value;

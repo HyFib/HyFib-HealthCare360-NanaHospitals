@@ -70,8 +70,8 @@ internal sealed class AbdmGatewaySessions
 }
 
 /// <summary>
-/// The live gateway client (<see cref="IAbdmGatewayClient"/>): the session, HIP-initiated linking and the answers of
-/// user-initiated linking. Every call goes
+/// The live gateway client (<see cref="IAbdmGatewayClient"/>): the session, HIP-initiated linking, the answers of
+/// user-initiated linking, and consent and data flow. Every call goes
 /// to the base URL in the settings with the headers NHA's wrapper sends (<c>Authorization: Bearer</c>, <c>X-CM-ID</c>,
 /// <c>REQUEST-ID</c>, <c>TIMESTAMP</c>, <c>X-HIP-ID</c>, and <c>X-LINK-TOKEN</c> when adding care contexts). The gateway
 /// accepts a call with 202 and answers it later through HC360's callback endpoints; any other answer is a refusal,
@@ -93,6 +93,9 @@ internal sealed class HttpAbdmGatewayClient(
     public const string OnDiscoverPath = "/user-initiated-linking/v3/patient/care-context/on-discover";
     public const string OnLinkInitPath = "/user-initiated-linking/v3/link/care-context/on-init";
     public const string OnLinkConfirmPath = "/user-initiated-linking/v3/link/care-context/on-confirm";
+    public const string OnConsentNotifyPath = "/consent/v3/request/hip/on-notify";
+    public const string OnHealthInformationRequestPath = "/data-flow/v3/health-information/hip/on-request";
+    public const string TransferNotifyPath = "/data-flow/v3/health-information/notify";
 
     public const string RefusedCode = "abdm.gateway_refused";
     public const string UnreachableCode = "abdm.gateway_unreachable";
@@ -138,11 +141,14 @@ internal sealed class HttpAbdmGatewayClient(
     public Task<Result> AnswerLinkConfirmAsync(AbdmGatewayMessages.OnLinkConfirm answer, CancellationToken ct) =>
         SendAsync(OnLinkConfirmPath, answer, Guid.CreateVersion7(), linkToken: null, "confirm the records the patient linked", ct);
 
-    public Task<Result> AcknowledgeConsentAsync(AbdmConsentNotification notification, CancellationToken ct) =>
-        refusal.AcknowledgeConsentAsync(notification, ct);
+    public Task<Result> AnswerConsentNotifyAsync(AbdmGatewayMessages.OnConsentNotify answer, CancellationToken ct) =>
+        SendAsync(OnConsentNotifyPath, answer, Guid.CreateVersion7(), linkToken: null, "acknowledge a consent", ct);
 
-    public Task<Result> TransferHealthInformationAsync(AbdmHealthInformationTransfer transfer, CancellationToken ct) =>
-        refusal.TransferHealthInformationAsync(transfer, ct);
+    public Task<Result> AnswerHealthInformationRequestAsync(AbdmGatewayMessages.OnHealthInformationRequest answer, CancellationToken ct) =>
+        SendAsync(OnHealthInformationRequestPath, answer, Guid.CreateVersion7(), linkToken: null, "answer a request for health information", ct);
+
+    public Task<Result> NotifyTransferAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct) =>
+        SendAsync(TransferNotifyPath, notification, Guid.CreateVersion7(), linkToken: null, "report a transfer of health information", ct);
 
     private async Task<Result> SendAsync(string path, object body, Guid requestId, string? linkToken, string what, CancellationToken ct)
     {

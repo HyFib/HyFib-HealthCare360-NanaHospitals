@@ -200,6 +200,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.item.clinical.medical_records': 'Medical record files',
     'myPrivacy.item.clinical.record_requests': 'Requests for your medical records',
     'myPrivacy.item.interop.abdm_link_requests': 'Records linked to your ABHA',
+    'myPrivacy.item.interop.abdm_transfers': 'Times your records were sent to another provider through ABDM',
     'myPrivacy.item.clinical.prescriptions': 'Prescriptions',
     'myPrivacy.item.pharmacy.sales': 'Pharmacy bills',
     'myPrivacy.item.pharmacy.refill_requests': 'Refill requests',
@@ -689,6 +690,8 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.item.clinical.medical_records': 'मेडिकल रिकॉर्ड की फ़ाइलें',
     'myPrivacy.item.clinical.record_requests': 'आपके मेडिकल रिकॉर्ड के लिए अनुरोध',
     'myPrivacy.item.interop.abdm_link_requests': 'आपके ABHA से जोड़े गए रिकॉर्ड',
+    'myPrivacy.item.interop.abdm_transfers':
+      'ABDM के ज़रिए आपके रिकॉर्ड दूसरे स्वास्थ्य प्रदाता को भेजे जाने की संख्या',
     'myPrivacy.item.clinical.prescriptions': 'दवा के पर्चे',
     'myPrivacy.item.pharmacy.sales': 'फ़ार्मेसी के बिल',
     'myPrivacy.item.pharmacy.refill_requests': 'दवा दोबारा लेने के अनुरोध',
@@ -1197,6 +1200,8 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.item.clinical.medical_records': 'மருத்துவப் பதிவுக் கோப்புகள்',
     'myPrivacy.item.clinical.record_requests': 'உங்கள் மருத்துவப் பதிவுகளுக்கான கோரிக்கைகள்',
     'myPrivacy.item.interop.abdm_link_requests': 'உங்கள் ABHA உடன் இணைக்கப்பட்ட பதிவுகள்',
+    'myPrivacy.item.interop.abdm_transfers':
+      'ABDM வழியாக உங்கள் பதிவுகள் மற்றொரு மருத்துவ சேவையாளருக்கு அனுப்பப்பட்ட முறைகள்',
     'myPrivacy.item.clinical.prescriptions': 'மருந்துச் சீட்டுகள்',
     'myPrivacy.item.pharmacy.sales': 'மருந்தக பில்கள்',
     'myPrivacy.item.pharmacy.refill_requests': 'மருந்து மறுநிரப்புக் கோரிக்கைகள்',

@@ -22,8 +22,8 @@ internal sealed record AbdmExport(R4.Bundle Bundle, string FileName);
 /// Every export is audited as an access to the patient's record.
 /// <para>
 /// The export is a staff download, like the printed document: it does not need the patient's record-sharing consent
-/// of the FHIR read API. Sending a document to ABDM is a separate step that ABDM itself authorises with the patient's
-/// consent artefact, through the gateway (<see cref="IAbdmGatewayClient"/>), which is not live yet.
+/// of the FHIR read API. Sending a document to another provider through ABDM is a separate step that ABDM itself
+/// authorises with the patient's consent artefact (<see cref="ShareAsync"/>, <see cref="AbdmDataFlowService"/>).
 /// </para>
 /// </summary>
 internal sealed class AbdmBundleService(
@@ -47,7 +47,17 @@ internal sealed class AbdmBundleService(
         RestrictedDuplicateCode,
         "Part of this record is kept under a restricted record that was merged into this patient. Someone who may open restricted records can export it.");
 
-    public async Task<Result<AbdmExport>> ExportAsync(AbdmRecordType type, Guid id, CancellationToken ct)
+    /// <summary>A staff download: the caller must be able to open the record, and the export is audited.</summary>
+    public Task<Result<AbdmExport>> ExportAsync(AbdmRecordType type, Guid id, CancellationToken ct) => BuildAsync(type, id, staff: true, ct);
+
+    /// <summary>
+    /// The document sent to another provider under the patient's ABDM consent (<see cref="AbdmDataFlowService"/>): no
+    /// staff member asks for it, so no one's access is checked; the patient's consent authorises it, and the transfer
+    /// audits it. The other rules hold: a complete record, of a patient not deleted, through the merges of duplicates.
+    /// </summary>
+    public Task<Result<AbdmExport>> ShareAsync(AbdmRecordType type, Guid id, CancellationToken ct) => BuildAsync(type, id, staff: false, ct);
+
+    private async Task<Result<AbdmExport>> BuildAsync(AbdmRecordType type, Guid id, bool staff, CancellationToken ct)
     {
         var located = await records.LocateAsync(type, id, ct);
         if (located.IsFailure)
@@ -60,7 +70,7 @@ internal sealed class AbdmBundleService(
         // answer for a record that does not exist.
         var source = located.Value;
         var chain = await ChainAsync(source.PatientId, ct);
-        if (await DeniedAsync(type, id, chain.Patients, ct) is { } denied)
+        if (staff && await DeniedAsync(type, id, chain.Patients, ct) is { } denied)
         {
             return denied.Type == ErrorType.Forbidden ? denied : AbdmRecordLoader.NotFound(type, id);
         }
@@ -87,7 +97,7 @@ internal sealed class AbdmBundleService(
             }
 
             var notChecked = theirs.Patients.SkipLast(1).Where(p => !duplicates.Contains(p)).ToList();
-            if (await DeniedAsync(type, id, notChecked, ct) is { } deniedDuplicate)
+            if (staff && await DeniedAsync(type, id, notChecked, ct) is { } deniedDuplicate)
             {
                 if (deniedDuplicate.Type == ErrorType.Forbidden)
                 {
@@ -114,6 +124,11 @@ internal sealed class AbdmBundleService(
         source = source with { PatientId = survivor, Duplicates = duplicates };
         var document = await records.LoadAsync(type, id, source, ct);
         var bundle = AbdmDocumentBuilder.Build(document);
+        if (!staff)
+        {
+            return new AbdmExport(bundle, document.FileName);
+        }
+
         await audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, Exported, $"ABDM health record exported: {Describe(type)}")
         {
             PatientId = source.PatientId,
