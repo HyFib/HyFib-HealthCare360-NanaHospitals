@@ -195,3 +195,36 @@ internal sealed class AbdmConsentArtefactConfiguration : IEntityTypeConfiguratio
         b.HasIndex(x => x.FetchRequestId).IsUnique().HasFilter("fetch_request_id IS NOT NULL");
     }
 }
+
+internal sealed class AbdmHealthInformationRequestConfiguration : IEntityTypeConfiguration<AbdmHealthInformationRequest>
+{
+    public void Configure(EntityTypeBuilder<AbdmHealthInformationRequest> b)
+    {
+        b.ToTable("abdm_health_information_requests", InteropSchema.Name);
+        b.Property(x => x.TransactionId).HasMaxLength(64);
+        b.Property(x => x.PrivateKeyCipher).HasMaxLength(500);
+        b.Property(x => x.Nonce).HasMaxLength(64);
+        b.Property(x => x.Error).HasMaxLength(500);
+        b.HasOne<AbdmConsentArtefact>().WithMany().HasForeignKey(x => x.ArtefactEntityId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.ArtefactEntityId);
+        b.HasIndex(x => x.PatientId);
+        b.HasIndex(x => x.GatewayRequestId).IsUnique();
+        b.HasIndex(x => x.TransactionId).IsUnique().HasFilter("transaction_id IS NOT NULL");
+    }
+}
+
+internal sealed class AbdmReceivedRecordConfiguration : IEntityTypeConfiguration<AbdmReceivedRecord>
+{
+    public void Configure(EntityTypeBuilder<AbdmReceivedRecord> b)
+    {
+        b.ToTable("abdm_received_records", InteropSchema.Name);
+        b.Property(x => x.CareContextReference).HasMaxLength(100);
+        b.Property(x => x.Title).HasMaxLength(200);
+        b.Property(x => x.Error).HasMaxLength(500);
+        b.HasOne<AbdmHealthInformationRequest>().WithMany().HasForeignKey(x => x.RequestEntityId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.PatientId);
+        b.HasIndex(x => new { x.RequestEntityId, x.PageNumber, x.EntryIndex }).IsUnique();
+    }
+}

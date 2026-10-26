@@ -543,3 +543,90 @@ internal sealed class AbdmConsentArtefact : AuditableEntity
 
     public DateTimeOffset? FetchedAt { get; set; }
 }
+
+/// <summary>Where a request for the records under an artefact stands (ABDM M3 data flow, the hospital as HIU).</summary>
+public enum AbdmHealthInformationStatus
+{
+    /// <summary>Sent to the consent manager; it has not answered yet.</summary>
+    Sent,
+
+    /// <summary>The consent manager has passed it to the provider (on-request with a transaction id); pages are awaited.</summary>
+    Requested,
+
+    /// <summary>Every page the provider announced has arrived.</summary>
+    Received,
+
+    /// <summary>The gateway or consent manager refused it, or it was never answered.</summary>
+    Failed,
+}
+
+/// <summary>
+/// The hospital asking, as HIU, for the records under one consent artefact: the request id the consent manager answers,
+/// the transaction id the provider's pushes name, and this request's own Fidelius key pair. The private key is kept
+/// encrypted (<see cref="PrivateKeyCipher"/>) only until the transfer ends; a key pair is never reused.
+/// </summary>
+internal sealed class AbdmHealthInformationRequest : AuditableEntity
+{
+    public Guid ArtefactEntityId { get; set; }
+
+    public Guid PatientId { get; set; }
+
+    /// <summary>The request id sent, which the on-request names.</summary>
+    public Guid GatewayRequestId { get; set; }
+
+    /// <summary>The consent manager's transaction id (from on-request), which each pushed page names.</summary>
+    public string? TransactionId { get; set; }
+
+    public AbdmHealthInformationStatus Status { get; set; }
+
+    /// <summary>The private key for this transfer, field-encrypted; cleared when the transfer ends.</summary>
+    public string? PrivateKeyCipher { get; set; }
+
+    /// <summary>The hospital's nonce for this transfer (base64, 32 bytes).</summary>
+    public string Nonce { get; set; } = string.Empty;
+
+    /// <summary>When the public key sent stops being valid: the artefact's erase date.</summary>
+    public DateTimeOffset KeyExpiresAt { get; set; }
+
+    /// <summary>The number of pages the provider announced, from its first page.</summary>
+    public int? PageCount { get; set; }
+
+    public DateTimeOffset? CompletedAt { get; set; }
+
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// One document received from another provider under a consent artefact, decrypted: the FHIR bundle as it came, its
+/// title and date for the list, and whether its checksum matched. Kept only until the artefact's erase date, or until
+/// the patient revokes the consent, then deleted outright (<see cref="AbdmHealthInformationRequest"/>).
+/// </summary>
+internal sealed class AbdmReceivedRecord : AuditableEntity
+{
+    public Guid RequestEntityId { get; set; }
+
+    public Guid PatientId { get; set; }
+
+    public string CareContextReference { get; set; } = string.Empty;
+
+    public int PageNumber { get; set; }
+
+    /// <summary>The entry's place in its page, so a page sent twice is not kept twice.</summary>
+    public int EntryIndex { get; set; }
+
+    /// <summary>The decrypted FHIR bundle (JSON), or null when the entry could not be read (<see cref="Error"/>).</summary>
+    public string? Content { get; set; }
+
+    /// <summary>The bundle's Composition title, or its type.</summary>
+    public string? Title { get; set; }
+
+    public DateTimeOffset? RecordDate { get; set; }
+
+    /// <summary>
+    /// The checksum the provider sent is the MD5 of the document, as ABDM's data push names it. Some providers send a
+    /// placeholder; a mismatch is shown, not refused, since AES-GCM's tag already proves the content intact.
+    /// </summary>
+    public bool ChecksumMatches { get; set; }
+
+    public string? Error { get; set; }
+}

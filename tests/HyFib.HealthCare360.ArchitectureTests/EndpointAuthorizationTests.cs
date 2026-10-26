@@ -105,6 +105,11 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v3/hiu/consent/request/on-init",
         "POST /api/v3/hiu/consent/request/notify",
         "POST /api/v3/hiu/consent/on-fetch",
+        "POST /api/v3/hiu/health-information/on-request",
+
+        // Where other providers post the records the hospital asked for (ABDM's data push carries no token): admitted only
+        // for a transaction awaiting pages, and readable only with that request's own key (AbdmHealthInformationService).
+        "POST /api/v3/hiu/health-information/transfer",
 
         // Devices that authenticate with their own key or serial number: attendance terminals and patient monitors.
         "GET /iclock/cdata",

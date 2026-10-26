@@ -238,11 +238,14 @@ public sealed class AbdmLinkingTests(HospitalServer server)
         (await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString();
 
     /// <summary>Sets the gateway up against <see cref="FakeAbdmGateway"/>, switched on or off.</summary>
+    /// <summary>The hospital's data-push URL as set up: where other providers post the records it asks for.</summary>
+    internal const string DataPushUrl = "https://hospital.test" + AbdmGatewayCallbackEndpoints.DataPushPath;
+
     internal static async Task SetUpGatewayAsync(HospitalServer server, bool enabled)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-        await settings.SetAsync(AbdmGatewaySettingKeys.Gateway, new { enabled, baseUrl = FakeAbdmGateway.BaseUrl, hipId = HipId, cmId = "sbx", timeoutSeconds = 10, abhaBaseUrl = FakeAbdmGateway.BaseUrl + "/abha" }, cancellationToken: Ct);
+        await settings.SetAsync(AbdmGatewaySettingKeys.Gateway, new { enabled, baseUrl = FakeAbdmGateway.BaseUrl, hipId = HipId, cmId = "sbx", timeoutSeconds = 10, abhaBaseUrl = FakeAbdmGateway.BaseUrl + "/abha", dataPushUrl = DataPushUrl }, cancellationToken: Ct);
         await settings.SetAsync(AbdmGatewaySettingKeys.Secret, new { clientId = "SBX_IT", clientSecret = "it-" + Guid.NewGuid().ToString("N") }, secret: true, cancellationToken: Ct);
     }
 

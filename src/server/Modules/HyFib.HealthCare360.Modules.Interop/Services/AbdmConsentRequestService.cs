@@ -29,8 +29,13 @@ internal sealed class AbdmConsentRequestInputValidator : AbstractValidator<AbdmC
     }
 }
 
-/// <summary>A consent artefact as staff see it: the provider and how many records it covers.</summary>
-public sealed record AbdmConsentArtefactView(string ArtefactId, string Status, string? HipId, string? HipName, int Records, DateTimeOffset? FetchedAt);
+/// <summary>
+/// A consent artefact as staff see it: the provider, how many records it covers, and the latest request for them
+/// (<paramref name="Transfer"/>, null before the first) with how many arrived.
+/// </summary>
+public sealed record AbdmConsentArtefactView(
+    string ArtefactId, string Status, string? HipId, string? HipName, int Records, DateTimeOffset? FetchedAt,
+    AbdmHealthInformationStatus? Transfer, string? TransferError, int Received);
 
 /// <summary>A consent request as staff see it.</summary>
 public sealed record AbdmConsentRequestView(
@@ -60,12 +65,14 @@ public sealed record AbdmConsentRequestView(
 /// (<c>/consent/v3/fetch</c>), which comes back at on-fetch (<see cref="OnFetchAsync"/>) with the provider, the records
 /// and the terms.</item>
 /// </list>
-/// Asking for the records under an artefact, receiving and reading them, is the next step (ABDM M3 data flow).
+/// A fetched artefact's records are then asked for, received and erased by <see cref="AbdmHealthInformationService"/>;
+/// a revocation or expiry erases what was received under it.
 /// </summary>
 internal sealed class AbdmConsentRequestService(
     HospitalDbContext db,
     AbdmGatewayConfiguration configuration,
     IAbdmGatewayClient gateway,
+    AbdmHealthInformationService records,
     ICurrentUser user,
     IAuditLogger audit,
     TimeProvider time,
@@ -183,7 +190,8 @@ internal sealed class AbdmConsentRequestService(
         var artefacts = await db.Set<AbdmConsentArtefact>().AsNoTracking()
             .Where(a => ids.Contains(a.ConsentRequestEntityId))
             .ToListAsync(ct);
-        return [.. requests.Select(r => View(r, artefacts.Where(a => a.ConsentRequestEntityId == r.Id)))];
+        var transfers = await TransfersAsync([.. artefacts.Select(a => a.Id)], ct);
+        return [.. requests.Select(r => View(r, artefacts.Where(a => a.ConsentRequestEntityId == r.Id), transfers))];
     }
 
     /// <summary>The consent manager has the request (or refused it).</summary>
@@ -234,6 +242,7 @@ internal sealed class AbdmConsentRequestService(
         var now = time.GetUtcNow();
         var kept = await db.Set<AbdmConsentArtefact>().Where(a => a.ConsentRequestEntityId == request.Id).ToListAsync(ct);
         var toFetch = new List<AbdmConsentArtefact>();
+        var ended = new List<Guid>();
         switch (status.ToUpperInvariant())
         {
             case "GRANTED":
@@ -260,6 +269,7 @@ internal sealed class AbdmConsentRequestService(
                 foreach (var artefact in kept.Where(a => artefactIds.Count == 0 || artefactIds.Contains(a.ArtefactId)))
                 {
                     artefact.Status = status.ToUpperInvariant();
+                    ended.Add(artefact.Id);
                 }
 
                 break;
@@ -277,6 +287,9 @@ internal sealed class AbdmConsentRequestService(
             Details = new { api = "abdm", status = request.Status.ToString(), artefacts = artefactIds },
         });
         await db.SaveChangesAsync(ct);
+
+        // What was received under a revoked or expired consent is erased now, not at its erase date.
+        await records.EraseAsync(ended, $"the patient's consent was {status.ToLowerInvariant()}", ct);
 
         var acknowledged = await gateway.AnswerHiuNotifyAsync(new AbdmGatewayMessages.HiuOnNotify(
             [.. artefactIds.Select(id => new AbdmGatewayMessages.Acknowledgement("OK", id))], new AbdmGatewayMessages.RespRequest(requestId), null), ct);
@@ -332,22 +345,55 @@ internal sealed class AbdmConsentRequestService(
         artefact.DataEraseAt = AbdmDataFlowService.Instant(detail.Permission?.DataEraseAt);
         artefact.FetchedAt = time.GetUtcNow();
         await db.SaveChangesAsync(ct);
+
+        // The doctor asked for the records: they are asked for as soon as the artefact says where they are.
+        if (artefact.Status == AbdmHealthInformationService.Granted)
+        {
+            var asked = await records.RequestAsync(artefact, ct);
+            if (asked.IsFailure)
+            {
+                log.LogWarning("The records under consent artefact {Artefact} were not asked for: {Reason}", artefact.ArtefactId, asked.Error!.Message);
+            }
+        }
     }
 
     private async Task<AbdmConsentRequestView> ViewAsync(Guid id, CancellationToken ct)
     {
         var request = await db.Set<AbdmConsentRequest>().AsNoTracking().FirstAsync(r => r.Id == id, ct);
         var artefacts = await db.Set<AbdmConsentArtefact>().AsNoTracking().Where(a => a.ConsentRequestEntityId == id).ToListAsync(ct);
-        return View(request, artefacts);
+        return View(request, artefacts, await TransfersAsync([.. artefacts.Select(a => a.Id)], ct));
     }
 
-    private static AbdmConsentRequestView View(AbdmConsentRequest r, IEnumerable<AbdmConsentArtefact> artefacts) => new(
+    /// <summary>Per artefact, its latest request for records and how many records are kept from all its requests.</summary>
+    private async Task<Dictionary<Guid, (AbdmHealthInformationStatus Status, string? Error, int Received)>> TransfersAsync(List<Guid> artefactIds, CancellationToken ct)
+    {
+        var latest = await db.Set<AbdmHealthInformationRequest>().AsNoTracking()
+            .Where(q => artefactIds.Contains(q.ArtefactEntityId))
+            .GroupBy(q => q.ArtefactEntityId)
+            .Select(g => g.OrderByDescending(q => q.CreatedAt).First())
+            .ToListAsync(ct);
+        var received = await (
+            from r in db.Set<AbdmReceivedRecord>().AsNoTracking()
+            join q in db.Set<AbdmHealthInformationRequest>() on r.RequestEntityId equals q.Id
+            where artefactIds.Contains(q.ArtefactEntityId) && r.Error == null
+            group r by q.ArtefactEntityId into g
+            select new { Artefact = g.Key, Count = g.Count() }).ToListAsync(ct);
+        return latest.ToDictionary(
+            q => q.ArtefactEntityId,
+            q => (q.Status, q.Error, received.FirstOrDefault(x => x.Artefact == q.ArtefactEntityId)?.Count ?? 0));
+    }
+
+    private static AbdmConsentRequestView View(
+        AbdmConsentRequest r, IEnumerable<AbdmConsentArtefact> artefacts, Dictionary<Guid, (AbdmHealthInformationStatus Status, string? Error, int Received)> transfers) => new(
         r.Id, r.PatientId, r.Status, r.Purpose, r.HiTypes.Split(',', StringSplitOptions.RemoveEmptyEntries), r.DateFrom, r.DateTo,
         r.DataEraseAt, r.RequesterName, r.CreatedAt, r.DecidedAt, r.Error,
         [.. artefacts.OrderBy(a => a.HipName).Select(a => new AbdmConsentArtefactView(
             a.ArtefactId, a.Status, a.HipId, a.HipName,
             (JsonSerializer.Deserialize<List<AbdmGatewayMessages.ConsentCareContext>>(a.CareContextsJson, AbdmGatewayMessages.Json) ?? []).Count,
-            a.FetchedAt))]);
+            a.FetchedAt,
+            transfers.TryGetValue(a.Id, out var t) ? t.Status : null,
+            transfers.TryGetValue(a.Id, out var e) ? e.Error : null,
+            transfers.TryGetValue(a.Id, out var n) ? n.Received : 0))]);
 
     private static string? Describe(AbdmGatewayMessages.GatewayError? error) =>
         error is null ? null : string.Join(" ", new[] { error.Code, error.Message }.Where(s => !string.IsNullOrWhiteSpace(s)));

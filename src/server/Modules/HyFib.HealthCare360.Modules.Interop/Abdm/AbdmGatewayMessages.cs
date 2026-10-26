@@ -189,6 +189,24 @@ internal static class AbdmGatewayMessages
     /// <summary><c>/api/v3/hiu/consent/on-fetch</c>: the artefact the HIU asked for, or why not.</summary>
     public sealed record ConsentOnFetch(FetchedConsent? Consent, GatewayError? Error, RespRequest? Response);
 
+    /// <summary>
+    /// <c>POST /data-flow/v3/health-information/request</c>, as the HIU: the records under a granted artefact, for its dates,
+    /// to be pushed to the hospital's <c>dataPushUrl</c> encrypted for the key material sent; answered at
+    /// <c>/api/v3/hiu/health-information/on-request</c>.
+    /// </summary>
+    public sealed record HiuHealthInformationRequest(string RequestId, string Timestamp, HiRequest HiRequest);
+
+    public sealed record ReceivedHiRequestStatus(string? TransactionId, string? SessionStatus);
+
+    /// <summary><c>/api/v3/hiu/health-information/on-request</c>: the transfer's id, which the HIP's pushes name, or why not.</summary>
+    public sealed record HiuOnHealthInformationRequest(ReceivedHiRequestStatus? HiRequest, GatewayError? Error, RespRequest? Response);
+
+    /// <summary>One encrypted document in a push: its content (or a link to it, which HC360 does not follow), its checksum and care context.</summary>
+    public sealed record ReceivedEntry(string? Content, string? Media, string? Checksum, string? CareContextReference, string? Link);
+
+    /// <summary>A page of encrypted documents a HIP posts to the hospital's <c>dataPushUrl</c> (no gateway token), with the HIP's key material.</summary>
+    public sealed record ReceivedPush(int? PageNumber, int? PageCount, string? TransactionId, IReadOnlyList<ReceivedEntry>? Entries, KeyMaterial? KeyMaterial);
+
     /// <summary>The patient's address on their ABHA, as a profile share carries it.</summary>
     public sealed record ShareAddress(string? Line, string? District, string? State, string? Pincode);
 
