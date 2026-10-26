@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.SupportServices.Features.Canteen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Cssd;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Dietary;
+using HyFib.HealthCare360.Modules.SupportServices.Features.Mortuary;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Waste;
 using HyFib.HealthCare360.Modules.SupportServices.Services;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -33,6 +34,12 @@ public static class SupportServicesPermissions
     /// <summary>Hand bags over to the treatment facility, and keep the register and the annual report (Form IV).</summary>
     public const string WasteManage = "bmw.manage";
 
+    /// <summary>Receive bodies into the mortuary, release them, and keep the register.</summary>
+    public const string MortuaryManage = "mortuary.manage";
+
+    /// <summary>Set the mortuary's cold-storage slots.</summary>
+    public const string MortuaryConfigure = "mortuary.configure";
+
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(CssdRead, "CSSD", "View instrument sets, loads, packs, issues and CSSD reports",
@@ -63,13 +70,17 @@ public static class SupportServicesPermissions
             [SystemRoles.Nurse, SystemRoles.LabTechnician, SystemRoles.CssdTechnician, SystemRoles.OtCoordinator, SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
         new(WasteManage, "Bio-medical waste", "Hand waste over to the treatment facility, the register and the annual report (Form IV)",
             [SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
+
+        new(MortuaryManage, "Mortuary", "Receive bodies into the mortuary, release them and keep the register",
+            [SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
+        new(MortuaryConfigure, "Mortuary", "Set the mortuary's cold-storage slots", [SystemRoles.HospitalAdmin]),
     ];
 }
 
 /// <summary>
 /// Support services: CSSD with sterilizer loads, issue with expiry and recall by load (CSSD-01..05); dietary orders,
 /// ward-wise meal plans, kitchen production and delivery tracking with optional diet charges (DIET-01..05); and the
-/// canteen POS with GST, staff credit and payroll deduction (CAN-01..04).
+/// canteen POS with GST, staff credit and payroll deduction (CAN-01..04); bio-medical waste; and the mortuary.
 /// </summary>
 public sealed class SupportServicesModule : IModule
 {
@@ -89,6 +100,7 @@ public sealed class SupportServicesModule : IModule
         services.AddScoped<CanteenService>();
         services.AddScoped<StaffCreditService>();
         services.AddScoped<WasteService>();
+        services.AddScoped<MortuaryService>();
 
         // The canteen's day for Billing's Tally day book (Billing reads it without referencing this module).
         services.AddScoped<ICounterSalesSource, CanteenDayBookSource>();
@@ -105,5 +117,6 @@ public sealed class SupportServicesModule : IModule
         CanteenEndpoints.Map(endpoints);
         StaffCreditEndpoints.Map(endpoints);
         WasteEndpoints.Map(endpoints);
+        MortuaryEndpoints.Map(endpoints);
     }
 }

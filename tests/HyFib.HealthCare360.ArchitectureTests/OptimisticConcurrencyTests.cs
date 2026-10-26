@@ -23,6 +23,8 @@ public sealed class OptimisticConcurrencyTests
             + "series' version on, so a version would refuse saves made while bills are being numbered.",
         ["PUT /api/v1/integrations/lab/connections/{code}"] =
             "Sends the version of the analyser list it loaded (ListVersion): every analyser's connection is kept in one setting.",
+        ["PUT /api/v1/mortuary/slots"] =
+            "Sends each changed slot's version with it (SlotInput.Version); new slots have none.",
         ["PUT /api/v1/hr/roster"] =
             "Sends the entries it replaces as the grid showed them (Replacing: id and version). A cell holds several entries.",
         ["PUT /api/v1/portal/communication-preferences"] =

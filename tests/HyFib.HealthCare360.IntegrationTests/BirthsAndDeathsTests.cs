@@ -183,7 +183,7 @@ public sealed class BirthsAndDeathsTests(HospitalServer server)
         (detail.IsDeceased, detail.DeceasedAt?.ToUnixTimeSeconds()).ShouldBe((true, (long?)at.ToUnixTimeSeconds()));
     }
 
-    private static SaveDeathRequest Certificate(Guid patientId, DateTimeOffset diedAt) => new(
+    internal static SaveDeathRequest Certificate(Guid patientId, DateTimeOffset diedAt) => new(
         patientId, AdmissionId: null, diedAt, AgeYears: null, [new CauseOfDeath("Septic shock", "6 hours"), new CauseOfDeath("Pneumonia", "5 days")],
         "Type 2 diabetes mellitus", DeathManner.Natural, MedicoLegal: false, PregnancyAtDeath.NotApplicable, "TNMC 45120");
 
@@ -191,14 +191,14 @@ public sealed class BirthsAndDeathsTests(HospitalServer server)
         motherId, BabyPatientId: null, AdmissionId: null, bornAt, BirthOutcome.LiveBirth, BirthSex.Female, 3050, 39, DeliveryMethod.Natural,
         BirthAttendant.Doctor, ChildName: null, FatherName: "Suresh Kumar", MotherAgeYears: 28, LiveChildren: 1, "Labour room sister", StillBirthCause: null);
 
-    private static async Task<string?> RefusalAsync(ApiClient api, HttpMethod method, string path, object? body)
+    internal static async Task<string?> RefusalAsync(ApiClient api, HttpMethod method, string path, object? body)
     {
         using var response = await api.SendRawAsync(method, path, body);
         response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await response.Content.ReadAsStringAsync(Ct));
         return (await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString();
     }
 
-    private static Task<PatientCreated> RegisterAsync(ApiClient api, Gender gender, DateOnly born, bool vip = false) =>
+    internal static Task<PatientCreated> RegisterAsync(ApiClient api, Gender gender, DateOnly born, bool vip = false) =>
         api.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
             Title: gender == Gender.Male ? "Mr." : "Mrs.", FirstName: TestPatients.FirstName(gender == Gender.Male ? "Murugan" : "Lakshmi"), MiddleName: null,
             LastName: "Vital" + string.Concat(Enumerable.Range(0, 8).Select(_ => (char)('a' + Random.Shared.Next(26)))), Gender: gender,

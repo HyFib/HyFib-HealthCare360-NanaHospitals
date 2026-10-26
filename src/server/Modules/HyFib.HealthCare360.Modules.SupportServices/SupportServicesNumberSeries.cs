@@ -27,5 +27,10 @@ public static class SupportServicesNumberSeries
     public static NumberSeriesDefinition WasteHandover { get; } =
         new("bmw-handover", "Bio-medical waste handover", "Bio-medical waste", "{FAC}BH{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
 
-    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [CssdRequest, WashCycle, SterilisationCycle, CanteenBill, WasteBag, WasteHandover];
+    /// <summary>The mortuary register: one number for each body received.</summary>
+    public static NumberSeriesDefinition MortuaryBody { get; } =
+        new("mortuary-body", "Mortuary register", "Mortuary", "{FAC}MB{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    internal static IEnumerable<NumberSeriesDefinition> All { get; } =
+        [CssdRequest, WashCycle, SterilisationCycle, CanteenBill, WasteBag, WasteHandover, MortuaryBody];
 }
