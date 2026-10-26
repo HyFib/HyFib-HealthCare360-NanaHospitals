@@ -270,7 +270,7 @@ public sealed class LabVerificationTests(HospitalServer server)
     private static Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
         admin.SaveSettingAsync("lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
 
-    private static async Task<PatientCreated> RegisterPatientAsync(HospitalServer server)
+    internal static async Task<PatientCreated> RegisterPatientAsync(HospitalServer server)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
