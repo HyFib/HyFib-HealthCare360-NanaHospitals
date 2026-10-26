@@ -91,6 +91,64 @@ internal static class AbdmGatewayMessages
     /// <summary><c>POST /user-initiated-linking/v3/link/care-context/on-confirm</c>: the linked care contexts, or an error.</summary>
     public sealed record OnLinkConfirm(IReadOnlyList<CareContextGroup>? Patient, RespRequest Response, GatewayError? Error);
 
+    public sealed record IdRef(string? Id);
+
+    public sealed record DateRange(string? From, string? To);
+
+    public sealed record ConsentCareContext(string? PatientReference, string? CareContextReference);
+
+    public sealed record Purpose(string? Text, string? Code, string? RefUri);
+
+    public sealed record Frequency(string? Unit, int? Value, int? Repeats);
+
+    public sealed record Permission(string? AccessMode, DateRange? DateRange, string? DataEraseAt, Frequency? Frequency);
+
+    /// <summary>The consent artefact: whose records, which care contexts, for whom, why, and for which dates and how long.</summary>
+    public sealed record ConsentDetail(
+        string? SchemaVersion, string? ConsentId, string? CreatedAt, IdRef? Patient, IReadOnlyList<ConsentCareContext>? CareContexts,
+        Purpose? Purpose, IdRef? Hip, IdRef? Hiu, IdRef? ConsentManager, IReadOnlyList<string>? HiTypes, Permission? Permission);
+
+    public sealed record ConsentNotification(string? Status, string? ConsentId, ConsentDetail? ConsentDetail, string? Signature);
+
+    /// <summary>The gateway's call <c>/api/v3/consent/request/hip/notify</c>: a consent granted, or revoked, expired or denied.</summary>
+    public sealed record ConsentNotify(string? RequestId, ConsentNotification? Notification);
+
+    public sealed record Acknowledgement(string Status, string ConsentId);
+
+    /// <summary><c>POST /consent/v3/request/hip/on-notify</c>.</summary>
+    public sealed record OnConsentNotify(Acknowledgement Acknowledgement, RespRequest Response, GatewayError? Error);
+
+    public sealed record DhPublicKey(string? Expiry, string? Parameters, string? KeyValue);
+
+    /// <summary>The requester's (HIU's) Fidelius key material: ECDH on Curve25519, its public key and nonce.</summary>
+    public sealed record KeyMaterial(string? CryptoAlg, string? Curve, DhPublicKey? DhPublicKey, string? Nonce);
+
+    public sealed record HiRequest(IdRef? Consent, DateRange? DateRange, string? DataPushUrl, KeyMaterial? KeyMaterial);
+
+    /// <summary>The gateway's call <c>/api/v3/hip/health-information/request</c>: send the consented records to the HIU.</summary>
+    public sealed record HealthInformationRequest(string? RequestId, string? TransactionId, HiRequest? HiRequest);
+
+    public sealed record HiRequestStatus(string TransactionId, string SessionStatus);
+
+    /// <summary><c>POST /data-flow/v3/health-information/hip/on-request</c>: <c>ACKNOWLEDGED</c>, or an error.</summary>
+    public sealed record OnHealthInformationRequest(HiRequestStatus? HiRequest, RespRequest Response, GatewayError? Error);
+
+    public sealed record PushEntry(string Content, string Media, string Checksum, string CareContextReference);
+
+    /// <summary>One page of the encrypted documents, posted to the HIU's <c>dataPushUrl</c> (no gateway session).</summary>
+    public sealed record DataPush(int PageNumber, int PageCount, string TransactionId, IReadOnlyList<PushEntry> Entries, KeyMaterial KeyMaterial);
+
+    public sealed record Notifier(string Type, string Id);
+
+    public sealed record CareContextStatus(string CareContextReference, string HiStatus, string Description);
+
+    public sealed record StatusNotification(string SessionStatus, string HipId, IReadOnlyList<CareContextStatus> StatusResponses);
+
+    public sealed record TransferNotification(string ConsentId, string TransactionId, string DoneAt, Notifier Notifier, StatusNotification StatusNotification);
+
+    /// <summary><c>POST /data-flow/v3/health-information/notify</c>: what was delivered, per care context.</summary>
+    public sealed record TransferNotify(TransferNotification Notification);
+
     /// <summary>
     /// The gateway's error in an answer body. NHA's wrapper notes the v3 gateway is not consistent: an error comes as
     /// <c>{"error": {...}}</c> or as <c>{"errors": [{"error": {...}}]}</c>, and both are read here.

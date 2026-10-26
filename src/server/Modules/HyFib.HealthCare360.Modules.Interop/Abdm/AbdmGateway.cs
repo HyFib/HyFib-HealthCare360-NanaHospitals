@@ -61,8 +61,8 @@ internal sealed record AbdmGatewayCredentials
 /// <param name="Enabled">The gateway switch in <c>abdm.gateway</c>.</param>
 /// <param name="Configured">Base URL, HIP id, consent manager id, client id and secret are all set.</param>
 /// <param name="Live">
-/// Health records are sent to ABDM. Always false in this release (see <paramref name="Remaining"/>): records can be
-/// linked to a patient's ABHA, but their content is not sent yet.
+/// The gateway is switched on and set up, so records are linked to patients' ABHAs and sent under their consents.
+/// What remains is NHA's sandbox run and certification (<paramref name="Remaining"/>).
 /// </param>
 /// <param name="Problems">Why the set-up is incomplete or wrong.</param>
 /// <param name="Remaining">What has to be built and certified before records are sent.</param>
@@ -87,18 +87,11 @@ internal sealed record AbdmCareContext(string Reference, string Display, AbdmRec
 internal sealed record AbdmCareContextLink(
     Guid PatientId, string PatientDisplay, string AbhaAddress, string? AbhaNumber, IReadOnlyList<AbdmCareContext> CareContexts);
 
-/// <summary>A consent the consent manager notified the hospital (HIP) of, to be acknowledged.</summary>
-internal sealed record AbdmConsentNotification(string ConsentId, string Status, string RequestId);
-
 /// <summary>The HIU's key material for one transfer (Fidelius: X25519 public key, nonce).</summary>
 internal sealed record AbdmKeyMaterial(string CryptoAlgorithm, string Curve, string PublicKey, string Nonce);
 
 /// <summary>One document, encrypted for the HIU, under the care context it belongs to.</summary>
 internal sealed record AbdmEncryptedEntry(string CareContextReference, string Content, string Checksum, string Media = "application/fhir+json");
-
-/// <summary>A health-information transfer: the encrypted documents pushed to the HIU's data-push URL.</summary>
-internal sealed record AbdmHealthInformationTransfer(
-    string TransactionId, Uri DataPushUrl, AbdmKeyMaterial HipKeyMaterial, IReadOnlyList<AbdmEncryptedEntry> Entries);
 
 /// <summary>The patient as the gateway asks for a link token: their ABHA address, name, gender and year of birth.</summary>
 internal sealed record AbdmLinkTokenRequest(string AbhaAddress, string Name, string Gender, int YearOfBirth);
@@ -117,13 +110,14 @@ internal sealed record AbdmLinkTokenRequest(string AbhaAddress, string Name, str
 /// <item><see cref="AnswerDiscoveryAsync"/>, <see cref="AnswerLinkInitAsync"/> and <see cref="AnswerLinkConfirmAsync"/>:
 /// <c>POST /user-initiated-linking/v3/patient/care-context/on-discover</c>, <c>…/v3/link/care-context/on-init</c> and
 /// <c>…/on-confirm</c>, the hospital's answers when a patient looks for their records from their PHR app.</item>
-/// <item><see cref="AcknowledgeConsentAsync"/>: <c>POST /consent/v3/request/hip/on-notify</c>.</item>
-/// <item><see cref="TransferHealthInformationAsync"/>: <c>POST /data-flow/v3/health-information/hip/on-request</c>,
-/// the encrypted push to the HIU's <c>dataPushUrl</c>, then <c>POST /data-flow/v3/health-information/notify</c>.</item>
+/// <item><see cref="AnswerConsentNotifyAsync"/>: <c>POST /consent/v3/request/hip/on-notify</c>, the acknowledgement of
+/// a consent the consent manager notified.</item>
+/// <item><see cref="AnswerHealthInformationRequestAsync"/>: <c>POST /data-flow/v3/health-information/hip/on-request</c>;
+/// the encrypted documents then go to the HIU's <c>dataPushUrl</c> (<see cref="AbdmDataPush"/>), and
+/// <see cref="NotifyTransferAsync"/> (<c>POST /data-flow/v3/health-information/notify</c>) says what was delivered.</item>
 /// </list>
-/// The live client (<see cref="HttpAbdmGatewayClient"/>) makes the session and linking calls; consent and data flow
-/// are not built yet and refuse with <c>abdm.gateway_disabled</c>, as every call does while the gateway is switched off
-/// or not set up (<see cref="DisabledAbdmGatewayClient"/>).
+/// The live client is <see cref="HttpAbdmGatewayClient"/>; every call is refused with <c>abdm.gateway_disabled</c>
+/// while the gateway is switched off or not set up (<see cref="DisabledAbdmGatewayClient"/>).
 /// </summary>
 internal interface IAbdmGatewayClient
 {
@@ -144,9 +138,14 @@ internal interface IAbdmGatewayClient
     /// <summary>Answers the gateway's link-confirm call: the care contexts linked, or why not.</summary>
     Task<Result> AnswerLinkConfirmAsync(AbdmGatewayMessages.OnLinkConfirm answer, CancellationToken ct);
 
-    Task<Result> AcknowledgeConsentAsync(AbdmConsentNotification notification, CancellationToken ct);
+    /// <summary>Acknowledges a consent notification: <c>OK</c>, or why not.</summary>
+    Task<Result> AnswerConsentNotifyAsync(AbdmGatewayMessages.OnConsentNotify answer, CancellationToken ct);
 
-    Task<Result> TransferHealthInformationAsync(AbdmHealthInformationTransfer transfer, CancellationToken ct);
+    /// <summary>Answers a health-information request: <c>ACKNOWLEDGED</c>, or why not.</summary>
+    Task<Result> AnswerHealthInformationRequestAsync(AbdmGatewayMessages.OnHealthInformationRequest answer, CancellationToken ct);
+
+    /// <summary>Tells the gateway what a transfer delivered, per care context.</summary>
+    Task<Result> NotifyTransferAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct);
 }
 
 /// <summary>
@@ -162,11 +161,11 @@ internal interface IFideliusCipher
 /// <summary>Reads the gateway settings and says what is set up and what is missing (never the secret itself).</summary>
 internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
 {
-    /// <summary>What has to happen before records are sent to ABDM (also in docs/modules/interop.md).</summary>
+    /// <summary>What has to happen before the hospital exchanges records through ABDM for real (also in docs/modules/interop.md).</summary>
     public static IReadOnlyList<string> Remaining { get; } =
     [
         "Register the hospital as a Health Information Provider (HIP) with its HFR id and get NHA sandbox client credentials.",
-        "Build the consent notifications and data-flow requests and their callbacks: records can be linked to a patient's ABHA, but their content is not sent yet.",
+        "Run linking, consent and the transfer of records in NHA's sandbox, and confirm the gateway's key-set URL and token issuer.",
         "Pass NHA's sandbox functional tests and certification (milestone M2), then switch to the production gateway.",
         "Sign the documents (Bundle.signature, optional in the implementation guide) with the doctor's digital signature certificate.",
     ];
@@ -217,7 +216,7 @@ internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
         return new AbdmGatewayStatus(
             gateway.Enabled,
             Configured: problems.Count == 0,
-            Live: false,
+            Live: gateway.Enabled && problems.Count == 0,
             gateway.BaseUrl,
             gateway.HipId,
             gateway.CmId,
@@ -264,9 +263,12 @@ internal sealed class DisabledAbdmGatewayClient(AbdmGatewayConfiguration configu
 
     public async Task<Result> AnswerLinkConfirmAsync(AbdmGatewayMessages.OnLinkConfirm answer, CancellationToken ct) => await RefuseAsync(ct);
 
-    public async Task<Result> AcknowledgeConsentAsync(AbdmConsentNotification notification, CancellationToken ct) => await RefuseAsync(ct);
+    public async Task<Result> AnswerConsentNotifyAsync(AbdmGatewayMessages.OnConsentNotify answer, CancellationToken ct) => await RefuseAsync(ct);
 
-    public async Task<Result> TransferHealthInformationAsync(AbdmHealthInformationTransfer transfer, CancellationToken ct) => await RefuseAsync(ct);
+    public async Task<Result> AnswerHealthInformationRequestAsync(AbdmGatewayMessages.OnHealthInformationRequest answer, CancellationToken ct) =>
+        await RefuseAsync(ct);
+
+    public async Task<Result> NotifyTransferAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct) => await RefuseAsync(ct);
 
     /// <summary>The refusal, or null when the gateway is switched on and set up.</summary>
     public async Task<Error?> WhyNotAsync(CancellationToken ct)
@@ -279,6 +281,7 @@ internal sealed class DisabledAbdmGatewayClient(AbdmGatewayConfiguration configu
 
     public static Error Refusal(string reason) => Error.Rule(Code, $"Nothing was sent to ABDM. {reason}");
 
+    /// <summary>The refusal: the gateway is off or not set up, or, when it is on, this client is not the one to call.</summary>
     private async Task<Error> RefuseAsync(CancellationToken ct) =>
-        await WhyNotAsync(ct) ?? Refusal("Consent notifications and data-flow requests are not part of this release.");
+        await WhyNotAsync(ct) ?? Refusal("The gateway is on: the live client sends this.");
 }

@@ -193,3 +193,98 @@ internal sealed class AbdmDiscovery : AuditableEntity
 
 /// <summary>One record as a care context, in the shape the gateway takes it (<see cref="AbdmGatewayMessages.CareContext"/>).</summary>
 internal sealed record AbdmLinkedRecord(AbdmRecordType Type, Guid RecordId, string ReferenceNumber, string Display);
+
+/// <summary>
+/// A consent the patient gave through ABDM for another provider (the HIU) to see some of their records here: which care
+/// contexts, for what purpose, the dates the records may come from, and until when the HIU may keep them. The consent
+/// manager notifies it, and later its revocation or expiry; health-information requests are checked against it.
+/// </summary>
+internal sealed class AbdmConsent : AuditableEntity
+{
+    /// <summary>The consent artefact's id at the consent manager.</summary>
+    public string ConsentId { get; set; } = string.Empty;
+
+    public string HipId { get; set; } = string.Empty;
+
+    public Guid PatientId { get; set; }
+
+    /// <summary>Lower-case.</summary>
+    public string AbhaAddress { get; set; } = string.Empty;
+
+    /// <summary><c>GRANTED</c>, or <c>REVOKED</c>, <c>EXPIRED</c>, <c>DENIED</c> once the consent manager says so.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>The provider the records go to.</summary>
+    public string? HiuId { get; set; }
+
+    /// <summary>The purpose code (for example <c>CAREMGT</c>, care management) and its text.</summary>
+    public string? Purpose { get; set; }
+
+    /// <summary>The health-information types consented to, comma-separated.</summary>
+    public string? HiTypes { get; set; }
+
+    /// <summary>The records' dates the consent covers.</summary>
+    public DateTimeOffset? DateFrom { get; set; }
+
+    public DateTimeOffset? DateTo { get; set; }
+
+    /// <summary>When the HIU must erase the records; no transfer after it.</summary>
+    public DateTimeOffset? DataEraseAt { get; set; }
+
+    /// <summary>The care contexts consented to: their references (JSON array of strings).</summary>
+    public string CareContextsJson { get; set; } = "[]";
+
+    public DateTimeOffset NotifiedAt { get; set; }
+
+    public DateTimeOffset? EndedAt { get; set; }
+}
+
+/// <summary>Where a transfer of records to a provider under a consent has got to.</summary>
+public enum AbdmTransferStatus
+{
+    /// <summary>The request was accepted; the documents are being made, encrypted and sent.</summary>
+    Acknowledged,
+
+    /// <summary>Every page reached the HIU.</summary>
+    Transferred,
+
+    /// <summary>The documents could not all be made or sent; <see cref="AbdmTransfer.Error"/> says why.</summary>
+    Failed,
+}
+
+/// <summary>
+/// One health-information request under a consent, and its transfer: the consented records made as ABDM documents,
+/// encrypted for the HIU (Fidelius) and posted to its data-push URL, then reported to the gateway.
+/// </summary>
+internal sealed class AbdmTransfer : AuditableEntity
+{
+    /// <summary>The gateway's transaction id for this transfer.</summary>
+    public string TransactionId { get; set; } = string.Empty;
+
+    public string ConsentId { get; set; } = string.Empty;
+
+    public string HipId { get; set; } = string.Empty;
+
+    public Guid PatientId { get; set; }
+
+    public string DataPushUrl { get; set; } = string.Empty;
+
+    /// <summary>The HIU's key material as it sent it (<see cref="AbdmGatewayMessages.KeyMaterial"/>, JSON): a public key and nonce.</summary>
+    public string KeyMaterialJson { get; set; } = "{}";
+
+    /// <summary>The records' dates asked for, within the consent's.</summary>
+    public DateTimeOffset? DateFrom { get; set; }
+
+    public DateTimeOffset? DateTo { get; set; }
+
+    public AbdmTransferStatus Status { get; set; }
+
+    public DateTimeOffset RequestedAt { get; set; }
+
+    public DateTimeOffset? CompletedAt { get; set; }
+
+    /// <summary>What happened to each care context (<see cref="AbdmGatewayMessages.CareContextStatus"/> list, JSON).</summary>
+    public string? ResultsJson { get; set; }
+
+    public string? Error { get; set; }
+}

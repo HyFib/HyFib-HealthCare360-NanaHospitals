@@ -11,7 +11,9 @@ namespace HyFib.HealthCare360.Modules.Interop.Features;
 /// serves them): the answers of HIP-initiated linking (<c>/api/v3/hip/token/on-generate-token</c>,
 /// <c>/api/v3/link/on_carecontext</c>), and the three calls of user-initiated linking, which HC360 answers with calls of
 /// its own (<c>/api/v3/hip/patient/care-context/discover</c>, <c>/api/v3/hip/link/care-context/init</c> and
-/// <c>…/confirm</c>, <see cref="AbdmUserLinkingService"/>). The answers name the call by its <c>REQUEST-ID</c> header. A
+/// <c>…/confirm</c>, <see cref="AbdmUserLinkingService"/>), and consent and data flow
+/// (<c>/api/v3/consent/request/hip/notify</c>, <c>/api/v3/hip/health-information/request</c>,
+/// <see cref="AbdmDataFlowService"/>). The answers name the call by its <c>REQUEST-ID</c> header. A
 /// call for another HIP (<c>X-HIP-ID</c>) is logged and ignored. Anonymous at the
 /// HTTP level and rate-limited; the gateway proves the call is its own with a bearer token signed by a key it publishes
 /// (<see cref="AbdmGatewayKeys"/>), and anything else is refused with 401. While ABDM is switched off they answer 503, as
@@ -25,6 +27,8 @@ internal static class AbdmGatewayCallbackEndpoints
     public const string DiscoverPath = "/api/v3/hip/patient/care-context/discover";
     public const string LinkInitPath = "/api/v3/hip/link/care-context/init";
     public const string LinkConfirmPath = "/api/v3/hip/link/care-context/confirm";
+    public const string ConsentNotifyPath = "/api/v3/consent/request/hip/notify";
+    public const string HealthInformationRequestPath = "/api/v3/hip/health-information/request";
 
     public const string RequestIdHeader = "REQUEST-ID";
     public const string HipIdHeader = "X-HIP-ID";
@@ -52,6 +56,11 @@ internal static class AbdmGatewayCallbackEndpoints
             HandleAsync<AbdmGatewayMessages.LinkInit>(request, configuration, keys, loggers, (call, requestId, innerCt) => linking.InitAsync(call, requestId ?? string.Empty, innerCt), ct));
         callbacks.MapPost(LinkConfirmPath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmUserLinkingService linking, ILoggerFactory loggers, CancellationToken ct) =>
             HandleAsync<AbdmGatewayMessages.LinkConfirm>(request, configuration, keys, loggers, (call, requestId, innerCt) => linking.ConfirmAsync(call, requestId ?? call.RequestId ?? string.Empty, innerCt), ct));
+
+        callbacks.MapPost(ConsentNotifyPath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmDataFlowService flow, ILoggerFactory loggers, CancellationToken ct) =>
+            HandleAsync<AbdmGatewayMessages.ConsentNotify>(request, configuration, keys, loggers, (call, requestId, innerCt) => flow.NotifyAsync(call, requestId ?? call.RequestId ?? string.Empty, innerCt), ct));
+        callbacks.MapPost(HealthInformationRequestPath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmDataFlowService flow, ILoggerFactory loggers, CancellationToken ct) =>
+            HandleAsync<AbdmGatewayMessages.HealthInformationRequest>(request, configuration, keys, loggers, (call, requestId, innerCt) => flow.RequestAsync(call, requestId ?? call.RequestId ?? string.Empty, innerCt), ct));
     }
 
     private static async Task<IResult> HandleAsync<T>(

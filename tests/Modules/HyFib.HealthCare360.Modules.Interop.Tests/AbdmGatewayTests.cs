@@ -34,7 +34,7 @@ public sealed class AbdmGatewayTests
     }
 
     [Fact]
-    public async Task A_complete_set_up_is_configured_but_still_not_live()
+    public async Task A_complete_set_up_switched_on_is_live()
     {
         _settings.Set(AbdmGatewaySettingKeys.Gateway, Complete);
         _settings.Set(AbdmGatewaySettingKeys.Secret, Credentials);
@@ -44,7 +44,7 @@ public sealed class AbdmGatewayTests
         status.ShouldSatisfyAllConditions(
             s => s.Enabled.ShouldBeTrue(),
             s => s.Configured.ShouldBeTrue(),
-            s => s.Live.ShouldBeFalse(),
+            s => s.Live.ShouldBeTrue(),
             s => s.HasClientId.ShouldBeTrue(),
             s => s.HasClientSecret.ShouldBeTrue(),
             s => s.Problems.ShouldBeEmpty(),
@@ -83,10 +83,10 @@ public sealed class AbdmGatewayTests
         _settings.Set(AbdmGatewaySettingKeys.Secret, Credentials);
         var link = await client.LinkCareContextsAsync(
             new AbdmCareContextLink(TestData.PatientId, "Meera K", "meera.k@sbx", AbdmTestData.AbhaNumber, [new AbdmCareContext("x", "Prescription", AbdmRecordType.Prescription)]), "link-token", Guid.CreateVersion7(), Ct);
-        link.Error!.Message.ShouldContain("not part of this release");
-        (await client.AcknowledgeConsentAsync(new AbdmConsentNotification("c", "GRANTED", "r"), Ct)).IsFailure.ShouldBeTrue();
-        (await client.TransferHealthInformationAsync(
-            new AbdmHealthInformationTransfer("t", new Uri("https://hiu.example/push"), new AbdmKeyMaterial("ECDH", "Curve25519", "k", "n"), []), Ct)).IsFailure.ShouldBeTrue();
+        link.Error!.Message.ShouldContain("the live client sends this");
+        (await client.AnswerConsentNotifyAsync(new AbdmGatewayMessages.OnConsentNotify(new("OK", "c"), new("r"), null), Ct)).IsFailure.ShouldBeTrue();
+        (await client.NotifyTransferAsync(new AbdmGatewayMessages.TransferNotify(new("c", "t", "2026-10-26T00:00:00.000Z", new("HIP", "h"), new("FAILED", "h", []))), Ct))
+            .IsFailure.ShouldBeTrue();
     }
 
     [Fact]

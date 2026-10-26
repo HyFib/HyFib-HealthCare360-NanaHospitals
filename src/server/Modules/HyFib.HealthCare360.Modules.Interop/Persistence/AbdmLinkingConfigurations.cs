@@ -76,3 +76,40 @@ internal sealed class AbdmDiscoveryConfiguration : IEntityTypeConfiguration<Abdm
         b.HasIndex(x => x.LinkReference).IsUnique().HasFilter("link_reference IS NOT NULL");
     }
 }
+
+internal sealed class AbdmConsentConfiguration : IEntityTypeConfiguration<AbdmConsent>
+{
+    public void Configure(EntityTypeBuilder<AbdmConsent> b)
+    {
+        b.ToTable("abdm_consents", InteropSchema.Name);
+        b.Property(x => x.ConsentId).HasMaxLength(64);
+        b.Property(x => x.HipId).HasMaxLength(64);
+        b.Property(x => x.AbhaAddress).HasMaxLength(100);
+        b.Property(x => x.Status).HasMaxLength(16);
+        b.Property(x => x.HiuId).HasMaxLength(64);
+        b.Property(x => x.Purpose).HasMaxLength(200);
+        b.Property(x => x.HiTypes).HasMaxLength(500);
+        b.Property(x => x.CareContextsJson).HasColumnType("jsonb");
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.ConsentId).IsUnique();
+        b.HasIndex(x => new { x.PatientId, x.NotifiedAt });
+    }
+}
+
+internal sealed class AbdmTransferConfiguration : IEntityTypeConfiguration<AbdmTransfer>
+{
+    public void Configure(EntityTypeBuilder<AbdmTransfer> b)
+    {
+        b.ToTable("abdm_transfers", InteropSchema.Name);
+        b.Property(x => x.TransactionId).HasMaxLength(64);
+        b.Property(x => x.ConsentId).HasMaxLength(64);
+        b.Property(x => x.HipId).HasMaxLength(64);
+        b.Property(x => x.DataPushUrl).HasMaxLength(500);
+        b.Property(x => x.KeyMaterialJson).HasColumnType("jsonb");
+        b.Property(x => x.ResultsJson).HasColumnType("jsonb");
+        b.Property(x => x.Error).HasMaxLength(500);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.TransactionId).IsUnique();
+        b.HasIndex(x => new { x.PatientId, x.RequestedAt });
+    }
+}
