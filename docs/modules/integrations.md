@@ -1222,8 +1222,40 @@ applications use (one per algorithm, with a Tamil name in the payload), and chec
 refused. In the other direction, messages sealed here under both algorithms were opened by node-jose 2.2.0 and by jose
 5.9.6 when this was built (a one-off check, as it needs Node).
 
+### NHCX claim documents (not live)
+
+What the envelope carries to the payer is a FHIR bundle in the NRCeS profiles for NHCX, which are part of the ABDM
+implementation guide (`ndhm.in` 6.5.0). `Interop/Nhcx/NhcxClaimBundle.cs` builds a pre-authorisation request or a claim
+as a `ClaimBundle`: a `collection` Bundle with the Claim (profile `Claim`), the Patient, the insurer's and the hospital's
+Organizations, the Coverage and the treating doctor.
+
+* **Claim.** `use` is `preauthorization` or `claim`; the type is inpatient, outpatient or day-care management from the
+  IG's `ndhm-claim-type`; the identifier is the hospital's pre-authorisation or claim number; diagnoses are ICD-10, typed
+  preliminary on a pre-authorisation and final on a claim (`ndhm-diagnostic-type`); each service carries HC360's service
+  code and name (`urn:hc360:service-item`, which the IG's example binding allows), quantity, unit price and net in
+  rupees, and the total is their sum. A claim quotes the insurer's pre-authorisation approval in `insurance.preAuthRef`.
+* **Coverage.** The policy number under the payer's code, the member id as `subscriberId`, the policy's period, and the
+  patient's relation to the holder (self, spouse, child, parent or other). The holder is the patient for "self";
+  otherwise the holder is named and not sent as a resource.
+* **Patient.** Only what an insurer needs to match the policy (UHID, ABHA number, name, gender, birth date, phone,
+  address): next of kin, marital status and language are left out.
+* **Refused before building**, as the insurer would refuse them: no number, no diagnosis, a code that is not ICD-10, no
+  services or a total of nothing, a quantity of zero, a treatment that ends before it starts, and a treatment that
+  starts outside the policy's period.
+
+Ids are derived from HC360's ids as the ABDM documents' are, so the same request built twice is the same bundle.
+
+**Checked against.** `NhcxClaimBundleTests` validates pre-authorisations and claims against the ClaimBundle profile with
+Firely's validator. The IG's own pre-authorisation and settlement examples pass the same validator, so it is set up as
+NRCeS meant, and a bundle with the insurer or a diagnosis type removed fails it. Every element the IG's
+pre-authorisation example fills in its Claim is filled here too, except coded procedures (HC360 keeps a
+pre-authorisation's procedures as text, so they go as services). Firely does not report a code outside an extensible
+binding, so the claim types and diagnosis types sent are checked against the IG's value set files directly.
+
 Not built (they need the NHCX sandbox and the hospital's participant registration): the registry lookups for a
 payer's encryption certificate, the API calls and callbacks, and NHCX's signing of messages, if the sandbox requires it.
+Also not built: loading a pre-authorisation or claim from Billing into the builder and sending it, the ClaimResponse
+bundles coming back, and the coverage eligibility check.
 
 ### Not covered yet: payment gateway
 * **PayU** and other gateways: only Razorpay (and the simulator) implement `IPaymentProvider`, settlements and refund

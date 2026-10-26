@@ -1,7 +1,7 @@
 # ABDM profiles used by the tests (ndhm.in 6.5.0)
 
-The tests (`AbdmDocumentTests`, `Abdm/ValidatorSetupTests`, and `AbdmExportTests` in the integration tests) check every
-ABDM document HC360 makes against the profiles of the **FHIR Implementation Guide for ABDM**, published by the National Resource Center for EHR Standards
+The tests (`AbdmDocumentTests`, `Abdm/ValidatorSetupTests`, `Nhcx/NhcxClaimBundleTests`, and `AbdmExportTests` in the
+integration tests) check every ABDM document and NHCX claim HC360 makes against the profiles of the **FHIR Implementation Guide for ABDM**, published by the National Resource Center for EHR Standards
 (NRCeS, https://nrces.in/).
 
 | | |
@@ -30,6 +30,13 @@ The files are copied from the package unchanged; only the ones the tests need ar
 - `example/Bundle-DischargeSummary-example-04.json` and `example/Bundle-Prescription-example-06.json`: the guide's own
   discharge summary and prescription examples. They must validate, which shows the validator is set up the way NRCeS
   intended.
+- `package/StructureDefinition-ClaimBundle.json`, `package/ValueSet-ndhm-claim-type.json` and
+  `package/ValueSet-ndhm-diagnostic-type.json`: the NHCX claim bundle profile (the Claim, Coverage, Patient, Organization
+  and Practitioner profiles it uses were already here), and the claim types and diagnosis types the claims are checked
+  against (`Nhcx/NhcxClaimBundleTests`). Added 2026-10-26 from the same package; the files already here were checked
+  byte for byte against it.
+- `example/Bundle-ClaimBundle-preauthorization-example-01.json` and `example/Bundle-ClaimBundle-settlement-example-01.json`:
+  the guide's own pre-authorisation and claim examples, which must validate too.
 
 The FHIR R4 core definitions come from the `Hl7.Fhir.Specification.Data.R4` NuGet package (`specification.zip`), not
 from here. SNOMED CT, LOINC and other external terminologies cannot be checked offline; see `Abdm/AbdmProfileValidator.cs`
