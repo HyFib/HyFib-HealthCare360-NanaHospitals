@@ -38,6 +38,7 @@ import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import { useVisitActions } from '@/modules/front-office/VisitActions';
 import { guardianRelationLabel, patientApi, patientQueries, type PatientDetail } from '@/modules/patients/api';
+import { AbhaChecksPanel } from '@/modules/patients/AbhaChecksPanel';
 import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
 import { DocumentsPanel } from '@/modules/patients/DocumentsPanel';
 import { IdentityChecksPanel } from '@/modules/patients/IdentityChecksPanel';
@@ -244,7 +245,12 @@ function PatientProfilePage() {
           {tab === 'overview' && <Overview patient={p} />}
           {tab === 'visits' && <Visits patientId={patientId} />}
           {tab === 'consents' && <ConsentsPanel patientId={patientId} />}
-          {tab === 'identity' && <IdentityChecksPanel patient={p} />}
+          {tab === 'identity' && (
+            <>
+              <IdentityChecksPanel patient={p} />
+              <AbhaChecksPanel patient={p} />
+            </>
+          )}
           {tab === 'portal' && <PortalAccessPanel patientId={patientId} />}
           {tab === 'documents' && <DocumentsPanel patientId={patientId} />}
         </div>

@@ -12,7 +12,8 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 /// ABDM health records (SRS EHR-08): every <c>/api/v1/abdm</c> endpoint stops with the ABDM switch, which is off until an
 /// administrator turns it on; exporting a record and linking records to a patient's ABHA need <c>abdm.export</c>, and
 /// the gateway's set-up is for those who manage integrations. The scan-and-share queue is the registration desk's
-/// (<c>patients.register</c>, and the contact permission for a share's full details). The gateway's callbacks (the answers
+/// (<c>patients.register</c>, and the contact permission for a share's full details); checking a patient's ABHA with
+/// ABDM needs the identity permission, as an Aadhaar check does. The gateway's callbacks (the answers
 /// of HIP-initiated linking, the three calls of user-initiated linking, consent notifications, requests for health
 /// information and profile shares) are anonymous (it signs them instead) and stop with the switch too.
 /// </summary>
@@ -32,7 +33,7 @@ public sealed class AbdmEndpointTests
         [.. All.Value.Where(e => Route(e).StartsWith("/api/v3/", StringComparison.Ordinal))]);
 
     [Fact]
-    public void The_abdm_api_is_six_document_exports_the_gateway_status_link_requests_and_the_share_queue()
+    public void The_abdm_api_is_six_document_exports_the_gateway_status_link_requests_the_share_queue_and_abha_checks()
     {
         Endpoints.Value.Select(e => $"{Method(e)} {Route(e)}").Order().ShouldBe(
         [
@@ -44,9 +45,12 @@ public sealed class AbdmEndpointTests
             "GET /api/v1/abdm/bundles/radiology-reports/{id:guid}",
             "GET /api/v1/abdm/gateway",
             "GET /api/v1/abdm/links/{id:guid}",
+            "GET /api/v1/abdm/patients/{patientId:guid}/abha-checks",
             "GET /api/v1/abdm/shares/",
             "GET /api/v1/abdm/shares/{id:guid}",
+            "POST /api/v1/abdm/abha-checks/{id:guid}/code",
             "POST /api/v1/abdm/links/",
+            "POST /api/v1/abdm/patients/{patientId:guid}/abha-checks",
             "POST /api/v1/abdm/shares/{id:guid}/dismiss",
             "POST /api/v1/abdm/shares/{id:guid}/registered",
         ]);
@@ -86,6 +90,10 @@ public sealed class AbdmEndpointTests
                 ? InteropPermissions.AbdmExport
                 : route.StartsWith("/api/v1/abdm/shares/", StringComparison.Ordinal)
                 ? PatientsPermissions.Register
+                : route.EndsWith("/abha-checks", StringComparison.Ordinal) && Method(endpoint) == "GET"
+                ? PatientsPermissions.Read
+                : route.Contains("/abha-checks", StringComparison.Ordinal)
+                ? PatientsPermissions.IdentityVerify
                 : PlatformPermissions.IntegrationsManage;
             endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(a => a.Policy)
                 .ShouldContain(PermissionPolicyProvider.Prefix + expected, Route(endpoint));

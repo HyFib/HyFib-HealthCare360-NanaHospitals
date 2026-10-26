@@ -141,6 +141,7 @@ public sealed class HospitalServer : IAsyncLifetime
         builder.Services.AddHttpClient<HttpAbdmGatewayClient>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbdmGatewayKeys>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
+        builder.Services.AddHttpClient<AbhaClient>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
 
         _app = builder.Build();
         var platform = _app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value;

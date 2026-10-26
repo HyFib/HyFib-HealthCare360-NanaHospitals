@@ -140,3 +140,21 @@ internal sealed class AbdmProfileShareConfiguration : IEntityTypeConfiguration<A
         b.HasIndex(x => new { x.PatientId, x.SharedAt });
     }
 }
+
+internal sealed class AbdmAbhaVerificationConfiguration : IEntityTypeConfiguration<AbdmAbhaVerification>
+{
+    public void Configure(EntityTypeBuilder<AbdmAbhaVerification> b)
+    {
+        b.ToTable("abdm_abha_verifications", InteropSchema.Name);
+        b.Property(x => x.TxnId).HasMaxLength(100);
+        b.Property(x => x.SentMessage).HasMaxLength(300);
+        b.Property(x => x.AbhaNumberMasked).HasMaxLength(32);
+        b.Property(x => x.AbhaAddress).HasMaxLength(100);
+        b.Property(x => x.Name).HasMaxLength(200);
+        b.Property(x => x.Gender).HasMaxLength(8);
+        b.Property(x => x.DifferencesJson).HasColumnType("jsonb");
+        b.Property(x => x.Error).HasMaxLength(500);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.PatientId, x.CreatedAt });
+    }
+}

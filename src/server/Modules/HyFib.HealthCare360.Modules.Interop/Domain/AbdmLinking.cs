@@ -372,3 +372,76 @@ internal sealed class AbdmProfileShare : AuditableEntity
 
     public DateTimeOffset? HandledAt { get; set; }
 }
+
+/// <summary>Where a check of a patient's ABHA with ABDM has got to.</summary>
+public enum AbhaVerificationStatus
+{
+    /// <summary>ABDM sent the patient a code; the desk enters it.</summary>
+    CodeSent,
+
+    /// <summary>The code was right, and the ABHA is the patient on record.</summary>
+    Verified,
+
+    /// <summary>The code was right, but the ABHA differs from the record (<see cref="AbdmAbhaVerification.DifferencesJson"/>).</summary>
+    Mismatch,
+
+    /// <summary>Three wrong codes, or ABDM's answer named no single ABHA.</summary>
+    Failed,
+
+    /// <summary>The code was not entered within ten minutes.</summary>
+    Expired,
+}
+
+/// <summary>
+/// A check of a patient's ABHA with ABDM at the desk (ABDM M1): ABDM sends a code to the mobile number linked to the
+/// ABHA number on the patient's record (or linked to the mobile number on it), the patient reads it out, and ABDM
+/// answers with the ABHA it opens, which is compared with the record. Only the ABHA number masked, the ABHA address and
+/// what differed are kept; the code and the token ABDM issues are not.
+/// </summary>
+internal sealed class AbdmAbhaVerification : AuditableEntity
+{
+    /// <summary>The code ABDM sends is good for ten minutes.</summary>
+    public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(10);
+
+    public const int MaxAttempts = 3;
+
+    /// <summary>At most this many codes to one patient in a quarter of an hour.</summary>
+    public const int MaxPerWindow = 3;
+
+    public static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
+
+    public Guid PatientId { get; set; }
+
+    public AbhaLoginHint Method { get; set; }
+
+    /// <summary>ABDM's transaction id, which the code is checked under.</summary>
+    public string TxnId { get; set; } = string.Empty;
+
+    /// <summary>ABDM's words on where the code went ("OTP sent to mobile number ending with ******3210").</summary>
+    public string? SentMessage { get; set; }
+
+    public AbhaVerificationStatus Status { get; set; }
+
+    public int Attempts { get; set; }
+
+    public DateTimeOffset CodeExpiresAt { get; set; }
+
+    public DateTimeOffset? CompletedAt { get; set; }
+
+    public string? AbhaNumberMasked { get; set; }
+
+    public string? AbhaAddress { get; set; }
+
+    public string? Name { get; set; }
+
+    public string? Gender { get; set; }
+
+    public int? YearOfBirth { get; set; }
+
+    public bool? KycVerified { get; set; }
+
+    /// <summary>What the ABHA says differently from the record, in words (JSON list).</summary>
+    public string DifferencesJson { get; set; } = "[]";
+
+    public string? Error { get; set; }
+}
