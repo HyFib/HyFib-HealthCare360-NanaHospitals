@@ -45,6 +45,52 @@ internal static class AbdmGatewayMessages
     /// <summary>The gateway's callback <c>/api/v3/link/on_carecontext</c>.</summary>
     public sealed record OnAddCareContexts(string? AbhaAddress, string? Status, RespRequest? Response, GatewayError? Error);
 
+    /// <summary>An identifier the gateway sends with a patient: its type (<c>MOBILE</c>, <c>MR</c>, <c>ABHA_NUMBER</c>…) and value.</summary>
+    public sealed record Identifier(string? Type, string? Value);
+
+    /// <summary>
+    /// The patient a discovery is for, as their ABHA has them: <c>id</c> is the ABHA address; the identifiers ABDM
+    /// verified (the mobile number) and those the patient typed (the hospital's UHID, as <c>MR</c>). The year of birth
+    /// comes as a number or, from NHA's wrapper, as a string.
+    /// </summary>
+    public sealed record DiscoverPatient(
+        string? Id, string? Name, string? Gender, int? YearOfBirth,
+        IReadOnlyList<Identifier>? VerifiedIdentifiers, IReadOnlyList<Identifier>? UnverifiedIdentifiers);
+
+    /// <summary>The gateway's call <c>/api/v3/hip/patient/care-context/discover</c>: a patient looking for their records.</summary>
+    public sealed record Discover(string? RequestId, string? TransactionId, DiscoverPatient? Patient);
+
+    /// <summary>
+    /// <c>POST /user-initiated-linking/v3/patient/care-context/on-discover</c>: the patient's unlinked records, one group per
+    /// health-information type, and how the patient was matched; or an error.
+    /// </summary>
+    public sealed record OnDiscover(
+        string? TransactionId, IReadOnlyList<CareContextGroup>? Patient, IReadOnlyList<string>? MatchedBy, RespRequest Response, GatewayError? Error);
+
+    public sealed record ChosenCareContext(string? ReferenceNumber, string? Display);
+
+    public sealed record ChosenGroup(string? ReferenceNumber, IReadOnlyList<ChosenCareContext>? CareContexts, string? HiType);
+
+    /// <summary>The gateway's call <c>/api/v3/hip/link/care-context/init</c>: the records the patient chose from those offered.</summary>
+    public sealed record LinkInit(string? TransactionId, string? AbhaAddress, IReadOnlyList<ChosenGroup>? Patient);
+
+    /// <summary>How the patient is asked to prove it is them: a code sent to their mobile number, until the expiry.</summary>
+    public sealed record LinkMeta(string CommunicationMedium, string CommunicationHint, string CommunicationExpiry);
+
+    /// <summary>The link reference the confirm call will name, and how the patient is authenticated (<c>MEDIATE</c>: by the hospital).</summary>
+    public sealed record LinkReference(string ReferenceNumber, string AuthenticationType, LinkMeta Meta);
+
+    /// <summary><c>POST /user-initiated-linking/v3/link/care-context/on-init</c>.</summary>
+    public sealed record OnLinkInit(string? TransactionId, LinkReference? Link, RespRequest Response, GatewayError? Error);
+
+    public sealed record Confirmation(string? LinkRefNumber, string? Token);
+
+    /// <summary>The gateway's call <c>/api/v3/hip/link/care-context/confirm</c>: the code the patient typed in their app.</summary>
+    public sealed record LinkConfirm(string? RequestId, Confirmation? Confirmation);
+
+    /// <summary><c>POST /user-initiated-linking/v3/link/care-context/on-confirm</c>: the linked care contexts, or an error.</summary>
+    public sealed record OnLinkConfirm(IReadOnlyList<CareContextGroup>? Patient, RespRequest Response, GatewayError? Error);
+
     /// <summary>
     /// The gateway's error in an answer body. NHA's wrapper notes the v3 gateway is not consistent: an error comes as
     /// <c>{"error": {...}}</c> or as <c>{"errors": [{"error": {...}}]}</c>, and both are read here.
@@ -98,6 +144,23 @@ internal static class AbdmGatewayMessages
                 _ => null,
             } : null;
     }
+
+    /// <summary>
+    /// Care contexts as the gateway takes them: one group per health-information type, each under the patient's
+    /// reference (their HC360 id) and display (their name), with its care contexts and their count, as NHA's wrapper
+    /// groups them for both kinds of linking.
+    /// </summary>
+    public static IReadOnlyList<CareContextGroup> Groups(Guid patientId, string patientDisplay, IEnumerable<(string Reference, string Display, AbdmRecordType Type)> careContexts) =>
+    [
+        .. careContexts
+            .GroupBy(c => HiType(c.Type))
+            .Select(g => new CareContextGroup(
+                ReferenceNumber: patientId.ToString("D"),
+                Display: patientDisplay,
+                CareContexts: [.. g.Select(c => new CareContext(c.Reference, c.Display))],
+                HiType: g.Key,
+                Count: g.Count())),
+    ];
 
     /// <summary>ABDM's gender codes.</summary>
     public static string Gender(Gender gender) => gender switch

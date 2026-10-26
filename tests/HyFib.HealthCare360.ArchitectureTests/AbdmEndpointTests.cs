@@ -11,7 +11,8 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 /// ABDM health records (SRS EHR-08): every <c>/api/v1/abdm</c> endpoint stops with the ABDM switch, which is off until an
 /// administrator turns it on; exporting a record and linking records to a patient's ABHA need <c>abdm.export</c>, and
 /// the gateway's set-up is for those who manage integrations. The only write is a link request. The gateway's callbacks
-/// are anonymous (it signs them instead) and stop with the switch too.
+/// (the answers of HIP-initiated linking, and the three calls of user-initiated linking) are anonymous (it signs them
+/// instead) and stop with the switch too.
 /// </summary>
 public sealed class AbdmEndpointTests
 {
@@ -52,10 +53,13 @@ public sealed class AbdmEndpointTests
             .Select(Route).ShouldBeEmpty("Add .RequireFeature(FeatureKeys.Abdm) to these ABDM endpoints");
 
     [Fact]
-    public void The_gateway_calls_back_on_two_anonymous_posts_it_signs_and_nothing_else_is_under_api_v3()
+    public void The_gateway_calls_back_on_five_anonymous_posts_it_signs_and_nothing_else_is_under_api_v3()
     {
         Callbacks.Value.Select(e => $"{Method(e)} {Route(e)}").Order().ShouldBe(
         [
+            "POST /api/v3/hip/link/care-context/confirm",
+            "POST /api/v3/hip/link/care-context/init",
+            "POST /api/v3/hip/patient/care-context/discover",
             "POST /api/v3/hip/token/on-generate-token",
             "POST /api/v3/link/on_carecontext",
         ]);

@@ -83,8 +83,9 @@ public sealed record AbdmGatewayStatus(
 /// <param name="Display">What the patient sees, for example "Discharge summary, 12 Sep 2026".</param>
 internal sealed record AbdmCareContext(string Reference, string Display, AbdmRecordType Type);
 
-/// <summary>HIP-initiated linking: the patient's ABHA address and the care contexts to add to it.</summary>
-internal sealed record AbdmCareContextLink(Guid PatientId, string AbhaAddress, string? AbhaNumber, IReadOnlyList<AbdmCareContext> CareContexts);
+/// <summary>HIP-initiated linking: the patient (their id and name), their ABHA address and the care contexts to add to it.</summary>
+internal sealed record AbdmCareContextLink(
+    Guid PatientId, string PatientDisplay, string AbhaAddress, string? AbhaNumber, IReadOnlyList<AbdmCareContext> CareContexts);
 
 /// <summary>A consent the consent manager notified the hospital (HIP) of, to be acknowledged.</summary>
 internal sealed record AbdmConsentNotification(string ConsentId, string Status, string RequestId);
@@ -113,6 +114,9 @@ internal sealed record AbdmLinkTokenRequest(string AbhaAddress, string Name, str
 /// <c>/api/v3/hip/token/on-generate-token</c>.</item>
 /// <item><see cref="LinkCareContextsAsync"/>: <c>POST /hip/v3/link/carecontext</c> with the link token, answered at
 /// <c>/api/v3/link/on_carecontext</c> (HIP-initiated linking after a record is completed).</item>
+/// <item><see cref="AnswerDiscoveryAsync"/>, <see cref="AnswerLinkInitAsync"/> and <see cref="AnswerLinkConfirmAsync"/>:
+/// <c>POST /user-initiated-linking/v3/patient/care-context/on-discover</c>, <c>…/v3/link/care-context/on-init</c> and
+/// <c>…/on-confirm</c>, the hospital's answers when a patient looks for their records from their PHR app.</item>
 /// <item><see cref="AcknowledgeConsentAsync"/>: <c>POST /consent/v3/request/hip/on-notify</c>.</item>
 /// <item><see cref="TransferHealthInformationAsync"/>: <c>POST /data-flow/v3/health-information/hip/on-request</c>,
 /// the encrypted push to the HIU's <c>dataPushUrl</c>, then <c>POST /data-flow/v3/health-information/notify</c>.</item>
@@ -130,6 +134,15 @@ internal interface IAbdmGatewayClient
 
     /// <summary>Adds the care contexts to the patient's ABHA with the link token, under <paramref name="requestId"/>.</summary>
     Task<Result> LinkCareContextsAsync(AbdmCareContextLink link, string linkToken, Guid requestId, CancellationToken ct);
+
+    /// <summary>Answers the gateway's discover call: the patient's unlinked records, or why there are none.</summary>
+    Task<Result> AnswerDiscoveryAsync(AbdmGatewayMessages.OnDiscover answer, CancellationToken ct);
+
+    /// <summary>Answers the gateway's link-init call: the link reference and where the code was sent, or why not.</summary>
+    Task<Result> AnswerLinkInitAsync(AbdmGatewayMessages.OnLinkInit answer, CancellationToken ct);
+
+    /// <summary>Answers the gateway's link-confirm call: the care contexts linked, or why not.</summary>
+    Task<Result> AnswerLinkConfirmAsync(AbdmGatewayMessages.OnLinkConfirm answer, CancellationToken ct);
 
     Task<Result> AcknowledgeConsentAsync(AbdmConsentNotification notification, CancellationToken ct);
 
@@ -244,6 +257,12 @@ internal sealed class DisabledAbdmGatewayClient(AbdmGatewayConfiguration configu
 
     public async Task<Result> LinkCareContextsAsync(AbdmCareContextLink link, string linkToken, Guid requestId, CancellationToken ct) =>
         await RefuseAsync(ct);
+
+    public async Task<Result> AnswerDiscoveryAsync(AbdmGatewayMessages.OnDiscover answer, CancellationToken ct) => await RefuseAsync(ct);
+
+    public async Task<Result> AnswerLinkInitAsync(AbdmGatewayMessages.OnLinkInit answer, CancellationToken ct) => await RefuseAsync(ct);
+
+    public async Task<Result> AnswerLinkConfirmAsync(AbdmGatewayMessages.OnLinkConfirm answer, CancellationToken ct) => await RefuseAsync(ct);
 
     public async Task<Result> AcknowledgeConsentAsync(AbdmConsentNotification notification, CancellationToken ct) => await RefuseAsync(ct);
 

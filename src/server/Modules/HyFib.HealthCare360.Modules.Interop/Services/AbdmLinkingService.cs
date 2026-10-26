@@ -3,7 +3,6 @@ using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
-using HyFib.HealthCare360.Platform.Documents;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
@@ -113,11 +112,7 @@ internal sealed class AbdmLinkingService(
 
             patientId = source.PatientId;
             facilityId = source.FacilityId;
-            linked.Add(new AbdmLinkedRecord(
-                record.Type,
-                record.Id,
-                ReferenceNumber(record.Type, record.Id),
-                $"{Capitalize(AbdmBundleService.Describe(record.Type))}, {DocumentFormat.Date(source.RecordedAt)}"));
+            linked.Add(AbdmCareContexts.Describe(record.Type, record.Id, source.RecordedAt));
         }
 
         var patient = await db.Set<Patient>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == patientId, ct);
@@ -267,6 +262,9 @@ internal sealed class AbdmLinkingService(
         {
             request.Status = AbdmLinkStatus.Linked;
             request.AnsweredAt = now;
+            var (settings, _, _) = await configuration.ReadAsync(ct);
+            var linked = JsonSerializer.Deserialize<List<AbdmLinkedRecord>>(request.CareContextsJson, AbdmGatewayMessages.Json) ?? [];
+            await AbdmCareContexts.AddAsync(db, settings.HipId!, request.PatientId, request.AbhaAddress, linked, AbdmLinkRoute.HipInitiated, now, ct);
         }
 
         await db.SaveChangesAsync(ct);
@@ -298,6 +296,7 @@ internal sealed class AbdmLinkingService(
         var sent = await gateway.LinkCareContextsAsync(
             new AbdmCareContextLink(
                 patient.Id,
+                patient.FullName,
                 request.AbhaAddress,
                 protector.Unprotect(patient.AbhaNumberCipher),
                 [.. careContexts.Select(c => new AbdmCareContext(c.ReferenceNumber, c.Display, c.Type))]),
@@ -365,6 +364,4 @@ internal sealed class AbdmLinkingService(
             request.ErrorCode,
             request.Error);
     }
-
-    private static string Capitalize(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
 }

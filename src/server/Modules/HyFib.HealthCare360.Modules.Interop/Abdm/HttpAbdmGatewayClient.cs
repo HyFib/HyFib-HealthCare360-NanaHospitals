@@ -70,7 +70,8 @@ internal sealed class AbdmGatewaySessions
 }
 
 /// <summary>
-/// The live gateway client (<see cref="IAbdmGatewayClient"/>): the session and HIP-initiated linking. Every call goes
+/// The live gateway client (<see cref="IAbdmGatewayClient"/>): the session, HIP-initiated linking and the answers of
+/// user-initiated linking. Every call goes
 /// to the base URL in the settings with the headers NHA's wrapper sends (<c>Authorization: Bearer</c>, <c>X-CM-ID</c>,
 /// <c>REQUEST-ID</c>, <c>TIMESTAMP</c>, <c>X-HIP-ID</c>, and <c>X-LINK-TOKEN</c> when adding care contexts). The gateway
 /// accepts a call with 202 and answers it later through HC360's callback endpoints; any other answer is a refusal,
@@ -89,6 +90,9 @@ internal sealed class HttpAbdmGatewayClient(
     public const string SessionPath = "/gateway/v3/sessions";
     public const string GenerateTokenPath = "/v3/token/generate-token";
     public const string AddCareContextsPath = "/hip/v3/link/carecontext";
+    public const string OnDiscoverPath = "/user-initiated-linking/v3/patient/care-context/on-discover";
+    public const string OnLinkInitPath = "/user-initiated-linking/v3/link/care-context/on-init";
+    public const string OnLinkConfirmPath = "/user-initiated-linking/v3/link/care-context/on-confirm";
 
     public const string RefusedCode = "abdm.gateway_refused";
     public const string UnreachableCode = "abdm.gateway_unreachable";
@@ -115,15 +119,7 @@ internal sealed class HttpAbdmGatewayClient(
     {
         // One group per kind of record, as NHA's wrapper sends them: the care contexts of the group, its count, and the
         // health-information type the consent manager offers them under.
-        var groups = link.CareContexts
-            .GroupBy(c => AbdmGatewayMessages.HiType(c.Type))
-            .Select(g => new AbdmGatewayMessages.CareContextGroup(
-                ReferenceNumber: link.PatientId.ToString("D"),
-                Display: g.Key,
-                CareContexts: [.. g.Select(c => new AbdmGatewayMessages.CareContext(c.Reference, c.Display))],
-                HiType: g.Key,
-                Count: g.Count()))
-            .ToList();
+        var groups = AbdmGatewayMessages.Groups(link.PatientId, link.PatientDisplay, link.CareContexts.Select(c => (c.Reference, c.Display, c.Type)));
         return await SendAsync(
             AddCareContextsPath,
             new AbdmGatewayMessages.AddCareContextsRequest(link.AbhaNumber, link.AbhaAddress, groups),
@@ -132,6 +128,15 @@ internal sealed class HttpAbdmGatewayClient(
             "link the records to the patient's ABHA",
             ct);
     }
+
+    public Task<Result> AnswerDiscoveryAsync(AbdmGatewayMessages.OnDiscover answer, CancellationToken ct) =>
+        SendAsync(OnDiscoverPath, answer, Guid.CreateVersion7(), linkToken: null, "answer a patient's search for their records", ct);
+
+    public Task<Result> AnswerLinkInitAsync(AbdmGatewayMessages.OnLinkInit answer, CancellationToken ct) =>
+        SendAsync(OnLinkInitPath, answer, Guid.CreateVersion7(), linkToken: null, "answer a patient's request to link records", ct);
+
+    public Task<Result> AnswerLinkConfirmAsync(AbdmGatewayMessages.OnLinkConfirm answer, CancellationToken ct) =>
+        SendAsync(OnLinkConfirmPath, answer, Guid.CreateVersion7(), linkToken: null, "confirm the records the patient linked", ct);
 
     public Task<Result> AcknowledgeConsentAsync(AbdmConsentNotification notification, CancellationToken ct) =>
         refusal.AcknowledgeConsentAsync(notification, ct);

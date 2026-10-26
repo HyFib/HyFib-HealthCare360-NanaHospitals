@@ -15,9 +15,9 @@ records to other providers are not built yet ([ABDM gateway](#abdm-gateway)).
 | | |
 |---|---|
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.Interop` (layer 8; references Patients, Clinical, Diagnostics and Inpatient) |
-| Schema | `interop`: `abdm_link_requests` (a request to link records to a patient's ABHA and where it has got to) and `abdm_link_tokens` (the link token the gateway issued for an ABHA address, encrypted); migration `AbdmLinking`. Everything else is read from the other modules' entities through `HospitalDbContext` |
-| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08, **partly met**: ABHA capture and the ABDM document export of consultations, prescriptions, lab reports, radiology and cardiology reports and discharge summaries are built, and so is linking completed records to the patient's ABHA through the ABDM gateway (HIP-initiated linking, tested against a fake gateway built to NHA's wrapper; it needs the hospital's NHA credentials and a sandbox run); verifying an ABHA with ABDM, user-initiated linking, consent and the transfer of records are not built |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, referral laboratories, the validated samples in `Fixtures/Abdm`), `AbdmDocumentVersionTests` (a document as of its record, its PDF made again, the order of rows, the PDF rule), `ValidatorSetupTests` (`Abdm/`: the Firely validator set-up, see [Validation](#validation)), `AbdmGatewayTests`, `HttpAbdmGatewayClientTests` (`Abdm/`: the gateway calls against a fake gateway, see [Linking](#linking-records-to-the-patients-abha-abdm-m2)) and `AbdmCallbackVerifierTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example ids, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, the one write, the anonymous signed callbacks), `AbdmLinkingTests` (IntegrationTests: a record linked end to end through a fake gateway and its signed callbacks, a kept token reused and a refused one dropped, forged and unsigned callbacks refused, nothing sent while the gateway is off), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate (a restricted one at either end of the merge, in a discharge summary, the survivor deleted), an ABHA number a merge links, a later allergy left out of a signed note, the LOINC name rule, the download's file and the DSC rule, every downloaded document validated), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts`, `modules/emr/AbdmRecordButton.test.tsx`, `modules/emr/abdmRecords.test.tsx` |
+| Schema | `interop`: `abdm_link_requests` (a request to link records to a patient's ABHA and where it has got to) `abdm_link_tokens` (the link token the gateway issued for an ABHA address, encrypted), `abdm_discoveries` (a patient's search for their records from their PHR app, and the code sent to them, hashed) and `abdm_care_contexts` (every record linked to an ABHA address, whichever way); migrations `AbdmLinking` and `AbdmUserLinking`. Everything else is read from the other modules' entities through `HospitalDbContext` |
+| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08, **partly met**: ABHA capture and the ABDM document export of consultations, prescriptions, lab reports, radiology and cardiology reports and discharge summaries are built, and so is linking completed records to the patient's ABHA through the ABDM gateway (HIP-initiated linking, and user-initiated linking from the patient's PHR app; tested against a fake gateway built to NHA's wrapper; it needs the hospital's NHA credentials and a sandbox run); verifying an ABHA with ABDM, consent and the transfer of records are not built |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, referral laboratories, the validated samples in `Fixtures/Abdm`), `AbdmDocumentVersionTests` (a document as of its record, its PDF made again, the order of rows, the PDF rule), `ValidatorSetupTests` (`Abdm/`: the Firely validator set-up, see [Validation](#validation)), `AbdmGatewayTests`, `HttpAbdmGatewayClientTests` (`Abdm/`: the gateway calls against a fake gateway, see [Linking](#linking-records-to-the-patients-abha-abdm-m2)) and `AbdmCallbackVerifierTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example ids, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, the one write, the anonymous signed callbacks), `AbdmLinkingTests` (IntegrationTests: a record linked end to end through a fake gateway and its signed callbacks, a kept token reused and a refused one dropped, forged and unsigned callbacks refused, nothing sent while the gateway is off), `AbdmUserLinkingTests` (IntegrationTests: a patient finds their records by ABHA address or verified mobile, links one with the code sent to them; wrong, spent and re-asked codes, a record not offered, three wrong codes), `AbdmDemographicsTests` (Interop.Tests: the gender, year-of-birth and name match), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate (a restricted one at either end of the merge, in a discharge summary, the survivor deleted), an ABHA number a merge links, a later allergy left out of a signed note, the LOINC name rule, the download's file and the DSC rule, every downloaded document validated), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts`, `modules/emr/AbdmRecordButton.test.tsx`, `modules/emr/abdmRecords.test.tsx` |
 
 ## Permission and set-up
 
@@ -484,7 +484,7 @@ build. What is built:
 |---|---|
 | Settings | `abdm.gateway` (hospital-wide JSON): `enabled` (false), `baseUrl` (https, no user name, e.g. the sandbox `https://dev.abdm.gov.in/api/hiecm`), `hipId` (the HFR id registered as HIP), `cmId` (`sbx` or `abdm`), `timeoutSeconds` (30, between 5 and 120), `jwksUrl` (optional, https: where the gateway publishes the keys its callbacks are signed with; by default `{baseUrl}/gateway/v3/certs`, the v3 place of the specification's `/v0.5/certs`, to be confirmed in the sandbox). `abdm.gateway.secret` (encrypted secret setting): `clientId`, `clientSecret` issued by NHA. Both are added under Administration › Settings (Add setting); the secret is never shown again |
 | Status | `GET /api/v1/abdm/gateway`: enabled, configured, `live` (false until records are sent, not only linked), the URL and ids, whether the client id and secret are set (never their values), the problems in the set-up and what remains |
-| Client | `IAbdmGatewayClient` (gateway v3), registered as `HttpAbdmGatewayClient`: `CreateSessionAsync` (`POST /gateway/v3/sessions` with the client id and secret, `grantType: client_credentials`; the access token is kept and shared until five minutes before it expires, twenty minutes in the sandbox), `RequestLinkTokenAsync` (`POST /v3/token/generate-token`: ABHA address, name, gender `M`/`F`/`O`/`U`, year of birth), `LinkCareContextsAsync` (`POST /hip/v3/link/carecontext` with the token in `X-LINK-TOKEN`: the ABHA number and address and the care contexts, one group per health-information type: `OPConsultation`, `Prescription`, `DischargeSummary`, `DiagnosticReport` for lab, radiology and cardiology reports). Every call carries `Authorization: Bearer`, `X-CM-ID`, `REQUEST-ID`, `TIMESTAMP` (UTC, milliseconds) and `X-HIP-ID`. The gateway accepts with 202 and answers later on a callback; any other answer is refused with 422 `abdm.gateway_refused` and the gateway's code and message (it sends `{ error }` or `{ errors: [{ error }] }`, both read), and a gateway that cannot be reached within the timeout gives 422 `abdm.gateway_unreachable`. A call is not retried, as the gateway may have acted on it when its answer was lost; a session the gateway ended (401) is renewed once. `AcknowledgeConsentAsync` and `TransferHealthInformationAsync` are not built and are refused as before. While the gateway is off or its set-up incomplete nothing is sent and every call answers 422 `abdm.gateway_disabled`, naming what is missing (`DisabledAbdmGatewayClient`) |
+| Client | `IAbdmGatewayClient` (gateway v3), registered as `HttpAbdmGatewayClient`: `CreateSessionAsync` (`POST /gateway/v3/sessions` with the client id and secret, `grantType: client_credentials`; the access token is kept and shared until five minutes before it expires, twenty minutes in the sandbox), `RequestLinkTokenAsync` (`POST /v3/token/generate-token`: ABHA address, name, gender `M`/`F`/`O`/`U`, year of birth), `LinkCareContextsAsync` (`POST /hip/v3/link/carecontext` with the token in `X-LINK-TOKEN`: the ABHA number and address and the care contexts, one group per health-information type: `OPConsultation`, `Prescription`, `DischargeSummary`, `DiagnosticReport` for lab, radiology and cardiology reports, each group under the patient's id and name), and the answers of user-initiated linking: `AnswerDiscoveryAsync`, `AnswerLinkInitAsync` and `AnswerLinkConfirmAsync` (`POST /user-initiated-linking/v3/patient/care-context/on-discover`, `…/v3/link/care-context/on-init` and `…/on-confirm`, each naming the gateway's call in `response.requestId`). Every call carries `Authorization: Bearer`, `X-CM-ID`, `REQUEST-ID`, `TIMESTAMP` (UTC, milliseconds) and `X-HIP-ID`. The gateway accepts with 202 and answers later on a callback; any other answer is refused with 422 `abdm.gateway_refused` and the gateway's code and message (it sends `{ error }` or `{ errors: [{ error }] }`, both read), and a gateway that cannot be reached within the timeout gives 422 `abdm.gateway_unreachable`. A call is not retried, as the gateway may have acted on it when its answer was lost; a session the gateway ended (401) is renewed once. `AcknowledgeConsentAsync` and `TransferHealthInformationAsync` are not built and are refused as before. While the gateway is off or its set-up incomplete nothing is sent and every call answers 422 `abdm.gateway_disabled`, naming what is missing (`DisabledAbdmGatewayClient`) |
 | Encryption | `FideliusCipher` (`IFideliusCipher`): every document of a transfer encrypted for the HIU under one fresh HIP key pair, with each document's MD5 as the entry's checksum. Built and tested against NHA's reference implementation, see [Fidelius](#fidelius) |
 | Callback check | `AbdmCallbackVerifier`: a call to the callback endpoints is the gateway's only when its `Authorization: Bearer` token is signed RS256 by a key in the gateway's key set (JWKS) whose key id the token names, and is within its lifetime (one minute's clock difference allowed). `none`, HMAC (including the HS256-with-the-public-key confusion) and any other algorithm are refused. A token naming a key id not in the set is refused, so the client fetches the set again (the gateway rotated its keys) rather than trying every key. Issuer and audience are checked once confirmed against the sandbox: ABDM publishes neither, nor the key set's URL. The key set is fetched from `jwksUrl` and kept six hours (`AbdmGatewayKeys`); a token naming a key not in it has it fetched again, at most once a minute. NHA's own reference HIP (`NHA-ABDM/ABDM-wrapper`) checks nothing, so anyone reaching its callback URLs could post a consent notification. `AbdmCallbackVerifierTests` holds a key set and tokens made with Python's jwcrypto 1.5.6, independent of .NET; they found two faults while this was built (a token naming an unknown key accepted by trying every key, and the lifetime check overflowing on the library's minimum date) |
 
@@ -512,12 +512,54 @@ The token is kept per HIP id and ABHA address, encrypted like other secrets in t
 never returned by the API. The request is answered 202 also when the gateway refused it at once or could not be
 reached: its view then says `Failed` and why. A failed request is not retried by HC360: staff link the records again.
 
-The gateway calls back on two endpoints, at the paths NHA's wrapper serves (`AbdmGatewayCallbackEndpoints`):
+#### Linking from the patient's PHR app (user-initiated, ABDM M2)
+
+The patient looks for their records at the hospital from their PHR app, which the gateway passes on in three calls;
+HC360 answers each with a call of its own (`AbdmUserLinkingService`):
+
+1. **Discover** (`{ transactionId, patient: { id, name, gender, yearOfBirth, verifiedIdentifiers, unverifiedIdentifiers } }`,
+   `id` the ABHA address). The patient is found by the ABHA address on their record; else by the mobile number ABDM
+   verified (`MOBILE`), among active, unmerged patients with that number, keeping those of the same gender, a year of
+   birth within two years (five when the hospital estimated the date of birth), the same first name and, when both
+   have one, a last name with the same initial ("Meera K" is "Meera Krishnan"), and the UHID when the patient typed it
+   (`MR`). Exactly one must match: none is `ABDM-1010` "Patient not found", more than one `1000`, so that a family
+   sharing a number is not guessed between. The answer offers the patient's completed records (what the export would
+   send: signed consultations and discharge summaries, issued prescriptions, released lab, radiology and cardiology
+   reports, in every facility, newest first, at most 100) not already linked to that ABHA address, grouped as for
+   HIP-initiated linking, with `matchedBy` (`ABHA_ADDRESS`, or `MOBILE` and `MR`). Audited as `phi` /
+   `abdm.discovered` with the records offered. A repeated call with the same transaction id gets the same answer.
+2. **Link init** (`{ transactionId, abhaAddress, patient: [{ referenceNumber, careContexts: [{ referenceNumber }] }] }`):
+   the records the patient chose, within 30 minutes of the discovery, from the same ABHA address, all among those
+   offered ("Care context reference numbers are invalid" otherwise, "Patient reference number is invalid" for another
+   patient). A six-digit code goes by SMS (template `abdm.link_code`) to the mobile number on the patient's record,
+   good for ten minutes; the answer gives a link reference, `authenticationType: MEDIATE` and `meta: { communicationMedium:
+   MOBILE, communicationHint: +91******3210, communicationExpiry }`. One code per search, and at most three codes to a
+   patient in 15 minutes; a patient with no mobile number on record cannot link this way.
+3. **Link confirm** (`{ confirmation: { linkRefNumber, token } }`): the right code links the chosen records
+   (`abdm_care_contexts`, route `UserInitiated`) and the answer lists them; audited as `phi` / `abdm.user_linked`. A
+   wrong code is `ABDM-1035` "Incorrect OTP"; the third wrong code, or a code past its ten minutes, ends the request,
+   and the patient searches again. The code is kept only as a hash, and dropped once used or ended.
+
+Records of every kind are offered, a restricted (VIP) or sensitive-category patient's included: it is the patient's
+own search, from the ABHA the mobile number or address on their record belongs to, and nothing is shared until they
+consent to it. HC360 does not keep the ABHA address on the patient's record from a search; staff record it as before.
+
+#### The gateway's calls
+
+The gateway calls HC360 on five endpoints, at the paths NHA's wrapper serves (`AbdmGatewayCallbackEndpoints`):
 
 | Method | Path | Body |
 |---|---|---|
 | POST | `/api/v3/hip/token/on-generate-token` | `{ abhaAddress, linkToken, response: { requestId }, error }` |
 | POST | `/api/v3/link/on_carecontext` | `{ abhaAddress, status, response: { requestId }, error }` |
+| POST | `/api/v3/hip/patient/care-context/discover` | discover, as above |
+| POST | `/api/v3/hip/link/care-context/init` | link init, as above |
+| POST | `/api/v3/hip/link/care-context/confirm` | link confirm, as above |
+
+The last three are answered by a call back to the gateway naming their `REQUEST-ID` header; a call naming another HIP
+in `X-HIP-ID` is logged and ignored. HC360 answers before it returns 202, so the gateway's call waits for the
+answer's delivery (at most the gateway timeout); an answer that cannot be delivered is logged and the patient tries
+again from their app.
 
 They are anonymous at the HTTP level and checked by the gateway's signed bearer token ([Callback check](#abdm-gateway)):
 401 when it is missing, forged or expired. They answer 503 `feature.disabled` while the ABDM switch is off, 404 while
@@ -527,16 +569,16 @@ a minute by default, `HealthCare360:RateLimits:Public`), which a busy hospital m
 addresses. The hospital's public address for these paths is registered with NHA as the HIP's callback URL.
 
 `HttpAbdmGatewayClientTests` checks each call against NHA's wrapper (paths, headers, bodies, the session's reuse and
-renewal, both error shapes, no retry); `AbdmLinkingTests` runs the whole flow against a fake gateway inside the test
+renewal, both error shapes, no retry); `AbdmLinkingTests` and `AbdmUserLinkingTests` run both flows against a fake gateway inside the test
 server (`FakeAbdmGateway`: sessions, 202s, a key set, and callbacks signed with its key). Neither has been run against
 NHA's sandbox, which needs the hospital's credentials.
 
 What remains, in order (also in the status's `remaining`):
 
 1. Register the hospital as a HIP with its HFR id and get NHA **sandbox** client credentials (an outside approval);
-   run the linking flow above in the sandbox and confirm the key set's URL and the token's issuer.
-2. Build the other callback endpoints the gateway calls (user-initiated discovery, link initiation and confirmation,
-   consent notification, health-information request), and link care contexts when a record is completed.
+   run both linking flows above in the sandbox and confirm the key set's URL and the token's issuer.
+2. Build the consent notification and health-information request callbacks and the encrypted transfer, and link care
+   contexts when a record is completed.
 3. Pass NHA's sandbox functional tests and certification, then switch to the production gateway.
 4. Sign documents (`Bundle.signature`, optional in the IG) with the doctor's DSC when the DSC signing of prescriptions
    (ERX-04) covers them.
@@ -567,8 +609,8 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
 
 * **EHR-08 is partly met.** ABHA capture and the ABDM document export are built (behind `features.abdm`, off by
   default), and so is HIP-initiated linking of records to the patient's ABHA through the gateway, which needs the
-  hospital's NHA credentials and a sandbox run. Not met: verifying the ABHA with ABDM, user-initiated linking,
-  consent and the encrypted transfer of records ([ABDM gateway](#abdm-gateway)); and cardiology reports (ECG,
+  hospital's NHA credentials and a sandbox run, and user-initiated linking from the patient's PHR app. Not met:
+  verifying the ABHA with ABDM, consent and the encrypted transfer of records ([ABDM gateway](#abdm-gateway)); and cardiology reports (ECG,
   echo, TMT, Holter, ABPM: their own studies, with no imaging study) are not exported as ABDM documents, nor are immunisations, wellness and
   invoice records. The FHIR read API's resources keep the ABDM-friendly identifiers (ABHA number, HFR id) but claim no
   NRCeS profiles; the ABDM documents do.
