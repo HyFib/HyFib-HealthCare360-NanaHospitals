@@ -24,6 +24,7 @@ import { Route as AppAdminRolesRouteImport } from './routes/_app/admin/roles'
 import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin/settings'
 import { Route as AppAdminSystemRouteImport } from './routes/_app/admin/system'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
+import { Route as AppAmbulanceIndexRouteImport } from './routes/_app/ambulance/index'
 import { Route as AppAmsIndexRouteImport } from './routes/_app/ams/index'
 import { Route as AppAnalyticsIndexRouteImport } from './routes/_app/analytics/index'
 import { Route as AppAnalyticsExtractsRouteImport } from './routes/_app/analytics/extracts'
@@ -404,6 +405,11 @@ const AppAdminSystemRoute = AppAdminSystemRouteImport.update({
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAmbulanceIndexRoute = AppAmbulanceIndexRouteImport.update({
+  id: '/ambulance/',
+  path: '/ambulance/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAmsIndexRoute = AppAmsIndexRouteImport.update({
@@ -2138,6 +2144,7 @@ export interface FileRoutesByFullPath {
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/workstation/printers': typeof AppWorkstationPrintersRoute
+  '/ambulance/': typeof AppAmbulanceIndexRoute
   '/ams/': typeof AppAmsIndexRoute
   '/analytics/': typeof AppAnalyticsIndexRoute
   '/assets/': typeof AppAssetsIndexRoute
@@ -2459,6 +2466,7 @@ export interface FileRoutesByTo {
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/workstation/printers': typeof AppWorkstationPrintersRoute
+  '/ambulance': typeof AppAmbulanceIndexRoute
   '/ams': typeof AppAmsIndexRoute
   '/analytics': typeof AppAnalyticsIndexRoute
   '/assets': typeof AppAssetsIndexRoute
@@ -2782,6 +2790,7 @@ export interface FileRoutesById {
   '/_app/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/_app/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/_app/workstation/printers': typeof AppWorkstationPrintersRoute
+  '/_app/ambulance/': typeof AppAmbulanceIndexRoute
   '/_app/ams/': typeof AppAmsIndexRoute
   '/_app/analytics/': typeof AppAnalyticsIndexRoute
   '/_app/assets/': typeof AppAssetsIndexRoute
@@ -3105,6 +3114,7 @@ export interface FileRouteTypes {
     | '/setup/specialties'
     | '/telehealth/$sessionId'
     | '/workstation/printers'
+    | '/ambulance/'
     | '/ams/'
     | '/analytics/'
     | '/assets/'
@@ -3426,6 +3436,7 @@ export interface FileRouteTypes {
     | '/setup/specialties'
     | '/telehealth/$sessionId'
     | '/workstation/printers'
+    | '/ambulance'
     | '/ams'
     | '/analytics'
     | '/assets'
@@ -3748,6 +3759,7 @@ export interface FileRouteTypes {
     | '/_app/setup/specialties'
     | '/_app/telehealth/$sessionId'
     | '/_app/workstation/printers'
+    | '/_app/ambulance/'
     | '/_app/ams/'
     | '/_app/analytics/'
     | '/_app/assets/'
@@ -4040,6 +4052,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AppAdminUsersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/ambulance/': {
+      id: '/_app/ambulance/'
+      path: '/ambulance'
+      fullPath: '/ambulance/'
+      preLoaderRoute: typeof AppAmbulanceIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/ams/': {
@@ -6319,6 +6338,7 @@ interface AppRouteChildren {
   AppSetupSpecialtiesRoute: typeof AppSetupSpecialtiesRoute
   AppTelehealthSessionIdRoute: typeof AppTelehealthSessionIdRoute
   AppWorkstationPrintersRoute: typeof AppWorkstationPrintersRoute
+  AppAmbulanceIndexRoute: typeof AppAmbulanceIndexRoute
   AppAmsIndexRoute: typeof AppAmsIndexRoute
   AppAnalyticsIndexRoute: typeof AppAnalyticsIndexRoute
   AppAssetsIndexRoute: typeof AppAssetsIndexRoute
@@ -6639,6 +6659,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSetupSpecialtiesRoute: AppSetupSpecialtiesRoute,
   AppTelehealthSessionIdRoute: AppTelehealthSessionIdRoute,
   AppWorkstationPrintersRoute: AppWorkstationPrintersRoute,
+  AppAmbulanceIndexRoute: AppAmbulanceIndexRoute,
   AppAmsIndexRoute: AppAmsIndexRoute,
   AppAnalyticsIndexRoute: AppAnalyticsIndexRoute,
   AppAssetsIndexRoute: AppAssetsIndexRoute,

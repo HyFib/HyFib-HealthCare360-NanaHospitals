@@ -26,6 +26,16 @@ internal static class SeedCatalog
         new("DIET-ENT", "Enteral / tube feed (per day)", 400m),
     ];
 
+    /// <summary>Ambulance fares: the base fare by vehicle kind covers the first 10 km; each kilometre beyond is AMB-KM.</summary>
+    public static readonly ServiceSeed[] AmbulanceServices =
+    [
+        new("AMB-BLS", "Ambulance — basic life support (first 10 km)", 1000m),
+        new("AMB-ALS", "Ambulance — advanced life support (first 10 km)", 2500m),
+        new("AMB-PTS", "Patient transport vehicle (first 10 km)", 800m),
+        new("AMB-HEARSE", "Hearse (first 10 km)", 1200m),
+        new("AMB-KM", "Ambulance — each km beyond the first 10", 25m),
+    ];
+
     public static readonly DietSeed[] Diets =
     [
         new("NORMAL", "Normal diet", DietCategory.Regular, "DIET-STD", MealSlots.Standard, "Regular hospital diet."),
