@@ -90,6 +90,7 @@ public static class PersonalDataCatalogue
                 new("clinical.encounter_codings", "Disease coding of consultations", Counted: false),
                 new("clinical.result_reviews", "Doctors' reviews of your results", Counted: false),
                 new("clinical.record_requests", "Requests for your medical records"),
+                new("interop.abdm_link_requests", "Records linked to your ABHA"),
             ]),
         new("medicines", "Prescriptions and medicines",
             "Your prescriptions, the medicines the pharmacy gave you, refills and returns.",

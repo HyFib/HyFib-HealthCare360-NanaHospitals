@@ -27,6 +27,9 @@ internal sealed record AbdmSource(Guid PatientId, Guid FacilityId, string? NotEx
     /// caller may open (<see cref="AbdmBundleService"/>).
     /// </summary>
     public IReadOnlyList<Guid> Duplicates { get; init; } = [];
+
+    /// <summary>When the record was made, which names it for the patient when it is linked to their ABHA.</summary>
+    public DateTimeOffset RecordedAt { get; init; }
 }
 
 /// <summary>
@@ -67,54 +70,58 @@ internal sealed class AbdmRecordLoader(
             case AbdmRecordType.Prescription:
             {
                 var row = await db.Set<Prescription>().AsNoTracking().Where(p => p.Id == id)
-                    .Select(p => new { p.PatientId, p.FacilityId, p.Status }).FirstOrDefaultAsync(ct);
+                    .Select(p => new { p.PatientId, p.FacilityId, p.Status, p.CreatedAt }).FirstOrDefaultAsync(ct);
                 return row is null ? NotFound(type, id)
                     : new AbdmSource(row.PatientId, row.FacilityId,
-                        row.Status != PrescriptionStatus.Signed ? "Only a signed prescription that has not been cancelled can be exported." : null);
+                        row.Status != PrescriptionStatus.Signed ? "Only a signed prescription that has not been cancelled can be exported." : null)
+                    { RecordedAt = row.CreatedAt };
             }
 
             case AbdmRecordType.LabReport:
             {
                 var row = await db.Set<LabReport>().AsNoTracking().Where(r => r.Id == id)
-                    .Select(r => new { r.PatientId, r.FacilityId, r.Status }).FirstOrDefaultAsync(ct);
+                    .Select(r => new { r.PatientId, r.FacilityId, r.Status, r.CreatedAt }).FirstOrDefaultAsync(ct);
                 return row is null ? NotFound(type, id)
                     : new AbdmSource(row.PatientId, row.FacilityId,
-                        row.Status is not (LabReportStatus.Released or LabReportStatus.Amended) ? "Only a released lab report can be exported." : null);
+                        row.Status is not (LabReportStatus.Released or LabReportStatus.Amended) ? "Only a released lab report can be exported." : null)
+                    { RecordedAt = row.CreatedAt };
             }
 
             case AbdmRecordType.RadiologyReport:
             {
                 var row = await db.Set<RadiologyReport>().AsNoTracking().Where(r => r.Id == id)
-                    .Select(r => new { r.PatientId, r.FacilityId, r.Status }).FirstOrDefaultAsync(ct);
-                return row is null ? NotFound(type, id) : new AbdmSource(row.PatientId, row.FacilityId, RadiologyReportNotExportable(row.Status));
+                    .Select(r => new { r.PatientId, r.FacilityId, r.Status, r.CreatedAt }).FirstOrDefaultAsync(ct);
+                return row is null ? NotFound(type, id) : new AbdmSource(row.PatientId, row.FacilityId, RadiologyReportNotExportable(row.Status)) { RecordedAt = row.CreatedAt };
             }
 
             case AbdmRecordType.CardiologyReport:
             {
                 var row = await db.Set<CardiologyReport>().AsNoTracking().Where(r => r.Id == id)
-                    .Select(r => new { r.PatientId, r.FacilityId, r.Status }).FirstOrDefaultAsync(ct);
-                return row is null ? NotFound(type, id) : new AbdmSource(row.PatientId, row.FacilityId, CardiologyReportNotExportable(row.Status));
+                    .Select(r => new { r.PatientId, r.FacilityId, r.Status, r.CreatedAt }).FirstOrDefaultAsync(ct);
+                return row is null ? NotFound(type, id) : new AbdmSource(row.PatientId, row.FacilityId, CardiologyReportNotExportable(row.Status)) { RecordedAt = row.CreatedAt };
             }
 
             case AbdmRecordType.OpConsultation:
             {
                 var row = await db.Set<ClinicalEncounter>().AsNoTracking().Where(e => e.Id == id)
-                    .Select(e => new { e.PatientId, e.FacilityId, e.Status, e.Type }).FirstOrDefaultAsync(ct);
+                    .Select(e => new { e.PatientId, e.FacilityId, e.Status, e.Type, e.CreatedAt }).FirstOrDefaultAsync(ct);
                 return row is null ? NotFound(type, id)
                     : new AbdmSource(row.PatientId, row.FacilityId,
                         row.Status == EncounterStatus.InProgress ? "Sign the consultation note before exporting it."
                         : row.Type == EncounterType.InPatient
                             ? "An in-patient note is not exported on its own: its diagnoses and prescriptions are in the stay's discharge summary."
-                        : null);
+                        : null)
+                    { RecordedAt = row.CreatedAt };
             }
 
             default:
             {
                 var row = await db.Set<DischargeSummary>().AsNoTracking().Where(s => s.Id == id)
-                    .Select(s => new { s.PatientId, s.FacilityId, s.Status }).FirstOrDefaultAsync(ct);
+                    .Select(s => new { s.PatientId, s.FacilityId, s.Status, s.CreatedAt }).FirstOrDefaultAsync(ct);
                 return row is null ? NotFound(type, id)
                     : new AbdmSource(row.PatientId, row.FacilityId,
-                        row.Status == DischargeSummaryStatus.Draft ? "Sign the discharge summary before exporting it." : null);
+                        row.Status == DischargeSummaryStatus.Draft ? "Sign the discharge summary before exporting it." : null)
+                    { RecordedAt = row.CreatedAt };
             }
         }
     }

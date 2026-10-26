@@ -5,8 +5,8 @@ using HyFib.HealthCare360.Platform.Settings;
 namespace HyFib.HealthCare360.Modules.Interop.Tests;
 
 /// <summary>
-/// The ABDM gateway is set up in settings but sends nothing in this release: its status says what is set up and what is
-/// missing (never the secret), and every call of the client is refused with <c>abdm.gateway_disabled</c>.
+/// The ABDM gateway is set up in settings: its status says what is set up and what is missing (never the secret). The
+/// refusing client (what the live client falls back to) refuses every call with <c>abdm.gateway_disabled</c>.
 /// </summary>
 public sealed class AbdmGatewayTests
 {
@@ -17,7 +17,7 @@ public sealed class AbdmGatewayTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private readonly FakeSettings _settings = new();
+    private readonly FakeAbdmSettings _settings = new();
 
     private AbdmGatewayConfiguration Configuration => new(_settings);
 
@@ -82,7 +82,7 @@ public sealed class AbdmGatewayTests
         _settings.Set(AbdmGatewaySettingKeys.Gateway, Complete);
         _settings.Set(AbdmGatewaySettingKeys.Secret, Credentials);
         var link = await client.LinkCareContextsAsync(
-            new AbdmCareContextLink(TestData.PatientId, "meera.k@sbx", AbdmTestData.AbhaNumber, [new AbdmCareContext("x", "Prescription", AbdmRecordType.Prescription)]), Ct);
+            new AbdmCareContextLink(TestData.PatientId, "meera.k@sbx", AbdmTestData.AbhaNumber, [new AbdmCareContext("x", "Prescription", AbdmRecordType.Prescription)]), "link-token", Guid.CreateVersion7(), Ct);
         link.Error!.Message.ShouldContain("not part of this release");
         (await client.AcknowledgeConsentAsync(new AbdmConsentNotification("c", "GRANTED", "r"), Ct)).IsFailure.ShouldBeTrue();
         (await client.TransferHealthInformationAsync(
@@ -91,24 +91,4 @@ public sealed class AbdmGatewayTests
 
     [Fact]
     public void The_client_secret_is_kept_in_a_secret_setting() => SecretSettingKeys.IsSecret(AbdmGatewaySettingKeys.Secret).ShouldBeTrue();
-
-    /// <summary>Hospital-wide settings in memory, as JSON (the store's own deserialisation).</summary>
-    private sealed class FakeSettings : ISettingsService
-    {
-        private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
-        private readonly Dictionary<string, string> _rows = [];
-
-        public void Set(string key, string json) => _rows[key] = json;
-
-        public Task<T?> GetAsync<T>(string key, Guid? facilityId = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_rows.TryGetValue(key, out var json) ? JsonSerializer.Deserialize<T>(json, Web) : default);
-
-        public Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task SetAsync<T>(string key, T value, Guid? facilityId, bool secret, uint? expectedVersion, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default) => Task.FromResult(_rows.Remove(key));
-    }
 }

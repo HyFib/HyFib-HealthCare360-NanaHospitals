@@ -264,6 +264,7 @@ export const ITEM_LABEL: Readonly<Record<string, MessageKey>> = {
   'clinical.discharge_summaries': 'myPrivacy.item.clinical.discharge_summaries',
   'clinical.medical_records': 'myPrivacy.item.clinical.medical_records',
   'clinical.record_requests': 'myPrivacy.item.clinical.record_requests',
+  'interop.abdm_link_requests': 'myPrivacy.item.interop.abdm_link_requests',
   'clinical.prescriptions': 'myPrivacy.item.clinical.prescriptions',
   'pharmacy.sales': 'myPrivacy.item.pharmacy.sales',
   'pharmacy.refill_requests': 'myPrivacy.item.pharmacy.refill_requests',

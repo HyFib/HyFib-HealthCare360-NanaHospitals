@@ -2,10 +2,12 @@ using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace HyFib.HealthCare360.Modules.Interop.Tests;
 
@@ -98,11 +100,18 @@ public sealed class InteropModuleTests
     }
 
     [Fact]
-    public void The_abdm_gateway_client_sends_nothing()
+    public async Task The_abdm_gateway_client_is_the_live_one_which_refuses_while_the_gateway_is_off()
     {
         var services = Services();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(Substitute.For<ISettingsService>());
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
 
-        services.Single(d => d.ServiceType == typeof(IAbdmGatewayClient)).ImplementationType.ShouldBe(typeof(DisabledAbdmGatewayClient));
+        var client = scope.ServiceProvider.GetRequiredService<IAbdmGatewayClient>();
+        client.ShouldBeOfType<HttpAbdmGatewayClient>();
+        (await client.CreateSessionAsync(TestContext.Current.CancellationToken)).Error!.Code.ShouldBe(DisabledAbdmGatewayClient.Code);
         services.Single(d => d.ServiceType == typeof(IFideliusCipher)).ImplementationType.ShouldBe(typeof(FideliusCipher));
     }
 }

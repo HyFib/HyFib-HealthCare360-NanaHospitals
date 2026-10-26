@@ -10,7 +10,10 @@ namespace HyFib.HealthCare360.Modules.Interop.Abdm;
 /// </summary>
 internal static class AbdmGatewaySettingKeys
 {
-    /// <summary><c>{ "enabled": false, "baseUrl": "https://dev.abdm.gov.in/api/hiecm", "hipId": "IN27…", "cmId": "sbx", "timeoutSeconds": 30 }</c>.</summary>
+    /// <summary>
+    /// <c>{ "enabled": false, "baseUrl": "https://dev.abdm.gov.in/api/hiecm", "hipId": "IN27…", "cmId": "sbx", "timeoutSeconds": 30 }</c>,
+    /// and optionally <c>"jwksUrl"</c>, where the gateway publishes the keys its callbacks are signed with.
+    /// </summary>
     public const string Gateway = "abdm.gateway";
 
     /// <summary><c>{ "clientId": "SBX_…", "clientSecret": "…" }</c>, encrypted.</summary>
@@ -33,6 +36,18 @@ internal sealed record AbdmGatewaySettings
     public string? CmId { get; init; }
 
     public int TimeoutSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// The gateway's key set (JWKS), which its callbacks to HC360 are checked against; by default
+    /// <c>{baseUrl}/gateway/v3/certs</c>, the v3 place of the specification's <c>/v0.5/certs</c>, to be confirmed in the
+    /// sandbox. https only.
+    /// </summary>
+    public string? JwksUrl { get; init; }
+
+    /// <summary><see cref="JwksUrl"/>, or the default under <see cref="BaseUrl"/>.</summary>
+    public string? KeySetUrl => !string.IsNullOrWhiteSpace(JwksUrl) ? JwksUrl
+        : string.IsNullOrWhiteSpace(BaseUrl) ? null
+        : $"{BaseUrl.TrimEnd('/')}/gateway/v3/certs";
 }
 
 /// <summary>The client credentials NHA issues for the gateway.</summary>
@@ -45,7 +60,10 @@ internal sealed record AbdmGatewayCredentials
 /// <summary>What the administrator sees about the gateway: how it is set up and what is missing.</summary>
 /// <param name="Enabled">The gateway switch in <c>abdm.gateway</c>.</param>
 /// <param name="Configured">Base URL, HIP id, consent manager id, client id and secret are all set.</param>
-/// <param name="Live">Records are sent to ABDM. Always false in this release (see <paramref name="Remaining"/>).</param>
+/// <param name="Live">
+/// Health records are sent to ABDM. Always false in this release (see <paramref name="Remaining"/>): records can be
+/// linked to a patient's ABHA, but their content is not sent yet.
+/// </param>
 /// <param name="Problems">Why the set-up is incomplete or wrong.</param>
 /// <param name="Remaining">What has to be built and certified before records are sent.</param>
 public sealed record AbdmGatewayStatus(
@@ -81,25 +99,37 @@ internal sealed record AbdmEncryptedEntry(string CareContextReference, string Co
 internal sealed record AbdmHealthInformationTransfer(
     string TransactionId, Uri DataPushUrl, AbdmKeyMaterial HipKeyMaterial, IReadOnlyList<AbdmEncryptedEntry> Entries);
 
+/// <summary>The patient as the gateway asks for a link token: their ABHA address, name, gender and year of birth.</summary>
+internal sealed record AbdmLinkTokenRequest(string AbhaAddress, string Name, string Gender, int YearOfBirth);
+
 /// <summary>
-/// The hospital's side (HIP) of the ABDM health-information exchange, version 3 of the gateway APIs. Each call needs a
-/// gateway session (client credentials). No implementation sends anything yet: the registered client
-/// (<see cref="DisabledAbdmGatewayClient"/>) refuses every call with <c>abdm.gateway_disabled</c> and says why.
+/// The hospital's side (HIP) of the ABDM health-information exchange, version 3 of the gateway APIs, under the base URL
+/// in <see cref="AbdmGatewaySettings.BaseUrl"/>. Each call needs a gateway session (client credentials), and each is
+/// answered asynchronously: the gateway accepts it (202) and later calls HC360 back with the request id it was sent
+/// under. Paths and bodies as NHA's ABDM wrapper uses them:
 /// <list type="bullet">
-/// <item><see cref="CreateSessionAsync"/>: <c>POST /api/hiecm/gateway/v3/sessions</c>.</item>
-/// <item><see cref="LinkCareContextsAsync"/>: <c>POST /api/hiecm/v3/token/generate-token</c>, then
-/// <c>POST /api/hiecm/hip/v3/link/carecontext</c> (HIP-initiated linking after a record is completed).</item>
-/// <item><see cref="AcknowledgeConsentAsync"/>: <c>POST /api/hiecm/consent/v3/request/hip/on-notify</c>.</item>
-/// <item><see cref="TransferHealthInformationAsync"/>: <c>POST /api/hiecm/data-flow/v3/health-information/hip/on-request</c>,
-/// the encrypted push to the HIU's <c>dataPushUrl</c>, then <c>POST /api/hiecm/data-flow/v3/health-information/notify</c>.</item>
+/// <item><see cref="CreateSessionAsync"/>: <c>POST /gateway/v3/sessions</c>.</item>
+/// <item><see cref="RequestLinkTokenAsync"/>: <c>POST /v3/token/generate-token</c>, answered at
+/// <c>/api/v3/hip/token/on-generate-token</c>.</item>
+/// <item><see cref="LinkCareContextsAsync"/>: <c>POST /hip/v3/link/carecontext</c> with the link token, answered at
+/// <c>/api/v3/link/on_carecontext</c> (HIP-initiated linking after a record is completed).</item>
+/// <item><see cref="AcknowledgeConsentAsync"/>: <c>POST /consent/v3/request/hip/on-notify</c>.</item>
+/// <item><see cref="TransferHealthInformationAsync"/>: <c>POST /data-flow/v3/health-information/hip/on-request</c>,
+/// the encrypted push to the HIU's <c>dataPushUrl</c>, then <c>POST /data-flow/v3/health-information/notify</c>.</item>
 /// </list>
-/// The paths follow NHA's v3 sandbox documentation and are to be confirmed against the sandbox when credentials arrive.
+/// The live client (<see cref="HttpAbdmGatewayClient"/>) makes the session and linking calls; consent and data flow
+/// are not built yet and refuse with <c>abdm.gateway_disabled</c>, as every call does while the gateway is switched off
+/// or not set up (<see cref="DisabledAbdmGatewayClient"/>).
 /// </summary>
 internal interface IAbdmGatewayClient
 {
     Task<Result<string>> CreateSessionAsync(CancellationToken ct);
 
-    Task<Result> LinkCareContextsAsync(AbdmCareContextLink link, CancellationToken ct);
+    /// <summary>Asks for a link token for the patient's ABHA address, under <paramref name="requestId"/>.</summary>
+    Task<Result> RequestLinkTokenAsync(AbdmLinkTokenRequest request, Guid requestId, CancellationToken ct);
+
+    /// <summary>Adds the care contexts to the patient's ABHA with the link token, under <paramref name="requestId"/>.</summary>
+    Task<Result> LinkCareContextsAsync(AbdmCareContextLink link, string linkToken, Guid requestId, CancellationToken ct);
 
     Task<Result> AcknowledgeConsentAsync(AbdmConsentNotification notification, CancellationToken ct);
 
@@ -123,7 +153,7 @@ internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
     public static IReadOnlyList<string> Remaining { get; } =
     [
         "Register the hospital as a Health Information Provider (HIP) with its HFR id and get NHA sandbox client credentials.",
-        "Build the gateway client (sessions, HIP-initiated care-context linking, consent notifications, data-flow requests) and the callback endpoints the gateway calls.",
+        "Build the consent notifications and data-flow requests and their callbacks: records can be linked to a patient's ABHA, but their content is not sent yet.",
         "Pass NHA's sandbox functional tests and certification (milestone M2), then switch to the production gateway.",
         "Sign the documents (Bundle.signature, optional in the implementation guide) with the doctor's digital signature certificate.",
     ];
@@ -152,6 +182,12 @@ internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
         if (gateway.CmId is not ("sbx" or "abdm"))
         {
             problems.Add($"The consent manager id (\"cmId\" in {AbdmGatewaySettingKeys.Gateway}) must be \"sbx\" (sandbox) or \"abdm\" (production).");
+        }
+
+        if (!string.IsNullOrWhiteSpace(gateway.JwksUrl)
+            && (!Uri.TryCreate(gateway.JwksUrl, UriKind.Absolute, out var jwks) || jwks.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(jwks.UserInfo)))
+        {
+            problems.Add("The gateway's key-set URL (\"jwksUrl\") must be an https address without a user name or password.");
         }
 
         if (string.IsNullOrWhiteSpace(credentials.ClientId) || string.IsNullOrWhiteSpace(credentials.ClientSecret))
@@ -194,9 +230,9 @@ internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
 }
 
 /// <summary>
-/// The gateway client registered today: it sends nothing and answers every call with <c>abdm.gateway_disabled</c>,
-/// naming what is missing, so code written against <see cref="IAbdmGatewayClient"/> fails safely until the live client
-/// replaces it.
+/// What every gateway call answers while it cannot be made: <c>abdm.gateway_disabled</c>, naming what is missing (the
+/// switch, the set-up), so code written against <see cref="IAbdmGatewayClient"/> fails safely. The live client uses it
+/// for the calls it does not make yet (consent and data flow).
 /// </summary>
 internal sealed class DisabledAbdmGatewayClient(AbdmGatewayConfiguration configuration) : IAbdmGatewayClient
 {
@@ -204,18 +240,26 @@ internal sealed class DisabledAbdmGatewayClient(AbdmGatewayConfiguration configu
 
     public async Task<Result<string>> CreateSessionAsync(CancellationToken ct) => await RefuseAsync(ct);
 
-    public async Task<Result> LinkCareContextsAsync(AbdmCareContextLink link, CancellationToken ct) => await RefuseAsync(ct);
+    public async Task<Result> RequestLinkTokenAsync(AbdmLinkTokenRequest request, Guid requestId, CancellationToken ct) => await RefuseAsync(ct);
+
+    public async Task<Result> LinkCareContextsAsync(AbdmCareContextLink link, string linkToken, Guid requestId, CancellationToken ct) =>
+        await RefuseAsync(ct);
 
     public async Task<Result> AcknowledgeConsentAsync(AbdmConsentNotification notification, CancellationToken ct) => await RefuseAsync(ct);
 
     public async Task<Result> TransferHealthInformationAsync(AbdmHealthInformationTransfer transfer, CancellationToken ct) => await RefuseAsync(ct);
 
-    private async Task<Error> RefuseAsync(CancellationToken ct)
+    /// <summary>The refusal, or null when the gateway is switched on and set up.</summary>
+    public async Task<Error?> WhyNotAsync(CancellationToken ct)
     {
         var (gateway, _, problems) = await configuration.ReadAsync(ct);
-        var reason = !gateway.Enabled ? $"The gateway is switched off (\"enabled\" in the {AbdmGatewaySettingKeys.Gateway} setting)."
-            : problems.Count > 0 ? problems[0]
-            : "The live ABDM gateway client is not part of this release.";
-        return Error.Rule(Code, $"Nothing was sent to ABDM. {reason}");
+        return !gateway.Enabled ? Refusal($"The gateway is switched off (\"enabled\" in the {AbdmGatewaySettingKeys.Gateway} setting).")
+            : problems.Count > 0 ? Refusal(problems[0])
+            : null;
     }
+
+    public static Error Refusal(string reason) => Error.Rule(Code, $"Nothing was sent to ABDM. {reason}");
+
+    private async Task<Error> RefuseAsync(CancellationToken ct) =>
+        await WhyNotAsync(ct) ?? Refusal("Consent notifications and data-flow requests are not part of this release.");
 }

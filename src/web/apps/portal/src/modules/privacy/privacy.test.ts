@@ -463,6 +463,7 @@ describe('the data summary', () => {
       'clinical.discharge_summaries',
       'clinical.medical_records',
       'clinical.record_requests',
+      'interop.abdm_link_requests',
       'clinical.prescriptions',
       'pharmacy.sales',
       'pharmacy.refill_requests',
