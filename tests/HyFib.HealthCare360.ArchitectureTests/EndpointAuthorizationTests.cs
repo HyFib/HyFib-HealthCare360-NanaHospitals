@@ -96,6 +96,9 @@ public sealed class EndpointAuthorizationTests
         // bearer token signed with a key the gateway publishes (AbdmGatewayKeys).
         "POST /api/v3/hip/token/on-generate-token",
         "POST /api/v3/link/on_carecontext",
+        "POST /api/v3/hip/patient/care-context/discover",
+        "POST /api/v3/hip/link/care-context/init",
+        "POST /api/v3/hip/link/care-context/confirm",
 
         // Devices that authenticate with their own key or serial number: attendance terminals and patient monitors.
         "GET /iclock/cdata",

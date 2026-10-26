@@ -337,6 +337,7 @@ public static class DefaultNotificationTemplates
     public static IReadOnlyList<(string Key, NotificationChannel Channel, string? Subject, string Body, string Description)> All { get; } =
     [
         ("auth.otp", NotificationChannel.Sms, null, "{{code}} is your {{hospital}} verification code. It expires in {{minutes}} minutes. Do not share it with anyone.", "Patient portal sign-in OTP"),
+        ("abdm.link_code", NotificationChannel.Sms, null, "{{code}} is your code to link your {{hospital}} records to your ABHA. It expires in {{minutes}} minutes. Do not share it with anyone.", "Code to link hospital records to the patient's ABHA from their PHR app"),
         ("portal.family_code", NotificationChannel.Sms, null, "{{requester}} wants to see your {{hospital}} records in the patient portal. Give them code {{code}} only if you agree. It expires in {{minutes}} minutes.", "Code for a family member to see a patient's records in the portal"),
         ("appointment.confirmed", NotificationChannel.Sms, null, "Dear {{name}}, your appointment with {{doctor}} is confirmed for {{date}} at {{time}}. Ref {{reference}}. - {{hospital}}", "Appointment booked"),
         ("appointment.confirmed", NotificationChannel.WhatsApp, null, "Dear {{name}}, your appointment with {{doctor}} is confirmed for {{date}} at {{time}}. Reference: {{reference}}.", "Appointment booked (WhatsApp)"),

@@ -9,9 +9,9 @@ namespace HyFib.HealthCare360.Modules.Interop;
 /// DiagnosticReport and DocumentReference for other providers, subject to the patient's record-sharing consent. ABDM
 /// health records (EHR-08, behind the <c>features.abdm</c> switch): discharge summaries, lab reports, consultation notes
 /// and prescriptions as FHIR documents of the NRCeS implementation guide, and the ABDM gateway client: records linked to a
-/// patient's ABHA (HIP-initiated linking, live), consent and data flow not yet. It reads the Patients, Clinical,
-/// Diagnostics and Inpatient modules' data; its own tables (schema <c>interop</c>) hold the link requests and the link
-/// tokens the gateway issued.
+/// patient's ABHA (HIP-initiated and user-initiated linking, live), consent and data flow not yet. It reads the
+/// Patients, Clinical, Diagnostics and Inpatient modules' data; its own tables (schema <c>interop</c>) hold the link
+/// requests, the link tokens the gateway issued, the patients' searches from their PHR apps and the care contexts linked.
 /// </summary>
 public sealed class InteropModule : IModule
 {
@@ -45,6 +45,7 @@ public sealed class InteropModule : IModule
         services.AddHttpClient<AbdmGatewayKeys>().ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
         services.AddScoped<IAbdmGatewayClient>(sp => sp.GetRequiredService<HttpAbdmGatewayClient>());
         services.AddScoped<AbdmLinkingService>();
+        services.AddScoped<AbdmUserLinkingService>();
         services.AddSingleton<IFideliusCipher, FideliusCipher>();
     }
 

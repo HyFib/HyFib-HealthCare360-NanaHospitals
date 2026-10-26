@@ -91,6 +91,8 @@ public static class PersonalDataCatalogue
                 new("clinical.result_reviews", "Doctors' reviews of your results", Counted: false),
                 new("clinical.record_requests", "Requests for your medical records"),
                 new("interop.abdm_link_requests", "Records linked to your ABHA"),
+                new("interop.abdm_care_contexts", "Each record linked to your ABHA", Counted: false),
+                new("interop.abdm_discoveries", "Searches for your records from your ABHA app", Counted: false),
             ]),
         new("medicines", "Prescriptions and medicines",
             "Your prescriptions, the medicines the pharmacy gave you, refills and returns.",

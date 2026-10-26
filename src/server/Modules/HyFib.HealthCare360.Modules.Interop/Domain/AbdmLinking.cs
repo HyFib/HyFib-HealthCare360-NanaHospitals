@@ -80,5 +80,116 @@ internal sealed class AbdmLinkToken : AuditableEntity
     public static string Normalize(string abhaAddress) => abhaAddress.Trim().ToLowerInvariant();
 }
 
+/// <summary>How a care context came to be linked to a patient's ABHA.</summary>
+public enum AbdmLinkRoute
+{
+    /// <summary>The hospital linked it (<see cref="AbdmLinkRequest"/>).</summary>
+    HipInitiated,
+
+    /// <summary>The patient found it from their PHR app and confirmed with the code sent to them (<see cref="AbdmDiscovery"/>).</summary>
+    UserInitiated,
+}
+
+/// <summary>
+/// A record linked to a patient's ABHA address as a care context, whichever way it was linked: the hospital's list of
+/// what the patient's PHR app can ask for. Discovery offers only records not already in it, and the consent manager's
+/// requests for health information name care contexts by its <see cref="ReferenceNumber"/>.
+/// </summary>
+internal sealed class AbdmLinkedCareContext : AuditableEntity
+{
+    public string HipId { get; set; } = string.Empty;
+
+    public Guid PatientId { get; set; }
+
+    /// <summary>Lower-case (<see cref="AbdmLinkToken.Normalize"/>).</summary>
+    public string AbhaAddress { get; set; } = string.Empty;
+
+    public AbdmRecordType RecordType { get; set; }
+
+    public Guid RecordId { get; set; }
+
+    /// <summary><c>{kind}/{record id}</c> (<see cref="Services.AbdmLinkingService.ReferenceNumber"/>).</summary>
+    public string ReferenceNumber { get; set; } = string.Empty;
+
+    public string Display { get; set; } = string.Empty;
+
+    public AbdmLinkRoute Route { get; set; }
+
+    public DateTimeOffset LinkedAt { get; set; }
+}
+
+/// <summary>Where a patient's search for their records from their PHR app has got to.</summary>
+public enum AbdmDiscoveryStatus
+{
+    /// <summary>The patient was found and their records offered; the patient has not chosen yet.</summary>
+    Offered,
+
+    /// <summary>The patient chose records and a code was sent to their mobile number.</summary>
+    CodeSent,
+
+    /// <summary>The patient gave the right code and the records were linked.</summary>
+    Linked,
+
+    /// <summary>The code expired or was entered wrongly too often; the patient starts again from their app.</summary>
+    Failed,
+}
+
+/// <summary>
+/// User-initiated linking (ABDM M2): a patient's search for their records at the hospital from their PHR app, and the
+/// steps after it. The gateway's discover call creates it under its transaction id; its link-init call names the
+/// records the patient chose, and HC360 sends a code to the patient's mobile number; its link-confirm call brings the
+/// code back under <see cref="LinkReference"/>.
+/// </summary>
+internal sealed class AbdmDiscovery : AuditableEntity
+{
+    /// <summary>Codes are good for ten minutes, as NHA's wrapper gives them.</summary>
+    public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(10);
+
+    /// <summary>Wrong codes allowed before the request fails.</summary>
+    public const int MaxAttempts = 3;
+
+    /// <summary>The records chosen at link-init must come within this time of the discovery.</summary>
+    public static readonly TimeSpan OfferLifetime = TimeSpan.FromMinutes(30);
+
+    /// <summary>The gateway's transaction id, which ties discovery and linking together.</summary>
+    public string TransactionId { get; set; } = string.Empty;
+
+    public string HipId { get; set; } = string.Empty;
+
+    public Guid PatientId { get; set; }
+
+    /// <summary>The ABHA address the search came from, lower-case.</summary>
+    public string AbhaAddress { get; set; } = string.Empty;
+
+    /// <summary>How the patient was matched: <c>ABHA_ADDRESS</c>, <c>MOBILE</c>, and <c>MR</c> when the UHID was given.</summary>
+    public string MatchedBy { get; set; } = string.Empty;
+
+    /// <summary>The records offered (<see cref="AbdmLinkedRecord"/> list, JSON).</summary>
+    public string OfferedJson { get; set; } = "[]";
+
+    /// <summary>The records the patient chose, a subset of <see cref="OfferedJson"/>.</summary>
+    public string? SelectedJson { get; set; }
+
+    public AbdmDiscoveryStatus Status { get; set; }
+
+    public DateTimeOffset OfferedAt { get; set; }
+
+    /// <summary>The link reference sent with the code; the gateway's confirm call names it.</summary>
+    public Guid? LinkReference { get; set; }
+
+    /// <summary>The code's hash (<see cref="SecretTokens.Hash"/> of the row id and the code), never the code.</summary>
+    public string? CodeHash { get; set; }
+
+    public DateTimeOffset? CodeSentAt { get; set; }
+
+    public DateTimeOffset? CodeExpiresAt { get; set; }
+
+    public int Attempts { get; set; }
+
+    public DateTimeOffset? LinkedAt { get; set; }
+
+    public string? Error { get; set; }
+}
+
 /// <summary>One record as a care context, in the shape the gateway takes it (<see cref="AbdmGatewayMessages.CareContext"/>).</summary>
 internal sealed record AbdmLinkedRecord(AbdmRecordType Type, Guid RecordId, string ReferenceNumber, string Display);

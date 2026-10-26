@@ -126,6 +126,48 @@ internal sealed class AbdmRecordLoader(
         }
     }
 
+    /// <summary>
+    /// The patient's records the export would send, newest first, at most <paramref name="limit"/>: signed out-patient
+    /// consultations and discharge summaries, issued prescriptions, and released lab, radiology and cardiology reports
+    /// (the same rules as <see cref="LocateAsync"/>), in every facility of the hospital. Records kept under a duplicate
+    /// UHID merged into the patient are not included; they are linked from the record staff see.
+    /// </summary>
+    public async Task<IReadOnlyList<(AbdmRecordType Type, Guid Id, DateTimeOffset RecordedAt)>> ListExportableAsync(Guid patientId, int limit, CancellationToken ct)
+    {
+        var found = new List<(AbdmRecordType Type, Guid Id, DateTimeOffset RecordedAt)>();
+        void Add(AbdmRecordType type, IEnumerable<(Guid Id, DateTimeOffset At)> rows) => found.AddRange(rows.Select(r => (type, r.Id, r.At)));
+
+        Add(AbdmRecordType.OpConsultation, (await db.Set<ClinicalEncounter>().AsNoTracking()
+            .Where(e => e.PatientId == patientId && e.Status != EncounterStatus.InProgress && e.Type != EncounterType.InPatient)
+            .OrderByDescending(e => e.CreatedAt).Take(limit).Select(e => new { e.Id, e.CreatedAt }).ToListAsync(ct)).Select(r => (r.Id, r.CreatedAt)));
+        Add(AbdmRecordType.DischargeSummary, (await db.Set<DischargeSummary>().AsNoTracking()
+            .Where(d => d.PatientId == patientId && d.Status != DischargeSummaryStatus.Draft)
+            .OrderByDescending(d => d.CreatedAt).Take(limit).Select(d => new { d.Id, d.CreatedAt }).ToListAsync(ct)).Select(r => (r.Id, r.CreatedAt)));
+        Add(AbdmRecordType.LabReport, (await db.Set<LabReport>().AsNoTracking()
+            .Where(r => r.PatientId == patientId && (r.Status == LabReportStatus.Released || r.Status == LabReportStatus.Amended))
+            .OrderByDescending(r => r.CreatedAt).Take(limit).Select(r => new { r.Id, r.CreatedAt }).ToListAsync(ct)).Select(r => (r.Id, r.CreatedAt)));
+        Add(AbdmRecordType.RadiologyReport, (await db.Set<RadiologyReport>().AsNoTracking()
+            .Where(r => r.PatientId == patientId && r.Status == DiagnosticReportStatus.Released)
+            .OrderByDescending(r => r.CreatedAt).Take(limit).Select(r => new { r.Id, r.CreatedAt }).ToListAsync(ct)).Select(r => (r.Id, r.CreatedAt)));
+        Add(AbdmRecordType.CardiologyReport, (await db.Set<CardiologyReport>().AsNoTracking()
+            .Where(r => r.PatientId == patientId && r.Status == DiagnosticReportStatus.Released)
+            .OrderByDescending(r => r.CreatedAt).Take(limit).Select(r => new { r.Id, r.CreatedAt }).ToListAsync(ct)).Select(r => (r.Id, r.CreatedAt)));
+
+        // A signed prescription is issued only where the hospital's DSC rule lets it be (the printout's rule).
+        var prescriptions = await db.Set<Prescription>().AsNoTracking()
+            .Where(p => p.PatientId == patientId && p.Status == PrescriptionStatus.Signed)
+            .OrderByDescending(p => p.CreatedAt).Take(limit).Select(p => new { p.Id, p.CreatedAt }).ToListAsync(ct);
+        foreach (var prescription in prescriptions)
+        {
+            if (await PrescriptionNotIssuedAsync(prescription.Id, ct) is null)
+            {
+                found.Add((AbdmRecordType.Prescription, prescription.Id, prescription.CreatedAt));
+            }
+        }
+
+        return [.. found.OrderByDescending(r => r.RecordedAt).Take(limit)];
+    }
+
     /// <summary>The answer for a record that does not exist, or is not exported because its patient was deleted.</summary>
     public static Error NotFound(AbdmRecordType type, Guid id) => Error.NotFound(
         type switch

@@ -27,7 +27,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 [Collection(FeatureSwitchCollection.Name)]
 public sealed class AbdmLinkingTests(HospitalServer server)
 {
-    private const string HipId = "IN2710000999";
+    internal const string HipId = "IN2710000999";
     private const string TokenPath = "/v3/token/generate-token";
     private const string CareContextPath = "/hip/v3/link/carecontext";
 
@@ -51,7 +51,7 @@ public sealed class AbdmLinkingTests(HospitalServer server)
         try
         {
             await SwitchAsync(enabled: true);
-            await SetUpGatewayAsync(enabled: true);
+            await SetUpGatewayAsync(server, enabled: true);
 
             // Only those who export records link them, and only what the export would send.
             using (var notAllowed = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/abdm/links", Link(consultation)))
@@ -167,7 +167,7 @@ public sealed class AbdmLinkingTests(HospitalServer server)
         }
         finally
         {
-            await RemoveGatewayAsync();
+            await RemoveGatewayAsync(server);
             await SwitchAsync(enabled: false);
         }
     }
@@ -185,7 +185,7 @@ public sealed class AbdmLinkingTests(HospitalServer server)
         try
         {
             await SwitchAsync(enabled: true);
-            await SetUpGatewayAsync(enabled: false);
+            await SetUpGatewayAsync(server, enabled: false);
 
             using (var off = await medicalRecords.SendRawAsync(HttpMethod.Post, "/api/v1/abdm/links", Link(consultation)))
             {
@@ -203,7 +203,7 @@ public sealed class AbdmLinkingTests(HospitalServer server)
         }
         finally
         {
-            await RemoveGatewayAsync();
+            await RemoveGatewayAsync(server);
             await SwitchAsync(enabled: false);
         }
     }
@@ -216,12 +216,19 @@ public sealed class AbdmLinkingTests(HospitalServer server)
     private List<GatewayCall> CareContextCallsWith(string linkToken) =>
         [.. Gateway.CallsTo(CareContextPath).Where(c => c.Header("X-LINK-TOKEN") == linkToken)];
 
-    private static async Task<HttpResponseMessage> CallBackAsync(ApiClient caller, string path, object body, string? token)
+    /// <summary>A call from the gateway to a callback endpoint, with its bearer token and, when given, its REQUEST-ID.</summary>
+    internal static async Task<HttpResponseMessage> CallBackAsync(ApiClient caller, string path, object body, string? token, string? requestId = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
         if (token is not null)
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        if (requestId is not null)
+        {
+            request.Headers.Add(AbdmGatewayCallbackEndpoints.RequestIdHeader, requestId);
+            request.Headers.Add(AbdmGatewayCallbackEndpoints.HipIdHeader, HipId);
         }
 
         return await caller.Http.SendAsync(request, Ct);
@@ -230,7 +237,8 @@ public sealed class AbdmLinkingTests(HospitalServer server)
     private static async Task<string?> Code(HttpResponseMessage response) =>
         (await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString();
 
-    private async Task SetUpGatewayAsync(bool enabled)
+    /// <summary>Sets the gateway up against <see cref="FakeAbdmGateway"/>, switched on or off.</summary>
+    internal static async Task SetUpGatewayAsync(HospitalServer server, bool enabled)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
@@ -238,7 +246,7 @@ public sealed class AbdmLinkingTests(HospitalServer server)
         await settings.SetAsync(AbdmGatewaySettingKeys.Secret, new { clientId = "SBX_IT", clientSecret = "it-" + Guid.NewGuid().ToString("N") }, secret: true, cancellationToken: Ct);
     }
 
-    private async Task RemoveGatewayAsync()
+    internal static async Task RemoveGatewayAsync(HospitalServer server)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();

@@ -43,6 +43,7 @@ public sealed class HttpAbdmGatewayClientTests
 
     private static AbdmCareContextLink Link() => new(
         TestData.PatientId,
+        "Meera K",
         "meera.k@sbx",
         AbdmTestData.AbhaNumber,
         [
@@ -133,11 +134,38 @@ public sealed class HttpAbdmGatewayClientTests
         var groups = body.GetProperty("patient").EnumerateArray().ToList();
         groups.Select(g => g.GetProperty("hiType").GetString()).ShouldBe(["Prescription", "DiagnosticReport"]);
         groups.ShouldAllBe(g => g.GetProperty("referenceNumber").GetString() == TestData.PatientId.ToString("D"));
+        groups.ShouldAllBe(g => g.GetProperty("display").GetString() == "Meera K");
         var reports = groups[1];
         reports.GetProperty("count").GetInt32().ShouldBe(2);
         reports.GetProperty("careContexts").EnumerateArray().Select(c => c.GetProperty("referenceNumber").GetString())
             .ShouldBe(["lab-report/2", "radiology-report/3"]);
         reports.GetProperty("careContexts")[0].GetProperty("display").GetString().ShouldBe("Lab report, 12 Oct 2026");
+    }
+
+    [Fact]
+    public async Task The_answers_of_user_initiated_linking_go_each_under_a_request_id_of_their_own()
+    {
+        _gateway.Respond(HttpStatusCode.OK, Session).Respond(HttpStatusCode.Accepted).Respond(HttpStatusCode.Accepted).Respond(HttpStatusCode.Accepted);
+        var client = Client();
+        var response = new AbdmGatewayMessages.RespRequest("gateway-call-1");
+
+        (await client.AnswerDiscoveryAsync(new AbdmGatewayMessages.OnDiscover("txn-1", [], ["ABHA_ADDRESS"], response, null), Ct)).IsSuccess.ShouldBeTrue();
+        (await client.AnswerLinkInitAsync(new AbdmGatewayMessages.OnLinkInit(
+            "txn-1", new AbdmGatewayMessages.LinkReference("ref-1", "MEDIATE", new AbdmGatewayMessages.LinkMeta("MOBILE", "+91******3232", "2026-10-26T09:40:15.123Z")), response, null), Ct))
+            .IsSuccess.ShouldBeTrue();
+        (await client.AnswerLinkConfirmAsync(new AbdmGatewayMessages.OnLinkConfirm(null, response, new("ABDM-1035", "Incorrect OTP")), Ct)).IsSuccess.ShouldBeTrue();
+
+        var answers = _gateway.Requests.Skip(1).ToList();
+        answers.Select(r => r.Uri.AbsolutePath).ShouldBe(
+        [
+            "/api/hiecm/user-initiated-linking/v3/patient/care-context/on-discover",
+            "/api/hiecm/user-initiated-linking/v3/link/care-context/on-init",
+            "/api/hiecm/user-initiated-linking/v3/link/care-context/on-confirm",
+        ]);
+        answers.Select(r => r.Header("REQUEST-ID")).Distinct().Count().ShouldBe(3);
+        answers.ShouldAllBe(r => r.Header("X-HIP-ID") == "IN2710000123" && r.Json().GetProperty("response").GetProperty("requestId").GetString() == "gateway-call-1");
+        answers[1].Json().GetProperty("link").GetProperty("meta").GetProperty("communicationMedium").GetString().ShouldBe("MOBILE");
+        answers[2].Body.ShouldBe("""{"response":{"requestId":"gateway-call-1"},"error":{"code":"ABDM-1035","message":"Incorrect OTP"}}""");
     }
 
     [Theory]

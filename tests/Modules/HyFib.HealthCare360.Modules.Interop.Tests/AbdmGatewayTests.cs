@@ -82,7 +82,7 @@ public sealed class AbdmGatewayTests
         _settings.Set(AbdmGatewaySettingKeys.Gateway, Complete);
         _settings.Set(AbdmGatewaySettingKeys.Secret, Credentials);
         var link = await client.LinkCareContextsAsync(
-            new AbdmCareContextLink(TestData.PatientId, "meera.k@sbx", AbdmTestData.AbhaNumber, [new AbdmCareContext("x", "Prescription", AbdmRecordType.Prescription)]), "link-token", Guid.CreateVersion7(), Ct);
+            new AbdmCareContextLink(TestData.PatientId, "Meera K", "meera.k@sbx", AbdmTestData.AbhaNumber, [new AbdmCareContext("x", "Prescription", AbdmRecordType.Prescription)]), "link-token", Guid.CreateVersion7(), Ct);
         link.Error!.Message.ShouldContain("not part of this release");
         (await client.AcknowledgeConsentAsync(new AbdmConsentNotification("c", "GRANTED", "r"), Ct)).IsFailure.ShouldBeTrue();
         (await client.TransferHealthInformationAsync(
