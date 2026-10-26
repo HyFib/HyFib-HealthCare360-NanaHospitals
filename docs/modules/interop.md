@@ -478,7 +478,8 @@ built:
 | Settings | `abdm.gateway` (hospital-wide JSON): `enabled` (false), `baseUrl` (https, no user name, e.g. the sandbox `https://dev.abdm.gov.in/api/hiecm`), `hipId` (the HFR id registered as HIP), `cmId` (`sbx` or `abdm`), `timeoutSeconds` (30). `abdm.gateway.secret` (encrypted secret setting): `clientId`, `clientSecret` issued by NHA. Both are added under Administration › Settings (Add setting); the secret is never shown again |
 | Status | `GET /api/v1/abdm/gateway`: enabled, configured, `live` (always false), the URL and ids, whether the client id and secret are set (never their values), the problems in the set-up and what remains |
 | Client | `IAbdmGatewayClient` (gateway v3): `CreateSessionAsync` (`/gateway/v3/sessions`), `LinkCareContextsAsync` (HIP-initiated linking of exported records to the patient's ABHA address), `AcknowledgeConsentAsync` (`consent/v3/request/hip/on-notify`), `TransferHealthInformationAsync` (`data-flow/v3/health-information/hip/on-request`, the encrypted push to the HIU, `notify`). The registered `DisabledAbdmGatewayClient` sends nothing and answers every call with 422 `abdm.gateway_disabled`, naming what is missing |
-| Encryption | `IFideliusCipher` (X25519 key agreement, AES-256-GCM, as ABDM's Fidelius). The registered `UnavailableFideliusCipher` refuses every call |
+| Encryption | `FideliusCipher` (`IFideliusCipher`): every document of a transfer encrypted for the HIU under one fresh HIP key pair, with each document's MD5 as the entry's checksum. Built and tested against NHA's reference implementation, see [Fidelius](#fidelius) |
+| Callback check | `AbdmCallbackVerifier`: a call to the callback endpoints is the gateway's only when its `Authorization: Bearer` token is signed RS256 by a key in the gateway's key set (JWKS) whose key id the token names, and is within its lifetime (one minute's clock difference allowed). `none`, HMAC (including the HS256-with-the-public-key confusion) and any other algorithm are refused. A token naming a key id not in the set is refused, so the client fetches the set again (the gateway rotated its keys) rather than trying every key. Issuer and audience are checked once confirmed against the sandbox: ABDM publishes neither, nor the key set's URL. NHA's own reference HIP (`NHA-ABDM/ABDM-wrapper`) checks nothing, so anyone reaching its callback URLs could post a consent notification. `AbdmCallbackVerifierTests` holds a key set and tokens made with Python's jwcrypto 1.5.6, independent of .NET; they found two faults while this was built (a token naming an unknown key accepted by trying every key, and the lifetime check overflowing on the library's minimum date) |
 
 What remains, in order (also in the status's `remaining`):
 
@@ -486,10 +487,31 @@ What remains, in order (also in the status's `remaining`):
 2. Build the live client and the callback endpoints the gateway calls (patient discovery, link initiation and
    confirmation, consent notification, health-information request), confirm the paths against the sandbox, and link
    care contexts to the patient's ABHA when a record is completed.
-3. Implement Fidelius and test it against NHA's reference implementation.
-4. Pass NHA's sandbox functional tests and certification, then switch to the production gateway.
-5. Sign documents (`Bundle.signature`, optional in the IG) with the doctor's DSC when the DSC signing of prescriptions
+3. Pass NHA's sandbox functional tests and certification, then switch to the production gateway.
+4. Sign documents (`Bundle.signature`, optional in the IG) with the doctor's DSC when the DSC signing of prescriptions
    (ERX-04) covers them.
+
+### Fidelius
+
+ABDM encrypts health information between the HIP and the HIU with Fidelius, as NHA's reference implementation
+(`mgrmtech/fidelius-cli`, BouncyCastle) does it; the gateway's other parties run that code, so HC360 follows it rather
+than a description of it (`Abdm/Fidelius.cs`):
+
+* **ECDH on BouncyCastle's `curve25519`**: Curve25519 in short Weierstrass form (Wei25519), **not** RFC 7748 X25519,
+  which would derive a different secret. Private keys are plain scalars, written by BouncyCastle as signed integers
+  (31 to 33 bytes). Public keys are uncompressed points, raw (65 bytes, 88 base64 characters) or as an X.509
+  SubjectPublicKeyInfo with the curve's parameters spelled out; HC360 reads both and sends the X.509 form, as the
+  reference's HIUs do. A key in any other form, off the curve, or a nonce that is not 32 bytes is refused
+  (`abdm.fidelius`).
+* The shared secret is the x-coordinate (32 bytes). The two nonces are XORed: the first 20 bytes salt HKDF-SHA256
+  (no info) for the 32-byte AES key, the last 12 are the AES-GCM IV. The 128-bit tag follows the ciphertext, base64.
+* The document is encrypted as UTF-8. The reference encrypts with the JVM's default charset, UTF-8 from Java 18 on but
+  not always before; a HIU on an older JVM may misread non-English names.
+
+`FideliusTests` holds key material and a ciphertext made by the reference CLI 1.2.0: the same inputs give its
+ciphertext byte for byte (with the HIU's key raw or X.509), its ciphertext decrypts here with Tamil text intact, and a
+fresh HC360 key pair is X.509-encoded as the reference encodes it. In the other direction, a transfer encrypted here
+was decrypted by the reference CLI when this was built (a one-off check, as it needs Java).
 
 ## Limitations and follow-ups
 

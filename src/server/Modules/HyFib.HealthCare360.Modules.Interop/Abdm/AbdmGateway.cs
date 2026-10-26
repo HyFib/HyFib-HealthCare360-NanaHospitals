@@ -107,13 +107,13 @@ internal interface IAbdmGatewayClient
 }
 
 /// <summary>
-/// Fidelius, ABDM's encryption of health information in transit: an X25519 key agreement between the HIP's and the
-/// HIU's ephemeral keys, the shared secret salted with both nonces, and AES-256-GCM over the document. Not implemented:
-/// it is built and tested against NHA's reference implementation together with the gateway client.
+/// Fidelius, ABDM's encryption of health information in transit (<see cref="Fidelius"/>): every document of a transfer
+/// encrypted for the HIU's key material under one fresh HIP key pair, which goes with them.
 /// </summary>
 internal interface IFideliusCipher
 {
-    Result<(AbdmEncryptedEntry Entry, AbdmKeyMaterial HipKeyMaterial)> Encrypt(string careContextReference, string documentJson, AbdmKeyMaterial hiu);
+    Result<(IReadOnlyList<AbdmEncryptedEntry> Entries, AbdmKeyMaterial HipKeyMaterial)> Encrypt(
+        IReadOnlyList<(string CareContextReference, string DocumentJson)> documents, AbdmKeyMaterial hiu);
 }
 
 /// <summary>Reads the gateway settings and says what is set up and what is missing (never the secret itself).</summary>
@@ -124,7 +124,6 @@ internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
     [
         "Register the hospital as a Health Information Provider (HIP) with its HFR id and get NHA sandbox client credentials.",
         "Build the gateway client (sessions, HIP-initiated care-context linking, consent notifications, data-flow requests) and the callback endpoints the gateway calls.",
-        "Implement Fidelius encryption (X25519, AES-256-GCM) and test it against NHA's reference implementation.",
         "Pass NHA's sandbox functional tests and certification (milestone M2), then switch to the production gateway.",
         "Sign the documents (Bundle.signature, optional in the implementation guide) with the doctor's digital signature certificate.",
     ];
@@ -219,11 +218,4 @@ internal sealed class DisabledAbdmGatewayClient(AbdmGatewayConfiguration configu
             : "The live ABDM gateway client is not part of this release.";
         return Error.Rule(Code, $"Nothing was sent to ABDM. {reason}");
     }
-}
-
-/// <summary>Fidelius is not implemented yet (see <see cref="IFideliusCipher"/>): every encryption is refused.</summary>
-internal sealed class UnavailableFideliusCipher : IFideliusCipher
-{
-    public Result<(AbdmEncryptedEntry Entry, AbdmKeyMaterial HipKeyMaterial)> Encrypt(string careContextReference, string documentJson, AbdmKeyMaterial hiu) =>
-        Error.Rule(DisabledAbdmGatewayClient.Code, "Fidelius encryption for ABDM is not implemented in this release; nothing is sent to ABDM.");
 }
