@@ -104,7 +104,7 @@ function DeathView({ death }: { death: DeathRecordDto }) {
   const queryClient = useQueryClient();
   const canCertify = usePermission(VITAL_PERMISSIONS.deathsCertify);
   const canRegister = usePermission(VITAL_PERMISSIONS.register);
-  const canMarkError = usePermission(DEATH_READERS);
+  const canMarkError = death.canMarkInError;
   const [dialog, setDialog] = useState<Dialog>(null);
   const recorded = death.status === 'Recorded';
   const overdue = recorded && todayIso() > death.dueBy;

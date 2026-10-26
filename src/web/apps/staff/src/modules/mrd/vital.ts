@@ -122,6 +122,8 @@ export interface BirthRecordDto {
   reportedOn: string | null;
   registrationNumber: string | null;
   errorReason: string | null;
+  /** Whether this user may mark it entered in error: it is still only recorded, and they recorded or certified it. */
+  canMarkInError: boolean;
   version: number;
 }
 
@@ -156,6 +158,8 @@ export interface DeathRecordDto {
   reportedOn: string | null;
   registrationNumber: string | null;
   errorReason: string | null;
+  /** Whether this user may mark it entered in error: it is still only recorded, and they recorded or certified it. */
+  canMarkInError: boolean;
   version: number;
 }
 
@@ -340,7 +344,7 @@ export const VITAL_PERMISSIONS = {
   register: 'mrd.vital.register',
 } as const;
 
-/** Who may open a birth, and mark it entered in error (server `VitalRegistrationEndpoints.BirthReaders`). */
+/** Who may open a birth (server `VitalRegistrationEndpoints.BirthReaders`); only whoever recorded it marks it entered in error. */
 export const BIRTH_READERS = [VITAL_PERMISSIONS.birthsRecord, VITAL_PERMISSIONS.register] as const;
-/** Who may open a death certificate, and mark it entered in error (server `DeathReaders`). */
+/** Who may open a death certificate (server `DeathReaders`); only the certifying doctor marks it entered in error. */
 export const DEATH_READERS = [VITAL_PERMISSIONS.deathsCertify, VITAL_PERMISSIONS.register] as const;

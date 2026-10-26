@@ -214,10 +214,14 @@ public sealed class BirthRecord : AuditableEntity, IFacilityScoped
         (ReportedOn, RegistrationNumber, Status) = (on, number, VitalReportStatus.Reported);
     });
 
-    public Result MarkEnteredInError(string reason) => VitalRegistration.MarkError(Status, () =>
-    {
-        (Status, ErrorReason) = (VitalReportStatus.EnteredInError, reason.Trim());
-    });
+    /// <summary>Only the person who recorded the birth may mark it entered in error; anyone else asks them.</summary>
+    public Result MarkEnteredInError(string reason, Guid? by) =>
+        VitalRegistration.MarkError(Status, IsRecordedBy(by), "Only the person who recorded this birth can mark it as entered in error.", () =>
+        {
+            (Status, ErrorReason) = (VitalReportStatus.EnteredInError, reason.Trim());
+        });
+
+    public bool IsRecordedBy(Guid? user) => user is { } u && u == RecordedBy;
 
     /// <summary>The local calendar day of the birth, from which the 21 days run.</summary>
     public DateOnly BirthDate => VitalRegistration.LocalDate(BornAt);
@@ -331,10 +335,14 @@ public sealed class DeathRecord : AuditableEntity, IFacilityScoped
         (ReportedOn, RegistrationNumber, Status) = (on, number, VitalReportStatus.Reported);
     });
 
-    public Result MarkEnteredInError(string reason) => VitalRegistration.MarkError(Status, () =>
-    {
-        (Status, ErrorReason) = (VitalReportStatus.EnteredInError, reason.Trim());
-    });
+    /// <summary>Only the doctor who certified the death may mark it entered in error; anyone else asks them.</summary>
+    public Result MarkEnteredInError(string reason, Guid? by) =>
+        VitalRegistration.MarkError(Status, IsCertifiedBy(by), "Only the doctor who certified this death can mark it as entered in error.", () =>
+        {
+            (Status, ErrorReason) = (VitalReportStatus.EnteredInError, reason.Trim());
+        });
+
+    public bool IsCertifiedBy(Guid? user) => user is { } u && u == CertifiedByUserId;
 
     /// <summary>The local calendar day of the death, from which the 21 days run.</summary>
     public DateOnly DeathDate => VitalRegistration.LocalDate(DiedAt);
@@ -384,11 +392,16 @@ public static class VitalRegistration
         return Result.Success();
     }
 
-    internal static Result MarkError(VitalReportStatus status, Action apply)
+    internal static Result MarkError(VitalReportStatus status, bool isOwnEntry, string notOwn, Action apply)
     {
         if (status != VitalReportStatus.Recorded)
         {
             return Closed(status);
+        }
+
+        if (!isOwnEntry)
+        {
+            return Error.Forbidden("vital.not_own_entry", notOwn);
         }
 
         apply();
