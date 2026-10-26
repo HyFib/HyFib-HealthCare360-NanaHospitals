@@ -40,6 +40,15 @@ internal static class AbdmEndpoints
 
         abdm.MapGet("/gateway", async (AbdmGatewayConfiguration gateway, CancellationToken ct) => TypedResults.Ok(await gateway.StatusAsync(ct)))
             .RequirePermission(PlatformPermissions.IntegrationsManage);
+
+        // HIP-initiated linking: completed records linked to the patient's ABHA as care contexts (AbdmLinkingService). The
+        // gateway answers later through its callbacks (AbdmGatewayCallbackEndpoints); the request shows where it has got to.
+        var links = abdm.MapGroup("/links").RequirePermission(InteropPermissions.AbdmExport);
+        links.MapPost("", async (AbdmLinkInput input, AbdmLinkingService linking, CancellationToken ct) =>
+                (await linking.StartAsync(input, ct)).ToHttpResult(view => TypedResults.Accepted($"{BasePath}/links/{view.Id}", view)))
+            .WithValidation<AbdmLinkInput>();
+        links.MapGet("/{id:guid}", async (Guid id, AbdmLinkingService linking, CancellationToken ct) =>
+            (await linking.GetAsync(id, ct)).ToOk());
     }
 
     private static async Task<IResult> ExportAsync(AbdmRecordType type, Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct)

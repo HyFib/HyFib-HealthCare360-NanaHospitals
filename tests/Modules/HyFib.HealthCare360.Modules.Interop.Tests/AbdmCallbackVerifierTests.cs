@@ -65,14 +65,21 @@ public sealed class AbdmCallbackVerifierTests
     [Theory]
     [InlineData(Expired, "expired")]
     [InlineData(WrongKey, "signature")]
-    [InlineData(UnknownKid, "key")]
     [InlineData(AlgNone, "")]
     [InlineData(HmacWithPublicKey, "")]
     public async Task Any_other_token_is_refused(string token, string reason)
     {
         var refused = await AbdmCallbackVerifier.VerifyAsync($"Bearer {token}", Jwks, null, null, Now);
-        refused.Error!.Code.ShouldBe("abdm.callback_unauthenticated");
+        refused.Error!.Code.ShouldBe(AbdmCallbackVerifier.UnauthenticatedCode);
         refused.Error.Message.ShouldContain(reason);
+    }
+
+    [Fact]
+    public async Task A_token_naming_a_key_not_in_the_set_is_refused_as_such_so_the_set_is_fetched_again()
+    {
+        var refused = await AbdmCallbackVerifier.VerifyAsync($"Bearer {UnknownKid}", Jwks, null, null, Now);
+        refused.Error!.Code.ShouldBe(AbdmCallbackVerifier.UnknownKeyCode);
+        refused.Error.Message.ShouldContain("key");
     }
 
     [Fact]

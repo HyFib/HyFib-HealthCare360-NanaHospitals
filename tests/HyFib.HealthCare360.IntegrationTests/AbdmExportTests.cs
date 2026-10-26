@@ -829,7 +829,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     /// <summary>A consultation without a visit: complaint, assessment and a coded diagnosis; signed or left open.</summary>
-    private static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign)
+    internal static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign)
     {
         var encounter = await doctor.PostAsync<EncounterDetail>("/api/v1/emr/encounters", new StartEncounterRequest(
             patientId, VisitId: null, AdmissionId: null, Type: null, DepartmentId: null, PractitionerId: null, TemplateId: null,
@@ -1311,7 +1311,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             .FirstOrDefaultAsync(Ct);
     }
 
-    private static RegisterPatientRequest Registration(string abha, string? address) => new(
+    internal static RegisterPatientRequest Registration(string abha, string? address) => new(
         Title: "Mrs.", FirstName: "Meera", MiddleName: null, LastName: "Abdm" + Letters(8), Gender: Gender.Female,
         DateOfBirth: new DateOnly(1980, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
         Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
@@ -1332,7 +1332,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     /// An ABHA number of this test alone, made so that it fails a Verhoeff check, as most real ABHA numbers do: they have
     /// no check digit, and registration must take any 14 digits.
     /// </summary>
-    private static string NewAbha()
+    internal static string NewAbha()
     {
         var digits = "91" + Digits(11);
         return digits + (char)('0' + ((Verhoeff.CheckDigit(digits) - '0' + 1) % 10));
@@ -1340,7 +1340,7 @@ public sealed class AbdmExportTests(HospitalServer server)
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));
 
-    private static string Letters(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('a' + Random.Shared.Next(26))));
+    internal static string Letters(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('a' + Random.Shared.Next(26))));
 
     /// <summary>A resulted lab test: its accession's report, and the result the pathologist verifies.</summary>
     private sealed record LabWork(Guid ReportId, Guid ResultId);

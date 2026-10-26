@@ -92,6 +92,11 @@ public sealed class EndpointAuthorizationTests
         "GET /api/v1/integrations/webhooks/whatsapp/",
         "POST /api/v1/integrations/webhooks/whatsapp/",
 
+        // The ABDM gateway's callbacks, at the paths the gateway calls (only while ABDM is switched on): each verified by a
+        // bearer token signed with a key the gateway publishes (AbdmGatewayKeys).
+        "POST /api/v3/hip/token/on-generate-token",
+        "POST /api/v3/link/on_carecontext",
+
         // Devices that authenticate with their own key or serial number: attendance terminals and patient monitors.
         "GET /iclock/cdata",
         "POST /iclock/cdata",

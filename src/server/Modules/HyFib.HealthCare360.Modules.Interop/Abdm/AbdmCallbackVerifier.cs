@@ -15,6 +15,11 @@ internal static class AbdmCallbackVerifier
     /// <summary>Clock difference tolerated between the gateway and the hospital.</summary>
     public static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(1);
 
+    public const string UnauthenticatedCode = "abdm.callback_unauthenticated";
+
+    /// <summary>The token names a key that is not in the set: the set is to be fetched again before it is refused.</summary>
+    public const string UnknownKeyCode = "abdm.callback_unknown_key";
+
     private static readonly JsonWebTokenHandler Handler = new() { MapInboundClaims = false };
 
     /// <summary>The token's claims when the call is the gateway's; otherwise why not.</summary>
@@ -63,7 +68,9 @@ internal static class AbdmCallbackVerifier
 
         return result.IsValid
             ? Result<IReadOnlyDictionary<string, object>>.Ok(result.Claims.AsReadOnly())
-            : Error.Rule("abdm.callback_unauthenticated", $"The gateway token was refused: {Reason(result.Exception)}.");
+            : Error.Rule(
+                result.Exception is SecurityTokenSignatureKeyNotFoundException ? UnknownKeyCode : UnauthenticatedCode,
+                $"The gateway token was refused: {Reason(result.Exception)}.");
     }
 
     private static string Reason(Exception? exception) => exception switch

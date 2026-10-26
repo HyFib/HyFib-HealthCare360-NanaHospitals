@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
@@ -76,6 +77,9 @@ public sealed class HospitalServer : IAsyncLifetime
 
     public IServiceProvider Services => App.Services;
 
+    /// <summary>The ABDM gateway the server calls (<see cref="FakeAbdmGateway"/>).</summary>
+    public FakeAbdmGateway AbdmGateway { get; } = new();
+
     /// <summary>
     /// A release signing key made for this run, which the test server trusts as it trusts HyFib's (DesktopUpdateTests).
     /// </summary>
@@ -131,6 +135,11 @@ public sealed class HospitalServer : IAsyncLifetime
         // HyFib's are; the server registers only the built-in keys when nothing was registered before.
         builder.Services.AddSingleton(new ReleaseTrust([.. ReleaseKeys.Trusted, ReleaseKey.FromSubjectPublicKeyInfo(ReleaseSigningKey.ExportSubjectPublicKeyInfo())]));
         builder.AddServerApplication(certificates);
+
+        // The ABDM gateway is a fake one of this run (AbdmLinkingTests): the gateway client and the key-set fetch send
+        // their requests to it, and nothing goes to the network.
+        builder.Services.AddHttpClient<HttpAbdmGatewayClient>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
+        builder.Services.AddHttpClient<AbdmGatewayKeys>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
 
         _app = builder.Build();
         var platform = _app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value;

@@ -1179,9 +1179,9 @@ Permissions:
     they can push over ADMS-compatible firmware or the JSON punch API through their middleware.
   * Real-time events (the terminal reporting each punch on an open connection) are not used: terminals are read on a
     schedule, every few minutes.
-* **ABDM (HIP/HIU)**: the ABDM documents (EHR-08) and the gateway's client interface and settings are in the Interop
-  module, not here; the gateway is not live until the hospital has NHA credentials
-  ([interop.md](interop.md#abdm-gateway-not-live)). The **HL7 FHIR R4 read facade** (EHR-05) is not an adapter either:
+* **ABDM (HIP/HIU)**: the ABDM documents (EHR-08) and the gateway client (sessions, HIP-initiated linking and the
+  gateway's signed callbacks) are in the Interop module, not here; nothing is sent until the hospital has NHA
+  credentials and switches the gateway on ([interop.md](interop.md#abdm-gateway)). The **HL7 FHIR R4 read facade** (EHR-05) is not an adapter either:
   it is the Interop module (`/fhir/r4`), documented in [interop.md](interop.md).
 * **ICD-10 free-text search online**: the WHO ICD-API does not support it, so the local catalogue answers instead.
 * **DICOM beyond the worklist and DICOMweb reads**:
