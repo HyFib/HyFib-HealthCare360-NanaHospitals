@@ -202,7 +202,7 @@ internal sealed class AbdmHealthInformationRequestConfiguration : IEntityTypeCon
     {
         b.ToTable("abdm_health_information_requests", InteropSchema.Name);
         b.Property(x => x.TransactionId).HasMaxLength(64);
-        b.Property(x => x.PrivateKeyCipher).HasMaxLength(500);
+        b.Property(x => x.PrivateKeyCipher).HasMaxLength(500).IsProtectedValue();
         b.Property(x => x.Nonce).HasMaxLength(64);
         b.Property(x => x.Error).HasMaxLength(500);
         b.HasOne<AbdmConsentArtefact>().WithMany().HasForeignKey(x => x.ArtefactEntityId).OnDelete(DeleteBehavior.Restrict);
