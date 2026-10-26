@@ -25,6 +25,8 @@ proves them on stock received with chosen batches and expiry dates.
 | `pharmacy.ip.indent` | Raise ward indents for admitted patients | Pharmacist, HospitalAdmin, **Nurse** |
 | `pharmacy.registers` | View/export the controlled-drug and Schedule H registers, and the NDPS accounts | Pharmacist, HospitalAdmin |
 | `pharmacy.ndps.count` | Count the narcotics at a change of shift, and witness another's count | Pharmacist, Nurse |
+| `pharmacy.adr.report` | Report suspected adverse drug reactions (PvPI) | Pharmacist, Doctor, Nurse |
+| `pharmacy.adr.manage` | Pharmacovigilance: every report, the causality assessment, sending it to the AMC | Pharmacist, QualityManager, HospitalAdmin |
 | `pharmacy.refills` | Authorise refills; approve/reject refill requests | Pharmacist, HospitalAdmin |
 
 **Counter staff** below means any of `pharmacy.queue.read`, `pharmacy.dispense`, `pharmacy.sales`, `pharmacy.ip.issue`.
@@ -138,6 +140,25 @@ Not built: the application for recognition (Form 3F) and the certificate (Form 3
 hospital and the State Drugs Controller. The annual return's form number and due date are taken from secondary sources
 (Form 3I, before 31 March); check them against the Gazette before relying on them.
 
+### Adverse drug reactions — `/adr` (Pharmacovigilance Programme of India)
+A suspected reaction is reported on the PvPI suspected ADR reporting form by whoever saw it: the reaction and its dates,
+seriousness (death, life-threatening, hospitalisation, disability, congenital anomaly, intervention, other) and outcome,
+the suspected and concomitant drugs with batch, dose and dates, dechallenge and rechallenge, tests and history. The
+patient is named by initials, as the form asks. A reporter sees and corrects their own drafts; pharmacovigilance
+(`pharmacy.adr.manage`) sees every report, assesses causality (WHO-UMC) and records it as sent to the ADR monitoring
+centre, after which it cannot change. A serious reaction is due within 15 days of the hospital learning of it
+(`dueBy`, `overdue`). Reads and prints go through the patient guard and are audited.
+
+| Method | Path | Permission | Request → Response |
+|---|---|---|---|
+| GET | `/adr?status` | `pharmacy.adr.report` or `.manage` | → `AdrReportListItem[]` (one's own, or all for pharmacovigilance) |
+| GET | `/adr/{id}` · `/adr/{id}/document` | reporter or `pharmacy.adr.manage` | → `AdrReportDto` / the printable PvPI form |
+| GET | `/adr/patients/{patientId}/medicines` | `pharmacy.adr.report` or `.manage` | → what the pharmacy gave the patient in the last 90 days (sales and ward issues), to fill in the drugs |
+| POST · PUT | `/adr` · `/adr/{id}` | `pharmacy.adr.report` (PUT: reporter or `.manage`) | `SaveAdrReportRequest` (PUT with `version`); 422 `adr.submitted` once sent |
+| POST | `/adr/{id}/submit` | `pharmacy.adr.manage` | `SubmitAdrReportRequest{causality, submittedOn, reference, version}` |
+
+Not built: sending to VigiFlow (the report is entered there, or mailed to the AMC, from the printed form).
+
 ### Refills — `/refills` and the patient portal (PH-05, PP-05)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
@@ -222,7 +243,7 @@ exceed it.
 `queue_entries` (unique `prescription_id` where `refill_of_entry_id IS NULL`), `queue_lines`, `sales` (unique
 `invoice_number`), `sale_items`, `sale_payments`, `sale_returns` (unique `return_number`), `sale_return_items`,
 `ward_indents`, `ward_indent_lines`, `ip_issues`, `ip_issue_lines`, `ward_returns`, `ward_return_lines`,
-`controlled_drug_register` (unique `ledger_entry_id`), `refill_requests`, `narcotic_counts`, `narcotic_count_lines`. Queue entries and sales use `xmin`
+`controlled_drug_register` (unique `ledger_entry_id`), `refill_requests`, `narcotic_counts`, `narcotic_count_lines`, `adr_reports` (unique `number`; drugs as jsonb). Queue entries and sales use `xmin`
 optimistic concurrency. Foreign keys go to the Patients `Patient` table and to the SupplyChain store, item and
 stock-batch tables.
 

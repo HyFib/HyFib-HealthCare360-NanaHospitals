@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Adr;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Dashboard;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Inpatient;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Ndps;
@@ -27,6 +28,12 @@ public static class PharmacyPermissions
     /// <summary>Count the essential narcotic drugs at a change of shift, and witness another's count (NDPS).</summary>
     public const string NdpsCount = "pharmacy.ndps.count";
 
+    /// <summary>Report a suspected adverse drug reaction (PvPI), and correct one's own report until it is sent.</summary>
+    public const string AdrReport = "pharmacy.adr.report";
+
+    /// <summary>Pharmacovigilance: every report, the causality assessment and sending it to the ADR monitoring centre.</summary>
+    public const string AdrManage = "pharmacy.adr.manage";
+
     /// <summary>Anyone working a pharmacy counter (stock pickers, queue, batch lists).</summary>
     internal static readonly string[] CounterStaff = [QueueRead, Dispense, Sales, IpIssue];
 
@@ -44,6 +51,9 @@ public static class PharmacyPermissions
         new(Refills, "Pharmacy", "Authorise, approve and reject prescription refills", Pharmacy),
         new(NdpsCount, "Pharmacy", "Count the narcotic drugs at a change of shift, and witness another's count",
             [SystemRoles.Pharmacist, SystemRoles.Nurse]),
+        new(AdrReport, "Pharmacy", "Report suspected adverse drug reactions (PvPI)", [SystemRoles.Pharmacist, SystemRoles.Doctor, SystemRoles.Nurse]),
+        new(AdrManage, "Pharmacy", "Pharmacovigilance: assess suspected adverse drug reactions and send them to the ADR monitoring centre",
+            [SystemRoles.Pharmacist, SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
     ];
 }
 
@@ -65,6 +75,8 @@ public sealed class PharmacyModule : IModule
         services.AddScoped<ControlledDrugRegisterService>();
         services.AddScoped<RefillService>();
         services.AddScoped<NdpsService>();
+        services.AddScoped<AdrService>();
+        services.AddScoped<AdrAccess>();
         services.AddScoped<PharmacyRealtime>();
 
         // The pharmacy counter's day for Billing's Tally day book (Billing reads it without referencing this module).
@@ -79,6 +91,7 @@ public sealed class PharmacyModule : IModule
         InpatientEndpoints.Map(endpoints);
         RegisterEndpoints.Map(endpoints);
         NdpsEndpoints.Map(endpoints);
+        AdrEndpoints.Map(endpoints);
         RefillEndpoints.Map(endpoints);
         DashboardEndpoints.Map(endpoints);
     }

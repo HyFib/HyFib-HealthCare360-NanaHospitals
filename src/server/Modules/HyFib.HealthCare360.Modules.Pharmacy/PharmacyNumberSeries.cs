@@ -23,5 +23,9 @@ public static class PharmacyNumberSeries
     public static NumberSeriesDefinition WardReturn { get; } =
         new("pharmacy.ward_return", "Ward return", "Pharmacy", "{FAC}WR{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
-    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [Invoice, SaleReturn, RefillRequest, WardIndent, WardIssue, WardReturn];
+    /// <summary>A suspected adverse drug reaction report (PvPI).</summary>
+    public static NumberSeriesDefinition AdrReport { get; } =
+        new("pharmacy.adr", "Adverse drug reaction report", "Pharmacy", "{FAC}ADR{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [Invoice, SaleReturn, RefillRequest, WardIndent, WardIssue, WardReturn, AdrReport];
 }

@@ -9,10 +9,13 @@ public static class PatientNames
     /// </summary>
     public static string Restricted(string fullName)
     {
-        var initials = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(part => char.IsLetter(part[0]))
-            .Select(part => $"{char.ToUpperInvariant(part[0])}.");
-        var shown = string.Join(' ', initials);
+        var shown = Initials(fullName);
         return shown.Length == 0 ? "Restricted patient" : $"{shown} (restricted)";
     }
+
+    /// <summary>"A. D." for "Asha Devi": how a report sent outside the hospital (PvPI) names the patient.</summary>
+    public static string Initials(string fullName) =>
+        string.Join(' ', fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => char.IsLetter(part[0]))
+            .Select(part => $"{char.ToUpperInvariant(part[0])}."));
 }
