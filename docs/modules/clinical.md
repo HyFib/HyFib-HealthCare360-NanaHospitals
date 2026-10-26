@@ -459,7 +459,9 @@ each; Part II, other significant conditions; the manner of death (pending invest
 and, for a woman aged 15 to 49, whether she was pregnant or within six weeks of the end of a pregnancy. The certifying
 doctor is the signed-in user, with their council registration number. Certifying a death marks the patient deceased,
 and so does an admission discharged as *Expired* (`ExpiredDischargeHandler`, on `PatientDischarged`); a certificate
-entered in error takes that mark back. Each event is to be reported to the Registrar within 21 days (`dueBy`), today
+entered in error takes that mark back. Only the person who recorded a birth, or the doctor who certified a death, can
+mark it entered in error (403 `vital.not_own_entry` for anyone else; `canMarkInError` on the record says whether the
+user may). Each event is to be reported to the Registrar within 21 days (`dueBy`), today
 through the Civil Registration System; medical records enters the registration number it gives, after which the entry
 cannot change here (422 `vital.reported`: a correction goes through the Registrar). Reads go through the chart check and
 are audited; the registers' CSV export is audited.
@@ -473,7 +475,7 @@ are audited; the registers' CSV export is audited.
 | GET | `/mrd/deaths/{id}` · `/document` | mrd.deaths.certify or mrd.vital.register | → `DeathRecordDto` / the printable MCCD |
 | POST · PUT | `/mrd/deaths` · `/mrd/deaths/{id}` | mrd.deaths.certify | `SaveDeathRequest` (patient, time of death, age when no date of birth, causes, other conditions, manner, medico-legal, pregnancy, registration number; PUT with `version`). 409 `death.exists` for a second certificate |
 | POST | `/mrd/{births\|deaths}/{id}/report` | mrd.vital.register | `ReportToRegistrarRequest{reportedOn, registrationNumber, version}` |
-| POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back |
+| POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one, and only by whoever recorded or certified it | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back; 403 `vital.not_own_entry` |
 
 #### Notifiable diseases (IDSP, `/idsp`, tag Disease Surveillance, permission `mrd.idsp.report`)
 A diagnosis (not a differential) whose ICD-10 code is on the IDSP list (`IdspDiseases`) opens a case on the week's

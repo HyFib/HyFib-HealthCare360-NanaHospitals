@@ -29,6 +29,9 @@ public sealed record BirthRecordDto(
     DateOnly? ReportedOn,
     string? RegistrationNumber,
     string? ErrorReason,
+
+    // Whether the user may mark the entry entered in error: it is still only recorded, and they recorded or certified it.
+    bool CanMarkInError,
     uint Version);
 
 public sealed record DeathRecordDto(
@@ -55,6 +58,9 @@ public sealed record DeathRecordDto(
     DateOnly? ReportedOn,
     string? RegistrationNumber,
     string? ErrorReason,
+
+    // Whether the user may mark the entry entered in error: it is still only recorded, and they recorded or certified it.
+    bool CanMarkInError,
     uint Version);
 
 /// <summary>A birth in the hospital. <paramref name="Version"/>: when correcting it.</summary>

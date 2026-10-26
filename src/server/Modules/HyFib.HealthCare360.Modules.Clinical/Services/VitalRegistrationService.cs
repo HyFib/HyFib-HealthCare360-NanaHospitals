@@ -210,7 +210,7 @@ internal sealed class VitalRegistrationService(
         }
 
         db.SetExpectedVersion(birth, request.Version);
-        var marked = birth.MarkEnteredInError(request.Reason);
+        var marked = birth.MarkEnteredInError(request.Reason, currentUser.UserId);
         if (marked.IsFailure)
         {
             return marked.Error!;
@@ -230,7 +230,7 @@ internal sealed class VitalRegistrationService(
         }
 
         db.SetExpectedVersion(death, request.Version);
-        var marked = death.MarkEnteredInError(request.Reason);
+        var marked = death.MarkEnteredInError(request.Reason, currentUser.UserId);
         if (marked.IsFailure)
         {
             return marked.Error!;
@@ -295,7 +295,8 @@ internal sealed class VitalRegistrationService(
             b.Id, b.SerialNumber, b.MotherPatientId, mother?.Uhid ?? string.Empty, mother?.FullName ?? string.Empty, b.BabyPatientId,
             b.BabyPatientId is { } id ? people.GetValueOrDefault(id)?.Uhid : null, b.AdmissionId, b.Status, b.BornAt, b.Outcome, b.Sex, b.WeightGrams,
             b.WeeksOfGestation, b.Method, b.Attendant, b.ChildName, b.FatherName, b.MotherAgeYears, b.LiveChildren, b.InformantName, b.StillBirthCause,
-            VitalRegistration.DueBy(b.BirthDate), b.ReportedOn, b.RegistrationNumber, b.ErrorReason, b.Version);
+            VitalRegistration.DueBy(b.BirthDate), b.ReportedOn, b.RegistrationNumber, b.ErrorReason,
+            b.Status == VitalReportStatus.Recorded && b.IsRecordedBy(currentUser.UserId), b.Version);
     }
 
     public async Task<DeathRecordDto> DeathDtoAsync(DeathRecord d, CancellationToken ct)
@@ -305,7 +306,7 @@ internal sealed class VitalRegistrationService(
             d.Id, d.SerialNumber, d.PatientId, patient.Uhid, patient.FullName, patient.Gender.ToString(), d.AdmissionId, d.Status, d.DiedAt,
             AgeAt(patient, d.DiedAt), d.Causes, d.UnderlyingCause, d.OtherConditions, d.Manner, d.MedicoLegal, d.Pregnancy, d.CertifiedBy,
             d.CertifierRegistrationNumber, d.CertifiedAt, VitalRegistration.DueBy(d.DeathDate), d.ReportedOn, d.RegistrationNumber, d.ErrorReason,
-            d.Version);
+            d.Status == VitalReportStatus.Recorded && d.IsCertifiedBy(currentUser.UserId), d.Version);
     }
 
     private const string Restricted = "Restricted";

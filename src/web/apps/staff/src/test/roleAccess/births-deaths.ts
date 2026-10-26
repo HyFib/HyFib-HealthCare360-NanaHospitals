@@ -41,6 +41,7 @@ const BIRTH: BirthRecordDto = {
   reportedOn: null,
   registrationNumber: null,
   errorReason: null,
+  canMarkInError: true,
   version: 2,
 };
 
@@ -131,6 +132,7 @@ const DEATH: DeathRecordDto = {
   reportedOn: null,
   registrationNumber: null,
   errorReason: null,
+  canMarkInError: true,
   version: 4,
 };
 

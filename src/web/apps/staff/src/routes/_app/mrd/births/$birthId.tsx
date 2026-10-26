@@ -97,7 +97,7 @@ function BirthView({ birth }: { birth: BirthRecordDto }) {
   const queryClient = useQueryClient();
   const canRecord = usePermission(VITAL_PERMISSIONS.birthsRecord);
   const canRegister = usePermission(VITAL_PERMISSIONS.register);
-  const canMarkError = usePermission(BIRTH_READERS);
+  const canMarkError = birth.canMarkInError;
   const [dialog, setDialog] = useState<Dialog>(null);
   const recorded = birth.status === 'Recorded';
   const overdue = recorded && todayIso() > birth.dueBy;

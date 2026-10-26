@@ -40,7 +40,7 @@ public sealed class VitalRegistrationTests
         (birth.Status, birth.RegistrationNumber).ShouldBe((VitalReportStatus.Reported, "B-2026-118"));
 
         birth.Record(Birth(), Now, null).Error!.Code.ShouldBe("vital.reported");
-        birth.MarkEnteredInError("Wrong mother").Error!.Code.ShouldBe("vital.reported");
+        birth.MarkEnteredInError("Wrong mother", null).Error!.Code.ShouldBe("vital.reported");
     }
 
     [Fact]
@@ -71,13 +71,33 @@ public sealed class VitalRegistrationTests
     public void An_entry_made_in_error_leaves_the_register_and_cannot_be_reported()
     {
         var death = new DeathRecord();
-        death.Certify(Death(), false, null, Now, null).IsSuccess.ShouldBeTrue();
+        death.Certify(Death(), false, null, Now, Certifier).IsSuccess.ShouldBeTrue();
 
-        death.MarkEnteredInError(" Certified on the wrong patient ").IsSuccess.ShouldBeTrue();
+        death.MarkEnteredInError(" Certified on the wrong patient ", Certifier).IsSuccess.ShouldBeTrue();
         (death.Status, death.ErrorReason).ShouldBe((VitalReportStatus.EnteredInError, "Certified on the wrong patient"));
         death.Report(new RegistrarReport(Today, "D-1"), Today).Error!.Code.ShouldBe("vital.entered_in_error");
         VitalRegistration.DueBy(Today).ShouldBe(Today.AddDays(21));
     }
+
+    [Fact]
+    public void Only_whoever_recorded_or_certified_an_entry_marks_it_entered_in_error()
+    {
+        var birth = new BirthRecord();
+        birth.Record(Birth(), Now, Recorder).IsSuccess.ShouldBeTrue();
+        birth.MarkEnteredInError("Wrong mother", Certifier).Error!.Code.ShouldBe("vital.not_own_entry");
+        birth.MarkEnteredInError("Wrong mother", null).Error!.Code.ShouldBe("vital.not_own_entry");
+        birth.Status.ShouldBe(VitalReportStatus.Recorded);
+        birth.MarkEnteredInError("Wrong mother", Recorder).IsSuccess.ShouldBeTrue();
+
+        var death = new DeathRecord();
+        death.Certify(Death(), false, null, Now, Certifier).IsSuccess.ShouldBeTrue();
+        death.MarkEnteredInError("Wrong patient", Recorder).Error!.Code.ShouldBe("vital.not_own_entry");
+        death.Status.ShouldBe(VitalReportStatus.Recorded);
+        death.MarkEnteredInError("Wrong patient", Certifier).IsSuccess.ShouldBeTrue();
+    }
+
+    private static readonly Guid Recorder = Guid.Parse("01923a4b-0000-7000-8000-00000000b001");
+    private static readonly Guid Certifier = Guid.Parse("01923a4b-0000-7000-8000-00000000b002");
 
     private static BirthDetails Birth() => new(
         Now.AddHours(-3), BirthOutcome.LiveBirth, BirthSex.Female, 3100, 39, DeliveryMethod.Natural, BirthAttendant.Doctor, null, "Ravi Kumar", 27, 2,

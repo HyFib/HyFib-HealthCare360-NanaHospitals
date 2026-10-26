@@ -133,6 +133,19 @@ public sealed class BirthsAndDeathsTests(HospitalServer server)
         var form3 = await mrd.GetAsync<PrintableDocumentDto>($"/api/v1/mrd/births/{still.Id}/document");
         form3.Html.ShouldContain("FORM 3");
         form3.Html.ShouldContain("Cord prolapse");
+
+        // Only the nurse who recorded the still birth may mark it entered in error; the records officer asks her.
+        var asSeenByMrd = await mrd.GetAsync<BirthRecordDto>($"/api/v1/mrd/births/{still.Id}");
+        (still.CanMarkInError, asSeenByMrd.CanMarkInError).ShouldBe((true, false));
+        using (var notTheirs = await mrd.SendRawAsync(HttpMethod.Post, $"/api/v1/mrd/births/{still.Id}/entered-in-error",
+                   new VitalEntryErrorRequest("Recorded twice", still.Version)))
+        {
+            notTheirs.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        var undone = await nurse.PostAsync<BirthRecordDto>($"/api/v1/mrd/births/{still.Id}/entered-in-error",
+            new VitalEntryErrorRequest("Recorded twice", still.Version));
+        (undone.Status, undone.CanMarkInError).ShouldBe((VitalReportStatus.EnteredInError, false));
     }
 
     [Fact]
