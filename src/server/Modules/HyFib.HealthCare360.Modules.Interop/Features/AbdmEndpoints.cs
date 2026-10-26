@@ -72,6 +72,14 @@ internal static class AbdmEndpoints
                 (await service.StartAsync(patientId, input, ct)).ToOk())
             .RequirePermission(PatientsPermissions.IdentityVerify)
             .WithValidation<AbhaVerificationStart>();
+        // The hospital as HIU (ABDM M3): asking the patient to share their records at other providers.
+        abdm.MapGet("/patients/{patientId:guid}/consent-requests", async (Guid patientId, AbdmConsentRequestService service, CancellationToken ct) =>
+                TypedResults.Ok(await service.ListAsync(patientId, ct)))
+            .RequirePermission(InteropPermissions.AbdmRecordsRequest);
+        abdm.MapPost("/patients/{patientId:guid}/consent-requests", async (Guid patientId, AbdmConsentRequestInput input, AbdmConsentRequestService service, CancellationToken ct) =>
+                (await service.RequestAsync(patientId, input, ct)).ToOk())
+            .RequirePermission(InteropPermissions.AbdmRecordsRequest)
+            .WithValidation<AbdmConsentRequestInput>();
         abdm.MapPost("/abha-checks/{id:guid}/code", async (Guid id, AbhaVerificationCode input, AbhaVerificationService service, CancellationToken ct) =>
                 (await service.VerifyAsync(id, input, ct)).ToOk())
             .RequirePermission(PatientsPermissions.IdentityVerify)

@@ -13,6 +13,7 @@ public static class InteropPermissions
 {
     public const string FhirRead = "fhir.read";
     public const string AbdmExport = "abdm.export";
+    public const string AbdmRecordsRequest = "abdm.records.request";
 
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
@@ -22,5 +23,8 @@ public static class InteropPermissions
         new(AbdmExport, "Interoperability",
             "Export discharge summaries, lab reports, radiology and cardiology reports, consultation notes and prescriptions as ABDM health records, and link them to the patient's ABHA (every export and link is audited). Staff only: it does not check the record-sharing consent, so never give it to an integration service account",
             [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
+        new(AbdmRecordsRequest, "Interoperability",
+            "Ask a patient, through ABDM, to let the hospital see their records at other providers, in their name as the requesting doctor (the patient decides in their ABHA app; every request is audited)",
+            [SystemRoles.Doctor]),
     ];
 }

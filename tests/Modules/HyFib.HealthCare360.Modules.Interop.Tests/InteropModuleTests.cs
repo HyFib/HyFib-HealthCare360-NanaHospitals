@@ -25,9 +25,9 @@ public sealed class InteropModuleTests
     public void Module_uses_its_schema_name_as_key() => new InteropModule().Name.ShouldBe("interop");
 
     [Fact]
-    public void Declares_fhir_read_and_abdm_export()
+    public void Declares_fhir_read_abdm_export_and_abdm_records_request()
     {
-        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport]);
+        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport, InteropPermissions.AbdmRecordsRequest]);
     }
 
     [Fact]
@@ -50,7 +50,17 @@ public sealed class InteropModuleTests
         permission.DefaultRoles.ShouldBe([SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]);
         permission.Group.ShouldBe("Interoperability");
         permission.Description.ShouldContain("audited");
-        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport]);
+    }
+
+    [Fact]
+    public void Asking_for_a_patients_records_at_other_providers_is_for_doctors()
+    {
+        var permission = new InteropModule().Permissions.Single(p => p.Name == InteropPermissions.AbdmRecordsRequest);
+
+        permission.Name.ShouldBe("abdm.records.request");
+        permission.DefaultRoles.ShouldBe([SystemRoles.Doctor]);
+        permission.Group.ShouldBe("Interoperability");
+        permission.Description.ShouldContain("audited");
     }
 
     [Fact]

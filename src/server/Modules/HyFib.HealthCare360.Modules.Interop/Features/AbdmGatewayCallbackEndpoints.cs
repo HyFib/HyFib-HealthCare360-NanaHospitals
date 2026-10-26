@@ -14,7 +14,9 @@ namespace HyFib.HealthCare360.Modules.Interop.Features;
 /// <c>…/confirm</c>, <see cref="AbdmUserLinkingService"/>), and consent and data flow
 /// (<c>/api/v3/consent/request/hip/notify</c>, <c>/api/v3/hip/health-information/request</c>,
 /// <see cref="AbdmDataFlowService"/>), and scan and share (<c>/api/v3/hip/patient/share</c>,
-/// <see cref="AbdmProfileShareService"/>). The answers name the call by its <c>REQUEST-ID</c> header. A
+/// <see cref="AbdmProfileShareService"/>), and the consent manager's answers to the hospital as HIU
+/// (<c>/api/v3/hiu/consent/request/on-init</c>, <c>…/notify</c>, <c>/api/v3/hiu/consent/on-fetch</c>,
+/// <see cref="AbdmConsentRequestService"/>, checked against <c>X-HIU-ID</c>). The answers name the call by its <c>REQUEST-ID</c> header. A
 /// call for another HIP (<c>X-HIP-ID</c>) is logged and ignored. Anonymous at the
 /// HTTP level and rate-limited; the gateway proves the call is its own with a bearer token signed by a key it publishes
 /// (<see cref="AbdmGatewayKeys"/>), and anything else is refused with 401. While ABDM is switched off they answer 503, as
@@ -31,9 +33,13 @@ internal static class AbdmGatewayCallbackEndpoints
     public const string ConsentNotifyPath = "/api/v3/consent/request/hip/notify";
     public const string HealthInformationRequestPath = "/api/v3/hip/health-information/request";
     public const string ProfileSharePath = "/api/v3/hip/patient/share";
+    public const string ConsentOnInitPath = "/api/v3/hiu/consent/request/on-init";
+    public const string HiuNotifyPath = "/api/v3/hiu/consent/request/notify";
+    public const string ConsentOnFetchPath = "/api/v3/hiu/consent/on-fetch";
 
     public const string RequestIdHeader = "REQUEST-ID";
     public const string HipIdHeader = "X-HIP-ID";
+    public const string HiuIdHeader = "X-HIU-ID";
 
     /// <summary>A callback body is a few hundred bytes; a discovery's a few kilobytes.</summary>
     public const long MaxBodyBytes = 64 * 1024;
@@ -66,6 +72,14 @@ internal static class AbdmGatewayCallbackEndpoints
 
         callbacks.MapPost(ProfileSharePath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmProfileShareService shares, ILoggerFactory loggers, CancellationToken ct) =>
             HandleAsync<AbdmGatewayMessages.ProfileShare>(request, configuration, keys, loggers, (call, requestId, innerCt) => shares.ShareAsync(call, requestId ?? string.Empty, innerCt), ct));
+
+        // The hospital as HIU (ABDM M3): the consent manager's answers about the patient's consent.
+        callbacks.MapPost(ConsentOnInitPath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmConsentRequestService consents, ILoggerFactory loggers, CancellationToken ct) =>
+            HandleAsync<AbdmGatewayMessages.ConsentOnInit>(request, configuration, keys, loggers, (answer, _, innerCt) => consents.OnInitAsync(answer, innerCt), ct, asHiu: true));
+        callbacks.MapPost(HiuNotifyPath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmConsentRequestService consents, ILoggerFactory loggers, CancellationToken ct) =>
+            HandleAsync<AbdmGatewayMessages.HiuNotify>(request, configuration, keys, loggers, (call, requestId, innerCt) => consents.NotifyAsync(call, requestId ?? call.RequestId ?? string.Empty, innerCt), ct, asHiu: true));
+        callbacks.MapPost(ConsentOnFetchPath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmConsentRequestService consents, ILoggerFactory loggers, CancellationToken ct) =>
+            HandleAsync<AbdmGatewayMessages.ConsentOnFetch>(request, configuration, keys, loggers, (answer, _, innerCt) => consents.OnFetchAsync(answer, innerCt), ct, asHiu: true));
     }
 
     private static async Task<IResult> HandleAsync<T>(
@@ -74,7 +88,8 @@ internal static class AbdmGatewayCallbackEndpoints
         AbdmGatewayKeys keys,
         ILoggerFactory loggers,
         Func<T, string?, CancellationToken, Task> handle,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool asHiu = false)
         where T : class
     {
         var (settings, _, problems) = await configuration.ReadAsync(ct);
@@ -91,9 +106,10 @@ internal static class AbdmGatewayCallbackEndpoints
             return TypedResults.Unauthorized();
         }
 
-        if (request.Headers[HipIdHeader].ToString() is { Length: > 0 } hipId && !string.Equals(hipId, settings.HipId, StringComparison.Ordinal))
+        var (idHeader, ownId) = asHiu ? (HiuIdHeader, settings.HiuIdentity) : (HipIdHeader, settings.HipId);
+        if (request.Headers[idHeader].ToString() is { Length: > 0 } calledId && !string.Equals(calledId, ownId, StringComparison.Ordinal))
         {
-            log.LogWarning("Ignored a call to the ABDM gateway callback {Path} for another HIP", request.Path.Value);
+            log.LogWarning("Ignored a call to the ABDM gateway callback {Path} for another HIP or HIU", request.Path.Value);
             return TypedResults.Accepted((string?)null);
         }
 

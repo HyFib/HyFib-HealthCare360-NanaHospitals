@@ -213,6 +213,7 @@
       "visits.read"
     ],
     "Doctor": [
+      "abdm.records.request",
       "ai.assistant.use",
       "ai.dictation.use",
       "bloodbank.reactions.report",
@@ -873,6 +874,7 @@
     "/api/v1/abdm/gateway admin.integrations.manage",
     "/api/v1/abdm/links/{id:guid} abdm.export",
     "/api/v1/abdm/patients/{patientId:guid}/abha-checks patients.read",
+    "/api/v1/abdm/patients/{patientId:guid}/consent-requests abdm.records.request",
     "/api/v1/abdm/shares patients.register",
     "/api/v1/abdm/shares/{id:guid} patients.register,patients.contact.read",
     "/api/v1/admin/audit admin.audit.read",
@@ -1531,6 +1533,7 @@
     "POST /api/v1/abdm/abha-checks/{id:guid}/code patients.identity.verify",
     "POST /api/v1/abdm/links abdm.export",
     "POST /api/v1/abdm/patients/{patientId:guid}/abha-checks patients.identity.verify",
+    "POST /api/v1/abdm/patients/{patientId:guid}/consent-requests abdm.records.request",
     "POST /api/v1/abdm/shares/{id:guid}/dismiss patients.register",
     "POST /api/v1/abdm/shares/{id:guid}/registered patients.register",
     "POST /api/v1/admin/backups admin.backups.manage",

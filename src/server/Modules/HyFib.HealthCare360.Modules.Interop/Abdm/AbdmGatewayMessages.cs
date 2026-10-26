@@ -149,6 +149,46 @@ internal static class AbdmGatewayMessages
     /// <summary><c>POST /data-flow/v3/health-information/notify</c>: what was delivered, per care context.</summary>
     public sealed record TransferNotify(TransferNotification Notification);
 
+    /// <summary>The requesting doctor's identifier: their medical-council registration.</summary>
+    public sealed record RequesterIdentifier(string Type, string Value, string System);
+
+    public sealed record Requester(string Name, RequesterIdentifier Identifier);
+
+    /// <summary>What the HIU asks the patient to consent to (ABDM M3): whose records, why, which kinds, which dates, how long.</summary>
+    public sealed record ConsentRequestBody(
+        Purpose Purpose, IdRef Patient, IdRef Hiu, Requester Requester, IReadOnlyList<string> HiTypes, Permission Permission);
+
+    /// <summary><c>POST /consent/v3/request/init</c>, as the HIU; the gateway answers at <c>/api/v3/hiu/consent/request/on-init</c>.</summary>
+    public sealed record ConsentInit(string RequestId, string Timestamp, ConsentRequestBody Consent);
+
+    /// <summary><c>/api/v3/hiu/consent/request/on-init</c>: the consent manager's id for the request, or why it was refused.</summary>
+    public sealed record ConsentOnInit(IdRef? ConsentRequest, GatewayError? Error, RespRequest? Response);
+
+    public sealed record ArtefactRef(string? Id);
+
+    public sealed record HiuNotification(string? ConsentRequestId, string? Status, IReadOnlyList<ArtefactRef>? ConsentArtefacts);
+
+    /// <summary><c>/api/v3/hiu/consent/request/notify</c>: the patient granted, denied, or later revoked or let expire, a request.</summary>
+    public sealed record HiuNotify(string? RequestId, string? Timestamp, HiuNotification? Notification, GatewayError? Error);
+
+    /// <summary><c>POST /consent/v3/request/hiu/on-notify</c>: one acknowledgement per artefact (none for a denial).</summary>
+    public sealed record HiuOnNotify(IReadOnlyList<Acknowledgement> Acknowledgement, RespRequest Response, GatewayError? Error);
+
+    /// <summary><c>POST /consent/v3/fetch</c>: a granted artefact, answered at <c>/api/v3/hiu/consent/on-fetch</c>.</summary>
+    public sealed record ConsentFetch(string RequestId, string Timestamp, string ConsentId);
+
+    public sealed record NamedRef(string? Id, string? Name);
+
+    /// <summary>A consent artefact as the HIU receives it: which provider (HIP) holds which of the patient's records.</summary>
+    public sealed record HiuConsentDetail(
+        string? SchemaVersion, string? ConsentId, string? CreatedAt, IdRef? Patient, IReadOnlyList<ConsentCareContext>? CareContexts,
+        Purpose? Purpose, NamedRef? Hip, IdRef? Hiu, IdRef? ConsentManager, IReadOnlyList<string>? HiTypes, Permission? Permission);
+
+    public sealed record FetchedConsent(string? Status, HiuConsentDetail? ConsentDetail, string? Signature);
+
+    /// <summary><c>/api/v3/hiu/consent/on-fetch</c>: the artefact the HIU asked for, or why not.</summary>
+    public sealed record ConsentOnFetch(FetchedConsent? Consent, GatewayError? Error, RespRequest? Response);
+
     /// <summary>The patient's address on their ABHA, as a profile share carries it.</summary>
     public sealed record ShareAddress(string? Line, string? District, string? State, string? Pincode);
 

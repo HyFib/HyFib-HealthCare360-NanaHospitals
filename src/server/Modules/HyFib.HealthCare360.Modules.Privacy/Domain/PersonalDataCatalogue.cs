@@ -97,6 +97,8 @@ public static class PersonalDataCatalogue
                 new("interop.abdm_consents", "Your ABDM consents for other providers to see your records", Counted: false),
                 new("interop.abdm_profile_shares", "Your ABHA profile shared at a registration counter", Counted: false),
                 new("interop.abdm_abha_verifications", "Checks of your ABHA with ABDM at the hospital", Counted: false),
+                new("interop.abdm_consent_requests", "Requests to see your records at other providers through ABDM", Counted: false),
+                new("interop.abdm_consent_artefacts", "Your ABDM consents for the hospital to see your records at other providers", Counted: false),
             ]),
         new("medicines", "Prescriptions and medicines",
             "Your prescriptions, the medicines the pharmacy gave you, refills and returns.",

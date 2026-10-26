@@ -445,3 +445,101 @@ internal sealed class AbdmAbhaVerification : AuditableEntity
 
     public string? Error { get; set; }
 }
+
+/// <summary>Where the hospital's request for a patient's consent (as an HIU, ABDM M3) has got to.</summary>
+public enum AbdmConsentRequestStatus
+{
+    /// <summary>Sent to the consent manager; it has not said yet that it has the request.</summary>
+    Sent,
+
+    /// <summary>The consent manager has the request; the patient decides in their ABHA app.</summary>
+    Requested,
+
+    Granted,
+    Denied,
+    Revoked,
+    Expired,
+
+    /// <summary>The consent manager refused the request, or could not be reached.</summary>
+    Failed,
+}
+
+/// <summary>
+/// The hospital asking a patient, through ABDM, to let it see their records at other providers (the hospital as HIU,
+/// ABDM M3): which kinds of records, from which dates, why, until when the hospital may keep them, and the doctor who
+/// asks. The patient decides in their ABHA app; a granted request brings one consent artefact per provider
+/// (<see cref="AbdmConsentArtefact"/>).
+/// </summary>
+internal sealed class AbdmConsentRequest : AuditableEntity
+{
+    public Guid PatientId { get; set; }
+
+    public string AbhaAddress { get; set; } = string.Empty;
+
+    /// <summary>The request id sent with the request, which the consent manager's on-init names.</summary>
+    public Guid GatewayRequestId { get; set; }
+
+    /// <summary>The consent manager's id for the request (from on-init), which its notifications name.</summary>
+    public string? ConsentRequestId { get; set; }
+
+    public AbdmConsentRequestStatus Status { get; set; }
+
+    /// <summary>The purpose of use code (<c>CAREMGT</c>, <c>BTG</c>, <c>PATRQT</c>).</summary>
+    public string Purpose { get; set; } = string.Empty;
+
+    /// <summary>The health-information types asked for, comma-separated.</summary>
+    public string HiTypes { get; set; } = string.Empty;
+
+    public DateTimeOffset DateFrom { get; set; }
+
+    public DateTimeOffset DateTo { get; set; }
+
+    /// <summary>When the hospital must erase what it receives.</summary>
+    public DateTimeOffset DataEraseAt { get; set; }
+
+    public Guid RequesterPractitionerId { get; set; }
+
+    public string RequesterName { get; set; } = string.Empty;
+
+    public DateTimeOffset? DecidedAt { get; set; }
+
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// A consent artefact the patient granted (ABDM M3): one provider (HIP) and the records (care contexts) there the
+/// hospital may ask for, with the purpose, kinds, dates and erase date the patient agreed to. Fetched from the consent
+/// manager after the patient grants the request; revoked or expired with the request.
+/// </summary>
+internal sealed class AbdmConsentArtefact : AuditableEntity
+{
+    public Guid ConsentRequestEntityId { get; set; }
+
+    public Guid PatientId { get; set; }
+
+    /// <summary>The consent manager's id for the artefact (<c>consentId</c>).</summary>
+    public string ArtefactId { get; set; } = string.Empty;
+
+    /// <summary><c>REQUESTED</c> until fetched, then the consent manager's status (<c>GRANTED</c>, <c>REVOKED</c>, <c>EXPIRED</c>).</summary>
+    public string Status { get; set; } = "REQUESTED";
+
+    public string? HipId { get; set; }
+
+    public string? HipName { get; set; }
+
+    /// <summary>The care contexts the artefact covers (<see cref="AbdmGatewayMessages.ConsentCareContext"/> list, JSON).</summary>
+    public string CareContextsJson { get; set; } = "[]";
+
+    public string? HiTypes { get; set; }
+
+    public DateTimeOffset? DateFrom { get; set; }
+
+    public DateTimeOffset? DateTo { get; set; }
+
+    public DateTimeOffset? DataEraseAt { get; set; }
+
+    /// <summary>The fetch's request id, which the on-fetch names.</summary>
+    public Guid? FetchRequestId { get; set; }
+
+    public DateTimeOffset? FetchedAt { get; set; }
+}
