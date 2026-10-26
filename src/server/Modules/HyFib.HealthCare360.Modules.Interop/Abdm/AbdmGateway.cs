@@ -32,6 +32,15 @@ internal sealed record AbdmGatewaySettings
     /// <summary>The hospital's HIP id, normally its Health Facility Registry id.</summary>
     public string? HipId { get; init; }
 
+    /// <summary>
+    /// The hospital's HIU id, when it asks for records from other providers (ABDM M3); by default the HIP id, as a
+    /// hospital registered in the HFR is both.
+    /// </summary>
+    public string? HiuId { get; init; }
+
+    /// <summary><see cref="HiuId"/>, or the HIP id.</summary>
+    public string? HiuIdentity => string.IsNullOrWhiteSpace(HiuId) ? HipId : HiuId;
+
     /// <summary>Consent manager id: <c>sbx</c> in the sandbox, <c>abdm</c> in production.</summary>
     public string? CmId { get; init; }
 
@@ -129,6 +138,10 @@ internal sealed record AbdmLinkTokenRequest(string AbhaAddress, string Name, str
 /// <see cref="NotifyTransferAsync"/> (<c>POST /data-flow/v3/health-information/notify</c>) says what was delivered.</item>
 /// <item><see cref="AnswerShareAsync"/>: <c>POST /patient-share/v3/on-share</c>, the token number given to a patient who
 /// scanned the hospital's QR code and shared their ABHA profile (scan and share, ABDM M1).</item>
+/// <item>As the hospital's HIU (ABDM M3, <c>X-HIU-ID</c>): <see cref="RequestConsentAsync"/> (<c>POST /consent/v3/request/init</c>,
+/// answered at <c>/api/v3/hiu/consent/request/on-init</c>), <see cref="AnswerHiuNotifyAsync"/>
+/// (<c>POST /consent/v3/request/hiu/on-notify</c>) and <see cref="FetchConsentAsync"/> (<c>POST /consent/v3/fetch</c>,
+/// answered at <c>/api/v3/hiu/consent/on-fetch</c>).</item>
 /// </list>
 /// The live client is <see cref="HttpAbdmGatewayClient"/>; every call is refused with <c>abdm.gateway_disabled</c>
 /// while the gateway is switched off or not set up (<see cref="DisabledAbdmGatewayClient"/>).
@@ -163,6 +176,15 @@ internal interface IAbdmGatewayClient
 
     /// <summary>Answers a profile share with the patient's token number, or why not.</summary>
     Task<Result> AnswerShareAsync(AbdmGatewayMessages.OnShare answer, CancellationToken ct);
+
+    /// <summary>As the HIU: asks the consent manager for the patient's consent to see their records elsewhere.</summary>
+    Task<Result> RequestConsentAsync(AbdmGatewayMessages.ConsentInit request, Guid requestId, CancellationToken ct);
+
+    /// <summary>As the HIU: acknowledges the patient's decision on a consent request.</summary>
+    Task<Result> AnswerHiuNotifyAsync(AbdmGatewayMessages.HiuOnNotify answer, CancellationToken ct);
+
+    /// <summary>As the HIU: asks for a granted consent artefact, answered at the on-fetch callback.</summary>
+    Task<Result> FetchConsentAsync(AbdmGatewayMessages.ConsentFetch request, Guid requestId, CancellationToken ct);
 }
 
 /// <summary>
@@ -294,6 +316,12 @@ internal sealed class DisabledAbdmGatewayClient(AbdmGatewayConfiguration configu
     public async Task<Result> NotifyTransferAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct) => await RefuseAsync(ct);
 
     public async Task<Result> AnswerShareAsync(AbdmGatewayMessages.OnShare answer, CancellationToken ct) => await RefuseAsync(ct);
+
+    public async Task<Result> RequestConsentAsync(AbdmGatewayMessages.ConsentInit request, Guid requestId, CancellationToken ct) => await RefuseAsync(ct);
+
+    public async Task<Result> AnswerHiuNotifyAsync(AbdmGatewayMessages.HiuOnNotify answer, CancellationToken ct) => await RefuseAsync(ct);
+
+    public async Task<Result> FetchConsentAsync(AbdmGatewayMessages.ConsentFetch request, Guid requestId, CancellationToken ct) => await RefuseAsync(ct);
 
     /// <summary>The refusal, or null when the gateway is switched on and set up.</summary>
     public async Task<Error?> WhyNotAsync(CancellationToken ct)

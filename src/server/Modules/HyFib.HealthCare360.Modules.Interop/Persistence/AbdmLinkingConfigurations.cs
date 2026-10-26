@@ -158,3 +158,40 @@ internal sealed class AbdmAbhaVerificationConfiguration : IEntityTypeConfigurati
         b.HasIndex(x => new { x.PatientId, x.CreatedAt });
     }
 }
+
+internal sealed class AbdmConsentRequestConfiguration : IEntityTypeConfiguration<AbdmConsentRequest>
+{
+    public void Configure(EntityTypeBuilder<AbdmConsentRequest> b)
+    {
+        b.ToTable("abdm_consent_requests", InteropSchema.Name);
+        b.Property(x => x.AbhaAddress).HasMaxLength(100);
+        b.Property(x => x.ConsentRequestId).HasMaxLength(64);
+        b.Property(x => x.Purpose).HasMaxLength(16);
+        b.Property(x => x.HiTypes).HasMaxLength(300);
+        b.Property(x => x.RequesterName).HasMaxLength(200);
+        b.Property(x => x.Error).HasMaxLength(500);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.PatientId, x.CreatedAt });
+        b.HasIndex(x => x.GatewayRequestId).IsUnique();
+        b.HasIndex(x => x.ConsentRequestId).IsUnique().HasFilter("consent_request_id IS NOT NULL");
+    }
+}
+
+internal sealed class AbdmConsentArtefactConfiguration : IEntityTypeConfiguration<AbdmConsentArtefact>
+{
+    public void Configure(EntityTypeBuilder<AbdmConsentArtefact> b)
+    {
+        b.ToTable("abdm_consent_artefacts", InteropSchema.Name);
+        b.Property(x => x.ArtefactId).HasMaxLength(64);
+        b.Property(x => x.Status).HasMaxLength(16);
+        b.Property(x => x.HipId).HasMaxLength(64);
+        b.Property(x => x.HipName).HasMaxLength(200);
+        b.Property(x => x.CareContextsJson).HasColumnType("jsonb");
+        b.Property(x => x.HiTypes).HasMaxLength(300);
+        b.HasOne<AbdmConsentRequest>().WithMany().HasForeignKey(x => x.ConsentRequestEntityId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.ArtefactId).IsUnique();
+        b.HasIndex(x => new { x.PatientId, x.CreatedAt });
+        b.HasIndex(x => x.FetchRequestId).IsUnique().HasFilter("fetch_request_id IS NOT NULL");
+    }
+}

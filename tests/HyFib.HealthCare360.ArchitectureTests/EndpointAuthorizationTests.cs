@@ -102,6 +102,9 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v3/consent/request/hip/notify",
         "POST /api/v3/hip/health-information/request",
         "POST /api/v3/hip/patient/share",
+        "POST /api/v3/hiu/consent/request/on-init",
+        "POST /api/v3/hiu/consent/request/notify",
+        "POST /api/v3/hiu/consent/on-fetch",
 
         // Devices that authenticate with their own key or serial number: attendance terminals and patient monitors.
         "GET /iclock/cdata",

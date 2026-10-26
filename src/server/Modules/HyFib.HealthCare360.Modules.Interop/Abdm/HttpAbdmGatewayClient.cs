@@ -97,6 +97,9 @@ internal sealed class HttpAbdmGatewayClient(
     public const string OnHealthInformationRequestPath = "/data-flow/v3/health-information/hip/on-request";
     public const string TransferNotifyPath = "/data-flow/v3/health-information/notify";
     public const string OnSharePath = "/patient-share/v3/on-share";
+    public const string ConsentInitPath = "/consent/v3/request/init";
+    public const string HiuOnNotifyPath = "/consent/v3/request/hiu/on-notify";
+    public const string ConsentFetchPath = "/consent/v3/fetch";
 
     public const string RefusedCode = "abdm.gateway_refused";
     public const string UnreachableCode = "abdm.gateway_unreachable";
@@ -154,7 +157,20 @@ internal sealed class HttpAbdmGatewayClient(
     public Task<Result> AnswerShareAsync(AbdmGatewayMessages.OnShare answer, CancellationToken ct) =>
         SendAsync(OnSharePath, answer, Guid.CreateVersion7(), linkToken: null, "give a token for a shared profile", ct);
 
-    private async Task<Result> SendAsync(string path, object body, Guid requestId, string? linkToken, string what, CancellationToken ct)
+    public Task<Result> RequestConsentAsync(AbdmGatewayMessages.ConsentInit request, Guid requestId, CancellationToken ct) =>
+        SendAsync(ConsentInitPath, request, requestId, linkToken: null, "ask for the patient's consent", ct, asHiu: true);
+
+    public Task<Result> AnswerHiuNotifyAsync(AbdmGatewayMessages.HiuOnNotify answer, CancellationToken ct) =>
+        SendAsync(HiuOnNotifyPath, answer, Guid.CreateVersion7(), linkToken: null, "acknowledge a consent decision", ct, asHiu: true);
+
+    public Task<Result> FetchConsentAsync(AbdmGatewayMessages.ConsentFetch request, Guid requestId, CancellationToken ct) =>
+        SendAsync(ConsentFetchPath, request, requestId, linkToken: null, "fetch a consent artefact", ct, asHiu: true);
+
+    /// <summary>
+    /// Sends a call as the hospital's HIP (<c>X-HIP-ID</c>), or with <paramref name="asHiu"/> as its HIU (<c>X-HIU-ID</c>),
+    /// when it asks for other providers' records.
+    /// </summary>
+    private async Task<Result> SendAsync(string path, object body, Guid requestId, string? linkToken, string what, CancellationToken ct, bool asHiu = false)
     {
         var setUp = await SetUpAsync(ct);
         if (setUp.IsFailure)
@@ -173,7 +189,14 @@ internal sealed class HttpAbdmGatewayClient(
 
             using var request = Request(gateway, path, body, requestId);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Value);
-            request.Headers.Add("X-HIP-ID", gateway.Settings.HipId);
+            if (asHiu)
+            {
+                request.Headers.Add("X-HIU-ID", gateway.Settings.HiuIdentity);
+            }
+            else
+            {
+                request.Headers.Add("X-HIP-ID", gateway.Settings.HipId);
+            }
             if (linkToken is not null)
             {
                 request.Headers.Add("X-LINK-TOKEN", linkToken);

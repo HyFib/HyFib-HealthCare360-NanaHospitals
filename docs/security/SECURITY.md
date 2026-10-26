@@ -344,9 +344,18 @@ and grants nothing.
     (HospitalAdmin and MrdOfficer by default): one signed or released record at a time, from the caller's facility,
     under the restricted-record rules. Every export is audited as an access to the patient's record, and the document
     is never cached.
-  - Sending it to ABDM needs the patient's ABDM consent and the gateway, which is not live: the registered client sends
-    nothing. NHA's client id and secret are a secret setting (`abdm.gateway.secret`, encrypted), and the gateway's
-    status says only whether they are set. Its base URL must be https without a user name.
+  - Sending it to another provider through ABDM needs the patient's consent artefact (checked against the records it
+    names, the dates and its erase date, again just before sending) and the gateway, switched on and set up by an
+    administrator; the records go encrypted for the requesting provider alone (Fidelius), to a push URL that must be
+    https and is refused when it names this machine or a private address. NHA's client id and secret are a secret
+    setting (`abdm.gateway.secret`, encrypted), and the gateway's status says only whether they are set. Its base URL
+    must be https without a user name.
+  - The gateway's callbacks are anonymous at the HTTP level and accepted only with a bearer token signed RS256 by a key
+    in the gateway's published key set; anything else is refused with 401, and a call naming another HIP or HIU is
+    ignored.
+  - Checking a patient's ABHA sends ABDM only the ABHA number or mobile number already on the record, encrypted with
+    ABDM's public key; the code and ABDM's token are not kept. Asking a patient for their records at other providers
+    (`abdm.records.request`, doctors) is in the requesting doctor's name and audited; the patient decides in their app.
   - Linking, replacing or removing a patient's ABHA number or address is audited (`patient.abha_changed`), with the
     number masked, including a number a merge of duplicate records links to the surviving one.
 - Only what is needed is stored:

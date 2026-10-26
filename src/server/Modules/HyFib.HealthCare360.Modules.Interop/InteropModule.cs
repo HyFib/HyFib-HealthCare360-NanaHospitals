@@ -52,6 +52,7 @@ public sealed class InteropModule : IModule
         services.AddScoped<AbdmProfileShareService>();
         services.AddHttpClient<AbhaClient>().ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
         services.AddScoped<AbhaVerificationService>();
+        services.AddScoped<AbdmConsentRequestService>();
         services.AddSingleton<IFideliusCipher, FideliusCipher>();
     }
 

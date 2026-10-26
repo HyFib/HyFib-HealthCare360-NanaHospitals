@@ -32,12 +32,14 @@ import { DataTable, ErrorState, LoadingState, Page, Section, StatusBadge, useNot
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
+import { useFeatureOn } from '@/lib/features';
 import { usePermission } from '@/lib/permissions';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import { useVisitActions } from '@/modules/front-office/VisitActions';
 import { guardianRelationLabel, patientApi, patientQueries, type PatientDetail } from '@/modules/patients/api';
+import { AbdmConsentRequestsPanel } from '@/modules/patients/AbdmConsentRequestsPanel';
 import { AbhaChecksPanel } from '@/modules/patients/AbhaChecksPanel';
 import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
 import { DocumentsPanel } from '@/modules/patients/DocumentsPanel';
@@ -47,11 +49,11 @@ import { PortalAccessPanel } from '@/modules/patients/PortalAccessPanel';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
 import { SensitiveCategoriesCard } from '@/modules/patients/SensitiveCategoriesCard';
 
-type TabId = 'overview' | 'visits' | 'consents' | 'identity' | 'portal' | 'documents';
+type TabId = 'overview' | 'visits' | 'consents' | 'identity' | 'portal' | 'documents' | 'abdm';
 
 export const Route = createFileRoute('/_app/patients/$patientId/')({
   validateSearch: (search: Record<string, unknown>): { tab?: TabId } => ({
-    tab: ['overview', 'visits', 'consents', 'identity', 'portal', 'documents'].includes(search.tab as string)
+    tab: ['overview', 'visits', 'consents', 'identity', 'portal', 'documents', 'abdm'].includes(search.tab as string)
       ? (search.tab as TabId)
       : undefined,
   }),
@@ -90,6 +92,10 @@ function PatientProfilePage() {
   const canCheckIn = usePermission('visits.manage');
   const canOpenChart = usePermission('clinical.emr.read');
   const canBook = usePermission('scheduling.appointments.book');
+  // The hospital asking the patient, through ABDM, for their records at other providers (doctors, while ABDM is on).
+  const abdmOn = useFeatureOn('abdm');
+  const canAskAbdm = usePermission('abdm.records.request');
+  const showAbdm = abdmOn && canAskAbdm;
   const canAdmit = usePermission('inpatient.admissions.admit');
   // HospitalAdmin and the MRD officer merge a duplicate registration into the record that stays.
   const canMerge = usePermission('patients.merge');
@@ -239,6 +245,7 @@ function PatientProfilePage() {
             <Tab value="identity">Identity</Tab>
             <Tab value="portal">Portal access</Tab>
             <Tab value="documents">Documents</Tab>
+            {showAbdm && <Tab value="abdm">ABDM records</Tab>}
           </TabList>
         </div>
         <div style={{ padding: 16 }}>
@@ -253,6 +260,7 @@ function PatientProfilePage() {
           )}
           {tab === 'portal' && <PortalAccessPanel patientId={patientId} />}
           {tab === 'documents' && <DocumentsPanel patientId={patientId} />}
+          {tab === 'abdm' && <AbdmConsentRequestsPanel patient={p} />}
         </div>
       </Section>
 
