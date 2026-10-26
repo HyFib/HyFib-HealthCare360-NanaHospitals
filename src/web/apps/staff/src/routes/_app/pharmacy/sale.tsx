@@ -152,6 +152,7 @@ function CounterSalePage() {
   const [buyerGstin, setBuyerGstin] = useState('');
   const [buyerLegalName, setBuyerLegalName] = useState('');
   const [dispatchState, setDispatchState] = useState('');
+  const [buyerAddress, setBuyerAddress] = useState('');
   const [payments, setPayments] = useState<PaymentDraft[]>(defaultPayments);
   const [sessionKey, setSessionKey] = useState(0);
   const [done, setDone] = useState<PharmacySaleCreated | null>(null);
@@ -282,6 +283,7 @@ function CounterSalePage() {
     setBuyerGstin('');
     setBuyerLegalName('');
     setDispatchState('');
+    setBuyerAddress('');
     setWithRx(false);
     setRx(EMPTY_RX);
     setDiscount('');
@@ -325,6 +327,7 @@ function CounterSalePage() {
               gstin: buyerGstin.replace(/\s/g, '').toUpperCase(),
               legalName: buyerLegalName.trim(),
               deliveryState: dispatchState || null,
+              address: buyerAddress.trim() || null,
             }
           : null,
       }),
@@ -603,6 +606,9 @@ function CounterSalePage() {
                       <Input value={buyerLegalName} maxLength={200} onChange={(_, d) => setBuyerLegalName(d.value)} />
                     </Field>
                   </div>
+                  <Field label="Buyer's address" hint="With the PIN code: the e-invoice needs it.">
+                    <Input value={buyerAddress} maxLength={300} onChange={(_, d) => setBuyerAddress(d.value)} />
+                  </Field>
                   <Field
                     label="Dispatched to"
                     hint={

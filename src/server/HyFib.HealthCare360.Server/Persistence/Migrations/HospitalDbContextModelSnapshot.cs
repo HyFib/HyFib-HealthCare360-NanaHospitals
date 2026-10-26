@@ -2690,6 +2690,153 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("doctor_share_rules", "billing");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.EInvoice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AckDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ack_date");
+
+                    b.Property<string>("AckNo")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("ack_no");
+
+                    b.Property<string>("BuyerGstin")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)")
+                        .HasColumnName("buyer_gstin");
+
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("cancel_reason");
+
+                    b.Property<string>("CancelRemark")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("cancel_remark");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<DateOnly>("DocumentDate")
+                        .HasColumnType("date")
+                        .HasColumnName("document_date");
+
+                    b.Property<string>("DocumentNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("document_number");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<decimal>("InvoiceValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("invoice_value");
+
+                    b.Property<string>("Irn")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("irn");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("RecordedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("recorded_by_name");
+
+                    b.Property<string>("SignedQrCode")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)")
+                        .HasColumnName("signed_qr_code");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("source");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_einvoices");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_einvoices_facility_id");
+
+                    b.HasIndex("Irn")
+                        .IsUnique()
+                        .HasDatabaseName("ix_einvoices_irn");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_einvoices_is_deleted");
+
+                    b.HasIndex("FacilityId", "DocumentDate")
+                        .HasDatabaseName("ix_einvoices_facility_id_document_date");
+
+                    b.HasIndex("Source", "SourceId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_einvoices_source_source_id")
+                        .HasFilter("status = 'Registered' AND is_deleted = false");
+
+                    b.ToTable("einvoices", "billing");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.GatewayDiscrepancy", b =>
                 {
                     b.Property<Guid>("Id")
@@ -22804,6 +22951,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<string>("BuyerAddress")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("buyer_address");
 
                     b.Property<string>("BuyerGstin")
                         .HasMaxLength(15)

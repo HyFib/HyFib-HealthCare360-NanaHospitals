@@ -65,6 +65,8 @@ internal static class BillQueries
             l.SgstAmount, l.IgstAmount, l.NetAmount, l.IsDiscountAllowed, l.IsPayerPayable, l.PractitionerId,
             l.PractitionerId is { } pid ? practitioners.GetValueOrDefault(pid) : null, l.DepartmentId, l.ServiceDate, IsReturn: l.GrossAmount < 0)).ToList();
 
+        var einvoice = await db.Set<EInvoice>().AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Source == "bill" && e.SourceId == bill.Id && e.Status == EInvoiceStatus.Registered, ct);
         return new BillDetail(
             bill.Id, bill.BillNumber, bill.Type, bill.IsFinalBill, bill.Status, bill.FacilityId, bill.PatientId, patient?.Uhid, patient?.FullName,
             bill.VisitId, bill.AdmissionId, bill.IpAccountId, bill.PayerType, bill.PayerId, payerName, bill.TariffPlanId, planName, bill.PolicyId,
@@ -80,7 +82,8 @@ internal static class BillQueries
             credits.Select(c => new CreditNoteDto(c.Id, c.Number, c.Kind, c.Amount, c.Reason, c.IssuedAt, c.IssuedByName)).ToList(),
             pending is null ? null : ToDto(pending, bill.BillNumber, patient?.Uhid, patient?.FullName),
             package,
-            bill.Version);
+            bill.Version,
+            einvoice is null ? null : EInvoiceService.Stamp(einvoice));
     }
 
     /// <summary>The package pricing a bill: the OP bill's own, or the IP account's on a final bill.</summary>

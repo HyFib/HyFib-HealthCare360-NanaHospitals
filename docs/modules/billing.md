@@ -61,6 +61,7 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
 | `billing.tally.export` | Post and export the Tally day book, mark it imported and reconcile it with Tally | HospitalAdmin, Accountant |
 | `billing.tally.configure` | Set the Tally ledger names the day book posts to | HospitalAdmin, Accountant |
+| `billing.einvoice` | Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs and IRN cancellations | Billing, Accountant, Pharmacist, HospitalAdmin |
 | `billing.gateway.reconcile` | Gateway reconciliation: settlements, exceptions, record a missed online receipt, send a failed gateway refund again. Card and UPI reconciliation: import the acquirer's settlement reports, review what does not match | HospitalAdmin, Accountant |
 | `insurance.payers.manage` | Insurers, TPAs, corporates, schemes, non-payable items | InsuranceDesk, HospitalAdmin |
 | `insurance.policies.manage` | Patient policies | InsuranceDesk, Billing, HospitalAdmin |
@@ -282,6 +283,17 @@ holds and how posting, the checks and the transition for older days work.
 | GET | `/ledgers` | `billing.tally.export` or `billing.tally.configure` | → `TallyLedgerMap` in effect, built-in names filled in |
 | PUT | `/ledgers` | `billing.tally.configure` | `TallyLedgerMap` → 204; validated (every name present, one line, at most 100 characters, known payment modes). Audited as `billing.tally.ledgers` |
 
+### GST e-invoices — `/api/v1/billing/einvoices` (`billing.einvoice`)
+See [GST e-invoicing](#gst-e-invoicing). `{source}` is `bill` or `pharmacy`.
+
+| Method | Path | Request → response |
+|---|---|---|
+| GET | `?from&to` | → `EInvoiceRegister`: whether e-invoicing applies and from when, and every B2B tax invoice of the days (the last 30 by default, at most 92, none before `gst.einvoice.from`) with its state (`Pending`, `Registered`, `IrnCancelled`, `NotNeeded`), the date it is due on the portal (30 days after the invoice) and its IRN |
+| GET | `/{source}/{id}` | → `EInvoiceDetail`: buyer, place of supply, value, state, the problems that would make the portal refuse it, and the latest IRN with its QR code. 422 `einvoice.not_applicable` before e-invoicing applies |
+| GET | `/{source}/{id}/json` | → the INV-01 (version 1.1) JSON, as a list of one invoice for the portal's bulk upload. 422 `einvoice.invalid` with the problems; 422 `einvoice.registered` once it has an IRN |
+| POST | `/{source}/{id}/irn` | `RecordIrnRequest(ackNo, signedQrCode)` → `EInvoiceDetail`. The signed QR code must name this invoice (400 `signedQrCode` with what differs); 409 `einvoice.registered` while an IRN is live, 409 `einvoice.irn_exists` for an IRN already recorded; 422 `einvoice.document_cancelled` |
+| POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other` |
+
 ### Gateway reconciliation — `/api/v1/billing/gateway`
 Every route needs `billing.gateway.reconcile` and works on the signed-in facility; a user without one gets 422
 `facility.required` on every route. See
@@ -372,6 +384,39 @@ language*).
   the stationery; the logo can be left off; a closing note ends the bill. The 80 mm counter bill and the IP running bill
   follow the same template (an 80 mm roll always prints the letterhead); receipts and refund vouchers follow
   **Receipts and refund vouchers**. See `docs/modules/print-templates.md`.
+
+## GST e-invoicing
+GST rule 48(4) requires a B2B tax invoice of a taxpayer above the notified turnover to carry an IRN from the Invoice
+Registration Portal (IRP). The date e-invoicing applies from is the setting `gst.einvoice.from`; before it, and when it
+is not set, nothing is listed and nothing can be recorded.
+
+* **Which invoices.** Bills with GST to a payer registered for GST (a corporate or an insurer with a GSTIN in the payer
+  master), and the pharmacy's B2B counter sales. Each module lists its own through the Platform contract
+  `IEInvoiceSource` (`BillEInvoiceSource`, `PharmacyEInvoiceSource`); Billing keeps the register (`billing.einvoices`).
+  Bills of supply (no GST) and sales to patients are not e-invoices.
+* **The JSON.** `InvoiceRegistrationPayload` writes the portal's INV-01 schema, version 1.1: B2B, `INV`, the facility as
+  the supplier (legal name, address line, city, PIN code and state from its GSTIN), the buyer with the place of supply,
+  every line with its SAC (services, `IsServc` Y) or HSN code (medicines, unit `NOS`), quantity, unit price, discount,
+  taxable value, GST rate and IGST or CGST and SGST, and the totals. A pharmacy line goes at its taxable value (MRP
+  includes GST), with no separate discount.
+* **The portal's checks, made here first.** The invoice number (at most 16 letters, digits, `/` and `-`, not starting
+  with 0); the hospital's GSTIN, legal name, address, city and PIN code; the buyer's GSTIN (not the hospital's own) and
+  an address with a PIN code (`BuyerAddress` takes the line, the place and the PIN code out of the free-text address);
+  each PIN code in its GSTIN's state (the state's postal circles); an SAC code for a service, an HSN code for goods; no
+  negative amounts (a return goes on a credit note); a GST rate the portal takes; IGST to another state, CGST and SGST
+  within it; each line's and the invoice's totals adding up. What fails is listed on the invoice instead of the JSON.
+* **The IRN.** The hospital uploads the JSON to the IRP (or through its GST suvidha provider) and records the
+  acknowledgement number and the signed QR code it returns. The QR code's payload must name this invoice: supplier and
+  buyer GSTIN, number, type, date, value and number of lines. Its signature is the IRP's; HC360 does not hold the IRP's
+  key, and the code is verified by scanning it with the GST verification app. The IRN, the acknowledgement and the QR
+  code then print on the A4 bill, the 80 mm bill and the pharmacy invoice.
+* **Cancelling.** The IRP cancels an IRN only within 24 hours of its generation; the cancellation done there is
+  recorded here with the portal's reason. Until then the invoice cannot be cancelled in HC360 (422 `einvoice.active`
+  on a bill or a pharmacy sale). After 24 hours the IRN stays and a credit note undoes the invoice. The portal does not
+  register the same invoice number twice, so an invoice whose IRN was cancelled is cancelled here and issued again
+  under a new number.
+* **Due dates.** The register shows each invoice's date 30 days on, the latest the IRP accepts from taxpayers with an
+  aggregate turnover of ₹10 crore or more; later ones are listed as overdue.
 
 ## Contracts for other modules
 
@@ -786,6 +831,7 @@ estimate) or a cancelled bill gives no document and is never sent.
 | `billing.gateway.reconciliation` | `{ "enabled": true, "settlementDays": 3, "checkoutExpiryHours": 48 }` | Gateway reconciliation: read settlements and list exceptions (`enabled`); an online receipt not settled after `settlementDays` (1–30) is an exception; a portal checkout nobody paid is marked expired after `checkoutExpiryHours` (1–720) |
 | `billing.pos.recheck` | `{ "timeoutMinutes": 15 }` | Terminal sales: a sale still waiting for the customer after `timeoutMinutes` (2–240) is cancelled on the terminal and marked timed out by `PosRecheckJob` |
 | `billing.pos.settlements` | `{ "settlementDays": 3, "otherTerminals": [], "columns": {} }` | Card and UPI reconciliation: a card or UPI receipt not settled after `settlementDays` (1–30) is listed; `otherTerminals` are the acquirer's TIDs of counters Billing does not record (pharmacy, canteen); `columns` adds the acquirer's headings by field (`rrn`, `approvalCode`, `amount`, `charges`, `tax`, `net`, `terminalId`, `transactionDate`, `transactionTime`, `card`, `type`, `mode`, `settlementDate`, `utr`), tried before the built-in ones |
+| `gst.einvoice.from` | not set | The first invoice date GST e-invoicing applies to (`yyyy-MM-dd`); not set, the hospital does not e-invoice |
 | `doctorfees.accrual.trigger` | `finalized` | `finalized` or `paid` |
 | `doctorfees.tds.percent` | `10` | TDS (194J) on doctor payouts |
 
@@ -816,6 +862,10 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
 (foreign key to `packages`, restrict) and `packages.used_for` (text; packages that existed before are `InPatient`).
 
 ## Not covered yet
+* **Sending e-invoices to the IRP directly.** The JSON is uploaded on the portal (or through a GST suvidha provider)
+  and the IRN recorded by hand; there is no API connection to the IRP, so no automatic IRN, e-way bill or GSTR-1 data.
+* **Credit notes on the IRP.** Credit notes against e-invoiced bills and pharmacy returns are not reported to the
+  portal as `CRN` documents.
 * **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
   bill.
 * **An admission's package is not checked against its tariff plan.** OP bills take only packages for their tariff plan

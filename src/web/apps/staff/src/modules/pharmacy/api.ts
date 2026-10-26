@@ -1,6 +1,7 @@
 import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { EInvoiceStamp } from '@/modules/billing/einvoiceApi';
 import type { BatchStock, ExpiringBatch } from '@/modules/inventory/api';
 import type { DrugSchedule, StockMovementType } from '@/modules/inventory/labels';
 import type { PatientSummary } from '@/modules/patients/api';
@@ -200,6 +201,8 @@ export interface B2bBuyer {
   gstin: string;
   legalName: string;
   deliveryState: string | null;
+  /** Address with its PIN code, which the e-invoice needs. */
+  address?: string | null;
 }
 
 export interface PharmacySaleListItem {
@@ -291,6 +294,10 @@ export interface PharmacySaleDetail {
   items: PharmacySaleItemDto[];
   payments: PharmacyPaymentDto[];
   version: number;
+  /** The B2B buyer's address with its PIN code, which the e-invoice needs. */
+  buyerAddress?: string | null;
+  /** The IRN the e-invoice portal gave this B2B invoice. */
+  eInvoice?: EInvoiceStamp | null;
 }
 
 export interface SaleReturnRequest {

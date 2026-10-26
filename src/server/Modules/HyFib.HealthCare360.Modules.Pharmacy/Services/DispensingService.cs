@@ -326,7 +326,8 @@ public sealed class DispensingService(
                 return Error.Rule("gst.facility_gstin", "Enter the hospital's GSTIN under Hospital setup before raising a B2B invoice.");
             }
 
-            sale.SetSupply(Gstin.Normalize(buyer.Gstin), buyer.LegalName.Trim(), facilityState, buyer.DeliveryState);
+            sale.SetSupply(Gstin.Normalize(buyer.Gstin), buyer.LegalName.Trim(), facilityState, buyer.DeliveryState,
+                string.IsNullOrWhiteSpace(buyer.Address) ? null : buyer.Address.Trim());
         }
 
         var reference = new StockReference(PharmacyStockReferences.CounterSale, sale.Id, sale.InvoiceNumber);

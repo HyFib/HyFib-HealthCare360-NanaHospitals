@@ -29,6 +29,12 @@ public static class BillingPermissions
     /// </summary>
     public const string GatewayReconcile = "billing.gateway.reconcile";
 
+    /// <summary>
+    /// The e-invoice register (GST rule 48(4)): download a B2B tax invoice's e-invoice JSON for the portal, record the IRN
+    /// it gave, and record its cancellation.
+    /// </summary>
+    public const string EInvoice = "billing.einvoice";
+
     public const string PayersManage = "insurance.payers.manage";
     public const string PoliciesManage = "insurance.policies.manage";
     public const string PreAuthManage = "insurance.preauth.manage";
@@ -63,6 +69,8 @@ public static class BillingPermissions
         new(GatewayReconcile, "Billing",
             "Reconcile online, card and UPI payments with the gateway's and the acquirer's settlements: record missed receipts, send failed refunds again, resolve exceptions",
             Approvers),
+        new(EInvoice, "Billing", "Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs and IRN cancellations",
+            [SystemRoles.Billing, SystemRoles.Accountant, SystemRoles.Pharmacist, SystemRoles.HospitalAdmin]),
         new(PayersManage, "Insurance", "Maintain insurers, TPAs, corporates, schemes and non-payable items", [SystemRoles.InsuranceDesk, SystemRoles.HospitalAdmin]),
         new(PoliciesManage, "Insurance", "Record and verify patient insurance policies",
             [SystemRoles.InsuranceDesk, SystemRoles.Billing, SystemRoles.HospitalAdmin]),

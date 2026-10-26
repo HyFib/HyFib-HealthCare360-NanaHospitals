@@ -142,7 +142,8 @@ public sealed record BillDetail(
     IReadOnlyList<CreditNoteDto> CreditNotes,
     DiscountApprovalDto? PendingDiscount,
     BillPackageSummary? Package,
-    uint Version);
+    uint Version,
+    EInvoiceStamp? EInvoice = null);
 
 /// <summary>
 /// The package a bill is priced at: an OP bill's own, or the IP account's on a final bill. <see cref="Price"/> is the

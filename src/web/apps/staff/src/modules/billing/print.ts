@@ -12,6 +12,7 @@ import {
 } from '@hc360/core';
 import { gstStateName } from '../inventory/gst';
 import type { BillDetail, DayEndReport, ReceiptDto, ReceiptPaymentDto, RefundDto } from './api';
+import type { EInvoiceStamp } from './einvoiceApi';
 import type { RunningBill } from './ipApi';
 import {
   PAYMENT_MODE_LABEL,
@@ -167,6 +168,14 @@ function billMeta(bill: BillDetail): [string, string][] {
   return meta;
 }
 
+/** The IRN of a B2B tax invoice with the portal's signed QR code, which the invoice must carry (GST rule 48(4)). */
+export function einvoiceBlock(stamp: EInvoiceStamp): string {
+  return `<div class="rule"></div>
+      <div class="center"><img src="${e(stamp.qrCodeSvg)}" alt="Signed QR code of the e-invoice" style="width:32mm;height:32mm"></div>
+      <div class="small" style="word-break:break-all">IRN ${e(stamp.irn)}</div>
+      <div class="small">Ack no. ${e(stamp.ackNo)} · ${e(formatDateTime(stamp.ackDate))}</div>`;
+}
+
 /** Compact bill for the counter's 80 mm receipt printer (the A4 bill is made by the server). */
 export function buildCounterBillHtml(bill: BillDetail, letterhead: Letterhead): string {
   const title = billTitle(bill);
@@ -191,6 +200,7 @@ export function buildCounterBillHtml(bill: BillDetail, letterhead: Letterhead): 
       <div class="rule"></div>
       <table class="sum">${sums}</table>
       <div class="words">${e(amountInWords(bill.patientAmount))}</div>
+      ${bill.eInvoice ? einvoiceBlock(bill.eInvoice) : ''}
       ${bill.receipts.length ? `<div class="rule"></div>${bill.receipts.map((r) => `<div class="small">${e(r.receiptNumber)} · ${e(modeSummaryLabel(r.modes))} · ${money(r.amount)}</div>`).join('')}` : ''}
       <div class="rule"></div>
       <div class="center small">Thank you. Get well soon.</div>`;

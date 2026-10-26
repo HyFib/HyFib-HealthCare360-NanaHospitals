@@ -27,6 +27,9 @@ internal static class BillDocument
     // 10pt), so the thirteen columns of a tax invoice fit across the page.
     private const string Styles = """
         .bill { font-size: 12px; }
+        .einvoice { display: flex; gap: 10px; align-items: center; margin: 6px 0; font-size: 10px; }
+        .einvoice-qr { width: 32mm; height: 32mm; }
+        .irn { font-family: monospace; word-break: break-all; }
         .hdr td { vertical-align: top; }
         .h-org { display: flex; gap: 10px; align-items: flex-start; }
         .h-logo { max-height: 18mm; max-width: 40mm; object-fit: contain; }
@@ -76,6 +79,7 @@ internal static class BillDocument
                   {Stamp(bill, text)}
                   {Header(letterhead, title, [(text["doc.bill.number"], bill.BillNumber ?? text["doc.bill.draft"]), (text["doc.date"], DocumentFormat.DateTime(bill.FinalizedAt ?? bill.CreatedAt))], text)}
                   {PatientBox(bill, text)}
+                  {EInvoiceBox(bill, text)}
                   {Cancellation(bill, text)}
                   {LinesTable(bill, text)}
                   <div class="keep">
@@ -92,6 +96,28 @@ internal static class BillDocument
                 </div>
                 """),
         };
+    }
+
+    /// <summary>
+    /// The IRN the Invoice Registration Portal gave a B2B tax invoice, with its acknowledgement and the signed QR code
+    /// (GST rule 48(4)), which the invoice must carry. Nothing on an invoice without one.
+    /// </summary>
+    private static Html EInvoiceBox(BillDetail bill, DocumentText text)
+    {
+        if (bill.EInvoice is not { } e)
+        {
+            return Html.Empty;
+        }
+
+        return Html.Of($"""
+            <div class="einvoice keep">
+              {Html.Image(ImageData.FromDataUri(e.QrCodeSvg), text["doc.bill.einvoice_qr"], "einvoice-qr")}
+              <div>
+                <div>{text["doc.bill.irn"]}: <span class="irn">{e.Irn}</span></div>
+                <div>{text["doc.bill.ack_no"]}: {e.AckNo} · {text["doc.bill.ack_date"]}: {DocumentFormat.DateTime(e.AckDate)}</div>
+              </div>
+            </div>
+            """);
     }
 
     /// <summary>
@@ -373,7 +399,7 @@ internal static class BillDocument
             var state = bill.PlaceOfSupply is { } code ? $"{Gstin.States.GetValueOrDefault(code, code)} ({code})" : DocumentFormat.Missing;
             return Html.Of($"""
                 <section class="keep">
-                  <h3>{text["doc.bill.gst_summary"]} · Place of supply: {state}</h3>
+                  <h3>{text["doc.bill.gst_summary"]} · {text.Format("doc.bill.place_of_supply", ("state", state))}</h3>
                   <table class="lines">
                     <thead><tr><th>SAC</th><th class="num">{text["doc.bill.taxable_value"]}</th><th class="num">IGST %</th><th class="num">IGST</th></tr></thead>
                     <tbody>{rows.Select(g => Html.Of($"<tr><td>{g.Sac}</td><td class=\"num\">{DocumentFormat.Money(g.Taxable)}</td><td class=\"num\">{Percent(g.Rate)}</td><td class=\"num\">{DocumentFormat.Money(g.Igst)}</td></tr>"))}</tbody>

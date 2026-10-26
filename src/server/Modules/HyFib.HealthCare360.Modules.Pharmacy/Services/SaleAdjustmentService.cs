@@ -18,6 +18,7 @@ public sealed class SaleAdjustmentService(
     StockService stock,
     ControlledDrugRegisterService register,
     PharmacyRealtime realtime,
+    IEInvoiceRegister einvoices,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -44,6 +45,12 @@ public sealed class SaleAdjustmentService(
         if (sale is null)
         {
             return Error.NotFound(nameof(PharmacySale), saleId);
+        }
+
+        if (sale.BuyerGstin is not null && await einvoices.FindAsync(PharmacyEInvoiceSource.Key, sale.Id, ct) is not null)
+        {
+            return Error.Rule("einvoice.active",
+                "This invoice has an IRN. Cancel the IRN on the portal within 24 hours and record it in the e-invoice register, or take a return.");
         }
 
         var now = time.GetUtcNow();
