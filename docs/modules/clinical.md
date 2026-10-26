@@ -767,7 +767,7 @@ an administrator sets up `integrations.aadhaar`.
 | GET | `/patients/{id}/identity-checks` | `patients.read` | The last 50 checks, newest first (`IdentityCheckDto`). Restricted-record rules apply (403 `patient.restricted`), and every listing is in the audit trail ("Viewed identity checks") |
 | POST | `/patients/{id}/identity-checks` | `patients.identity.verify` | `VerifyIdentityRequest {aadhaarNumber, pidData, consent}` → `IdentityCheckDto`. See below |
 
-`patients.identity.verify` ("Check a patient's identity with their Aadhaar fingerprint (UIDAI)") is given to
+`patients.identity.verify` ("Check a patient's identity with their Aadhaar fingerprint (UIDAI) or their ABHA (a code from ABDM)") is given to
 FrontOffice and HospitalAdmin.
 
 * **The request.** `aadhaarNumber` is the 12-digit Aadhaar number or 16-digit Virtual ID as the patient gives it

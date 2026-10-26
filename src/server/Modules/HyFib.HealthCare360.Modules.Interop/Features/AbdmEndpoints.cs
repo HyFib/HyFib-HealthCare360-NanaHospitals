@@ -62,6 +62,20 @@ internal static class AbdmEndpoints
             .WithValidation<AbdmShareRegisteredInput>();
         shares.MapPost("/{id:guid}/dismiss", async (Guid id, AbdmProfileShareService service, CancellationToken ct) =>
             (await service.DismissAsync(id, ct)).ToOk());
+
+        // Checking a patient's ABHA with ABDM at the desk (AbhaVerificationService): a code to the mobile number linked to
+        // the ABHA on the record, which the patient reads out. Identity checks need the identity permission, as Aadhaar's do.
+        abdm.MapGet("/patients/{patientId:guid}/abha-checks", async (Guid patientId, AbhaVerificationService service, CancellationToken ct) =>
+                TypedResults.Ok(await service.ListAsync(patientId, ct)))
+            .RequirePermission(PatientsPermissions.Read);
+        abdm.MapPost("/patients/{patientId:guid}/abha-checks", async (Guid patientId, AbhaVerificationStart input, AbhaVerificationService service, CancellationToken ct) =>
+                (await service.StartAsync(patientId, input, ct)).ToOk())
+            .RequirePermission(PatientsPermissions.IdentityVerify)
+            .WithValidation<AbhaVerificationStart>();
+        abdm.MapPost("/abha-checks/{id:guid}/code", async (Guid id, AbhaVerificationCode input, AbhaVerificationService service, CancellationToken ct) =>
+                (await service.VerifyAsync(id, input, ct)).ToOk())
+            .RequirePermission(PatientsPermissions.IdentityVerify)
+            .WithValidation<AbhaVerificationCode>();
     }
 
     private static async Task<IResult> ExportAsync(AbdmRecordType type, Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct)

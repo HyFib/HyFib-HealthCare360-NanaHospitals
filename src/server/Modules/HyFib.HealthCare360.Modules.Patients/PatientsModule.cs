@@ -69,7 +69,7 @@ public static class PatientsPermissions
         new(SensitiveManage, "Patients", "Put a patient's record in a sensitive category (HIV, mental health, MTP) or take it out", [SystemRoles.Doctor]),
         new(Consents, "Patients", "Capture and revoke patient consents", [.. Desk, .. Clinical]),
         new(Documents, "Patients", "Attach and view patient documents", [.. Desk, .. Clinical, SystemRoles.MrdOfficer, SystemRoles.InsuranceDesk]),
-        new(IdentityVerify, "Patients", "Check a patient's identity with their Aadhaar fingerprint (UIDAI)", Desk),
+        new(IdentityVerify, "Patients", "Check a patient's identity with their Aadhaar fingerprint (UIDAI) or their ABHA (a code from ABDM)", Desk),
         new(VisitsRead, "Visits", "View visits and queues", PlatformPermissions.PatientFacingStaff),
         new(VisitsManage, "Visits", "Create, cancel and complete visits", [.. Desk, .. Clinical]),
         new(QueueManage, "Visits", "Call, start and complete queue tokens", [.. Desk, .. Clinical]),

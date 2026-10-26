@@ -242,7 +242,7 @@ public sealed class AbdmLinkingTests(HospitalServer server)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-        await settings.SetAsync(AbdmGatewaySettingKeys.Gateway, new { enabled, baseUrl = FakeAbdmGateway.BaseUrl, hipId = HipId, cmId = "sbx", timeoutSeconds = 10 }, cancellationToken: Ct);
+        await settings.SetAsync(AbdmGatewaySettingKeys.Gateway, new { enabled, baseUrl = FakeAbdmGateway.BaseUrl, hipId = HipId, cmId = "sbx", timeoutSeconds = 10, abhaBaseUrl = FakeAbdmGateway.BaseUrl + "/abha" }, cancellationToken: Ct);
         await settings.SetAsync(AbdmGatewaySettingKeys.Secret, new { clientId = "SBX_IT", clientSecret = "it-" + Guid.NewGuid().ToString("N") }, secret: true, cancellationToken: Ct);
     }
 

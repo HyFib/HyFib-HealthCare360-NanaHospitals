@@ -44,6 +44,18 @@ internal sealed record AbdmGatewaySettings
     /// </summary>
     public string? JwksUrl { get; init; }
 
+    /// <summary>
+    /// ABDM's ABHA service (ABHA verification at the desk): by default the sandbox's
+    /// <c>https://abhasbx.abdm.gov.in/abha/api/v3</c>, or production's <c>https://abha.abdm.gov.in/abha/api/v3</c> with
+    /// consent manager <c>abdm</c>. https only.
+    /// </summary>
+    public string? AbhaBaseUrl { get; init; }
+
+    /// <summary><see cref="AbhaBaseUrl"/>, or the default for <see cref="CmId"/>.</summary>
+    public string AbhaServiceUrl => (!string.IsNullOrWhiteSpace(AbhaBaseUrl) ? AbhaBaseUrl
+        : CmId == "abdm" ? "https://abha.abdm.gov.in/abha/api/v3"
+        : "https://abhasbx.abdm.gov.in/abha/api/v3").TrimEnd('/');
+
     /// <summary><see cref="JwksUrl"/>, or the default under <see cref="BaseUrl"/>.</summary>
     public string? KeySetUrl => !string.IsNullOrWhiteSpace(JwksUrl) ? JwksUrl
         : string.IsNullOrWhiteSpace(BaseUrl) ? null
@@ -205,6 +217,12 @@ internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
             && (!Uri.TryCreate(gateway.JwksUrl, UriKind.Absolute, out var jwks) || jwks.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(jwks.UserInfo)))
         {
             problems.Add("The gateway's key-set URL (\"jwksUrl\") must be an https address without a user name or password.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(gateway.AbhaBaseUrl)
+            && (!Uri.TryCreate(gateway.AbhaBaseUrl, UriKind.Absolute, out var abha) || abha.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(abha.UserInfo)))
+        {
+            problems.Add("The ABHA service URL (\"abhaBaseUrl\") must be an https address without a user name or password.");
         }
 
         if (string.IsNullOrWhiteSpace(credentials.ClientId) || string.IsNullOrWhiteSpace(credentials.ClientSecret))
