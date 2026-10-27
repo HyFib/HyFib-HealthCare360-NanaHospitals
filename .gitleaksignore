@@ -1,0 +1,6 @@
+# Test fixtures in past commits, not credentials: a sample archive key in a deploy-script test, and made-up AUA and
+# ASA licence keys in a fingerprint test since rewritten. Listed by fingerprint so a scan of the whole history is clean
+# and a real secret stands out.
+2cb94052ac9bd528593ecad411f902478177398a:tests/deploy/Test-StandbyScripts.ps1:generic-api-key:127
+2ddf0005543a02187cc7e7c379e353671f829c00:tests/HyFib.HealthCare360.Integrations.Tests/Fingerprint/AadhaarAuthTests.cs:generic-api-key:28
+2ddf0005543a02187cc7e7c379e353671f829c00:tests/HyFib.HealthCare360.Integrations.Tests/Fingerprint/AadhaarAuthTests.cs:generic-api-key:29
