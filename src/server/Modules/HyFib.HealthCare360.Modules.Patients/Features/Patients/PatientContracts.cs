@@ -79,6 +79,10 @@ public sealed record PatientSummary(
 /// The desk gave the patient the privacy notice (DPDP s.5): recorded as a <see cref="ConsentType.PrivacyNotice"/> consent
 /// with the notice's current version (<see cref="PrivacyNotice"/>).
 /// </param>
+/// <param name="Paper">
+/// The patient was registered on paper while HC360 was down, under a downtime UHID of the desk's kit: the record keeps
+/// that UHID and the time on the form (<see cref="Services.DowntimeUhidService"/>). Null for a registration made now.
+/// </param>
 /// <param name="WhatsAppOptIn">
 /// The patient agreed at the desk to get reminders and updates on WhatsApp on <paramref name="Phone"/> (INT-WA); recorded
 /// as a registration-desk opt-in with the registering user.
@@ -116,7 +120,13 @@ public sealed record RegisterPatientRequest(
     string? Notes,
     bool ConfirmedNotDuplicate,
     bool WhatsAppOptIn = false,
-    bool PrivacyNoticeGiven = false);
+    bool PrivacyNoticeGiven = false,
+    PaperRegistration? Paper = null);
+
+/// <summary>A registration entered from the paper form filled in while HC360 was down.</summary>
+/// <param name="Uhid">The downtime UHID written on the form.</param>
+/// <param name="RegisteredAt">When the form says the patient was registered.</param>
+public sealed record PaperRegistration(string Uhid, DateTimeOffset RegisteredAt);
 
 public sealed record UpdatePatientRequest(
     string? Title,
@@ -257,6 +267,13 @@ public sealed class RegisterPatientRequestValidator : AbstractValidator<Register
         RuleFor(x => x.GuardianName).MaximumLength(200);
         RuleFor(x => x.PhotoFileId).NotEqual(Guid.Empty).WithMessage("Choose a valid photo.");
         RuleFor(x => x.Notes).SafeText(2000);
+        RuleFor(x => x.Paper!.Uhid).NotEmpty().WithMessage("Enter the UHID written on the paper form.").MaximumLength(20)
+            .OverridePropertyName("paper.uhid").When(x => x.Paper is not null);
+        RuleFor(x => x.Paper!.RegisteredAt)
+            .Must(at => at <= time.GetUtcNow().AddMinutes(5)).WithMessage("The registration time cannot be in the future.")
+            .Must(at => at >= time.GetUtcNow() - Services.DowntimeUhidService.LongestBackEntry)
+            .WithMessage("Paper registrations older than 90 days cannot be entered this way.")
+            .OverridePropertyName("paper.registeredAt").When(x => x.Paper is not null);
     }
 }
 

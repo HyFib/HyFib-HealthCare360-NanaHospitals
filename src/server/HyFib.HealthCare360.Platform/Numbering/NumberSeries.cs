@@ -56,11 +56,27 @@ public interface INumberSeries
     /// all facilities share. The definition's default format and reset apply until an administrator changes them.
     /// </summary>
     Task<string> NextAsync(NumberSeriesDefinition series, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Allocates the next <paramref name="count"/> numbers of <paramref name="series"/> at once, in order, for use later
+    /// (a block kept for registering patients on paper while HC360 is down). They are issued as any other number is, so
+    /// the series never issues them again; the caller keeps them.
+    /// </summary>
+    Task<IReadOnlyList<string>> ReserveAsync(NumberSeriesDefinition series, Guid? facilityId, int count, CancellationToken cancellationToken);
 }
 
 internal sealed class NumberSeriesService(HospitalDbContext db, NumberSeriesCatalog catalog, IMemoryCache cache, TimeProvider time) : INumberSeries
 {
-    public async Task<string> NextAsync(NumberSeriesDefinition series, Guid? facilityId, CancellationToken cancellationToken)
+    public async Task<string> NextAsync(NumberSeriesDefinition series, Guid? facilityId, CancellationToken cancellationToken) =>
+        (await AllocateAsync(series, facilityId, 1, cancellationToken))[0];
+
+    public Task<IReadOnlyList<string>> ReserveAsync(NumberSeriesDefinition series, Guid? facilityId, int count, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        return AllocateAsync(series, facilityId, count, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<string>> AllocateAsync(NumberSeriesDefinition series, Guid? facilityId, int count, CancellationToken cancellationToken)
     {
         // Every series a module issues is on the administrators' list, so it can be set up before its first number.
         if (!series.Hidden && !catalog.IsDeclared(series))
@@ -97,7 +113,7 @@ internal sealed class NumberSeriesService(HospitalDbContext db, NumberSeriesCata
             var period = NumberFormat.PeriodFor(row.ResetPolicy, now);
             var allocated = await db.Database.SqlQuery<AllocatedRow>($"""
                 UPDATE platform.number_series
-                   SET current_value = CASE WHEN current_period IS NOT DISTINCT FROM {period} THEN current_value + 1 ELSE 1 END,
+                   SET current_value = CASE WHEN current_period IS NOT DISTINCT FROM {period} THEN current_value + {count} ELSE {count} END,
                        current_period = {period},
                        updated_at = {time.GetUtcNow()}
                  WHERE key = {series.Key} AND facility_id IS NOT DISTINCT FROM {scope}
@@ -107,7 +123,8 @@ internal sealed class NumberSeriesService(HospitalDbContext db, NumberSeriesCata
             if (allocated.Count == 1)
             {
                 var facilityCode = await FacilityCodeAsync(scope, cancellationToken);
-                return NumberFormat.Render(allocated[0].Format, allocated[0].Value, facilityCode, now);
+                var last = allocated[0].Value;
+                return [.. Enumerable.Range(0, count).Select(i => NumberFormat.Render(allocated[0].Format, last - count + 1 + i, facilityCode, now))];
             }
         }
 

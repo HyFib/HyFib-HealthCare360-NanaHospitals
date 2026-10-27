@@ -20,6 +20,12 @@ const manifest: ModuleManifest = {
       permission: 'patients.register',
       keywords: ['new', 'registration', 'uhid'],
     },
+    {
+      label: 'Downtime UHIDs',
+      to: '/patients/downtime',
+      permission: 'patients.downtime',
+      keywords: ['downtime', 'paper', 'kit', 'offline', 'back-entry', 'uhid'],
+    },
   ],
   quickActions: [
     {

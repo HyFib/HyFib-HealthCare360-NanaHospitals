@@ -49,6 +49,7 @@ public static class PersonalDataCatalogue
             [
                 new("patients.patients", "Duplicate registrations merged into yours", Counted: false, Column: "merged_into_patient_id"),
                 new("patients.patient_identity_checks", "Identity checks with your Aadhaar fingerprint"),
+                new("patients.downtime_uhids", "Your registration on paper while the system was down"),
             ]),
         new("visits", "Visits and appointments",
             "When you came, which department and doctor you saw, your appointments and your place in the queue.",

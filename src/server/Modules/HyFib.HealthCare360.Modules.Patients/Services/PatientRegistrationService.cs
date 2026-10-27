@@ -36,6 +36,7 @@ internal sealed record PatientInput(
 public sealed class PatientRegistrationService(
     HospitalDbContext db,
     INumberSeries numbers,
+    DowntimeUhidService downtime,
     IFieldProtector protector,
     ICurrentUser currentUser,
     IAuditLogger audit,
@@ -136,11 +137,26 @@ public sealed class PatientRegistrationService(
             }
         }
 
-        var patient = new Patient { RegisteredFacilityId = facilityId, RegisteredAt = time.GetUtcNow() };
+        var patient = new Patient { RegisteredFacilityId = facilityId, RegisteredAt = request.Paper?.RegisteredAt ?? time.GetUtcNow() };
         Apply(patient, input, today, isNew: true);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        patient.Uhid = await numbers.NextAsync(PatientsNumberSeries.Uhid, null, ct);
+        if (request.Paper is { } paper)
+        {
+            // Entered from the form filled in while HC360 was down: the UHID the patient already carries.
+            var claimed = await downtime.ClaimAsync(paper, patient, ct);
+            if (claimed.IsFailure)
+            {
+                return claimed.Error!;
+            }
+
+            patient.Uhid = claimed.Value.Uhid;
+        }
+        else
+        {
+            patient.Uhid = await numbers.NextAsync(PatientsNumberSeries.Uhid, null, ct);
+        }
+
         patient.MarkRegistered();
         db.Add(patient);
         db.Set<PatientConsent>().Add(new PatientConsent

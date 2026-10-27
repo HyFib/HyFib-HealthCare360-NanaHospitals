@@ -172,6 +172,10 @@ order.AccessionNumber = await numbers.NextAsync(DiagnosticsNumberSeries.LabAcces
 and that every default format follows the rules above. Allocate inside the transaction that saves the document, so
 numbers stay gap-free.
 
+`ReserveAsync(series, facilityId, count)` issues `count` numbers at once, in order, for use later: the downtime UHIDs
+of a registration desk's kit (see `docs/modules/downtime.md`). They count as issued, so the series never issues them
+again and the next number cannot be set below them.
+
 ## All series
 
 | Area | Number | Key | Default format | Starts again | Counted | Room |
