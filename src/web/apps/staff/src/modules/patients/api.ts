@@ -9,6 +9,7 @@ import type {
 } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { PaperRegistration } from './downtimeApi';
 import { photoDataUrl } from './photo';
 
 export const PATIENT_CATEGORIES = [
@@ -165,6 +166,8 @@ export interface RegisterPatientRequest extends PatientFormPayload {
   whatsAppOptIn?: boolean;
   /** The desk gave the patient the privacy notice (DPDP s.5); recorded with the notice's current version. */
   privacyNoticeGiven?: boolean;
+  /** Entered from the paper form filled in while HC360 was down, under the downtime UHID written on it. */
+  paper?: PaperRegistration | null;
 }
 
 export interface UpdatePatientRequest extends PatientFormPayload {

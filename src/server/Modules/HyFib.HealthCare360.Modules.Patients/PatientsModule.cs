@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Identity;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
@@ -37,6 +38,9 @@ public static class PatientsPermissions
     public const string Consents = "patients.consents";
     public const string Documents = "patients.documents";
     public const string IdentityVerify = "patients.identity.verify";
+
+    /// <summary>Issue blocks of UHIDs for the desks' downtime kits, see which were entered from paper, and void the unusable.</summary>
+    public const string Downtime = "patients.downtime";
     public const string VisitsRead = "visits.read";
     public const string VisitsManage = "visits.manage";
     public const string QueueManage = "queue.manage";
@@ -70,6 +74,7 @@ public static class PatientsPermissions
         new(Consents, "Patients", "Capture and revoke patient consents", [.. Desk, .. Clinical]),
         new(Documents, "Patients", "Attach and view patient documents", [.. Desk, .. Clinical, SystemRoles.MrdOfficer, SystemRoles.InsuranceDesk]),
         new(IdentityVerify, "Patients", "Check a patient's identity with their Aadhaar fingerprint (UIDAI) or their ABHA (a code from ABDM)", Desk),
+        new(Downtime, "Patients", "Issue downtime UHID blocks for paper registration and follow their entry", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
         new(VisitsRead, "Visits", "View visits and queues", PlatformPermissions.PatientFacingStaff),
         new(VisitsManage, "Visits", "Create, cancel and complete visits", [.. Desk, .. Clinical]),
         new(QueueManage, "Visits", "Call, start and complete queue tokens", [.. Desk, .. Clinical]),
@@ -105,6 +110,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<IPortalAccountResolver, PortalAccountResolver>();
         services.AddScoped<IPatientLanguageSource, PatientLanguageSource>();
         services.AddScoped<IdentityCheckService>();
+        services.AddScoped<DowntimeUhidService>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -115,5 +121,6 @@ public sealed class PatientsModule : IModule
         FrontOfficeEndpoints.Map(endpoints);
         PortalFamilyEndpoints.Map(endpoints);
         IdentityCheckEndpoints.Map(endpoints);
+        DowntimeUhidEndpoints.Map(endpoints);
     }
 }

@@ -148,6 +148,7 @@ import { Route as AppOtBookRouteImport } from './routes/_app/ot/book'
 import { Route as AppOtImplantsRouteImport } from './routes/_app/ot/implants'
 import { Route as AppOtTheatresRouteImport } from './routes/_app/ot/theatres'
 import { Route as AppPatientsIndexRouteImport } from './routes/_app/patients/index'
+import { Route as AppPatientsDowntimeRouteImport } from './routes/_app/patients/downtime'
 import { Route as AppPatientsRegisterRouteImport } from './routes/_app/patients/register'
 import { Route as AppPharmacyIndexRouteImport } from './routes/_app/pharmacy/index'
 import { Route as AppPharmacyAdrRouteImport } from './routes/_app/pharmacy/adr'
@@ -1032,6 +1033,11 @@ const AppOtTheatresRoute = AppOtTheatresRouteImport.update({
 const AppPatientsIndexRoute = AppPatientsIndexRouteImport.update({
   id: '/patients/',
   path: '/patients/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPatientsDowntimeRoute = AppPatientsDowntimeRouteImport.update({
+  id: '/patients/downtime',
+  path: '/patients/downtime',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPatientsRegisterRoute = AppPatientsRegisterRouteImport.update({
@@ -2130,6 +2136,7 @@ export interface FileRoutesByFullPath {
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
+  '/patients/downtime': typeof AppPatientsDowntimeRoute
   '/patients/register': typeof AppPatientsRegisterRoute
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
@@ -2455,6 +2462,7 @@ export interface FileRoutesByTo {
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
+  '/patients/downtime': typeof AppPatientsDowntimeRoute
   '/patients/register': typeof AppPatientsRegisterRoute
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
@@ -2782,6 +2790,7 @@ export interface FileRoutesById {
   '/_app/ot/book': typeof AppOtBookRoute
   '/_app/ot/implants': typeof AppOtImplantsRoute
   '/_app/ot/theatres': typeof AppOtTheatresRoute
+  '/_app/patients/downtime': typeof AppPatientsDowntimeRoute
   '/_app/patients/register': typeof AppPatientsRegisterRoute
   '/_app/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/_app/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
@@ -3109,6 +3118,7 @@ export interface FileRouteTypes {
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
+    | '/patients/downtime'
     | '/patients/register'
     | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
@@ -3434,6 +3444,7 @@ export interface FileRouteTypes {
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
+    | '/patients/downtime'
     | '/patients/register'
     | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
@@ -3760,6 +3771,7 @@ export interface FileRouteTypes {
     | '/_app/ot/book'
     | '/_app/ot/implants'
     | '/_app/ot/theatres'
+    | '/_app/patients/downtime'
     | '/_app/patients/register'
     | '/_app/pharmacy/adr'
     | '/_app/pharmacy/ip-issues'
@@ -4957,6 +4969,13 @@ declare module '@tanstack/react-router' {
       path: '/patients'
       fullPath: '/patients/'
       preLoaderRoute: typeof AppPatientsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/patients/downtime': {
+      id: '/_app/patients/downtime'
+      path: '/patients/downtime'
+      fullPath: '/patients/downtime'
+      preLoaderRoute: typeof AppPatientsDowntimeRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/patients/register': {
@@ -6363,6 +6382,7 @@ interface AppRouteChildren {
   AppOtBookRoute: typeof AppOtBookRoute
   AppOtImplantsRoute: typeof AppOtImplantsRoute
   AppOtTheatresRoute: typeof AppOtTheatresRoute
+  AppPatientsDowntimeRoute: typeof AppPatientsDowntimeRoute
   AppPatientsRegisterRoute: typeof AppPatientsRegisterRoute
   AppPharmacyAdrRoute: typeof AppPharmacyAdrRoute
   AppPharmacyIpIssuesRoute: typeof AppPharmacyIpIssuesRoute
@@ -6687,6 +6707,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOtBookRoute: AppOtBookRoute,
   AppOtImplantsRoute: AppOtImplantsRoute,
   AppOtTheatresRoute: AppOtTheatresRoute,
+  AppPatientsDowntimeRoute: AppPatientsDowntimeRoute,
   AppPatientsRegisterRoute: AppPatientsRegisterRoute,
   AppPharmacyAdrRoute: AppPharmacyAdrRoute,
   AppPharmacyIpIssuesRoute: AppPharmacyIpIssuesRoute,

@@ -8,6 +8,7 @@ import type {
   VisitListItem,
   WhatsAppConsentDto,
 } from '@/modules/patients/api';
+import type { DowntimeUhidBlockSummary } from '@/modules/patients/downtimeApi';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
 
@@ -234,7 +235,24 @@ const RAVI_PAYER: PatientPayer = {
   validUntil: null,
 };
 
+/** A registration desk's downtime kit, partly entered since the server came back. */
+const DOWNTIME_BLOCKS: DowntimeUhidBlockSummary[] = [
+  {
+    id: id('40'),
+    label: 'Main reception, kit 1',
+    count: 25,
+    firstUhid: 'NH26000501',
+    lastUhid: 'NH26000525',
+    issuedAt: minutesAgo(60 * 24 * 7),
+    issuedByName: 'Meena Iyer',
+    entered: 6,
+    voided: 1,
+    open: 18,
+  },
+];
+
 export const ANSWERS: FakeAnswers = {
+  'GET /api/v1/patients/downtime-blocks': DOWNTIME_BLOCKS,
   [`GET /api/v1/patients/${RAVI_ID}/payer`]: { current: RAVI_PAYER },
   [`GET /api/v1/patients/${RECORD_ID}`]: PATIENT,
   [`GET /api/v1/patients/${RECORD_ID}/sensitive-categories`]: { categories: ['Hiv'], version: 4 },

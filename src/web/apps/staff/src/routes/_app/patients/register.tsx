@@ -12,11 +12,17 @@ import {
   MessageBarActions,
   MessageBarBody,
   Text,
+  ToggleButton,
   tokens,
 } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DocumentArrowLeftRegular, PrintRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DocumentArrowLeftRegular,
+  DocumentTextRegular,
+  PrintRegular,
+} from '@fluentui/react-icons';
 import { formatRelative, isApiError, useSession } from '@hc360/core';
-import { applyServerErrors, LEAVE_KEEPING_DRAFT, Page, PageHeader, useNotify } from '@hc360/ui';
+import { applyServerErrors, LEAVE_KEEPING_DRAFT, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
@@ -27,6 +33,8 @@ import { abhaShareApi, abhaShareQueries, formFromShare, tokenLabel } from '@/mod
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import { patientApi, patientKeys, type DuplicateCandidate } from '@/modules/patients/api';
 import { PatientForm } from '@/modules/patients/PatientForm';
+import { NOT_ON_PAPER, paperOf, type PaperEntry } from '@/modules/patients/downtimeApi';
+import { PaperRegistrationFields } from '@/modules/patients/PaperRegistrationFields';
 import {
   emptyPatientForm,
   toPatientPayload,
@@ -116,6 +124,9 @@ function RegisterPatientPage() {
   );
   const [registered, setRegistered] = useState<Registered | null>(null);
   const [checkIn, setCheckIn] = useState(false);
+  // A form filled in on paper while HC360 was down: the UHID and the time written on it.
+  const [paperEntry, setPaperEntry] = useState<PaperEntry>(NOT_ON_PAPER);
+  const [paperProblems, setPaperProblems] = useState<{ uhid?: string; at?: string }>({});
 
   const [firstName, ...rest] = (search.name ?? '').trim().split(/\s+/);
   const [defaults] = useState<PatientFormValues>(() => ({
@@ -141,9 +152,12 @@ function RegisterPatientPage() {
         whatsAppOptIn: whatsAppOptInOf(values),
         privacyNoticeGiven: values.privacyNoticeGiven,
         confirmedNotDuplicate: confirmed,
+        paper: paperOf(paperEntry).paper,
       }),
     onSuccess: (result, { values }) => {
       draft.clear();
+      setPaperEntry(NOT_ON_PAPER);
+      setPaperProblems({});
       // Saved: what the form shows is no longer an unsaved change, so leaving from the result does not ask.
       form?.reset(values);
       setDuplicates(null);
@@ -164,8 +178,14 @@ function RegisterPatientPage() {
       }
     },
     onError: (error, { values }) => {
+      const paperUhid = isApiError(error) ? (error.fieldErrors['paper.uhid']?.[0] ?? null) : null;
+      const paperAt = isApiError(error) ? (error.fieldErrors['paper.registeredAt']?.[0] ?? null) : null;
       if (isApiError(error) && error.code === 'patient.possible_duplicate' && Array.isArray(error.data)) {
         setDuplicates({ values, candidates: error.data as DuplicateCandidate[] });
+      } else if (paperUhid || paperAt) {
+        setPaperProblems({ uhid: paperUhid ?? undefined, at: paperAt ?? undefined });
+      } else if (isApiError(error) && error.code === 'downtime.uhid_entered') {
+        setPaperProblems({ uhid: error.message });
       } else if (!(form && applyServerErrors(error, form.setError))) {
         notify.error(error, 'Could not register the patient');
       }
@@ -197,6 +217,19 @@ function RegisterPatientPage() {
         title="Register patient"
         subtitle="A UHID is issued on saving. Press Ctrl+S to save."
         breadcrumbs={[{ label: 'Patients', onClick: () => void navigate({ to: '/patients' }) }, { label: 'Register' }]}
+        actions={
+          // Rare (after downtime), so it does not take room on the form until asked for.
+          <ToggleButton
+            icon={<DocumentTextRegular />}
+            checked={paperEntry.onPaper}
+            onClick={() => {
+              setPaperEntry((entry) => ({ ...entry, onPaper: !entry.onPaper }));
+              setPaperProblems({});
+            }}
+          >
+            Paper form
+          </ToggleButton>
+        }
       />
 
       {draft.saved && (
@@ -235,11 +268,26 @@ function RegisterPatientPage() {
         </MessageBar>
       )}
 
+      {paperEntry.onPaper && (
+        <Section title="Paper form">
+          <PaperRegistrationFields value={paperEntry} onChange={setPaperEntry} problems={paperProblems} />
+        </Section>
+      )}
+
       {!(search.share && share.isLoading) && (
         <PatientForm
           key={fromShare?.id ?? 'blank'}
           defaultValues={formDefaults}
-          onSubmit={(values) => register.mutate({ values, confirmed: false })}
+          onSubmit={(values) => {
+            const { problem } = paperOf(paperEntry);
+            if (problem) {
+              setPaperProblems(problem.includes('UHID') ? { uhid: problem } : { at: problem });
+              return;
+            }
+
+            setPaperProblems({});
+            register.mutate({ values, confirmed: false });
+          }}
           busy={register.isPending}
           submitLabel="Register and issue UHID"
           checkDuplicates
