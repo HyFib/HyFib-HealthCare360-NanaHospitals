@@ -425,6 +425,54 @@ internal sealed class BackupJob(BackupService backups) : IJob
         await backups.RunAsync(BackupKind.Scheduled, null, cancellationToken);
 }
 
+/// <summary>
+/// The nightly backup the server was off for: the job scheduler keeps its schedule in memory, so a run missed while the
+/// server was stopped (a power cut, an update, a reboot at the wrong hour) is never fired late. Shortly after start-up this
+/// checks whether the schedule fell due since the last full backup was attempted and, if so, takes it now. A new
+/// installation that has never attempted one waits for its schedule.
+/// </summary>
+internal sealed class BackupCatchUpJob(
+    BackupService backups,
+    IDbContextFactory<HospitalDbContext> contexts,
+    IOptions<PlatformOptions> options,
+    TimeProvider time,
+    ILogger<BackupCatchUpJob> logger) : IJob
+{
+    /// <summary>How long after start-up the check is made, so the server is serving before a backup loads the disk.</summary>
+    public static readonly TimeSpan Delay = TimeSpan.FromMinutes(2);
+
+    public async ValueTask Execute(IJobExecutionContext context, CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow();
+        await using (var db = await contexts.CreateDbContextAsync(cancellationToken))
+        {
+            var full = db.Set<BackupRun>().Where(r => r.Kind == BackupKind.Scheduled || r.Kind == BackupKind.Manual);
+            if (await full.AnyAsync(r => r.Status == BackupStatus.Running && r.StartedAt > now.AddHours(-3), cancellationToken))
+            {
+                return;
+            }
+
+            var lastAttempt = await full.MaxAsync(r => (DateTimeOffset?)r.StartedAt, cancellationToken);
+            var zone = PlatformServiceCollectionExtensions.ResolveTimeZone(options.Value.TimeZone);
+            if (!Missed(options.Value.Backup.Schedule, zone, lastAttempt, now))
+            {
+                return;
+            }
+
+            logger.LogWarning("The scheduled backup was missed while the server was stopped (last attempted {LastAttempt}); taking it now", lastAttempt);
+        }
+
+        await backups.RunAsync(BackupKind.Scheduled, null, cancellationToken);
+    }
+
+    /// <summary>Whether <paramref name="schedule"/> fell due after <paramref name="lastAttempt"/> and before <paramref name="now"/>.</summary>
+    public static bool Missed(string schedule, TimeZoneInfo zone, DateTimeOffset? lastAttempt, DateTimeOffset now) =>
+        lastAttempt is { } last
+        && ((ICronTrigger)Quartz.TriggerBuilder.Create().WithCronSchedule(schedule, cron => cron.InTimeZone(zone)).StartAt(last).Build())
+            .GetFireTimeAfter(last) is { } due
+        && due <= now;
+}
+
 internal static class BackupEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)

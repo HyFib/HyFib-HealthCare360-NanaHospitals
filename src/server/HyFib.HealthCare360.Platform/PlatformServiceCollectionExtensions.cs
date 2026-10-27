@@ -322,6 +322,9 @@ public static class PlatformServiceCollectionExtensions
                     quartz.ScheduleJob<BackupJob>(trigger => trigger
                         .WithIdentity("nightly-backup")
                         .WithCronSchedule(options.Backup.Schedule, cron => cron.InTimeZone(ResolveTimeZone(options.TimeZone))));
+                    quartz.ScheduleJob<BackupCatchUpJob>(trigger => trigger
+                        .WithIdentity("backup-catch-up")
+                        .StartAt(DateTimeOffset.UtcNow.Add(BackupCatchUpJob.Delay)));
                 }
             });
             services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
@@ -394,7 +397,7 @@ public static class PlatformServiceCollectionExtensions
         return endpoints;
     }
 
-    private static TimeZoneInfo ResolveTimeZone(string id)
+    internal static TimeZoneInfo ResolveTimeZone(string id)
     {
         try
         {
