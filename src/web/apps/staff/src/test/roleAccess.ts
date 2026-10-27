@@ -484,11 +484,11 @@ export async function learn(path: string): Promise<Learned> {
     await settle(server, opened);
   };
   const names = actionButtons();
-  const fromRow = await rowButtons(server, opened);
-  if (fromRow.length > 0 || dialogs().length > 0) {
+  // A row clicked leaves the screen in another state (a drawer open, or another screen): back to it as it opened.
+  if (clickableRow()) {
+    names.push(...(await rowButtons(server, opened)));
     await reopen();
   }
-  names.push(...fromRow);
   for (let i = 0; i < names.length; i++) {
     const name = names[i]!;
     const from = server.requests.length;
