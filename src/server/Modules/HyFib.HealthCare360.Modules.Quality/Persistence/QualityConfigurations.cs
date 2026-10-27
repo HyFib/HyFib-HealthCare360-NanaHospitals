@@ -125,3 +125,22 @@ internal sealed class IndicatorValueConfiguration : IEntityTypeConfiguration<Ind
         b.HasIndex(x => new { x.FacilityId, x.IndicatorId, x.PeriodStart }).IsUnique().HasFilter(QualitySchema.NotDeleted);
     }
 }
+
+internal sealed class DowntimeEventConfiguration : IEntityTypeConfiguration<DowntimeEvent>
+{
+    public void Configure(EntityTypeBuilder<DowntimeEvent> b)
+    {
+        b.ToTable("downtime_events", QualitySchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.Affected).HasMaxLength(300);
+        b.Property(x => x.Description).HasMaxLength(2000);
+        b.Property(x => x.RecordedByName).HasMaxLength(200);
+        b.Property(x => x.ActionsTaken).HasMaxLength(2000);
+        b.Property(x => x.EndedByName).HasMaxLength(200);
+        b.Property(x => x.BackEntryNote).HasMaxLength(1000);
+        b.Property(x => x.BackEntrySignedByName).HasMaxLength(200);
+        b.Ignore(x => x.Status);
+        b.HasIndex(x => x.Number).IsUnique();
+        b.HasIndex(x => new { x.FacilityId, x.StartedAt });
+    }
+}

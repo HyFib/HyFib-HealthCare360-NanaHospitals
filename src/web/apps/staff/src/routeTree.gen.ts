@@ -165,6 +165,7 @@ import { Route as AppPrivacySettingsRouteImport } from './routes/_app/privacy/se
 import { Route as AppPurchaseIndexRouteImport } from './routes/_app/purchase/index'
 import { Route as AppPurchaseVendorsRouteImport } from './routes/_app/purchase/vendors'
 import { Route as AppQualityIndexRouteImport } from './routes/_app/quality/index'
+import { Route as AppQualityDowntimeRouteImport } from './routes/_app/quality/downtime'
 import { Route as AppQualityMyReportsRouteImport } from './routes/_app/quality/my-reports'
 import { Route as AppQualityReportRouteImport } from './routes/_app/quality/report'
 import { Route as AppQualityRisksRouteImport } from './routes/_app/quality/risks'
@@ -1118,6 +1119,11 @@ const AppPurchaseVendorsRoute = AppPurchaseVendorsRouteImport.update({
 const AppQualityIndexRoute = AppQualityIndexRouteImport.update({
   id: '/quality/',
   path: '/quality/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQualityDowntimeRoute = AppQualityDowntimeRouteImport.update({
+  id: '/quality/downtime',
+  path: '/quality/downtime',
   getParentRoute: () => AppRoute,
 } as any)
 const AppQualityMyReportsRoute = AppQualityMyReportsRouteImport.update({
@@ -2148,6 +2154,7 @@ export interface FileRoutesByFullPath {
   '/privacy/retention': typeof AppPrivacyRetentionRoute
   '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
+  '/quality/downtime': typeof AppQualityDowntimeRoute
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
   '/quality/risks': typeof AppQualityRisksRoute
@@ -2474,6 +2481,7 @@ export interface FileRoutesByTo {
   '/privacy/retention': typeof AppPrivacyRetentionRoute
   '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
+  '/quality/downtime': typeof AppQualityDowntimeRoute
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
   '/quality/risks': typeof AppQualityRisksRoute
@@ -2802,6 +2810,7 @@ export interface FileRoutesById {
   '/_app/privacy/retention': typeof AppPrivacyRetentionRoute
   '/_app/privacy/settings': typeof AppPrivacySettingsRoute
   '/_app/purchase/vendors': typeof AppPurchaseVendorsRoute
+  '/_app/quality/downtime': typeof AppQualityDowntimeRoute
   '/_app/quality/my-reports': typeof AppQualityMyReportsRoute
   '/_app/quality/report': typeof AppQualityReportRoute
   '/_app/quality/risks': typeof AppQualityRisksRoute
@@ -3130,6 +3139,7 @@ export interface FileRouteTypes {
     | '/privacy/retention'
     | '/privacy/settings'
     | '/purchase/vendors'
+    | '/quality/downtime'
     | '/quality/my-reports'
     | '/quality/report'
     | '/quality/risks'
@@ -3456,6 +3466,7 @@ export interface FileRouteTypes {
     | '/privacy/retention'
     | '/privacy/settings'
     | '/purchase/vendors'
+    | '/quality/downtime'
     | '/quality/my-reports'
     | '/quality/report'
     | '/quality/risks'
@@ -3783,6 +3794,7 @@ export interface FileRouteTypes {
     | '/_app/privacy/retention'
     | '/_app/privacy/settings'
     | '/_app/purchase/vendors'
+    | '/_app/quality/downtime'
     | '/_app/quality/my-reports'
     | '/_app/quality/report'
     | '/_app/quality/risks'
@@ -5090,6 +5102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppQualityIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/quality/downtime': {
+      id: '/_app/quality/downtime'
+      path: '/quality/downtime'
+      fullPath: '/quality/downtime'
+      preLoaderRoute: typeof AppQualityDowntimeRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/quality/my-reports': {
       id: '/_app/quality/my-reports'
       path: '/quality/my-reports'
@@ -6394,6 +6413,7 @@ interface AppRouteChildren {
   AppPrivacyRetentionRoute: typeof AppPrivacyRetentionRoute
   AppPrivacySettingsRoute: typeof AppPrivacySettingsRoute
   AppPurchaseVendorsRoute: typeof AppPurchaseVendorsRoute
+  AppQualityDowntimeRoute: typeof AppQualityDowntimeRoute
   AppQualityMyReportsRoute: typeof AppQualityMyReportsRoute
   AppQualityReportRoute: typeof AppQualityReportRoute
   AppQualityRisksRoute: typeof AppQualityRisksRoute
@@ -6719,6 +6739,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPrivacyRetentionRoute: AppPrivacyRetentionRoute,
   AppPrivacySettingsRoute: AppPrivacySettingsRoute,
   AppPurchaseVendorsRoute: AppPurchaseVendorsRoute,
+  AppQualityDowntimeRoute: AppQualityDowntimeRoute,
   AppQualityMyReportsRoute: AppQualityMyReportsRoute,
   AppQualityReportRoute: AppQualityReportRoute,
   AppQualityRisksRoute: AppQualityRisksRoute,

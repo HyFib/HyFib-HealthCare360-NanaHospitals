@@ -23,7 +23,10 @@ public sealed class QualityModuleTests
         var managed = new QualityModule().Permissions.Where(p => p.Name != QualityPermissions.IncidentsReport).ToList();
 
         managed.Select(p => p.Name).ShouldBe(
-            [QualityPermissions.IncidentsManage, QualityPermissions.CapaManage, QualityPermissions.RisksManage, QualityPermissions.IndicatorsManage]);
+            [
+                QualityPermissions.IncidentsManage, QualityPermissions.CapaManage, QualityPermissions.RisksManage, QualityPermissions.IndicatorsManage,
+                QualityPermissions.DowntimeManage,
+            ]);
         managed.ShouldAllBe(p => p.DefaultRoles!.SequenceEqual(new[] { SystemRoles.QualityManager, SystemRoles.HospitalAdmin }));
     }
 }

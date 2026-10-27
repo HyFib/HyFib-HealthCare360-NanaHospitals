@@ -14,5 +14,8 @@ public static class QualityNumberSeries
     public static NumberSeriesDefinition Risk { get; } =
         new("quality.risk", "Risk", "Quality and safety", "{FAC}RSK{SEQ:4}", NumberResetPolicy.Never, MaxLength: 24);
 
-    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [Incident, Capa, Risk];
+    public static NumberSeriesDefinition Downtime { get; } =
+        new("quality.downtime", "Downtime", "Quality and safety", "{FAC}DT{YY}{SEQ:4}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [Incident, Capa, Risk, Downtime];
 }

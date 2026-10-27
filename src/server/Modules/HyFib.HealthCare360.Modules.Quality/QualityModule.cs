@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Quality.Features.Capas;
 using HyFib.HealthCare360.Modules.Quality.Features.Dashboard;
+using HyFib.HealthCare360.Modules.Quality.Features.Downtime;
 using HyFib.HealthCare360.Modules.Quality.Features.Incidents;
 using HyFib.HealthCare360.Modules.Quality.Features.Indicators;
 using HyFib.HealthCare360.Modules.Quality.Features.Risks;
@@ -18,6 +19,9 @@ public static class QualityPermissions
     public const string RisksManage = "quality.risks.manage";
     public const string IndicatorsManage = "quality.indicators.manage";
 
+    /// <summary>Record spells of working without HC360 (and drills of it), and sign off their back-entry.</summary>
+    public const string DowntimeManage = "quality.downtime.manage";
+
     private static readonly string[] Quality = [SystemRoles.QualityManager, SystemRoles.HospitalAdmin];
 
     internal static IEnumerable<PermissionDefinition> All { get; } =
@@ -27,6 +31,7 @@ public static class QualityPermissions
         new(CapaManage, "Quality", "Plan corrective/preventive actions and verify their effectiveness", Quality),
         new(RisksManage, "Quality", "Maintain the risk register", Quality),
         new(IndicatorsManage, "Quality", "Define quality indicators and record their values", Quality),
+        new(DowntimeManage, "Quality", "Record downtime of HC360 and drills of the downtime procedure, and sign off the back-entry of paper records", Quality),
     ];
 }
 
@@ -54,5 +59,6 @@ public sealed class QualityModule : IModule
         RiskEndpoints.Map(endpoints);
         IndicatorEndpoints.Map(endpoints);
         QualityDashboardEndpoints.Map(endpoints);
+        DowntimeEndpoints.Map(endpoints);
     }
 }

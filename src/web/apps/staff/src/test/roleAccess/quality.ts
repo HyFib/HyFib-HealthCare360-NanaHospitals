@@ -14,6 +14,7 @@ import type {
   RiskMatrixCell,
   ScorecardRow,
 } from '@/modules/quality/api';
+import type { DowntimeEvent, DowntimeSummary } from '@/modules/quality/downtimeApi';
 import { riskRating } from '@/modules/quality/rules';
 import { paged, STAFF_USER, type FakeAnswers } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
@@ -536,7 +537,50 @@ const DASHBOARD: QualityDashboard = {
   ],
 };
 
+/** A network outage whose paper records are still being entered, and the year's downtime figures. */
+const DOWNTIME: DowntimeEvent[] = [
+  {
+    id: '0192a000-0000-7000-8000-0000000071d1',
+    number: 'NHDT260004',
+    kind: 'Unplanned',
+    cause: 'NetworkOutage',
+    affected: 'All of HC360',
+    description: 'Core switch in the server room failed.',
+    startedAt: '2026-10-20T04:00:00Z',
+    endedAt: '2026-10-20T05:30:00Z',
+    minutes: 90,
+    status: 'BackEntryPending',
+    recordedByName: 'Meena Iyer',
+    actionsTaken: 'Switch replaced from spares.',
+    endedByName: 'Meena Iyer',
+    backEntryCompletedAt: null,
+    paperRecords: null,
+    backEntryNote: null,
+    backEntrySignedByName: null,
+    version: 5,
+  },
+];
+
+const DOWNTIME_SUMMARY: DowntimeSummary = {
+  from: '2025-10-28',
+  to: '2026-10-27',
+  unplanned: 2,
+  planned: 1,
+  drills: 1,
+  unplannedMinutes: 135,
+  plannedMinutes: 30,
+  longestUnplannedMinutes: 90,
+  unplannedAvailabilityPercent: 99.974,
+  meanMinutesToRestore: 68,
+  meanHoursToBackEntry: 5.5,
+  ongoing: 0,
+  backEntryPending: 1,
+  lastDrillAt: '2026-07-14T05:00:00Z',
+};
+
 export const ANSWERS: FakeAnswers = {
+  'GET /api/v1/quality/downtime': DOWNTIME,
+  'GET /api/v1/quality/downtime/summary': DOWNTIME_SUMMARY,
   'GET /api/v1/quality/dashboard': DASHBOARD,
   'GET /api/v1/quality/incidents': paged(INCIDENTS),
   'GET /api/v1/quality/incidents/mine': MY_INCIDENTS,
