@@ -378,7 +378,7 @@ export function WeekBoard({ calendar, today, onOpen, onOpenDay }: WeekBoardProps
               appearance="transparent"
               className={styles.dayButton}
               onClick={() => onOpenDay(day)}
-              aria-label={`Open ${dayLabel(day)}`}
+              aria-label={`Open ${dayLabel(day)}${day === today ? ' · Today' : ''}`}
             >
               <Text weight={day === today ? 'bold' : 'semibold'}>
                 {dayLabel(day)}
