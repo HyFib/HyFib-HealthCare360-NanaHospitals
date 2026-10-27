@@ -61,6 +61,23 @@ one statement, as issuing one number does.
 Only UHIDs are issued ahead of time. Visits, bills and receipts made on paper during downtime are entered afterwards
 and get their numbers then.
 
+## Paper forms
+
+*Patients → Downtime UHIDs → Paper forms* prints the kit's blank forms on A4, for copying. Each follows HC360's own
+screen, so it is entered field by field when HC360 is back, and each has a box for who entered it in HC360 and when,
+and who checked it:
+
+| Form | Who fills it in | What it holds |
+|---|---|---|
+| Patient registration | Registration desk | Every field of *Register patient*, in its order, under the kit's next downtime UHID, with the time registered; the privacy notice and WhatsApp consent; the patient's signature. The Aadhaar number is not written on paper: it is entered from the card at the next visit |
+| OP consultation and prescription | Doctors | Department, doctor, vitals, complaints, findings, diagnosis, allergies, medicines (dose, route, frequency, duration), investigations advised, follow-up, signature and registration number |
+| Laboratory and imaging requisition | Wards and OPD | Ordering doctor, priority, clinical details, the tests, and the sample's collection and receipt |
+| Medication administration record | Nurses | Allergies, weight, and each dose given with the time and who gave it, or why it was not |
+| Back-entry tally | Each area | The downtime's number, and per form how many were kept on paper, entered and checked, signed by the area in-charge; the quality team signs off the downtime from these |
+
+The forms are built in the staff app (`modules/patients/paperForms.ts`); a hospital that prefers its own stationery
+can copy their fields.
+
 ## The downtime log (Quality)
 
 Every spell of working without HC360 is recorded in *Quality and safety → Downtime* (permission
@@ -103,8 +120,8 @@ hospital's procedure, not this page, is what staff follow.
 
 1. **Prepare.**
    - Every registration desk keeps a downtime kit: a block of downtime UHIDs with its printed sheet, blank paper
-     registration forms, and the paper forms the other areas use (OP prescriptions, lab and imaging requisitions,
-     medication administration records, receipts).
+     registration forms, and the paper forms the other areas use (see *Paper forms*: OP consultations, lab and imaging
+     requisitions, medication administration records, back-entry tallies), and the manual receipt book.
    - Medical records keeps the kits stocked: a block is replaced when it runs low, and its unused numbers are voided.
    - IT keeps the list of who to call and how a downtime is announced (overhead page, phone tree, WhatsApp group).
 2. **Planned downtime.**
