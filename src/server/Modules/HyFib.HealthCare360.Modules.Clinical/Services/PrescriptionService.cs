@@ -88,7 +88,7 @@ public sealed class PrescriptionService(
             Advice = Clean(request.Advice),
             RefillsAllowed = request.RefillsAllowed,
         };
-        prescription.ReplaceItems(request.Items.Select(ToItem));
+        prescription.ReplaceItems(await FromDrugMasterAsync(request.Items.Select(ToItem), ct));
         db.Add(prescription);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -105,7 +105,7 @@ public sealed class PrescriptionService(
 
         var prescription = loaded.Value;
         db.SetExpectedVersion(prescription, request.Version);
-        var replaced = prescription.ReplaceItems(request.Items.Select(ToItem));
+        var replaced = prescription.ReplaceItems(await FromDrugMasterAsync(request.Items.Select(ToItem), ct));
         if (replaced.IsFailure)
         {
             return replaced.Error!;
@@ -230,7 +230,7 @@ public sealed class PrescriptionService(
             RefillOfPrescriptionId = source.Id,
         };
         refill.PrescriptionNumber = await numbers.NextAsync(ClinicalNumberSeries.Prescription, refill.FacilityId, ct);
-        refill.ReplaceItems(source.Items.OrderBy(i => i.Sequence).Select(i => ToItem(ToRequest(i))));
+        refill.ReplaceItems(await FromDrugMasterAsync(source.Items.OrderBy(i => i.Sequence).Select(i => ToItem(ToRequest(i))), ct));
 
         var signed = await SignCoreAsync(refill, request.OverrideReason, request.AcknowledgeWarnings, request.ConfirmControlledDrugs, ct);
         if (signed.IsFailure)
@@ -441,6 +441,34 @@ public sealed class PrescriptionService(
             prescription.FacilityId,
             document: new NotificationDocument(PrescriptionDocumentSource.DocumentKind, prescription.Id));
         prescription.MarkPatientNotified(time.GetUtcNow());
+    }
+
+    /// <summary>
+    /// Whether a line is a controlled drug (Schedule H1/X, NDPS: the prescriber's confirmation and the controlled-drug
+    /// register) is the drug master's to say when the line names one of its drugs, as the drug picker shows it; what the
+    /// client sent can only add the care, never take it away. A line typed in keeps what it says.
+    /// </summary>
+    private async Task<List<PrescriptionItem>> FromDrugMasterAsync(IEnumerable<PrescriptionItem> lines, CancellationToken ct)
+    {
+        var items = lines.ToList();
+        var drugIds = items.Where(i => i.DrugItemId is not null).Select(i => i.DrugItemId!.Value).Distinct().ToList();
+        if (drugIds.Count == 0)
+        {
+            return items;
+        }
+
+        var master = await db.Set<Item>().AsNoTracking().Where(i => drugIds.Contains(i.Id))
+            .Select(i => new { i.Id, i.Schedule, i.IsControlled }).ToDictionaryAsync(i => i.Id, ct);
+        foreach (var item in items)
+        {
+            if (item.DrugItemId is { } id && master.TryGetValue(id, out var drug) && Item.NeedsRegister(drug.Schedule, drug.IsControlled))
+            {
+                item.IsControlledDrug = true;
+                item.ControlledSchedule = drug.Schedule == DrugSchedule.X ? "X" : "H1";
+            }
+        }
+
+        return items;
     }
 
     internal static PrescriptionItem ToItem(PrescriptionItemRequest r)
