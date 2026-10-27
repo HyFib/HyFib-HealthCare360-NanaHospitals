@@ -2,6 +2,7 @@ using System.Net;
 using HyFib.HealthCare360.Modules.Analytics.Domain;
 using HyFib.HealthCare360.Modules.Analytics.Features.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Features.Schedules;
+using HyFib.HealthCare360.SharedKernel;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -41,7 +42,17 @@ public sealed class ScheduleReportAccessTests(HospitalServer server)
                 refused.StatusCode.ShouldBe(HttpStatusCode.NotFound, $"{method} {path}");
             }
 
-            (await admin.GetAsync<ScheduleDto>($"{Schedules}/{schedule.Id}")).Id.ShouldBe(schedule.Id, "still there for the admin");
+            var current = await admin.GetAsync<ScheduleDto>($"{Schedules}/{schedule.Id}");
+            current.Id.ShouldBe(schedule.Id, "still there for the admin");
+
+            // Moved to a report the analyst may open: the schedule is theirs to see, its revenue deliveries still are not.
+            var moved = await admin.PutAsync<ScheduleDto>($"{Schedules}/{schedule.Id}", new SaveScheduleRequest(
+                Name: schedule.Name, ReportId: "bed-occupancy", Parameters: null, Format: ExportFormat.Csv, Frequency: ScheduleFrequency.Daily, Time: "07:00",
+                DayOfWeek: null, DayOfMonth: null, Recipients: ["accounts@example.com"], Destination: ScheduleDestination.Email, ExtractName: null,
+                Version: current.Version));
+            (await analyst.GetAsync<ScheduleDto>($"{Schedules}/{moved.Id}")).Id.ShouldBe(moved.Id);
+            (await analyst.GetAsync<PagedResult<DeliveryDto>>($"{Schedules}/{moved.Id}/deliveries")).Items.ShouldNotContain(d => d.Id == delivery.Id);
+            (await admin.GetAsync<PagedResult<DeliveryDto>>($"{Schedules}/{moved.Id}/deliveries")).Items.ShouldContain(d => d.Id == delivery.Id);
         }
         finally
         {

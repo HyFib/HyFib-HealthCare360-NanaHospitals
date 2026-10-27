@@ -41,6 +41,9 @@ internal sealed class ScheduleService(
     public bool CanOpen(ReportActor actor, string reportId) =>
         catalog.Find(reportId)?.Descriptor is { } report && ReportCatalog.CanRead(report, actor);
 
+    /// <summary>The ids of the reports <paramref name="actor"/> may open.</summary>
+    public IReadOnlyList<string> OpenableReportIds(ReportActor actor) => catalog.VisibleTo(actor).Select(r => r.Descriptor.Id).ToList();
+
     public async Task<Result<ScheduleDto>> GetAsync(ReportActor actor, Guid id, CancellationToken ct) =>
         await db.Set<ReportSchedule>().AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) is { } schedule && CanOpen(actor, schedule.ReportId)
             ? ToDto(schedule, actor)

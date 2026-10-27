@@ -80,8 +80,10 @@ internal static class ScheduleEndpoints
             return Error.NotFound("Schedule", id).ToProblem();
         }
 
+        // Each delivery by its own report: a schedule moved to another report keeps the deliveries of the one before.
         var page = query.ToRequest();
-        var deliveries = db.Set<ReportDelivery>().AsNoTracking().Where(d => d.ScheduleId == id);
+        var openable = schedules.OpenableReportIds(actor);
+        var deliveries = db.Set<ReportDelivery>().AsNoTracking().Where(d => d.ScheduleId == id && openable.Contains(d.ReportId));
         var total = await deliveries.LongCountAsync(ct);
         var rows = await deliveries
             .OrderByDescending(d => d.CreatedAt)

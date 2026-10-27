@@ -240,6 +240,9 @@ internal static class FileEndpoints
     /// <summary>The Patients module's permission to view patients (<c>PatientsPermissions.Read</c>), which this assembly cannot reference.</summary>
     public const string PatientsRead = "patients.read";
 
+    /// <summary>The Patients module's permission to attach and view patients' documents (<c>PatientsPermissions.Documents</c>).</summary>
+    public const string PatientDocuments = "patients.documents";
+
     public static void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/files").WithTags("Documents");
@@ -291,8 +294,9 @@ internal static class FileEndpoints
     }
 
     /// <summary>
-    /// Why a patient's file may not be opened by this user, or null: it is for staff who may view patients
-    /// (<see cref="PatientsRead"/>, the staff whose work is about patients, DPDP s.8), and it follows its record's
+    /// Why a patient's file may not be opened by this user, or null: it is for staff who may view patients or their
+    /// documents (<see cref="PatientsRead"/>, <see cref="PatientDocuments"/>: the staff whose work is about patients, DPDP
+    /// s.8), and it follows its record's
     /// restricted-record rules (EHR-07), as the record's documents list does, so knowing a file's id never opens a record
     /// its user may not.
     /// </summary>
@@ -305,7 +309,8 @@ internal static class FileEndpoints
             return null;
         }
 
-        if (user.UserId is not { } userId || !await permissions.HasPermissionAsync(userId, PatientsRead, ct))
+        if (user.UserId is not { } userId
+            || !(await permissions.HasPermissionAsync(userId, PatientsRead, ct) || await permissions.HasPermissionAsync(userId, PatientDocuments, ct)))
         {
             return Error.Forbidden("files.patient_record", "This document is in a patient's record, which your role does not open.").ToProblem();
         }

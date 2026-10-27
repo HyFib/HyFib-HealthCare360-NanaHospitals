@@ -1,12 +1,15 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Files;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -168,6 +171,14 @@ public sealed class PatientDocumentTests(HospitalServer server)
         (await analyst.GetAsync<StoredFileDto>($"/api/v1/files/{unowned}/meta")).Id.ShouldBe(unowned);
         var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
         (await nurse.GetAsync<StoredFileDto>($"/api/v1/files/{patientsFile}/meta")).Id.ShouldBe(patientsFile);
+
+        // A role made for patients' documents alone (attach and view them), without searching the patient register.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var role = await (await server.SignInAsync(HospitalServer.Users.Admin)).PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+            "IT documents " + suffix, "Scans and files patients' documents", [PatientsPermissions.Documents, PlatformPermissions.FilesRead], Version: null));
+        await server.CreateStaffAccountAsync("it-docs-" + suffix, role.Name);
+        var scanner = await server.SignInAsync("it-docs-" + suffix);
+        (await scanner.GetAsync<StoredFileDto>($"/api/v1/files/{patientsFile}/meta")).Id.ShouldBe(patientsFile);
     }
 
     [Fact]
