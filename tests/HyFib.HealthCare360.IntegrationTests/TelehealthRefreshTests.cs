@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Appointments;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
@@ -57,5 +59,37 @@ public sealed class TelehealthRefreshTests(HospitalServer server)
             (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<TelehealthParticipant>()
                 .CountAsync(p => p.SessionId == sessionId, Ct)).ShouldBe(1);
         }
+    }
+
+    [Fact]
+    public async Task A_doctor_joins_a_restricted_patients_consultation_only_as_they_would_open_the_chart()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var practitionerId = (await doctor.GetAsync<System.Text.Json.JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var slot = await TeleconsultationJourneyTests.FreeVideoSlotAsync(frontOffice, practitionerId);
+        var appointment = await frontOffice.PostAsync<AppointmentDetail>("/api/v1/scheduling/appointments", new BookAppointmentRequest(
+            patient.Id, practitionerId, slot.StartsAt, AppointmentChannel.Phone, AppointmentVisitType.New, IsTelehealth: true,
+            "Review over video", Notes: null));
+        var day = DateOnly.FromDateTime(slot.StartsAt.ToOffset(TimeSpan.FromMinutes(330)).DateTime);
+        var sessionId = (await doctor.GetAsync<List<TelehealthSessionListItem>>($"/api/v1/telehealth/sessions?date={day:O}&practitionerId={practitionerId}"))
+            .Single(s => s.AppointmentId == appointment.Id).Id;
+
+        // The patient is a VIP: their record opens only after an audited break-the-glass.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            await db.Set<Patient>().Where(p => p.Id == patient.Id).ExecuteUpdateAsync(p => p.SetProperty(x => x.IsVip, true), Ct);
+        }
+
+        await using (var refused = await LongPollingHub.ConnectAsync(doctor, HubPath))
+        {
+            (await refused.InvokeAsync("JoinAsClinician", sessionId)).ShouldNotBeNull().ShouldContain("restricted record");
+        }
+
+        await doctor.PostAsync($"/api/v1/patients/{patient.Id}/break-glass", new BreakGlassRequest("Video review of the discharge, needs the record"));
+        await using var hub = await LongPollingHub.ConnectAsync(doctor, HubPath);
+        (await hub.InvokeAsync("JoinAsClinician", sessionId)).ShouldBeNull();
     }
 }
