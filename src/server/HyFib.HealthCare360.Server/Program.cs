@@ -47,6 +47,9 @@ directories.EnsureCreated();
 
 builder.Services.AddWindowsService(options => options.ServiceName = "HyFib HealthCare360");
 
+// The database is brought up to date once the service has reported in to Windows, before the web server and the jobs start.
+builder.Services.AddDatabaseStartup();
+
 // Every sink masks phone, Aadhaar and ABHA numbers, e-mail addresses and secrets, including exception text; the file is
 // structured, one JSON event per line (HospitalLogging).
 builder.Services.AddSerilog((services, logger) =>
@@ -254,7 +257,6 @@ if (platformOptions.ServesApi)
     }).AllowAnonymous();
 }
 
-await app.InitializeDatabaseAsync();
 await app.RunAsync();
 return 0;
 
