@@ -52,6 +52,12 @@ const manifest: ModuleManifest = {
       permission: Q.indicatorsManage,
       keywords: ['kpi', 'nabh indicators', 'scorecard', 'trend'],
     },
+    {
+      label: 'Downtime',
+      to: '/quality/downtime',
+      permission: 'quality.downtime.manage',
+      keywords: ['downtime', 'outage', 'business continuity', 'drill', 'back-entry', 'paper'],
+    },
   ],
   quickActions: [
     {

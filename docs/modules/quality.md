@@ -14,6 +14,7 @@ with likelihood × impact scoring, and NABH quality indicators.
 | `quality.capa.manage` | QualityManager, HospitalAdmin | Plan CAPAs, verify effectiveness, cancel |
 | `quality.risks.manage` | QualityManager, HospitalAdmin | Risk register |
 | `quality.indicators.manage` | QualityManager, HospitalAdmin | Indicator definitions, values, trends, scorecard |
+| `quality.downtime.manage` | QualityManager, HospitalAdmin | The downtime log: record downtime and drills, end them, sign off their back-entry ([downtime.md](downtime.md)) |
 
 The dashboard needs any of the four management permissions.
 
@@ -123,6 +124,7 @@ notices: incident assigned (to the assignee), CAPA assigned or reassigned (to th
 | `quality.incident` | `{FAC}IR{YY}{SEQ:5}` (e.g. `NHIR2600017`) | yearly |
 | `quality.capa` | `{FAC}CAPA{YY}{SEQ:4}` | yearly |
 | `quality.risk` | `{FAC}RSK{SEQ:4}` | never |
+| `quality.downtime` | `{FAC}DT{YY}{SEQ:4}` | yearly |
 
 ## Seed data (`QualitySeeder`, order 120, idempotent by code)
 Twenty-two monthly NABH indicators:
