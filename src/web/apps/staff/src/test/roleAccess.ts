@@ -295,16 +295,20 @@ function fillFields(form: HTMLElement, all: boolean) {
 }
 
 /**
- * Presses the button of `dialog` that acts, its last: as it opens, then with its required fields filled, then with all
- * of them, until it sends something or closes. A button still waiting for input after that leaves the last one that
- * can be pressed to act, as before.
+ * Presses the button of `dialog` that acts, its last (of those `only` keeps): as it opens, then with its required fields
+ * filled, then with all of them, until it sends something or closes. A button still waiting for input after that leaves
+ * the last one that can be pressed to act, as before.
  */
-async function confirmIn(server: ReturnType<typeof fakeServer>, dialog: HTMLElement) {
+async function confirmIn(
+  server: ReturnType<typeof fakeServer>,
+  dialog: HTMLElement,
+  only: (button: HTMLElement) => boolean = () => true,
+) {
   const from = server.requests.length;
   const acts = () =>
     within(dialog)
       .queryAllByRole('button')
-      .filter((b) => !NOT_ACTIONS.test(buttonName(b)));
+      .filter((b) => only(b) && !NOT_ACTIONS.test(buttonName(b)));
   for (const fill of [undefined, 'required', 'all'] as const) {
     if (fill) {
       fillFields(dialog, fill === 'all');
@@ -346,12 +350,25 @@ async function press(server: ReturnType<typeof fakeServer>, name: string) {
     name = name.slice(ROW.length);
   }
   const [trigger, item] = name.split(MENU);
-  const button = within(panel)
-    .queryAllByRole('button')
-    .find((b) => buttonName(b) === trigger && enabled(b));
-  if (!button) {
+  const find = () =>
+    within(panel)
+      .queryAllByRole('button')
+      .find((b) => buttonName(b) === trigger);
+  // A button of a row's drawer that waits for input there: its required fields filled, then all of them. The same
+  // button is pressed after, whatever the input made of its name ("Save call" that becomes "Save and close task").
+  const button = find();
+  for (const all of panel.tagName === 'MAIN' ? [] : [false, true]) {
+    if (!button || enabled(button)) {
+      break;
+    }
+    fillFields(panel, all);
+    await settle(server);
+  }
+  if (!button?.isConnected || !enabled(button)) {
     return false;
   }
+  const shown = new Set(within(panel).queryAllByRole('button'));
+  const from = server.requests.length;
   fireEvent.click(button);
   await settle(server);
   if (item !== undefined) {
@@ -368,8 +385,21 @@ async function press(server: ReturnType<typeof fakeServer>, name: string) {
     .at(-1);
   if (dialog) {
     await confirmIn(server, dialog);
+    return true;
   }
-  return dialog !== undefined;
+  // A form the button opened in the row's drawer itself (Reschedule): its own buttons, filled and pressed the same way.
+  const isNew = (b: HTMLElement) => !shown.has(b);
+  if (panel.tagName !== 'MAIN' && panel.isConnected && writesOf(server, from).length === 0) {
+    if (
+      within(panel)
+        .queryAllByRole('button')
+        .some((b) => isNew(b) && !NOT_ACTIONS.test(buttonName(b)))
+    ) {
+      await confirmIn(server, panel, isNew);
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -389,10 +419,11 @@ async function rowButtons(server: ReturnType<typeof fakeServer>, opened: Opened)
   if (opened.router.state.location.pathname !== start) {
     return [];
   }
+  // A drawer's buttons waiting for input count too: press fills the drawer first. The page's must be enabled already.
   const panel = rowPanel(before);
   const names = within(panel)
     .queryAllByRole('button')
-    .filter(enabled)
+    .filter((b) => panel.tagName !== 'MAIN' || enabled(b))
     .map(buttonName)
     .filter((name) => name && !NOT_ACTIONS.test(name) && (panel.tagName !== 'MAIN' || !onPage.has(name)));
   return [...new Set(names)].map((name) => `${ROW}${name}`);
@@ -502,7 +533,8 @@ export async function learn(path: string): Promise<Learned> {
       learned.buttons.set(name, sent);
     }
     // A menu opened: each of its items is pressed in turn.
-    const items = !name.includes(MENU) && sent.length === 0 ? menuItems() : [];
+    const isItem = (name.startsWith(ROW) ? name.slice(ROW.length) : name).includes(MENU);
+    const items = !isItem && sent.length === 0 ? menuItems() : [];
     names.splice(i + 1, 0, ...items.map((item) => `${name}${MENU}${item}`));
     // Back to the screen as it opened, for the next button.
     if (
