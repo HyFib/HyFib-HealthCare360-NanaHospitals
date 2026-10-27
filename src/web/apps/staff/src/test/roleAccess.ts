@@ -208,15 +208,141 @@ function actionButtons(): string[] {
 /** A menu item is learned and pressed as "Trigger › Item". */
 const MENU = ' › ';
 
+/** A button of what a table's first clickable row opens (a drawer, or a panel on the page) is "First row › Button". */
+const ROW = `First row${MENU}`;
+
 const enabled = (b: HTMLElement) => !b.hasAttribute('disabled') && b.getAttribute('aria-disabled') !== 'true';
 
+const dialogs = () => screen.queryAllByRole('dialog').concat(screen.queryAllByRole('alertdialog'));
+
+/** The first row of a table on the page that opens something when clicked. */
+const clickableRow = () =>
+  (document.querySelector('main')?.querySelector('tbody tr[tabindex="0"]') as HTMLElement | null) ?? null;
+
+/** Where a row's buttons are: the drawer or dialog it opened, or else the page. */
+const rowPanel = (before: readonly HTMLElement[]) =>
+  dialogs()
+    .filter((d) => !before.includes(d))
+    .at(-1) ?? (document.querySelector('main') as HTMLElement);
+
+/** Today, as a date or date-and-time input takes it. */
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** A value a form will take for a field: what the field is for, from its type and its label. */
+function sampleValue(input: HTMLInputElement | HTMLTextAreaElement) {
+  const label = `${input.getAttribute('aria-label') ?? ''} ${input.labels?.[0]?.textContent ?? ''} ${input.name}`;
+  switch (input.type) {
+    case 'number': {
+      const min = Number(input.getAttribute('min') ?? 1);
+      return String(min > 1 ? min : 1);
+    }
+    case 'date':
+      return today();
+    case 'datetime-local':
+      return `${today()}T09:00`;
+    case 'time':
+      return '09:00';
+    case 'month':
+      return today().slice(0, 7);
+    case 'email':
+      return 'test@example.com';
+    case 'tel':
+      return '9876543210';
+    case 'url':
+      return 'https://example.com';
+  }
+  if (/email/i.test(label)) return 'test@example.com';
+  if (/phone|mobile/i.test(label)) return '9876543210';
+  if (/pin ?code|pincode/i.test(label)) return '600001';
+  return 'Test entry';
+}
+
+const isRequired = (input: Element) => input.hasAttribute('required') || input.getAttribute('aria-required') === 'true';
+
 /**
- * Presses `name` on the page ("Trigger › Item" opens the menu, then presses its item), then the last button of the
- * confirmation that opens, if one does. Returns whether a confirmation opened.
+ * Fills the empty fields of a form (its required ones, or all of them), so a button that waits for input can be pressed:
+ * a text or number field gets a value of its kind, a list its first choice, a required checkbox a tick, a group of
+ * options its first one.
+ */
+function fillFields(form: HTMLElement, all: boolean) {
+  for (const input of form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')) {
+    if (input.disabled || input.readOnly || !(all || isRequired(input))) {
+      continue;
+    }
+    if (input.type === 'checkbox') {
+      if (!(input as HTMLInputElement).checked) fireEvent.click(input);
+    } else if (input.type === 'radio') {
+      const group = form.querySelectorAll<HTMLInputElement>(`input[type="radio"][name="${input.name}"]`);
+      if (![...group].some((r) => r.checked)) fireEvent.click(input);
+    } else if (
+      !['hidden', 'file', 'search'].includes(input.type) &&
+      input.value === '' &&
+      input.getAttribute('role') !== 'combobox'
+    ) {
+      fireEvent.change(input, { target: { value: sampleValue(input) } });
+    }
+  }
+  for (const select of form.querySelectorAll('select')) {
+    const first = [...select.options].find((o) => o.value !== '' && !o.disabled);
+    if (!select.disabled && select.value === '' && first && (all || isRequired(select))) {
+      fireEvent.change(select, { target: { value: first.value } });
+    }
+  }
+}
+
+/**
+ * Presses the button of `dialog` that acts, its last: as it opens, then with its required fields filled, then with all
+ * of them, until it sends something or closes. A button still waiting for input after that leaves the last one that
+ * can be pressed to act, as before.
+ */
+async function confirmIn(server: ReturnType<typeof fakeServer>, dialog: HTMLElement) {
+  const from = server.requests.length;
+  const acts = () =>
+    within(dialog)
+      .queryAllByRole('button')
+      .filter((b) => !NOT_ACTIONS.test(buttonName(b)));
+  for (const fill of [undefined, 'required', 'all'] as const) {
+    if (fill) {
+      fillFields(dialog, fill === 'all');
+      await settle(server);
+    }
+    const submit = acts().at(-1);
+    if (submit && enabled(submit)) {
+      fireEvent.click(submit);
+      await settle(server);
+    }
+    if (!dialog.isConnected || writesOf(server, from).length > 0) {
+      return;
+    }
+  }
+  const fallback = acts().filter(enabled).at(-1);
+  if (fallback && fallback !== acts().at(-1)) {
+    fireEvent.click(fallback);
+    await settle(server);
+  }
+}
+
+/**
+ * Presses `name` on the page ("Trigger › Item" opens the menu, then presses its item; "First row › Button" clicks the
+ * first clickable row, then the button in what it opened), then the button that acts in the confirmation or form that
+ * opens, if one does. Returns whether one opened.
  */
 async function press(server: ReturnType<typeof fakeServer>, name: string) {
+  let panel = document.querySelector('main') as HTMLElement;
+  let before = dialogs();
+  if (name.startsWith(ROW)) {
+    const row = clickableRow();
+    if (!row) {
+      return false;
+    }
+    fireEvent.click(row);
+    await settle(server);
+    panel = rowPanel(before);
+    before = dialogs();
+    name = name.slice(ROW.length);
+  }
   const [trigger, item] = name.split(MENU);
-  const button = within(document.querySelector('main') as HTMLElement)
+  const button = within(panel)
     .queryAllByRole('button')
     .find((b) => buttonName(b) === trigger && enabled(b));
   if (!button) {
@@ -232,19 +358,40 @@ async function press(server: ReturnType<typeof fakeServer>, name: string) {
     fireEvent.click(menuItem);
     await settle(server);
   }
-  // A confirmation: its last button is the one that acts.
-  const dialog = screen.queryAllByRole('dialog').concat(screen.queryAllByRole('alertdialog')).at(-1);
-  const confirm = dialog
-    ? within(dialog)
-        .queryAllByRole('button')
-        .filter((b) => enabled(b) && !NOT_ACTIONS.test(buttonName(b)))
-        .at(-1)
-    : undefined;
-  if (confirm) {
-    fireEvent.click(confirm);
-    await settle(server);
+  // A confirmation or form that the button opened (not one already open, such as a row's drawer).
+  const dialog = dialogs()
+    .filter((d) => !before.includes(d))
+    .at(-1);
+  if (dialog) {
+    await confirmIn(server, dialog);
   }
   return dialog !== undefined;
+}
+
+/**
+ * The buttons of what the first clickable row opens, as "First row › Button": those of the drawer or dialog it opens,
+ * or those it adds to the page. None when the row opens another screen (a record screen, checked as one) or nothing.
+ */
+async function rowButtons(server: ReturnType<typeof fakeServer>, opened: Opened): Promise<string[]> {
+  const row = clickableRow();
+  if (!row) {
+    return [];
+  }
+  const start = opened.router.state.location.pathname;
+  const onPage = new Set(actionButtons());
+  const before = dialogs();
+  fireEvent.click(row);
+  await settle(server);
+  if (opened.router.state.location.pathname !== start) {
+    return [];
+  }
+  const panel = rowPanel(before);
+  const names = within(panel)
+    .queryAllByRole('button')
+    .filter(enabled)
+    .map(buttonName)
+    .filter((name) => name && !NOT_ACTIONS.test(name) && (panel.tagName !== 'MAIN' || !onPage.has(name)));
+  return [...new Set(names)].map((name) => `${ROW}${name}`);
 }
 
 /** The items of the menu open on the page, by name. */
@@ -337,6 +484,11 @@ export async function learn(path: string): Promise<Learned> {
     await settle(server, opened);
   };
   const names = actionButtons();
+  const fromRow = await rowButtons(server, opened);
+  if (fromRow.length > 0 || dialogs().length > 0) {
+    await reopen();
+  }
+  names.push(...fromRow);
   for (let i = 0; i < names.length; i++) {
     const name = names[i]!;
     const from = server.requests.length;
@@ -349,7 +501,13 @@ export async function learn(path: string): Promise<Learned> {
     const items = !name.includes(MENU) && sent.length === 0 ? menuItems() : [];
     names.splice(i + 1, 0, ...items.map((item) => `${name}${MENU}${item}`));
     // Back to the screen as it opened, for the next button.
-    if (confirmed || items.length > 0 || opened.router.state.location.href !== start || sent.length > 0) {
+    if (
+      confirmed ||
+      items.length > 0 ||
+      name.startsWith(ROW) ||
+      opened.router.state.location.href !== start ||
+      sent.length > 0
+    ) {
       await reopen();
     }
   }
@@ -408,7 +566,8 @@ export async function findRefusals(part: number, parts: number) {
       refused.push(
         ...seen.reads.filter((p) => !mayRead(p, permissions)).map((p) => `${role}: "${s.label}" (${s.to}) reads ${p}`),
       );
-      for (const [name] of doubtful.filter(([n]) => seen.buttons.includes(n.split(MENU)[0]!))) {
+      // A row's buttons are not on the page as it opens: each is pressed as the role, and does nothing if not shown.
+      for (const [name] of doubtful.filter(([n]) => n.startsWith(ROW) || seen.buttons.includes(n.split(MENU)[0]!))) {
         refused.push(
           ...(await pressAs(s.to, user, name))
             .filter((w) => !mayWrite(w, permissions))
