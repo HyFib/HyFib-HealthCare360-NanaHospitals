@@ -74,6 +74,45 @@ const isReviewed = (node: axe.NodeResult) => {
 };
 
 /**
+ * Runs `check` with a stand-in 2D canvas where jsdom has none. `label-content-name-mismatch` (WCAG 2.5.3, the visible
+ * text of a control is in its name) first asks whether a control's text is an icon font's ligature by drawing it on a
+ * canvas; jsdom has no canvas, so the rule stopped with an error, reported as a problem to review. HC360 has no icon
+ * fonts (Fluent's icons are SVG), so the stand-in draws every character as itself, as a browser would draw our text:
+ * each takes its own width and leaves ink. A browser with a canvas is left alone.
+ */
+async function withTextCanvas<T>(check: () => Promise<T>): Promise<T> {
+  if (typeof HTMLCanvasElement === 'undefined' || document.createElement('canvas').getContext('2d') !== null) {
+    return check();
+  }
+  const getContext = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')!;
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+    ...getContext,
+    value: function (this: HTMLCanvasElement, kind: string) {
+      return kind === '2d' ? textContext(this) : null;
+    },
+  });
+  try {
+    return await check();
+  } finally {
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', getContext);
+  }
+}
+
+/** A 2D context that measures text by its characters and inks every pixel it is asked to read. */
+const textContext = (canvas: HTMLCanvasElement) => ({
+  canvas,
+  font: '',
+  textAlign: 'start',
+  textBaseline: 'alphabetic',
+  measureText: (text: string) => ({ width: [...text].length * 10 }),
+  fillText: () => undefined,
+  clearRect: () => undefined,
+  getImageData: (_x: number, _y: number, width: number, height: number) => ({
+    data: new Uint8ClampedArray(Math.max(1, Math.ceil(width) * Math.ceil(height)) * 4).fill(255),
+  }),
+});
+
+/**
  * The WCAG A and AA problems axe-core finds in `context` (the whole page by default): its violations, and what it asks
  * a person to review unless that is listed in REVIEWED (the rule's `nodes` then hold only the rest).
  */
@@ -85,14 +124,16 @@ export async function axeViolations(
   for (const id of [...BROWSER_ONLY_RULES, ...Object.keys(options.skip ?? {})]) {
     rules[id] = { enabled: false };
   }
-  const results = await axe.run(
-    { include: context, exclude: NOT_CHECKED },
-    {
-      runOnly: { type: 'tag', values: WCAG_TAGS },
-      rules,
-      resultTypes: ['violations', 'incomplete'],
-      elementRef: true,
-    },
+  const results = await withTextCanvas(() =>
+    axe.run(
+      { include: context, exclude: NOT_CHECKED },
+      {
+        runOnly: { type: 'tag', values: WCAG_TAGS },
+        rules,
+        resultTypes: ['violations', 'incomplete'],
+        elementRef: true,
+      },
+    ),
   );
   const toReview = results.incomplete
     .map((result) => ({

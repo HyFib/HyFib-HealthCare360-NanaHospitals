@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 using HyFib.HealthCare360.Modules.VirtualCare.Services;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Realtime;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -30,6 +31,7 @@ public sealed class TelehealthHub(
     TelehealthBroadcaster broadcaster,
     IFeatureFlags features,
     IAuditLogger audit,
+    INotificationService notifications,
     TimeProvider time,
     ILogger<TelehealthHub> logger) : Hub
 {
@@ -67,6 +69,14 @@ public sealed class TelehealthHub(
         if (session.IsClosed)
         {
             throw new HubException("This consultation is closed.");
+        }
+
+        // The consultation shows the patient and their chat: the same rule as opening their chart (restricted records,
+        // sensitive categories, break-the-glass), judged for the hub caller as the REST endpoints judge their caller.
+        var chart = await new PatientAccessGuard(db, caller, permissions, audit, notifications, time).EnsureCanOpenChartAsync(session.PatientId, Aborted);
+        if (chart.IsFailure)
+        {
+            throw new HubException(chart.Error!.Message);
         }
 
         await EnsureVideoOnAsync(session, forPatients: false);

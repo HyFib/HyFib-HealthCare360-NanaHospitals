@@ -37,6 +37,14 @@ describe('expectNoAxeViolations', () => {
     expect(await ids()).toEqual(expect.arrayContaining(['aria-prohibited-attr', 'duplicate-id-aria']));
   });
 
+  it("checks that a control's name has its visible text in it (WCAG 2.5.3), though jsdom draws no canvas", async () => {
+    page('<button type="button" aria-label="Open Series 1 · Chest PA">Series 1 · Chest PA</button>');
+    expect(await ids()).toEqual([]);
+
+    page('<button type="button" aria-label="Open Mon 27 Oct">Mon 27 Oct · Today</button>');
+    expect(await ids()).toEqual(['label-content-name-mismatch']);
+  });
+
   it("leaves out Tabster's focus sentinels", async () => {
     page('<i tabindex="0" aria-hidden="true" data-tabster-dummy=""></i><button type="button">Save</button>');
     expect(await ids()).toEqual([]);
