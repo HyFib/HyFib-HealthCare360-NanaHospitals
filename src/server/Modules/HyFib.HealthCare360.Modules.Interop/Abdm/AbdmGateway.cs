@@ -12,7 +12,8 @@ internal static class AbdmGatewaySettingKeys
 {
     /// <summary>
     /// <c>{ "enabled": false, "baseUrl": "https://dev.abdm.gov.in/api/hiecm", "hipId": "IN27…", "cmId": "sbx", "timeoutSeconds": 30 }</c>,
-    /// and optionally <c>"jwksUrl"</c>, where the gateway publishes the keys its callbacks are signed with, and
+    /// and optionally <c>"jwksUrl"</c>, where the gateway publishes the keys its callbacks are signed with,
+    /// <c>"callbackClientId"</c> and <c>"callbackIssuer"</c>, the client id and issuer its callbacks' tokens carry, and
     /// <c>"dataPushUrl"</c>, where other providers post the records the hospital asks for.
     /// </summary>
     public const string Gateway = "abdm.gateway";
@@ -71,6 +72,16 @@ internal sealed record AbdmGatewaySettings
     /// address of <c>/api/v3/hiu/health-information/transfer</c>. Without it, records are not asked for.
     /// </summary>
     public string? DataPushUrl { get; init; }
+
+    /// <summary>
+    /// The <c>clientId</c> claim of the tokens the gateway's own calls carry, as seen in the sandbox. The gateway signs
+    /// every ABDM client's session token with the same keys and issuer, so this is what tells its calls from another
+    /// provider's; required with the production gateway.
+    /// </summary>
+    public string? CallbackClientId { get; init; }
+
+    /// <summary>The issuer (<c>iss</c>) of those tokens, also checked when set.</summary>
+    public string? CallbackIssuer { get; init; }
 
     /// <summary><see cref="JwksUrl"/>, or the default under <see cref="BaseUrl"/>.</summary>
     public string? KeySetUrl => !string.IsNullOrWhiteSpace(JwksUrl) ? JwksUrl
@@ -217,7 +228,7 @@ internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
     public static IReadOnlyList<string> Remaining { get; } =
     [
         "Register the hospital as a Health Information Provider (HIP) with its HFR id and get NHA sandbox client credentials.",
-        "Run linking, consent and the transfer of records in NHA's sandbox, and confirm the gateway's key-set URL and token issuer.",
+        "Run linking, consent and the transfer of records in NHA's sandbox, and confirm the gateway's key-set URL and the client id and issuer of its callback tokens (callbackClientId, callbackIssuer).",
         "Pass NHA's sandbox functional tests and certification (milestone M2), then switch to the production gateway.",
         "Sign the documents (Bundle.signature, optional in the implementation guide) with the doctor's digital signature certificate.",
     ];
@@ -246,6 +257,12 @@ internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
         if (gateway.CmId is not ("sbx" or "abdm"))
         {
             problems.Add($"The consent manager id (\"cmId\" in {AbdmGatewaySettingKeys.Gateway}) must be \"sbx\" (sandbox) or \"abdm\" (production).");
+        }
+
+        if (gateway.CmId == "abdm" && string.IsNullOrWhiteSpace(gateway.CallbackClientId))
+        {
+            problems.Add("With the production gateway, set the client id its calls' tokens carry (\"callbackClientId\" in "
+                         + $"{AbdmGatewaySettingKeys.Gateway}, as seen in the sandbox): another provider's token is signed with the same keys.");
         }
 
         if (!string.IsNullOrWhiteSpace(gateway.JwksUrl)

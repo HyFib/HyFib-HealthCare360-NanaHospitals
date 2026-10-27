@@ -47,7 +47,7 @@ public sealed class InteropModule : IModule
         services.AddScoped<IAbdmGatewayClient>(sp => sp.GetRequiredService<HttpAbdmGatewayClient>());
         services.AddScoped<AbdmLinkingService>();
         services.AddScoped<AbdmUserLinkingService>();
-        services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
+        services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(AbdmDataPush.CreateHandler);
         services.AddScoped<AbdmDataFlowService>();
         services.AddScoped<AbdmProfileShareService>();
         services.AddHttpClient<AbhaClient>().ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);

@@ -83,6 +83,15 @@ public sealed class AbdmCallbackVerifierTests
     }
 
     [Fact]
+    public async Task A_token_the_gateway_issued_to_another_client_is_refused_when_the_gateways_client_id_is_set()
+    {
+        (await AbdmCallbackVerifier.VerifyAsync($"Bearer {Valid}", Jwks, null, null, Now, clientId: "gateway")).IsSuccess.ShouldBeTrue();
+        var refused = await AbdmCallbackVerifier.VerifyAsync($"Bearer {Valid}", Jwks, null, null, Now, clientId: "SBX_000999");
+        refused.Error!.Code.ShouldBe(AbdmCallbackVerifier.UnauthenticatedCode);
+        refused.Error.Message.ShouldContain("another client");
+    }
+
+    [Fact]
     public async Task A_call_without_a_token_or_from_another_issuer_is_refused()
     {
         (await AbdmCallbackVerifier.VerifyAsync(null, Jwks, null, null, Now)).IsFailure.ShouldBeTrue();

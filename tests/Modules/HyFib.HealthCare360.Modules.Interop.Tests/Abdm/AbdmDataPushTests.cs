@@ -5,7 +5,7 @@ namespace HyFib.HealthCare360.Modules.Interop.Tests;
 
 /// <summary>
 /// Where the hospital sends a patient's encrypted records under a consent: only to an https address outside its own
-/// network, whatever the request names; and how ABDM's timestamps are read.
+/// network, whatever the request names or a name resolves to; and how ABDM's timestamps are read.
 /// </summary>
 public sealed class AbdmDataPushTests
 {
@@ -15,6 +15,7 @@ public sealed class AbdmDataPushTests
     [InlineData("http://hiu.example.org/data/push", false)]
     [InlineData("https://user:pw@hiu.example.org/push", false)]
     [InlineData("https://localhost/push", false)]
+    [InlineData("https://LOCALHOST./push", false)]
     [InlineData("https://127.0.0.1/push", false)]
     [InlineData("https://10.1.2.3/push", false)]
     [InlineData("https://172.20.0.5/push", false)]
@@ -29,6 +30,19 @@ public sealed class AbdmDataPushTests
     [InlineData(null, false)]
     public void Only_an_https_address_outside_the_hospitals_network_takes_records(string? url, bool allowed) =>
         AbdmDataPush.IsAllowed(url, out _).ShouldBe(allowed);
+
+    [Fact]
+    public async Task A_name_that_leads_into_the_hospitals_network_is_not_connected_to()
+    {
+        // A name is resolved as the connection is made, and only an address outside the hospital's network is used: a name
+        // that resolves to this machine (or is made to, after the request was checked) is refused, not connected to.
+        using var handler = AbdmDataPush.CreateHandler();
+        handler.UseProxy = false;
+        using var http = new HttpClient(handler);
+
+        var refused = await Should.ThrowAsync<HttpRequestException>(() => http.GetAsync(new Uri("https://localhost:9/push"), TestContext.Current.CancellationToken));
+        refused.Message.ShouldContain("outside the hospital's network");
+    }
 
     [Theory]
     [InlineData("2026-10-26T09:30:15.123Z", "2026-10-26T09:30:15.1230000+00:00")]

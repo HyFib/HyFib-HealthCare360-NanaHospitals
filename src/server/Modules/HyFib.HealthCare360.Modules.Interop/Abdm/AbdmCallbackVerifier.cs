@@ -26,8 +26,12 @@ internal static class AbdmCallbackVerifier
     /// <param name="jwksJson">The gateway's key set, as it publishes it.</param>
     /// <param name="issuer">The issuer to require, once confirmed against the sandbox; null skips the check.</param>
     /// <param name="audience">The audience to require, likewise (ABDM does not publish it).</param>
+    /// <param name="clientId">
+    /// The <c>clientId</c> claim to require: the gateway signs every ABDM client's session token with the keys it signs its
+    /// own calls with, so without it another provider's token would pass as the gateway's. Null skips the check.
+    /// </param>
     public static async Task<Result<IReadOnlyDictionary<string, object>>> VerifyAsync(
-        string? authorization, string jwksJson, string? issuer, string? audience, DateTimeOffset now)
+        string? authorization, string jwksJson, string? issuer, string? audience, DateTimeOffset now, string? clientId = null)
     {
         const string bearer = "Bearer ";
         if (authorization is null || !authorization.StartsWith(bearer, StringComparison.OrdinalIgnoreCase))
@@ -65,6 +69,12 @@ internal static class AbdmCallbackVerifier
             ValidateAudience = audience is not null,
             ValidAudience = audience,
         });
+
+        if (result.IsValid && clientId is not null
+            && !(result.Claims.TryGetValue("clientId", out var claimed) && string.Equals(claimed as string, clientId, StringComparison.Ordinal)))
+        {
+            return Error.Rule(UnauthenticatedCode, "The gateway token was refused: it was issued to another client, not the gateway.");
+        }
 
         return result.IsValid
             ? Result<IReadOnlyDictionary<string, object>>.Ok(result.Claims.AsReadOnly())
