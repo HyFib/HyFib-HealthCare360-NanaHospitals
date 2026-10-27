@@ -69,7 +69,7 @@ and who checked it:
 
 | Form | Who fills it in | What it holds |
 |---|---|---|
-| Patient registration | Registration desk | Every field of *Register patient*, in its order, under the kit's next downtime UHID, with the time registered; the privacy notice and WhatsApp consent; the patient's signature. The Aadhaar number is not written on paper: it is entered from the card at the next visit |
+| Patient registration | Registration desk | Every field of *Register patient*, in its order, under the kit's next downtime UHID, with the time registered; the restricted-record flag (VIP, staff or high-profile patient) and notes for the front desk; the privacy notice and WhatsApp consent; the patient's signature. The Aadhaar number is not written on paper: it is entered from the card at the next visit |
 | OP consultation and prescription | Doctors | Department, doctor, vitals, complaints, findings, diagnosis, allergies, medicines (dose, route, frequency, duration), investigations advised, follow-up, signature and registration number |
 | Laboratory and imaging requisition | Wards and OPD | Ordering doctor, priority, clinical details, the tests, and the sample's collection and receipt |
 | Medication administration record | Nurses | Allergies, weight, and each dose given with the time and who gave it, or why it was not |

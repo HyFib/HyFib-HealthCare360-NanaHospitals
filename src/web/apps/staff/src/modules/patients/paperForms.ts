@@ -144,6 +144,8 @@ function registration(): string {
         choices('Patient category', PATIENT_CATEGORIES.map(humanize)),
         box('ABHA number'),
         box('ABHA address'),
+        choices('', ['Restricted record (VIP, staff or high-profile patient)']),
+        box('Notes for the front desk', true),
       ].join(''),
     ),
     section(

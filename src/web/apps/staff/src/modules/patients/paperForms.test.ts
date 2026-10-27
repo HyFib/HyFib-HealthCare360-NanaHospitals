@@ -49,6 +49,8 @@ describe('Paper forms', () => {
       'Patient category',
       'ABHA number',
       'ABHA address',
+      'Restricted record (VIP, staff or high-profile patient)',
+      'Notes for the front desk',
       'Patient was given the privacy notice',
       'Patient agrees to WhatsApp reminders and updates on this number',
     ]) {
