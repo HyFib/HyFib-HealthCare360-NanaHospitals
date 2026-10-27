@@ -22,6 +22,8 @@ public sealed class StoredFileNameTests
     [InlineData("/home/ravi/../scan.pdf", "application/pdf", "scan.pdf")]
     [InlineData("C:report.pdf", "application/pdf", "report.pdf")]
     [InlineData(@"C:\scans\", "application/pdf", "document.pdf")]
+    [InlineData("ECG 10:30.pdf", "application/pdf", "ECG 1030.pdf")]
+    [InlineData("scan?<1>.png", "image/png", "scan1.png")]
     [InlineData(".hta", "image/webp", "document.webp")]
     [InlineData("tracing.exe", EncryptedFileStore.ScpEcgContentType, "tracing.scp")]
     [InlineData(null, "application/pdf", "document.pdf")]
