@@ -18,6 +18,12 @@ public sealed class RateLimitOptions
     /// <summary>Links, QR codes, webhooks and workstation enrolment: per address.</summary>
     public FixedWindowLimit Public { get; set; } = new() { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) };
 
+    /// <summary>
+    /// Calls from the hospital's partners (SMS and WhatsApp delivery receipts, the payment gateway, the ABDM gateway): per
+    /// address. A campaign brings one receipt a message from the provider's few addresses.
+    /// </summary>
+    public FixedWindowLimit Partner { get; set; } = new() { PermitLimit = 1200, Window = TimeSpan.FromMinutes(1) };
+
     /// <summary>Machines with a credential of their own (RPM gateways, biometric terminals): per credential.</summary>
     public TokenBucketLimit Device { get; set; } = new() { TokenLimit = 120, TokensPerPeriod = 60, ReplenishmentPeriod = TimeSpan.FromSeconds(30) };
 
@@ -34,6 +40,7 @@ public sealed class RateLimitOptions
         Check(SignIn, nameof(SignIn), problems);
         Check(OneTimeCode, nameof(OneTimeCode), problems);
         Check(Public, nameof(Public), problems);
+        Check(Partner, nameof(Partner), problems);
         Check(Device, nameof(Device), problems);
         Check(DesktopUpdate, nameof(DesktopUpdate), problems);
         Check(PerUser, nameof(PerUser), problems);

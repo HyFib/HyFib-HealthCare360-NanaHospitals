@@ -20,7 +20,7 @@ namespace HyFib.HealthCare360.Modules.Interop.Features;
 /// <see cref="AbdmHealthInformationService"/>, checked against <c>X-HIU-ID</c>). Other providers post the records
 /// themselves to <see cref="DataPushPath"/>, without a gateway token (<see cref="ReceiveAsync"/>). The answers name the call by its <c>REQUEST-ID</c> header. A
 /// call for another HIP (<c>X-HIP-ID</c>) is logged and ignored. Anonymous at the
-/// HTTP level and rate-limited; the gateway proves the call is its own with a bearer token signed by a key it publishes
+/// HTTP level and rate-limited as a partner's calls (<see cref="RateLimitPolicies.Partner"/>); the gateway proves the call is its own with a bearer token signed by a key it publishes
 /// (<see cref="AbdmGatewayKeys"/>), and anything else is refused with 401. While ABDM is switched off they answer 503, as
 /// every ABDM endpoint does, and while the gateway is off or not set up, 404. A call the gateway makes is accepted (202) as the gateway expects, also when it
 /// answers no request of this hospital's, which is logged and ignored.
@@ -59,7 +59,7 @@ internal static class AbdmGatewayCallbackEndpoints
             .WithTags("ABDM gateway callbacks")
             .RequireFeature(FeatureKeys.Abdm)
             .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Public)
+            .RequireRateLimiting(RateLimitPolicies.Partner)
             .WithMetadata(new RequestSizeLimitAttribute(MaxBodyBytes));
 
         callbacks.MapPost(OnGenerateTokenPath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmLinkingService linking, ILoggerFactory loggers, CancellationToken ct) =>
@@ -96,7 +96,7 @@ internal static class AbdmGatewayCallbackEndpoints
             .WithTags("ABDM gateway callbacks")
             .RequireFeature(FeatureKeys.Abdm)
             .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Public)
+            .RequireRateLimiting(RateLimitPolicies.Partner)
             .WithMetadata(new RequestSizeLimitAttribute(MaxPushBytes));
     }
 

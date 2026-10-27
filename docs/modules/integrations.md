@@ -1072,7 +1072,7 @@ staff app.
 | GET | `/api/v1/integrations/webhooks/whatsapp` | anonymous, verify token | Meta subscription check |
 | POST | `/api/v1/integrations/webhooks/whatsapp` | anonymous, `X-Hub-Signature-256` | statuses and inbound messages |
 
-Webhooks use the platform's `public` rate-limit policy, read at most 256 KB and accept `?facility=<id>`.
+Webhooks use the platform's `partner` rate-limit policy (1,200 a minute per address, outside the per-address limit on every request, so a campaign's delivery receipts are taken), read at most 256 KB and accept `?facility=<id>`.
 
 The PACS images and the modality worklist have no endpoints here: the images and the viewer link are served by
 Diagnostics (`/api/v1/radiology/studies/{id}/images…` and `/viewer`), and the worklist is DICOM on its own port.

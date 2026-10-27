@@ -216,11 +216,21 @@ internal sealed class EncryptedFileStore(
         return (string.IsNullOrWhiteSpace(stem) ? "document" : stem) + extensions[0];
     }
 
+    // The last part of the name as the browser sent it, whichever separator its machine uses, without a drive ("C:"),
+    // cleaned of the characters Windows refuses in a name: the same name on any host (Path.GetFileName and
+    // Path.GetInvalidFileNameChars follow the server's own system, so on Linux "C:\fakepath\run.png" kept its folders).
+    private static readonly char[] NotInNames = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+
     private static string SanitizeFileName(string? fileName)
     {
-        var name = Path.GetFileName(fileName ?? "document");
-        var invalid = Path.GetInvalidFileNameChars();
-        var cleaned = new string(name.Where(c => !invalid.Contains(c) && !char.IsControl(c)).ToArray()).Trim();
+        var sent = fileName ?? "document";
+        var name = sent[(sent.LastIndexOfAny(['/', '\\']) + 1)..];
+        if (name.Length >= 2 && name[1] == ':' && char.IsAsciiLetter(name[0]))
+        {
+            name = name[2..];
+        }
+
+        var cleaned = new string(name.Where(c => !NotInNames.Contains(c) && !char.IsControl(c)).ToArray()).Trim();
         return string.IsNullOrEmpty(cleaned) ? "document" : cleaned.Length > 200 ? cleaned[..200] : cleaned;
     }
 }
