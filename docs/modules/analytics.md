@@ -132,7 +132,9 @@ is stored as JSON (`dashboards.layout_json`, jsonb): `[{"id","reportId","title",
 | GET | `/schedules/{id}/deliveries?page&pageSize` | → `PagedResult<DeliveryDto {id, scheduleId, reportTitle, trigger, createdAt, status, periodFrom, periodTo, format, fileName, sizeBytes, rowCount, fileAvailable, error, sent, pending, recipients[{email, status, attempts, lastError, sentAt}]}>` |
 | GET | `/deliveries/{id}/file` | the delivered file again while it is kept (audited); 422 `analytics.file_purged` after retention |
 
-Schedule rules: the report must be one the saver may open and must not list patients; the facility is always the
+Schedule rules: the report must be one the saver may open and must not list patients; to anyone who may not open a
+schedule's report, the schedule, its deliveries and their files are not there (left out of the list, 404 on every
+other call, *Send now* and delete included); the facility is always the
 schedule's own (`facilityId` inputs are dropped); periods must be relative (`custom` is rejected: "Choose a relative
 period…"); without a period the e-mail covers the complete period that just ended (daily → yesterday, weekly → last
 week, monthly → last month); recipients are lower-cased, de-duplicated and, when the setting

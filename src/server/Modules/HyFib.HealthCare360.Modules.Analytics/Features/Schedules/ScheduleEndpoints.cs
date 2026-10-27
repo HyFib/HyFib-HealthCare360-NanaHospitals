@@ -42,11 +42,12 @@ internal static class ScheduleEndpoints
     private static async Task<IResult> Update(Guid id, SaveScheduleRequest request, ReportActors actors, ScheduleService schedules, CancellationToken ct) =>
         await actors.CurrentAsync(ct) is { } actor ? (await schedules.UpdateAsync(actor, id, request, ct)).ToOk() : SignInRequired();
 
-    private static async Task<IResult> Delete(Guid id, uint? version, ScheduleService schedules, CancellationToken ct) =>
-        (await schedules.DeleteAsync(id, version, ct)).ToNoContent();
+    private static async Task<IResult> Delete(Guid id, uint? version, ReportActors actors, ScheduleService schedules, CancellationToken ct) =>
+        await actors.CurrentAsync(ct) is { } actor ? (await schedules.DeleteAsync(actor, id, version, ct)).ToNoContent() : SignInRequired();
 
     /// <summary>Generates the file now and queues the e-mails, or refreshes the extract (the regular schedule is unchanged).</summary>
-    private static async Task<IResult> SendNow(Guid id, ReportActors actors, HospitalDbContext db, ReportDeliveryService deliveries, CancellationToken ct)
+    private static async Task<IResult> SendNow(
+        Guid id, ReportActors actors, HospitalDbContext db, ScheduleService schedules, ReportDeliveryService deliveries, CancellationToken ct)
     {
         if (await actors.CurrentAsync(ct) is not { } actor)
         {
@@ -54,7 +55,7 @@ internal static class ScheduleEndpoints
         }
 
         var schedule = await db.Set<ReportSchedule>().FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (schedule is null)
+        if (schedule is null || !schedules.CanOpen(actor, schedule.ReportId))
         {
             return Error.NotFound("Schedule", id).ToProblem();
         }
@@ -65,8 +66,20 @@ internal static class ScheduleEndpoints
             : Error.Rule("analytics.delivery_failed", delivery.Error ?? "The report could not be generated.").ToProblem();
     }
 
-    private static async Task<IResult> Deliveries(Guid id, [AsParameters] PageQuery query, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Deliveries(
+        Guid id, [AsParameters] PageQuery query, ReportActors actors, HospitalDbContext db, ScheduleService schedules, CancellationToken ct)
     {
+        if (await actors.CurrentAsync(ct) is not { } actor)
+        {
+            return SignInRequired();
+        }
+
+        var reportId = await db.Set<ReportSchedule>().AsNoTracking().Where(s => s.Id == id).Select(s => s.ReportId).FirstOrDefaultAsync(ct);
+        if (reportId is null || !schedules.CanOpen(actor, reportId))
+        {
+            return Error.NotFound("Schedule", id).ToProblem();
+        }
+
         var page = query.ToRequest();
         var deliveries = db.Set<ReportDelivery>().AsNoTracking().Where(d => d.ScheduleId == id);
         var total = await deliveries.LongCountAsync(ct);
@@ -109,10 +122,17 @@ internal static class ScheduleEndpoints
     }
 
     /// <summary>Downloads a delivered file again (the "link" alternative to the attachment); audited as an export.</summary>
-    private static async Task<IResult> DownloadFile(Guid id, HttpContext http, HospitalDbContext db, IFieldProtector protector, IAuditLogger audit, CancellationToken ct)
+    private static async Task<IResult> DownloadFile(
+        Guid id, HttpContext http, ReportActors actors, HospitalDbContext db, ScheduleService schedules, IFieldProtector protector, IAuditLogger audit,
+        CancellationToken ct)
     {
+        if (await actors.CurrentAsync(ct) is not { } actor)
+        {
+            return SignInRequired();
+        }
+
         var delivery = await db.Set<ReportDelivery>().AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct);
-        if (delivery is null)
+        if (delivery is null || !schedules.CanOpen(actor, delivery.ReportId))
         {
             return Error.NotFound("Delivery", id).ToProblem();
         }
