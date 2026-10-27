@@ -1,4 +1,4 @@
-import { Field, Input, makeStyles, Switch, Text } from '@fluentui/react-components';
+import { Field, Input, makeStyles, Text } from '@fluentui/react-components';
 import type { PaperEntry } from './downtimeApi';
 
 const useStyles = makeStyles({
@@ -23,45 +23,32 @@ export function PaperRegistrationFields({
   const styles = useStyles();
   return (
     <div className={styles.root}>
-      <Switch
-        checked={value.onPaper}
-        onChange={(_, data) => onChange({ ...value, onPaper: data.checked })}
-        label="Entering a paper form filled in while HC360 was down"
-      />
-      {value.onPaper && (
-        <>
-          <Text size={200}>
-            The patient keeps the downtime UHID written on the form, and the record shows the time on the form as the
-            registration time.
-          </Text>
-          <div className={styles.row}>
-            <Field
-              label="UHID on the form"
-              required
-              validationMessage={problems?.uhid}
-              validationState={problems?.uhid ? 'error' : 'none'}
-            >
-              <Input
-                value={value.uhid}
-                maxLength={20}
-                onChange={(_, data) => onChange({ ...value, uhid: data.value })}
-              />
-            </Field>
-            <Field
-              label="Registered on the form at"
-              required
-              validationMessage={problems?.at}
-              validationState={problems?.at ? 'error' : 'none'}
-            >
-              <Input
-                type="datetime-local"
-                value={value.at}
-                onChange={(_, data) => onChange({ ...value, at: data.value })}
-              />
-            </Field>
-          </div>
-        </>
-      )}
+      <Text size={200}>
+        For a form filled in on paper while HC360 was down: the patient keeps the downtime UHID written on it, and the
+        record shows the time on the form as the registration time.
+      </Text>
+      <div className={styles.row}>
+        <Field
+          label="UHID on the form"
+          required
+          validationMessage={problems?.uhid}
+          validationState={problems?.uhid ? 'error' : 'none'}
+        >
+          <Input value={value.uhid} maxLength={20} onChange={(_, data) => onChange({ ...value, uhid: data.value })} />
+        </Field>
+        <Field
+          label="Registered on the form at"
+          required
+          validationMessage={problems?.at}
+          validationState={problems?.at ? 'error' : 'none'}
+        >
+          <Input
+            type="datetime-local"
+            value={value.at}
+            onChange={(_, data) => onChange({ ...value, at: data.value })}
+          />
+        </Field>
+      </div>
     </div>
   );
 }

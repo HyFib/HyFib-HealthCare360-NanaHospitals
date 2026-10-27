@@ -23,8 +23,8 @@ registration forms and a printed sheet of UHIDs issued to the kit in advance.
    patient's card or wristband, and a line for the patient's name and the time.
 3. **During downtime**, the desk registers each new patient on a paper form under the next UHID on the sheet, and
    writes the date and time on the form. A spoilt label is crossed out and marked "void".
-4. **When HC360 is back**, the desk enters each form on *Register patient* with *Entering a paper form filled in
-   while HC360 was down* switched on, the UHID on the form and the time on the form. The patient keeps that UHID and
+4. **When HC360 is back**, the desk enters each form on *Register patient* after pressing *Paper form* at the top of
+   the page, with the UHID on the form and the time on the form. The patient keeps that UHID and
    the record shows the time on the form as the registration time. The duplicate check still runs: a patient who was
    already registered should not be registered again.
 5. **Close the block**: the block shows each UHID as *Entered* (with the patient and when and by whom it was

@@ -12,9 +12,15 @@ import {
   MessageBarActions,
   MessageBarBody,
   Text,
+  ToggleButton,
   tokens,
 } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DocumentArrowLeftRegular, PrintRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DocumentArrowLeftRegular,
+  DocumentTextRegular,
+  PrintRegular,
+} from '@fluentui/react-icons';
 import { formatRelative, isApiError, useSession } from '@hc360/core';
 import { applyServerErrors, LEAVE_KEEPING_DRAFT, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -211,6 +217,19 @@ function RegisterPatientPage() {
         title="Register patient"
         subtitle="A UHID is issued on saving. Press Ctrl+S to save."
         breadcrumbs={[{ label: 'Patients', onClick: () => void navigate({ to: '/patients' }) }, { label: 'Register' }]}
+        actions={
+          // Rare (after downtime), so it does not take room on the form until asked for.
+          <ToggleButton
+            icon={<DocumentTextRegular />}
+            checked={paperEntry.onPaper}
+            onClick={() => {
+              setPaperEntry((entry) => ({ ...entry, onPaper: !entry.onPaper }));
+              setPaperProblems({});
+            }}
+          >
+            Paper form
+          </ToggleButton>
+        }
       />
 
       {draft.saved && (
@@ -249,9 +268,11 @@ function RegisterPatientPage() {
         </MessageBar>
       )}
 
-      <Section title="Paper registration">
-        <PaperRegistrationFields value={paperEntry} onChange={setPaperEntry} problems={paperProblems} />
-      </Section>
+      {paperEntry.onPaper && (
+        <Section title="Paper form">
+          <PaperRegistrationFields value={paperEntry} onChange={setPaperEntry} problems={paperProblems} />
+        </Section>
+      )}
 
       {!(search.share && share.isLoading) && (
         <PatientForm
