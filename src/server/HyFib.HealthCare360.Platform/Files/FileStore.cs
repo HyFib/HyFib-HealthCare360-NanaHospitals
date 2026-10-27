@@ -237,6 +237,9 @@ internal sealed class EncryptedFileStore(
 
 internal static class FileEndpoints
 {
+    /// <summary>The Patients module's permission to view patients (<c>PatientsPermissions.Read</c>), which this assembly cannot reference.</summary>
+    public const string PatientsRead = "patients.read";
+
     public static void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/files").WithTags("Documents");
@@ -253,10 +256,10 @@ internal static class FileEndpoints
             .DisableAntiforgery() // bearer-token API: not vulnerable to CSRF
             .WithMetadata(new RequestSizeLimitAttributeShim(EncryptedFileStore.MaxBytes + (1024 * 1024)));
 
-        group.MapGet("/{id:guid}", async (Guid id, bool? download, IFileStore store, HospitalDbContext db, IPatientRecordAccess records, IAuditLogger audit,
-                CancellationToken ct) =>
+        group.MapGet("/{id:guid}", async (Guid id, bool? download, IFileStore store, HospitalDbContext db, ICurrentUser user, IPermissionService permissions,
+                IPatientRecordAccess records, IAuditLogger audit, CancellationToken ct) =>
             {
-                if (await RestrictedAsync(id, db, records, ct) is { } refused)
+                if (await RestrictedAsync(id, db, user, permissions, records, ct) is { } refused)
                 {
                     return refused;
                 }
@@ -277,8 +280,9 @@ internal static class FileEndpoints
             })
             .RequirePermission(PlatformPermissions.FilesRead);
 
-        group.MapGet("/{id:guid}/meta", async (Guid id, HospitalDbContext db, IPatientRecordAccess records, CancellationToken ct) =>
-                await RestrictedAsync(id, db, records, ct) ?? (await db.Set<StoredFile>().Where(f => f.Id == id)
+        group.MapGet("/{id:guid}/meta", async (Guid id, HospitalDbContext db, ICurrentUser user, IPermissionService permissions, IPatientRecordAccess records,
+                CancellationToken ct) =>
+                await RestrictedAsync(id, db, user, permissions, records, ct) ?? (await db.Set<StoredFile>().Where(f => f.Id == id)
                         .Select(f => new StoredFileDto(f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Category, f.PatientId, f.CreatedAt))
                         .FirstOrDefaultAsync(ct) is { } dto
                     ? TypedResults.Ok(dto)
@@ -287,15 +291,23 @@ internal static class FileEndpoints
     }
 
     /// <summary>
-    /// Why a patient's file may not be opened by this user, or null: it follows its record's restricted-record rules
-    /// (EHR-07), as the record's documents list does, so knowing a file's id never opens a restricted record's files.
+    /// Why a patient's file may not be opened by this user, or null: it is for staff who may view patients
+    /// (<see cref="PatientsRead"/>, the staff whose work is about patients, DPDP s.8), and it follows its record's
+    /// restricted-record rules (EHR-07), as the record's documents list does, so knowing a file's id never opens a record
+    /// its user may not.
     /// </summary>
-    private static async Task<IResult?> RestrictedAsync(Guid id, HospitalDbContext db, IPatientRecordAccess records, CancellationToken ct)
+    private static async Task<IResult?> RestrictedAsync(
+        Guid id, HospitalDbContext db, ICurrentUser user, IPermissionService permissions, IPatientRecordAccess records, CancellationToken ct)
     {
         var patientId = await db.Set<StoredFile>().Where(f => f.Id == id).Select(f => f.PatientId).FirstOrDefaultAsync(ct);
         if (patientId is null)
         {
             return null;
+        }
+
+        if (user.UserId is not { } userId || !await permissions.HasPermissionAsync(userId, PatientsRead, ct))
+        {
+            return Error.Forbidden("files.patient_record", "This document is in a patient's record, which your role does not open.").ToProblem();
         }
 
         var access = await records.EnsureCanOpenAsync(patientId.Value, ct);

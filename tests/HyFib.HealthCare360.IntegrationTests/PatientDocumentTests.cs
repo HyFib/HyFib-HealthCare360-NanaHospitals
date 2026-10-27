@@ -16,7 +16,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// Documents attached to the patient record (EHR-04) over the real API: an outside report keeps its type, date and
 /// source; a restricted record's documents are added and removed only with the access that opens the record (EHR-07); a
-/// patient who does not exist has no record to add to; and a document cannot be dated after today in the hospital.
+/// patient who does not exist has no record to add to; a document cannot be dated after today in the hospital; and a
+/// patient's files are only for staff whose work is about patients.
 /// </summary>
 public sealed class PatientDocumentTests(HospitalServer server)
 {
@@ -146,6 +147,27 @@ public sealed class PatientDocumentTests(HospitalServer server)
         var unowned = await UploadAsync(admin, patientId: null);
         (await nurse.GetAsync<StoredFileDto>($"/api/v1/files/{unrestricted}/meta")).Id.ShouldBe(unrestricted);
         (await nurse.GetAsync<StoredFileDto>($"/api/v1/files/{unowned}/meta")).PatientId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_patients_files_are_not_for_staff_whose_work_is_not_about_patients()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var patientsFile = await UploadAsync(admin, (await RegisterPatientAsync(isVip: false)).Id);
+        var unowned = await UploadAsync(admin, patientId: null);
+
+        // An MIS analyst may open stored documents, but not patients' records (DPDP s.8): not by a file's id either.
+        var analyst = await server.SignInAsync(HospitalServer.Users.MisAnalyst);
+        foreach (var path in new[] { $"/api/v1/files/{patientsFile}", $"/api/v1/files/{patientsFile}/meta" })
+        {
+            using var refused = await analyst.SendRawAsync(HttpMethod.Get, path);
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden, path);
+            (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("files.patient_record");
+        }
+
+        (await analyst.GetAsync<StoredFileDto>($"/api/v1/files/{unowned}/meta")).Id.ShouldBe(unowned);
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+        (await nurse.GetAsync<StoredFileDto>($"/api/v1/files/{patientsFile}/meta")).Id.ShouldBe(patientsFile);
     }
 
     [Fact]
