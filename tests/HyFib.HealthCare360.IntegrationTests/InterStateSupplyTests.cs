@@ -45,12 +45,14 @@ public sealed class InterStateSupplyTests(HospitalServer server)
 
         var kerala = await BillAsync(await CompanyAsync(admin, KeralaClinic), service);
         kerala.PlaceOfSupply.ShouldBe("32");
+        kerala.IsInterState.ShouldBeTrue("the preview shows IGST by it, even while the bill's tax is zero");
         kerala.IgstAmount.ShouldBeGreaterThan(0m);
         (kerala.CgstAmount, kerala.SgstAmount).ShouldBe((0m, 0m));
         kerala.Lines.Sum(l => l.IgstAmount).ShouldBe(kerala.IgstAmount);
 
         var unregistered = await BillAsync(await CompanyAsync(admin, gstin: null), service);
         unregistered.PlaceOfSupply.ShouldBe("33");
+        unregistered.IsInterState.ShouldBeFalse();
         unregistered.IgstAmount.ShouldBe(0m);
         (unregistered.CgstAmount + unregistered.SgstAmount).ShouldBe(kerala.IgstAmount, "The same tax, split between the Centre and the State.");
     }

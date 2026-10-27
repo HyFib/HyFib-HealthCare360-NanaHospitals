@@ -36,6 +36,7 @@ import { billingApi, type BillDetail, type DiscountOutcome, type LineDiscountInp
 import {
   allowedWithoutApproval,
   lineDiscountable,
+  gstBreakdown,
   previewDiscount,
   requiresApproval,
   type DiscountDraft,
@@ -408,8 +409,11 @@ export function DiscountDialog({
                     <span className={styles.payable}>{formatInr(totals.patientAmount)}</span>
                     {totals.tax > 0 && (
                       <Caption1 block className={styles.muted}>
-                        Includes GST {formatInr(totals.tax)} (CGST {formatInr(totals.cgst)} + SGST{' '}
-                        {formatInr(totals.sgst)})
+                        Includes GST {formatInr(totals.tax)} (
+                        {gstBreakdown(bill, totals)
+                          .map((part) => `${part.label} ${formatInr(part.amount)}`)
+                          .join(' + ')}
+                        )
                       </Caption1>
                     )}
                   </div>

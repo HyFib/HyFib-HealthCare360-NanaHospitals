@@ -443,3 +443,20 @@ export function previewDiscount(bill: PreviewBill, draft: DiscountDraft): Discou
 export function creditableAmount(bill: { patientAmount: number; creditAmount: number }): number {
   return fromPaise(maxBig(toPaise(bill.patientAmount) - toPaise(bill.creditAmount), 0n));
 }
+
+/**
+ * How the GST in a preview is shown: as IGST on a bill whose place of supply is another state (the server charges
+ * IGST on it, and a discount does not change where the supply goes, even when the bill's tax is zero now), otherwise as
+ * CGST and SGST.
+ */
+export function gstBreakdown(
+  bill: { isInterState: boolean },
+  totals: { tax: number; cgst: number; sgst: number },
+): { label: 'CGST' | 'SGST' | 'IGST'; amount: number }[] {
+  return bill.isInterState
+    ? [{ label: 'IGST', amount: totals.tax }]
+    : [
+        { label: 'CGST', amount: totals.cgst },
+        { label: 'SGST', amount: totals.sgst },
+      ];
+}

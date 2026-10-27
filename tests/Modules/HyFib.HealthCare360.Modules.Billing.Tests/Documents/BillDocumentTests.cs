@@ -338,7 +338,7 @@ public sealed class BillDocumentTests
     {
         var taxed = Taxed();
         var line = taxed.Lines[0] with { CgstAmount = 0m, SgstAmount = 0m, IgstAmount = 180m };
-        var bill = taxed with { Lines = [line], CgstAmount = 0m, SgstAmount = 0m, IgstAmount = 180m, PlaceOfSupply = "32" };
+        var bill = taxed with { Lines = [line], CgstAmount = 0m, SgstAmount = 0m, IgstAmount = 180m, PlaceOfSupply = "32", IsInterState = true };
 
         BillDocument.Totals(bill).Select(r => r.Label).ShouldContain("IGST");
         BillDocument.Totals(bill).Select(r => r.Label).ShouldNotContain("CGST");
@@ -375,7 +375,7 @@ public sealed class BillDocumentTests
         PayerType: PayerType.Self, PayerId: null, PayerName: null, TariffPlanId: null, TariffPlanName: "General", PolicyId: null, PreAuthorizationId: null,
         CoPayPercent: 0m, PayerCoverageLimit: null, BillDiscountPercent: null, BillDiscountValue: null, DiscountReason: null, ApprovedDiscountAmount: 0m,
         GrossAmount: 500m, PackageCoveredAmount: 0m, TariffDiscountAmount: 0m, LineDiscountAmount: 0m, BillDiscountAmount: 0m, DiscountAmount: 0m,
-        TaxableAmount: 500m, CgstAmount: 0m, SgstAmount: 0m, IgstAmount: 0m, PlaceOfSupply: "33", TaxAmount: 0m, RoundOffAmount: 0m, NetAmount: 500m, PayerAmount: 0m, PatientAmount: 500m,
+        TaxableAmount: 500m, CgstAmount: 0m, SgstAmount: 0m, IgstAmount: 0m, PlaceOfSupply: "33", IsInterState: false, TaxAmount: 0m, RoundOffAmount: 0m, NetAmount: 500m, PayerAmount: 0m, PatientAmount: 500m,
         CoPayAmount: 0m, NonPayableAmount: 0m, PaidAmount: 500m, RefundedAmount: 0m, CreditAmount: 0m, DueAmount: 0m, RefundableAmount: 0m,
         PayerSettledAmount: 0m, PayerDisallowedAmount: 0m, IsTaxInvoice: false, CreatedAt: Created, FinalizedAt: Created.AddMinutes(5), CancelledAt: null,
         CancelReason: null, Notes: null, Lines: [Line()], Receipts: [Receipt()], Refunds: [], CreditNotes: [], PendingDiscount: null, Package: null,
