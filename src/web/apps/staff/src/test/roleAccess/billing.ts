@@ -17,6 +17,7 @@ import type {
   PackageStatus,
   RunningBill,
 } from '@/modules/billing/ipApi';
+import type { HbpProcedure } from '@/modules/billing/hbpApi';
 import type { PackageDetail, TariffPlanDetail, TariffPlanListItem, TariffPriceDto } from '@/modules/billing/mastersApi';
 import type {
   PosSettlementDayDto,
@@ -533,6 +534,22 @@ const PRICES: TariffPriceDto[] = [
   },
 ];
 
+/** An AB PM-JAY HBP procedure the package is mapped to. */
+const HBP_PROCEDURE: HbpProcedure = {
+  code: 'SG039A',
+  packageCode: 'SG039',
+  specialtyCode: 'SG',
+  specialty: 'General Surgery',
+  packageName: 'Appendicectomy',
+  procedureName: 'Appendicectomy (laparoscopic)',
+  rate: 21000,
+  lengthOfStayDays: 3,
+  reservedForPublic: false,
+  stratification: null,
+  masterVersion: 'HBP 2022',
+  isActive: true,
+};
+
 const PACKAGE_ID = '0192a000-0000-7000-8000-000000000b41';
 const PACKAGE: PackageDetail = {
   id: PACKAGE_ID,
@@ -546,6 +563,8 @@ const PACKAGE: PackageDetail = {
   usedFor: 'Both',
   description: 'Phacoemulsification with foldable IOL, one eye.',
   isActive: true,
+  hbpCode: 'SG039A',
+  hbpProcedureName: 'Appendicectomy (laparoscopic)',
   inclusions: [
     {
       id: id('69'),
@@ -904,6 +923,8 @@ export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/billing/tariffs/${RECORD_ID}`]: PLAN,
   [`GET /api/v1/billing/tariffs/${RECORD_ID}/prices`]: paged(PRICES),
   [`GET /api/v1/billing/packages/${PACKAGE_ID}`]: PACKAGE,
+  'GET /api/v1/billing/hbp/procedures': [HBP_PROCEDURE],
+  'GET /api/v1/billing/hbp/procedures/SG039A': HBP_PROCEDURE,
   'GET /api/v1/billing/gateway/summary': GATEWAY_SUMMARY,
   'GET /api/v1/billing/gateway/exceptions': paged(EXCEPTIONS),
   'GET /api/v1/billing/gateway/settlements': GATEWAY_SETTLEMENTS,

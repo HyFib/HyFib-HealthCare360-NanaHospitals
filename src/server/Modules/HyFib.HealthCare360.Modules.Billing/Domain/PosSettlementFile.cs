@@ -634,7 +634,7 @@ public static class PosSettlementFile
 
     // ---------------------------------------------------------------------------------------------------- the table
 
-    private static Result<IReadOnlyList<ReportSheet>> ReadSheets(byte[] content)
+    internal static Result<IReadOnlyList<ReportSheet>> ReadSheets(byte[] content)
     {
         if (content is [0xD0, 0xCF, 0x11, 0xE0, ..])
         {

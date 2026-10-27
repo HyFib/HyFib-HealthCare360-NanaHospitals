@@ -200,6 +200,47 @@ public sealed class NhcxClaimBundleTests
         }
     }
 
+    [Fact]
+    public void A_pmjay_claim_names_the_hbp_procedures_and_the_programme()
+    {
+        var request = Request(NhcxClaimUse.Claim) with
+        {
+            Pmjay = true,
+            Lines = [new("SG039A", "Appendicectomy (laparoscopic)", 1, 21000) { ServiceSystem = NhcxClaimBundle.HbpSystem }],
+        };
+
+        var bundle = NhcxClaimBundle.Build(request).Value;
+        var item = ((R4.Claim)bundle.Entry[0].Resource).Item.Single();
+
+        AbdmProfileValidator.Validate(bundle, NhcxClaimBundle.ClaimBundleProfile).Errors.ShouldBeEmpty();
+        item.ProductOrService.Coding.Single().ShouldSatisfyAllConditions(
+            c => c.System.ShouldBe(NhcxClaimBundle.HbpSystem),
+            c => c.Code.ShouldBe("SG039A"));
+        var programme = item.ProgramCode.Single().Coding.Single();
+        var listed = JsonNode.Parse(File.ReadAllText(Path.Combine(AbdmProfileValidator.PackageDirectory, "CodeSystem-ndhm-program-code.json")))!;
+        programme.System.ShouldBe((string)listed["url"]!);
+        listed["concept"]!.AsArray().Select(c => ((string)c!["code"]!, (string)c["display"]!)).ShouldContain((programme.Code!, programme.Display!));
+    }
+
+    [Theory]
+    [InlineData("SRG-APP", false)]
+    [InlineData("S.01.0001", true)]
+    public void A_pmjay_claim_line_without_an_hbp_procedure_is_refused(string code, bool asHbp)
+    {
+        var line = new NhcxClaimLine(code, "Laparoscopic appendicectomy", 1, 21000);
+        var request = Request(NhcxClaimUse.Claim) with { Pmjay = true, Lines = [asHbp ? line with { ServiceSystem = NhcxClaimBundle.HbpSystem } : line] };
+
+        NhcxClaimBundle.Build(request).Error!.Code.ShouldBe("nhcx.claim_hbp");
+    }
+
+    [Fact]
+    public void Other_claims_carry_no_programme()
+    {
+        var claim = (R4.Claim)NhcxClaimBundle.Build(Request(NhcxClaimUse.Claim)).Value.Entry[0].Resource;
+
+        claim.Item.ShouldAllBe(i => i.ProgramCode.Count == 0);
+    }
+
     private static NhcxPolicyRow Policy() => new()
     {
         Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac003"),

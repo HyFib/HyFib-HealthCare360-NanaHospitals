@@ -3496,6 +3496,124 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("gateway_webhook_events", "billing");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.HbpProcedure", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<int?>("LengthOfStayDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("length_of_stay_days");
+
+                    b.Property<string>("MasterVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("master_version");
+
+                    b.Property<string>("PackageCode")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("package_code");
+
+                    b.Property<string>("PackageName")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("package_name");
+
+                    b.Property<string>("ProcedureName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("procedure_name");
+
+                    b.Property<decimal?>("Rate")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("rate");
+
+                    b.Property<bool>("ReservedForPublic")
+                        .HasColumnType("boolean")
+                        .HasColumnName("reserved_for_public");
+
+                    b.Property<string>("Specialty")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("specialty");
+
+                    b.Property<string>("SpecialtyCode")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("specialty_code");
+
+                    b.Property<string>("Stratification")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("stratification");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hbp_procedures");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_hbp_procedures_code");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_hbp_procedures_is_deleted");
+
+                    b.HasIndex("SpecialtyCode", "IsActive")
+                        .HasDatabaseName("ix_hbp_procedures_specialty_code_is_active");
+
+                    b.ToTable("hbp_procedures", "billing");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.InsuranceClaim", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3990,6 +4108,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("description");
+
+                    b.Property<string>("HbpCode")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("hbp_code");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
@@ -21909,7 +22032,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("PrivateKeyCipher")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
-                        .HasColumnName("private_key_cipher");
+                        .HasColumnName("private_key_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
 
                     b.Property<string>("Status")
                         .IsRequired()

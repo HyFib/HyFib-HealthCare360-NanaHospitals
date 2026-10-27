@@ -11,7 +11,8 @@ public sealed record PackageListItem(
     Guid? TariffPlanId,
     PackageUse UsedFor,
     bool IsActive,
-    int InclusionCount);
+    int InclusionCount,
+    string? HbpCode = null);
 
 public sealed record PackageInclusionDto(
     Guid Id,
@@ -36,7 +37,9 @@ public sealed record PackageDetail(
     string? Description,
     bool IsActive,
     IReadOnlyList<PackageInclusionDto> Inclusions,
-    uint Version);
+    uint Version,
+    string? HbpCode = null,
+    string? HbpProcedureName = null);
 
 /// <summary>An inclusion names one service item <em>or</em> a category, with optional quantity and amount caps.</summary>
 public sealed record PackageInclusionInput(Guid? ServiceItemId, ServiceCategory? Category, decimal? MaxQuantity, decimal? MaxAmount, string? Notes);
@@ -52,7 +55,8 @@ public sealed record SavePackageRequest(
     string? Description,
     bool IsActive,
     IReadOnlyList<PackageInclusionInput> Inclusions,
-    uint? Version);
+    uint? Version,
+    string? HbpCode = null);
 
 public sealed class SavePackageRequestValidator : AbstractValidator<SavePackageRequest>
 {
@@ -65,6 +69,7 @@ public sealed class SavePackageRequestValidator : AbstractValidator<SavePackageR
         RuleFor(x => x.LengthOfStayDays).InclusiveBetween(1, 365);
         RuleFor(x => x.UsedFor).IsInEnum();
         RuleFor(x => x.Description).SafeText(1000);
+        RuleFor(x => x.HbpCode).MaximumLength(8).SafeText(8);
         RuleFor(x => x.Inclusions).NotNull().Must(i => i.Count <= 100).WithMessage("A package can have at most 100 inclusions.");
         RuleForEach(x => x.Inclusions).ChildRules(inclusion =>
         {

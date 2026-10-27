@@ -57,7 +57,11 @@ internal sealed record NhcxPolicyRow
 internal sealed record NhcxDiagnosis(string Icd10Code, string? Title = null);
 
 /// <summary>One service on the claim: a bill line, or a line of a pre-authorisation's cost estimate.</summary>
-internal sealed record NhcxClaimLine(string ServiceCode, string ServiceName, decimal Quantity, decimal UnitPrice);
+internal sealed record NhcxClaimLine(string ServiceCode, string ServiceName, decimal Quantity, decimal UnitPrice)
+{
+    /// <summary>The code system of <see cref="ServiceCode"/>: HC360's service master, or PM-JAY's HBP procedures (<see cref="NhcxClaimBundle.HbpSystem"/>).</summary>
+    public string ServiceSystem { get; init; } = NhcxClaimBundle.ServiceSystem;
+}
 
 /// <summary>A pre-authorisation request or a claim, from Billing, with the masters it names.</summary>
 internal sealed record NhcxClaimRequest
@@ -91,6 +95,12 @@ internal sealed record NhcxClaimRequest
 
     /// <summary>On a claim: the insurer's approval reference of the pre-authorisation it follows.</summary>
     public string? PreAuthorizationReference { get; init; }
+
+    /// <summary>
+    /// A claim to AB PM-JAY: each line names the scheme's HBP procedure and carries the programme (the IG's
+    /// <c>ndhm-program-code</c> <c>AB-PMJAY</c>), so the scheme pays its package rate for it.
+    /// </summary>
+    public bool Pmjay { get; init; }
 }
 
 /// <summary>
@@ -117,6 +127,17 @@ internal static partial class NhcxClaimBundle
 
     /// <summary>HC360's service master codes, the claim lines' <c>productOrService</c> (an example binding in the IG).</summary>
     public const string ServiceSystem = "urn:hc360:service-item";
+
+    /// <summary>
+    /// AB PM-JAY's Health Benefit Package procedure codes (<c>SG039A</c>). Neither NHA nor the IG publishes a URI for them,
+    /// so HC360 names them under its own namespace until the NHCX sandbox says which one the scheme reads.
+    /// </summary>
+    public const string HbpSystem = "urn:hc360:pmjay-hbp";
+
+    /// <summary>The IG's government programme codes, and AB PM-JAY's code and display there.</summary>
+    public const string ProgramSystem = "https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-program-code";
+    public const string PmjayProgram = "AB-PMJAY";
+    public const string PmjayProgramDisplay = "Ayushman Bharat Pradhan Mantri Jan Arogya Yojana (AB-PMJAY)";
 
     public const string PayerSystem = "urn:hc360:payer";
     public const string Icd10 = "http://hl7.org/fhir/sid/icd-10";
@@ -204,6 +225,11 @@ internal static partial class NhcxClaimBundle
         if (request.Lines.FirstOrDefault(l => l.Quantity <= 0 || l.UnitPrice < 0 || string.IsNullOrWhiteSpace(l.ServiceCode) || string.IsNullOrWhiteSpace(l.ServiceName)) is { } line)
         {
             return Error.Rule("nhcx.claim_lines", $"The service '{line.ServiceName}' needs a code, a name, a quantity above zero and a price of zero or more.");
+        }
+
+        if (request.Pmjay && request.Lines.FirstOrDefault(l => l.ServiceSystem != HbpSystem || !HbpProcedureCode().IsMatch(l.ServiceCode.Trim())) is { } uncoded)
+        {
+            return Error.Rule("nhcx.claim_hbp", $"'{uncoded.ServiceName}' has no PM-JAY HBP procedure code: the scheme pays only the packages it lists. Map the package to its HBP procedure first.");
         }
 
         if (request.Lines.Sum(l => l.Quantity * l.UnitPrice) <= 0)
@@ -360,7 +386,7 @@ internal static partial class NhcxClaimBundle
             var item = new R4.Claim.ItemComponent
             {
                 Sequence = ++sequence,
-                ProductOrService = FhirElements.Concept(ServiceSystem, line.ServiceCode.Trim(), line.ServiceName.Trim()),
+                ProductOrService = FhirElements.Concept(line.ServiceSystem, line.ServiceCode.Trim(), line.ServiceName.Trim()),
                 Quantity = new R4.Quantity { Value = FhirElements.Normalize(line.Quantity) },
                 UnitPrice = Money(line.UnitPrice),
                 Net = Money(net),
@@ -368,6 +394,11 @@ internal static partial class NhcxClaimBundle
             if (doctorId is not null)
             {
                 item.CareTeamSequence = [1];
+            }
+
+            if (request.Pmjay)
+            {
+                item.ProgramCode = [FhirElements.Concept(ProgramSystem, PmjayProgram, PmjayProgramDisplay)];
             }
 
             claim.Item.Add(item);
@@ -397,4 +428,8 @@ internal static partial class NhcxClaimBundle
 
     [GeneratedRegex(@"^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     internal static partial Regex Icd10Code();
+
+    /// <summary>Two letters for the specialty, three digits for the package, a letter for a stratified procedure (<c>BM001A</c>).</summary>
+    [GeneratedRegex(@"^[A-Z]{2}[0-9]{3}[A-Z]?$", RegexOptions.CultureInvariant)]
+    internal static partial Regex HbpProcedureCode();
 }

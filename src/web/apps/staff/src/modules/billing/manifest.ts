@@ -101,6 +101,12 @@ const manifest: ModuleManifest = {
       keywords: ['package', 'surgery package'],
     },
     {
+      label: 'PM-JAY procedures',
+      to: '/billing/hbp',
+      permission: ['billing.tariffs.manage', 'insurance.preauth.manage', 'insurance.claims.manage'],
+      keywords: ['pmjay', 'pm-jay', 'ayushman', 'hbp', 'health benefit package', 'scheme packages'],
+    },
+    {
       label: 'Tally export',
       to: '/billing/tally',
       permission: 'billing.tally.export',

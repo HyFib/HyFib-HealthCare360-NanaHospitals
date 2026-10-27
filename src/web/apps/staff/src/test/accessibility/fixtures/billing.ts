@@ -338,6 +338,7 @@ const PACKAGES: PackageListItem[] = [
     lengthOfStayDays: null,
     tariffPlanId: null,
     usedFor: 'Both',
+    hbpCode: null,
     isActive: true,
     inclusionCount: 6,
   },

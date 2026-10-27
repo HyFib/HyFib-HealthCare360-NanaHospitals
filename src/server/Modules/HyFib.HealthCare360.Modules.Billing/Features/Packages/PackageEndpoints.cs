@@ -30,7 +30,7 @@ internal static class PackageEndpoints
         }
 
         var rows = await packages.OrderBy(p => p.Name)
-            .Select(p => new PackageListItem(p.Id, p.Code, p.Name, p.Price, p.LengthOfStayDays, p.TariffPlanId, p.UsedFor, p.IsActive, p.Inclusions.Count))
+            .Select(p => new PackageListItem(p.Id, p.Code, p.Name, p.Price, p.LengthOfStayDays, p.TariffPlanId, p.UsedFor, p.IsActive, p.Inclusions.Count, p.HbpCode))
             .ToListAsync(ct);
         return TypedResults.Ok(rows);
     }
@@ -41,7 +41,7 @@ internal static class PackageEndpoints
         return package is null ? Error.NotFound(nameof(Package), id).ToProblem() : TypedResults.Ok(await ToDetailAsync(db, package, ct));
     }
 
-    private static async Task<IResult> Create(SavePackageRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Create(SavePackageRequest request, HospitalDbContext db, HbpService hbp, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         if (await db.Set<Package>().IgnoreQueryFilters().AnyAsync(p => p.Code == code, ct))
@@ -50,7 +50,7 @@ internal static class PackageEndpoints
         }
 
         var package = new Package { Code = code };
-        var applied = await ApplyAsync(db, package, request, ct);
+        var applied = await ApplyAsync(db, hbp, package, request, ct);
         if (applied.IsFailure)
         {
             return applied.Error!.ToProblem();
@@ -61,7 +61,7 @@ internal static class PackageEndpoints
         return TypedResults.Created($"/api/v1/billing/packages/{package.Id}", await ToDetailAsync(db, package, ct));
     }
 
-    private static async Task<IResult> Update(Guid id, SavePackageRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Update(Guid id, SavePackageRequest request, HospitalDbContext db, HbpService hbp, CancellationToken ct)
     {
         var package = await db.Set<Package>().Include(p => p.Inclusions).FirstOrDefaultAsync(p => p.Id == id, ct);
         if (package is null)
@@ -70,7 +70,7 @@ internal static class PackageEndpoints
         }
 
         db.GuardVersion(package, request.Version ?? 0);
-        var applied = await ApplyAsync(db, package, request, ct);
+        var applied = await ApplyAsync(db, hbp, package, request, ct);
         if (applied.IsFailure)
         {
             return applied.Error!.ToProblem();
@@ -80,8 +80,14 @@ internal static class PackageEndpoints
         return TypedResults.Ok(await ToDetailAsync(db, package, ct));
     }
 
-    private static async Task<Result> ApplyAsync(HospitalDbContext db, Package package, SavePackageRequest request, CancellationToken ct)
+    private static async Task<Result> ApplyAsync(HospitalDbContext db, HbpService hbp, Package package, SavePackageRequest request, CancellationToken ct)
     {
+        var hbpCode = await hbp.CheckForPackageAsync(request.HbpCode, package.HbpCode, ct);
+        if (hbpCode.IsFailure)
+        {
+            return hbpCode.Error!;
+        }
+
         var item = await db.Set<ServiceItem>().AsNoTracking().FirstOrDefaultAsync(s => s.Id == request.ServiceItemId, ct);
         if (item is null || item.Category != ServiceCategory.Package)
         {
@@ -102,6 +108,7 @@ internal static class PackageEndpoints
         package.UsedFor = request.UsedFor;
         package.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         package.IsActive = request.IsActive;
+        package.HbpCode = hbpCode.Value;
         package.Inclusions.Clear();
         foreach (var inclusion in request.Inclusions)
         {
@@ -123,12 +130,17 @@ internal static class PackageEndpoints
     {
         var ids = package.Inclusions.Where(i => i.ServiceItemId is not null).Select(i => i.ServiceItemId!.Value).Append(package.ServiceItemId).Distinct().ToList();
         var items = await db.Set<ServiceItem>().Where(s => ids.Contains(s.Id)).ToDictionaryAsync(s => s.Id, s => new { s.Code, s.Name }, ct);
+        var hbpName = package.HbpCode is { } hbpCode
+            ? await db.Set<HbpProcedure>().Where(p => p.Code == hbpCode).Select(p => p.ProcedureName).FirstOrDefaultAsync(ct)
+            : null;
         return new PackageDetail(
             package.Id, package.Code, package.Name, package.ServiceItemId, items.GetValueOrDefault(package.ServiceItemId)?.Code, package.Price,
             package.LengthOfStayDays, package.TariffPlanId, package.UsedFor, package.Description, package.IsActive,
             package.Inclusions.Select(i => new PackageInclusionDto(
                 i.Id, i.ServiceItemId, i.ServiceItemId is { } sid ? items.GetValueOrDefault(sid)?.Code : null,
                 i.ServiceItemId is { } nid ? items.GetValueOrDefault(nid)?.Name : null, i.Category, i.MaxQuantity, i.MaxAmount, i.Notes)).ToList(),
-            package.Version);
+            package.Version,
+            package.HbpCode,
+            hbpName);
     }
 }

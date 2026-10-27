@@ -98,8 +98,15 @@ Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.c
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/` · `/{id}` | `billing.tariffs.manage` / `billing.ip.manage` / `billing.charges.read` / `billing.op.create` | → `PackageListItem[]` / `PackageDetail` |
-| POST | `/` | `billing.tariffs.manage` | `SavePackageRequest` (price, `usedFor`: `InPatient`, `OutPatient` or `Both`, LOS, inclusions: item or category, quantity/amount caps) → 201 |
+| POST | `/` | `billing.tariffs.manage` | `SavePackageRequest` (price, `usedFor`: `InPatient`, `OutPatient` or `Both`, LOS, inclusions: item or category, quantity/amount caps, `hbpCode`: the AB PM-JAY procedure, see [PM-JAY procedures](#pm-jay-procedures-hbp)) → 201 |
 | PUT | `/{id}` | `billing.tariffs.manage` | `SavePackageRequest` (+`version`) → `PackageDetail` |
+
+### PM-JAY procedures — `/api/v1/billing/hbp`
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/procedures?search=&specialty=&includeRetired=` | `billing.tariffs.manage` / `insurance.preauth.manage` / `insurance.claims.manage` | → `HbpProcedureDto[]` (the first 50 by code, active ones unless asked) |
+| GET | `/procedures/{code}` | as above | → `HbpProcedureDto`; 404 `billing.hbp_not_found` |
+| POST | `/imports` | `billing.tariffs.manage` | multipart `file` (NHA's HBP master, .xlsx or CSV, at most 10 MB) and `version` (for example `HBP 2022`) → `HbpImportResult` (read, added, updated, retired, the rows not read); 400 `file` or `version` |
 
 ### Charges — `/api/v1/billing/charges`
 | Method | Path | Permission | Request → response |
@@ -334,6 +341,29 @@ one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) fo
 | GET | `/{id}/pdf` | → `application/pdf` `bill-<number>.pdf`: the same [printed bill](#the-printed-bill) the counter prints, for the bills listed above only (finalized, part-paid, paid, refunded); audited ("Downloaded bill … as a PDF (patient portal)"); 503 `pdf.unavailable` when the server cannot make PDFs |
 | POST | `/{id}/pay` | → `PortalPaymentOrder` (gateway checkout / link) |
 | POST | `/{id}/payments/{orderId}/verify` | → `PortalPaymentStatus` |
+
+## PM-JAY procedures (HBP)
+AB PM-JAY pays fixed rates for the procedures of its Health Benefit Package master (HBP), which the National Health
+Authority publishes and the State Health Agencies pass on as Excel. Each procedure code is two letters for the
+specialty, three digits for the package and, for a stratified procedure, a letter (`BM001A` to `BM001D` are thermal
+burns by %TBSA band). The master also gives the rate, the expected stay, what the stratification is by, and whether the
+scheme reserves the procedure for public hospitals.
+
+* **Import.** Whoever keeps the tariffs (`billing.tariffs.manage`) imports the master (**Billing › PM-JAY procedures ›
+  Import master**), as .xlsx or CSV, under the name NHA gives it. HC360 finds the columns by their headings rather than
+  their place, since state copies order and name them differently: the procedure code and name are required; the
+  specialty and its code, package name, rate or price, length of stay, reservation and stratification are read when
+  present. A rate with a rupee sign or commas is read; a row whose code is not an HBP procedure code, has no name, or
+  repeats an earlier code is left out and listed back with its row number. Audited as `data` / `billing.hbp.imported`.
+* **A later master** updates the procedures it lists, adds the new ones, and **retires** (does not delete) those it no
+  longer lists: a package or claim that names a retired procedure still reads, but a package cannot newly be mapped
+  to it.
+* **Mapping a package.** A package the scheme covers names its HBP procedure (`hbpCode`, on the package drawer, which
+  shows the procedure's name, the scheme rate and whether it is reserved for public hospitals). The code must be in the
+  imported master and active; a package already mapped to a procedure a later master retired keeps it until changed.
+  The package's own price is not tied to the scheme rate, which states weight by tier and incentives.
+* **Claims to the scheme** name the HBP procedure on each line and carry the IG's `AB-PMJAY` programme code
+  ([NHCX claim documents](integrations.md#nhcx-claim-documents-not-live)).
 
 ## Packages on OP bills
 A visit can be billed at a package (MB-02, OPB-01..07), as an admission can: for example a cataract operation done as
@@ -866,6 +896,9 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
   and the IRN recorded by hand; there is no API connection to the IRP, so no automatic IRN, e-way bill or GSTR-1 data.
 * **Credit notes on the IRP.** Credit notes against e-invoiced bills and pharmacy returns are not reported to the
   portal as `CRN` documents.
+* **PM-JAY's tier and incentive weights and its reservation rule.** The master's base rate is shown, not the state's
+  weighted rate, and a procedure reserved for public hospitals is flagged, not refused, since HC360 does not record
+  whether the hospital is public.
 * **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
   bill.
 * **An admission's package is not checked against its tariff plan.** OP bills take only packages for their tariff plan

@@ -33,6 +33,13 @@ public sealed class Package : AuditableEntity
     public PackageUse UsedFor { get; set; } = PackageUse.InPatient;
 
     public string? Description { get; set; }
+
+    /// <summary>
+    /// The AB PM-JAY procedure the package is billed as for the scheme (an <see cref="HbpProcedure"/> code, as
+    /// <c>SG039A</c>), which claims to the scheme name in place of HC360's own code. Null for packages the scheme does not cover.
+    /// </summary>
+    public string? HbpCode { get; set; }
+
     public bool IsActive { get; set; } = true;
     public List<PackageInclusion> Inclusions { get; set; } = [];
 

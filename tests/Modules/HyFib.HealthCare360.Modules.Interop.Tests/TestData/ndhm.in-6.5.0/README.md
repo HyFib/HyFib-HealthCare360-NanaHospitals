@@ -53,3 +53,5 @@ and run the Interop module tests and `AbdmExportTests`.
   `example/Bundle-CoverageEligibilityResponseBundle-*-example-01.json` and the four
   `example/Bundle-ClaimResponseBundle-*-example-01.json`: the guide's own checks and answers, which must validate and
   which the response reader is checked against figure by figure.
+- `package/CodeSystem-ndhm-program-code.json`: the government programme codes, against which the `AB-PMJAY` code and
+  display on PM-JAY claims are checked (`Nhcx/NhcxClaimBundleTests`). Added 2026-10-27 from the same package.

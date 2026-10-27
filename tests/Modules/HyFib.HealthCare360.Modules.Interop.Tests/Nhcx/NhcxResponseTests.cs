@@ -63,7 +63,7 @@ public sealed class NhcxResponseTests
         request.Identifier.Single().Value.ShouldBe("NHEL2600007");
         request.Insurance.Single().Focal.ShouldBe(true);
         request.Item.Select(i => i.ProductOrService.Coding.Single().Code).ShouldBe(["SRG-APP", "SG039A"]);
-        request.Item[1].ProductOrService.Coding.Single().System.ShouldBe("urn:hc360:pmjay-hbp");
+        request.Item[1].ProductOrService.Coding.Single().System.ShouldBe(NhcxClaimBundle.HbpSystem);
         request.Item[0].Diagnosis.Select(d => ((R4.CodeableConcept)d.Diagnosis).Coding.Single().Code).ShouldBe(["K35.8"]);
         var coverage = bundle.Entry.Select(e => e.Resource).OfType<R4.Coverage>().Single();
         coverage.Identifier.Single().Value.ShouldBe("P/181100/01/2026/004512", "the policy is named as on a claim, so the insurer matches it the same way");
@@ -237,7 +237,7 @@ public sealed class NhcxResponseTests
             ?
             [
                 new("SRG-APP", "Laparoscopic appendicectomy", [new("K35.8", "Acute appendicitis, other and unspecified")]),
-                new("SG039A", "Appendicectomy (laparoscopic)", [new("K35.8")]) { ServiceSystem = "urn:hc360:pmjay-hbp" },
+                new("SG039A", "Appendicectomy (laparoscopic)", [new("K35.8")]) { ServiceSystem = NhcxClaimBundle.HbpSystem },
             ]
             : [],
     };

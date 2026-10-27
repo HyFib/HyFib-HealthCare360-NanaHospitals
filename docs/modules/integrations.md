@@ -1234,6 +1234,11 @@ Organizations, the Coverage and the treating doctor.
   preliminary on a pre-authorisation and final on a claim (`ndhm-diagnostic-type`); each service carries HC360's service
   code and name (`urn:hc360:service-item`, which the IG's example binding allows), quantity, unit price and net in
   rupees, and the total is their sum. A claim quotes the insurer's pre-authorisation approval in `insurance.preAuthRef`.
+  A claim to **AB PM-JAY** names the scheme's HBP procedure on each line instead (`urn:hc360:pmjay-hbp`: neither NHA nor
+  the IG publishes a URI for HBP codes, so HC360 names them under its own namespace until the NHCX sandbox says which
+  one the scheme reads) and carries the programme on each line (`item.programCode`: `AB-PMJAY` from the IG's
+  `ndhm-program-code`); a line without an HBP procedure code is refused, since the scheme pays only the procedures it
+  lists ([PM-JAY procedures](billing.md#pm-jay-procedures-hbp)).
 * **Coverage.** The policy number under the payer's code, the member id as `subscriberId`, the policy's period, and the
   patient's relation to the holder (self, spouse, child, parent or other). The holder is the patient for "self";
   otherwise the holder is named and not sent as a resource.
