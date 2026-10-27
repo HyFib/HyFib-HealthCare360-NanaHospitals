@@ -391,15 +391,13 @@ describe('the GST a discount preview shows', () => {
   const totals = { tax: 180, cgst: 90, sgst: 90 };
 
   it('splits it into CGST and SGST within the state', () => {
-    expect(gstBreakdown({ igstAmount: 0, lines: [{ igstAmount: 0 }] }, totals)).toEqual([
+    expect(gstBreakdown({ isInterState: false }, totals)).toEqual([
       { label: 'CGST', amount: 90 },
       { label: 'SGST', amount: 90 },
     ]);
   });
 
   it('shows it as IGST on a bill to another state, as the bill charges it', () => {
-    expect(gstBreakdown({ igstAmount: 360, lines: [{ igstAmount: 360 }] }, totals)).toEqual([
-      { label: 'IGST', amount: 180 },
-    ]);
+    expect(gstBreakdown({ isInterState: true }, totals)).toEqual([{ label: 'IGST', amount: 180 }]);
   });
 });

@@ -187,6 +187,8 @@ export interface BillDetail {
   igstAmount: number;
   /** GST state code of the place of supply: the payer's registered state, else the facility's. */
   placeOfSupply: string | null;
+  /** The place of supply is another state, so GST is IGST (even while the bill's tax is zero). */
+  isInterState: boolean;
   taxAmount: number;
   roundOffAmount: number;
   netAmount: number;

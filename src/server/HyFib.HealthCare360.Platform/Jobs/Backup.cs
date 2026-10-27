@@ -446,8 +446,11 @@ internal sealed class BackupCatchUpJob(
         var now = time.GetUtcNow();
         await using (var db = await contexts.CreateDbContextAsync(cancellationToken))
         {
+            // A backup this server started is under way (and is the backup); one still marked as running from before it
+            // started was cut off with its server, by the power cut or update that made the nightly backup missed.
             var full = db.Set<BackupRun>().Where(r => r.Kind == BackupKind.Scheduled || r.Kind == BackupKind.Manual);
-            if (await full.AnyAsync(r => r.Status == BackupStatus.Running && r.StartedAt > now.AddHours(-3), cancellationToken))
+            var serverStarted = context.Trigger.StartTimeUtc - Delay;
+            if (await full.AnyAsync(r => r.Status == BackupStatus.Running && r.StartedAt >= serverStarted, cancellationToken))
             {
                 return;
             }

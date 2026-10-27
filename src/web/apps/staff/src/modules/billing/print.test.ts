@@ -90,6 +90,7 @@ function bill(overrides: Partial<BillDetail> = {}): BillDetail {
     sgstAmount: 0,
     igstAmount: 0,
     placeOfSupply: null,
+    isInterState: false,
     taxAmount: 0,
     roundOffAmount: 0,
     netAmount: 500,
@@ -185,6 +186,7 @@ describe('bill prints', () => {
         igstAmount: 180,
         taxAmount: 180,
         placeOfSupply: '32',
+        isInterState: true,
       }),
       facility,
     );

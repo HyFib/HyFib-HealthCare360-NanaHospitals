@@ -252,6 +252,7 @@ export const DRAFT: BillDetail = {
   sgstAmount: 0,
   igstAmount: 0,
   placeOfSupply: null,
+  isInterState: false,
   taxAmount: 0,
   roundOffAmount: 0,
   netAmount: 850,

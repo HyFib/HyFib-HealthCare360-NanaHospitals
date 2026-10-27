@@ -445,15 +445,15 @@ export function creditableAmount(bill: { patientAmount: number; creditAmount: nu
 }
 
 /**
- * How the GST in a preview is shown: as IGST on a bill whose place of supply is another state (it already charges
- * IGST, and a discount does not change where the supply goes), otherwise as CGST and SGST.
+ * How the GST in a preview is shown: as IGST on a bill whose place of supply is another state (the server charges
+ * IGST on it, and a discount does not change where the supply goes, even when the bill's tax is zero now), otherwise as
+ * CGST and SGST.
  */
 export function gstBreakdown(
-  bill: { igstAmount: number; lines: readonly { igstAmount: number }[] },
+  bill: { isInterState: boolean },
   totals: { tax: number; cgst: number; sgst: number },
 ): { label: 'CGST' | 'SGST' | 'IGST'; amount: number }[] {
-  const interState = bill.igstAmount !== 0 || bill.lines.some((line) => line.igstAmount !== 0);
-  return interState
+  return bill.isInterState
     ? [{ label: 'IGST', amount: totals.tax }]
     : [
         { label: 'CGST', amount: totals.cgst },

@@ -73,7 +73,7 @@ internal static class BillQueries
             bill.PreAuthorizationId, bill.CoPayPercent, bill.PayerCoverageLimit, bill.BillDiscountPercent, bill.BillDiscountValue, bill.DiscountReason,
             bill.ApprovedDiscountAmount, bill.GrossAmount, bill.PackageCoveredAmount, bill.TariffDiscountAmount, bill.LineDiscountAmount,
             bill.BillDiscountAmount, bill.DiscountAmount, bill.TaxableAmount, bill.CgstAmount, bill.SgstAmount, bill.IgstAmount,
-            bill.PlaceOfSupply, bill.TaxAmount, bill.RoundOffAmount,
+            bill.PlaceOfSupply, bill.IsInterState, bill.TaxAmount, bill.RoundOffAmount,
             bill.NetAmount, bill.PayerAmount, bill.PatientAmount, bill.CoPayAmount, bill.NonPayableAmount, bill.PaidAmount, bill.RefundedAmount,
             bill.CreditAmount, bill.DueAmount, bill.RefundableAmount, bill.PayerSettledAmount, bill.PayerDisallowedAmount,
             IsTaxInvoice: bill.Lines.Any(l => l.TaxAmount > 0), bill.CreatedAt, bill.FinalizedAt, bill.CancelledAt, bill.CancelReason, bill.Notes, lines,

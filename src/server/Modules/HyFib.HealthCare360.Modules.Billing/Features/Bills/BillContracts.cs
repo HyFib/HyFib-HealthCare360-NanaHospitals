@@ -116,6 +116,7 @@ public sealed record BillDetail(
     decimal SgstAmount,
     decimal IgstAmount,
     string? PlaceOfSupply,
+    bool IsInterState,
     decimal TaxAmount,
     decimal RoundOffAmount,
     decimal NetAmount,
