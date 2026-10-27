@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allowedWithoutApproval,
   calculateBillTotals,
+  gstBreakdown,
   inferTariffPercent,
   NO_BILL_DISCOUNT,
   NO_DISCOUNT_AUTHORITY,
@@ -383,5 +384,22 @@ describe('discount preview on a saved bill', () => {
       ok: false,
       kind: 'unavailable',
     });
+  });
+});
+
+describe('the GST a discount preview shows', () => {
+  const totals = { tax: 180, cgst: 90, sgst: 90 };
+
+  it('splits it into CGST and SGST within the state', () => {
+    expect(gstBreakdown({ igstAmount: 0, lines: [{ igstAmount: 0 }] }, totals)).toEqual([
+      { label: 'CGST', amount: 90 },
+      { label: 'SGST', amount: 90 },
+    ]);
+  });
+
+  it('shows it as IGST on a bill to another state, as the bill charges it', () => {
+    expect(gstBreakdown({ igstAmount: 360, lines: [{ igstAmount: 360 }] }, totals)).toEqual([
+      { label: 'IGST', amount: 180 },
+    ]);
   });
 });
