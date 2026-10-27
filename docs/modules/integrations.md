@@ -1252,10 +1252,46 @@ pre-authorisation example fills in its Claim is filled here too, except coded pr
 pre-authorisation's procedures as text, so they go as services). Firely does not report a code outside an extensible
 binding, so the claim types and diagnosis types sent are checked against the IG's value set files directly.
 
+### NHCX eligibility checks and insurers' answers (not live)
+
+`Interop/Nhcx/NhcxEligibilityBundle.cs` builds the coverage eligibility check as a `CoverageEligibilityRequestBundle`:
+the CoverageEligibilityRequest (profile `CoverageEligibilityRequest`) followed by the Patient, the staff member who
+checks (the profile wants a Practitioner as `enterer`), the hospital and the insurer as Organizations, the hospital as
+a Location (`facility`, required) and the Coverage. The patient, insurer and policy are built exactly as on a claim, so
+the insurer matches them the same way.
+
+* **Purpose.** `validation` (is the policy in force), `benefits` (what is covered and how much is left, per service),
+  `auth-requirements` (do these services need approval in advance) or `discovery` (which policies the insurer holds for
+  the patient). A benefits or approval question names the services, each with HC360's service code (or a scheme's
+  package code) and the ICD-10 diagnosis it is for; one without services is refused, as is a code that is not ICD-10.
+* **Identifier.** The hospital's number for the check, which the insurer quotes back.
+
+`Interop/Nhcx/NhcxResponses.cs` reads what comes back, once the envelope is opened, into what Billing records:
+
+* **ClaimResponseBundle** (the answer to a pre-authorisation, an enhancement of one, a predetermination or a claim):
+  for each ClaimResponse, its use, the outcome (`queued`, `complete`, `partial`, `error`), the insurer's words
+  (`disposition`), the approval reference and how long it holds (`preAuthRef`, `preAuthPeriod`), the totals by
+  adjudication category, each line's figures and reasons by the line's sequence on the request, the payment (amount,
+  date, reference), whether an approval or settlement letter came with it (`formCode`, `form`), and the errors.
+  **Approved** is the `benefit` total, else the `eligible` one; NRCeS's own examples put the approved amount under
+  `eligpercent`, so that is read last.
+* **CoverageEligibilityResponseBundle**: the purposes answered, the outcome, the words, any approval reference, and per
+  policy whether it is in force, its benefit period, and per service whether it is excluded, needs approval, and what
+  is allowed and used (money or counts). Exactly one response is expected.
+* An element the FHIR model does not know is skipped rather than refusing the answer; a body that is not FHIR JSON, not
+  a Bundle, or carries no response of the expected kind is refused.
+
+**Checked against.** `NhcxResponseTests` validates HC360's eligibility checks of all four purposes against the
+CoverageEligibilityRequestBundle profile, and every element the IG's benefits example fills is filled here too (except
+`language`). The IG's own four ClaimResponseBundle examples (pre-authorisation, enhancement, predetermination,
+settlement) and four CoverageEligibilityResponseBundle examples validate against their profiles and are read figure by
+figure: the approval references, periods, submitted and approved totals, each line's amounts and reasons, the letters,
+the policies in force and their periods, and the benefits allowed and used.
+
 Not built (they need the NHCX sandbox and the hospital's participant registration): the registry lookups for a
-payer's encryption certificate, the API calls and callbacks, and NHCX's signing of messages, if the sandbox requires it.
-Also not built: loading a pre-authorisation or claim from Billing into the builder and sending it, the ClaimResponse
-bundles coming back, and the coverage eligibility check.
+payer's encryption certificate, the API calls and callbacks that carry these bundles, and NHCX's signing of messages,
+if the sandbox requires it. Also not built: loading a pre-authorisation, claim or eligibility check from Billing into
+the builders, sending it, and recording the insurer's answer on Billing's records.
 
 ### Not covered yet: payment gateway
 * **PayU** and other gateways: only Razorpay (and the simulator) implement `IPaymentProvider`, settlements and refund
