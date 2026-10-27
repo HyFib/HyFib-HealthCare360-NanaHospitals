@@ -72,5 +72,8 @@ public sealed class DowntimeLogTests(HospitalServer server)
 
         var listed = await quality.GetAsync<List<DowntimeEventDto>>($"{Log}?from={date:yyyy-MM-dd}&to={date:yyyy-MM-dd}");
         listed.Select(e => e.Kind).ShouldBe([DowntimeKind.Drill, DowntimeKind.Planned, DowntimeKind.Unplanned]);
+        var pending = await quality.GetAsync<List<DowntimeEventDto>>($"{Log}?from={date:yyyy-MM-dd}&to={date:yyyy-MM-dd}&status=BackEntryPending");
+        pending.Select(e => e.Kind).ShouldBe([DowntimeKind.Drill, DowntimeKind.Planned]);
+        (await quality.GetAsync<List<DowntimeEventDto>>($"{Log}?from={date:yyyy-MM-dd}&to={date:yyyy-MM-dd}&status=Closed")).ShouldHaveSingleItem().Id.ShouldBe(outage.Id);
     }
 }

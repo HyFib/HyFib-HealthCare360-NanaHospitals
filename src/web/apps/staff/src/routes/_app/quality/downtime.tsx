@@ -46,7 +46,8 @@ function DowntimePage() {
         <Section flush title="Downtime">
           <DowntimeTable onOpen={setOpen} />
         </Section>
-        <RecordDowntimeDialog open={recording} onClose={() => setRecording(false)} />
+        {/* Mounted only while open, so each recording starts from a fresh form and the current time. */}
+        {recording && <RecordDowntimeDialog open onClose={() => setRecording(false)} />}
         {open && <DowntimeStepDialog downtime={open} onClose={() => setOpen(null)} />}
       </RequirePermission>
     </Page>

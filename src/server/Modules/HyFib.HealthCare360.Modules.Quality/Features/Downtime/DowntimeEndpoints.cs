@@ -35,13 +35,18 @@ internal static class DowntimeEndpoints
         }
 
         var (since, until) = Bounds(period.Value);
-        var events = await db.Set<DowntimeEvent>().AsNoTracking()
-            .Where(e => e.StartedAt >= since && e.StartedAt < until)
-            .OrderByDescending(e => e.StartedAt)
-            .Take(ListSize)
-            .ToListAsync(ct);
+        var query = db.Set<DowntimeEvent>().AsNoTracking().Where(e => e.StartedAt >= since && e.StartedAt < until);
+        // The status filter is applied before the limit, so a busy period does not hide what was asked for.
+        query = status switch
+        {
+            DowntimeStatus.Ongoing => query.Where(e => e.EndedAt == null),
+            DowntimeStatus.BackEntryPending => query.Where(e => e.EndedAt != null && e.BackEntryCompletedAt == null),
+            DowntimeStatus.Closed => query.Where(e => e.BackEntryCompletedAt != null),
+            _ => query,
+        };
+        var events = await query.OrderByDescending(e => e.StartedAt).Take(ListSize).ToListAsync(ct);
         var now = time.GetUtcNow();
-        return TypedResults.Ok(events.Where(e => status is null || e.Status == status).Select(e => ToDto(e, now)).ToList());
+        return TypedResults.Ok(events.Select(e => ToDto(e, now)).ToList());
     }
 
     private static async Task<IResult> Get(Guid id, HospitalDbContext db, TimeProvider time, CancellationToken ct)
