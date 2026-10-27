@@ -10,8 +10,8 @@ namespace HyFib.HealthCare360.Integrations.Features.Webhooks;
 /// </summary>
 internal static class WebhookRequests
 {
-    /// <summary>The platform's fixed-window policy for anonymous endpoints (60 requests/minute per client address).</summary>
-    public const string RateLimitPolicy = RateLimitPolicies.Public;
+    /// <summary>The platform's policy for partners' calls (1,200 requests a minute per client address): a campaign brings one receipt a message.</summary>
+    public const string RateLimitPolicy = RateLimitPolicies.Partner;
 
     public const int MaxBodyBytes = 256 * 1024;
 

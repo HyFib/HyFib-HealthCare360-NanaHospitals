@@ -32,7 +32,7 @@ internal static class GatewayEndpoints
         app.MapPost("/api/v1/billing/webhooks/payment-gateway", Webhook)
             .WithTags("Billing - Payment gateway")
             .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Public);
+            .RequireRateLimiting(RateLimitPolicies.Partner);
     }
 
     private static async Task<IResult> StartSale(StartPosSaleRequest request, PosService pos, CancellationToken ct) => (await pos.StartAsync(request, ct)).ToOk();

@@ -216,9 +216,12 @@ internal sealed class EncryptedFileStore(
         return (string.IsNullOrWhiteSpace(stem) ? "document" : stem) + extensions[0];
     }
 
+    // The last part of the name as the browser sent it, whichever separator its machine uses (and a drive's colon, as on
+    // Windows): Path.GetFileName splits on the server's own only, so on Linux "C:\fakepath\run.png" kept its folders.
     private static string SanitizeFileName(string? fileName)
     {
-        var name = Path.GetFileName(fileName ?? "document");
+        var sent = fileName ?? "document";
+        var name = sent[(sent.LastIndexOfAny(['/', '\\', ':']) + 1)..];
         var invalid = Path.GetInvalidFileNameChars();
         var cleaned = new string(name.Where(c => !invalid.Contains(c) && !char.IsControl(c)).ToArray()).Trim();
         return string.IsNullOrEmpty(cleaned) ? "document" : cleaned.Length > 200 ? cleaned[..200] : cleaned;

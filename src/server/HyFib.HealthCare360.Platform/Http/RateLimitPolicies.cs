@@ -22,6 +22,14 @@ public static class RateLimitPolicies
     public const string Public = "public";
 
     /// <summary>
+    /// Calls from the hospital's partners, which sign or otherwise prove each call (SMS and WhatsApp delivery receipts,
+    /// the payment gateway, the ABDM gateway and the providers that push records to it): 1,200 requests a minute per
+    /// client address by default, outside the per-address limit on every request, so a campaign's receipts are taken and
+    /// raising this leaves the <see cref="Public"/> budget of QR codes and links as it is.
+    /// </summary>
+    public const string Partner = "partner";
+
+    /// <summary>
     /// Machines that present their own credential (home RPM gateways with <c>X-Device-Key</c>, biometric terminals with
     /// their key or serial number): by default 120 requests a minute per credential, so many homes behind one
     /// mobile-network address do not share a budget. Requests without a credential fall back to the client address.
@@ -61,11 +69,14 @@ public static class RateLimitPolicies
             }
 
             limiter.AddPolicy(Public, http => RateLimitPartition.GetFixedWindowLimiter(ClientKey(http), _ => FixedWindow(limits.Public)));
+            limiter.AddPolicy(Partner, http => RateLimitPartition.GetFixedWindowLimiter(ClientKey(http), _ => FixedWindow(limits.Partner)));
             limiter.AddPolicy(Device, http => RateLimitPartition.GetTokenBucketLimiter(DevicePartition(http, ClientKey(http)), _ => TokenBucket(limits.Device)));
             limiter.AddPolicy(DesktopUpdate, http => RateLimitPartition.GetFixedWindowLimiter(
                 DevicePartition(http, ClientKey(http)), _ => FixedWindow(limits.DesktopUpdate)));
-            limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http => RateLimitPartition.GetTokenBucketLimiter(
-                http.User.FindFirst(HcClaims.UserId)?.Value ?? ClientKey(http), _ => TokenBucket(limits.PerUser)));
+            // A partner's calls count against their own budget alone: the per-address burst would refuse a campaign's receipts.
+            limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http => IsPartnerCall(http)
+                ? RateLimitPartition.GetNoLimiter(Partner)
+                : RateLimitPartition.GetTokenBucketLimiter(http.User.FindFirst(HcClaims.UserId)?.Value ?? ClientKey(http), _ => TokenBucket(limits.PerUser)));
         });
         return services;
     }
@@ -98,6 +109,10 @@ public static class RateLimitPolicies
         ArgumentNullException.ThrowIfNull(http);
         return http.RequestServices.GetRequiredService<ClientAddresses>().Key(http.Connection.RemoteIpAddress);
     }
+
+    /// <summary>Whether the request is for an endpoint on the <see cref="Partner"/> policy.</summary>
+    internal static bool IsPartnerCall(HttpContext http) =>
+        http.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName == Partner;
 
     /// <summary>Partition for <see cref="Device"/>: a hash of the presented credential, never the raw value.</summary>
     internal static string DevicePartition(HttpContext http, string clientKey)

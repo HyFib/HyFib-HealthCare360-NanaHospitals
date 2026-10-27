@@ -164,15 +164,16 @@ limit of zero or a window of zero. Change one and restart the `HC360Server` serv
 |---|---|---|
 | `SignIn:PermitLimit`, `SignIn:Window` | 10 in `00:01:00` | Signing in, second factors, one-time codes, unlocking, a password given again: per address, for the hospital when there are several servers |
 | `OneTimeCode:PermitLimit`, `OneTimeCode:Window` | 5 in `00:15:00` | Asking for a portal sign-in code: per address, as above |
-| `Public:PermitLimit`, `Public:Window` | 60 in `00:01:00` | Links, QR codes, webhooks, workstation enrolment: per address |
+| `Public:PermitLimit`, `Public:Window` | 60 in `00:01:00` | Links, QR codes, workstation enrolment: per address |
+| `Partner:PermitLimit`, `Partner:Window` | 1200 in `00:01:00` | Partners' calls: SMS and WhatsApp delivery receipts, the payment gateway, the ABDM gateway and records pushed to it; per address, and not counted against `PerUser` |
 | `Device:TokenLimit`, `Device:TokensPerPeriod`, `Device:ReplenishmentPeriod` | 120, 60 every `00:00:30` | RPM gateways and biometric terminals: per device |
 | `DesktopUpdate:PermitLimit`, `DesktopUpdate:Window` | 30 in `00:15:00` | HC360 Desktop's self-update: per workstation |
 | `PerUser:TokenLimit`, `PerUser:TokensPerPeriod`, `PerUser:ReplenishmentPeriod` | 400, 200 every `00:00:10` | Every request: per signed-in user, or per address before signing in |
 | `Ai:PermitLimit`, `Ai:Window`, `Ai:SegmentsPerWindow` | 20 in `00:01:00`, 4 | The AI assistant, dictation and note structuring: per user |
 | `RadiologyImages:PermitLimit`, `RadiologyImages:QueueLimit` | 6 at once, 32 waiting | PACS thumbnails and images: per user |
 
-Raise the sign-in limit when many workstations reach the server through one address (a NAT router), and the per-user
-limits for a load test. Lowering them below the defaults is rarely needed: the per-account lockout and the portal's proof
+Raise the sign-in limit when many workstations reach the server through one address (a NAT router), the partner limit
+when a campaign sends more than 1,200 messages a minute through one provider, and the per-user limits for a load test. Lowering them below the defaults is rarely needed: the per-account lockout and the portal's proof
 of work already stop guessing.
 
 ### Reading the server log

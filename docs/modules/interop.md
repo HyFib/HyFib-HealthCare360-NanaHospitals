@@ -758,9 +758,8 @@ again from their app.
 They are anonymous at the HTTP level and checked by the gateway's signed bearer token ([Callback check](#abdm-gateway)):
 401 when it is missing, forged or expired. They answer 503 `feature.disabled` while the ABDM switch is off, 404 while
 the gateway is off or not set up, 422 for a body that is not the expected JSON, and 202 otherwise, also for an answer to no request of this hospital's,
-which is logged and ignored. Bodies are limited to 64 KB and requests to the public rate limit per client address (60
-a minute by default, `HealthCare360:RateLimits:Public`), which a busy hospital may need to raise for the gateway's
-addresses. The hospital's public address for these paths is registered with NHA as the HIP's callback URL.
+which is logged and ignored. Bodies are limited to 64 KB and requests to the partners' rate limit per client address
+(1,200 a minute by default, `HealthCare360:RateLimits:Partner`), apart from the public limit on QR codes and links. The hospital's public address for these paths is registered with NHA as the HIP's callback URL.
 
 `HttpAbdmGatewayClientTests` checks each call against NHA's wrapper (paths, headers, bodies, the session's reuse and
 renewal, both error shapes, no retry); `AbdmLinkingTests`, `AbdmUserLinkingTests`, `AbdmDataFlowTests`, `AbdmProfileShareTests` and `AbdmConsentRequestTests` run the flows against a fake gateway inside the test
