@@ -27,6 +27,7 @@ import { DataTable, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { printDowntimeUhidSheet } from '@/lib/print';
+import { PAPER_FORMS, printPaperForm } from './paperForms';
 import {
   downtimeApi,
   downtimeKeys,
@@ -44,6 +45,8 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
   mono: { fontFamily: tokens.fontFamilyMonospace },
   toolbar: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' },
+  forms: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' },
+  form: { display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' },
 });
 
 const problemOf = (error: unknown, fallback: string) => (isApiError(error) ? error.message : fallback);
@@ -332,5 +335,28 @@ function VoidDowntimeUhidDialog({
         </DialogBody>
       </DialogSurface>
     </Dialog>
+  );
+}
+
+/** The blank paper forms of a downtime kit, each printed on A4 for copying. */
+export function PaperFormsList({ facilityName }: { facilityName: string }) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const print = (kind: (typeof PAPER_FORMS)[number]['kind']) =>
+    printPaperForm(kind, facilityName).catch(() => notify.error('The form could not be printed.'));
+  return (
+    <ul className={styles.forms} aria-label="Paper forms">
+      {PAPER_FORMS.map((form) => (
+        <li key={form.kind} className={styles.form}>
+          <div className={styles.cell}>
+            <Text weight="semibold">{form.title}</Text>
+            <Caption1 className={styles.muted}>{form.description}</Caption1>
+          </div>
+          <Button icon={<PrintRegular />} onClick={() => void print(form.kind)} aria-label={`Print ${form.title}`}>
+            Print
+          </Button>
+        </li>
+      ))}
+    </ul>
   );
 }
