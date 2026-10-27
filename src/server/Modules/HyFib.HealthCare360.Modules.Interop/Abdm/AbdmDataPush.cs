@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Platform.Http;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -15,6 +16,42 @@ internal sealed class AbdmDataPush(HttpClient http, ILogger<AbdmDataPush> log)
 {
     /// <summary>A page of a few documents with their PDFs can be several megabytes.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// The connection to an HIU: a name is resolved as the connection is made and only an address outside the hospital's
+    /// network is connected to, so a name that resolves into it (or is made to, after the URL was checked) leads nowhere.
+    /// Through the hospital's outbound proxy the proxy resolves the name, and <see cref="IsAllowed"/> is the check.
+    /// </summary>
+    public static SocketsHttpHandler CreateHandler()
+    {
+        var handler = OutboundHttp.CreateHandler();
+        handler.ConnectCallback = ConnectOutsideAsync;
+        return handler;
+    }
+
+    private static async ValueTask<Stream> ConnectOutsideAsync(SocketsHttpConnectionContext context, CancellationToken ct)
+    {
+        var target = context.DnsEndPoint;
+        var direct = string.Equals(target.Host, context.InitialRequestMessage.RequestUri?.IdnHost, StringComparison.OrdinalIgnoreCase);
+        var addresses = IPAddress.TryParse(target.Host, out var literal) ? [literal] : await Dns.GetHostAddressesAsync(target.Host, ct);
+        var usable = direct ? addresses.Where(IsPublic).ToArray() : addresses;
+        if (usable.Length == 0)
+        {
+            throw new HttpRequestException($"The data-push address {target.Host} does not lead outside the hospital's network.");
+        }
+
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            await socket.ConnectAsync(usable, target.Port, ct);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
 
     /// <summary>True when the HIU accepted the page (any 2xx).</summary>
     public async Task<bool> PushAsync(Uri url, AbdmGatewayMessages.DataPush page, CancellationToken ct)
@@ -41,13 +78,13 @@ internal sealed class AbdmDataPush(HttpClient http, ILogger<AbdmDataPush> log)
 
     /// <summary>
     /// An https URL with no user name, whose host is not this machine or an address on a private, link-local or
-    /// carrier network. A host name is not resolved here: the HIU's address comes from the consent manager's signed request.
+    /// carrier network. A host name is resolved when the records are sent (<see cref="CreateHandler"/>).
     /// </summary>
     public static bool IsAllowed(string? value, out Uri? url)
     {
         url = null;
         if (!Uri.TryCreate(value, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(parsed.UserInfo)
-            || parsed.IsLoopback || string.Equals(parsed.Host, "localhost", StringComparison.OrdinalIgnoreCase))
+            || parsed.IsLoopback || string.Equals(parsed.Host.TrimEnd('.'), "localhost", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

@@ -30,12 +30,22 @@ internal sealed class ScheduleService(
             query = query.Where(s => s.Destination == kind);
         }
 
-        var schedules = await query.OrderBy(s => s.Name).Take(500).ToListAsync(ct);
-        return schedules.Select(s => ToDto(s, actor)).ToList();
+        var schedules = await query.OrderBy(s => s.Name).ToListAsync(ct);
+        return schedules.Where(s => CanOpen(actor, s.ReportId)).Take(500).Select(s => ToDto(s, actor)).ToList();
     }
 
+    /// <summary>
+    /// Whether <paramref name="actor"/> may open the report <paramref name="reportId"/>. A schedule, its deliveries and their
+    /// files are as closed as the report: to anyone who may not open it they are not there.
+    /// </summary>
+    public bool CanOpen(ReportActor actor, string reportId) =>
+        catalog.Find(reportId)?.Descriptor is { } report && ReportCatalog.CanRead(report, actor);
+
+    /// <summary>The ids of the reports <paramref name="actor"/> may open.</summary>
+    public IReadOnlyList<string> OpenableReportIds(ReportActor actor) => catalog.VisibleTo(actor).Select(r => r.Descriptor.Id).ToList();
+
     public async Task<Result<ScheduleDto>> GetAsync(ReportActor actor, Guid id, CancellationToken ct) =>
-        await db.Set<ReportSchedule>().AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) is { } schedule
+        await db.Set<ReportSchedule>().AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) is { } schedule && CanOpen(actor, schedule.ReportId)
             ? ToDto(schedule, actor)
             : Error.NotFound("Schedule", id);
 
@@ -68,7 +78,7 @@ internal sealed class ScheduleService(
     public async Task<Result<ScheduleDto>> UpdateAsync(ReportActor actor, Guid id, SaveScheduleRequest request, CancellationToken ct)
     {
         var schedule = await db.Set<ReportSchedule>().FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (schedule is null)
+        if (schedule is null || !CanOpen(actor, schedule.ReportId))
         {
             return Error.NotFound("Schedule", id);
         }
@@ -109,10 +119,10 @@ internal sealed class ScheduleService(
         return ToDto(schedule, actor);
     }
 
-    public async Task<Result> DeleteAsync(Guid id, uint? version, CancellationToken ct)
+    public async Task<Result> DeleteAsync(ReportActor actor, Guid id, uint? version, CancellationToken ct)
     {
         var schedule = await db.Set<ReportSchedule>().FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (schedule is null)
+        if (schedule is null || !CanOpen(actor, schedule.ReportId))
         {
             return Error.NotFound("Schedule", id);
         }

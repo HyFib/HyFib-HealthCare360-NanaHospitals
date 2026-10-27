@@ -163,6 +163,8 @@ export interface TallyLedgerMap {
   discount: string;
   outputCgst: string;
   outputSgst: string;
+  /** GST on supplies to another state (a payer or buyer registered there). */
+  outputIgst: string;
   roundOff: string;
   patientDebtors: string;
   patientAdvances: string;

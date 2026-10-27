@@ -60,6 +60,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.SecondDoctor] = SystemRoles.Doctor,
         [Users.Accountant] = SystemRoles.Accountant,
         [Users.Radiographer] = SystemRoles.Radiographer,
+        [Users.MisAnalyst] = SystemRoles.MisAnalyst,
     };
 
     // A test-only password for the staff accounts, new for every run.
@@ -641,6 +642,9 @@ public sealed class HospitalServer : IAsyncLifetime
 
         /// <summary>Performs scans and records the woman's Form F declaration, but does not sign Form F. Created on first use.</summary>
         public const string Radiographer = "radiographer";
+
+        /// <summary>Runs MIS reports and schedules them, but holds no finance reports. Created on first use.</summary>
+        public const string MisAnalyst = "misanalyst";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

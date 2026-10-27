@@ -56,11 +56,11 @@ internal sealed class AbdmGatewayKeys(HttpClient http, AbdmGatewayKeyCache cache
             return Error.Rule(AbdmCallbackVerifier.UnauthenticatedCode, "The gateway's key set could not be fetched to check the call.");
         }
 
-        var verified = await AbdmCallbackVerifier.VerifyAsync(authorization, keys.Value.Json, null, null, now);
+        var verified = await AbdmCallbackVerifier.VerifyAsync(authorization, keys.Value.Json, settings.CallbackIssuer, null, now, settings.CallbackClientId);
         if (verified.Error?.Code == AbdmCallbackVerifier.UnknownKeyCode && now - keys.Value.FetchedAt >= AbdmGatewayKeyCache.MinimumRefetch
             && await FetchAsync(url, now, ct) is { } refetched)
         {
-            verified = await AbdmCallbackVerifier.VerifyAsync(authorization, refetched.Json, null, null, now);
+            verified = await AbdmCallbackVerifier.VerifyAsync(authorization, refetched.Json, settings.CallbackIssuer, null, now, settings.CallbackClientId);
         }
 
         return verified.IsSuccess ? Result.Success() : verified.Error!;

@@ -70,6 +70,23 @@ public sealed class AbdmGatewayTests
     }
 
     [Fact]
+    public async Task The_production_gateway_is_not_live_until_the_client_id_of_its_callback_tokens_is_set()
+    {
+        // The gateway signs the session tokens of every ABDM client with the keys it signs its own calls with, under the
+        // same issuer: only the client id tells its calls from another provider's.
+        const string production = """{"enabled":true,"baseUrl":"https://live.abdm.gov.in/api/hiecm","hipId":"IN2710000123","cmId":"abdm"}""";
+        _settings.Set(AbdmGatewaySettingKeys.Gateway, production);
+        _settings.Set(AbdmGatewaySettingKeys.Secret, Credentials);
+
+        var status = await Configuration.StatusAsync(Ct);
+        status.Live.ShouldBeFalse();
+        status.Problems.ShouldContain(p => p.Contains("callbackClientId", StringComparison.Ordinal));
+
+        _settings.Set(AbdmGatewaySettingKeys.Gateway, production.Replace("}", ""","callbackClientId":"gateway"}""", StringComparison.Ordinal));
+        (await Configuration.StatusAsync(Ct)).Live.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task The_client_refuses_every_call_and_says_why()
     {
         var client = new DisabledAbdmGatewayClient(Configuration);

@@ -115,10 +115,25 @@ public static class ServerComposition
     /// (for example a table that already exists) happens again on every attempt, so it stops start-up at once, as does an
     /// update that cannot lock a table it changes (<see cref="DatabaseInitializer.LockedMessage"/>).
     /// </summary>
-    public static async Task InitializeDatabaseAsync(this WebApplication app, CancellationToken cancellationToken = default)
+    public static Task InitializeDatabaseAsync(this WebApplication app, CancellationToken cancellationToken = default) =>
+        InitializeDatabaseAsync(app.Services, cancellationToken);
+
+    /// <summary>
+    /// Brings the database up to date as the host's first hosted service (<see cref="DatabaseStartup"/>), not before the
+    /// host starts: the Windows service then reports in to Windows (which allows 30 seconds) as the host starts, while
+    /// migrations, the backup before them, or PostgreSQL still starting after a power cut may take minutes. The web server
+    /// and the jobs, later hosted services, start once it is done; if it fails the service stops, and Windows restarts it.
+    /// </summary>
+    public static IServiceCollection AddDatabaseStartup(this IServiceCollection services)
     {
-        var initializer = app.Services.GetRequiredService<DatabaseInitializer>();
-        var logger = app.Services.GetRequiredService<ILogger<DatabaseInitializer>>();
+        services.Insert(0, ServiceDescriptor.Singleton<IHostedService, DatabaseStartup>());
+        return services;
+    }
+
+    internal static async Task InitializeDatabaseAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        var initializer = services.GetRequiredService<DatabaseInitializer>();
+        var logger = services.GetRequiredService<ILogger<DatabaseInitializer>>();
         for (var attempt = 1; ; attempt++)
         {
             try
@@ -151,4 +166,12 @@ public static class ServerComposition
         InvalidOperationException { InnerException: NpgsqlException inner } => inner.IsTransient,
         _ => false,
     });
+}
+
+/// <summary>Brings the database up to date as the host starts (<see cref="ServerComposition.AddDatabaseStartup"/>).</summary>
+public sealed class DatabaseStartup(IServiceProvider services) : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken) => ServerComposition.InitializeDatabaseAsync(services, cancellationToken);
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

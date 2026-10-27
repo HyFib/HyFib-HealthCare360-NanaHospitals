@@ -9,6 +9,7 @@ const map: TallyLedgerMap = {
   discount: 'Discount Allowed',
   outputCgst: 'Output CGST',
   outputSgst: 'Output SGST',
+  outputIgst: 'IGST Payable',
   roundOff: 'Round Off',
   patientDebtors: 'Patient Receivables',
   patientAdvances: 'Patient Advances',
@@ -75,6 +76,7 @@ describe('ledger names form', () => {
       onAccount: null,
       modeLedgers: { Cash: 'Pharmacy Cash' },
     });
+    expect(saved.outputIgst).toBe('IGST Payable');
     expect(saved.doctorPayablePrefix).toBe('Doctor Fees Payable - ');
     expect(saved.canteen.include).toBe(false);
   });
