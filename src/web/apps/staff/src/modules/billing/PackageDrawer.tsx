@@ -22,6 +22,7 @@ import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { searchServices } from './api';
+import { HBP_CODE, hbpQueries } from './hbpApi';
 import {
   PACKAGE_USE_LABEL,
   PACKAGE_USES,
@@ -137,6 +138,7 @@ export function PackageDrawer({
   const [planId, setPlanId] = useState(p?.tariffPlanId ?? '');
   const [description, setDescription] = useState(p?.description ?? '');
   const [active, setActive] = useState(p?.isActive ?? true);
+  const [hbpCode, setHbpCode] = useState(p?.hbpCode ?? '');
   const [inclusions, setInclusions] = useState<InclusionDraft[]>(() =>
     (p?.inclusions ?? []).map((i) => ({
       key: nextKey(),
@@ -168,7 +170,17 @@ export function PackageDrawer({
     })
     .find(Boolean);
   const codeOk = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(code.trim()) && code.trim().length <= 32;
-  const valid = codeOk && name.trim().length > 0 && billing !== null && parsedPrice.ok && stayOk && !inclusionProblem;
+  const hbp = hbpCode.trim().toUpperCase();
+  const hbpFormatOk = hbp === '' || HBP_CODE.test(hbp);
+  const hbpProcedure = useQuery({ ...hbpQueries.procedure(hbp), enabled: hbp !== '' && hbpFormatOk });
+  const valid =
+    codeOk &&
+    name.trim().length > 0 &&
+    billing !== null &&
+    parsedPrice.ok &&
+    stayOk &&
+    !inclusionProblem &&
+    hbpFormatOk;
 
   const update = (key: string, patch: Partial<InclusionDraft>) =>
     setInclusions((list) => list.map((i) => (i.key === key ? { ...i, ...patch } : i)));
@@ -196,6 +208,7 @@ export function PackageDrawer({
           };
         }),
         version: p?.version ?? null,
+        hbpCode: hbp || null,
       };
       return p ? mastersApi.updatePackage(p.id, request) : mastersApi.createPackage(request);
     },
@@ -292,6 +305,21 @@ export function PackageDrawer({
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </Select>
+              </Field>
+              <Field
+                label="PM-JAY HBP procedure"
+                hint={hbpHint(hbp, hbpFormatOk, hbpProcedure.data, hbpProcedure.isError)}
+                validationMessage={
+                  hbpFormatOk ? undefined : 'Two letters, three digits and a letter, for example SG039A'
+                }
+                validationState={hbpFormatOk ? 'none' : 'error'}
+              >
+                <Input
+                  value={hbpCode}
+                  onChange={(_, d) => setHbpCode(d.value)}
+                  maxLength={8}
+                  placeholder="For example SG039A"
+                />
               </Field>
             </div>
             {billing ? (
@@ -425,4 +453,37 @@ export function PackageDrawer({
       {guard.dialogs}
     </OverlayDrawer>
   );
+}
+
+/** What the HBP code names in the imported master, or why it cannot be saved. */
+function hbpHint(
+  code: string,
+  formatOk: boolean,
+  procedure: { procedureName: string; rate: number | null; isActive: boolean; reservedForPublic: boolean } | undefined,
+  missing: boolean,
+): string {
+  if (code === '') {
+    return 'Leave empty unless the scheme covers this package';
+  }
+
+  if (!formatOk) {
+    return '';
+  }
+
+  if (missing) {
+    return 'Not in the imported HBP master';
+  }
+
+  if (!procedure) {
+    return 'Looking up…';
+  }
+
+  return [
+    procedure.procedureName,
+    procedure.rate !== null ? `scheme rate ${formatInr(procedure.rate)}` : null,
+    procedure.reservedForPublic ? 'reserved for public hospitals' : null,
+    procedure.isActive ? null : 'retired by the latest master',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }

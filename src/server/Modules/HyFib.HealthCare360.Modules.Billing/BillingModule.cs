@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.DoctorFees;
 using HyFib.HealthCare360.Modules.Billing.Features.EInvoices;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
+using HyFib.HealthCare360.Modules.Billing.Features.Hbp;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
 using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 using HyFib.HealthCare360.Modules.Billing.Features.Packages;
@@ -68,6 +69,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<PosRecheckRunner>();
         services.AddScoped<GatewayWebhookLog>();
         services.AddScoped<PosSettlementService>();
+        services.AddScoped<HbpService>();
         services.AddScoped<BillSharing>();
         services.AddScoped<INotificationDocumentSource, BillDocumentSource>();
 
@@ -85,6 +87,7 @@ public sealed class BillingModule : IModule
     {
         TariffEndpoints.Map(endpoints);
         PackageEndpoints.Map(endpoints);
+        HbpEndpoints.Map(endpoints);
         ChargeEndpoints.Map(endpoints);
         BillEndpoints.Map(endpoints);
         DiscountEndpoints.Map(endpoints);

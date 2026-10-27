@@ -105,6 +105,8 @@ export interface PackageListItem {
   usedFor: PackageUse;
   isActive: boolean;
   inclusionCount: number;
+  /** The AB PM-JAY HBP procedure the package is billed as for the scheme. */
+  hbpCode: string | null;
 }
 
 export interface PackageInclusionDto {
@@ -132,6 +134,8 @@ export interface PackageDetail {
   isActive: boolean;
   inclusions: PackageInclusionDto[];
   version: number;
+  hbpCode: string | null;
+  hbpProcedureName: string | null;
 }
 
 export interface PackageInclusionInput {
@@ -154,6 +158,7 @@ export interface SavePackageRequest {
   isActive: boolean;
   inclusions: PackageInclusionInput[];
   version: number | null;
+  hbpCode: string | null;
 }
 
 /** Packages an OP bill may be priced at: active (the list holds only those), for OP visits, for its tariff or any. */

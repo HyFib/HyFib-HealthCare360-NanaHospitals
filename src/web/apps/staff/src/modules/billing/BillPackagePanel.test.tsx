@@ -43,6 +43,7 @@ function pkg(id: string, patch: Partial<PackageListItem> = {}): PackageListItem 
     lengthOfStayDays: null,
     tariffPlanId: null,
     usedFor: 'OutPatient',
+    hbpCode: null,
     isActive: true,
     inclusionCount: 2,
     ...patch,
