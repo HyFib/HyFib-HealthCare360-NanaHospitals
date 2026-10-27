@@ -184,6 +184,7 @@ export function TallyLedgerForm({ map, canEdit }: { map: TallyLedgerMap; canEdit
         <FormGrid columns={2}>
           <Ledger control={control} name="outputCgst" label="Output CGST" disabled={disabled} />
           <Ledger control={control} name="outputSgst" label="Output SGST" disabled={disabled} />
+          <Ledger control={control} name="outputIgst" label="Output IGST (other states)" disabled={disabled} />
           <Ledger control={control} name="discount" label="Discounts" disabled={disabled} />
           <Ledger control={control} name="roundOff" label="Round off" disabled={disabled} />
         </FormGrid>

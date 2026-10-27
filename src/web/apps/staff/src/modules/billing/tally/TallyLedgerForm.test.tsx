@@ -27,6 +27,7 @@ const map: TallyLedgerMap = {
   discount: 'Discount Allowed',
   outputCgst: 'Output CGST',
   outputSgst: 'Output SGST',
+  outputIgst: 'Output IGST',
   roundOff: 'Round Off',
   patientDebtors: 'Patient Receivables',
   patientAdvances: 'Patient Advances',
@@ -94,6 +95,19 @@ describe('TallyLedgerForm', () => {
         pharmacy: expect.objectContaining({ sales: null }),
       }),
     );
+  });
+
+  it('names the ledger for GST on supplies to another state, and saves it', async () => {
+    renderForm();
+    const igst = screen.getByRole('textbox', { name: 'Output IGST (other states)' });
+    expect(igst).toHaveValue('Output IGST');
+
+    await userEvent.clear(igst);
+    await userEvent.type(igst, 'IGST Payable');
+    await userEvent.click(screen.getByRole('button', { name: 'Save ledger names' }));
+
+    await waitFor(() => expect(tallyApi.saveLedgers).toHaveBeenCalledTimes(1));
+    expect(tallyApi.saveLedgers).toHaveBeenCalledWith(expect.objectContaining({ outputIgst: 'IGST Payable' }));
   });
 
   it('is read-only without the permission to set up Tally', () => {
