@@ -188,8 +188,12 @@ export const screens: Screen[] = [
 /** Buttons that leave a screen as it was. */
 const NOT_ACTIONS = /^(cancel|close|back|dismiss|keep editing|stay)$/i;
 
+/** A button's name, without a time that moves on while the check runs ("26 min ago"). */
 const buttonName = (button: HTMLElement) =>
-  (button.getAttribute('aria-label') ?? button.textContent ?? '').replace(/\s+/g, ' ').trim();
+  (button.getAttribute('aria-label') ?? button.textContent ?? '')
+    .replace(/\b\d+ (s|sec|min|h|hr|d|days?|hours?|minutes?) ago\b/g, 'ago')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 /** The page's buttons a user may press (not those of the shell), by name, once each. */
 function actionButtons(): string[] {
