@@ -115,16 +115,105 @@ describe('AbdmConsentRequestsPanel', () => {
             hipName: 'City Care Hospital',
             records: 2,
             fetchedAt: '2026-10-26T11:01:00Z',
+            transfer: 'Received',
+            transferError: null,
+            received: 2,
           },
-          { artefactId: 'a2', status: 'REQUESTED', hipId: null, hipName: null, records: 0, fetchedAt: null },
+          {
+            artefactId: 'a2',
+            status: 'REQUESTED',
+            hipId: null,
+            hipName: null,
+            records: 0,
+            fetchedAt: null,
+            transfer: null,
+            transferError: null,
+            received: 0,
+          },
         ],
       }),
     ]);
     renderPanel();
     expect(await screen.findByText('Granted')).toBeInTheDocument();
-    expect(screen.getByText('City Care Hospital: 2 records')).toBeInTheDocument();
+    expect(screen.getByText('City Care Hospital: 2 records · 2 received')).toBeInTheDocument();
     expect(screen.getByText('A provider: details awaited')).toBeInTheDocument();
     expect(screen.getByText('Consultations, Lab and imaging reports')).toBeInTheDocument();
+  });
+
+  it('asks again for records that did not arrive', async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.endsWith('/consent-requests')
+          ? [
+              request({
+                status: 'Granted',
+                artefacts: [
+                  {
+                    artefactId: 'a 1',
+                    status: 'GRANTED',
+                    hipId: 'IN29',
+                    hipName: 'City Care Hospital',
+                    records: 1,
+                    fetchedAt: '2026-10-26T11:01:00Z',
+                    transfer: 'Failed',
+                    transferError: 'The consent manager did not pass the request on.',
+                    received: 0,
+                  },
+                ],
+              }),
+            ]
+          : [],
+      ),
+    );
+    post.mockResolvedValue('q1');
+    renderPanel();
+    const user = userEvent.setup();
+    expect(
+      await screen.findByText(/not received: The consent manager did not pass the request on\./),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ask again' }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/api/v1/abdm/patients/p1/consent-artefacts/a%201/records-requests'),
+    );
+  });
+
+  it('lists the records received, and opens one', async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.endsWith('/received-records')
+          ? [
+              {
+                id: 'rec1',
+                artefactId: 'a1',
+                hipName: 'City Care Hospital',
+                careContextReference: 'visit/1',
+                title: 'Consultation note',
+                recordDate: '2026-09-01T10:00:00Z',
+                receivedAt: '2026-10-26T11:05:00Z',
+                checksumMatches: true,
+                error: null,
+              },
+            ]
+          : path.endsWith('/received-records/rec1')
+            ? {
+                record: { id: 'rec1' },
+                eraseAt: '2026-11-25T23:59:59Z',
+                bundle: {
+                  resourceType: 'Bundle',
+                  entry: [
+                    { resource: { resourceType: 'Composition', title: 'Consultation note' } },
+                    { resource: { resourceType: 'Condition', code: { text: 'Type 2 diabetes' } } },
+                  ],
+                },
+              }
+            : [],
+      ),
+    );
+    renderPanel();
+    const user = userEvent.setup();
+    await user.click(await screen.findByText('Consultation note'));
+    expect(await screen.findByText('Type 2 diabetes')).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith('/api/v1/abdm/patients/p1/received-records/rec1', expect.anything());
   });
 
   it('asks for an ABHA address first, and is not shown without the permission', async () => {

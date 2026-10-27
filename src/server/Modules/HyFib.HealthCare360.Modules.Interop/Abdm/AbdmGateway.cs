@@ -12,7 +12,8 @@ internal static class AbdmGatewaySettingKeys
 {
     /// <summary>
     /// <c>{ "enabled": false, "baseUrl": "https://dev.abdm.gov.in/api/hiecm", "hipId": "IN27…", "cmId": "sbx", "timeoutSeconds": 30 }</c>,
-    /// and optionally <c>"jwksUrl"</c>, where the gateway publishes the keys its callbacks are signed with.
+    /// and optionally <c>"jwksUrl"</c>, where the gateway publishes the keys its callbacks are signed with, and
+    /// <c>"dataPushUrl"</c>, where other providers post the records the hospital asks for.
     /// </summary>
     public const string Gateway = "abdm.gateway";
 
@@ -64,6 +65,12 @@ internal sealed record AbdmGatewaySettings
     public string AbhaServiceUrl => (!string.IsNullOrWhiteSpace(AbhaBaseUrl) ? AbhaBaseUrl
         : CmId == "abdm" ? "https://abha.abdm.gov.in/abha/api/v3"
         : "https://abhasbx.abdm.gov.in/abha/api/v3").TrimEnd('/');
+
+    /// <summary>
+    /// Where other providers (HIPs) post the records the hospital asked for as HIU (ABDM M3): the hospital's public https
+    /// address of <c>/api/v3/hiu/health-information/transfer</c>. Without it, records are not asked for.
+    /// </summary>
+    public string? DataPushUrl { get; init; }
 
     /// <summary><see cref="JwksUrl"/>, or the default under <see cref="BaseUrl"/>.</summary>
     public string? KeySetUrl => !string.IsNullOrWhiteSpace(JwksUrl) ? JwksUrl
@@ -185,6 +192,12 @@ internal interface IAbdmGatewayClient
 
     /// <summary>As the HIU: asks for a granted consent artefact, answered at the on-fetch callback.</summary>
     Task<Result> FetchConsentAsync(AbdmGatewayMessages.ConsentFetch request, Guid requestId, CancellationToken ct);
+
+    /// <summary>Asks, as the HIU, for the records under a granted artefact, pushed encrypted to the hospital's data-push URL.</summary>
+    Task<Result> RequestHealthInformationAsync(AbdmGatewayMessages.HiuHealthInformationRequest request, Guid requestId, CancellationToken ct);
+
+    /// <summary>Tells the consent manager, as the HIU, which care contexts arrived and could be read.</summary>
+    Task<Result> NotifyReceivedAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct);
 }
 
 /// <summary>
@@ -245,6 +258,12 @@ internal sealed class AbdmGatewayConfiguration(ISettingsService settings)
             && (!Uri.TryCreate(gateway.AbhaBaseUrl, UriKind.Absolute, out var abha) || abha.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(abha.UserInfo)))
         {
             problems.Add("The ABHA service URL (\"abhaBaseUrl\") must be an https address without a user name or password.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(gateway.DataPushUrl)
+            && (!Uri.TryCreate(gateway.DataPushUrl, UriKind.Absolute, out var push) || push.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(push.UserInfo)))
+        {
+            problems.Add("The data-push URL (\"dataPushUrl\") must be an https address without a user name or password.");
         }
 
         if (string.IsNullOrWhiteSpace(credentials.ClientId) || string.IsNullOrWhiteSpace(credentials.ClientSecret))
@@ -322,6 +341,11 @@ internal sealed class DisabledAbdmGatewayClient(AbdmGatewayConfiguration configu
     public async Task<Result> AnswerHiuNotifyAsync(AbdmGatewayMessages.HiuOnNotify answer, CancellationToken ct) => await RefuseAsync(ct);
 
     public async Task<Result> FetchConsentAsync(AbdmGatewayMessages.ConsentFetch request, Guid requestId, CancellationToken ct) => await RefuseAsync(ct);
+
+    public async Task<Result> RequestHealthInformationAsync(AbdmGatewayMessages.HiuHealthInformationRequest request, Guid requestId, CancellationToken ct) =>
+        await RefuseAsync(ct);
+
+    public async Task<Result> NotifyReceivedAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct) => await RefuseAsync(ct);
 
     /// <summary>The refusal, or null when the gateway is switched on and set up.</summary>
     public async Task<Error?> WhyNotAsync(CancellationToken ct)

@@ -356,6 +356,13 @@ and grants nothing.
   - Checking a patient's ABHA sends ABDM only the ABHA number or mobile number already on the record, encrypted with
     ABDM's public key; the code and ABDM's token are not kept. Asking a patient for their records at other providers
     (`abdm.records.request`, doctors) is in the requesting doctor's name and audited; the patient decides in their app.
+  - Records received from other providers arrive encrypted for a key pair made for that one request (Fidelius); the
+    private key is field-encrypted and dropped when the transfer ends. The data-push endpoint carries no token (as
+    ABDM's push has none): it admits a page only for a transaction the consent manager named for a request of the
+    hospital's, still awaiting pages, under a consent still granted, and keeps nothing it cannot decrypt with that
+    request's key or that names a visit the consent does not cover. Received records are shown as text (never their
+    HTML narrative), each opening audited, and deleted outright when the consent is revoked or expires and at its
+    erase date.
   - Linking, replacing or removing a patient's ABHA number or address is audited (`patient.abha_changed`), with the
     number masked, including a number a merge of duplicate records links to the surviving one.
 - Only what is needed is stored:

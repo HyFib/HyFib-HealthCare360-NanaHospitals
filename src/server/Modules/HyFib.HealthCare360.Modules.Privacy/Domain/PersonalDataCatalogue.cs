@@ -99,6 +99,8 @@ public static class PersonalDataCatalogue
                 new("interop.abdm_abha_verifications", "Checks of your ABHA with ABDM at the hospital", Counted: false),
                 new("interop.abdm_consent_requests", "Requests to see your records at other providers through ABDM", Counted: false),
                 new("interop.abdm_consent_artefacts", "Your ABDM consents for the hospital to see your records at other providers", Counted: false),
+                new("interop.abdm_health_information_requests", "Requests for your records at other providers under your ABDM consents", Counted: false),
+                new("interop.abdm_received_records", "Your records received from other providers through ABDM, kept until your consent's erase date", Counted: false),
             ]),
         new("medicines", "Prescriptions and medicines",
             "Your prescriptions, the medicines the pharmacy gave you, refills and returns.",

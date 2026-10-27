@@ -47,11 +47,14 @@ public sealed class AbdmEndpointTests
             "GET /api/v1/abdm/links/{id:guid}",
             "GET /api/v1/abdm/patients/{patientId:guid}/abha-checks",
             "GET /api/v1/abdm/patients/{patientId:guid}/consent-requests",
+            "GET /api/v1/abdm/patients/{patientId:guid}/received-records",
+            "GET /api/v1/abdm/patients/{patientId:guid}/received-records/{recordId:guid}",
             "GET /api/v1/abdm/shares/",
             "GET /api/v1/abdm/shares/{id:guid}",
             "POST /api/v1/abdm/abha-checks/{id:guid}/code",
             "POST /api/v1/abdm/links/",
             "POST /api/v1/abdm/patients/{patientId:guid}/abha-checks",
+            "POST /api/v1/abdm/patients/{patientId:guid}/consent-artefacts/{artefactId}/records-requests",
             "POST /api/v1/abdm/patients/{patientId:guid}/consent-requests",
             "POST /api/v1/abdm/shares/{id:guid}/dismiss",
             "POST /api/v1/abdm/shares/{id:guid}/registered",
@@ -65,7 +68,7 @@ public sealed class AbdmEndpointTests
             .Select(Route).ShouldBeEmpty("Add .RequireFeature(FeatureKeys.Abdm) to these ABDM endpoints");
 
     [Fact]
-    public void The_gateway_calls_back_on_eleven_anonymous_posts_it_signs_and_nothing_else_is_under_api_v3()
+    public void The_gateway_calls_back_on_twelve_anonymous_posts_providers_push_records_to_one_and_nothing_else_is_under_api_v3()
     {
         Callbacks.Value.Select(e => $"{Method(e)} {Route(e)}").Order().ShouldBe(
         [
@@ -79,6 +82,8 @@ public sealed class AbdmEndpointTests
             "POST /api/v3/hiu/consent/on-fetch",
             "POST /api/v3/hiu/consent/request/notify",
             "POST /api/v3/hiu/consent/request/on-init",
+            "POST /api/v3/hiu/health-information/on-request",
+            "POST /api/v3/hiu/health-information/transfer",
             "POST /api/v3/link/on_carecontext",
         ]);
         Callbacks.Value.ShouldAllBe(e => e.Metadata.GetMetadata<IAllowAnonymous>() != null);
@@ -99,7 +104,8 @@ public sealed class AbdmEndpointTests
                 ? PatientsPermissions.Read
                 : route.Contains("/abha-checks", StringComparison.Ordinal)
                 ? PatientsPermissions.IdentityVerify
-                : route.Contains("/consent-requests", StringComparison.Ordinal)
+                : route.Contains("/consent-requests", StringComparison.Ordinal) || route.Contains("/consent-artefacts/", StringComparison.Ordinal)
+                    || route.Contains("/received-records", StringComparison.Ordinal)
                 ? InteropPermissions.AbdmRecordsRequest
                 : PlatformPermissions.IntegrationsManage;
             endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(a => a.Policy)

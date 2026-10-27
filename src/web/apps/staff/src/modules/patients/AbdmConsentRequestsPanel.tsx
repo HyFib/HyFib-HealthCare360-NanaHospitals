@@ -25,9 +25,12 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import { useFeatureOn } from '@/lib/features';
 import { usePermission } from '@/lib/permissions';
+import { AbdmReceivedRecords } from './AbdmReceivedRecords';
 import type { PatientDetail } from './api';
 
 export type AbdmConsentRequestStatus = 'Sent' | 'Requested' | 'Granted' | 'Denied' | 'Revoked' | 'Expired' | 'Failed';
+
+export type AbdmTransferStatus = 'Sent' | 'Requested' | 'Received' | 'Failed';
 
 export interface AbdmConsentArtefact {
   artefactId: string;
@@ -36,6 +39,9 @@ export interface AbdmConsentArtefact {
   hipName: string | null;
   records: number;
   fetchedAt: string | null;
+  transfer: AbdmTransferStatus | null;
+  transferError: string | null;
+  received: number;
 }
 
 export interface AbdmConsentRequest {
@@ -97,7 +103,19 @@ const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   types: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' },
   dates: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
+  heading: { display: 'block', marginTop: '20px', marginBottom: '8px' },
 });
+
+function transferText(a: AbdmConsentArtefact): string {
+  switch (a.transfer) {
+    case 'Received':
+      return `${a.received} received`;
+    case 'Failed':
+      return `not received${a.transferError ? `: ${a.transferError}` : ''}`;
+    default:
+      return 'records on their way';
+  }
+}
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 const typeLabel = (value: string) => HI_TYPES.find((t) => t.value === value)?.label ?? value;
@@ -113,6 +131,20 @@ export function AbdmConsentRequestsPanel({ patient }: { patient: PatientDetail }
   const canRequest = usePermission('abdm.records.request');
   const requests = useQuery({ ...consentRequestQueries.list(patient.id), enabled: switchedOn && canRequest });
   const [open, setOpen] = useState(false);
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+
+  const askAgain = useMutation({
+    mutationFn: (artefactId: string) =>
+      api.post(
+        `/api/v1/abdm/patients/${patient.id}/consent-artefacts/${encodeURIComponent(artefactId)}/records-requests`,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['abdm', 'consent-requests', patient.id] });
+      notify.success('Records asked for', 'They appear here when the provider sends them.');
+    },
+    onError: (error) => notify.error(error, 'Could not ask for the records'),
+  });
 
   if (!switchedOn || !canRequest) {
     return null;
@@ -169,11 +201,24 @@ export function AbdmConsentRequestsPanel({ patient }: { patient: PatientDetail }
                 <StatusBadge status={STATUS_TEXT[r.status]} />
                 {r.error && <Caption1 className={styles.muted}>{r.error}</Caption1>}
                 {r.artefacts.map((a) => (
-                  <Caption1 key={a.artefactId}>
-                    {a.hipName ?? a.hipId ?? 'A provider'}
-                    {a.fetchedAt ? `: ${a.records} ${a.records === 1 ? 'record' : 'records'}` : ': details awaited'}
-                    {a.status !== 'GRANTED' && a.status !== 'REQUESTED' ? ` (${a.status.toLowerCase()})` : ''}
-                  </Caption1>
+                  <div key={a.artefactId}>
+                    <Caption1>
+                      {a.hipName ?? a.hipId ?? 'A provider'}
+                      {a.fetchedAt ? `: ${a.records} ${a.records === 1 ? 'record' : 'records'}` : ': details awaited'}
+                      {a.status !== 'GRANTED' && a.status !== 'REQUESTED' ? ` (${a.status.toLowerCase()})` : ''}
+                      {a.status === 'GRANTED' && a.transfer ? ` · ${transferText(a)}` : ''}
+                    </Caption1>
+                    {a.status === 'GRANTED' && a.transfer === 'Failed' && (
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        disabled={askAgain.isPending}
+                        onClick={() => askAgain.mutate(a.artefactId)}
+                      >
+                        Ask again
+                      </Button>
+                    )}
+                  </div>
                 ))}
               </div>
             ),
@@ -182,6 +227,10 @@ export function AbdmConsentRequestsPanel({ patient }: { patient: PatientDetail }
         emptyTitle="No records have been asked for through ABDM"
         size="small"
       />
+      <Text as="h3" weight="semibold" className={styles.heading}>
+        Records received
+      </Text>
+      <AbdmReceivedRecords patientId={patient.id} />
       {open && <AskDialog patientId={patient.id} onClose={() => setOpen(false)} />}
     </>
   );

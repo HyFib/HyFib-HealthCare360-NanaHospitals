@@ -100,6 +100,7 @@ internal sealed class HttpAbdmGatewayClient(
     public const string ConsentInitPath = "/consent/v3/request/init";
     public const string HiuOnNotifyPath = "/consent/v3/request/hiu/on-notify";
     public const string ConsentFetchPath = "/consent/v3/fetch";
+    public const string HealthInformationRequestPath = "/data-flow/v3/health-information/request";
 
     public const string RefusedCode = "abdm.gateway_refused";
     public const string UnreachableCode = "abdm.gateway_unreachable";
@@ -165,6 +166,12 @@ internal sealed class HttpAbdmGatewayClient(
 
     public Task<Result> FetchConsentAsync(AbdmGatewayMessages.ConsentFetch request, Guid requestId, CancellationToken ct) =>
         SendAsync(ConsentFetchPath, request, requestId, linkToken: null, "fetch a consent artefact", ct, asHiu: true);
+
+    public Task<Result> RequestHealthInformationAsync(AbdmGatewayMessages.HiuHealthInformationRequest request, Guid requestId, CancellationToken ct) =>
+        SendAsync(HealthInformationRequestPath, request, requestId, linkToken: null, "ask for the records under a consent", ct, asHiu: true);
+
+    public Task<Result> NotifyReceivedAsync(AbdmGatewayMessages.TransferNotify notification, CancellationToken ct) =>
+        SendAsync(TransferNotifyPath, notification, Guid.CreateVersion7(), linkToken: null, "report the records received", ct, asHiu: true);
 
     /// <summary>
     /// Sends a call as the hospital's HIP (<c>X-HIP-ID</c>), or with <paramref name="asHiu"/> as its HIU (<c>X-HIU-ID</c>),

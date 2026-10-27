@@ -16,7 +16,9 @@ namespace HyFib.HealthCare360.Modules.Interop.Features;
 /// <see cref="AbdmDataFlowService"/>), and scan and share (<c>/api/v3/hip/patient/share</c>,
 /// <see cref="AbdmProfileShareService"/>), and the consent manager's answers to the hospital as HIU
 /// (<c>/api/v3/hiu/consent/request/on-init</c>, <c>…/notify</c>, <c>/api/v3/hiu/consent/on-fetch</c>,
-/// <see cref="AbdmConsentRequestService"/>, checked against <c>X-HIU-ID</c>). The answers name the call by its <c>REQUEST-ID</c> header. A
+/// <see cref="AbdmConsentRequestService"/>, and <c>/api/v3/hiu/health-information/on-request</c>,
+/// <see cref="AbdmHealthInformationService"/>, checked against <c>X-HIU-ID</c>). Other providers post the records
+/// themselves to <see cref="DataPushPath"/>, without a gateway token (<see cref="ReceiveAsync"/>). The answers name the call by its <c>REQUEST-ID</c> header. A
 /// call for another HIP (<c>X-HIP-ID</c>) is logged and ignored. Anonymous at the
 /// HTTP level and rate-limited; the gateway proves the call is its own with a bearer token signed by a key it publishes
 /// (<see cref="AbdmGatewayKeys"/>), and anything else is refused with 401. While ABDM is switched off they answer 503, as
@@ -36,6 +38,10 @@ internal static class AbdmGatewayCallbackEndpoints
     public const string ConsentOnInitPath = "/api/v3/hiu/consent/request/on-init";
     public const string HiuNotifyPath = "/api/v3/hiu/consent/request/notify";
     public const string ConsentOnFetchPath = "/api/v3/hiu/consent/on-fetch";
+    public const string HealthInformationOnRequestPath = "/api/v3/hiu/health-information/on-request";
+
+    /// <summary>The hospital's data-push URL: where other providers post the records it asked for, encrypted for it.</summary>
+    public const string DataPushPath = "/api/v3/hiu/health-information/transfer";
 
     public const string RequestIdHeader = "REQUEST-ID";
     public const string HipIdHeader = "X-HIP-ID";
@@ -43,6 +49,9 @@ internal static class AbdmGatewayCallbackEndpoints
 
     /// <summary>A callback body is a few hundred bytes; a discovery's a few kilobytes.</summary>
     public const long MaxBodyBytes = 64 * 1024;
+
+    /// <summary>A pushed page holds a few documents, with any PDFs inside them.</summary>
+    public const long MaxPushBytes = 32 * 1024 * 1024;
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -80,6 +89,47 @@ internal static class AbdmGatewayCallbackEndpoints
             HandleAsync<AbdmGatewayMessages.HiuNotify>(request, configuration, keys, loggers, (call, requestId, innerCt) => consents.NotifyAsync(call, requestId ?? call.RequestId ?? string.Empty, innerCt), ct, asHiu: true));
         callbacks.MapPost(ConsentOnFetchPath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmConsentRequestService consents, ILoggerFactory loggers, CancellationToken ct) =>
             HandleAsync<AbdmGatewayMessages.ConsentOnFetch>(request, configuration, keys, loggers, (answer, _, innerCt) => consents.OnFetchAsync(answer, innerCt), ct, asHiu: true));
+        callbacks.MapPost(HealthInformationOnRequestPath, (HttpRequest request, AbdmGatewayConfiguration configuration, AbdmGatewayKeys keys, AbdmHealthInformationService records, ILoggerFactory loggers, CancellationToken ct) =>
+            HandleAsync<AbdmGatewayMessages.HiuOnHealthInformationRequest>(request, configuration, keys, loggers, (answer, _, innerCt) => records.OnRequestAsync(answer, innerCt), ct, asHiu: true));
+
+        app.MapPost(DataPushPath, ReceiveAsync)
+            .WithTags("ABDM gateway callbacks")
+            .RequireFeature(FeatureKeys.Abdm)
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Public)
+            .WithMetadata(new RequestSizeLimitAttribute(MaxPushBytes));
+    }
+
+    /// <summary>
+    /// A page of records from another provider. It carries no gateway token (ABDM's data push has none): what admits it
+    /// is a transaction id the consent manager gave for a request of this hospital's, still awaiting pages, and content
+    /// that decrypts with that request's own key. Anything else is refused and nothing is kept.
+    /// </summary>
+    private static async Task<IResult> ReceiveAsync(HttpRequest request, AbdmGatewayConfiguration configuration, AbdmHealthInformationService records, CancellationToken ct)
+    {
+        var (settings, _, problems) = await configuration.ReadAsync(ct);
+        if (!settings.Enabled || problems.Count > 0)
+        {
+            return TypedResults.NotFound();
+        }
+
+        AbdmGatewayMessages.ReceivedPush? push;
+        try
+        {
+            push = await JsonSerializer.DeserializeAsync<AbdmGatewayMessages.ReceivedPush>(request.Body, AbdmGatewayMessages.Json, ct);
+        }
+        catch (JsonException)
+        {
+            push = null;
+        }
+
+        if (push is null)
+        {
+            return Error.Validation("abdm.push_body", "The page is not valid JSON of the expected shape.").ToProblem();
+        }
+
+        var received = await records.ReceiveAsync(push, ct);
+        return received.IsFailure ? received.Error!.ToProblem() : TypedResults.Accepted((string?)null);
     }
 
     private static async Task<IResult> HandleAsync<T>(

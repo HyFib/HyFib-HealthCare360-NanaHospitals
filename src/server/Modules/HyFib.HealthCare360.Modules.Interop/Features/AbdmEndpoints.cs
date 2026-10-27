@@ -80,6 +80,15 @@ internal static class AbdmEndpoints
                 (await service.RequestAsync(patientId, input, ct)).ToOk())
             .RequirePermission(InteropPermissions.AbdmRecordsRequest)
             .WithValidation<AbdmConsentRequestInput>();
+        abdm.MapPost("/patients/{patientId:guid}/consent-artefacts/{artefactId}/records-requests", async (Guid patientId, string artefactId, AbdmHealthInformationService service, CancellationToken ct) =>
+                (await service.RequestAsync(patientId, artefactId, ct)).ToOk())
+            .RequirePermission(InteropPermissions.AbdmRecordsRequest);
+        abdm.MapGet("/patients/{patientId:guid}/received-records", async (Guid patientId, AbdmHealthInformationService service, CancellationToken ct) =>
+                TypedResults.Ok(await service.ListAsync(patientId, ct)))
+            .RequirePermission(InteropPermissions.AbdmRecordsRequest);
+        abdm.MapGet("/patients/{patientId:guid}/received-records/{recordId:guid}", async (Guid patientId, Guid recordId, AbdmHealthInformationService service, CancellationToken ct) =>
+                (await service.ReadAsync(patientId, recordId, ct)).ToOk())
+            .RequirePermission(InteropPermissions.AbdmRecordsRequest);
         abdm.MapPost("/abha-checks/{id:guid}/code", async (Guid id, AbhaVerificationCode input, AbhaVerificationService service, CancellationToken ct) =>
                 (await service.VerifyAsync(id, input, ct)).ToOk())
             .RequirePermission(PatientsPermissions.IdentityVerify)
