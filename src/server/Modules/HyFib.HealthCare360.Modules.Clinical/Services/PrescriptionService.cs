@@ -127,6 +127,7 @@ public sealed class PrescriptionService(
             return loaded.Error!;
         }
 
+        await FromDrugMasterAsync(loaded.Value.Items, ct);
         var result = await safety.CheckAsync(loaded.Value, ct);
         return new SafetyCheckResponse(result.IsBlocked, result.Warnings.Count > 0, loaded.Value.HasControlledDrugs, result.Alerts);
     }
@@ -310,6 +311,8 @@ public sealed class PrescriptionService(
     private async Task<Result<IReadOnlyList<SafetyAlert>>> SignCoreAsync(Prescription prescription, string? overrideReason, bool acknowledgeWarnings,
         bool confirmControlledDrugs, CancellationToken ct)
     {
+        // Again at signing: a draft saved before the master decided, or whose drug the master has since reclassified.
+        await FromDrugMasterAsync(prescription.Items, ct);
         if (await TelemedicineProhibitedAsync(prescription, ct) is { Count: > 0 } prohibited)
         {
             return TelemedicinePrescribing.Refusal(prohibited);
