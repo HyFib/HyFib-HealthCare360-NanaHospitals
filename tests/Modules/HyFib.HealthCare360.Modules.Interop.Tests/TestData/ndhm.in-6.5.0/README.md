@@ -45,3 +45,11 @@ for what the validator skips and how the tests make sure nothing else is skipped
 To move to a newer guide, download the new `ndhm.in` package from the npm registry, replace these files with the same
 files from it (adding any profile the validator then asks for), update this README and `AbdmProfiles` (`src/server/Modules/HyFib.HealthCare360.Modules.Interop/Abdm/AbdmCodes.cs`),
 and run the Interop module tests and `AbdmExportTests`.
+- `package/StructureDefinition-CoverageEligibilityRequest.json`, `…CoverageEligibilityRequestBundle.json`,
+  `…CoverageEligibilityResponse.json`, `…CoverageEligibilityResponseBundle.json`, `…ClaimResponse.json` and
+  `…ClaimResponseBundle.json`: the NHCX eligibility check and the insurers' answers (`Nhcx/NhcxResponseTests`). Added
+  2026-10-27 from the same package; the files already here were checked byte for byte against it.
+- `example/Bundle-CoverageEligibilityRequestBundle-validation-example-01.json` and `…-benefits-example-01.json`, the four
+  `example/Bundle-CoverageEligibilityResponseBundle-*-example-01.json` and the four
+  `example/Bundle-ClaimResponseBundle-*-example-01.json`: the guide's own checks and answers, which must validate and
+  which the response reader is checked against figure by figure.

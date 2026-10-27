@@ -139,14 +139,14 @@ internal static partial class NhcxClaimBundle
         var claimId = Id($"Claim/{request.Use}/{FhirIds.Of(request.SourceId)}");
         string? doctorId = request.Doctor is { } d ? Id($"Practitioner/{FhirIds.Of(d.Id)}") : null;
 
-        var patient = Patient(request, hospitalId);
+        var patient = Patient(request.Patient, request.Facility, hospitalId);
         patient.Id = patientId;
         var patientName = patient.Name.FirstOrDefault()?.Text;
         var hospital = AbdmParticipants.Organization(request.Facility);
         hospital.Id = hospitalId;
         var insurer = Insurer(request.Payer);
         insurer.Id = insurerId;
-        var coverage = Coverage(request, patientId, patientName, insurerId);
+        var coverage = Coverage(request.Payer, request.Policy, patientId, patientName, insurerId);
         coverage.Id = coverageId;
         var claim = Claim(request, patientId, patientName, hospitalId, insurerId, coverageId, doctorId);
         claim.Id = claimId;
@@ -222,20 +222,21 @@ internal static partial class NhcxClaimBundle
             : null;
     }
 
-    private static R4.Patient Patient(NhcxClaimRequest request, string hospitalId)
+    /// <summary>The patient as an insurer needs them to match the policy, also on an eligibility check.</summary>
+    internal static R4.Patient Patient(PatientRow row, FacilityRow facility, string hospitalId)
     {
         var refs = new ReferenceDirectory();
-        var patient = AbdmProfiler.Patient(PatientMapper.Map(request.Patient, refs));
+        var patient = AbdmProfiler.Patient(PatientMapper.Map(row, refs));
         patient.Contact.Clear();
         patient.MaritalStatus = null;
         patient.Communication.Clear();
-        patient.ManagingOrganization = request.Patient.RegisteredFacilityId == request.Facility.Id
-            ? new R4.ResourceReference(AbdmDocumentBuilder.Urn(hospitalId), request.Facility.Name)
+        patient.ManagingOrganization = row.RegisteredFacilityId == facility.Id
+            ? new R4.ResourceReference(AbdmDocumentBuilder.Urn(hospitalId), facility.Name)
             : null;
         return patient;
     }
 
-    private static R4.Organization Insurer(NhcxPayerRow payer) => new()
+    internal static R4.Organization Insurer(NhcxPayerRow payer) => new()
     {
         Meta = FhirElements.Meta(payer.CreatedAt, payer.UpdatedAt, AbdmProfiles.Organization),
         Name = payer.Name,
@@ -252,24 +253,23 @@ internal static partial class NhcxClaimBundle
             : FhirElements.Concept(AbdmSystems.OrganizationType, "pay", "Payer")],
     };
 
-    private static R4.Coverage Coverage(NhcxClaimRequest request, string patientId, string? patientName, string insurerId)
+    internal static R4.Coverage Coverage(NhcxPayerRow payer, NhcxPolicyRow policy, string patientId, string? patientName, string insurerId)
     {
-        var policy = request.Policy;
         var patient = new R4.ResourceReference(AbdmDocumentBuilder.Urn(patientId), patientName);
         var relation = Relationship(policy.RelationToHolder);
         var coverage = new R4.Coverage
         {
             Meta = FhirElements.Meta(policy.CreatedAt, policy.UpdatedAt, CoverageProfile),
-            Identifier = [new R4.Identifier($"{PayerSystem}:{request.Payer.Code}:policy", policy.PolicyNumber.Trim())],
+            Identifier = [new R4.Identifier($"{PayerSystem}:{payer.Code}:policy", policy.PolicyNumber.Trim())],
             Status = R4.FinancialResourceStatusCodes.Active,
-            Type = request.Payer.IsInsurer
+            Type = payer.IsInsurer
                 ? FhirElements.Concept("http://terminology.hl7.org/CodeSystem/v3-ActCode", "HIP", "health insurance plan policy")
                 : FhirElements.Concept("http://terminology.hl7.org/CodeSystem/v3-ActCode", "PUBLICPOL", "public healthcare"),
             SubscriberId = FhirElements.Clean(policy.MemberId),
             Beneficiary = patient,
             Relationship = relation is { } r ? FhirElements.Concept("http://terminology.hl7.org/CodeSystem/subscriber-relationship", r.Code, r.Display) : null,
             Period = new R4.Period { Start = FhirTime.Date(policy.ValidFrom), End = FhirTime.Date(policy.ValidTo) },
-            Payor = [new R4.ResourceReference(AbdmDocumentBuilder.Urn(insurerId), request.Payer.Name)],
+            Payor = [new R4.ResourceReference(AbdmDocumentBuilder.Urn(insurerId), payer.Name)],
         };
 
         // The patient holds the policy when the desk recorded "self" or no relation and no other holder.
@@ -381,7 +381,7 @@ internal static partial class NhcxClaimBundle
         return claim;
     }
 
-    private static R4.Money Money(decimal value) => new() { Value = FhirElements.Normalize(value), Currency = R4.Money.Currencies.INR };
+    internal static R4.Money Money(decimal value) => new() { Value = FhirElements.Normalize(value), Currency = R4.Money.Currencies.INR };
 
     /// <summary>The desk's word for the patient's relation to the policy holder, as FHIR's subscriber relationship.</summary>
     private static (string Code, string Display)? Relationship(string? recorded) =>
@@ -396,5 +396,5 @@ internal static partial class NhcxClaimBundle
         };
 
     [GeneratedRegex(@"^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex Icd10Code();
+    internal static partial Regex Icd10Code();
 }
