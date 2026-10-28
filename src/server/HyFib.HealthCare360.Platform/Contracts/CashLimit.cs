@@ -15,10 +15,11 @@ namespace HyFib.HealthCare360.Platform.Contracts;
 public interface ICashReceiptSource
 {
     /// <summary>
-    /// The cash (wallets included) the patient paid at any of <paramref name="facilityIds"/> since <paramref name="since"/>.
-    /// Money paid back is not taken off: the Act limits what is received.
+    /// The cash (wallets included) the patient paid at any of <paramref name="facilityIds"/> from <paramref name="from"/>
+    /// until <paramref name="to"/> (not included). Money paid back is not taken off: the Act limits what is received.
     /// </summary>
-    Task<decimal> CashReceivedAsync(Guid patientId, IReadOnlyCollection<Guid> facilityIds, DateTimeOffset since, CancellationToken cancellationToken);
+    Task<decimal> CashReceivedAsync(
+        Guid patientId, IReadOnlyCollection<Guid> facilityIds, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -38,6 +39,11 @@ public sealed class CashLimit(HospitalDbContext db, IEnumerable<ICashReceiptSour
 
     private const string OtherModes = "card, UPI, net banking or an account-payee cheque";
 
+    /// <summary>The check below, for money received now.</summary>
+    public Task<Result> CheckAsync(
+        Guid facilityId, Guid? patientId, decimal cash, string occasion, Func<CancellationToken, Task<decimal>> takenFor, CancellationToken ct) =>
+        CheckAsync(facilityId, patientId, cash, occasion, takenFor, time.GetUtcNow(), ct);
+
     /// <summary>
     /// Refuses <paramref name="cash"/> when, with what was taken before, it would make <see cref="Limit"/> or more in one
     /// payment, for the <paramref name="occasion"/> (<paramref name="takenFor"/> counts the cash it took), or from the
@@ -47,8 +53,13 @@ public sealed class CashLimit(HospitalDbContext db, IEnumerable<ICashReceiptSour
     /// </summary>
     /// <param name="patientId">Null for a customer who is not a registered patient: only the payment and the occasion count.</param>
     /// <param name="occasion">What the money is for, as the counter is told: "admission", "bill" or "invoice".</param>
+    /// <param name="receivedAt">
+    /// When the money was received: the day counted is its day. A payment a gateway took before midnight may be recorded
+    /// after it.
+    /// </param>
     public async Task<Result> CheckAsync(
-        Guid facilityId, Guid? patientId, decimal cash, string occasion, Func<CancellationToken, Task<decimal>> takenFor, CancellationToken ct)
+        Guid facilityId, Guid? patientId, decimal cash, string occasion, Func<CancellationToken, Task<decimal>> takenFor, DateTimeOffset receivedAt,
+        CancellationToken ct)
     {
         if (cash <= 0)
         {
@@ -65,19 +76,21 @@ public sealed class CashLimit(HospitalDbContext db, IEnumerable<ICashReceiptSour
         {
             await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockKey(patient)})", ct);
             var facilities = await SamePersonAsync(facilityId, ct);
-            var since = StartOfToday();
+            var (from, to) = DayOf(receivedAt);
             foreach (var source in sources)
             {
-                takenToday += await source.CashReceivedAsync(patient, facilities, since, ct);
+                takenToday += await source.CashReceivedAsync(patient, facilities, from, to, ct);
             }
         }
+
+        var day = LocalDate(receivedAt) == LocalDate(time.GetUtcNow()) ? "today" : $"on {LocalDate(receivedAt):dd-MM-yyyy}";
 
         // The tightest of the three: on a tie, the payment, then what the money is for, then the day.
         (string Over, string? Taken, decimal SoFar)[] limits =
         [
             ("in one payment", null, 0m),
             ($"for one {occasion}", $"for this {occasion}", await takenFor(ct)),
-            ("from one patient in a day", "from this patient today", takenToday),
+            ("from one patient in a day", $"from this patient {day}", takenToday),
         ];
         var (over, taken, soFar) = limits.MaxBy(l => l.SoFar);
         if (soFar + cash < Limit)
@@ -106,11 +119,16 @@ public sealed class CashLimit(HospitalDbContext db, IEnumerable<ICashReceiptSour
             : await db.Set<Facility>().Where(f => f.Id == facilityId || (f.Pan != null && f.Pan.Trim().ToUpper() == pan)).Select(f => f.Id).ToListAsync(ct);
     }
 
-    private DateTimeOffset StartOfToday()
+    /// <summary>The hospital's (IST) day <paramref name="at"/> falls in, from its first instant until the next day's.</summary>
+    private static (DateTimeOffset From, DateTimeOffset To) DayOf(DateTimeOffset at)
     {
-        var today = TimeZoneInfo.ConvertTime(time.GetUtcNow(), HospitalTimeZone.Zone).Date;
-        return new DateTimeOffset(today, HospitalTimeZone.Zone.GetUtcOffset(today)).ToUniversalTime();
+        var day = LocalDate(at).ToDateTime(TimeOnly.MinValue);
+        var next = day.AddDays(1);
+        return (new DateTimeOffset(day, HospitalTimeZone.Zone.GetUtcOffset(day)).ToUniversalTime(),
+            new DateTimeOffset(next, HospitalTimeZone.Zone.GetUtcOffset(next)).ToUniversalTime());
     }
+
+    private static DateOnly LocalDate(DateTimeOffset at) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, HospitalTimeZone.Zone).DateTime);
 
     /// <summary>Stable 64-bit key of the patient's cash lock (identical on every server node).</summary>
     private static long LockKey(Guid patientId) =>

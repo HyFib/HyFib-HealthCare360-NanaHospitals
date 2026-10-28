@@ -41,7 +41,9 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
   PAN is not recorded), from the IST midnight; money paid back is not taken off. A payment that would reach the limit is
   refused (422 `payments.cash_limit`) with how much less to take in cash. `CashLimit` takes a per-patient advisory lock
   inside the transaction that records the money, so two counters taking cash from the same patient at once are counted
-  one after the other.
+  one after the other. A payment taken online counts as cash when the gateway says it was made from a wallet, and is
+  held to the limit when its capture is recorded, on the day the gateway took it: refused, it is not recorded, and the
+  capture is left to the accountants (an unrecorded-payment exception) to refund.
 * Every document number is allocated inside the transaction that saves the document, so series are gap-free.
 * Charge posting (per source line), gateway payments, POS transactions and patient advances are idempotent — a WiFi
   retry or a replayed webhook can never charge or receipt twice (backed by unique indexes).

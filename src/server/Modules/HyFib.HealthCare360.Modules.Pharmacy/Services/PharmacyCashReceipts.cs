@@ -8,11 +8,12 @@ namespace HyFib.HealthCare360.Modules.Pharmacy.Services;
 /// </summary>
 internal sealed class PharmacyCashReceipts(HospitalDbContext db) : ICashReceiptSource
 {
-    public Task<decimal> CashReceivedAsync(Guid patientId, IReadOnlyCollection<Guid> facilityIds, DateTimeOffset since, CancellationToken ct) =>
+    public Task<decimal> CashReceivedAsync(
+        Guid patientId, IReadOnlyCollection<Guid> facilityIds, DateTimeOffset from, DateTimeOffset to, CancellationToken ct) =>
         db.Set<PharmacySale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(s => s.PatientId == patientId && facilityIds.Contains(s.FacilityId))
             .SelectMany(s => s.Payments)
-            .Where(p => p.Mode == PaymentMode.Cash && !p.IsRefund && p.ReceivedAt >= since)
+            .Where(p => p.Mode == PaymentMode.Cash && !p.IsRefund && p.ReceivedAt >= from && p.ReceivedAt < to)
             .SumAsync(p => p.Amount, ct);
 
     /// <summary>The cash taken for one invoice so far.</summary>

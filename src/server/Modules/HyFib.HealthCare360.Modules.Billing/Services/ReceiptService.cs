@@ -68,11 +68,7 @@ public sealed class ReceiptService(
         }
 
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
-        var cash = bill.IpAccountId is { } accountId
-            ? await cashLimit.CheckAsync(bill.FacilityId, bill.PatientId, BillingCashReceipts.CashIn(lines.Value), "admission",
-                c => BillingCashReceipts.CashTakenAsync(db, r => r.IpAccountId == accountId, c), ct)
-            : await cashLimit.CheckAsync(bill.FacilityId, bill.PatientId, BillingCashReceipts.CashIn(lines.Value), "bill",
-                c => BillingCashReceipts.CashTakenAsync(db, r => r.BillId == bill.Id, c), ct);
+        var cash = await CheckCashLimitAsync(bill.FacilityId, bill.PatientId, bill, null, BillingCashReceipts.CashIn(lines.Value), time.GetUtcNow(), ct);
         if (cash.IsFailure)
         {
             return cash.Error!;
@@ -136,8 +132,7 @@ public sealed class ReceiptService(
         }
 
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
-        var cash = await cashLimit.CheckAsync(account.FacilityId, account.PatientId, BillingCashReceipts.CashIn(lines.Value), "admission",
-            c => BillingCashReceipts.CashTakenAsync(db, r => r.IpAccountId == account.Id, c), ct);
+        var cash = await CheckCashLimitAsync(account.FacilityId, account.PatientId, null, account, BillingCashReceipts.CashIn(lines.Value), time.GetUtcNow(), ct);
         if (cash.IsFailure)
         {
             return cash.Error!;
@@ -210,14 +205,24 @@ public sealed class ReceiptService(
             return Error.Rule("billing.payment_target", "The payment is not linked to a bill or an IP account.");
         }
 
+        // A payment made online from a wallet is held to the cash limit too, on the day the gateway took it. Refused, it is
+        // not recorded: the gateway's capture is left to the accountants, to refund.
+        var line = new PaymentLineData(payment.Mode, payment.Amount, payment.Reference, payment.CardLast4, ExternalId: payment.ExternalId);
+        var now = time.GetUtcNow();
+        var receivedAt = payment.ReceivedAt is { } at && at < now ? at : now;
+        var cash = await CheckCashLimitAsync(payment.FacilityId, payment.PatientId, bill, account, BillingCashReceipts.CashIn([line]), receivedAt, ct);
+        if (cash.IsFailure)
+        {
+            return cash.Error!;
+        }
+
         var receipt = await NewReceiptAsync(payment.FacilityId, payment.Purpose, payment.PatientId, payment.Source, payment.Shift, ct);
         receipt.BillId = bill?.Id;
         receipt.VisitId = bill?.VisitId ?? account?.VisitId;
         receipt.AdmissionId = bill?.AdmissionId ?? account?.AdmissionId;
         receipt.IpAccountId = bill?.IpAccountId ?? account?.Id;
-        receipt.AddPayment(new PaymentLineData(payment.Mode, payment.Amount, payment.Reference, payment.CardLast4, ExternalId: payment.ExternalId));
-        var now = time.GetUtcNow();
-        var recorded = receipt.Record(payment.ReceivedAt is { } receivedAt && receivedAt < now ? receivedAt : now);
+        receipt.AddPayment(line);
+        var recorded = receipt.Record(receivedAt);
         if (recorded.IsFailure)
         {
             return recorded.Error!;
@@ -232,6 +237,24 @@ public sealed class ReceiptService(
         db.Add(receipt);
         await QueueReceiptMessageAsync(receipt, bill?.BillNumber ?? $"advance, admission {account?.AdmissionNumber}", bill, ct);
         return receipt;
+    }
+
+    /// <summary>
+    /// The cash limit (<see cref="CashLimit"/>) for <paramref name="cash"/> received at <paramref name="receivedAt"/>, paid on
+    /// <paramref name="bill"/> or as an advance on <paramref name="account"/>: a bill of an admission counts with the
+    /// admission, any other bill on its own.
+    /// </summary>
+    private Task<Result> CheckCashLimitAsync(
+        Guid facilityId, Guid patientId, Bill? bill, IpAccount? account, decimal cash, DateTimeOffset receivedAt, CancellationToken ct)
+    {
+        if ((bill?.IpAccountId ?? account?.Id) is { } accountId)
+        {
+            return cashLimit.CheckAsync(facilityId, patientId, cash, "admission",
+                c => BillingCashReceipts.CashTakenAsync(db, r => r.IpAccountId == accountId, c), receivedAt, ct);
+        }
+
+        var billId = bill!.Id;
+        return cashLimit.CheckAsync(facilityId, patientId, cash, "bill", c => BillingCashReceipts.CashTakenAsync(db, r => r.BillId == billId, c), receivedAt, ct);
     }
 
     /// <summary>Adjusts part of the IP advance against a bill (no money moves; journal in Tally). The caller saves.</summary>

@@ -96,7 +96,7 @@ public sealed class SalePaymentValidator : AbstractValidator<SalePayment>
 {
     public SalePaymentValidator()
     {
-        RuleFor(x => x.Amount).GreaterThan(0);
+        RuleFor(x => x.Amount).GreaterThan(0).PrecisionScale(18, 2, true).WithMessage("Use at most 2 decimal places.");
         RuleFor(x => x.Reference).MaximumLength(64);
         RuleFor(x => x.Reference).NotEmpty().When(x => x.Mode is PaymentMode.Card or PaymentMode.Upi)
             .WithMessage("Enter the card slip or UPI transaction reference.");

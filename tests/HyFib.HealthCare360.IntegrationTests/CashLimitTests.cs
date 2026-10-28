@@ -7,9 +7,11 @@ using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
+using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
@@ -52,7 +54,8 @@ public sealed class CashLimitTests(HospitalServer server)
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
         await HospitalDayAsync();
         var patientId = await RegisterPatientAsync(frontOffice);
-        var account = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        var account = stay.Account;
         var shift = await OpenShiftAsync(billing);
 
         // One payment of ₹2,00,000 in cash is refused, split into two lines or not. The counter is told what it may take.
@@ -86,6 +89,12 @@ public sealed class CashLimitTests(HospitalServer server)
         // Medicines sold on credit: the balance, collected later, is refused in cash too, and taken by UPI.
         var credit = await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter", sale(PharmacyPaymentMode.Credit));
         credit.DueAmount.ShouldBeGreaterThan(0m);
+        using (var finer = await pharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/sales/{credit.Id}/payments",
+                   new PharmacyCollectPaymentRequest(PharmacyPaymentMode.Upi, 0.005m, "UTR" + Digits(9))))
+        {
+            finer.StatusCode.ShouldBe(HttpStatusCode.BadRequest, "money is taken in rupees and paise");
+        }
+
         (await RefusedAsync(pharmacist, $"/api/v1/pharmacy/sales/{credit.Id}/payments", new PharmacyCollectPaymentRequest(PharmacyPaymentMode.Cash, credit.DueAmount, null)))
             .ShouldStartWith("Income-tax Act s.269ST: ₹2,00,000.00 or more cannot be taken in cash (wallets included) from one patient in a day.");
         using (var collected = await pharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/sales/{credit.Id}/payments",
@@ -104,9 +113,10 @@ public sealed class CashLimitTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
-        await HospitalDayAsync();
+        var today = await HospitalDayAsync();
         var patientId = await RegisterPatientAsync(frontOffice);
-        var account = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        var account = stay.Account;
         var shift = await OpenShiftAsync(billing);
 
         // ₹1,50,000 was taken in cash for the stay yesterday.
@@ -147,6 +157,17 @@ public sealed class CashLimitTests(HospitalServer server)
                       + "net banking or an account-payee cheque.");
         await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(bill.Id, [Card(1_50_000m)], null));
 
+        // He goes home: his day in the ward is charged on the final bill, which his advance pays, and his bed goes back.
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+        await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{account.AdmissionId}/discharge/initiate",
+            new InitiateDischargeRequest(today, "Discharge advised on the ward round"));
+        var final = await billing.PostAsync<BillDetail>($"/api/v1/billing/ip-accounts/{account.Id}/final-bill");
+        final = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{final.Id}/finalize", new BillVersionRequest(final.Version));
+        var settled = await billing.PostAsync<SettlementResult>($"/api/v1/billing/ip-accounts/{account.Id}/settle");
+        (settled.AdvanceAdjusted, settled.RemainingDue).ShouldBe((final.DueAmount, 0m));
+        await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{account.AdmissionId}/discharge/complete",
+            new CompleteDischargeRequest(DischargeType.Normal, null, "Discharged home", NotifyPatient: false));
+
         await CloseShiftAsync(billing, shift, 1_50_000m + 49_500m + 1_00_000m);
     }
 
@@ -158,7 +179,8 @@ public sealed class CashLimitTests(HospitalServer server)
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         await HospitalDayAsync();
         var patientId = await RegisterPatientAsync(frontOffice);
-        var account = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        var account = stay.Account;
         var shift = await OpenShiftAsync(billing);
 
         // A sister hospital of the same company took ₹1,50,000 in cash from the patient this morning.
@@ -179,6 +201,91 @@ public sealed class CashLimitTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Cash_paid_at_the_pharmacy_counts_for_the_day_at_the_billing_counter()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+        await HospitalDayAsync();
+        var patientId = await RegisterPatientAsync(frontOffice);
+        await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        var account = stay.Account;
+        var shift = await OpenShiftAsync(billing);
+
+        // The patient's medicines are paid for in cash at the pharmacy, and the billing counter then takes as much more in
+        // cash as makes ₹1,99,999 from the patient today: under the limit, so both are taken.
+        var sale = (await MedicineSaleAsync(pharmacist, patientId))(PharmacyPaymentMode.Cash);
+        var medicines = sale.Payments.ShouldHaveSingleItem().Amount;
+
+        // Money is taken in rupees and paise: cash a fraction of a paisa short of the price, which would be kept rounded up
+        // to it, is refused.
+        var finer = sale with
+        {
+            Payments = [new SalePayment(PharmacyPaymentMode.Cash, medicines - 0.005m, null), new SalePayment(PharmacyPaymentMode.Upi, 0.005m, "UTR" + Digits(9))],
+        };
+        using (var refused = await pharmacist.SendRawAsync(HttpMethod.Post, "/api/v1/pharmacy/sales/counter", finer))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
+
+        await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter", sale);
+        await billing.PostAsync<ReceiptDto>(Deposits(account), new CollectDepositRequest([Cash(1_99_999m - medicines)], null));
+
+        // ₹1 more at the billing counter would make ₹2,00,000 from the patient today, counting the pharmacy's cash: refused,
+        // although the admission has had less than that.
+        (await RefusedAsync(billing, Deposits(account), new CollectDepositRequest([Cash(1m)], null)))
+            .ShouldBe("Income-tax Act s.269ST: ₹2,00,000.00 or more cannot be taken in cash (wallets included) from one patient in a day. "
+                      + "₹1,99,999.00 has been taken in cash from this patient today, so take less than ₹1.00 in cash and the rest by card, UPI, "
+                      + "net banking or an account-payee cheque.");
+
+        await CloseShiftAsync(billing, shift, 1_99_999m - medicines);
+    }
+
+    [Fact]
+    public async Task A_wallet_payment_taken_online_counts_as_cash_and_one_that_would_reach_the_limit_is_not_recorded()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var today = await HospitalDayAsync();
+        var patientId = await RegisterPatientAsync(frontOffice);
+        await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        var account = stay.Account;
+        var shift = await OpenShiftAsync(billing);
+
+        // ₹1,50,000 was taken in cash for the stay yesterday.
+        var advance = await billing.PostAsync<ReceiptDto>(Deposits(account), new CollectDepositRequest([Cash(1_50_000m)], "Advance at admission"));
+        await MoveBackADayAsync(advance.Id);
+
+        // The family pays ₹50,000 more for the stay online, from a wallet. With the cash, it would make ₹2,00,000 for the
+        // admission, so the gateway's capture is not recorded: the accountants are to refund it. By UPI, a bank payment, the
+        // same ₹50,000 is recorded.
+        (await TakenOnlineAsync(patientId, null, account.Id, 50_000m, "wallet"))
+            .ShouldBe("Income-tax Act s.269ST: ₹2,00,000.00 or more cannot be taken in cash (wallets included) for one admission. "
+                      + "₹1,50,000.00 has been taken in cash for this admission, so take less than ₹50,000.00 in cash and the rest by card, UPI, "
+                      + "net banking or an account-payee cheque.");
+        (await TakenOnlineAsync(patientId, null, account.Id, 50_000m, "upi")).ShouldBeNull();
+
+        // ₹49,000 from a wallet is under the limit and recorded. It counts as cash: the counter may now take less than ₹1,000
+        // in cash for the stay.
+        (await TakenOnlineAsync(patientId, null, account.Id, 49_000m, "wallet")).ShouldBeNull();
+        (await RefusedAsync(billing, Deposits(account), new CollectDepositRequest([Cash(1_000m)], null)))
+            .ShouldStartWith("Income-tax Act s.269ST: ₹2,00,000.00 or more cannot be taken in cash (wallets included) for one admission. "
+                             + "₹1,99,000.00 has been taken in cash for this admission, so take less than ₹1,000.00 in cash");
+
+        // A wallet payment the gateway took yesterday for the patient's out-patient bill, recorded only today, counts on
+        // the day it was taken, with yesterday's cash.
+        var bill = await OutPatientBillAsync(frontOffice, billing, patientId, 60_000m);
+        (await TakenOnlineAsync(patientId, bill.Id, null, 60_000m, "wallet", DateTimeOffset.UtcNow.AddDays(-1)))
+            .ShouldBe("Income-tax Act s.269ST: ₹2,00,000.00 or more cannot be taken in cash (wallets included) from one patient in a day. "
+                      + $"₹1,50,000.00 has been taken in cash from this patient on {today.AddDays(-1):dd-MM-yyyy}, so take less than ₹50,000.00 in cash "
+                      + "and the rest by card, UPI, net banking or an account-payee cheque.");
+
+        await CloseShiftAsync(billing, shift, 1_50_000m);
+    }
+
+    [Fact]
     public async Task Cash_taken_for_the_same_patient_at_two_counters_at_once_is_counted_one_after_the_other()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
@@ -186,7 +293,8 @@ public sealed class CashLimitTests(HospitalServer server)
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         await HospitalDayAsync();
         var patientId = await RegisterPatientAsync(frontOffice);
-        var account = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
+        var account = stay.Account;
         var bill = await OutPatientBillAsync(frontOffice, billing, patientId, 2_50_000m);
         var shift = await OpenShiftAsync(billing);
 
@@ -215,8 +323,8 @@ public sealed class CashLimitTests(HospitalServer server)
         return created.Id;
     }
 
-    /// <summary>Front office: admits the patient, paying for himself, to a free bed of the male general ward; his IP account.</summary>
-    private static async Task<IpAccountDetail> AdmitAsync(ApiClient frontOffice, ApiClient doctor, ApiClient billing, Guid patientId)
+    /// <summary>Front office: admits the patient, paying for himself, to a free bed of the male general ward.</summary>
+    private async Task<Stay> AdmitAsync(ApiClient frontOffice, ApiClient doctor, ApiClient billing, Guid patientId)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
@@ -228,7 +336,30 @@ public sealed class CashLimitTests(HospitalServer server)
             ProvisionalDiagnosis: "Cellulitis of the right leg", ReferredBy: null, PayerType: PayerType.Self, PayerId: null, PolicyNumber: null,
             IsMlc: false, MlcNumber: null, ExpectedDischargeDate: null, AttendantName: null, AttendantRelation: null, AttendantPhone: null,
             AdmittedAt: null, Notes: null));
-        return await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}");
+        return new Stay(server, frontOffice, await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}"), ward.Id);
+    }
+
+    /// <summary>
+    /// The patient's stay, with his IP account. Every test of the run shares the ward's beds, so when the test ends a stay
+    /// still in progress is cancelled (one that has ended is refused, and stays as it is), and the nurse cleans the bed it
+    /// left: a bed is taken again only once housekeeping has made it vacant.
+    /// </summary>
+    private sealed class Stay(HospitalServer server, ApiClient frontOffice, IpAccountDetail account, Guid wardId) : IAsyncDisposable
+    {
+        public IpAccountDetail Account => account;
+
+        public async ValueTask DisposeAsync()
+        {
+            (await frontOffice.SendRawAsync(HttpMethod.Post, $"/api/v1/inpatient/admissions/{account.AdmissionId}/cancel",
+                new CancelAdmissionRequest("Admitted for a test of the cash limit"))).Dispose();
+            var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+            foreach (var task in (await nurse.GetAsync<List<HousekeepingTaskDto>>($"/api/v1/beds/housekeeping?wardId={wardId}"))
+                     .Where(t => t.AdmissionId == account.AdmissionId && t.Status == HousekeepingStatus.Pending))
+            {
+                await nurse.PostAsync<HousekeepingTaskDto>($"/api/v1/beds/housekeeping/{task.Id}/start");
+                await nurse.PostAsync<HousekeepingTaskDto>($"/api/v1/beds/housekeeping/{task.Id}/complete", new BedNoteRequest("Cleaned after the stay"));
+            }
+        }
     }
 
     /// <summary>
@@ -312,6 +443,30 @@ public sealed class CashLimitTests(HospitalServer server)
     }
 
     /// <summary>
+    /// A payment the gateway took for the bill or the stay, made by <paramref name="method"/> (Razorpay's name for it),
+    /// recorded as <c>PaymentGatewayService</c> records a capture: in a transaction of its own, dated when the gateway took
+    /// it. Null when it is recorded; otherwise why it is not.
+    /// </summary>
+    private async Task<string?> TakenOnlineAsync(Guid patientId, Guid? billId, Guid? accountId, decimal amount, string method, DateTimeOffset? takenAt = null)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var hospital = await db.Set<Facility>().OrderBy(f => f.CreatedAt).FirstAsync(Ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(Ct);
+        var receipt = await scope.ServiceProvider.GetRequiredService<ReceiptService>().RecordExternalAsync(new ExternalPayment(
+            hospital.Id, billId is null ? ReceiptPurpose.Deposit : ReceiptPurpose.BillPayment, patientId, billId, accountId, PaymentMode.PaymentGateway,
+            amount, "pay_" + Letters(14), method, null, ReceiptSource.PaymentGateway, null, takenAt), Ct);
+        if (receipt.Error is { } error)
+        {
+            return error.Message;
+        }
+
+        await db.SaveChangesAsync(Ct);
+        await transaction.CommitAsync(Ct);
+        return null;
+    }
+
+    /// <summary>
     /// A second hospital, registered under <paramref name="pan"/>, with this hospital under <see cref="Pan"/>, for the rest
     /// of the test; then this hospital's PAN is put back and the second hospital closed, because the server is shared by
     /// every test of the run.
@@ -383,7 +538,7 @@ public sealed class CashLimitTests(HospitalServer server)
     /// Today in the hospital's calendar (IST). The limit counts a day's cash, so the test must not straddle midnight:
     /// started in the last two minutes of a day, it waits for the next.
     /// </summary>
-    private async Task HospitalDayAsync()
+    private async Task<DateOnly> HospitalDayAsync()
     {
         var clock = server.Services.GetRequiredService<TimeProvider>();
         var now = clock.GetUtcNow();
@@ -392,6 +547,8 @@ public sealed class CashLimitTests(HospitalServer server)
         {
             await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, Ct);
         }
+
+        return IndiaClock.LocalDate(clock.GetUtcNow());
     }
 
     private static string Deposits(IpAccountDetail account) => $"/api/v1/billing/ip-accounts/{account.Id}/deposits";
