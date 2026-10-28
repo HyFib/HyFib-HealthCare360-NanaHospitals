@@ -10,7 +10,9 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Organization;
+using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -35,16 +37,25 @@ public sealed class RoomRentGstTests(HospitalServer server)
         var dayBefore = today.AddDays(-2);
 
         // Three patients admitted the day before yesterday, recorded as late entries: one to a deluxe suite, one to the
-        // ICU and one to a private room. The bed-day job charges the two midnights each has spent.
+        // ICU and one to a private room.
         var stays = new Dictionary<string, AdmissionCreated>();
         foreach (var ward in new[] { "DLX", "ICU", "PVT" })
         {
             stays[ward] = await AdmitAsync(frontOffice, doctor, await RegisterPatientAsync(frontOffice), ward, IndiaClock.AtLocal(dayBefore, new TimeOnly(10, 0)));
-            await PostDueBedDaysAsync(stays[ward].Id);
         }
 
         try
         {
+            // The bed-day job charges the two midnights each has spent. Meanwhile the ICU has been re-classed as a general
+            // ward: a day keeps the class its bed had when the stay began there, as the consultant's visit does.
+            await using (await WardTypeAsync("ICU", WardType.General))
+            {
+                foreach (var stay in stays.Values)
+                {
+                    await PostDueBedDaysAsync(stay.Id);
+                }
+            }
+
             // Deluxe suite, ₹6,500 a day: ₹325 of GST on each day.
             var deluxe = await BedDaysAsync(billing, stays["DLX"].Id);
             deluxe.Count.ShouldBe(2);
@@ -121,6 +132,29 @@ public sealed class RoomRentGstTests(HospitalServer server)
     {
         await using var scope = server.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<InpatientChargeService>().PostDueBedDaysAsync(admissionId, null, Ct);
+    }
+
+    /// <summary>The ward's type set to <paramref name="type"/>, as if edited in its master; disposed, the type it had is put back.</summary>
+    private async Task<IAsyncDisposable> WardTypeAsync(string code, WardType type)
+    {
+        var before = await SetWardTypeAsync(code, type);
+        return new Restore(() => SetWardTypeAsync(code, before));
+    }
+
+    private async Task<WardType> SetWardTypeAsync(string code, WardType type)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var ward = await db.Set<Ward>().IgnoreQueryFilters().SingleAsync(w => w.Code == code && !w.IsDeleted, CancellationToken.None);
+        var before = ward.Type;
+        ward.Type = type;
+        await db.SaveChangesAsync(CancellationToken.None);
+        return before;
+    }
+
+    private sealed class Restore(Func<Task> restore) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await restore();
     }
 
     /// <summary>Today in the hospital's calendar (IST); started in the last two minutes of a day, it waits for the next.</summary>

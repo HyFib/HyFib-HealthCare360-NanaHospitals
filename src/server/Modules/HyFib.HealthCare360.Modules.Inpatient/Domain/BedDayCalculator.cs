@@ -12,11 +12,14 @@ public enum BedDayPolicy
     CalendarDay,
 }
 
-/// <summary>A period in one bed (UTC instants) with the per-day bed charge that applies to it.</summary>
-public sealed record BedStay(DateTimeOffset From, DateTimeOffset? To, Guid? BedServiceItemId, Guid WardId);
+/// <summary>
+/// A period in one bed (UTC instants) with the per-day bed charge that applies to it, and whether the bed was in critical
+/// care when the stay began there (<see cref="BedAssignment.IsCriticalCare"/>).
+/// </summary>
+public sealed record BedStay(DateTimeOffset From, DateTimeOffset? To, Guid? BedServiceItemId, Guid WardId, bool IsCriticalCare = false);
 
-/// <summary>A chargeable bed day and the bed class (service item) to charge for it.</summary>
-public sealed record BedDay(DateOnly Date, Guid? BedServiceItemId, Guid? WardId);
+/// <summary>A chargeable bed day, the bed class (service item) to charge for it, and whether the bed was in critical care.</summary>
+public sealed record BedDay(DateOnly Date, Guid? BedServiceItemId, Guid? WardId, bool IsCriticalCare = false);
 
 /// <summary>
 /// Works out which in-patient days are chargeable (IPB auto bed/nursing charges). Pure and deterministic so the hourly
@@ -79,7 +82,7 @@ public static class BedDayCalculator
     private static BedDay Day(DateOnly date, IReadOnlyList<BedStay> stays, DateTimeOffset censusPoint)
     {
         var stay = StayAt(stays, censusPoint);
-        return new BedDay(date, stay?.BedServiceItemId, stay?.WardId);
+        return new BedDay(date, stay?.BedServiceItemId, stay?.WardId, stay?.IsCriticalCare ?? false);
     }
 }
 

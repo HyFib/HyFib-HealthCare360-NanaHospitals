@@ -60,7 +60,7 @@ public sealed class InpatientChargeService(
         var stays = await db.Set<BedAssignment>().AsNoTracking()
             .Where(a => a.AdmissionId == admissionId)
             .OrderBy(a => a.FromAt)
-            .Select(a => new BedStay(a.FromAt, a.ToAt, a.BedServiceItemId, a.WardId))
+            .Select(a => new BedStay(a.FromAt, a.ToAt, a.BedServiceItemId, a.WardId, a.IsCriticalCare))
             .ToListAsync(ct);
         var due = BedDayCalculator.DueDays(admission.AdmittedAt, endedAt, stays, now, await PolicyAsync(admission.FacilityId, ct));
         if (due.Count == 0)
@@ -76,21 +76,12 @@ public sealed class InpatientChargeService(
             .ToHashSet();
         var nursingItemId = await ServiceItemIdAsync(NursingServiceCode, ct);
 
-        // A bed's day tells Billing whether it is in critical care, which decides its GST (a CCU or an ICCU is kept as an
-        // ICU ward).
-        var wardIds = due.Where(d => d.WardId is not null).Select(d => d.WardId!.Value).Distinct().ToList();
-        var intensiveCare = (await db.Set<Ward>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
-                .Where(w => wardIds.Contains(w.Id))
-                .Select(w => new { w.Id, w.Type })
-                .ToListAsync(ct))
-            .Where(w => Ward.IsCriticalCareType(w.Type))
-            .Select(w => w.Id)
-            .ToHashSet();
-
         var count = 0;
         foreach (var day in due)
         {
-            var room = day.WardId is { } wardId && intensiveCare.Contains(wardId) ? RoomCharge.IntensiveCare : RoomCharge.Room;
+            // A bed's day tells Billing whether it is in critical care, which decides its GST: as the bed assignment
+            // recorded it when the stay began there, as for the consultant's visit (a CCU or an ICCU is kept as an ICU ward).
+            var room = day.IsCriticalCare ? RoomCharge.IntensiveCare : RoomCharge.Room;
             if (day.BedServiceItemId is { } bedItemId && !posted.Contains((day.Date, DailyChargeKind.Bed))
                 && await PostDayAsync(admission, day.Date, DailyChargeKind.Bed, bedItemId, room, ct))
             {
