@@ -710,7 +710,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     the hospital CA's .crt and a prescription's DSC signature as .p7s), and only from the server.
   - Denies permissions other than camera, microphone, clipboard and notifications.
   - Disables password autosave and autofill.
-  - Disables DevTools unless IT enables them.
+  - Disables DevTools unless IT's machine policy enables them (`"allowDevTools": true` in `policy.json`, which only an
+    administrator can write). The user's own settings file cannot.
 - The server runs as a dedicated virtual service account, and its data folder is readable only by that account,
   Administrators and SYSTEM.
 
