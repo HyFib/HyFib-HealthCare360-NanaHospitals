@@ -4,7 +4,9 @@ using System.Text.Json.Nodes;
 using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Features;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
@@ -14,6 +16,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace HyFib.HealthCare360.Platform.Settings;
@@ -327,7 +330,9 @@ internal static class SettingsEndpoints
                 x.Row.UpdatedAt ?? x.Row.CreatedAt, x.Row.Version)));
         });
 
-        admin.MapPut("/{key}", async (string key, SaveSettingRequest request, ISettingsService settings, IAuditLogger audit, HospitalDbContext db, CancellationToken ct) =>
+        admin.MapPut("/{key}", async (
+            string key, SaveSettingRequest request, ISettingsService settings, IAuditLogger audit, HospitalDbContext db, IOptions<PlatformOptions> platform,
+            CancellationToken ct) =>
         {
             if (key.Length is 0 or > 128 || !key.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-'))
             {
@@ -335,7 +340,9 @@ internal static class SettingsEndpoints
             }
 
             // A setting with rules of its own is refused here, not read leniently later (a default, or the nearest value allowed).
-            if ((AntiAutomationSettings.Problem(key, request.Value) ?? AdministrationOnDesktop.Problem(key, request.Value, request.FacilityId)) is { } problem)
+            if ((AntiAutomationSettings.Problem(key, request.Value)
+                 ?? AdministrationOnDesktop.Problem(key, request.Value, request.FacilityId)
+                 ?? TrainingSimulators.Problem(key, request.Value, platform.Value)) is { } problem)
             {
                 return Error.Field("value", problem).ToProblem();
             }

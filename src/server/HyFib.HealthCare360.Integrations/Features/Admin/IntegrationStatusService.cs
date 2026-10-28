@@ -81,7 +81,7 @@ internal sealed class IntegrationStatusService(
             {
                 // Label building is local to the server: always available, on the workstations' printers or the simulator.
                 var labels = await settings.ReadAsync<LabelSettings, NoSecrets>(name, null, requireEnabled: false, cancellationToken);
-                var simulated = string.Equals(labels.Settings?.Provider?.Trim(), ProviderKeys.Simulator, StringComparison.OrdinalIgnoreCase);
+                var simulated = labels.Problem is null && string.Equals(labels.Settings?.Provider?.Trim(), ProviderKeys.Simulator, StringComparison.OrdinalIgnoreCase);
                 return (true, true, simulated ? ProviderKeys.Simulator : "zpl/tspl");
             }
             case IntegrationNames.Lab:

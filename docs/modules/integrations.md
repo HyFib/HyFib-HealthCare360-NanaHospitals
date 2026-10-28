@@ -34,6 +34,15 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
   (`integrations.labels`) are written as usual but kept in `simulator_messages` (channel `Labels`) instead of being
   printed, and the staff app shows each label in the print dialog; a laboratory analyser whose connection is
   `Simulator` is the training analyser, whose results are entered on screen (see *Training analyser* below).
+* **Simulators only on a training or test server.** A simulator answers "sent", "paid", "approved" or "authenticated"
+  with nothing sent, no money moving and nobody checked, and keeps what it was given (sign-in codes too) in an inbox
+  administrators read. So only a server set up with demonstration data (`HealthCare360:SeedDemoData`,
+  `PlatformOptions.AllowsSimulators`) uses them. On a hospital's live server, `PUT /api/v1/admin/settings/{key}` refuses
+  an `integrations.*` value whose `provider` is `simulator` (400), and Lab setup refuses a `Simulator` connection (422
+  `lab.training_server`). A simulator chosen before (on the server when it was a training server, or written to the
+  database) is not used either: `IntegrationSettingsReader` reads the integration as not usable, with the reason, so
+  every router refuses it as it does a disabled integration; labels go to the workstations' printers, and the
+  training analyser takes no results. `TrainingSimulators` (Platform) holds the rule.
 * **Integration log.** Every external call, inbound webhook and analyser message writes one row through the platform
   `IIntegrationLogger`, via the internal `IntegrationTrace` helper. Rows record integration, provider, operation,
   direction, success, duration, reference and summaries. Adapters build their own summaries: masked recipient,
@@ -841,7 +850,9 @@ it, so the lab can practise without an analyser. Code: `Features/LabConnections/
   analyser's sample-id fields, or `AstmMessageMapper`) and handed to the LIS through `ILabMessageProcessor`. So results
   are matched by channel code, auto-validated, delta-checked and held by QC lockout as a real analyser's are, and are
   logged (provider `simulator:<code>`) and counted on the dashboard.
-* **Limits.** Only an analyser whose connection is `Simulator` takes results from the screen (otherwise 422
+* **Limits.** Only a training or test server has a training analyser (otherwise 422 `lab.training_server`): on a
+  hospital's live server, results typed in would be patients' results no analyser measured. Only an analyser whose
+  connection is `Simulator` takes results from the screen (otherwise 422
   `lab.not_training_analyser`), with the gateway on, the connection and the analyser switched on, at the user's own
   facility. Values and units cannot hold the characters analyser messages reserve (`| ^ ~ \ &`, line breaks); at most
   100 results a message. Use it only for training: the results are real results on the sample.
@@ -1052,9 +1063,9 @@ staff app.
 | GET | `/api/v1/admin/integrations/simulator/transactions` | `admin.integrations.manage` | paging + `kind` → simulated payment orders, links and refunds, POS sales, and punches on training attendance terminals |
 | GET | `/api/v1/admin/integrations/whatsapp/inbound` | `admin.integrations.manage` | paging + `keyword` → `InboundWhatsAppMessageDto` (sender masked) with `keyword` and `keywordAction` (`OptedOut`, `OptedIn`, `Superseded`, `None`, or null for replies not acted on yet). The staff inbox shows it as the Result column |
 | GET | `/api/v1/integrations/lab/connections` | `integrations.lab.connections`, `integrations.lab.status` or `admin.integrations.manage` | → `LabConnectionsDto { gatewayEnabled, listVersion, connections[], agents[] }`: each analyser's connection with its Lab setup state, live status and orders waiting, and the facility's enrolled lab agents (online when seen in the last 3 minutes or relaying) |
-| PUT | `/api/v1/integrations/lab/connections/{code}` | `integrations.lab.connections` | `SaveLabConnectionRequest { transport, enabled, port, allowedIps, encoding, sampleIdFields, orderMessage, agentDeviceId, serial, listVersion }` → 204. 404 for an analyser not in Lab setup or of another facility; 400 for a port the server uses, a port or an agent's COM port already taken, or an agent that is not an enrolled lab agent of the analyser's facility; 409 when the list changed since `listVersion`. Clears the retired `hostQuery`. Audited as `lab.connection.saved` |
+| PUT | `/api/v1/integrations/lab/connections/{code}` | `integrations.lab.connections` | `SaveLabConnectionRequest { transport, enabled, port, allowedIps, encoding, sampleIdFields, orderMessage, agentDeviceId, serial, listVersion }` → 204. 404 for an analyser not in Lab setup or of another facility; 400 for a port the server uses, a port or an agent's COM port already taken, or an agent that is not an enrolled lab agent of the analyser's facility; 409 when the list changed since `listVersion`; 422 `lab.training_server` for a `Simulator` connection on a live server. Clears the retired `hostQuery`. Audited as `lab.connection.saved` |
 | DELETE | `/api/v1/integrations/lab/connections/{code}?version` | `integrations.lab.connections` | → 204; 409 on a stale version. Audited as `lab.connection.removed` |
-| GET | `/api/v1/integrations/lab/connections/{code}/training/samples/{barcode}` | `integrations.lab.connections` | Training analyser only → `TrainingSampleDto { sampleBarcode, patientName, patientId, channels[] }`; 422 `lab.training_no_tests` when the sample needs nothing from the analyser, `lab.not_training_analyser`, `lab.gateway_off` or `lab.training_off` |
+| GET | `/api/v1/integrations/lab/connections/{code}/training/samples/{barcode}` | `integrations.lab.connections` | Training analyser only → `TrainingSampleDto { sampleBarcode, patientName, patientId, channels[] }`; 422 `lab.training_server` on a live server, `lab.training_no_tests` when the sample needs nothing from the analyser, `lab.not_training_analyser`, `lab.gateway_off` or `lab.training_off` |
 | POST | `/api/v1/integrations/lab/connections/{code}/training/results` | `integrations.lab.connections` | `TrainingResultsRequest { sampleBarcode, results[{ channel, value, units }] }` → `TrainingResultsOutcome { accepted, message, rawMessage }`; the same 422s; 400 for values analyser messages cannot carry |
 | POST | `/api/v1/integrations/lab/agent/heartbeat` | anonymous, lab agent credential (`X-Device-Id`, `X-Device-Key`), `device` rate limit | `LabAgentHeartbeatRequest { appVersion, ports[] { code, open, error } }` (at most 64 ports) → `LabAgentAssignments { deviceId, deviceName, gatewayEnabled, heartbeatSeconds, instruments[] }`; 401 for a device that is not an enrolled lab agent |
 | GET | `/api/v1/integrations/lab/agent/relay/{code}` | anonymous, lab agent credential, `device` rate limit | WebSocket, sub-protocol `hc360.lab-relay.v1`: the analyser's serial bytes. 401 not an enrolled lab agent, 404 analyser not assigned to it, 503 gateway off |

@@ -26,7 +26,7 @@ public sealed class WhatsAppRouterTests
             .Returns(new WhatsAppSecrets { AccessToken = "t" });
     }
 
-    private WhatsAppRouter Router => new([_meta], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance), _tracing.Trace);
+    private WhatsAppRouter Router => new([_meta], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), Servers.Live, NullLogger<IntegrationSettingsReader>.Instance), _tracing.Trace);
 
     private void Configure(WhatsAppSettings? settings) =>
         _settings.GetAsync<WhatsAppSettings>("integrations.whatsapp", Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(settings);

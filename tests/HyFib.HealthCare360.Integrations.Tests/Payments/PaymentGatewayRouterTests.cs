@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Integrations.Common;
 using HyFib.HealthCare360.Integrations.Payments;
+using HyFib.HealthCare360.Integrations.Tests.TestSupport;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
@@ -36,7 +37,7 @@ public sealed class PaymentGatewayRouterTests
     }
 
     private PaymentGatewayRouter Router =>
-        new([_razorpay], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance));
+        new([_razorpay], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), Servers.Live, NullLogger<IntegrationSettingsReader>.Instance));
 
     private static string Sign(string secret, string payload) =>
         Convert.ToHexStringLower(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));

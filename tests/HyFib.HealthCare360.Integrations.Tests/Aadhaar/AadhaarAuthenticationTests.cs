@@ -49,7 +49,7 @@ public sealed class AadhaarAuthenticationTests : IDisposable
 
     private AadhaarAuthRouter Router => new(
         [new UidaiAadhaarAuthenticator(new HttpClient(_asa), _tracing.Trace), new SimulatorAadhaarAuthenticator(_tracing.Trace)],
-        new IntegrationSettingsReader(_settings, _user, NullLogger<IntegrationSettingsReader>.Instance),
+        new IntegrationSettingsReader(_settings, _user, Servers.Training, NullLogger<IntegrationSettingsReader>.Instance),
         _user);
 
     public void Dispose()

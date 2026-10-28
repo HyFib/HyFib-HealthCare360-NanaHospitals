@@ -106,6 +106,28 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task On_a_live_server_the_training_gateway_marks_no_bill_paid()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var bill = await FinalizedBillAsync(billing);
+        var sentBefore = await billing.PostAsync<GatewayOrderDto>("/api/v1/billing/payment-links", new CreatePaymentLinkRequest(bill.Id, null, null, false, false));
+
+        using (server.AsLiveServer())
+        {
+            // The training gateway would take the payment at once, with no money moving: on the hospital's live server
+            // no link is made with it, and a link it made before is not marked paid.
+            using var refused = await billing.SendRawAsync(HttpMethod.Post, "/api/v1/billing/payment-links", new CreatePaymentLinkRequest(bill.Id, null, null, false, false));
+            refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            (await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("billing.gateway_unavailable");
+            var checkedAgain = await billing.PostAsync<GatewayOrderDto>($"/api/v1/billing/payment-links/{sentBefore.Id}/refresh");
+            checkedAgain.Status.ShouldNotBe(GatewayOrderStatus.Paid);
+        }
+
+        (await billing.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}")).DueAmount.ShouldBe(bill.DueAmount);
+    }
+
+    [Fact]
     public async Task Exceptions_and_settlements_are_for_accountants_and_administrators_only()
     {
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);

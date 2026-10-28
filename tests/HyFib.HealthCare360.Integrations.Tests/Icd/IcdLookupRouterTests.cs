@@ -35,7 +35,7 @@ public sealed class IcdLookupRouterTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private IcdLookupRouter Router => new(
-        new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance),
+        new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), Servers.Training, NullLogger<IntegrationSettingsReader>.Instance),
         new WhoIcdApiClient(_http.Client(), _tokens, _tracing.Trace),
         _tracing.Trace,
         _cache,
