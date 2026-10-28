@@ -95,7 +95,8 @@ public sealed class EmergencyDepartmentTests(HospitalServer server)
         (await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{visit.Id}")).Status.ShouldBe(VisitStatus.Completed);
     }
 
-    private async Task<(Guid PatientId, VisitDetail Visit)> EmergencyVisitAsync(ApiClient frontOffice)
+    /// <summary>A new patient checked in as an emergency (on the ER board, untriaged).</summary>
+    internal static async Task<(Guid PatientId, VisitDetail Visit)> EmergencyVisitAsync(ApiClient frontOffice)
     {
         var departments = await frontOffice.GetAsync<List<LookupItem>>("/api/v1/masters/lookups/departments");
         var created = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
