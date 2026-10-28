@@ -31,7 +31,7 @@ import {
   SparkleRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { bridge, draftStorageKey, hasPermission, todayIso, useSession } from '@hc360/core';
+import { bridge, draftStorage, draftStorageKey, hasPermission, todayIso, useSession } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
@@ -158,14 +158,6 @@ const useStyles = makeStyles({
 
 function toneOf(plan: AssistantPlan): AssistantExchange['tone'] {
   return plan.kind === 'message' ? plan.tone : 'info';
-}
-
-function localStorageOrNull(): Storage | null {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -378,11 +370,7 @@ export function AssistantPanel({
     }
     if (plan.note) {
       const kept = user
-        ? keepNoteDraft(
-            localStorageOrNull(),
-            draftStorageKey(user.id, emrNoteDraftName(plan.note.patientId)),
-            plan.note.draft,
-          )
+        ? keepNoteDraft(draftStorage, draftStorageKey(user.id, emrNoteDraftName(plan.note.patientId)), plan.note.draft)
         : false;
       if (!kept) {
         update(exchange.id, {

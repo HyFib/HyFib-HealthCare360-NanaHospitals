@@ -1,4 +1,4 @@
-import { draftStorageKey, useSession } from '@hc360/core';
+import { draftStorage, draftStorageKey, useDrafts, useSession } from '@hc360/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FieldValues, UseFormReturn } from 'react-hook-form';
 
@@ -12,7 +12,7 @@ function read<T>(key: string | null): SavedDraft<T> | null {
     return null;
   }
   try {
-    const raw = localStorage.getItem(key);
+    const raw = draftStorage.getItem(key);
     return raw ? (JSON.parse(raw) as SavedDraft<T>) : null;
   } catch {
     return null;
@@ -20,19 +20,15 @@ function read<T>(key: string | null): SavedDraft<T> | null {
 }
 
 function remove(key: string | null): void {
-  if (!key) {
-    return;
-  }
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // Storage unavailable — nothing to remove.
+  if (key) {
+    draftStorage.removeItem(key);
   }
 }
 
 /**
  * Saves a form locally every few seconds while it changes, so a WiFi drop, a crash or an accidental close never
- * loses a half-typed registration or note (SRS DED-10). Drafts are per user and wiped at sign-out.
+ * loses a half-typed registration or note (SRS DED-10). Drafts are per user, kept on the computer encrypted under the
+ * user's key (`draftStorage`), and wiped at sign-out.
  */
 export function useFormDraft<T extends FieldValues>(
   form: UseFormReturn<T> | null,
@@ -42,6 +38,15 @@ export function useFormDraft<T extends FieldValues>(
   const userId = useSession((s) => s.user?.id);
   const storageKey = key && userId ? draftStorageKey(userId, key) : null;
   const [saved, setSaved] = useState<SavedDraft<T> | null>(() => read<T>(storageKey));
+  // The user's drafts open once the server's key has come, which can be after the form: it looks again then.
+  const draftsOpen = useDrafts((s) => userId !== undefined && s.openFor === userId);
+  const [lookedOpen, setLookedOpen] = useState(draftsOpen);
+  if (draftsOpen !== lookedOpen) {
+    setLookedOpen(draftsOpen);
+    if (draftsOpen && saved === null) {
+      setSaved(read<T>(storageKey));
+    }
+  }
   // A draft on offer stays stored until it is restored or discarded, even while the form shows what it was filled with.
   const offered = useRef(saved !== null);
   useEffect(() => {
@@ -67,11 +72,11 @@ export function useFormDraft<T extends FieldValues>(
         // so saved content never comes back later as a "draft".
         if (JSON.stringify(values) === JSON.stringify(form.formState.defaultValues ?? {})) {
           if (!offered.current) {
-            localStorage.removeItem(storageKey);
+            draftStorage.removeItem(storageKey);
           }
           return;
         }
-        localStorage.setItem(storageKey, JSON.stringify({ value: values, savedAt: Date.now() }));
+        draftStorage.setItem(storageKey, JSON.stringify({ value: values, savedAt: Date.now() }));
       } catch {
         // Quota exceeded or private mode: drafts are best effort.
       }
@@ -109,11 +114,7 @@ export function useFormDraft<T extends FieldValues>(
       return;
     }
     const raw = JSON.stringify({ value: values, savedAt: Date.now() });
-    try {
-      localStorage.setItem(storageKey, raw);
-    } catch {
-      // Storage unavailable: the draft is still offered until the form is closed.
-    }
+    draftStorage.setItem(storageKey, raw);
     offered.current = true;
     setSaved(JSON.parse(raw) as SavedDraft<T>);
   }, [form, storageKey]);

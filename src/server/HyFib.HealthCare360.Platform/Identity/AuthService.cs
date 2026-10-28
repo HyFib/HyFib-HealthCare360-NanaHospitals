@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.Json;
 using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -161,13 +162,19 @@ public sealed record AuthUser(
     bool BiometricUnlock = false,
     bool AdministrationNeedsDesktop = false);
 
+/// <summary>
+/// What a sign-in, refresh or unlock answers. <paramref name="DraftKey"/> is the key the staff app encrypts the user's
+/// drafts with on the computer (SRS DED-10): the same in each of their sessions, and given only to a session that may be
+/// used, never to one that is locked or must first change its password or set up two-step verification.
+/// </summary>
 public sealed record AuthResult(
     string? AccessToken,
     DateTimeOffset? ExpiresAt,
     AuthUser? User,
     bool MfaRequired = false,
     Guid? ChallengeId = null,
-    string? Restriction = null);
+    string? Restriction = null,
+    string? DraftKey = null);
 
 public sealed record OtpChallengeResponse(Guid ChallengeId, DateTimeOffset ExpiresAt, string MaskedPhone);
 
@@ -706,7 +713,7 @@ public sealed class AuthService(
         SetRefreshCookie(http, session.ClientType, next.Raw, next.Entity.ExpiresAt);
         var restriction = RestrictionFor(user, roles, session);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction, DraftKey: DraftKeyFor(user, restriction));
     }
 
     public async Task<Result> LogoutAsync(HttpContext http, CancellationToken ct)
@@ -786,7 +793,7 @@ public sealed class AuthService(
 
         var restriction = RestrictionFor(user, roles);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction, DraftKey: DraftKeyFor(user, restriction));
     }
 
     public async Task<Result<AuthResult>> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken ct)
@@ -837,7 +844,7 @@ public sealed class AuthService(
         var roles = RoleNames(user);
         var restriction = RestrictionFor(user, roles);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction, DraftKey: DraftKeyFor(user, restriction));
     }
 
     // ---------------------------------------------------------------- idle lock screen
@@ -961,7 +968,7 @@ public sealed class AuthService(
             var roles = RoleNames(user);
             var restriction = RestrictionFor(user, roles);
             var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-            return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
+            return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction, DraftKey: DraftKeyFor(user, restriction));
         }
 
         session.FailedUnlockAttempts++;
@@ -1049,7 +1056,7 @@ public sealed class AuthService(
         var roles = RoleNames(user);
         var restriction = RestrictionFor(user, roles);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, session.FacilityId, session.DeviceId, restriction, ct), Restriction: restriction, DraftKey: DraftKeyFor(user, restriction));
     }
 
     public async Task<Result> DisableMfaAsync(MfaDisableRequest request, CancellationToken ct)
@@ -1249,7 +1256,7 @@ public sealed class AuthService(
 
         SetRefreshCookie(http, clientType, refresh.Raw, refresh.Entity.ExpiresAt);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
-        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, facility?.Id, deviceId, restriction, ct), Restriction: restriction);
+        return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, facility?.Id, deviceId, restriction, ct), Restriction: restriction, DraftKey: DraftKeyFor(user, restriction));
     }
 
     private (string Raw, RefreshToken Entity) CreateRefreshToken(UserSession session, DateTimeOffset now)
@@ -1412,6 +1419,15 @@ public sealed class AuthService(
     /// <summary>The account's restriction, else the session's lock.</summary>
     private string? RestrictionFor(User user, IReadOnlyList<string> roles, UserSession session) =>
         RestrictionFor(user, roles) ?? (session.LockedAt is null ? null : RestrictionLocked);
+
+    /// <summary>
+    /// The key the staff app encrypts this user's drafts with on the computer (SRS DED-10, audit P10). It is the same in
+    /// each of the user's sessions, so a draft typed before a crash or an outage opens again once they sign in again, and
+    /// only the server can make it: someone else signed in on the same Windows account is given their own. None while
+    /// the session may not be used (<paramref name="restriction"/>).
+    /// </summary>
+    private string? DraftKeyFor(User user, string? restriction) =>
+        restriction is null ? Convert.ToBase64String(HMACSHA256.HashData(protector.DeriveKey("draft-keys"), user.Id.ToByteArray())) : null;
 
     private bool RequiresMfa(User user, IReadOnlyList<string> roles) =>
         SignInPolicy.RequiresMfa(Security, roles, user.Roles.SelectMany(r => r.Role?.Permissions ?? []).Select(p => p.Permission));

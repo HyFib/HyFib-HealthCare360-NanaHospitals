@@ -34,7 +34,7 @@ import {
   SaveRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { draftStorageKey, formatDate, formatTime, useHotkey, useSession } from '@hc360/core';
+import { draftStorage, draftStorageKey, formatDate, formatTime, useDrafts, useHotkey, useSession } from '@hc360/core';
 import { ErrorState, LEAVE_KEEPING_DRAFT, LoadingState, Section, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -170,7 +170,7 @@ function readDraft(key: string | null): SavedDraft | null {
     return null;
   }
   try {
-    const raw = localStorage.getItem(key);
+    const raw = draftStorage.getItem(key);
     const parsed = raw ? (JSON.parse(raw) as SavedDraft) : null;
     return parsed && Object.keys(parsed.value ?? {}).length > 0 ? parsed : null;
   } catch {
@@ -179,21 +179,12 @@ function readDraft(key: string | null): SavedDraft | null {
 }
 
 function writeDraft(key: string, edits: Edits): void {
-  try {
-    localStorage.setItem(key, JSON.stringify({ value: edits, savedAt: new Date().getTime() }));
-  } catch {
-    // Drafts are best effort (quota, private mode).
-  }
+  draftStorage.setItem(key, JSON.stringify({ value: edits, savedAt: new Date().getTime() }));
 }
 
 function removeDraft(key: string | null): void {
-  if (!key) {
-    return;
-  }
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // Nothing to remove.
+  if (key) {
+    draftStorage.removeItem(key);
   }
 }
 
@@ -315,6 +306,15 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
   const draftKey = userId ? draftStorageKey(userId, `lab-results:${sheet.sampleId}`) : null;
   const [edits, setEdits] = useState<Edits>({});
   const [restorable, setRestorable] = useState<SavedDraft | null>(() => readDraft(draftKey));
+  // The user's drafts open once the server's key has come, which can be after the sheet: it looks again then.
+  const draftsOpen = useDrafts((s) => userId !== undefined && s.openFor === userId);
+  const [lookedOpen, setLookedOpen] = useState(draftsOpen);
+  if (draftsOpen !== lookedOpen) {
+    setLookedOpen(draftsOpen);
+    if (draftsOpen && restorable === null && Object.keys(edits).length === 0) {
+      setRestorable(readDraft(draftKey));
+    }
+  }
   const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<string[]>([]);
   const [release, setRelease] = useState(true);

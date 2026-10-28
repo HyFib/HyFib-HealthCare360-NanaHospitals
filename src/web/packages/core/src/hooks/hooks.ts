@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useState, type RefObject } from 'react';
-import { draftStorageKey, lastActivityAt, useSession } from '../auth/session';
+import { draftStorage, draftStorageKey } from '../auth/drafts';
+import { lastActivityAt, useSession } from '../auth/session';
 
 /** Debounces a fast-changing value (search boxes). */
 export function useDebouncedValue<T>(value: T, delayMs = 300): T {
@@ -29,7 +30,7 @@ export function useDraft<T>(key: string | null, value: T, options: { intervalMs?
     }
     const timer = setInterval(() => {
       try {
-        localStorage.setItem(storageKey, JSON.stringify({ value: currentValue(), savedAt: Date.now() }));
+        draftStorage.setItem(storageKey, JSON.stringify({ value: currentValue(), savedAt: Date.now() }));
         setSavedAt(Date.now());
       } catch {
         // Quota or private mode: drafts are best-effort.
@@ -43,7 +44,7 @@ export function useDraft<T>(key: string | null, value: T, options: { intervalMs?
       return null;
     }
     try {
-      const raw = localStorage.getItem(storageKey);
+      const raw = draftStorage.getItem(storageKey);
       return raw ? (JSON.parse(raw) as { value: T; savedAt: number }) : null;
     } catch {
       return null;
@@ -52,11 +53,7 @@ export function useDraft<T>(key: string | null, value: T, options: { intervalMs?
 
   const clear = useCallback(() => {
     if (storageKey) {
-      try {
-        localStorage.removeItem(storageKey);
-      } catch {
-        // ignore
-      }
+      draftStorage.removeItem(storageKey);
     }
     setSavedAt(null);
   }, [storageKey]);
