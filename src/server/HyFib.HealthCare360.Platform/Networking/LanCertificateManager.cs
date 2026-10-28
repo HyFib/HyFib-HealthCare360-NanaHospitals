@@ -48,20 +48,31 @@ public sealed class LanCertificateManager : IDisposable
 
     private static readonly TimeSpan RenewBefore = TimeSpan.FromDays(30);
 
+    /// <summary>
+    /// How often a running server checks its certificate's expiry: it is issued again <see cref="RenewBefore"/> before it
+    /// expires however long the server has been up, network change or not.
+    /// </summary>
+    private static readonly TimeSpan ExpiryCheck = TimeSpan.FromHours(6);
+
     private readonly DataDirectories _directories;
     private readonly PlatformOptions _options;
     private readonly IDataProtector _protector;
     private readonly ILogger<LanCertificateManager> _logger;
+    private readonly TimeProvider _time;
     private readonly Lock _gate = new();
     private X509Certificate2? _ca;
     private X509Certificate2? _server;
+    private ITimer? _expiryCheck;
 
-    public LanCertificateManager(DataDirectories directories, PlatformOptions options, IDataProtectionProvider dataProtection, ILogger<LanCertificateManager> logger)
+    public LanCertificateManager(
+        DataDirectories directories, PlatformOptions options, IDataProtectionProvider dataProtection, ILogger<LanCertificateManager> logger,
+        TimeProvider? time = null)
     {
         _directories = directories;
         _options = options;
         _protector = dataProtection.CreateProtector(ProtectorPurpose);
         _logger = logger;
+        _time = time ?? TimeProvider.System;
     }
 
     public X509Certificate2 ServerCertificate
@@ -136,11 +147,34 @@ public sealed class LanCertificateManager : IDisposable
             CaPem = _ca.ExportCertificatePem();
             File.WriteAllText(Path.Combine(_directories.Certificates, CaPublicFile), CaPem);
             _server = LoadOrCreateServerCertificate(_ca, force: false);
+            _expiryCheck ??= _time.CreateTimer(_ => RenewBeforeExpiry(), null, ExpiryCheck, ExpiryCheck);
         }
     }
 
     /// <summary>Re-issues the server certificate if the machine's IP addresses changed or it is near expiry.</summary>
-    public bool RefreshIfNeeded()
+    public bool RefreshIfNeeded() => Reissue(checkNames: true);
+
+    /// <summary>
+    /// The running server's own check (<see cref="ExpiryCheck"/>). Addresses are left to <see cref="RefreshIfNeeded"/> on a
+    /// network change: rotating IPv6 temporary addresses would otherwise re-issue the certificate every day. A failure is
+    /// logged and tried again at the next check; until then System health warns that the certificate is expiring.
+    /// </summary>
+    private void RenewBeforeExpiry()
+    {
+        try
+        {
+            if (Reissue(checkNames: false))
+            {
+                _logger.LogInformation("LAN server certificate issued again before it expires");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "The LAN server certificate could not be issued again; it is tried again in {Hours} hours", ExpiryCheck.TotalHours);
+        }
+    }
+
+    private bool Reissue(bool checkNames)
     {
         if (!string.IsNullOrWhiteSpace(_options.Network.CertificatePath) || _ca is null)
         {
@@ -149,10 +183,10 @@ public sealed class LanCertificateManager : IDisposable
 
         lock (_gate)
         {
-            var desired = DesiredNames();
+            // In the CA's last weeks a certificate issued again would expire with the CA, as this one does.
             var needsRenewal = _server is null
-                || _server.NotAfter.ToUniversalTime() - DateTime.UtcNow < RenewBefore
-                || !desired.SetEquals(SubjectAlternativeNames);
+                || (_server.NotAfter.ToUniversalTime() - _time.GetUtcNow().UtcDateTime < RenewBefore && IssuedUntil(_ca) > _server.NotAfter.ToUniversalTime())
+                || (checkNames && !DesiredNames().SetEquals(SubjectAlternativeNames));
             if (!needsRenewal)
             {
                 return false;
@@ -181,7 +215,7 @@ public sealed class LanCertificateManager : IDisposable
         request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
         request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
 
-        var now = DateTimeOffset.UtcNow;
+        var now = _time.GetUtcNow();
         using var ca = request.CreateSelfSigned(now.AddDays(-1), now.AddYears(10));
         var pfx = ca.Export(X509ContentType.Pkcs12);
         WriteProtected(path, pfx);
@@ -200,7 +234,7 @@ public sealed class LanCertificateManager : IDisposable
             var meta = JsonSerializer.Deserialize<string[]>(File.ReadAllText(metaPath)) ?? [];
             var existing = X509CertificateLoader.LoadPkcs12(_protector.Unprotect(File.ReadAllBytes(path)), null);
             // Issued by another CA when one was imported (ImportCa) while the server ran: workstations would refuse it.
-            if (desired.SetEquals(meta) && existing.NotAfter.ToUniversalTime() - DateTime.UtcNow > RenewBefore && IsIssuedBy(existing, ca))
+            if (desired.SetEquals(meta) && existing.NotAfter.ToUniversalTime() - _time.GetUtcNow().UtcDateTime > RenewBefore && IsIssuedBy(existing, ca))
             {
                 SubjectAlternativeNames = meta;
                 return existing;
@@ -235,9 +269,7 @@ public sealed class LanCertificateManager : IDisposable
 
         var serial = RandomNumberGenerator.GetBytes(16);
         serial[0] &= 0x7F;
-        var now = DateTimeOffset.UtcNow;
-        // 397 days keeps Apple/Chrome happy for tablets that trust the hospital CA.
-        using var issued = request.Create(ca, now.AddDays(-1), now.AddDays(397), serial);
+        using var issued = request.Create(ca, _time.GetUtcNow().AddDays(-1), IssuedUntil(ca), serial);
         using var withKey = issued.CopyWithPrivateKey(key);
         var pfx = withKey.Export(X509ContentType.Pkcs12);
 
@@ -247,6 +279,18 @@ public sealed class LanCertificateManager : IDisposable
         SubjectAlternativeNames = names;
         _logger.LogInformation("Issued LAN server certificate for {Names} (expires {Expiry:u})", string.Join(", ", names), issued.NotAfter);
         return X509CertificateLoader.LoadPkcs12(pfx, null);
+    }
+
+    /// <summary>
+    /// When a server certificate issued now expires: in 397 days, which keeps Apple and Chrome happy for tablets that trust
+    /// the hospital CA, but no later than the CA itself, as nothing can be issued past its issuer's expiry. In the CA's last
+    /// year the certificate is shorter, and System health warns before the CA expires.
+    /// </summary>
+    private DateTime IssuedUntil(X509Certificate2 ca)
+    {
+        var full = _time.GetUtcNow().UtcDateTime.AddDays(397);
+        var caExpires = ca.NotAfter.ToUniversalTime();
+        return full < caExpires ? full : caExpires;
     }
 
     private HashSet<string> DesiredNames()
@@ -427,6 +471,7 @@ public sealed class LanCertificateManager : IDisposable
 
     public void Dispose()
     {
+        _expiryCheck?.Dispose();
         lock (_gate)
         {
             _server?.Dispose();
