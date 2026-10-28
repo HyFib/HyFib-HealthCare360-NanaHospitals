@@ -53,11 +53,15 @@ public readonly record struct IdspWeek(int Year, int Week)
 /// <summary>
 /// One patient's episode of a notifiable disease (IDSP). A diagnosis presumes it (P form), a released positive test
 /// confirms it (L form); both may happen, in either order, and the case is then on both forms, each in the week it
-/// happened. A second diagnosis or result of the same disease within <see cref="EpisodeDays"/> belongs to the same case.
+/// happened. A second diagnosis or result of the same disease within the disease's episode
+/// (<see cref="IdspDisease.EpisodeDays"/>) belongs to the same case.
 /// </summary>
 public sealed class NotifiableCase : AuditableEntity, IFacilityScoped
 {
-    /// <summary>Within this many days of the case's last event, the same disease in the same patient is the same episode.</summary>
+    /// <summary>
+    /// Within this many days of the case's last event, the same disease in the same patient is the same episode, unless
+    /// the disease sets its own (tuberculosis: a year).
+    /// </summary>
     public const int EpisodeDays = 30;
 
     public Guid FacilityId { get; set; }
@@ -78,8 +82,15 @@ public sealed class NotifiableCase : AuditableEntity, IFacilityScoped
     public string? TestName { get; private set; }
     public string? TestResult { get; private set; }
 
-    /// <summary>When the surveillance officer was alerted about an outbreak-prone disease.</summary>
+    /// <summary>When the surveillance officer was alerted: about an outbreak-prone disease, or a TB case to notify.</summary>
     public DateTimeOffset? AlertedAt { get; private set; }
+
+    /// <summary>For tuberculosis: the Ni-kshay ID the case was notified under, and the day it was notified.</summary>
+    public string? NikshayId { get; private set; }
+
+    public DateOnly? NikshayNotifiedOn { get; private set; }
+    public Guid? NikshayRecordedBy { get; private set; }
+    public DateTimeOffset? NikshayRecordedAt { get; private set; }
 
     public string? DiscardReason { get; private set; }
     public Guid? DiscardedBy { get; private set; }
@@ -142,6 +153,41 @@ public sealed class NotifiableCase : AuditableEntity, IFacilityScoped
     }
 
     public void MarkAlerted(DateTimeOffset at) => AlertedAt ??= at;
+
+    /// <summary>
+    /// Records that the tuberculosis case was notified on Ni-kshay, under <paramref name="nikshayId"/>, on
+    /// <paramref name="notifiedOn"/>; recording it again corrects it. <paramref name="today"/> is the hospital's date.
+    /// </summary>
+    public Result RecordNikshay(string nikshayId, DateOnly notifiedOn, DateOnly today, Guid? by, DateTimeOffset at)
+    {
+        if (DiseaseCode != IdspDiseases.TuberculosisCode)
+        {
+            return Error.Rule("idsp.not_nikshay", "Only tuberculosis is notified on Ni-kshay.");
+        }
+
+        if (Status == NotifiableCaseStatus.Discarded)
+        {
+            return Error.Rule("idsp.case_discarded", "This case is discarded.");
+        }
+
+        var id = nikshayId.Trim();
+        if (id.Length is 0 or > 32 || !id.All(char.IsAsciiLetterOrDigit))
+        {
+            return Error.Field("nikshayId", "Enter the Ni-kshay ID as Ni-kshay gave it: letters and digits.");
+        }
+
+        var first = VitalRegistration.LocalDate(PresumedAt ?? ConfirmedAt ?? CreatedAt);
+        if (notifiedOn > today || notifiedOn < first)
+        {
+            return Error.Field("notifiedOn", $"Give the day it was notified: from {first:dd-MM-yyyy}, and not later than today.");
+        }
+
+        NikshayId = id;
+        NikshayNotifiedOn = notifiedOn;
+        NikshayRecordedBy = by;
+        NikshayRecordedAt = at;
+        return Result.Success();
+    }
 
     public Result Discard(string reason, Guid? by, DateTimeOffset at)
     {

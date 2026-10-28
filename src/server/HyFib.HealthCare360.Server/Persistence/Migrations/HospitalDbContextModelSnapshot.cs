@@ -9471,6 +9471,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("lab_result_id");
 
+                    b.Property<string>("NikshayId")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("nikshay_id");
+
+                    b.Property<DateOnly?>("NikshayNotifiedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("nikshay_notified_on");
+
+                    b.Property<DateTimeOffset?>("NikshayRecordedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("nikshay_recorded_at");
+
+                    b.Property<Guid?>("NikshayRecordedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("nikshay_recorded_by");
+
                     b.Property<DateOnly?>("OnsetDate")
                         .HasColumnType("date")
                         .HasColumnName("onset_date");
@@ -9546,6 +9563,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("PatientId", "DiseaseCode")
                         .HasDatabaseName("ix_notifiable_cases_patient_id_disease_code");
+
+                    b.HasIndex("DiseaseCode", "Status", "NikshayNotifiedOn")
+                        .HasDatabaseName("ix_notifiable_cases_disease_code_status_nikshay_notified_on");
 
                     b.ToTable("notifiable_cases", "clinical");
                 });

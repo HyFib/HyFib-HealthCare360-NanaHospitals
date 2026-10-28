@@ -1,10 +1,12 @@
+import { HOSPITAL_TIME_ZONE } from '@hc360/core';
 import type { StatusTone } from '@hc360/ui';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 // Notifiable diseases (server `IdspEndpoints`): a diagnosis puts a case on the week's presumptive (P) form, a released
 // positive test confirms it on the laboratory (L) form, and the surveillance officer reports each week's forms to IHIP,
-// a nil report too. Outbreak-prone diseases alert the officer at once.
+// a nil report too. Outbreak-prone diseases alert the officer at once. Tuberculosis is not on the forms: each case is
+// notified on Ni-kshay, and waits here until its Ni-kshay ID is recorded.
 
 export const IDSP_FORMS = ['Presumptive', 'Laboratory'] as const;
 export type IdspForm = (typeof IDSP_FORMS)[number];
@@ -31,6 +33,8 @@ export interface IdspDisease {
   code: string;
   name: string;
   immediate: boolean;
+  /** Notified on Ni-kshay (tuberculosis), not on the IHIP forms. */
+  nikshay: boolean;
   icdCodes: string[];
 }
 
@@ -39,6 +43,7 @@ export interface IdspCaseRow {
   diseaseCode: string;
   disease: string;
   immediate: boolean;
+  nikshay: boolean;
   source: NotifiableCaseSource;
   status: NotifiableCaseStatus;
   patientId: string;
@@ -57,6 +62,21 @@ export interface IdspCaseRow {
   testResult: string | null;
   alertedAt: string | null;
   discardReason: string | null;
+  /** For tuberculosis: the Ni-kshay ID it was notified under, and the day, once it is. */
+  nikshayId: string | null;
+  nikshayNotifiedOn: string | null;
+  version: number;
+}
+
+/** Tuberculosis cases to notify on Ni-kshay, the longest waiting first, and those notified in the last 90 days. */
+export interface IdspTuberculosis {
+  toNotify: IdspCaseRow[];
+  notified: IdspCaseRow[];
+}
+
+export interface RecordNikshayRequest {
+  nikshayId: string;
+  notifiedOn: string;
   version: number;
 }
 
@@ -128,6 +148,7 @@ export const idspKeys = {
   week: (year: number, week: number) => ['mrd', 'idsp', 'week', year, week] as const,
   case: (id: string) => ['mrd', 'idsp', 'case', id] as const,
   diseases: () => ['mrd', 'idsp', 'diseases'] as const,
+  tuberculosis: () => ['mrd', 'idsp', 'tuberculosis'] as const,
 };
 
 const base = '/api/v1/idsp';
@@ -156,6 +177,11 @@ export const idspQueries = {
       queryFn: ({ signal }) => api.get<IdspDisease[]>(`${base}/diseases`, { signal }),
       staleTime: Infinity,
     }),
+  tuberculosis: () =>
+    queryOptions({
+      queryKey: idspKeys.tuberculosis(),
+      queryFn: ({ signal }) => api.get<IdspTuberculosis>(`${base}/tuberculosis`, { signal }),
+    }),
 };
 
 export const idspApi = {
@@ -164,6 +190,9 @@ export const idspApi = {
   discard: (id: string, reason: string, version: number) =>
     api.post<IdspCaseRow>(`${base}/cases/${id}/discard`, { reason, version }),
   add: (request: AddIdspCaseRequest) => api.post<IdspCaseRow>(`${base}/cases`, request),
+  /** A tuberculosis case was notified on Ni-kshay: its Ni-kshay ID and the day (correcting them again is allowed). */
+  recordNikshay: (id: string, request: RecordNikshayRequest) =>
+    api.post<IdspCaseRow>(`${base}/cases/${id}/nikshay`, request),
   /** The week's P or L line list as CSV, to upload to IHIP (the download is audited). */
   export: (year: number, week: number, form: IdspForm) =>
     api.blob(`${weekPath(year, week)}/export`, { query: { form } }),
@@ -171,6 +200,47 @@ export const idspApi = {
 
 /** The register, the weekly reports, the cases added or discarded, and the outbreak alerts (medical records, quality). */
 export const IDSP_PERMISSION = 'mrd.idsp.report';
+
+const istDate = new Intl.DateTimeFormat('en-CA', { timeZone: HOSPITAL_TIME_ZONE });
+
+/** The day (yyyy-mm-dd, in India) a case was first diagnosed or confirmed: it cannot be notified before. */
+export function caseFirstDay(row: Pick<IdspCaseRow, 'presumedAt' | 'confirmedAt'>): string | null {
+  const first = row.presumedAt ?? row.confirmedAt;
+  return first ? istDate.format(new Date(first)) : null;
+}
+
+/** Days a tuberculosis case has waited to be notified on Ni-kshay, from its first diagnosis or result to today. */
+export function daysWaiting(row: Pick<IdspCaseRow, 'presumedAt' | 'confirmedAt'>, today: string): number | null {
+  const first = caseFirstDay(row);
+  return first ? Math.max(0, Math.round((Date.parse(today) - Date.parse(first)) / 86_400_000)) : null;
+}
+
+/**
+ * What stops a Ni-kshay ID from being recorded: the ID as Ni-kshay gave it (letters and digits), and the day it was
+ * notified, from the case's first day to today (dates as yyyy-mm-dd).
+ */
+export function nikshayProblems(
+  nikshayId: string,
+  notifiedOn: string,
+  firstDay: string | null,
+  today: string,
+): { id: string | null; date: string | null } {
+  const id = nikshayId.trim();
+  return {
+    id: !id
+      ? 'Enter the Ni-kshay ID.'
+      : !/^[A-Za-z0-9]{1,32}$/.test(id)
+        ? 'Enter the ID as Ni-kshay gave it: letters and digits.'
+        : null,
+    date: !notifiedOn
+      ? 'Give the day it was notified.'
+      : notifiedOn > today
+        ? 'The date cannot be in the future.'
+        : firstDay && notifiedOn < firstDay
+          ? 'It cannot be notified before it was diagnosed.'
+          : null,
+  };
+}
 
 /** "2026-W43", as IHIP names the week. */
 export const weekLabel = (year: number, week: number) => `${year}-W${String(week).padStart(2, '0')}`;

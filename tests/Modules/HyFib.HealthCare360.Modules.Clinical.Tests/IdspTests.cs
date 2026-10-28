@@ -22,7 +22,6 @@ public sealed class IdspTests
     [InlineData("A010")]
     [InlineData("B18.1")]
     [InlineData("Z21")]
-    [InlineData("A15.0")]
     [InlineData(null)]
     public void Codes_outside_the_list_are_not_notified(string? code) => IdspDiseases.ForIcd(code).ShouldBeNull();
 
@@ -37,10 +36,56 @@ public sealed class IdspTests
         IdspDiseases.ForLabResult("HB", null, null).ShouldBeNull();
     }
 
+    [Theory]
+    [InlineData("A15.0")]
+    [InlineData("A16.2")]
+    [InlineData("A17.0")]
+    [InlineData("a18.0")]
+    [InlineData("A19.9")]
+    public void Tuberculosis_is_caught_by_its_diagnosis_for_Nikshay_and_is_not_on_the_IHIP_list(string code)
+    {
+        var tb = IdspDiseases.ForIcd(code).ShouldNotBeNull();
+        (tb.Code, tb.Nikshay, tb.Immediate, tb.EpisodeDays).ShouldBe((IdspDiseases.TuberculosisCode, true, false, 365));
+        IdspDiseases.All.ShouldNotContain(tb, "the IHIP forms do not carry tuberculosis");
+        IdspDiseases.Find("TB").ShouldBeSameAs(tb);
+    }
+
+    [Fact]
+    public void Tuberculosis_is_confirmed_by_Mycobacterium_tuberculosis_grown_and_not_by_other_mycobacteria()
+    {
+        IdspDiseases.ForLabResult("LAB-AFB-CS", null, "Mycobacterium tuberculosis complex")!.Code.ShouldBe("TB");
+        IdspDiseases.ForLabResult("LAB-AFB-CS", null, "Mycobacterium avium complex").ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_tuberculosis_case_is_notified_under_its_Nikshay_id_on_a_day_from_its_diagnosis_to_today()
+    {
+        var today = new DateOnly(2026, 10, 28);
+        var tb = new NotifiableCase { DiseaseCode = "TB" };
+        tb.Presume(Guid.NewGuid(), "A15.0", Monday);
+
+        tb.RecordNikshay("10-23", today, today, null, Monday).Error!.Fields!.Keys.ShouldBe(["nikshayId"]);
+        tb.RecordNikshay("10234567", today.AddDays(1), today, null, Monday).Error!.Fields!.Keys.ShouldBe(["notifiedOn"]);
+        tb.RecordNikshay("10234567", new DateOnly(2026, 10, 18), today, null, Monday).Error!.Fields!.Keys.ShouldBe(["notifiedOn"]);
+
+        var by = Guid.NewGuid();
+        tb.RecordNikshay(" 10234567 ", new DateOnly(2026, 10, 19), today, by, Monday.AddDays(2)).IsSuccess.ShouldBeTrue();
+        (tb.NikshayId, tb.NikshayNotifiedOn, tb.NikshayRecordedBy).ShouldBe(("10234567", new DateOnly(2026, 10, 19), by));
+
+        // Only tuberculosis goes to Ni-kshay, and a discarded case is not notified.
+        var dengue = new NotifiableCase { DiseaseCode = "DENGUE" };
+        dengue.Presume(null, "A90", Monday);
+        dengue.RecordNikshay("10234567", today, today, null, Monday).Error!.Code.ShouldBe("idsp.not_nikshay");
+        var ruledOut = new NotifiableCase { DiseaseCode = "TB" };
+        ruledOut.Presume(null, "A16.2", Monday);
+        ruledOut.Discard("Sputum CBNAAT negative, another diagnosis", null, Monday);
+        ruledOut.RecordNikshay("10234567", today, today, null, Monday).Error!.Code.ShouldBe("idsp.case_discarded");
+    }
+
     [Fact]
     public void Every_disease_has_a_unique_code_and_the_outbreak_prone_ones_are_marked()
     {
-        IdspDiseases.All.Select(d => d.Code).ShouldBeUnique();
+        IdspDiseases.Notifiable.Select(d => d.Code).ShouldBeUnique();
         IdspDiseases.All.Where(d => d.Immediate).Select(d => d.Code).ShouldContain("CHOLERA");
         IdspDiseases.All.Where(d => d.Immediate).Select(d => d.Code).ShouldNotContain("ADD");
     }

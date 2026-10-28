@@ -9,17 +9,25 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowDownloadRegular, ArrowLeftRegular, DeleteRegular, SendRegular } from '@fluentui/react-icons';
-import { formatDateOnly, formatDateTime } from '@hc360/core';
+import {
+  AddRegular,
+  ArrowDownloadRegular,
+  ArrowLeftRegular,
+  DeleteRegular,
+  EditRegular,
+  SendRegular,
+} from '@fluentui/react-icons';
+import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
 import { ConfirmDialog, DataTable, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
-import { AddCaseDialog, DiscardCaseDialog, ReportWeekDialog } from '@/modules/mrd/IdspDialogs';
+import { AddCaseDialog, DiscardCaseDialog, RecordNikshayDialog, ReportWeekDialog } from '@/modules/mrd/IdspDialogs';
 import {
   caseSourceLabel,
   caseStatusTone,
+  daysWaiting,
   IDSP_PERMISSION,
   idspApi,
   idspFormLabel,
@@ -60,7 +68,8 @@ export const Route = createFileRoute('/_app/mrd/idsp')({
 /**
  * Notifiable diseases (IDSP): the cases the hospital's diagnoses and lab results raised, each week's P and L forms
  * to upload to IHIP and record as reported (a nil report too), and the outbreak-prone cases to tell the district
- * surveillance unit about at once.
+ * surveillance unit about at once. Tuberculosis cases are notified on Ni-kshay one by one instead, and wait here until
+ * their Ni-kshay ID is recorded.
  */
 function IdspPage() {
   const search = Route.useSearch();
@@ -72,7 +81,7 @@ function IdspPage() {
     <Page>
       <PageHeader
         title="Notifiable diseases (IDSP)"
-        subtitle="Cases from diagnoses go on the week's P form, cases confirmed by a released test on the L form. Upload each week's forms to IHIP by the Monday after, a nil report too, and record them here."
+        subtitle="Cases from diagnoses go on the week's P form, cases confirmed by a released test on the L form. Upload each week's forms to IHIP by the Monday after, a nil report too, and record them here. Notify each tuberculosis case on Ni-kshay and record its Ni-kshay ID."
         actions={
           <Button icon={<AddRegular />} onClick={() => setAdding(true)}>
             Add a case
@@ -92,31 +101,144 @@ function IdspPage() {
   );
 }
 
-/** The case an outbreak alert links to, with what to do about it. */
+/** The case an alert links to, with what to do about it. */
 function CaseNotice({ id, onDone }: { id: string; onDone: () => void }) {
   const row = useQuery(idspQueries.case(id));
   const [discarding, setDiscarding] = useState(false);
+  const [recording, setRecording] = useState(false);
   if (!row.data) {
     return null;
   }
   const c = row.data;
+  const toNotify = c.status === 'Open' && c.nikshay && c.nikshayId === null;
   return (
     <>
-      <MessageBar intent={c.status === 'Open' && c.immediate ? 'warning' : 'info'} layout="multiline">
+      <MessageBar intent={c.status === 'Open' && (c.immediate || toNotify) ? 'warning' : 'info'} layout="multiline">
         <MessageBarBody>
           <MessageBarTitle>
             {c.disease}: {c.patientName} · {c.uhid}
           </MessageBarTitle>
           {c.status === 'Discarded'
             ? `Discarded: ${c.discardReason ?? ''}`
-            : c.immediate
-              ? 'Outbreak-prone: inform the district surveillance unit within 24 hours, then report it on the week’s form.'
-              : 'On the week’s form, to report to IHIP.'}{' '}
+            : c.nikshay
+              ? c.nikshayId
+                ? `Notified on Ni-kshay on ${formatDateOnly(c.nikshayNotifiedOn)}, Ni-kshay ID ${c.nikshayId}.`
+                : 'Notify it on Ni-kshay, then record its Ni-kshay ID here.'
+              : c.immediate
+                ? 'Outbreak-prone: inform the district surveillance unit within 24 hours, then report it on the week’s form.'
+                : 'On the week’s form, to report to IHIP.'}{' '}
+          {toNotify && <Link onClick={() => setRecording(true)}>Record the Ni-kshay ID</Link>}{' '}
           {c.status === 'Open' && <Link onClick={() => setDiscarding(true)}>Discard the case</Link>}{' '}
           <Link onClick={onDone}>Dismiss</Link>
         </MessageBarBody>
       </MessageBar>
       {discarding && <DiscardCaseDialog row={c} onClose={() => setDiscarding(false)} />}
+      {recording && <RecordNikshayDialog row={c} onClose={() => setRecording(false)} />}
+    </>
+  );
+}
+
+/** Tuberculosis cases to notify on Ni-kshay, the longest waiting first, and those notified in the last 90 days. */
+function Tuberculosis() {
+  const query = useQuery(idspQueries.tuberculosis());
+  const [recording, setRecording] = useState<IdspCaseRow | null>(null);
+  const [discarding, setDiscarding] = useState<IdspCaseRow | null>(null);
+  const today = todayIso();
+  const data = query.data;
+
+  const patient = {
+    key: 'patient',
+    header: 'Patient',
+    render: (r: IdspCaseRow) => (
+      <span>
+        <Text>{r.patientName}</Text>
+        <Caption1 block>
+          {[r.uhid, r.sex, r.ageYears !== null ? `${r.ageYears} years` : null].filter(Boolean).join(' · ')}
+        </Caption1>
+      </span>
+    ),
+  };
+  const diagnosed = {
+    key: 'diagnosed',
+    header: 'Diagnosed',
+    render: (r: IdspCaseRow) => (
+      <span>
+        {r.icdCode ?? `${r.testName ?? ''}: ${r.testResult ?? ''}`}
+        <Caption1 block>{formatDateTime(r.presumedAt ?? r.confirmedAt)}</Caption1>
+      </span>
+    ),
+  };
+
+  return (
+    <>
+      <Section title="Tuberculosis: notify on Ni-kshay" flush>
+        <DataTable<IdspCaseRow>
+          ariaLabel="Tuberculosis cases to notify on Ni-kshay"
+          rows={data?.toNotify}
+          loading={query.isLoading}
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          getRowId={(r) => r.id}
+          size="small"
+          columns={[
+            patient,
+            diagnosed,
+            {
+              key: 'waiting',
+              header: 'Waiting',
+              width: 110,
+              render: (r) => {
+                const days = daysWaiting(r, today);
+                return days === null ? '' : days === 0 ? 'Since today' : days === 1 ? 'One day' : `${days} days`;
+              },
+            },
+          ]}
+          rowActions={(r) => (
+            <>
+              <Button size="small" appearance="primary" icon={<SendRegular />} onClick={() => setRecording(r)}>
+                Record Ni-kshay ID
+              </Button>
+              <Button size="small" icon={<DeleteRegular />} onClick={() => setDiscarding(r)}>
+                Discard
+              </Button>
+            </>
+          )}
+          emptyTitle="Nothing to notify"
+          emptyDescription="A tuberculosis diagnosis, or a result growing M. tuberculosis, waits here until its Ni-kshay ID is recorded."
+        />
+      </Section>
+      {data && data.notified.length > 0 && (
+        <Section title="Notified on Ni-kshay, last 90 days" flush>
+          <DataTable<IdspCaseRow>
+            ariaLabel="Tuberculosis cases notified on Ni-kshay"
+            rows={data.notified}
+            getRowId={(r) => r.id}
+            size="small"
+            columns={[
+              patient,
+              diagnosed,
+              {
+                key: 'nikshay',
+                header: 'Ni-kshay ID',
+                render: (r) => (
+                  <span>
+                    {r.nikshayId}
+                    <Caption1 block>{formatDateOnly(r.nikshayNotifiedOn)}</Caption1>
+                  </span>
+                ),
+              },
+            ]}
+            rowActions={(r) => (
+              <Button size="small" icon={<EditRegular />} onClick={() => setRecording(r)}>
+                Correct
+              </Button>
+            )}
+            emptyTitle="None notified"
+          />
+        </Section>
+      )}
+      {recording && <RecordNikshayDialog row={recording} onClose={() => setRecording(null)} />}
+      {discarding && <DiscardCaseDialog row={discarding} onClose={() => setDiscarding(null)} />}
     </>
   );
 }
@@ -142,6 +264,7 @@ function Overview({ onOpen }: { onOpen: (week: IdspWeekSummary) => void }) {
           <CaseTable rows={data.immediate} ariaLabel="Outbreak-prone cases" form={null} />
         </Section>
       )}
+      <Tuberculosis />
       <Section title="Weeks" flush>
         <DataTable<IdspWeekSummary>
           ariaLabel="IDSP weeks"

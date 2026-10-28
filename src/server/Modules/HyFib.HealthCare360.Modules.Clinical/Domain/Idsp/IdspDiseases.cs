@@ -6,7 +6,9 @@ namespace HyFib.HealthCare360.Modules.Clinical.Domain.Idsp;
 /// <see cref="IcdPrefixes"/> are ICD-10 codes or categories as the catalogue writes them ("A01", "A92.0");
 /// <see cref="LabTests"/> are lab-master test codes, <see cref="Loinc"/> codes of tests the hospital adds itself, and
 /// <see cref="Organisms"/> the growth on a culture that confirms the disease. <see cref="Immediate"/> diseases are
-/// outbreak-prone: the surveillance officer is alerted at once, not at the end of the week.
+/// outbreak-prone: the surveillance officer is alerted at once, not at the end of the week. A <see cref="Nikshay"/>
+/// disease (tuberculosis) is notified on Ni-kshay, case by case, instead of the IHIP forms. Within
+/// <see cref="EpisodeDays"/> of a case's last event, the same disease in the same patient is the same case.
 /// </summary>
 public sealed record IdspDisease(
     string Code,
@@ -15,15 +17,31 @@ public sealed record IdspDisease(
     IReadOnlyList<string> LabTests,
     IReadOnlyList<string> Loinc,
     IReadOnlyList<string> Organisms,
-    bool Immediate);
+    bool Immediate,
+    bool Nikshay = false,
+    int EpisodeDays = NotifiableCase.EpisodeDays);
 
 /// <summary>
 /// The IDSP diseases a hospital reports, after the IHIP P and L forms. The district unit's own list governs: check
-/// this one against it before go-live. Not here: tuberculosis, notified on Ni-kshay, and HIV, which is not an IDSP
-/// disease.
+/// this one against it before go-live. Not on the forms: tuberculosis, notified on Ni-kshay (<see cref="Tuberculosis"/>),
+/// and HIV, which is not an IDSP disease.
 /// </summary>
 public static class IdspDiseases
 {
+    public const string TuberculosisCode = "TB";
+
+    /// <summary>
+    /// Tuberculosis is notifiable to Ni-kshay, the National TB Elimination Programme's case register: since 2012, and
+    /// by the Health Ministry's notification of 16 March 2018 every clinical establishment notifies each TB patient it
+    /// diagnoses or treats, failing which the provisions on spreading an infectious disease apply (IPC s.269 and 270,
+    /// now BNS s.271 and 272). A case is caught by its diagnosis (A15–A19) or by M. tuberculosis grown, and stays to be
+    /// notified until its Ni-kshay ID is recorded. A course of treatment runs six months or longer, so a diagnosis within
+    /// a year of the last belongs to the same case.
+    /// </summary>
+    public static IdspDisease Tuberculosis { get; } = new(
+        TuberculosisCode, "Tuberculosis", ["A15", "A16", "A17", "A18", "A19"], [], [], ["Mycobacterium tuberculosis"], Immediate: false, Nikshay: true,
+        EpisodeDays: 365);
+
     public static IReadOnlyList<IdspDisease> All { get; } =
     [
         new("ADD", "Acute diarrhoeal disease (including gastroenteritis)", ["A04", "A08", "A09"], [], [], [], false),
@@ -56,7 +74,10 @@ public static class IdspDiseases
         new("SNAKE_BITE", "Snake bite", ["T63.0"], [], [], [], false),
     ];
 
-    private static readonly Dictionary<string, IdspDisease> ByCode = All.ToDictionary(d => d.Code, StringComparer.Ordinal);
+    /// <summary>Every disease a case is opened for: the IDSP list and tuberculosis.</summary>
+    public static IReadOnlyList<IdspDisease> Notifiable { get; } = [.. All, Tuberculosis];
+
+    private static readonly Dictionary<string, IdspDisease> ByCode = Notifiable.ToDictionary(d => d.Code, StringComparer.Ordinal);
 
     public static IdspDisease? Find(string code) => ByCode.GetValueOrDefault(code);
 
@@ -69,7 +90,7 @@ public static class IdspDiseases
         }
 
         var code = icdCode.Trim().ToUpperInvariant();
-        return All.FirstOrDefault(d => d.IcdPrefixes.Any(p => Under(code, p)));
+        return Notifiable.FirstOrDefault(d => d.IcdPrefixes.Any(p => Under(code, p)));
     }
 
     // "A01" covers A01 and A01.0..A01.4; "A92.0" covers itself.
@@ -79,8 +100,8 @@ public static class IdspDiseases
     /// <summary>The disease a positive result of this test confirms: by the test's code or LOINC, or by the organism grown.</summary>
     public static IdspDisease? ForLabResult(string testCode, string? loinc, string? organism)
     {
-        var byTest = All.FirstOrDefault(d => d.LabTests.Contains(testCode, StringComparer.OrdinalIgnoreCase)
-                                             || (loinc is not null && d.Loinc.Contains(loinc, StringComparer.Ordinal)));
+        var byTest = Notifiable.FirstOrDefault(d => d.LabTests.Contains(testCode, StringComparer.OrdinalIgnoreCase)
+                                                    || (loinc is not null && d.Loinc.Contains(loinc, StringComparer.Ordinal)));
         if (byTest is not null)
         {
             return byTest;
@@ -88,6 +109,6 @@ public static class IdspDiseases
 
         return string.IsNullOrWhiteSpace(organism)
             ? null
-            : All.FirstOrDefault(d => d.Organisms.Any(o => organism.Contains(o, StringComparison.OrdinalIgnoreCase)));
+            : Notifiable.FirstOrDefault(d => d.Organisms.Any(o => organism.Contains(o, StringComparison.OrdinalIgnoreCase)));
     }
 }

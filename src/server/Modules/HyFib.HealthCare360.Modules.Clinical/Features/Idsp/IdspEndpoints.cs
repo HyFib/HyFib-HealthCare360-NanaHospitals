@@ -8,6 +8,7 @@ namespace HyFib.HealthCare360.Modules.Clinical.Features.Idsp;
 /// <summary>
 /// /api/v1/idsp: notifiable diseases (IDSP). Cases come from diagnoses (P form) and released positive tests (L form);
 /// the surveillance officer reports each week's forms to IHIP, a nil report too, and downloads the line list to upload.
+/// Tuberculosis cases are notified on Ni-kshay instead, and their Ni-kshay IDs recorded here.
 /// </summary>
 internal static class IdspEndpoints
 {
@@ -23,10 +24,23 @@ internal static class IdspEndpoints
         group.MapGet("/cases/{id:guid}", Case);
         group.MapPost("/cases", Add).WithValidation<AddIdspCaseRequest>();
         group.MapPost("/cases/{id:guid}/discard", Discard).WithValidation<DiscardIdspCaseRequest>();
+        group.MapGet("/tuberculosis", Tuberculosis);
+        group.MapPost("/cases/{id:guid}/nikshay", RecordNikshay).WithValidation<RecordNikshayRequest>();
     }
 
+    private static async Task<IResult> Tuberculosis(IdspService idsp, IAuditLogger audit, CancellationToken ct)
+    {
+        var dto = await idsp.TuberculosisAsync(ct);
+        var shown = dto.ToNotify.Concat(dto.Notified).Select(c => c.Id).ToList();
+        await Viewed(audit, "idsp.tuberculosis.viewed", $"Viewed the tuberculosis cases for Ni-kshay ({dto.ToNotify.Count} to notify)", shown, ct);
+        return TypedResults.Ok(dto);
+    }
+
+    private static async Task<IResult> RecordNikshay(Guid id, RecordNikshayRequest request, IdspService idsp, CancellationToken ct) =>
+        (await idsp.RecordNikshayAsync(id, request, ct)).ToOk();
+
     private static IResult Diseases() =>
-        TypedResults.Ok(IdspDiseases.All.Select(d => new IdspDiseaseDto(d.Code, d.Name, d.Immediate, d.IcdPrefixes)).ToList());
+        TypedResults.Ok(IdspDiseases.Notifiable.Select(d => new IdspDiseaseDto(d.Code, d.Name, d.Immediate, d.Nikshay, d.IcdPrefixes)).ToList());
 
     private static async Task<IResult> Overview(IdspService idsp, IAuditLogger audit, CancellationToken ct)
     {

@@ -13,11 +13,15 @@ internal sealed class NotifiableCaseConfiguration : IEntityTypeConfiguration<Not
         b.Property(x => x.TestName).HasMaxLength(200);
         b.Property(x => x.TestResult).HasMaxLength(200);
         b.Property(x => x.DiscardReason).HasMaxLength(500);
+        b.Property(x => x.NikshayId).HasMaxLength(32);
         b.Ignore(x => x.LastEventAt);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.FacilityId, x.PresumedWeek });
         b.HasIndex(x => new { x.FacilityId, x.ConfirmedWeek });
         b.HasIndex(x => new { x.PatientId, x.DiseaseCode });
+
+        // The Ni-kshay register: tuberculosis cases still to notify, and those notified lately.
+        b.HasIndex(x => new { x.DiseaseCode, x.Status, x.NikshayNotifiedOn });
         b.HasIndex(x => x.DiagnosisId);
         b.HasIndex(x => x.LabResultId);
     }

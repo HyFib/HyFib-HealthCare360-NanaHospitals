@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addCaseProblems, reportProblems, weekLabel } from './idsp';
+import { addCaseProblems, caseFirstDay, daysWaiting, nikshayProblems, reportProblems, weekLabel } from './idsp';
 
 describe('IDSP week report', () => {
   const sunday = '2026-10-25';
@@ -39,5 +39,33 @@ describe('a case added by hand', () => {
     expect(addCaseProblems({ ...blank, testResult: 'Positive' }).test).toBe('Name the test that confirmed it.');
     expect(addCaseProblems({ ...blank, testResult: 'Positive', testName: 'Dengue IgM' }).test).toBeNull();
     expect(addCaseProblems({ ...blank, onsetDate: '2026-10-26' }).onset).toBe('The onset cannot be in the future.');
+  });
+});
+
+describe('a tuberculosis case notified on Ni-kshay', () => {
+  // Diagnosed at 00:30 on 19 October in India: still 18 October in UTC.
+  const tb = { presumedAt: '2026-10-18T19:00:00Z', confirmedAt: null };
+
+  it('starts on the day it was diagnosed in India', () => {
+    expect(caseFirstDay(tb)).toBe('2026-10-19');
+    expect(caseFirstDay({ presumedAt: null, confirmedAt: '2026-10-20T06:00:00Z' })).toBe('2026-10-20');
+    expect(caseFirstDay({ presumedAt: null, confirmedAt: null })).toBeNull();
+    expect(daysWaiting(tb, '2026-10-28')).toBe(9);
+    expect(daysWaiting(tb, '2026-10-19')).toBe(0);
+  });
+
+  it('is recorded with the ID Ni-kshay gave, on a day from its diagnosis to today', () => {
+    expect(nikshayProblems('10234567', '2026-10-27', '2026-10-19', '2026-10-28')).toEqual({ id: null, date: null });
+    expect(nikshayProblems(' ', '2026-10-27', '2026-10-19', '2026-10-28').id).toBe('Enter the Ni-kshay ID.');
+    expect(nikshayProblems('102-345', '2026-10-27', '2026-10-19', '2026-10-28').id).toBe(
+      'Enter the ID as Ni-kshay gave it: letters and digits.',
+    );
+    expect(nikshayProblems('10234567', '', '2026-10-19', '2026-10-28').date).toBe('Give the day it was notified.');
+    expect(nikshayProblems('10234567', '2026-10-29', '2026-10-19', '2026-10-28').date).toBe(
+      'The date cannot be in the future.',
+    );
+    expect(nikshayProblems('10234567', '2026-10-18', '2026-10-19', '2026-10-28').date).toBe(
+      'It cannot be notified before it was diagnosed.',
+    );
   });
 });
