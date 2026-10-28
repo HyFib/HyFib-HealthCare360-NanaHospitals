@@ -18,7 +18,8 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 
 ### Network and transport
 - HTTPS only (TLS 1.2/1.3). The Server Node creates a **private hospital CA** and a server certificate naming its host
-  name and addresses; the certificate is re-issued automatically when the address changes.
+  name and addresses; the certificate is re-issued automatically when the address changes, and 30 days before it
+  expires: the running server checks every six hours, so one left running for a year still serves a valid certificate.
 - **HC360 Desktop and the HC360 lab agent pin the hospital CA**:
   - The server's certificate must chain to exactly that CA (through the intermediates the server sends, if any), be
     issued for a TLS server (serverAuth), and name the host being contacted.
