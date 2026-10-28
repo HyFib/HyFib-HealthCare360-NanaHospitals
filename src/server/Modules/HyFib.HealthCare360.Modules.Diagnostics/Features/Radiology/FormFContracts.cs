@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 
@@ -103,7 +104,7 @@ public sealed class SaveFormFDeclarationRequestValidator : AbstractValidator<Sav
         RuleFor(x => x.LivingSons).InclusiveBetween(0, 20);
         RuleFor(x => x.LivingDaughters).InclusiveBetween(0, 20);
         RuleFor(x => x.LastMenstrualPeriod)
-            .Must(d => d is null || d <= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime.AddDays(1)))
+            .Must(d => d is null || d <= time.Today().AddDays(1))
             .WithMessage("The last menstrual period cannot be in the future.");
         RuleFor(x => x.LastMenstrualPeriod).NotNull().When(x => x.WeeksOfPregnancy is null)
             .WithMessage("Enter the last menstrual period or the weeks of pregnancy.");

@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Engagement.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Features.Leads;
 
@@ -131,7 +132,7 @@ public sealed class ConvertLeadRequestValidator : AbstractValidator<ConvertLeadR
         {
             RuleFor(x => x.RegisterPatient!).Must(r => r.DateOfBirth is not null || r.AgeYears is not null).WithName("registerPatient.dateOfBirth")
                 .WithMessage("Enter the date of birth or the age.");
-            RuleFor(x => x.RegisterPatient!.DateOfBirth).Must(d => d is null || d <= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime))
+            RuleFor(x => x.RegisterPatient!.DateOfBirth).Must(d => d is null || d <= time.Today())
                 .WithMessage("Enter a valid date of birth.");
             RuleFor(x => x.RegisterPatient!.AgeYears).InclusiveBetween(0, 130);
         });

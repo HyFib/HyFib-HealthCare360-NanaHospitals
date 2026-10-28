@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Flags;
 
@@ -53,7 +54,7 @@ public sealed class RecordAllergyRequestValidator : AbstractValidator<RecordAlle
         RuleFor(x => x.Allergen).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Reaction).SafeText(300);
         RuleFor(x => x.Notes).SafeText(500);
-        RuleFor(x => x.OnsetDate).Must(d => d is null || d <= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(1))
+        RuleFor(x => x.OnsetDate).Must(d => d is null || d <= time.Today().AddDays(1))
             .WithMessage("The onset date cannot be in the future.");
     }
 }

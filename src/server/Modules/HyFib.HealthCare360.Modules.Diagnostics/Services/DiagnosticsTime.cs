@@ -11,17 +11,7 @@ internal static class DiagnosticsTime
     /// <summary>Clock skew tolerated when a workstation supplies a time (collection, QC run, call time).</summary>
     public static readonly TimeSpan FutureTolerance = TimeSpan.FromMinutes(5);
 
-    private static readonly Lazy<TimeZoneInfo> Zone = new(() =>
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-    });
+    private static readonly Lazy<TimeZoneInfo> Zone = new(() => HospitalTimeZone.Zone);
 
     public static DateOnly Today(TimeProvider time) => time.Today();
 

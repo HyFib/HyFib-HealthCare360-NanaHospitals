@@ -208,15 +208,7 @@ internal static class VisitEndpoints
 
     private static DateTimeOffset ToUtcStart(DateOnly localDate)
     {
-        try
-        {
-            var zone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-            var start = localDate.ToDateTime(TimeOnly.MinValue);
-            return new DateTimeOffset(start, zone.GetUtcOffset(start)).ToUniversalTime();
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return new DateTimeOffset(localDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        }
+        var start = localDate.ToDateTime(TimeOnly.MinValue);
+        return new DateTimeOffset(start, HospitalTimeZone.Zone.GetUtcOffset(start)).ToUniversalTime();
     }
 }

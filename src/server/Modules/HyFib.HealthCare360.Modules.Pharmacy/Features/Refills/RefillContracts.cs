@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Features.Refills;
@@ -42,7 +43,7 @@ public sealed class CreateRefillRequestValidator : AbstractValidator<CreateRefil
 {
     public CreateRefillRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        var today = time.Today();
         RuleFor(x => x.QueueEntryId).NotEmpty();
         RuleFor(x => x.PreferredPickupDate).Must(d => d is null || (d >= today && d <= today.AddDays(30)))
             .WithMessage("Choose a pickup date within the next 30 days.");

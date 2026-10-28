@@ -76,17 +76,7 @@ public static class PatientQueries
     public static DateOnly Today(this TimeProvider time) => DateOnly.FromDateTime(IndiaTime(time).DateTime);
 
     /// <summary>Current time in the hospital's time zone (IST by default).</summary>
-    public static DateTimeOffset IndiaTime(TimeProvider time)
-    {
-        try
-        {
-            return TimeZoneInfo.ConvertTime(time.GetUtcNow(), TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata"));
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return time.GetUtcNow();
-        }
-    }
+    public static DateTimeOffset IndiaTime(TimeProvider time) => TimeZoneInfo.ConvertTime(time.GetUtcNow(), HospitalTimeZone.Zone);
 }
 
 /// <summary>

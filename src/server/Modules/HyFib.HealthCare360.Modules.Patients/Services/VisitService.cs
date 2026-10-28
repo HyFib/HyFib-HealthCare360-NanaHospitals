@@ -348,16 +348,9 @@ public sealed class VisitService(
 
     internal static DateTimeOffset StartOfLocalDay(DateTimeOffset utcNow)
     {
-        try
-        {
-            var zone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-            var local = TimeZoneInfo.ConvertTime(utcNow, zone);
-            return new DateTimeOffset(local.Date, zone.GetUtcOffset(local.Date)).ToUniversalTime();
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return new DateTimeOffset(utcNow.UtcDateTime.Date, TimeSpan.Zero);
-        }
+        var zone = HospitalTimeZone.Zone;
+        var local = TimeZoneInfo.ConvertTime(utcNow, zone);
+        return new DateTimeOffset(local.Date, zone.GetUtcOffset(local.Date)).ToUniversalTime();
     }
 
     internal static QueueTokenDto ToDto(QueueToken t) => new(

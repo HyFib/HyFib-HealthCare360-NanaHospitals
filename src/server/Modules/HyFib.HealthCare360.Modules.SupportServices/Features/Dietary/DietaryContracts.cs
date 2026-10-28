@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SupportServices.Domain.Dietary;
 
 namespace HyFib.HealthCare360.Modules.SupportServices.Features.Dietary;
@@ -155,7 +156,7 @@ public sealed class CreateDietOrderRequestValidator : AbstractValidator<CreateDi
         RuleFor(x => x.CalorieTargetKcal).InclusiveBetween(300, 5000);
         RuleFor(x => x.MealSlots).Must(s => s is null || (s > MealSlot.None && s <= MealSlots.All)).WithMessage("Choose at least one meal round.");
         RuleFor(x => x.StartDate)
-            .Must(d => d is null || (d >= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(-1) && d <= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(7)))
+            .Must(d => d is null || (d >= time.Today().AddDays(-1) && d <= time.Today().AddDays(7)))
             .WithMessage("The diet can start today or within the next 7 days.");
     }
 }

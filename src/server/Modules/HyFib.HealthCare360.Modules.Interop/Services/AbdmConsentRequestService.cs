@@ -2,6 +2,7 @@ using System.Text.Json;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Organization;
 using Microsoft.Extensions.Logging;
 
@@ -21,10 +22,9 @@ internal sealed class AbdmConsentRequestInputValidator : AbstractValidator<AbdmC
         RuleForEach(x => x.HiTypes).Must(t => AbdmConsentRequestService.HiTypes.Contains(t)).WithMessage("That is not a kind of record ABDM shares.");
         RuleFor(x => x.HiTypes).Must(t => t is null || t.Distinct().Count() == t.Count).WithMessage("A kind of record is listed twice.");
         RuleFor(x => x.From).LessThanOrEqualTo(x => x.To).WithMessage("The dates are the wrong way round.");
-        RuleFor(x => x.To).Must(to => to <= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime.AddDays(1)))
+        RuleFor(x => x.To).Must(to => to <= time.Today().AddDays(1))
             .WithMessage("Records cannot be asked for from the future.");
-        RuleFor(x => x.EraseAfter).Must(d => d > DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime)
-                && d <= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime.AddYears(1)))
+        RuleFor(x => x.EraseAfter).Must(d => d > time.Today() && d <= time.Today().AddYears(1))
             .WithMessage("Keep the records for at most a year, ending after today.");
     }
 }
