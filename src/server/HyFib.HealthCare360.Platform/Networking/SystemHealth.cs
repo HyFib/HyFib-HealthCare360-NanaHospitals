@@ -3,6 +3,7 @@ using System.Management;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -196,6 +197,11 @@ public sealed class SystemHealthService(
         messageWarnings.AddRange(IntegrationWarnings(integrations));
 
         var keyWarnings = new List<HealthWarning>(await SecurityControlWarningsAsync(ct));
+        if (await AuditChainChecks.WarningAsync(db, ct) is { } brokenChain)
+        {
+            keyWarnings.Add(brokenChain);
+        }
+
         if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
         {
             keyWarnings.Add(new("keys.signing_due", "info", "The sign-in token key is over a year old. Rotate it under Encryption keys."));

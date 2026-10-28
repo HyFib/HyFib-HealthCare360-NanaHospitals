@@ -117,14 +117,7 @@ internal static class AuditEndpoints
         group.MapGet("/export", Export);
 
         group.MapGet("/verify", async (AuditChainService chain, IAuditLogger audit, CancellationToken ct) =>
-        {
-            var result = await chain.VerifyAsync(ct);
-            await audit.WriteAsync(new AuditEntry(AuditCategories.Security, "audit.verified", result.Message)
-            {
-                Severity = result.Valid ? AuditSeverity.Info : AuditSeverity.Critical,
-            }, ct);
-            return TypedResults.Ok(result);
-        });
+            TypedResults.Ok(await AuditChainChecks.VerifyAndRecordAsync(chain, audit, ct)));
     }
 
     private static readonly JsonSerializerOptions ExportJson = new(JsonSerializerDefaults.Web) { WriteIndented = false };

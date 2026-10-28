@@ -2,7 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Networking;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -158,6 +161,65 @@ public sealed class AuditSealTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_check_that_finds_the_chain_broken_turns_System_health_critical_until_one_passes()
+    {
+        var first = (await RecordAndSealAsync(3))[0].ChainIndex!.Value;
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        await using var hold = await HoldSealerAsync();
+        var chain = await ChainFromAsync(first);
+        try
+        {
+            await RewriteAsync(chain, "Looked up the allergy history", keepSeals: true);
+            var check = await VerifyAsync();
+            check.Valid.ShouldBeFalse();
+
+            var warning = (await HealthWarningsAsync(admin)).Where(w => w.Code == "audit.chain_broken").ShouldHaveSingleItem();
+            warning.Severity.ShouldBe("critical");
+            warning.Message.ShouldContain(check.Message!);
+        }
+        finally
+        {
+            await PutBackAsync(chain);
+        }
+
+        (await VerifyAsync()).Valid.ShouldBeTrue();
+        (await HealthWarningsAsync(admin)).ShouldNotContain(w => w.Code == "audit.chain_broken");
+    }
+
+    [Fact]
+    public async Task A_broken_chain_is_told_to_administrators_once_while_it_lasts_and_again_when_it_comes_back()
+    {
+        var first = (await RecordAndSealAsync(3))[0].ChainIndex!.Value;
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var alerts = server.Services.GetRequiredService<SystemHealthAlerts>();
+        await using var hold = await HoldSealerAsync();
+        var chain = await ChainFromAsync(first);
+        try
+        {
+            await RewriteAsync(chain, "Looked up the allergy history", keepSeals: true);
+            var broken = (await VerifyAsync()).Message!;
+            await alerts.CheckAsync(Ct);
+            await alerts.CheckAsync(Ct);
+            (await AlertsAsync(admin, broken)).ShouldBe(1, "told once while it lasts");
+
+            await PutBackAsync(chain);
+            (await VerifyAsync()).Valid.ShouldBeTrue();
+            await alerts.CheckAsync(Ct);
+            await RewriteAsync(chain, "Looked up the allergy history", keepSeals: true);
+            (await VerifyAsync()).Valid.ShouldBeFalse();
+            await alerts.CheckAsync(Ct);
+            (await AlertsAsync(admin, broken)).ShouldBe(2, "told again when it comes back");
+        }
+        finally
+        {
+            await PutBackAsync(chain);
+        }
+
+        (await VerifyAsync()).Valid.ShouldBeTrue();
+        await alerts.CheckAsync(Ct);
+    }
+
+    [Fact]
     public async Task Only_whoever_may_read_the_audit_trail_exports_it()
     {
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
@@ -166,6 +228,16 @@ public sealed class AuditSealTests(HospitalServer server)
             $"/api/v1/admin/audit/export?from={Uri.EscapeDataString(now.AddDays(-1).ToString("O"))}&to={Uri.EscapeDataString(now.ToString("O"))}");
         refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
+
+    private static async Task<IReadOnlyList<HealthWarning>> HealthWarningsAsync(ApiClient admin) =>
+        (await admin.GetAsync<HealthWarnings>("/api/v1/admin/system/health")).Warnings;
+
+    /// <summary>The critical System health alerts <paramref name="admin"/> has that say <paramref name="message"/>.</summary>
+    private static async Task<int> AlertsAsync(ApiClient admin, string message) =>
+        (await admin.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=200")).Items
+        .Count(n => n.Title == "System health: critical" && n.Severity == "critical" && n.Body?.Contains(message, StringComparison.Ordinal) == true);
+
+    private sealed record HealthWarnings(IReadOnlyList<HealthWarning> Warnings);
 
     /// <summary>The integrity check as Administration › Audit log runs it.</summary>
     private async Task<AuditVerification> VerifyAsync()
