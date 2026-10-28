@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
 
@@ -23,7 +24,8 @@ internal static class TestData
         Guid? practitionerId = null,
         Guid? patientId = null,
         Guid? serviceItemId = null,
-        DateTimeOffset? serviceDate = null)
+        DateTimeOffset? serviceDate = null,
+        RoomCharge? room = null)
     {
         var charge = new Charge
         {
@@ -40,6 +42,7 @@ internal static class TestData
             PractitionerId = practitionerId,
             ServiceDate = serviceDate ?? Now,
             Status = ChargeStatus.Unbilled,
+            Room = room,
         };
         charge.ApplyPrice(new PriceQuote(unitPrice, PriceSource.TariffPlan, 1m, null), taxRate, tariffDiscountPercent, null);
         return charge;

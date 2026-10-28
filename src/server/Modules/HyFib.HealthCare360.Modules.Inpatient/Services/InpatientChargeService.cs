@@ -76,17 +76,29 @@ public sealed class InpatientChargeService(
             .ToHashSet();
         var nursingItemId = await ServiceItemIdAsync(NursingServiceCode, ct);
 
+        // A bed's day tells Billing whether it is in critical care, which decides its GST (a CCU or an ICCU is kept as an
+        // ICU ward).
+        var wardIds = due.Where(d => d.WardId is not null).Select(d => d.WardId!.Value).Distinct().ToList();
+        var intensiveCare = (await db.Set<Ward>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .Where(w => wardIds.Contains(w.Id))
+                .Select(w => new { w.Id, w.Type })
+                .ToListAsync(ct))
+            .Where(w => Ward.IsCriticalCareType(w.Type))
+            .Select(w => w.Id)
+            .ToHashSet();
+
         var count = 0;
         foreach (var day in due)
         {
+            var room = day.WardId is { } wardId && intensiveCare.Contains(wardId) ? RoomCharge.IntensiveCare : RoomCharge.Room;
             if (day.BedServiceItemId is { } bedItemId && !posted.Contains((day.Date, DailyChargeKind.Bed))
-                && await PostDayAsync(admission, day.Date, DailyChargeKind.Bed, bedItemId, ct))
+                && await PostDayAsync(admission, day.Date, DailyChargeKind.Bed, bedItemId, room, ct))
             {
                 count++;
             }
 
             if (nursingItemId is { } nursingId && !posted.Contains((day.Date, DailyChargeKind.Nursing))
-                && await PostDayAsync(admission, day.Date, DailyChargeKind.Nursing, nursingId, ct))
+                && await PostDayAsync(admission, day.Date, DailyChargeKind.Nursing, nursingId, null, ct))
             {
                 count++;
             }
@@ -269,7 +281,8 @@ public sealed class InpatientChargeService(
             : BedDayPolicy.MidnightCensus;
     }
 
-    private async Task<bool> PostDayAsync(Admission admission, DateOnly date, DailyChargeKind kind, Guid serviceItemId, CancellationToken ct)
+    /// <param name="room">For a bed's day, the kind of room (GST on room rent); null for a nursing day.</param>
+    private async Task<bool> PostDayAsync(Admission admission, DateOnly date, DailyChargeKind kind, Guid serviceItemId, RoomCharge? room, CancellationToken ct)
     {
         var reference = DailyChargeKeys.For(admission.Id, date);
         var label = kind == DailyChargeKind.Bed ? "Bed charges" : "Nursing charges";
@@ -285,6 +298,7 @@ public sealed class InpatientChargeService(
             SourceReference = reference,
             DepartmentId = admission.DepartmentId,
             ServiceDate = IndiaClock.StartOfDayUtc(date),
+            Room = room,
         }, ct);
 
         if (result.IsFailure)
