@@ -219,6 +219,9 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
             DepartmentId = request.DepartmentId ?? item.DepartmentId,
             ServiceDate = serviceDate,
             Status = ChargeStatus.Unbilled,
+
+            // Only a bed's day is room rent.
+            Room = item.Category == ServiceCategory.BedCharge ? request.Room : null,
         };
         charge.ApplyPrice(quote, item.TaxRate, context.Plan?.DefaultDiscountPercent ?? 0m, context.Plan?.Id);
         if (charge.IsCredit)

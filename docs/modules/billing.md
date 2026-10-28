@@ -32,6 +32,15 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
   another state is billed **IGST** for the whole tax instead of CGST and SGST, on every line and in the totals; the bill
   stores `placeOfSupply` and `igstAmount`. Tally posts IGST to the `Output IGST` ledger. A facility without a GSTIN bills
   CGST and SGST as before.
+* **Room rent** (`RoomRentGst`; notification 12/2017-CT(R) entry 74 as amended by 4/2022, and 11/2017-CT(R) entry 31A
+  inserted by 3/2022, from 18 July 2022): health care is exempt, but a day of a room other than intensive or critical
+  care charged above ₹5,000 is taxed at 5% on the whole charge (CGST and SGST of 2.5% each, or IGST), without input tax
+  credit. At or below ₹5,000, or in critical care (ICU, CCU, ICCU, NICU: Inpatient's ICU, NICU, PICU and HDU wards), a
+  day is exempt. The rule replaces the room's rate in the service master for the bed days Inpatient charges (each tells
+  Billing its `RoomCharge`, kept on the charge as `room`), and again when a stay is re-priced on another plan. A day is
+  over the line by its charge after the plan's concession; a discount given later on the bill lowers the tax, not the
+  rate. A bed charge posted by hand at the desk keeps the service's own rate, and bed days charged before this rule keep
+  the GST they were charged with.
 * Only the **patient share** is rounded to the rupee (it is collected in cash); the payer share stays at paise.
 * **Cash limit** (Income-tax Act s.269ST; the penalty under s.271DA is the whole sum, and hospitals have no exemption):
   ₹2,00,000 or more may not be taken in cash from one patient in a day, for one admission (deposits and the bills of the

@@ -47,7 +47,10 @@ public sealed class Ward : AuditableEntity, IFacilityScoped
     public bool IsActive { get; set; } = true;
     public string? Notes { get; set; }
 
-    /// <summary>Critical-care wards bill the ICU consultant-visit tariff (VISIT-DR-ICU).</summary>
+    /// <summary>
+    /// Critical-care wards bill the ICU consultant-visit tariff (VISIT-DR-ICU), and a day of their beds is exempt from GST on
+    /// room rent whatever it costs.
+    /// </summary>
     public bool IsCriticalCare => IsCriticalCareType(Type);
 
     public static bool IsCriticalCareType(WardType type) => type is WardType.Icu or WardType.Nicu or WardType.Picu or WardType.Hdu;

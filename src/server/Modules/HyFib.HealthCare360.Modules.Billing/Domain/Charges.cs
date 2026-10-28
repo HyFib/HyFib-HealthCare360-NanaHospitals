@@ -41,6 +41,10 @@ public sealed class Charge : AuditableEntity, IFacilityScoped
     public PriceSource PriceSource { get; set; }
     public Guid? TariffPlanId { get; set; }
     public decimal BedMultiplier { get; set; } = 1m;
+
+    /// <summary>For a day of a bed, the kind of room: its GST follows <see cref="RoomRentGst"/>, not the service's own rate.</summary>
+    public RoomCharge? Room { get; set; }
+
     public string SourceModule { get; set; } = string.Empty;
     public string SourceReference { get; set; } = string.Empty;
 
@@ -62,15 +66,20 @@ public sealed class Charge : AuditableEntity, IFacilityScoped
     /// <summary>A return credited to the patient (negative quantity), for example unused ward stock sent back to pharmacy.</summary>
     public bool IsCredit => Quantity < 0;
 
-    /// <summary>Applies a price quote and recomputes gross, tariff discount, GST (CGST/SGST) and net.</summary>
+    /// <summary>
+    /// Applies a price quote and recomputes gross, tariff discount, GST (CGST/SGST) and net. A day of a room takes its GST
+    /// rate from <see cref="RoomRentGst"/>, by its price after the tariff concession, instead of <paramref name="taxRate"/>.
+    /// </summary>
     public void ApplyPrice(PriceQuote quote, decimal taxRate, decimal discountPercent, Guid? tariffPlanId)
     {
         UnitPrice = quote.UnitPrice;
         PriceSource = quote.Source;
         BedMultiplier = quote.Multiplier;
         TariffPlanId = tariffPlanId;
-        TaxRate = Math.Max(taxRate, 0m);
         DiscountPercent = IsDiscountAllowed ? Math.Clamp(discountPercent, 0m, 100m) : 0m;
+        TaxRate = Room is { } room
+            ? RoomRentGst.RateFor(room, UnitPrice - Money.PercentOf(UnitPrice, DiscountPercent))
+            : Math.Max(taxRate, 0m);
 
         var amounts = ChargeAmounts.Calculate(Quantity, UnitPrice, DiscountPercent, TaxRate);
         GrossAmount = amounts.Gross;

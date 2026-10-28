@@ -30,6 +30,22 @@ public sealed record ChargeRequest
 
     public Guid? DepartmentId { get; init; }
     public DateTimeOffset? ServiceDate { get; init; }
+
+    /// <summary>For a day of a bed (Inpatient's bed-day charge), the kind of room, which decides its GST; null otherwise.</summary>
+    public RoomCharge? Room { get; init; }
+}
+
+/// <summary>
+/// What a day of a bed is, for GST on room rent (<c>RoomRentGst</c> in Billing): health care is exempt, but a room other
+/// than an ICU, CCU, ICCU or NICU charged above ₹5,000 a day is taxed.
+/// </summary>
+public enum RoomCharge
+{
+    /// <summary>A room or bed outside intensive care.</summary>
+    Room = 0,
+
+    /// <summary>A bed in intensive or critical care (Inpatient's ICU, NICU, PICU and HDU wards): exempt whatever it costs.</summary>
+    IntensiveCare,
 }
 
 public enum ChargeBillingState
