@@ -148,6 +148,13 @@ export interface LandingProps {
   onChoose: (role: string, path?: string) => void;
 }
 
+/** A mobile number as a patient types it: 90000 01021. */
+const mobileNumber = (phone: string) =>
+  phone
+    .replace(/\D/g, '')
+    .slice(-10)
+    .replace(/^(\d{5})/, '$1 ');
+
 /** The demo's front page: what it is, the morning it recorded, and who you can be in it. */
 export function Landing({ meta, ready, error, onChoose }: LandingProps) {
   const styles = useStyles();
@@ -164,9 +171,9 @@ export function Landing({ meta, ready, error, onChoose }: LandingProps) {
           A morning at {meta.facility}
         </h1>
         <p className={styles.lead}>
-          This is the HealthCare360 staff app, unchanged, replaying a morning recorded from its own server: patients in
-          the outpatient clinic, on the wards and in casualty. Choose who to be. Every screen of that role is here, and
-          nothing you change is saved.
+          This is the HealthCare360 staff app and patient portal, unchanged, replaying a morning recorded from their own
+          server: patients in the outpatient clinic, on the wards and in casualty. Choose who to be. Every screen of
+          that role is here, and nothing you change is saved.
         </p>
       </section>
 
@@ -174,8 +181,8 @@ export function Landing({ meta, ready, error, onChoose }: LandingProps) {
         <div className={styles.rolesHead}>
           <h2 className={styles.rolesTitle}>Choose who to be</h2>
           <Text className={styles.muted}>
-            Each member of staff sees the menu and screens of their own role. Sign in as one, or go straight to a screen
-            where their part of the morning shows.
+            Each member of staff sees the menu and screens of their own role, and the patient their own portal. Sign in
+            as one, or go straight to a screen where their part of the morning shows.
           </Text>
           {!ready && !error && (
             <span className={styles.loading}>
@@ -197,7 +204,9 @@ export function Landing({ meta, ready, error, onChoose }: LandingProps) {
                       {person.displayName}
                     </h3>
                     <Caption1 className={styles.muted}>
-                      {person.roleName} · user name {person.userName}
+                      {person.app === 'portal' && person.phone
+                        ? `Patient portal · mobile ${mobileNumber(person.phone)}`
+                        : `${person.roleName} · user name ${person.userName}`}
                     </Caption1>
                   </span>
                 </div>

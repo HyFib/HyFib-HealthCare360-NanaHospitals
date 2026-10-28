@@ -1,7 +1,8 @@
 /**
- * Who the demo lets you be, and where each one's part of the recorded morning shows: the roles' guided tours. Each
- * place is a screen of that role's own menu; build.mjs refuses to pack a demo in which a place was not recorded for
- * its role, and verify.mjs opens every one. What the notes say is what story.mjs made happen.
+ * Who the demo lets you be, and where each one's part of the recorded morning shows: the roles' guided tours (the
+ * patient's on the patient portal, under its /portal base). Each place is a screen of that role's own menu; build.mjs
+ * refuses to pack a demo in which a place was not recorded for its role, and verify.mjs opens and photographs every
+ * one. What the notes say is what story.mjs made happen, and what the screen shows at 11:10.
  */
 
 export interface Place {
@@ -211,6 +212,28 @@ export const PERSONAS: Persona[] = [
         path: '/admin/system',
         note: 'What the server checks about itself. This demo machine fails several checks (disk, time server, messages, PDFs, backup key), as a new install would.',
       },
+    ],
+  },
+  {
+    role: 'patient',
+    does: 'Sees their own visits, reports, prescriptions and bills on the patient portal, on a phone or a computer.',
+    places: [
+      {
+        label: 'Home',
+        path: '/portal/home',
+        note: "Good morning, Rajendran: today's report and prescription, and what you can do here.",
+      },
+      {
+        label: 'Reports',
+        path: '/portal/reports',
+        note: 'Your diabetes panel, released this morning: open it for HbA1c 8.4% and the lipid profile.',
+      },
+      {
+        label: 'Prescriptions',
+        path: '/portal/prescriptions',
+        note: 'Metformin 500 mg from Dr. Arjun Mehta: open it for the QR code that proves it genuine at any pharmacy.',
+      },
+      { label: 'Bills', path: '/portal/bills', note: "This morning's bill, ₹1,930, paid in full." },
     ],
   },
 ];

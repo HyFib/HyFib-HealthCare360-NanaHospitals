@@ -9,7 +9,16 @@ export interface DemoMeta {
   clockStart: string;
   facility: string;
   recordedOn: string;
-  roles: { role: string; userName: string; displayName: string; roleName: string }[];
+  roles: {
+    role: string;
+    userName: string;
+    displayName: string;
+    roleName: string;
+    /** The staff app, or the patient portal for the role that is a patient. */
+    app: 'staff' | 'portal';
+    /** The patient's mobile number, which they sign in to the portal with. */
+    phone?: string;
+  }[];
   /** Every patient's id (for verify.mjs). */
   patients: string[];
   files: string[];

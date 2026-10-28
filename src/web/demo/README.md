@@ -1,23 +1,24 @@
 # The HealthCare360 demo
 
-A shareable, read-only demo of the staff app. A visitor picks a role (front office, doctor, nurse, lab, pathologist,
-radiographer, radiologist, pharmacist, billing, hospital administrator, system administrator) and uses the real app,
-unchanged, as that role. Behind it there is no server: the app replays what the real server answered when each role's
-screens were opened on a recorded morning at a sample hospital. Anything that would change a record is refused with
-"This is a read-only demo".
+A shareable, read-only demo of the staff app and the patient portal. A visitor picks a role (front office, doctor,
+nurse, lab, pathologist, radiographer, radiologist, pharmacist, billing, hospital administrator, system administrator,
+or a patient on the portal) and uses the real app, unchanged, as that role. Behind it there is no server: the app
+replays what the real server answered when each role's screens were opened on a recorded morning at a sample hospital.
+Anything that would change a record is refused with "This is a read-only demo".
 
 It is made in five steps, each a script in this folder:
 
 | Step             | Script        | What it does                                                                                                               |
 | ---------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | 1. The day       | `story.mjs`   | Plays a morning on a demo server through its API: patients registered, seen, tested, billed, admitted, discharged, triaged |
-| 2. The recording | `capture.mjs` | Signs in as each role in Chromium, walks its screens (`lib/walk.mjs`) and keeps every answer                               |
-| 3. The build     | `build.mjs`   | Scrubs the answers, packs them into data files, and builds the app around a replay (`app/`)                                |
+| 2. The recording | `capture.mjs` | Signs in as each role in Chromium (the patient on the portal), walks its screens (`lib/walk.mjs`) and keeps every answer   |
+| 3. The build     | `build.mjs`   | Scrubs the answers, packs them into data files, and builds both apps around a replay (`app/`)                              |
 | 4. The check     | `verify.mjs`  | Walks the built demo the same way and fails when a guided place has unrecorded data or errors                              |
 | 5. Publishing    | —             | The built folder is one page with its files: publish it as an Artifact (or any static host)                                |
 
-The replay's rules (what it answers a search, another day, another role, a write) have tests of their own, run in CI:
-`node --test "demo/**/*.test.ts"`.
+The replay's rules (what it answers a search, another day, another role, a write, a patient's sign-in) have tests of
+their own, run in CI: `node --test "demo/**/*.test.ts"`. CI also type-checks the demo against each app it starts:
+`tsc -p demo` (the staff app) and `tsc -p demo/tsconfig.portal.json` (the patient portal, whose `@/` is its own).
 
 ## Making it
 
@@ -52,11 +53,12 @@ export FAKETIME_TIMESTAMP_FILE=/var/tmp/hc360-demo-clock.txt FAKETIME_CACHE_DURA
 # LD_PRELOAD=…/faketime/libfaketimeMT.so.1. Its demo seed is made at 9:00 am.
 ```
 
-Then, from `src/web` (Node 22.18 or later, after `pnpm install` and `pnpm --filter @hc360/staff build`, which the
-server serves):
+Then, from `src/web` (Node 22.18 or later, after `pnpm install` and `pnpm -r --filter './apps/**' build`: the server
+serves both apps):
 
 ```bash
 export HC360_DEMO_PASSWORD='<demo password>' NODE_EXTRA_CA_CERTS=<the server's CA certificate>
+export HC360_DEMO_DB=postgresql://<user>:<password>@localhost:5432/<demo database>   # the patient's sign-in code
 DEMO_CLOCK_FILE=/var/tmp/hc360-demo-clock.txt node demo/story.mjs demo/out/story.json   # about 3 min
 DEMO_PARALLEL=4 node demo/capture.mjs demo/out/recordings                                # 40 to 60 min
 node demo/build.mjs demo/out/recordings demo/out/story.json demo/out/demo
@@ -66,18 +68,25 @@ node demo/verify.mjs demo/out/demo demo/out/verify      # verify.md and a pictur
 The demo's clock starts where the story stopped the server's, and runs on from there, so the recorded morning is
 "today" in the demo.
 
+The patient (`PORTAL_PATIENT` in `app/personas.ts`) signs in to the portal on the server's patients' port
+(`HC360_PORTAL`, `https://localhost:7361` by default) with a code sent by SMS. A demo server has no SMS gateway, so
+`capture.mjs` reads the code the server queued for one from its database, with `psql` and `HC360_DEMO_DB`.
+
 ## What it replays, and what it does not
 
 - **Reads** answer from the recording. A search the walk did not make is answered by filtering what was recorded. A
   list for another day or another page is answered with an empty list.
-- **Signing in and out** works for the demo's user names, with any password.
+- **Signing in and out** works for the demo's user names, with any password, and for the demo patient's mobile
+  number on the portal, with any code.
 - **Writes are refused** (`demo.read_only`), and the app shows the refusal as it shows any other.
 - **Live updates** (SignalR) connect and stay quiet. Video consultations do not connect.
 - **The idle screen lock is off**, since there is no PIN to unlock it with.
 - **Inside the Artifact viewer**, printing and file downloads are blocked by the viewer itself.
-- **The app is the same build** as `apps/staff`, with one difference (`app/staff.tsx`): it keeps the screen it is on
-  in memory, not in the address bar. The page that holds the demo serves only itself, and its address belongs to the
-  page around it.
+- **The apps are the same builds** as `apps/staff` and `apps/portal`, with one difference (`app/staff.tsx`,
+  `app/portal.tsx`): each keeps the screen it is on in memory, not in the address bar. The page that holds the demo
+  serves only itself, and its address belongs to the page around it.
+- **A screen the walk did not record** gets the app's own "not found"; the demo badge says why, and points to the
+  role's tour.
 
 ## What the build refuses to ship
 

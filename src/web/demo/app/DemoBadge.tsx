@@ -6,6 +6,7 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
+  mergeClasses,
   shorthands,
   tokens,
 } from '@fluentui/react-components';
@@ -33,6 +34,13 @@ const useStyles = makeStyles({
     ...shorthands.border('1px', 'solid', tokens.colorNeutralStroke1),
     borderRadius: tokens.borderRadiusLarge,
     boxShadow: tokens.shadow16,
+  },
+  // The patient portal keeps its menu down the left on a wide screen and along the foot on a phone (below 900 px,
+  // apps/portal's WIDE_LAYOUT_QUERY): the badge takes the other corner, above the phone's menu bar.
+  portal: {
+    left: 'auto',
+    right: 'max(12px, env(safe-area-inset-right, 0px))',
+    '@media (max-width: 899px)': { bottom: 'calc(88px + env(safe-area-inset-bottom, 0px))' },
   },
   tag: {
     fontSize: tokens.fontSizeBase100,
@@ -62,6 +70,8 @@ const MISSED_FOR_MS = 8000;
 
 export interface DemoBadgeProps {
   meta: DemoMeta;
+  /** The app the badge sits over: it keeps clear of that app's menu. */
+  app: 'staff' | 'portal';
   /** Opens a screen of the app, as a link inside it would. */
   navigate: (path: string) => void;
   /** Back to the demo's front page, to choose another role. */
@@ -72,7 +82,7 @@ export interface DemoBadgeProps {
  * Says, on every screen, that this is the read-only demo and who you are in it; leads to the role's tour, and explains
  * a screen the walk did not record (the app shows its own "not found" there).
  */
-export function DemoBadge({ meta, navigate, changeRole }: DemoBadgeProps) {
+export function DemoBadge({ meta, app, navigate, changeRole }: DemoBadgeProps) {
   const styles = useStyles();
   const [role, setRole] = useState(currentRole);
   useEffect(() => {
@@ -98,7 +108,7 @@ export function DemoBadge({ meta, navigate, changeRole }: DemoBadgeProps) {
   const places = PERSONAS.find((p) => p.role === role)?.places ?? [];
 
   return (
-    <aside className={styles.root} aria-label="Demo">
+    <aside className={mergeClasses(styles.root, app === 'portal' && styles.portal)} aria-label="Demo">
       <span className={styles.tag}>Demo · nothing is saved</span>
       {person && (
         <span className={styles.who}>

@@ -295,10 +295,10 @@ jobs:
       - name: Unit tests
         run: pnpm -r test
 
-      # The shareable demo (src/web/demo/README.md): it starts the staff app as main.tsx does, so it is checked against it,
-      # and the rules it answers the app by.
+      # The shareable demo (src/web/demo/README.md): it starts the staff app and the patient portal as their main.tsx
+      # do, so it is checked against each (the portal's `@/` is its own source), and the rules it answers them by.
       - name: Demo type check
-        run: pnpm exec tsc -p demo
+        run: pnpm exec tsc -p demo && pnpm exec tsc -p demo/tsconfig.portal.json
 
       - name: Demo replay tests
         run: node --test "demo/**/*.test.ts"

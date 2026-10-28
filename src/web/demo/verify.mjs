@@ -124,9 +124,13 @@ async function verifyRole(role) {
     await quiet();
   }
 
+  const portal = person.app === 'portal';
   await page.goto(BASE);
   await page.getByRole('button', { name: `Sign in as ${person.displayName}` }).click();
-  await page.getByRole('navigation', { name: 'Main navigation' }).waitFor({ timeout: 60_000 });
+  // The app's menu: the staff app's drawer, or the portal's column of links (this window is wide enough for it).
+  await page
+    .getByRole('navigation', portal ? { name: 'Main', exact: true } : { name: 'Main navigation' })
+    .waitFor({ timeout: 60_000 });
   const user = await page.evaluate(async () => {
     const answer = await fetch('/api/v1/auth/me');
     return answer.json();
@@ -159,9 +163,10 @@ async function verifyRole(role) {
     go,
     quiet,
     user,
-    patients: meta.patients,
+    patients: portal ? [] : meta.patients,
     outOfTime: () => Date.now() - startedAt > MAX_MINUTES * 60_000,
     onScreen: (path) => screens.set(path, true),
+    app: portal ? 'portal' : 'staff',
   });
   const allMisses = await page.evaluate(() => globalThis.HC360_DEMO_REPLAY.misses);
   await context.close();

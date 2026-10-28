@@ -4,6 +4,7 @@ import { dataReady, meta, replay } from './install';
 import { Hc360ThemeProvider } from '@hc360/ui';
 import { StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import type { AppModule } from './apps';
 import { DemoBadge } from './DemoBadge';
 import { Landing } from './Landing';
 import { currentRole, setCurrentRole } from './replay';
@@ -19,6 +20,11 @@ declare global {
 
 const container = document.getElementById('root')!;
 let landing: Root | null = null;
+
+/** The two apps the page can start, each loaded (with its own styles) only when one of its roles is chosen. */
+const APPS = import.meta.glob<AppModule>(['./staff.tsx', './portal.tsx']);
+/** Where each app opens: the staff app's home, the portal's home under its /portal base. */
+const HOME = { staff: '/', portal: '/portal/home' } as const;
 
 /** Keeps the workstation's settings a role's screens open with (its queue desk, ward, counter), as staff set them. */
 function setUpDesk(desk: Record<string, string>): void {
@@ -38,8 +44,8 @@ function changeRole(): void {
   location.reload();
 }
 
-/** Signs in as `role` and opens the staff app, at `path` when given, else at the role's home. */
-async function start(role: string, path = '/'): Promise<void> {
+/** Signs in as `role` and opens its app (the staff app or the patient portal), at `path` when given, else at home. */
+async function start(role: string, path?: string): Promise<void> {
   const data = await dataReady;
   const recording = data.roles[role];
   if (!recording) {
@@ -51,18 +57,19 @@ async function start(role: string, path = '/'): Promise<void> {
   setUpDesk(recording.desk);
   landing?.unmount();
   landing = null;
-  const { startStaffApp } = await import('./staff');
-  const router = startStaffApp(container, path);
-  const navigate = (to: string) => router.navigate({ href: to });
+  const app = meta.roles.find((r) => r.role === role)?.app ?? 'staff';
+  const { startApp } = await APPS[`./${app}.tsx`]!();
+  const started = startApp(container, path ?? HOME[app]);
+  const navigate = started.open;
   window.HC360_DEMO_NAVIGATE = navigate;
-  window.HC360_DEMO_HERE = () => router.state.location.href;
+  window.HC360_DEMO_HERE = started.here;
 
   const badge = document.createElement('div');
   document.body.append(badge);
   createRoot(badge).render(
     <StrictMode>
       <Hc360ThemeProvider>
-        <DemoBadge meta={meta} navigate={(to) => void navigate(to)} changeRole={changeRole} />
+        <DemoBadge meta={meta} app={app} navigate={(to) => void navigate(to)} changeRole={changeRole} />
       </Hc360ThemeProvider>
     </StrictMode>,
   );

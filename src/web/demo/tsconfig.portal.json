@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "typeRoots": ["../apps/portal/node_modules/@types", "../apps/portal/node_modules"],
+    "paths": {
+      "@/*": ["../apps/portal/src/*"],
+      "@hc360/core": ["../packages/core/src/index.ts"],
+      "@hc360/ui": ["../packages/ui/src/index.ts"],
+      "*": ["../apps/portal/node_modules/@types/*", "../apps/portal/node_modules/*"]
+    }
+  },
+  "include": ["app/portal.tsx"],
+  "exclude": []
+}

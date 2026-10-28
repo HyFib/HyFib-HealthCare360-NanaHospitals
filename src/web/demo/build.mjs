@@ -20,6 +20,7 @@ import { MORNING, PERSONAS } from './app/personas.ts';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STAFF = resolve(HERE, '../apps/staff');
 const STAFF_SRC = join(STAFF, 'src');
+const PORTAL_SRC = resolve(HERE, '../apps/portal/src');
 const DEMO_APP = join(HERE, 'app');
 const PARTIAL = process.argv.includes('--partial');
 const [RECORDINGS, STORY, OUT] = process.argv
@@ -138,10 +139,13 @@ function bodyId(text) {
 }
 
 const roles = {};
+/** Which app each role uses: the staff app, or the patient portal. */
+const apps = {};
 let lastRecorded = 0;
 for (const recording of recordings) {
   const { role, user } = recording;
-  const login = recording.entries['POST /api/v1/auth/login'];
+  // Staff sign in with a password; the patient with the code sent to their phone.
+  const login = recording.entries['POST /api/v1/auth/login'] ?? recording.entries['POST /api/v1/auth/otp/verify'];
   if (!login?.body) throw new Error(`${role}: the recording has no sign-in answer.`);
   const signIn = JSON.parse(login.body);
   const answers = {};
@@ -161,8 +165,10 @@ for (const recording of recordings) {
     roleName: user.roles.map((r) => r.replace(/([a-z])([A-Z])/g, '$1 $2')).join(', '),
     login: { ...signIn, accessToken: 'demo-access-token', expiresAt: null },
     desk: recording.desk ?? {},
+    ...(recording.phone ? { phone: recording.phone } : {}),
     answers,
   };
+  apps[role] = user.type === 'patient' ? 'portal' : 'staff';
   report.roles[role] = {
     menu: recording.menu.length,
     notOpened: recording.menu
@@ -200,15 +206,27 @@ const fromStaff = createRequire(join(STAFF, 'package.json'));
 const { build } = await import(pathToFileURL(fromStaff.resolve('vite')).href);
 const { default: react } = await import(pathToFileURL(fromStaff.resolve('@vitejs/plugin-react')).href);
 
-/** The demo's own modules import packages as the staff app does: resolved from there, so there is one copy of each. */
-function resolveLikeStaffApp() {
-  const entry = join(STAFF_SRC, 'main.tsx');
+/**
+ * Each app's modules resolve as they do in that app's own build: `@/` is the app's own source, and the demo's modules
+ * import packages as the app they start does, so there is one copy of each. The portal's are its source and the demo's
+ * portal starter (app/portal.tsx); everything else is the staff app's.
+ */
+function resolveLikeTheApps() {
+  const source = { staff: STAFF_SRC, portal: PORTAL_SRC };
+  const entry = { staff: join(STAFF_SRC, 'main.tsx'), portal: join(PORTAL_SRC, 'main.tsx') };
+  const appOf = (importer) =>
+    importer.startsWith(`${PORTAL_SRC}/`) || importer === join(DEMO_APP, 'portal.tsx') ? 'portal' : 'staff';
   return {
-    name: 'hc360-demo:resolve-like-staff-app',
+    name: 'hc360-demo:resolve-like-the-apps',
     enforce: 'pre',
-    async resolveId(source, importer, options) {
-      if (!importer?.startsWith(DEMO_APP) || /^[./\0]|^@\//.test(source)) return null;
-      return this.resolve(source, entry, { ...options, skipSelf: true });
+    async resolveId(id, importer, options) {
+      if (!importer) return null;
+      const app = appOf(importer);
+      if (id.startsWith('@/')) {
+        return this.resolve(join(source[app], id.slice(2)), importer, { ...options, skipSelf: true });
+      }
+      if (!importer.startsWith(DEMO_APP) || /^[./\0]/.test(id)) return null;
+      return this.resolve(id, entry[app], { ...options, skipSelf: true });
     },
   };
 }
@@ -219,12 +237,11 @@ await build({
   root: DEMO_APP,
   base: './',
   logLevel: 'warn',
-  plugins: [resolveLikeStaffApp(), react()],
+  plugins: [resolveLikeTheApps(), react()],
   resolve: {
     alias: [
       // A recorded day sends no live updates: the realtime hubs connect at once and stay quiet.
       { find: /^@microsoft\/signalr$/, replacement: join(DEMO_APP, 'signalr.ts') },
-      { find: /^@\//, replacement: `${STAFF_SRC}/` },
     ],
   },
   build: {
@@ -232,8 +249,9 @@ await build({
     emptyOutDir: true,
     sourcemap: false,
     chunkSizeWarningLimit: 20_000,
-    // One stylesheet, linked from the page, which build.mjs then writes into the page itself.
-    cssCodeSplit: false,
+    // Each app's stylesheet comes with it (both set the page's own height and margins); the page's own is written into
+    // the page by build.mjs.
+    cssCodeSplit: true,
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name]-[hash].js',
@@ -284,7 +302,14 @@ const meta = {
   }),
   roles: PERSONAS.filter((p) => roles[p.role]).map((p) => {
     const r = roles[p.role];
-    return { role: r.role, userName: r.userName, displayName: r.displayName, roleName: r.roleName };
+    return {
+      role: r.role,
+      userName: r.userName,
+      displayName: r.displayName,
+      roleName: r.roleName,
+      app: apps[p.role],
+      ...(r.phone ? { phone: r.phone } : {}),
+    };
   }),
   // Every patient's id, for verify.mjs to open each one's record and chart as capture.mjs did.
   patients: [
@@ -305,7 +330,7 @@ const styles = [...built.matchAll(/<link rel="stylesheet"[^>]*href="([^"]+)"[^>]
 const css = styles.map((href) => readFileSync(join(OUT, href), 'utf8')).join('\n');
 for (const href of styles) rmSync(join(OUT, href));
 const page = `<title>HealthCare360 Demo</title>
-<meta name="description" content="The HealthCare360 staff app replaying a recorded morning at ${facility}: choose a role and look around.">
+<meta name="description" content="The HealthCare360 staff app and patient portal replaying a recorded morning at ${facility}: choose a role and look around.">
 <style>
 ${css}
 /* The demo badge sits at the foot of the navigation: its last items can scroll up above it. */

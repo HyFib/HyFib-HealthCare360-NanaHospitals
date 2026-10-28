@@ -11,5 +11,6 @@
       "*": ["../apps/staff/node_modules/@types/*", "../apps/staff/node_modules/*"]
     }
   },
-  "include": ["app"]
+  "include": ["app"],
+  "exclude": ["app/portal.tsx"]
 }
