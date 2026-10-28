@@ -61,6 +61,27 @@ if (recordings.length === 0) {
  */
 const MACHINE_PATHS = ['/tmp', '/var/tmp', '/home', '/root'];
 const PRIVATE_ADDRESS = /\b(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b/g;
+/** The name the demo's server goes by instead. */
+const SERVER_STAND_IN = 'HC360-SRV01';
+
+/**
+ * The names the recording machine gives itself, as the server reported them (System information and System health),
+ * matched whole wherever they show: in those answers, in the certificate's names (vm.local) and in any message.
+ */
+function serverNames() {
+  const names = new Set();
+  for (const recording of recordings) {
+    for (const [key, entry] of Object.entries(recording.entries)) {
+      if (!entry.body || entry.encoding !== 'utf8' || entry.status !== 200) continue;
+      if (key === 'GET /api/v1/system/info') names.add(JSON.parse(entry.body).serverName);
+      if (key === 'GET /api/v1/admin/system/health') names.add(JSON.parse(entry.body).server?.machineName);
+    }
+  }
+  return [...names]
+    .filter((name) => typeof name === 'string' && name.trim() && name !== 'localhost')
+    .map((name) => new RegExp(`(?<![\\w-])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'g'));
+}
+const SERVER_NAMES = serverNames();
 
 function scrub(text, where) {
   let out = text;
@@ -81,6 +102,12 @@ function scrub(text, where) {
     note('private address');
     return '192.0.2.10';
   });
+  for (const name of SERVER_NAMES) {
+    out = out.replace(name, () => {
+      note('server name');
+      return SERVER_STAND_IN;
+    });
+  }
   if (/eyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}/.test(out)) {
     report.refused.push(`${where}: a token`);
   }

@@ -11,7 +11,8 @@
 //
 // Every person is fictional, and every phone number is in the 90000 0xxxx series the load tests use.
 
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { addDays, Api, ApiError, askServerTime, firstSignIn, istAt, istDate, serverNow } from './lib/api.mjs';
 
 const outcome = { recordedAt: null, today: null, demoClock: null, accounts: [], staff: [], scenes: [] };
@@ -40,7 +41,7 @@ const hhmm = (instant) => new Date(instant.getTime() + INDIA_OFFSET_MS).toISOStr
 /** Waits until the server shows `target`: libfaketime reads the clock file again at most once a second. */
 async function settle(target, label) {
   for (let i = 0; i < 40; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await new Promise((done) => setTimeout(done, 400));
     if (Math.abs((await askServerTime()).getTime() - target) < 5_000) return;
   }
   throw new Error(`The server's clock did not move to ${label}`);
@@ -793,6 +794,9 @@ async function main() {
   if (!CLOCK) {
     throw new Error('Set DEMO_CLOCK_FILE to the file the demo server takes its clock from (README.md).');
   }
+  // Where the outcome goes is made before the morning is, which a failed write at the end would leave half-recorded.
+  const file = resolve(process.argv[2] ?? 'story.json');
+  mkdirSync(dirname(file), { recursive: true });
   outcome.recordedAt = (await askServerTime()).toISOString();
   await Api.as('admin');
   outcome.today = istDate();
@@ -1680,7 +1684,6 @@ async function main() {
   // The demo shows this moment: the clock stops, so every screen recorded from now on is of 11:10 am.
   outcome.demoClock = (await stopAt('11:10')).toISOString();
   outcome.finishedAt = (await askServerTime()).toISOString();
-  const file = process.argv[2] ?? 'story.json';
   writeFileSync(file, JSON.stringify(outcome, null, 2));
   const failed = outcome.scenes.filter((s) => !s.ok);
   console.log(`\n${outcome.scenes.length - failed.length}/${outcome.scenes.length} scenes made; written to ${file}`);

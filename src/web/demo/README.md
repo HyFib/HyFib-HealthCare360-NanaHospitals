@@ -86,6 +86,7 @@ still holds a token or a private key. It replaces these before packing:
 
 - the recording machine's folders, with `D:\HC360\Data`
 - its private addresses, with `192.0.2.10`
+- the name it gives itself (the server name on System information and System health), with `HC360-SRV01`
 - its CA certificate's fingerprint, with zeros
 
 It also reports any phone number outside the story's fictional series (90000 0xxxx). The sign-in answers keep their
