@@ -2,14 +2,20 @@ using HyFib.HealthCare360.Modules.Clinical.Domain.Idsp;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Idsp;
 
-public sealed record IdspDiseaseDto(string Code, string Name, bool Immediate, IReadOnlyList<string> IcdCodes);
+/// <param name="Nikshay">Notified on Ni-kshay (tuberculosis), not on the IHIP forms.</param>
+public sealed record IdspDiseaseDto(string Code, string Name, bool Immediate, bool Nikshay, IReadOnlyList<string> IcdCodes);
 
-/// <summary>A case as the IHIP line list asks for it. A restricted (VIP) patient the user may not open shows initials only.</summary>
+/// <summary>
+/// A case as the IHIP line list (or Ni-kshay, for tuberculosis) asks for it. A restricted (VIP) patient the user may not
+/// open shows initials only. <paramref name="Nikshay"/>: notified on Ni-kshay, under <paramref name="NikshayId"/> once
+/// it is.
+/// </summary>
 public sealed record IdspCaseRow(
     Guid Id,
     string DiseaseCode,
     string Disease,
     bool Immediate,
+    bool Nikshay,
     NotifiableCaseSource Source,
     NotifiableCaseStatus Status,
     Guid PatientId,
@@ -28,7 +34,15 @@ public sealed record IdspCaseRow(
     string? TestResult,
     DateTimeOffset? AlertedAt,
     string? DiscardReason,
+    string? NikshayId,
+    DateOnly? NikshayNotifiedOn,
     uint Version);
+
+/// <summary>Tuberculosis cases to notify on Ni-kshay, the longest waiting first, and those notified lately.</summary>
+public sealed record IdspTuberculosisDto(IReadOnlyList<IdspCaseRow> ToNotify, IReadOnlyList<IdspCaseRow> Notified);
+
+/// <summary>A tuberculosis case was notified on Ni-kshay, under <paramref name="NikshayId"/>, on <paramref name="NotifiedOn"/>.</summary>
+public sealed record RecordNikshayRequest(string NikshayId, DateOnly NotifiedOn, uint Version);
 
 public sealed record IdspFormReport(DateOnly ReportedOn, string? Reference, int CaseCount, DateTimeOffset ReportedAt, uint Version);
 
@@ -68,8 +82,9 @@ public sealed record ReportIdspWeekRequest(DateOnly ReportedOn, string? Referenc
 public sealed record DiscardIdspCaseRequest(string Reason, uint Version);
 
 /// <summary>
-/// A case the system did not catch: acute flaccid paralysis, or a disease diagnosed without a code. With a test result it
-/// is laboratory-confirmed (from an outside laboratory), otherwise presumptive.
+/// A case the system did not catch: acute flaccid paralysis, a disease diagnosed without a code, or tuberculosis
+/// diagnosed elsewhere and treated here. With a test result it is laboratory-confirmed (from an outside laboratory),
+/// otherwise presumptive.
 /// </summary>
 public sealed record AddIdspCaseRequest(Guid PatientId, string DiseaseCode, DateOnly? OnsetDate, string? TestName, string? TestResult);
 
@@ -89,12 +104,21 @@ internal sealed class DiscardIdspCaseRequestValidator : AbstractValidator<Discar
     }
 }
 
+internal sealed class RecordNikshayRequestValidator : AbstractValidator<RecordNikshayRequest>
+{
+    public RecordNikshayRequestValidator()
+    {
+        RuleFor(x => x.NikshayId).NotEmpty().MaximumLength(32).Matches("^[A-Za-z0-9]+$")
+            .WithMessage("Enter the Ni-kshay ID as Ni-kshay gave it: letters and digits.");
+    }
+}
+
 internal sealed class AddIdspCaseRequestValidator : AbstractValidator<AddIdspCaseRequest>
 {
     public AddIdspCaseRequestValidator()
     {
         RuleFor(x => x.PatientId).NotEmpty();
-        RuleFor(x => x.DiseaseCode).NotEmpty().Must(c => IdspDiseases.Find(c) is not null).WithMessage("Choose a disease from the IDSP list.");
+        RuleFor(x => x.DiseaseCode).NotEmpty().Must(c => IdspDiseases.Find(c) is not null).WithMessage("Choose a disease from the IDSP list, or tuberculosis.");
         RuleFor(x => x.TestName).MaximumLength(200).NotEmpty().When(x => !string.IsNullOrWhiteSpace(x.TestResult))
             .WithMessage("Name the test that confirmed it.");
         RuleFor(x => x.TestResult).MaximumLength(200);

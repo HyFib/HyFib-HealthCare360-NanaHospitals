@@ -25,10 +25,12 @@ import { errorMessage } from '@/modules/lab/common/errors';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 import {
   addCaseProblems,
+  caseFirstDay,
   idspApi,
   idspFormLabel,
   idspKeys,
   idspQueries,
+  nikshayProblems,
   reportProblems,
   weekLabel,
   type IdspCaseRow,
@@ -312,6 +314,14 @@ export function AddCaseDialog({ onClose }: { onClose: () => void }) {
                   </MessageBarBody>
                 </MessageBar>
               )}
+              {chosen?.nikshay && (
+                <MessageBar intent="info">
+                  <MessageBarBody>
+                    {chosen.name} is notified on Ni-kshay, not on the IHIP forms: the case waits under Tuberculosis
+                    until its Ni-kshay ID is recorded.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
               <div className={styles.row}>
                 <Field
                   label="Test"
@@ -324,9 +334,11 @@ export function AddCaseDialog({ onClose }: { onClose: () => void }) {
                   <Input value={testResult} maxLength={200} onChange={(_, d) => setTestResult(d.value)} />
                 </Field>
               </div>
-              <Caption1 className={styles.muted}>
-                With a result, the case goes on this week&apos;s L form; without one, on the P form.
-              </Caption1>
+              {!chosen?.nikshay && (
+                <Caption1 className={styles.muted}>
+                  With a result, the case goes on this week&apos;s L form; without one, on the P form.
+                </Caption1>
+              )}
             </DialogContent>
             <DialogActions>
               <Button onClick={guard.requestClose} disabled={add.isPending}>
@@ -340,6 +352,107 @@ export function AddCaseDialog({ onClose }: { onClose: () => void }) {
                 icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Add case
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
+/**
+ * A tuberculosis case was notified on Ni-kshay: its Ni-kshay ID and the day, from the case's first diagnosis to today.
+ * Recording it again corrects them.
+ */
+export function RecordNikshayDialog({ row, onClose }: { row: IdspCaseRow; onClose: () => void }) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const today = todayIso();
+  const firstDay = caseFirstDay(row);
+  const [nikshayId, setNikshayId] = useState(row.nikshayId ?? '');
+  const [notifiedOn, setNotifiedOn] = useState(row.nikshayNotifiedOn ?? today);
+  const [tried, setTried] = useState(false);
+  const problems = nikshayProblems(nikshayId, notifiedOn, firstDay, today);
+  const valid = problems.id === null && problems.date === null;
+
+  const record = useMutation({
+    mutationFn: () => idspApi.recordNikshay(row.id, { nikshayId: nikshayId.trim(), notifiedOn, version: row.version }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(idspKeys.case(row.id), saved);
+      void queryClient.invalidateQueries({ queryKey: idspKeys.all });
+      notify.success('Ni-kshay ID recorded', `${row.patientName}: ${saved.nikshayId ?? ''}.`);
+      onClose();
+    },
+  });
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ nikshayId, notifiedOn }),
+    busy: record.isPending,
+    onClose,
+  });
+
+  return (
+    <Dialog open onOpenChange={guard.onOpenChange}>
+      <DialogSurface style={{ maxWidth: 520 }}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            setTried(true);
+            if (valid && !record.isPending) {
+              record.mutate();
+            }
+          }}
+        >
+          <DialogBody>
+            <DialogTitle>
+              {row.nikshayId ? 'Correct the Ni-kshay notification' : 'Record the Ni-kshay notification'}
+              <Caption1 block className={styles.muted}>
+                {row.disease} · {row.patientName} · {row.uhid}
+              </Caption1>
+            </DialogTitle>
+            <DialogContent className={styles.content}>
+              {record.error && (
+                <MessageBar intent="error">
+                  <MessageBarBody>
+                    {errorMessage(record.error, 'The Ni-kshay ID could not be recorded.')}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              <Caption1 className={styles.muted}>
+                Notify the case on Ni-kshay first, then record the ID Ni-kshay gave the patient.
+              </Caption1>
+              <div className={styles.row}>
+                <Field label="Ni-kshay ID" required validationMessage={tried ? (problems.id ?? undefined) : undefined}>
+                  <Input value={nikshayId} maxLength={32} onChange={(_, d) => setNikshayId(d.value)} autoFocus />
+                </Field>
+                <Field
+                  label="Notified on"
+                  required
+                  validationMessage={tried ? (problems.date ?? undefined) : undefined}
+                >
+                  <Input
+                    type="date"
+                    value={notifiedOn}
+                    min={firstDay ?? undefined}
+                    max={today}
+                    onChange={(_, d) => setNotifiedOn(d.value)}
+                  />
+                </Field>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={guard.requestClose} disabled={record.isPending}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={record.isPending}
+                disabledFocusable={record.isPending}
+                icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
+              >
+                Record
               </Button>
             </DialogActions>
           </DialogBody>

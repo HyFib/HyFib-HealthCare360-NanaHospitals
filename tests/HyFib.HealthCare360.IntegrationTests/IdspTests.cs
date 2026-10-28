@@ -148,6 +148,67 @@ public sealed class IdspTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task A_tuberculosis_diagnosis_waits_to_be_notified_on_Nikshay_off_the_IHIP_forms_until_its_Nikshay_id_is_recorded()
+    {
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5.5));
+
+        // The doctor suspects pulmonary tuberculosis, then confirms the diagnosis: one case.
+        var encounter = await EncounterAsync(doctor, patient.Id);
+        await DiagnoseAsync(doctor, encounter, "A16.2", DiagnosisType.Provisional);
+        await DiagnoseAsync(doctor, encounter, "A15.0", DiagnosisType.Final);
+        var register = await mrd.GetAsync<IdspTuberculosisDto>("/api/v1/idsp/tuberculosis");
+        var tb = register.ToNotify.Where(c => c.PatientId == patient.Id).ShouldHaveSingleItem();
+        (tb.DiseaseCode, tb.Disease, tb.Nikshay, tb.IcdCode, tb.NikshayId, tb.Uhid).ShouldBe(("TB", "Tuberculosis", true, "A16.2", null, patient.Uhid));
+
+        // The surveillance officer is told to notify it on Ni-kshay.
+        var alert = await EventuallyAsync(async () => (await mrd.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=200")).Items
+            .FirstOrDefault(n => n.Link == $"/mrd/idsp?case={tb.Id}"), "The surveillance officer was not told to notify the case.");
+        alert.Title.ShouldBe("Notify on Ni-kshay: Tuberculosis");
+        alert.Body.ShouldNotBeNull().ShouldNotContain(patient.Uhid, Case.Sensitive, "the alert carries no patient details");
+
+        // Tuberculosis is not on the IHIP forms: the week's P form does not carry it.
+        (await WeekAsync(mrd, IdspWeek.Of(tb.PresumedAt.ShouldNotBeNull()))).Presumptive.Cases.ShouldNotContain(c => c.PatientId == patient.Id);
+
+        // A day after today is refused; the officer records the Ni-kshay ID, and the case moves to the notified ones.
+        using (var tomorrow = await mrd.SendRawAsync(HttpMethod.Post, $"/api/v1/idsp/cases/{tb.Id}/nikshay",
+                   new RecordNikshayRequest("10234567", today.AddDays(1), tb.Version)))
+        {
+            tomorrow.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
+
+        var notified = await mrd.PostAsync<IdspCaseRow>($"/api/v1/idsp/cases/{tb.Id}/nikshay", new RecordNikshayRequest("10234567", today, tb.Version));
+        (notified.NikshayId, notified.NikshayNotifiedOn).ShouldBe(("10234567", today));
+        register = await mrd.GetAsync<IdspTuberculosisDto>("/api/v1/idsp/tuberculosis");
+        register.ToNotify.ShouldNotContain(c => c.Id == tb.Id);
+        register.Notified.ShouldContain(c => c.Id == tb.Id);
+
+        // The register names patients: it is the surveillance officer's, not the doctor's.
+        using (var notTheDoctors = await doctor.SendRawAsync(HttpMethod.Get, "/api/v1/idsp/tuberculosis"))
+        {
+            notTheDoctors.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+    }
+
+    [Fact]
+    public async Task A_tuberculosis_case_added_by_hand_also_asks_for_its_Nikshay_notification()
+    {
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+
+        // Diagnosed at another hospital and treated here: medical records adds the case by hand.
+        var added = await mrd.PostAsync<IdspCaseRow>("/api/v1/idsp/cases", new AddIdspCaseRequest(patient.Id, "TB", null, null, null));
+        var alert = await EventuallyAsync(async () => (await mrd.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=200")).Items
+            .FirstOrDefault(n => n.Link == $"/mrd/idsp?case={added.Id}"), "The surveillance officer was not told to notify the case added by hand.");
+        alert.Title.ShouldBe("Notify on Ni-kshay: Tuberculosis");
+        (await mrd.GetAsync<IdspTuberculosisDto>("/api/v1/idsp/tuberculosis")).ToNotify.ShouldContain(c => c.Id == added.Id);
+    }
+
     private static async Task<Guid> EncounterAsync(ApiClient doctor, Guid patientId) =>
         (await doctor.PostAsync<EncounterDetail>("/api/v1/emr/encounters", new StartEncounterRequest(
             patientId, VisitId: null, AdmissionId: null, Type: null, DepartmentId: null, PractitionerId: null, TemplateId: null, ChiefComplaint: "Fever"))).Id;

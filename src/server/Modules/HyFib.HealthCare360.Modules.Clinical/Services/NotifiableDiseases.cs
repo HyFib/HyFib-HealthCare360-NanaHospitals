@@ -18,8 +18,9 @@ public sealed record NotifiableLabFinding(
     DateTimeOffset ReleasedAt);
 
 /// <summary>
-/// Turns diagnoses and released positive results into IDSP cases (<see cref="NotifiableCase"/>), in the caller's save,
-/// and alerts the surveillance officer through the outbox, after the commit, for an outbreak-prone disease.
+/// Turns diagnoses and released positive results into notifiable cases (<see cref="NotifiableCase"/>), in the caller's
+/// save, and alerts the surveillance officer through the outbox, after the commit: at once for an outbreak-prone IDSP
+/// disease, and for each tuberculosis case, which is to be notified on Ni-kshay.
 /// </summary>
 public sealed class NotifiableDiseases(HospitalDbContext db, IOutbox outbox)
 {
@@ -65,14 +66,17 @@ public sealed class NotifiableDiseases(HospitalDbContext db, IOutbox outbox)
         }
     }
 
-    internal static IdspAlert AlertFor(NotifiableCase @case, IdspDisease disease, string what) =>
-        new(@case.FacilityId, $"Notifiable disease: {disease.Name}",
+    internal static IdspAlert AlertFor(NotifiableCase @case, IdspDisease disease, string what) => disease.Nikshay
+        ? new(@case.FacilityId, $"Notify on Ni-kshay: {disease.Name}",
+            $"A case of {disease.Name} was recorded. Notify it on Ni-kshay, then record its Ni-kshay ID in HC360.",
+            $"/mrd/idsp?case={@case.Id}")
+        : new(@case.FacilityId, $"Notifiable disease: {disease.Name}",
             $"A {what} case of {disease.Name} was recorded. It is outbreak-prone: inform the district surveillance unit within 24 hours.",
             $"/mrd/idsp?case={@case.Id}");
 
     private void Alert(NotifiableCase @case, IdspDisease disease, string what, DateTimeOffset at)
     {
-        if (!disease.Immediate || @case.AlertedAt is not null)
+        if (!(disease.Immediate || disease.Nikshay) || @case.AlertedAt is not null)
         {
             return;
         }
@@ -91,7 +95,7 @@ public sealed class NotifiableDiseases(HospitalDbContext db, IOutbox outbox)
     // The patient's open case of the disease whose last event is within the episode; one added earlier in this save counts.
     private async Task<NotifiableCase?> EpisodeAsync(Guid facilityId, Guid patientId, IdspDisease disease, DateTimeOffset at, CancellationToken ct)
     {
-        var since = at.AddDays(-NotifiableCase.EpisodeDays);
+        var since = at.AddDays(-disease.EpisodeDays);
         bool Matches(NotifiableCase c) =>
             c.FacilityId == facilityId && c.PatientId == patientId && c.DiseaseCode == disease.Code && c.Status == NotifiableCaseStatus.Open;
 

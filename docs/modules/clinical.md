@@ -499,18 +499,31 @@ no cases too (a nil report), once the week is over; cases that come in after the
 form is reported again. A case the system cannot catch (AFP, a disease diagnosed without a code, a result from an outside
 laboratory) is added by hand; a case ruled out is discarded with its reason. Rows show contact details as PRV-03 lets the
 user see them, and a restricted patient's row initials only to a user who may not open the record; every view and
-export is audited. Not built: sending to IHIP (the line list is uploaded by hand), the S (syndromic) form, which is for
-health workers in the community, and tuberculosis, which is notified on Ni-kshay.
+export is audited. Not built: sending to IHIP (the line list is uploaded by hand), and the S (syndromic) form, which is
+for health workers in the community.
+
+**Tuberculosis (Ni-kshay).** TB is notifiable to Ni-kshay, the NTEP case register, by every clinical establishment that
+diagnoses or treats it (Health Ministry notification of 16 March 2018; not notifying is punishable under BNS s.271 and
+272, formerly IPC s.269 and 270). It is caught as an IDSP disease is (`IdspDiseases.Tuberculosis`): a diagnosis A15–A19,
+or *Mycobacterium tuberculosis* grown, opens a case, and a later one within a year (treatment runs six months or more) is
+the same case. It is not on the IHIP forms. Each new case alerts the holders of `mrd.idsp.report` to notify it on
+Ni-kshay ("Notify on Ni-kshay: Tuberculosis", no patient details), and it waits on the register, longest first, until
+its Ni-kshay ID and the day it was notified are recorded (from the day of its first diagnosis or result to today;
+recording again corrects them). A case diagnosed elsewhere and treated here is added by hand, as disease `TB`, and
+alerts as any new case does. Not built: sending to Ni-kshay (each case is notified by hand on the portal), and the
+chemist's notification of anti-TB medicines sold.
 
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
-| GET | `/idsp/diseases` | mrd.idsp.report | → `IdspDiseaseDto[]` (code, name, outbreak-prone, ICD-10 codes) |
+| GET | `/idsp/diseases` | mrd.idsp.report | → `IdspDiseaseDto[]` (code, name, outbreak-prone, notified on Ni-kshay, ICD-10 codes): the IDSP list and tuberculosis |
 | GET | `/idsp/weeks` | mrd.idsp.report | → `IdspOverview` (this week and the eight before it, with P and L counts, reported, overdue; outbreak-prone cases of the last two weeks) |
 | GET | `/idsp/weeks/{year}/{week}` · `/export?form=Presumptive\|Laboratory` | mrd.idsp.report | → `IdspWeekDto` (both forms' cases and reports, the discarded cases) / the line list CSV |
 | PUT | `/idsp/weeks/{year}/{week}/{form}` | mrd.idsp.report | `ReportIdspWeekRequest{reportedOn, reference, version?}`: the form as sent; 422 `idsp.week_not_over` before the week ends |
 | GET | `/idsp/cases/{id}` | mrd.idsp.report | → `IdspCaseRow` |
-| POST | `/idsp/cases` | mrd.idsp.report | `AddIdspCaseRequest{patientId, diseaseCode, onsetDate, testName, testResult}`; 409 `idsp.case_exists` within 30 days |
+| POST | `/idsp/cases` | mrd.idsp.report | `AddIdspCaseRequest{patientId, diseaseCode, onsetDate, testName, testResult}`; 409 `idsp.case_exists` within 30 days (a year for TB) |
 | POST | `/idsp/cases/{id}/discard` | mrd.idsp.report | `DiscardIdspCaseRequest{reason, version}` |
+| GET | `/idsp/tuberculosis` | mrd.idsp.report | → `IdspTuberculosisDto{toNotify, notified}`: TB cases waiting for their Ni-kshay ID (longest first), and those notified in the last 90 days; audited |
+| POST | `/idsp/cases/{id}/nikshay` | mrd.idsp.report | `RecordNikshayRequest{nikshayId, notifiedOn, version}` → `IdspCaseRow`; 422 `idsp.not_nikshay` for another disease, `idsp.case_discarded` |
 
 #### Coding for insurance claims
 
