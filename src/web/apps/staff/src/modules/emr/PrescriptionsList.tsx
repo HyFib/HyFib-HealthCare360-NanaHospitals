@@ -26,6 +26,7 @@ import {
   ArrowSyncRegular,
   DismissRegular,
   DocumentArrowDownRegular,
+  LinkRegular,
   MoreHorizontalRegular,
   OpenRegular,
   PrintRegular,
@@ -38,6 +39,7 @@ import { useState } from 'react';
 import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { printServerDocument, useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
+import { AbdmLinkDialog } from './AbdmLinkButton';
 import { useAbdmRecordDownload, useAbdmRecordsAvailable } from './abdmRecords';
 import { emrKeys } from './api';
 import { directionsText } from './dosing';
@@ -256,6 +258,7 @@ export function PrescriptionsList({
   const [page, setPage] = useState(1);
   const [cancelling, setCancelling] = useState<PrescriptionListItem | null>(null);
   const [refilling, setRefilling] = useState<string | null>(null);
+  const [linking, setLinking] = useState<PrescriptionListItem | null>(null);
   const list = useQuery(prescriptionQueries.list(patientId, { encounterId, page }));
   const rows = (list.data?.items ?? []).filter((p) => !excludeDrafts || p.status !== 'Draft');
 
@@ -343,12 +346,17 @@ export function PrescriptionsList({
                       Download PDF
                     </MenuItem>
                     {abdmAvailable && (
-                      <MenuItem
-                        icon={<DocumentArrowDownRegular />}
-                        onClick={() => abdmDownload.mutate(abdmPrescriptionBundle(p.id))}
-                      >
-                        Download ABDM record
-                      </MenuItem>
+                      <>
+                        <MenuItem
+                          icon={<DocumentArrowDownRegular />}
+                          onClick={() => abdmDownload.mutate(abdmPrescriptionBundle(p.id))}
+                        >
+                          Download ABDM record
+                        </MenuItem>
+                        <MenuItem icon={<LinkRegular />} onClick={() => setLinking(p)}>
+                          Link to patient&apos;s ABHA
+                        </MenuItem>
+                      </>
                     )}
                   </>
                 )}
@@ -397,6 +405,12 @@ export function PrescriptionsList({
         onCancel={() => setCancelling(null)}
       />
       <RefillDialog prescriptionId={refilling} patientId={patientId} onClose={() => setRefilling(null)} />
+      <AbdmLinkDialog
+        record={{ type: 'Prescription', id: linking?.id ?? '' }}
+        what={`prescription ${linking?.prescriptionNumber ?? ''}`.trim()}
+        open={linking !== null}
+        onClose={() => setLinking(null)}
+      />
     </>
   );
 }

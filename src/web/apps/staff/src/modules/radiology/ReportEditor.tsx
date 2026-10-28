@@ -47,6 +47,7 @@ import { useBaseVersion } from '@/lib/baseVersion';
 import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
+import { AbdmLinkButton } from '@/modules/emr/AbdmLinkButton';
 import { imagingReportExportable } from '@/modules/lab/common/abdm';
 import { AbdmReportButton } from '@/modules/lab/common/AbdmReportButton';
 import { CriticalCallDialog } from '@/modules/lab/common/CriticalCallDialog';
@@ -636,7 +637,10 @@ function SignedReport({
           )}
           <DocumentButtons path={radiologyReportDocument(study.id)} />
           {imagingReportExportable(report.status) && (
-            <AbdmReportButton path={abdmRadiologyReportBundle(report.id)} what="radiology report" />
+            <>
+              <AbdmReportButton path={abdmRadiologyReportBundle(report.id)} what="radiology report" />
+              <AbdmLinkButton record={{ type: 'RadiologyReport', id: report.id }} what="radiology report" />
+            </>
           )}
           {canVerify && (report.status === 'Verified' || report.status === 'Released') && (
             <Button icon={<AddRegular />} onClick={() => setAddendum(true)}>

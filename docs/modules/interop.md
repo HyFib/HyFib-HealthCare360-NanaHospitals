@@ -356,10 +356,10 @@ ABHA numbers, end in).
   entries }`.
 * **Staff app**, for users with `abdm.export` while the switch is on; a refusal is shown with the server's reason:
   **Download ABDM record** on a signed or amended discharge summary (patient chart > Admissions > Discharge summary;
-  disabled while it has unsaved changes, hidden while it is being amended) and in the menu of a signed prescription
-  (the patient chart's and the encounter's prescriptions). Lab reports, radiology reports and consultations are exported through the API,
-  which is also what the hospital's staff call for NHA's sandbox testing. Linking records to the patient's ABHA is
-  API-only too in this release.
+  disabled while it has unsaved changes, hidden while it is being amended), on a signed consultation (the encounter),
+  on a released lab, radiology or cardiology report, and in the menu of a signed prescription (the patient chart's and
+  the encounter's prescriptions). **Link to patient's ABHA** sits beside it on each
+  ([Linking](#linking-records-to-the-patients-abha-abdm-m2)).
 
 ### The documents
 
@@ -529,6 +529,14 @@ sees in their PHR app and can later consent to share (`AbdmLinkingService`).
 The token is kept per HIP id and ABHA address, encrypted like other secrets in the database (`IFieldProtector`), and
 never returned by the API. The request is answered 202 also when the gateway refused it at once or could not be
 reached: its view then says `Failed` and why. A failed request is not retried by HC360: staff link the records again.
+
+On the screens, **Link to patient's ABHA** sits beside **Download ABDM record**, on the records the export sends:
+a signed consultation, an issued prescription (in its row's menu), a released lab, radiology or cardiology report and
+a signed discharge summary. It is offered while ABDM health records are switched on, to staff with `abdm.export`. It
+asks first, then links that one record (`useAbdmLink`). The screen asks after the request every five seconds for two
+minutes and says that ABDM linked it, why it did not, or that it has not answered yet; a dropped WiFi connection is
+asked again. The server says at once why it cannot link a record: no ABHA address or year of birth on the patient, or
+the gateway not set up.
 
 #### Linking from the patient's PHR app (user-initiated, ABDM M2)
 

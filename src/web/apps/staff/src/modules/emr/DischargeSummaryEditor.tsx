@@ -40,6 +40,7 @@ import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { IcdCodePicker } from '@/modules/mrd/CodePicker';
+import { AbdmLinkButton } from './AbdmLinkButton';
 import { AbdmRecordButton } from './AbdmRecordButton';
 import {
   dischargeSummaryDocument,
@@ -472,7 +473,16 @@ export function DischargeSummaryEditor({
         {current && (
           <DocumentButtons path={dischargeSummaryDocument(current.id)} printLabel="Print (A4)" disabled={isDirty} />
         )}
-        {current && signedOrAmended && !amending && <AbdmRecordButton summaryId={current.id} disabled={isDirty} />}
+        {current && signedOrAmended && !amending && (
+          <>
+            <AbdmRecordButton summaryId={current.id} disabled={isDirty} />
+            <AbdmLinkButton
+              record={{ type: 'DischargeSummary', id: current.id }}
+              what="discharge summary"
+              disabled={isDirty}
+            />
+          </>
+        )}
         {canWrite && !signedOrAmended && (
           <>
             <Button

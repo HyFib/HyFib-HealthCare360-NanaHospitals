@@ -7,6 +7,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
+import { AbdmLinkButton } from '@/modules/emr/AbdmLinkButton';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { AmendReportDialog } from '@/modules/lab/AmendReportDialog';
 import {
@@ -134,7 +135,10 @@ function LabReportPage() {
               printAppearance={canVerify && waiting.length > 0 ? 'secondary' : 'primary'}
             />
             {labReportExportable(view.status) && (
-              <AbdmReportButton path={abdmLabReportBundle(view.reportId)} what="lab report" />
+              <>
+                <AbdmReportButton path={abdmLabReportBundle(view.reportId)} what="lab report" />
+                <AbdmLinkButton record={{ type: 'LabReport', id: view.reportId }} what="lab report" />
+              </>
             )}
             {canVerify && releasedTests(view) > 0 && (
               <Button icon={<EditRegular />} onClick={() => setAmending(true)}>

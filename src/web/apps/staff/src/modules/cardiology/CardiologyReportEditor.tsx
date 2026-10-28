@@ -46,6 +46,7 @@ import { useBaseVersion } from '@/lib/baseVersion';
 import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
+import { AbdmLinkButton } from '@/modules/emr/AbdmLinkButton';
 import { parseAgeYears } from '@/modules/lab/common/banner';
 import { imagingReportExportable } from '@/modules/lab/common/abdm';
 import { AbdmReportButton } from '@/modules/lab/common/AbdmReportButton';
@@ -1063,7 +1064,10 @@ function SignedReport({
           )}
           <DocumentButtons path={cardiologyReportDocument(study.id)} />
           {imagingReportExportable(report.status) && (
-            <AbdmReportButton path={abdmCardiologyReportBundle(report.id)} what="cardiology report" />
+            <>
+              <AbdmReportButton path={abdmCardiologyReportBundle(report.id)} what="cardiology report" />
+              <AbdmLinkButton record={{ type: 'CardiologyReport', id: report.id }} what="cardiology report" />
+            </>
           )}
         </>
       }
