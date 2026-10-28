@@ -14,7 +14,8 @@ namespace HyFib.HealthCare360.Platform.Identity;
 /// one password. The demonstration accounts get their password only on development machines (<see cref="IdentitySeeder"/>),
 /// and a test server runs as in production, so its load test needs accounts of its own, made with
 /// <c>HyFib.HealthCare360.Server.exe loadtest accounts --count N</c>. An account made before takes the new password, so a
-/// run can always sign in. Only on a server set up with demonstration data, as the synthetic patients.
+/// run can always sign in. Only on a server set up with demonstration data, in a database made for it
+/// (<see cref="TrainingDatabase"/>), as the synthetic patients.
 /// </summary>
 public sealed class LoadTestAccounts(HospitalDbContext db, PasswordHashing hashing, IOptions<PlatformOptions> options)
 {
@@ -30,10 +31,12 @@ public sealed class LoadTestAccounts(HospitalDbContext db, PasswordHashing hashi
     public async Task<Result<IReadOnlyList<string>>> EnsureAsync(int count, string password, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(password);
-        if (!options.Value.SeedDemoData)
+        // The setting alone could be turned on for a live database, and this runs without starting the server.
+        if (!options.Value.SeedDemoData || !await TrainingDatabase.IsTrainingAsync(db, cancellationToken))
         {
             return Error.Rule("loadtest.not_demo",
-                "Load test accounts are made only on a server set up with demonstration data (HealthCare360:SeedDemoData), never on a hospital's live server.");
+                "Load test accounts are made only on a server set up with demonstration data (HealthCare360:SeedDemoData) and " +
+                "started with it on a database of its own, never on a hospital's live server.");
         }
 
         if (count is < 1 or > MaxAccounts)

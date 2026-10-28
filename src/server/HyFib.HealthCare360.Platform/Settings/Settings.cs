@@ -339,6 +339,11 @@ internal static class SettingsEndpoints
                 return Error.Field("key", "Use letters, digits, dots, dashes or underscores.").ToProblem();
             }
 
+            if (TrainingDatabase.Problem(key) is { } serverSet)
+            {
+                return Error.Field("key", serverSet).ToProblem();
+            }
+
             // A setting with rules of its own is refused here, not read leniently later (a default, or the nearest value allowed).
             if ((AntiAutomationSettings.Problem(key, request.Value)
                  ?? AdministrationOnDesktop.Problem(key, request.Value, request.FacilityId)
