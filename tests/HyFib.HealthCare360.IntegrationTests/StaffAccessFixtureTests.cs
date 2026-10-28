@@ -11,13 +11,17 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// The staff app's role-access check (src/web/apps/staff/src/test/roleAccess.ts) opens every menu link and record screen
 /// as every built-in role and fails for a screen that asks the server for something the role may not read, or shows a
-/// button that sends what the role may not do. It reads the roles' permissions and the API's permission rules from
-/// <c>serverAccess.json</c>, kept beside it; this test fails when that file no longer says what the server does. Write
-/// it again with HC360_WRITE_ACCESS_FIXTURE=1.
+/// button that sends what the role may not do, and for a screen that calls a path or method the server does not have.
+/// It reads the roles' permissions and the API's routes with their permission rules from <c>serverAccess.json</c>, kept
+/// beside it; this test fails when that file no longer says what the server does. Write it again with
+/// HC360_WRITE_ACCESS_FIXTURE=1.
 /// </summary>
 public sealed class StaffAccessFixtureTests(HospitalServer server)
 {
     private const string WriteVariable = "HC360_WRITE_ACCESS_FIXTURE";
+
+    /// <summary>The rule of a route that asks for no permission: any signed-in user, or anyone.</summary>
+    private const string NoPermission = "-";
 
     [Fact]
     public void The_staff_apps_copy_of_roles_and_read_rules_matches_the_server()
@@ -31,7 +35,7 @@ public sealed class StaffAccessFixtureTests(HospitalServer server)
 
         var committed = File.Exists(file) ? File.ReadAllText(file).ReplaceLineEndings("\n") : "";
         committed.ShouldBe(current,
-            $"{Path.GetFileName(file)} no longer matches the server's built-in roles or the permissions its GET endpoints ask for. " +
+            $"{Path.GetFileName(file)} no longer matches the server's built-in roles, or its routes and the permissions they ask for. " +
             $"Run StaffAccessFixtureTests with {WriteVariable}=1 to write it again, and commit it.");
     }
 
@@ -55,8 +59,9 @@ public sealed class StaffAccessFixtureTests(HospitalServer server)
     }
 
     /// <summary>
-    /// The built-in roles' permissions (as seeded), the permission rules of every GET under /api, and of every write
-    /// (POST, PUT, PATCH, DELETE) as "METHOD path rules".
+    /// The built-in roles' permissions (as seeded), and every route under /api with its permission rules: each GET as
+    /// "path rules", each write (POST, PUT, PATCH, DELETE) as "METHOD path rules", and "-" for a route that asks for no
+    /// permission, so that a call to a route the server does not have is told apart from one that needs none.
     /// </summary>
     private string Describe()
     {
@@ -80,19 +85,20 @@ public sealed class StaffAccessFixtureTests(HospitalServer server)
                 .Where(p => p?.StartsWith(PermissionPolicyProvider.Prefix, StringComparison.Ordinal) == true)
                 .Select(p => p![PermissionPolicyProvider.Prefix.Length..])
                 .ToArray();
-            if (!path.StartsWith("/api/", StringComparison.Ordinal) || rules.Length == 0)
+            if (!path.StartsWith("/api/", StringComparison.Ordinal))
             {
                 continue;
             }
 
+            var rule = rules.Length == 0 ? NoPermission : string.Join(',', rules);
             if (methods.Contains("GET"))
             {
-                reads.Add($"{path} {string.Join(',', rules)}");
+                reads.Add($"{path} {rule}");
             }
 
             foreach (var method in methods.Where(m => m is "POST" or "PUT" or "PATCH" or "DELETE"))
             {
-                writes.Add($"{method} {path} {string.Join(',', rules)}");
+                writes.Add($"{method} {path} {rule}");
             }
         }
 
