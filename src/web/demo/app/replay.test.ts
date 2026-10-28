@@ -1,7 +1,7 @@
 // The replay's rules (replay.ts), with Node's own test runner: node --test demo/
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
-import { Replay, type Answer, type DemoData, type RoleRecording } from './replay.ts';
+import { MISSED, Replay, type Answer, type DemoData, type RoleRecording } from './replay.ts';
 
 // The browser globals the replay touches, as plain stand-ins.
 const store = new Map<string, string>();
@@ -107,6 +107,15 @@ describe('the replay', () => {
       replay.misses.map((m) => m.request),
       ['GET /api/v1/patients/p1'],
     );
+  });
+
+  it('tells the page when a screen asks for something the walk did not record', async () => {
+    const told: unknown[] = [];
+    const listen = (event: Event) => told.push((event as CustomEvent).detail);
+    window.addEventListener(MISSED, listen);
+    await ask(replay, 'GET', '/api/v1/patients/p2');
+    window.removeEventListener(MISSED, listen);
+    assert.deepEqual(told, [{ role: 'frontoffice', request: 'GET /api/v1/patients/p2', screen: '/' }]);
   });
 
   it('replays a recorded read that is a POST, and refuses every write', async () => {

@@ -13,7 +13,7 @@ import { ArrowSwapRegular, CompassNorthwestRegular } from '@fluentui/react-icons
 import { useEffect, useState } from 'react';
 import type { DemoMeta } from './install';
 import { PERSONAS } from './personas';
-import { currentRole, ROLE_CHANGED } from './replay';
+import { currentRole, MISSED, ROLE_CHANGED } from './replay';
 
 const useStyles = makeStyles({
   // At the foot of the navigation column and no wider than it (the page gives the navigation room to scroll its last
@@ -49,8 +49,16 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorNeutralForeground2,
   },
+  missed: {
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+    color: tokens.colorNeutralForeground1,
+  },
   actions: { display: 'flex', gap: '2px', marginLeft: '-8px' },
 });
+
+/** How long the badge explains a screen the demo has no recording for. */
+const MISSED_FOR_MS = 8000;
 
 export interface DemoBadgeProps {
   meta: DemoMeta;
@@ -60,7 +68,10 @@ export interface DemoBadgeProps {
   changeRole: () => void;
 }
 
-/** Says, on every screen, that this is the read-only demo and who you are in it; leads to the role's tour. */
+/**
+ * Says, on every screen, that this is the read-only demo and who you are in it; leads to the role's tour, and explains
+ * a screen the walk did not record (the app shows its own "not found" there).
+ */
 export function DemoBadge({ meta, navigate, changeRole }: DemoBadgeProps) {
   const styles = useStyles();
   const [role, setRole] = useState(currentRole);
@@ -68,6 +79,20 @@ export function DemoBadge({ meta, navigate, changeRole }: DemoBadgeProps) {
     const update = () => setRole(currentRole());
     window.addEventListener(ROLE_CHANGED, update);
     return () => window.removeEventListener(ROLE_CHANGED, update);
+  }, []);
+  const [missed, setMissed] = useState(false);
+  useEffect(() => {
+    let timer: number | undefined;
+    const explain = () => {
+      setMissed(true);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setMissed(false), MISSED_FOR_MS);
+    };
+    window.addEventListener(MISSED, explain);
+    return () => {
+      window.removeEventListener(MISSED, explain);
+      window.clearTimeout(timer);
+    };
   }, []);
   const person = meta.roles.find((r) => r.role === role);
   const places = PERSONAS.find((p) => p.role === role)?.places ?? [];
@@ -80,6 +105,10 @@ export function DemoBadge({ meta, navigate, changeRole }: DemoBadgeProps) {
           {person.displayName}, {person.roleName}
         </span>
       )}
+      <span className={styles.missed} role="status">
+        {missed &&
+          'This screen was not recorded for the demo, so parts of it are missing. The Tour has the ones that were.'}
+      </span>
       <span className={styles.actions}>
         {places.length > 0 && (
           <Menu>

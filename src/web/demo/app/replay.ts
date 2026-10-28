@@ -73,6 +73,11 @@ const WRONG_PASSWORD = {
 
 /** Raised on window when the demo's role changes: signed in as one, or signed out. */
 export const ROLE_CHANGED = 'hc360-demo:role';
+/**
+ * Raised on window, with the Miss as its detail, when a screen asks for something the walk did not record: the app
+ * then shows its own "not found", which the demo's badge explains.
+ */
+export const MISSED = 'hc360-demo:missed';
 
 /** The role signed in, kept for the tab (a reload stays signed in); in memory where the browser keeps no storage. */
 let memoryRole: string | null = null;
@@ -228,7 +233,9 @@ export class Replay {
     if (found) return this.respond(found.answer, found.adjust);
     if (method !== 'GET') return problem(403, READ_ONLY);
     const screen = (window as { HC360_DEMO_HERE?: () => string }).HC360_DEMO_HERE?.() ?? '/';
-    this.misses.push({ role, request: `${method} ${path}${url.search}`, screen });
+    const miss: Miss = { role, request: `${method} ${path}${url.search}`, screen };
+    this.misses.push(miss);
+    window.dispatchEvent(new CustomEvent(MISSED, { detail: miss }));
     return problem(404, NOT_RECORDED);
   }
 

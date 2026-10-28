@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "typeRoots": ["../apps/staff/node_modules/@types", "../apps/staff/node_modules"],
+    "types": ["node", "vite/client"],
+    "paths": {
+      "@/*": ["../apps/staff/src/*"],
+      "@hc360/core": ["../packages/core/src/index.ts"],
+      "@hc360/ui": ["../packages/ui/src/index.ts"],
+      "*": ["../apps/staff/node_modules/@types/*", "../apps/staff/node_modules/*"]
+    }
+  },
+  "include": ["app"]
+}

@@ -295,7 +295,11 @@ jobs:
       - name: Unit tests
         run: pnpm -r test
 
-      # The rules the shareable demo answers the staff app by (src/web/demo/README.md).
+      # The shareable demo (src/web/demo/README.md): it starts the staff app as main.tsx does, so it is checked against it,
+      # and the rules it answers the app by.
+      - name: Demo type check
+        run: pnpm exec tsc -p demo
+
       - name: Demo replay tests
         run: node --test "demo/**/*.test.ts"
 
