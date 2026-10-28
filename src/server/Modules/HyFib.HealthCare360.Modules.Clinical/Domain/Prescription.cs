@@ -34,13 +34,18 @@ public enum DoseFrequency
     Weekly,
 }
 
-/// <summary>What the prescriber confirmed when signing (safety override, controlled-drug confirmation).</summary>
+/// <summary>
+/// What the prescriber confirmed when signing (safety override, controlled-drug confirmation), and their registration
+/// number and council as their practitioner record had them then.
+/// </summary>
 public sealed record PrescriptionSignature(
     Guid? UserId,
     string VerificationToken,
     string? OverrideReason,
     string? SafetyAlertsJson,
-    bool ControlledDrugsConfirmed);
+    bool ControlledDrugsConfirmed,
+    string? RegistrationNumber = null,
+    string? RegistrationCouncil = null);
 
 /// <summary>
 /// The doctor's Digital Signature Certificate signature over the prescription's canonical bytes (ERX-04), as checked
@@ -87,6 +92,15 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
     public DateTimeOffset PrescribedAt { get; set; }
     public DateTimeOffset? SignedAt { get; private set; }
     public Guid? SignedByUserId { get; private set; }
+
+    /// <summary>
+    /// The prescriber's registration number and council as their practitioner record had them when the prescription was
+    /// signed: every copy of it carries these (MCI Regulations 2002, 1.4.1), whatever the record says later. Null on a
+    /// draft, and on a prescription signed before HC360 kept them.
+    /// </summary>
+    public string? PrescriberRegistrationNumber { get; private set; }
+
+    public string? PrescriberRegistrationCouncil { get; private set; }
 
     /// <summary>Notes for the pharmacist/nurse.</summary>
     public string? Notes { get; set; }
@@ -213,6 +227,8 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         Status = PrescriptionStatus.Signed;
         SignedAt = now;
         SignedByUserId = signature.UserId;
+        PrescriberRegistrationNumber = signature.RegistrationNumber;
+        PrescriberRegistrationCouncil = signature.RegistrationCouncil;
         VerificationToken = signature.VerificationToken;
         SafetyOverrideReason = string.IsNullOrWhiteSpace(signature.OverrideReason) ? null : signature.OverrideReason.Trim();
         SafetyAlerts = signature.SafetyAlertsJson;

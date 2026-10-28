@@ -38,7 +38,7 @@ internal static class PrescriptionVerificationEndpoints
             return Error.NotFound("Prescription").ToProblem();
         }
 
-        var prescriber = await PrintQueries.PrescriberAsync(db, rx.PractitionerId, ct);
+        var prescriber = await PrintQueries.PrescriberAsync(db, rx, ct);
         var facility = await db.Set<Facility>().AsNoTracking().IgnoreQueryFilters().Where(f => f.Id == rx.FacilityId).Select(f => f.Name).FirstOrDefaultAsync(ct);
         var registration = prescriber?.RegistrationNumber is { } number
             ? string.IsNullOrWhiteSpace(prescriber.RegistrationCouncil) ? number : $"{number} ({prescriber.RegistrationCouncil})"

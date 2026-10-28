@@ -90,7 +90,7 @@ internal static class PortalEndpoints
         }
 
         await audit.PatientRecordAccessedAsync(p.PatientId, $"Portal: viewed prescription {p.PrescriptionNumber}", ct);
-        var prescriber = await PrintQueries.PrescriberAsync(db, p.PractitionerId, ct);
+        var prescriber = await PrintQueries.PrescriberAsync(db, p, ct);
         var facility = await db.Set<Facility>().AsNoTracking().IgnoreQueryFilters().Where(f => f.Id == p.FacilityId).Select(f => f.Name).FirstOrDefaultAsync(ct);
         var lines = p.Items.OrderBy(i => i.Sequence).Select(i =>
         {

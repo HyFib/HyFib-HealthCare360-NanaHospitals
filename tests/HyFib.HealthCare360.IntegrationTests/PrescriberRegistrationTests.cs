@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +14,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// A prescription carries the prescriber's registration number: every physician shows the number the State Medical
 /// Council or the national register gave them on all their prescriptions (Indian Medical Council (Professional Conduct,
-/// Etiquette and Ethics) Regulations 2002, 1.4.1). A prescriber whose practitioner record has none cannot sign one.
+/// Etiquette and Ethics) Regulations 2002, 1.4.1). A prescriber whose practitioner record has none cannot sign one, and a
+/// signed prescription keeps the number it was signed with.
 /// </summary>
 public sealed class PrescriberRegistrationTests(HospitalServer server)
 {
@@ -57,6 +59,34 @@ public sealed class PrescriberRegistrationTests(HospitalServer server)
         var signed = await doctor.PostAsync<SignPrescriptionResult>($"{Prescriptions}/{draft.Id}/sign",
             new SignPrescriptionRequest(OverrideReason: null, AcknowledgeWarnings: true, ConfirmControlledDrugs: false, draft.Version));
         signed.Prescription.Status.ShouldBe(PrescriptionStatus.Signed);
+
+        // Every copy carries the number it was signed with, whatever the practitioner record says later: corrected, or
+        // cleared.
+        var token = await TokenAsync(draft.Id);
+        var pharmacist = server.Anonymous(ownAddress: true);
+        foreach (var later in new[] { "TNMC 99999", null })
+        {
+            await RegistrationAsync(practitionerId, later);
+            try
+            {
+                var reprint = (await doctor.GetAsync<PrintableDocumentDto>($"{Prescriptions}/{draft.Id}/document")).Html;
+                reprint.ShouldContain(registration!);
+                reprint.ShouldNotContain("TNMC 99999");
+                var checkedByQr = await pharmacist.GetAsync<PrescriptionVerification>($"/api/v1/public/prescriptions/verify/{token}");
+                checkedByQr.RegistrationNumber.ShouldNotBeNull().ShouldStartWith(registration!);
+            }
+            finally
+            {
+                await RegistrationAsync(practitionerId, registration);
+            }
+        }
+    }
+
+    private async Task<string> TokenAsync(Guid prescriptionId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Prescription>().IgnoreQueryFilters()
+            .Where(p => p.Id == prescriptionId).Select(p => p.VerificationToken!).SingleAsync(Ct);
     }
 
     /// <summary>Sets the practitioner's registration number; returns the one it had.</summary>

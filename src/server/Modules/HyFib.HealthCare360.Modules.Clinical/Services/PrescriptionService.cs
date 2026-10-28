@@ -313,11 +313,12 @@ public sealed class PrescriptionService(
     {
         // A prescription carries the prescriber's registration number (Indian Medical Council (Professional Conduct,
         // Etiquette and Ethics) Regulations 2002, 1.4.1): one whose record has none is not signed.
+        // The number and council are kept on the prescription as they are now, for every copy of it.
         var registration = await db.Set<Practitioner>().AsNoTracking()
             .Where(p => p.Id == prescription.PractitionerId)
-            .Select(p => p.RegistrationNumber)
+            .Select(p => new { Number = p.RegistrationNumber, Council = p.RegistrationCouncil })
             .FirstOrDefaultAsync(ct);
-        if (string.IsNullOrWhiteSpace(registration))
+        if (registration is null || string.IsNullOrWhiteSpace(registration.Number))
         {
             return Error.Rule("prescription.registration_missing",
                 "The prescriber's medical council registration number is not on their practitioner record, and a prescription must carry it. "
@@ -347,7 +348,8 @@ public sealed class PrescriptionService(
         }
 
         var signature = new PrescriptionSignature(currentUser.UserId, NewVerificationToken(), check.IsBlocked ? overrideReason : null,
-            JsonSerializer.Serialize(check.Alerts, JsonOptions), confirmControlledDrugs);
+            JsonSerializer.Serialize(check.Alerts, JsonOptions), confirmControlledDrugs, registration.Number.Trim(),
+            string.IsNullOrWhiteSpace(registration.Council) ? null : registration.Council.Trim());
         var signed = prescription.Sign(signature, time.GetUtcNow());
         if (signed.IsFailure)
         {
