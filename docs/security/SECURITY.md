@@ -496,8 +496,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     as critical.
   - Critical System health warnings are not left for someone to open the page: every five minutes the server that runs
     the jobs tells each new one to everyone who may see System health, in the app, and to the IT on-call number by SMS
-    (and WhatsApp when switched on), as Wi-Fi alerts are. A warning is told once while it lasts, and again if it clears
-    and comes back. Its SMS waits out an internet outage for up to seven days. The Wi-Fi warnings are left to the Wi-Fi
+    (and WhatsApp when switched on), as Wi-Fi alerts are. A warning is told again every day while it lasts, so one put
+    off at go-live, such as nobody holding the backup recovery key, is not forgotten, and at once if it clears and comes
+    back. Its SMS waits out an internet outage until the next day's is due. The Wi-Fi warnings are left to the Wi-Fi
     monitor, which tells them as they happen.
   - *Export for auditors* writes the sealed entries of a period, contiguous by position, with their hashes, seals and the
     anchors in range, to a JSON file (`audit.exported` is audited). An auditor checks it on any machine with
