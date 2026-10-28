@@ -170,15 +170,54 @@ public sealed class BiometricPullTests(HospitalServer server)
         ], ignoreOrder: true);
     }
 
-    private static Task<HttpResponseMessage> PushAsync(HttpClient http, string serial, string key)
+    /// <summary>A terminal pushes <paramref name="punches"/>, or a punch a minute ago of a PIN nobody has.</summary>
+    private static Task<HttpResponseMessage> PushAsync(HttpClient http, string serial, string key, params DevicePunchInput[] punches)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/hr/attendance/device-punches")
         {
-            Content = JsonContent.Create(new DevicePunchBatch([new DevicePunchInput(Pin(), DateTimeOffset.UtcNow.AddMinutes(-1), null, null)])),
+            Content = JsonContent.Create(new DevicePunchBatch(punches.Length > 0 ? punches : [new DevicePunchInput(Pin(), DateTimeOffset.UtcNow.AddMinutes(-1), null, null)])),
         };
         request.Headers.Add("X-Device-Serial", serial);
         request.Headers.Add("X-Device-Key", key);
         return http.SendAsync(request, Ct);
+    }
+
+    [Fact]
+    public async Task HR_sees_the_PINs_no_employee_has_most_punched_first()
+    {
+        var hr = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var serial = Serial();
+        var pushing = await hr.PostAsync<DeviceKeyIssued>("/api/v1/hr/biometric-devices", Terminal(serial, BiometricConnection.Push, null));
+        await using (var legacy = server.Services.CreateAsyncScope())
+        {
+            await Devices(legacy).Where(d => d.Id == pushing.DeviceId).ExecuteUpdateAsync(s => s.SetProperty(d => d.AllowedIpAddress, (string?)null), Ct);
+        }
+
+        // Someone punches with a PIN no employee was given, twice, and someone else once: an enrolment typo to fix.
+        var twice = Pin();
+        var once = Pin();
+        while (once == twice)
+        {
+            once = Pin();
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        using (var pushed = await PushAsync(server.Anonymous().Http, serial, pushing.ApiKey!,
+                   new DevicePunchInput(twice, now.AddMinutes(-30), null, null),
+                   new DevicePunchInput(twice, now.AddMinutes(-20), null, null),
+                   new DevicePunchInput(once, now.AddMinutes(-10), null, null)))
+        {
+            pushed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+
+        var unmatched = await hr.GetAsync<List<UnmatchedPinDto>>("/api/v1/hr/attendance/unmatched-pins");
+
+        var shown = unmatched.Where(p => p.Pin == twice || p.Pin == once).ToList();
+        shown.Select(p => p.Pin).ShouldBe([twice, once], "the PIN punched most comes first");
+        shown[0].ShouldSatisfyAllConditions(
+            p => p.PunchCount.ShouldBe(2),
+            p => p.FirstPunchAt.ShouldBe(now.AddMinutes(-30), TimeSpan.FromSeconds(1)),
+            p => p.LastPunchAt.ShouldBe(now.AddMinutes(-20), TimeSpan.FromSeconds(1)));
     }
 
     [Fact]
