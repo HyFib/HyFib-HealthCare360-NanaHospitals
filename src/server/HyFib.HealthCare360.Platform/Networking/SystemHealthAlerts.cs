@@ -15,17 +15,22 @@ namespace HyFib.HealthCare360.Platform.Networking;
 /// Tells people when System health turns critical, rather than waiting for someone to open it (DED-17): every five
 /// minutes the server that runs the jobs builds the report, and each critical warning that was not there at the last check
 /// goes to everyone who may see System health, in the app, and to the IT on-call number by SMS (and WhatsApp when the
-/// hospital turned it on), as Wi-Fi alerts do (<see cref="WifiMonitor"/>). A warning is told once while it lasts, and again
-/// when it clears and comes back; after a restart the ones still there are told once more. The WiFi warnings are the WiFi
-/// monitor's to tell: it tells a drop, a lost adapter or an insecure network as it happens, and not at all where the
-/// hospital turned it off.
+/// hospital turned it on), as Wi-Fi alerts do (<see cref="WifiMonitor"/>). A warning is told again a day after it was
+/// last told while it lasts, so one put off at go-live, such as nobody holding the backups' recovery key, is not forgotten
+/// (audit P8); and again as soon as it clears and comes back. After a restart the ones still there are told once more.
+/// The WiFi warnings are the WiFi monitor's to tell: it tells a drop, a lost adapter or an insecure network as it happens,
+/// and not at all where the hospital turned it off.
 /// </summary>
 internal sealed class SystemHealthAlerts(
     IServiceScopeFactory scopeFactory, IOptions<PlatformOptions> options, TimeProvider time, ILogger<SystemHealthAlerts> logger) : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
 
-    private readonly HashSet<string> _told = new(StringComparer.Ordinal);
+    /// <summary>How long after it was told a warning that lasts is told again.</summary>
+    public static readonly TimeSpan RemindAfter = TimeSpan.FromDays(1);
+
+    // When each warning still there was last told.
+    private readonly Dictionary<string, DateTimeOffset> _told = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _checking = new(1, 1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -49,7 +54,7 @@ internal sealed class SystemHealthAlerts(
         }
     }
 
-    /// <summary>One check: tells the critical warnings not told since they appeared, and returns them.</summary>
+    /// <summary>One check: tells the critical warnings not told since they appeared, or not for a day, and returns them.</summary>
     public async Task<IReadOnlyList<HealthWarning>> CheckAsync(CancellationToken cancellationToken)
     {
         await _checking.WaitAsync(cancellationToken);
@@ -62,8 +67,13 @@ internal sealed class SystemHealthAlerts(
                 .ToList();
 
             // One that cleared is told again if it comes back.
-            _told.IntersectWith(critical.Select(Key));
-            var fresh = critical.Where(w => !_told.Contains(Key(w))).ToList();
+            foreach (var cleared in _told.Keys.Except(critical.Select(Key)).ToList())
+            {
+                _told.Remove(cleared);
+            }
+
+            var now = time.GetUtcNow();
+            var fresh = critical.Where(w => !_told.TryGetValue(Key(w), out var told) || now - told >= RemindAfter).ToList();
             if (fresh.Count == 0)
             {
                 return fresh;
@@ -77,18 +87,21 @@ internal sealed class SystemHealthAlerts(
                 await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, "System health: critical",
                     warning.Server is null ? warning.Message : $"{warning.Message} (server {warning.Server})", "/admin/system", "system", "critical", cancellationToken);
 
-                // Tried through an internet outage as long as any message, not the six hours a WiFi alert is: the warning is
-                // told once while it lasts, so a message that expired unsent would not be sent again.
+                // Tried through an internet outage until the reminder after it is due, which takes its place while the warning
+                // lasts: the outage ends with one message, not one for every day it lasted.
                 if (!string.IsNullOrWhiteSpace(onCall.Phone))
                 {
                     notifications.Queue("system.alert", new NotificationRecipient(Phone.Normalize(onCall.Phone), null, null, "IT on-call"),
                         new Dictionary<string, string> { ["server"] = server, ["message"] = warning.Message },
-                        onCall.WhatsApp ? [NotificationChannel.Sms, NotificationChannel.WhatsApp] : [NotificationChannel.Sms]);
+                        onCall.WhatsApp ? [NotificationChannel.Sms, NotificationChannel.WhatsApp] : [NotificationChannel.Sms], RemindAfter);
                 }
             }
 
             await services.GetRequiredService<HospitalDbContext>().SaveChangesAsync(cancellationToken);
-            _told.UnionWith(fresh.Select(Key));
+            foreach (var warning in fresh)
+            {
+                _told[Key(warning)] = now;
+            }
             logger.LogWarning("System health is critical: {Warnings}", string.Join("; ", fresh.Select(w => w.Code)));
             return fresh;
         }

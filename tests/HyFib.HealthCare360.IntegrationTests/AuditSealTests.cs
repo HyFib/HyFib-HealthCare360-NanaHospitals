@@ -222,11 +222,12 @@ public sealed class AuditSealTests(HospitalServer server)
     }
 
     /// <summary>
-    /// The SMS to the IT on-call number waits out an internet outage as long as any message does, not the six hours a WiFi
-    /// alert does: a warning is told once while it lasts, so one whose SMS expired unsent was never told again.
+    /// The SMS to the IT on-call number waits out an internet outage until the next day's reminder is due, which takes its
+    /// place while the warning lasts. Any shorter, an outage could end with nothing sent until the reminder; any longer (a
+    /// week, as other messages), with one SMS for each day it lasted.
     /// </summary>
     [Fact]
-    public async Task A_broken_chain_texted_to_IT_on_call_is_tried_as_long_as_any_message()
+    public async Task A_broken_chain_texted_to_IT_on_call_is_tried_until_the_next_reminder()
     {
         const string onCallPhone = "+919800000142";
         var first = (await RecordAndSealAsync(3))[0].ChainIndex!.Value;
@@ -245,7 +246,7 @@ public sealed class AuditSealTests(HospitalServer server)
             texts.ShouldNotBeEmpty("the broken chain is texted to IT on-call");
             foreach (var text in texts)
             {
-                (text.ExpiresAt!.Value - text.CreatedAt).ShouldBe(OutboxRetryPolicy.DefaultLifetime, "tried as long as any message");
+                (text.ExpiresAt!.Value - text.CreatedAt).ShouldBe(SystemHealthAlerts.RemindAfter, "tried until the next reminder");
             }
         }
         finally
