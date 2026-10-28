@@ -10,8 +10,9 @@ namespace HyFib.HealthCare360.Modules.Patients.Seed;
 /// Synthetic patients for load tests: patient search is to answer within 500 ms over a million patients (SRS PERF-02),
 /// which only a database that holds that many can show. Their UHIDs start with <see cref="UhidPrefix"/>, so they never
 /// take a number from the hospital's series and are told apart at a glance, and registering them raises no event: no
-/// welcome message goes anywhere. Only on a server set up with demonstration data (<c>HealthCare360:SeedDemoData</c>),
-/// never among a hospital's real records. <c>HyFib.HealthCare360.Server.exe loadtest patients --count N</c> runs it.
+/// welcome message goes anywhere. Only on a server set up with demonstration data (<c>HealthCare360:SeedDemoData</c>), in a
+/// database made for it (<see cref="TrainingDatabase"/>), never among a hospital's real records.
+/// <c>HyFib.HealthCare360.Server.exe loadtest patients --count N</c> runs it.
 /// </summary>
 public sealed class LoadTestPatients(HospitalDbContext db, IOptions<PlatformOptions> options, TimeProvider time)
 {
@@ -93,10 +94,12 @@ public sealed class LoadTestPatients(HospitalDbContext db, IOptions<PlatformOpti
     /// </summary>
     public async Task<Result<long>> AddAsync(long count, IProgress<long>? progress, CancellationToken cancellationToken)
     {
-        if (!options.Value.SeedDemoData)
+        // The setting alone could be turned on for a live database, and this runs without starting the server.
+        if (!options.Value.SeedDemoData || !await TrainingDatabase.IsTrainingAsync(db, cancellationToken))
         {
             return Error.Rule("loadtest.not_demo",
-                "Synthetic patients are added only on a server set up with demonstration data (HealthCare360:SeedDemoData), never among a hospital's real records.");
+                "Synthetic patients are added only on a server set up with demonstration data (HealthCare360:SeedDemoData) and " +
+                "started with it on a database of its own, never among a hospital's real records.");
         }
 
         if (count is < 1 or > 10_000_000)

@@ -92,6 +92,7 @@ public sealed class DatabaseInitializer(
         }
 
         await ApplyPlatformSqlAsync(db, cancellationToken);
+        await TrainingDatabase.CheckAsync(db, options.Value.SeedDemoData, cancellationToken);
 
         foreach (var seeder in scope.ServiceProvider.GetServices<ISeeder>().OrderBy(s => s.Order))
         {

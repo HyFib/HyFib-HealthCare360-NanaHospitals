@@ -37,7 +37,8 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
 * **Simulators only on a training or test server.** A simulator answers "sent", "paid", "approved" or "authenticated"
   with nothing sent, no money moving and nobody checked, and keeps what it was given (sign-in codes too) in an inbox
   administrators read. So only a server set up with demonstration data (`HealthCare360:SeedDemoData`,
-  `PlatformOptions.AllowsSimulators`) uses them. On a hospital's live server, `PUT /api/v1/admin/settings/{key}` refuses
+  `PlatformOptions.AllowsSimulators`) uses them, and such a server starts only on a database made for training or
+  testing (`TrainingDatabase`). On a hospital's live server, `PUT /api/v1/admin/settings/{key}` refuses
   an `integrations.*` value whose `provider` is `simulator` (400), and Lab setup refuses a `Simulator` connection (422
   `lab.training_server`). A simulator chosen before (on the server when it was a training server, or written to the
   database) is not used either: `IntegrationSettingsReader` reads the integration as not usable, with the reason, so

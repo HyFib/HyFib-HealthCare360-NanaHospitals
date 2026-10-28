@@ -124,6 +124,8 @@ with a group label, a plain-language description and default roles from `SystemR
 `internal sealed class XSeeder(...) : ISeeder { public int Order => 1xx; ... }` — must be idempotent (check by code
 before insert). Service catalogue entries your module bills for go into `org.service_items` (`ServiceItem`) with
 stable codes (`LAB-CBC`, `RAD-XR-CHEST`, …). Demo/sample transactional data only when `PlatformOptions.SeedDemoData`.
+Such data reaches only a database made for training or testing: start-up stops before the seeders on a database that
+holds patients and is not one (`TrainingDatabase`, Platform).
 
 ## 10. Build & test (you share the machine with other agents)
 ```bash

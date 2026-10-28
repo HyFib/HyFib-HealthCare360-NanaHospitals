@@ -27,7 +27,9 @@ server — the load test registers patients.
 
 1. Install HC360 as for a hospital (DEPLOYMENT.md), then add `"SeedDemoData": true` under `HealthCare360` in
    `config\hc360.settings.json` and restart the service: the test server then has demonstration data, which the
-   commands below require. Turn two-step verification off for the test (`HealthCare360:Security:EnforceMfa` false).
+   commands below require. Do it before anyone registers a patient there: the database is then marked as made for
+   testing, and stays so. HC360 does not start with demonstration data on a database that holds patients and is not
+   (a hospital's records). Turn two-step verification off for the test (`HealthCare360:Security:EnforceMfa` false).
 2. From an elevated prompt on the server, add synthetic patients and the load test's accounts:
    ```powershell
    $server = 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe'
