@@ -183,8 +183,9 @@ public sealed class LanCertificateManager : IDisposable
 
         lock (_gate)
         {
+            // In the CA's last weeks a certificate issued again would expire with the CA, as this one does.
             var needsRenewal = _server is null
-                || _server.NotAfter.ToUniversalTime() - _time.GetUtcNow().UtcDateTime < RenewBefore
+                || (_server.NotAfter.ToUniversalTime() - _time.GetUtcNow().UtcDateTime < RenewBefore && IssuedUntil(_ca) > _server.NotAfter.ToUniversalTime())
                 || (checkNames && !DesiredNames().SetEquals(SubjectAlternativeNames));
             if (!needsRenewal)
             {
@@ -268,9 +269,7 @@ public sealed class LanCertificateManager : IDisposable
 
         var serial = RandomNumberGenerator.GetBytes(16);
         serial[0] &= 0x7F;
-        var now = _time.GetUtcNow();
-        // 397 days keeps Apple/Chrome happy for tablets that trust the hospital CA.
-        using var issued = request.Create(ca, now.AddDays(-1), now.AddDays(397), serial);
+        using var issued = request.Create(ca, _time.GetUtcNow().AddDays(-1), IssuedUntil(ca), serial);
         using var withKey = issued.CopyWithPrivateKey(key);
         var pfx = withKey.Export(X509ContentType.Pkcs12);
 
@@ -280,6 +279,18 @@ public sealed class LanCertificateManager : IDisposable
         SubjectAlternativeNames = names;
         _logger.LogInformation("Issued LAN server certificate for {Names} (expires {Expiry:u})", string.Join(", ", names), issued.NotAfter);
         return X509CertificateLoader.LoadPkcs12(pfx, null);
+    }
+
+    /// <summary>
+    /// When a server certificate issued now expires: in 397 days, which keeps Apple and Chrome happy for tablets that trust
+    /// the hospital CA, but no later than the CA itself, as nothing can be issued past its issuer's expiry. In the CA's last
+    /// year the certificate is shorter, and System health warns before the CA expires.
+    /// </summary>
+    private DateTime IssuedUntil(X509Certificate2 ca)
+    {
+        var full = _time.GetUtcNow().UtcDateTime.AddDays(397);
+        var caExpires = ca.NotAfter.ToUniversalTime();
+        return full < caExpires ? full : caExpires;
     }
 
     private HashSet<string> DesiredNames()

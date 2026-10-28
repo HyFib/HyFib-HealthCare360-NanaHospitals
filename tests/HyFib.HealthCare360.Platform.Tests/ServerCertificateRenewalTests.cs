@@ -44,6 +44,29 @@ public sealed class ServerCertificateRenewalTests : IDisposable
         server.CaFingerprint.ShouldBe(ca);
     }
 
+    /// <summary>
+    /// In the hospital CA's last year a full 397 days would outlast the CA, and no certificate can be issued past its issuer's
+    /// expiry: the server certificate is issued up to the CA's expiry instead, and not again at every check after that, as
+    /// nothing longer can be issued until the CA is replaced (System health warns about the CA).
+    /// </summary>
+    [Fact]
+    public void In_the_hospital_CAs_last_year_the_certificate_is_issued_up_to_the_CAs_expiry_once()
+    {
+        var clock = new Clock(DateTimeOffset.UtcNow);
+        var options = new PlatformOptions { DataDirectory = _root };
+        using var server = new LanCertificateManager(
+            new DataDirectories(options), options, new EphemeralDataProtectionProvider(), NullLogger<LanCertificateManager>.Instance, clock);
+        server.EnsureCertificates();
+        var caExpires = server.CaExpiresAt.ShouldNotBeNull();
+
+        clock.MoveTo(caExpires.AddDays(-200));
+        server.ServerExpiresAt.ShouldBe(caExpires);
+
+        var thumbprint = server.ServerCertificate.Thumbprint;
+        clock.MoveTo(caExpires.AddDays(-20));
+        server.ServerCertificate.Thumbprint.ShouldBe(thumbprint, "nothing longer could be issued");
+    }
+
     /// <summary>A clock the test moves on: each timer made from it comes round when it is due, once per move.</summary>
     private sealed class Clock(DateTimeOffset now) : TimeProvider
     {
