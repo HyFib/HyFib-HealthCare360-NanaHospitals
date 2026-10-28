@@ -21,6 +21,12 @@ describe('every role can use the screens its menu shows, part 1 of 4', () => {
     expect(Object.keys(access.roles)).toContain('FrontOffice');
     expect(ruleFor(reads, '/api/v1/patients')).toBeDefined();
     expect(ruleFor(writes.get('POST') ?? [], '/api/v1/patients')).toBeDefined();
+    // A route that asks for no permission is listed too, so the check can tell it from one the server does not have.
+    expect(ruleFor(reads, '/api/v1/notifications/unread-count')).toEqual({
+      segments: ['', 'api', 'v1', 'notifications', 'unread-count'],
+      rules: [],
+    });
+    expect(ruleFor(reads, '/api/v1/notifications/unread-counts')).toBeUndefined();
     expect(screens.map((s) => s.to)).toContain(`/mrd/records/${RECORD_ID}`);
   });
 
@@ -28,7 +34,10 @@ describe('every role can use the screens its menu shows, part 1 of 4', () => {
     'asks the server only for what the role may read, and offers only what it may do',
     { timeout: 1_200_000 },
     async () => {
-      const { refused, gaps } = await findRefusals(0, 4);
+      const { refused, gaps, unknown } = await findRefusals(0, 4);
+      expect(unknown, `Screens that call the API where the server has no such route:\n${unknown.join('\n')}`).toEqual(
+        [],
+      );
       expect(refused, `Screens that ask for what the role may not read or do:\n${refused.join('\n')}`).toEqual([]);
       expect(gaps, `Screens the check cannot see whole (roleAccess/ has their data):\n${gaps.join('\n')}`).toEqual([]);
     },

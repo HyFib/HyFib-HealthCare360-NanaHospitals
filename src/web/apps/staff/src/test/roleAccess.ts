@@ -27,18 +27,25 @@ import { RECORD_ID, WARD_ID } from './roleAccessIds';
 // Each screen is opened once with every permission, to learn what it reads and what each of its buttons sends: a button
 // that acts at once, opens a confirmation whose last button acts, or opens a menu whose items do either. A role whose
 // permissions do not cover all of that opens the screen again as itself (a screen leaves out what its user may not see
-// or do), and what it still asks for, or still offers, fails the test. serverAccess.json holds the roles' permissions
-// and the server's read and write rules; StaffAccessFixtureTests keeps it current. The roleAccess.*.test.tsx files
+// or do), and what it still asks for, or still offers, fails the test, as does a screen that asks for a path, or sends a
+// method, the server does not have. serverAccess.json holds the roles' permissions and every route of the server's API
+// with its permission rules; StaffAccessFixtureTests keeps it current. The roleAccess.*.test.tsx files
 // check a part of the screens each, so they run side by side; each mocks the realtime connection and the charts away
 // (jsdom has no canvas to draw on).
 
 interface ServerAccess {
   roles: Record<string, string[]>;
-  /** "/api/v1/emr/templates/{id:guid} clinical.emr.read|clinical.templates.manage": every comma part must be held. */
+  /**
+   * "/api/v1/emr/templates/{id:guid} clinical.emr.read|clinical.templates.manage": every comma part must be held; "-" for a
+   * route that asks for no permission (any signed-in user, or anyone).
+   */
   reads: string[];
   /** "POST /api/v1/mrd/records/{id:guid}/complete mrd.records", as for reads. */
   writes: string[];
 }
+
+/** The rule of a route that asks for no permission (StaffAccessFixtureTests.NoPermission). */
+const NO_PERMISSION = '-';
 
 export const access = JSON.parse(readFileSync(join(import.meta.dirname, 'serverAccess.json'), 'utf8')) as ServerAccess;
 
@@ -49,7 +56,7 @@ interface Rule {
 
 const rule = (path: string, rules: string): Rule => ({
   segments: path.split('/'),
-  rules: rules.split(',').map((r) => r.split('|')),
+  rules: rules === NO_PERMISSION ? [] : rules.split(',').map((r) => r.split('|')),
 });
 
 export const reads = access.reads.map((line) => {
@@ -76,16 +83,25 @@ export function ruleFor(rules: readonly Rule[], path: string) {
     .sort((a, b) => literal(b.segments) - literal(a.segments))[0];
 }
 
+/** No role may use a route the server does not have. */
 const allowed = (found: Rule | undefined, permissions: readonly string[]) =>
-  found?.rules.every((anyOf) => anyOf.some((p) => permissions.includes(p))) ?? true;
+  found !== undefined && found.rules.every((anyOf) => anyOf.some((p) => permissions.includes(p)));
 
-const mayRead = (path: string, permissions: readonly string[]) => allowed(ruleFor(reads, path), permissions);
+const readRule = (path: string) => ruleFor(reads, path);
 
 /** `write` is "POST /api/v1/..." as sent. */
-const mayWrite = (write: string, permissions: readonly string[]) => {
+const writeRule = (write: string) => {
   const [method, path] = write.split(' ');
-  return allowed(ruleFor(writes.get(method!) ?? [], path!), permissions);
+  return ruleFor(writes.get(method!) ?? [], path!);
 };
+
+/** Whether `path` is the API's: the server's other paths (the app's own files) are not checked. */
+const isApi = (path: string) => path.startsWith('/api/');
+
+const mayRead = (path: string, permissions: readonly string[]) => !isApi(path) || allowed(readRule(path), permissions);
+
+const mayWrite = (write: string, permissions: readonly string[]) =>
+  !isApi(write.split(' ')[1]!) || allowed(writeRule(write), permissions);
 
 const WARD: WardDto = {
   id: WARD_ID,
@@ -575,8 +591,8 @@ async function asUser(path: string, user: AuthUser): Promise<{ reads: string[]; 
 
 /**
  * Opens every `parts`-th screen from `part` with every permission to learn it, then as each built-in role that can
- * reach it whose permissions do not cover all of it; returns what each screen was learned to read and send, and what a
- * role was refused.
+ * reach it whose permissions do not cover all of it; returns what each screen was learned to read and send, what a
+ * role was refused, and what a screen asked of the API that the server does not have (a path, or a method on it).
  */
 export async function findRefusals(part: number, parts: number) {
   close();
@@ -584,6 +600,21 @@ export async function findRefusals(part: number, parts: number) {
   const learned = new Map<string, Learned>();
   for (const s of mine) {
     learned.set(s.to, await learn(s.to));
+  }
+
+  const unknown: string[] = [];
+  for (const s of mine) {
+    const l = learned.get(s.to)!;
+    unknown.push(
+      ...l.reads.filter((p) => isApi(p) && !readRule(p)).map((p) => `"${s.label}" (${s.to}) reads GET ${p}`),
+    );
+    for (const [name, sent] of l.buttons) {
+      unknown.push(
+        ...sent
+          .filter((w) => isApi(w.split(' ')[1]!) && !writeRule(w))
+          .map((w) => `"${s.label}" (${s.to}) shows "${name}", which sends ${w}`),
+      );
+    }
   }
 
   const refused: string[] = [];
@@ -624,5 +655,5 @@ export async function findRefusals(part: number, parts: number) {
       gaps.push(`"${s.label}" (${s.to}) has all its data now: take it out of WITHOUT_DATA`);
     }
   }
-  return { learned, refused, gaps };
+  return { learned, refused, gaps, unknown };
 }

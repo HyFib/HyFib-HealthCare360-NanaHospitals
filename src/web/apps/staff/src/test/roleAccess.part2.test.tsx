@@ -21,7 +21,10 @@ describe('every role can use the screens its menu shows, part 2 of 4', () => {
     'asks the server only for what the role may read, and offers only what it may do',
     { timeout: 1_200_000 },
     async () => {
-      const { refused, gaps } = await findRefusals(1, 4);
+      const { refused, gaps, unknown } = await findRefusals(1, 4);
+      expect(unknown, `Screens that call the API where the server has no such route:\n${unknown.join('\n')}`).toEqual(
+        [],
+      );
       expect(refused, `Screens that ask for what the role may not read or do:\n${refused.join('\n')}`).toEqual([]);
       expect(gaps, `Screens the check cannot see whole (roleAccess/ has their data):\n${gaps.join('\n')}`).toEqual([]);
     },
