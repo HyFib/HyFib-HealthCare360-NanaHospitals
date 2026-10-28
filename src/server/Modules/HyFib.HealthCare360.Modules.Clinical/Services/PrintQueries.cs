@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Modules.Clinical.Domain;
+
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
 /// <summary>Facility letterhead printed on prescriptions, discharge summaries and checkup reports (UX-09).</summary>
@@ -49,6 +51,20 @@ public static class PrintQueries
                 select new PrescriberInfo(p.Id, p.DisplayName, p.Qualification, p.RegistrationCouncil, p.RegistrationNumber,
                     d != null ? d.Name : null, s != null ? s.Name : null, p.SignatureFileId))
             .FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// The prescriber of <paramref name="prescription"/>, with the registration number and council it was signed with
+    /// (<see cref="Prescription.PrescriberRegistrationNumber"/>): a reprint, the portal and the QR check show what the
+    /// prescription carried, whatever the practitioner record says now. A draft, or a prescription signed before HC360
+    /// kept them, shows the record as it is.
+    /// </summary>
+    public static async Task<PrescriberInfo?> PrescriberAsync(HospitalDbContext db, Prescription prescription, CancellationToken ct)
+    {
+        var prescriber = await PrescriberAsync(db, prescription.PractitionerId, ct);
+        return prescriber is not null && prescription.PrescriberRegistrationNumber is { } number
+            ? prescriber with { RegistrationNumber = number, RegistrationCouncil = prescription.PrescriberRegistrationCouncil }
+            : prescriber;
+    }
 
     /// <summary>Display names for a set of practitioners (lists and timelines).</summary>
     public static async Task<Dictionary<Guid, string>> PractitionerNamesAsync(HospitalDbContext db, IEnumerable<Guid?> ids, CancellationToken ct)

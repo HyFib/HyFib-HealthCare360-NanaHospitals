@@ -10589,6 +10589,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("prescribed_at");
 
+                    b.Property<string>("PrescriberRegistrationCouncil")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("prescriber_registration_council");
+
+                    b.Property<string>("PrescriberRegistrationNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("prescriber_registration_number");
+
                     b.Property<string>("PrescriptionNumber")
                         .IsRequired()
                         .HasMaxLength(24)

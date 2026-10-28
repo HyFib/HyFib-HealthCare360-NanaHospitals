@@ -46,7 +46,7 @@ internal sealed class PrescriptionPrintBuilder(HospitalDbContext db, ISettingsSe
                 FrequencyLabels.Tamil(i.Frequency, i.CustomFrequency), i.DurationDays, i.Quantity, i.Instructions, i.IsControlledDrug);
         }).ToList();
         var publicAddress = p.VerificationToken is null ? null : await PortalAddress.BaseUrlAsync(settings, p.FacilityId, ct);
-        var prescriber = await PrintQueries.PrescriberAsync(db, p.PractitionerId, ct);
+        var prescriber = await PrintQueries.PrescriberAsync(db, p, ct);
         var digitalSignature = PrescriptionFinalCopies.PrintSignature(p, signature);
         if (digitalSignature is not null && prescriber is not null && PrescriptionCanonicalForm.TryReadParties(p.SignedContent!) is { } signed)
         {

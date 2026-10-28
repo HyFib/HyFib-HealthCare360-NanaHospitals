@@ -311,6 +311,20 @@ public sealed class PrescriptionService(
     private async Task<Result<IReadOnlyList<SafetyAlert>>> SignCoreAsync(Prescription prescription, string? overrideReason, bool acknowledgeWarnings,
         bool confirmControlledDrugs, CancellationToken ct)
     {
+        // A prescription carries the prescriber's registration number (Indian Medical Council (Professional Conduct,
+        // Etiquette and Ethics) Regulations 2002, 1.4.1): one whose record has none is not signed.
+        // The number and council are kept on the prescription as they are now, for every copy of it.
+        var registration = await db.Set<Practitioner>().AsNoTracking()
+            .Where(p => p.Id == prescription.PractitionerId)
+            .Select(p => new { Number = p.RegistrationNumber, Council = p.RegistrationCouncil })
+            .FirstOrDefaultAsync(ct);
+        if (registration is null || string.IsNullOrWhiteSpace(registration.Number))
+        {
+            return Error.Rule("prescription.registration_missing",
+                "The prescriber's medical council registration number is not on their practitioner record, and a prescription must carry it. "
+                + "Ask the administrator to add it under Practitioners, then sign.");
+        }
+
         // Again at signing: a draft saved before the master decided, or whose drug the master has since reclassified.
         await FromDrugMasterAsync(prescription.Items, ct);
         if (await TelemedicineProhibitedAsync(prescription, ct) is { Count: > 0 } prohibited)
@@ -334,7 +348,8 @@ public sealed class PrescriptionService(
         }
 
         var signature = new PrescriptionSignature(currentUser.UserId, NewVerificationToken(), check.IsBlocked ? overrideReason : null,
-            JsonSerializer.Serialize(check.Alerts, JsonOptions), confirmControlledDrugs);
+            JsonSerializer.Serialize(check.Alerts, JsonOptions), confirmControlledDrugs, registration.Number.Trim(),
+            string.IsNullOrWhiteSpace(registration.Council) ? null : registration.Council.Trim());
         var signed = prescription.Sign(signature, time.GetUtcNow());
         if (signed.IsFailure)
         {

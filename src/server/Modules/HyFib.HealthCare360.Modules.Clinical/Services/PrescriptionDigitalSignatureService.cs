@@ -324,12 +324,15 @@ public sealed class PrescriptionDigitalSignatureService(
         return true;
     }
 
-    /// <summary>The parties as they are now: the facility, the patient and the prescriber.</summary>
+    /// <summary>
+    /// The parties as they are now: the facility, the patient and the prescriber, with the registration number and council
+    /// the prescription was signed with.
+    /// </summary>
     public async Task<PrescriptionSigningParties> PartiesAsync(Prescription p, CancellationToken ct)
     {
         var facility = await db.Set<Facility>().AsNoTracking().IgnoreQueryFilters().Where(f => f.Id == p.FacilityId).Select(f => f.Name).FirstOrDefaultAsync(ct);
         var patient = await db.Set<Patient>().AsNoTracking().Where(x => x.Id == p.PatientId).Select(x => new { x.Uhid, x.FullName }).FirstAsync(ct);
-        var prescriber = await PrintQueries.PrescriberAsync(db, p.PractitionerId, ct);
+        var prescriber = await PrintQueries.PrescriberAsync(db, p, ct);
         return new PrescriptionSigningParties(facility ?? string.Empty, p.PatientId, patient.Uhid, patient.FullName, prescriber?.DisplayName ?? string.Empty,
             prescriber?.Qualification, prescriber?.RegistrationNumber, prescriber?.RegistrationCouncil);
     }
