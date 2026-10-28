@@ -1,6 +1,7 @@
 // The replay's rules (replay.ts), with Node's own test runner: node --test demo/
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
+import { startClockAt } from './clock.ts';
 import { MISSED, Replay, type Answer, type DemoData, type RoleRecording } from './replay.ts';
 
 // The browser globals the replay touches, as plain stand-ins.
@@ -50,6 +51,10 @@ const data: DemoData = {
     patient: { ...role('patient', {}), phone: '+919000001021' },
   },
 };
+
+// As the app does before anything else runs (install.ts): the demo's "today" is the day the data was recorded, whatever
+// the day the tests run.
+startClockAt(Date.parse(data.clockStart));
 
 async function ask(replay: Replay, method: string, path: string, body: unknown = null) {
   const response = await replay.answer(
