@@ -13,8 +13,7 @@ internal sealed record AnalyteSlot(LabTest Analyte, string? GroupName, int Displ
 /// </summary>
 internal sealed class LabWorkflow(HospitalDbContext db)
 {
-    /// <summary>Panels may nest (a health-check profile containing a CBC); deeper nesting is treated as a set-up error.</summary>
-    private const int MaxPanelDepth = 3;
+    private const int MaxPanelDepth = LabTest.MaxPanelDepth;
 
     public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<AnalyteSlot>>> AnalyteLayoutAsync(IEnumerable<Guid> orderedTestIds, CancellationToken ct)
     {

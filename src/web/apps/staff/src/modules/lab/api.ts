@@ -568,6 +568,8 @@ export interface TestConsentInput {
 export interface ConsentTest {
   itemId: string;
   name: string;
+  /** The tube the test is drawn in. */
+  sampleId: string;
 }
 
 /** Data for the 50 × 25 mm barcode label. */

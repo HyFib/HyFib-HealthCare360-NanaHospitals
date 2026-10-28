@@ -144,8 +144,10 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
     : isInFuture(collectedIso, new Date())
       ? 'The collection time cannot be in the future.'
       : null;
+  // Of those, the ones in the tubes still chosen: a collector who leaves a held tube out draws the others without it.
+  const heldTests = consentTests?.filter((test) => selected.includes(test.sampleId)) ?? [];
   const consentIncomplete =
-    consentTests !== null &&
+    heldTests.length > 0 &&
     (basis === 'CourtOrder'
       ? !reference.trim()
       : !counselled || (basis === 'Representative' && (!givenBy.trim() || !relation.trim())));
@@ -168,13 +170,15 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
         collectedAt: collectedIso,
         collectionSite: site.trim() || null,
         consents:
-          consentTests?.map((test) => ({
-            itemId: test.itemId,
-            basis,
-            givenBy: basis === 'Representative' ? givenBy.trim() : null,
-            relation: basis === 'Representative' ? relation.trim() : null,
-            reference: reference.trim() || null,
-          })) ?? null,
+          heldTests.length === 0
+            ? null
+            : heldTests.map((test) => ({
+                itemId: test.itemId,
+                basis,
+                givenBy: basis === 'Representative' ? givenBy.trim() : null,
+                relation: basis === 'Representative' ? relation.trim() : null,
+                reference: reference.trim() || null,
+              })),
       }),
     onError: (error) => {
       if (hasErrorCode(error, 'lab.consent_required')) {
@@ -302,13 +306,13 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                   </MessageBar>
                 )}
 
-                {consentTests && (
+                {heldTests.length > 0 && (
                   <div className={styles.consent} role="group" aria-label="Record the consent">
                     <MessageBar intent="warning" layout="multiline">
                       <MessageBarBody>
                         <MessageBarTitle>Consent for an HIV test</MessageBarTitle>
-                        {consentTests.map((test) => test.name).join(', ')}: draw the sample only after pre-test
-                        counselling and the patient&apos;s written consent (HIV and AIDS Act 2017, s.5).
+                        {heldTests.map((test) => test.name).join(', ')}: draw the sample only after pre-test counselling
+                        and the patient&apos;s written consent (HIV and AIDS Act 2017, s.5).
                       </MessageBarBody>
                     </MessageBar>
                     <RadioGroup

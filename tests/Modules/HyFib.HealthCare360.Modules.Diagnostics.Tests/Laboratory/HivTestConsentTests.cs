@@ -32,10 +32,25 @@ public sealed class HivTestConsentTests
     [Fact]
     public void A_panel_with_an_hiv_analyte_needs_consent_and_one_without_does_not()
     {
-        var profile = Test("PRE-OP", "Pre-operative profile", null);
-        HivTestConsent.Needed(profile, [Test("LAB-HBSAG", "Hepatitis B surface antigen", null), Test("LAB-HIV", "HIV 1 & 2 antibodies", null)])
-            .ShouldBeTrue();
-        HivTestConsent.Needed(profile, [Test("LAB-HBSAG", "Hepatitis B surface antigen", null)]).ShouldBeFalse();
+        var hbsag = Test("LAB-HBSAG", "Hepatitis B surface antigen", null);
+        var hiv = Test("LAB-HIV", "HIV 1 & 2 antibodies", null);
+        HivTestConsent.Needed(Panel("PRE-OP", "Pre-operative profile", hbsag, hiv), Master(hbsag, hiv)).ShouldBeTrue();
+        HivTestConsent.Needed(Panel("PRE-OP", "Pre-operative profile", hbsag), Master(hbsag, hiv)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void An_hiv_analyte_in_a_panel_within_a_panel_needs_consent_down_to_the_depth_the_laboratory_expands()
+    {
+        var hbsag = Test("LAB-HBSAG", "Hepatitis B surface antigen", null);
+        var hiv = Test("LAB-HIV", "HIV 1 & 2 antibodies", null);
+        var viral = Panel("VIRAL", "Viral markers", hbsag, hiv);
+        var preOp = Panel("PRE-OP", "Pre-operative profile", Test("LAB-CBC", "Complete blood count", null), viral);
+        HivTestConsent.Needed(preOp, Master(viral, hbsag, hiv)).ShouldBeTrue();
+
+        // Three panels deep is as far as the laboratory expands, and as far as the rule looks.
+        var cardiac = Panel("CARDIAC", "Cardiac work-up", preOp);
+        HivTestConsent.Needed(cardiac, Master(preOp, viral, hbsag, hiv)).ShouldBeTrue();
+        HivTestConsent.Needed(Panel("ANNUAL", "Annual check", cardiac), Master(cardiac, preOp, viral, hbsag, hiv)).ShouldBeFalse();
     }
 
     [Fact]
@@ -67,4 +82,14 @@ public sealed class HivTestConsentTests
     }
 
     private static LabTest Test(string code, string name, string? loinc) => new() { Code = code, Name = name, Loinc = loinc };
+
+    private static LabTest Panel(string code, string name, params LabTest[] components) => new()
+    {
+        Code = code,
+        Name = name,
+        IsPanel = true,
+        Components = [.. components.Select(c => new LabTestComponent { TestId = c.Id })],
+    };
+
+    private static Dictionary<Guid, LabTest> Master(params LabTest[] tests) => tests.ToDictionary(t => t.Id);
 }

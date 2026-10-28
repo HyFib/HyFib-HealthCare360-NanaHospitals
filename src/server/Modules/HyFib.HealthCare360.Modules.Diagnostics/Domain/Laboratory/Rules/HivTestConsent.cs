@@ -17,10 +17,16 @@ public static partial class HivTestConsent
     private static readonly HashSet<string> Loinc = new(["56888-1", "7917-8", "31201-7", "5221-7", "20447-9"], StringComparer.Ordinal);
 
     /// <summary>
-    /// Whether the test, or one of its <paramref name="components"/> (the analytes of a panel), is an HIV test: by its
-    /// LOINC code, or by "HIV" as a word of its code or name ("LAB-HIV", "Anti-HIV 1 & 2", "HIV-1 RNA").
+    /// Whether the test, or a test under it, is an HIV test: by its LOINC code, or by "HIV" as a word of its code or name
+    /// ("LAB-HIV", "Anti-HIV 1 & 2", "HIV-1 RNA"). Under a panel are its analytes and the panels within it, followed as
+    /// the laboratory expands them, to <see cref="LabTest.MaxPanelDepth"/>; <paramref name="tests"/> holds them by id.
     /// </summary>
-    public static bool Needed(LabTest test, IEnumerable<LabTest> components) => IsHiv(test) || components.Any(IsHiv);
+    public static bool Needed(LabTest test, IReadOnlyDictionary<Guid, LabTest> tests) => Needed(test, tests, 0);
+
+    private static bool Needed(LabTest test, IReadOnlyDictionary<Guid, LabTest> tests, int depth) =>
+        IsHiv(test)
+        || (depth < LabTest.MaxPanelDepth
+            && test.Components.Any(c => tests.TryGetValue(c.TestId, out var component) && Needed(component, tests, depth + 1)));
 
     public static bool IsHiv(LabTest test) =>
         (test.Loinc is { } loinc && Loinc.Contains(loinc.Trim())) || HivWord().IsMatch(test.Code) || HivWord().IsMatch(test.Name);

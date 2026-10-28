@@ -99,14 +99,23 @@ internal sealed class SampleService(
             return Result.Success();
         }
 
+        // The tests ordered and every test under them, through panels within panels, as the laboratory expands them.
         var testIds = pending.Select(i => i.LabTestId).Distinct().ToList();
-        var tests = await db.Set<LabTest>().AsNoTracking().Include(t => t.Components).Where(t => testIds.Contains(t.Id)).ToListAsync(ct);
-        var componentIds = tests.SelectMany(t => t.Components).Select(c => c.TestId).Distinct().ToList();
-        var components = await db.Set<LabTest>().AsNoTracking().Where(t => componentIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
-        var hiv = tests
-            .Where(t => HivTestConsent.Needed(t, t.Components.Select(c => components.GetValueOrDefault(c.TestId)).OfType<LabTest>()))
-            .Select(t => t.Id)
-            .ToHashSet();
+        var tests = new Dictionary<Guid, LabTest>();
+        var toLoad = testIds;
+        for (var depth = 0; depth <= LabTest.MaxPanelDepth && toLoad.Count > 0; depth++)
+        {
+            var batch = toLoad;
+            var loaded = await db.Set<LabTest>().AsNoTracking().Include(t => t.Components).Where(t => batch.Contains(t.Id)).ToListAsync(ct);
+            foreach (var test in loaded)
+            {
+                tests[test.Id] = test;
+            }
+
+            toLoad = loaded.SelectMany(t => t.Components.Select(c => c.TestId)).Where(id => !tests.ContainsKey(id)).Distinct().ToList();
+        }
+
+        var hiv = testIds.Where(id => tests.TryGetValue(id, out var test) && HivTestConsent.Needed(test, tests)).ToHashSet();
 
         var now = time.GetUtcNow();
         var missing = new List<LabOrderItem>();
@@ -134,7 +143,7 @@ internal sealed class SampleService(
             "lab.consent_required",
             $"{string.Join(", ", missing.Select(i => i.TestName))}: an HIV test needs the patient's informed consent, given after pre-test "
             + "counselling, before its sample is drawn (HIV and AIDS Act 2017, s.5). Record who consented, or the court's order, then collect.");
-        return refused with { Data = new { tests = missing.Select(i => new { itemId = i.Id, name = i.TestName }).ToList() } };
+        return refused with { Data = new { tests = missing.Select(i => new { itemId = i.Id, name = i.TestName, sampleId = i.SampleId }).ToList() } };
     }
 
     /// <summary>Label data for reprinting (a torn or smudged label must be replaced with an identical one).</summary>

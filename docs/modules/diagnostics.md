@@ -84,7 +84,7 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/samples/pending-collection?section&priority&patientClass` | samples.collect or orders.read | → `PagedResult<PendingCollectionItem>` (barcode, container, tests, patient preparation, isRecollection) |
-| POST | `/orders/{id}/collect` | `lab.samples.collect` | `CollectSamplesRequest` (sampleIds? — all pending when empty, ≤ 50; collectedAt ≤ now + 5 min; collectionSite; consents? [itemId, basis Patient/Representative/CourtOrder, givenBy, relation, reference]) → `SampleLabel[]` for barcode printing; 422 `lab.payment_pending` (OP/external, `data.tests` lists unpaid tests); 422 `lab.consent_required` (an HIV test without its consent, `data.tests` lists them: see *Consent before an HIV test*) |
+| POST | `/orders/{id}/collect` | `lab.samples.collect` | `CollectSamplesRequest` (sampleIds? — all pending when empty, ≤ 50; collectedAt ≤ now + 5 min; collectionSite; consents? [itemId, basis Patient/Representative/CourtOrder, givenBy, relation, reference]) → `SampleLabel[]` for barcode printing; 422 `lab.payment_pending` (OP/external, `data.tests` lists unpaid tests); 422 `lab.consent_required` (an HIV test without its consent, `data.tests` lists them with the tube each is in: see *Consent before an HIV test*) |
 | GET | `/orders/{id}/labels?sampleId` | samples.collect or samples.receive | → `SampleLabel[]` (reprint) |
 | GET | `/samples/by-barcode/{barcode}` | samples.receive, results.enter or orders.read | → `SampleLookup` |
 | POST | `/samples/receive` | `lab.samples.receive` | `ReceiveSamplesRequest` (barcodes) → `ReceiveOutcome[]` (per barcode; one bad label never blocks the rack) |
@@ -97,9 +97,11 @@ counselling; of the exceptions in s.6, the one a hospital laboratory meets is a 
 therefore not drawn until that is recorded on the test (`HivTestConsent`): the patient consented, a representative did
 (named, with the relation), or a court ordered it (its number); the consent form's number is kept when there is one. A
 test is an HIV test by its LOINC code (HIV antibody screens, the HIV-1 immunoblot and viral load) or by "HIV" as a word
-of its code or name, and a panel is one when an analyte is. The consent is recorded once, at collection, and stands for
-a repeat sample; the order shows it on the test (`consentBasis`, `consentRecordedAt`). The collect dialog asks for it
-when the server holds the tube back. Blood donors are screened under the blood bank's own donor consent.
+of its code or name, and a panel is one when an analyte is, or a panel within it, as deep as the laboratory expands
+panels. The consent is recorded once, at collection, and stands for a repeat sample; the order shows it on the test
+(`consentBasis`, `consentRecordedAt`). The collect dialog asks for it when the server holds the tube back, unless the
+collector leaves that tube out and draws the others. Blood donors are screened under the blood bank's own donor
+consent.
 
 **Tube labels (LIS-02/03).** After collection, and on reprint, the staff app prints one label per tube from
 `SampleLabel`, without a dialog, on the workstation's label printer: name, age/sex, UHID, STAT or the accession

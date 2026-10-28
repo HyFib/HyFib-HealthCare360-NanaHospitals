@@ -8,6 +8,9 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 /// </summary>
 public sealed class LabTest : AuditableEntity
 {
+    /// <summary>Panels may nest (a health-check profile containing a CBC); deeper nesting is treated as a set-up error.</summary>
+    public const int MaxPanelDepth = 3;
+
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
 
