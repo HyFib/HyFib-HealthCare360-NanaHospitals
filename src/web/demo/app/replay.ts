@@ -22,6 +22,8 @@ export interface RoleRecording {
   login: { accessToken: string; expiresAt: string; user: unknown } & Record<string, unknown>;
   /** What the role's workstation keeps in local storage (the queue desk, the ward, the counter). */
   desk: Record<string, string>;
+  /** The patient's mobile number (+91…), for the role that is a patient on the portal: they sign in with it. */
+  phone?: string;
   answers: Record<string, Answer>;
 }
 
@@ -70,6 +72,9 @@ const WRONG_PASSWORD = {
   detail: 'Sign in as one of the demo roles, such as doctor, nurse or frontoffice; any password works.',
   code: 'auth.invalid_credentials',
 };
+
+/** The last ten digits of a mobile number, however it was typed (+91, spaces, dashes). */
+const mobile = (phone: string) => phone.replace(/\D/g, '').slice(-10);
 
 /** Raised on window when the demo's role changes: signed in as one, or signed out. */
 export const ROLE_CHANGED = 'hc360-demo:role';
@@ -187,6 +192,12 @@ export class Replay {
     return this.roles.find((r) => r.userName.toLowerCase() === name || r.role === name);
   }
 
+  /** The demo's patient with this mobile number, who signs in to the portal with it. */
+  roleByPhone(phone: string): RoleRecording | undefined {
+    const number = mobile(phone);
+    return number.length === 10 ? this.roles.find((r) => r.phone && mobile(r.phone) === number) : undefined;
+  }
+
   /** The sign-in answer for a role, valid for the rest of the demo day. */
   private signedIn(recording: RoleRecording): Response {
     const expiresAt = new Date(Date.now() + 12 * 3600_000).toISOString();
@@ -220,6 +231,37 @@ export class Replay {
       }
       if (action === 'lock') return json(204, null);
       if (action === 'me' && recording) return json(200, recording.login.user);
+      // The portal: a code "sent" to the demo patient's number, and any code accepted for it.
+      if (action === 'otp/request') {
+        const { phone = '' } = (body ? JSON.parse(body) : {}) as { phone?: string };
+        const patient = this.roleByPhone(phone);
+        if (!patient?.phone) {
+          const numbers = this.roles.filter((r) => r.phone).map((r) => mobile(r.phone ?? ''));
+          return problem(422, {
+            title: 'Not a demo patient',
+            detail: `In the demo, sign in with ${numbers.join(' or ')}; any code works.`,
+            code: 'demo.not_a_patient',
+          });
+        }
+        const number = mobile(patient.phone);
+        return json(200, {
+          challengeId: `demo-${patient.role}`,
+          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+          maskedPhone: `+91 ${number.slice(0, 2)}XXX XX${number.slice(-3)}`,
+        });
+      }
+      if (action === 'otp/verify') {
+        const { challengeId = '' } = (body ? JSON.parse(body) : {}) as { challengeId?: string };
+        const patient = this.data.roles[challengeId.replace(/^demo-/, '')];
+        if (!patient?.phone) return problem(401, { title: 'Ask for a new code', code: 'auth.otp_invalid' });
+        setCurrentRole(patient.role);
+        return this.signedIn(patient);
+      }
+    }
+
+    // The portal's check against automated sign-ins is a proof of work; the demo does not ask for one.
+    if (path === '/api/v1/public/challenge') {
+      return json(200, { required: false, challenge: null, bits: 0, expiresAt: null });
     }
 
     if (path === '/api/v1/settings/public') {

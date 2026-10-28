@@ -1,7 +1,7 @@
 // Walks one role's part of the staff app in Chromium, as its user would look round it: every item of the role's own
 // menu (its permissions decide what is there), every tab of each screen, the filters left on "choose…", the first
-// row's drawer, the first records each list links to, and every patient's record and chart the role may read. It
-// opens; it never presses a button that changes anything.
+// row's drawer, the first records each list links to, and every patient's record and chart the role may read. The
+// patient portal is walked the same way from its own menu. It opens; it never presses a button that changes anything.
 //
 // capture.mjs walks the real server this way and keeps what it answers; verify.mjs walks the demo build the same
 // way and checks every screen got its answers. Both pass how to navigate, wait and tell where the app is.
@@ -30,8 +30,13 @@ const exactly = (text) => new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g,
  * @param {string[]} how.patients every patient's id
  * @param {() => boolean} how.outOfTime
  * @param {(path: string) => void} [how.onScreen] told of each screen as the walk reaches it
+ * @param {'staff' | 'portal'} [how.app] the staff app's menu groups its items; the patient portal's is a list of links
  */
-export async function walkRole(page, { here, go, quiet, user, patients, outOfTime, onScreen = () => undefined }) {
+export async function walkRole(
+  page,
+  { here, go, quiet, user, patients, outOfTime, onScreen = () => undefined, app = 'staff' },
+) {
+  const home = app === 'portal' ? '/portal/home' : '/';
   const visited = [];
   const followed = new Set();
   const perTemplate = new Map();
@@ -167,13 +172,49 @@ export async function walkRole(page, { here, go, quiet, user, patients, outOfTim
     }
   }
 
+  /** The patient portal's menu: one link per page (a column on a wide screen), each opened as the patient would. */
+  async function portalMenu() {
+    await open(home);
+    const nav = page.getByRole('navigation', { name: 'Main', exact: true });
+    const plan = [];
+    for (const link of await nav.locator('a[href]').all()) {
+      plan.push({ label: (await link.innerText()).trim(), href: await link.getAttribute('href') });
+    }
+    const menu = [];
+    for (const entry of plan) {
+      if (outOfTime()) {
+        menu.push({ label: entry.label, skipped: 'out of time' });
+        continue;
+      }
+      try {
+        followed.add(entry.href);
+        await open(entry.href);
+        menu.push({ label: entry.label, path: here() });
+        await explore(0);
+        await drain(PER_TEMPLATE);
+      } catch (error) {
+        menu.push({
+          label: entry.label,
+          error: String(error.message ?? error)
+            .split('\n')[0]
+            .slice(0, 200),
+        });
+      }
+    }
+    return menu;
+  }
+
   // Home, as the role lands on it after signing in.
   await quiet();
   await explore(0);
   await drain(PER_TEMPLATE);
 
+  if (app === 'portal') {
+    return { menu: await portalMenu(), visited: [...new Set(visited)] };
+  }
+
   // The role's menu, as its user sees it: each category opened (one at a time, as the menu does), each item chosen.
-  await open('/');
+  await open(home);
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   const plan = [];
   for (const top of await nav.locator('.fui-NavItem, .fui-NavCategoryItem').all()) {
@@ -200,7 +241,7 @@ export async function walkRole(page, { here, go, quiet, user, patients, outOfTim
       await closeOverlays();
       // A screen of its own (the queue display board, for a TV) has no menu: home first.
       if (!(await nav.count())) {
-        await open('/');
+        await open(home);
       }
       if (entry.category) {
         const category = nav

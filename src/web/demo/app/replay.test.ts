@@ -46,6 +46,7 @@ const data: DemoData = {
       'POST /api/v1/emergency/cases/c1/triage/preview': answer(200, { level: 2 }),
     }),
     nurse: role('nurse', {}),
+    patient: { ...role('patient', {}), phone: '+919000001021' },
   },
 };
 
@@ -124,6 +125,22 @@ describe('the replay', () => {
     const write = await ask(replay, 'POST', '/api/v1/visits', { patientId: 'p1' });
     assert.equal(write.status, 403);
     assert.equal(write.body.code, 'demo.read_only');
+  });
+
+  it('signs the demo patient in to the portal with any code, and refuses other numbers', async () => {
+    const other = await ask(replay, 'POST', '/api/v1/auth/otp/request', { phone: '98765 43210' });
+    assert.equal(other.status, 422);
+    assert.match(other.body.detail, /9000001021/);
+    const sent = await ask(replay, 'POST', '/api/v1/auth/otp/request', { phone: '90000 01021' });
+    assert.equal(sent.status, 200);
+    const verified = await ask(replay, 'POST', '/api/v1/auth/otp/verify', {
+      challengeId: sent.body.challengeId,
+      code: '000000',
+    });
+    assert.equal(verified.status, 200);
+    assert.equal(store.get('hc360-demo:role'), 'patient');
+    const check = await ask(replay, 'POST', '/api/v1/public/challenge', { action: 'otp', subject: null });
+    assert.equal(check.body.required, false);
   });
 
   it('turns the idle screen lock off and signs out', async () => {

@@ -2,14 +2,20 @@
 // role in Chromium, walks the role's part of the app (lib/walk.mjs) and keeps each API call's answer. The answers are
 // the demo's data: build.mjs packs them.
 //
-//   HC360_DEMO_PASSWORD=… node demo/capture.mjs <out-dir> [role,role,…]
+//   HC360_DEMO_PASSWORD=… HC360_DEMO_DB=postgresql://… node demo/capture.mjs <out-dir> [role,role,…]
 //
 // CHROMIUM_PATH points at a Chromium other than the one this Playwright version downloads. DEMO_PARALLEL roles (3)
 // record at a time, each for at most DEMO_MAX_MINUTES (40).
+//
+// The role "patient" is the patient personas.ts names, on the patient portal (HC360_PORTAL, the server's patients'
+// port). Patients sign in with a code sent by SMS; the demo server has no SMS gateway, so the code is read from the
+// messages it queued for one, in its database (HC360_DEMO_DB, a connection URI for psql).
 
 import { chromium } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { PORTAL_PATIENT } from './app/personas.ts';
 import { Api, BASE } from './lib/api.mjs';
 import { walkRole } from './lib/walk.mjs';
 
@@ -27,14 +33,19 @@ export const ROLES = [
   'billing',
   'hospitaladmin',
   'admin',
+  'patient',
 ];
 const roles = (process.argv[3] ?? ROLES.join(',')).split(',');
 const PARALLEL = Number(process.env.DEMO_PARALLEL ?? 3);
 const MAX_MINUTES = Number(process.env.DEMO_MAX_MINUTES ?? 40);
+/** Where the server serves the patient portal: its own port, which a hospital opens to the internet. */
+const PORTAL = process.env.HC360_PORTAL ?? 'https://localhost:7361';
+const DB = process.env.HC360_DEMO_DB;
 
+const ORIGINS = new Set([new URL(BASE).origin, new URL(PORTAL).origin]);
 const isApi = (url) => {
   const { origin, pathname } = new URL(url);
-  return origin === new URL(BASE).origin && (pathname.startsWith('/api/') || pathname === '/health/live');
+  return ORIGINS.has(origin) && (pathname.startsWith('/api/') || pathname === '/health/live');
 };
 const TEXT = /json|text|xml|html|javascript|csv|problem/;
 const pathOf = (url) => {
@@ -71,6 +82,57 @@ export async function deskSettings() {
 async function patientIds() {
   const admin = await Api.as('admin');
   return (await admin.get('/api/v1/patients?page=1&pageSize=50')).items.map((p) => p.id);
+}
+
+/** Asks the demo server's database (psql, HC360_DEMO_DB) one question; `values` are passed as psql variables. */
+function ask(query, values) {
+  if (!DB) {
+    throw new Error("Set HC360_DEMO_DB to a connection URI for the demo server's database (the patient role).");
+  }
+  const variables = Object.entries(values).flatMap(([name, value]) => ['-v', `${name}=${value}`]);
+  return execFileSync('psql', [DB, '-At', '-v', 'ON_ERROR_STOP=1', ...variables], { input: query, encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
+    .map((row) => row.split('|'));
+}
+
+/** The portal sign-in codes the server has queued for a number, as [message id, code]. */
+const sentCodes = (phone) =>
+  ask(
+    `select id, payload->'values'->>'code' from platform.outbox_messages
+     where payload->>'templateKey' = 'auth.otp' and payload->>'to' = :'phone';`,
+    { phone },
+  );
+
+/** Signs in to the patient portal as PORTAL_PATIENT, with the code the server sent to their phone. */
+async function signInPatient(page) {
+  const [[phone] = []] = ask(`select phone from patients.patients where full_name = :'name' limit 1;`, {
+    name: PORTAL_PATIENT,
+  });
+  if (!phone) throw new Error(`No patient called ${PORTAL_PATIENT}: run story.mjs first.`);
+  const earlier = new Set(sentCodes(phone).map(([id]) => id));
+  await page.goto(`${PORTAL}/portal/sign-in`);
+  const number = page.locator('input[autocomplete="tel-national"]');
+  await number.fill(phone.replace(/^\+91/, ''));
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/api/v1/auth/otp/request') && r.ok(), { timeout: 60_000 }),
+    number.press('Enter'),
+  ]);
+  let code;
+  for (let i = 0; i < 40 && !code; i++) {
+    code = sentCodes(phone).find(([id]) => !earlier.has(id))?.[1];
+    if (!code) await page.waitForTimeout(250);
+  }
+  if (!code) throw new Error(`The server queued no sign-in code for ${PORTAL_PATIENT}.`);
+  const verified = page.waitForResponse((r) => r.url().endsWith('/api/v1/auth/otp/verify'));
+  const box = page.locator('input[autocomplete="one-time-code"]');
+  await box.fill(code);
+  // Six digits may send themselves; otherwise the form is sent as a patient would.
+  const sent = await Promise.race([verified.then(() => true), page.waitForTimeout(1500).then(() => false)]);
+  if (!sent) await box.press('Enter');
+  const user = (await (await verified).json()).user;
+  await page.waitForURL((url) => !url.pathname.endsWith('/sign-in'), { timeout: 30_000 });
+  return { user, phone };
 }
 
 async function record(browser, role, desk, patients) {
@@ -164,28 +226,34 @@ async function record(browser, role, desk, patients) {
     }
   }
 
+  const portal = role === 'patient';
   /** In-app navigation, as a link does (the router follows pushState): a reload would sign in again each time. */
   async function go(path) {
     await page.evaluate((target) => globalThis.history.pushState(null, '', target), path);
     await quiet();
     if (pathOf(page.url()) !== path) {
-      await page.goto(`${BASE}${path}`);
+      await page.goto(`${portal ? PORTAL : BASE}${path}`);
       await quiet();
     }
   }
 
   // Sign in as the role, on the sign-in screen.
-  await page.goto(`${BASE}/login`);
   let user;
+  let phone;
   try {
-    await page.locator('input[autocomplete="username"]').fill(role);
-    await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-    const [answer] = await Promise.all([
-      page.waitForResponse((r) => r.url().endsWith('/api/v1/auth/login')),
-      page.getByRole('button', { name: 'Sign in' }).click(),
-    ]);
-    user = (await answer.json()).user;
-    await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 });
+    if (portal) {
+      ({ user, phone } = await signInPatient(page));
+    } else {
+      await page.goto(`${BASE}/login`);
+      await page.locator('input[autocomplete="username"]').fill(role);
+      await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
+      const [answer] = await Promise.all([
+        page.waitForResponse((r) => r.url().endsWith('/api/v1/auth/login')),
+        page.getByRole('button', { name: 'Sign in' }).click(),
+      ]);
+      user = (await answer.json()).user;
+      await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 });
+    }
   } catch (error) {
     await page.screenshot({ path: join(OUT, `${role}-sign-in.png`) });
     throw error;
@@ -196,8 +264,9 @@ async function record(browser, role, desk, patients) {
     go,
     quiet,
     user,
-    patients,
+    patients: portal ? [] : patients,
     outOfTime: () => Date.now() - startedAt > MAX_MINUTES * 60_000,
+    app: portal ? 'portal' : 'staff',
   });
 
   await quiet();
@@ -208,6 +277,7 @@ async function record(browser, role, desk, patients) {
     recordedAt: now.toISOString(),
     minutes: Math.round((Date.now() - startedAt) / 6000) / 10,
     user,
+    ...(phone ? { phone } : {}),
     desk,
     patients,
     menu,
