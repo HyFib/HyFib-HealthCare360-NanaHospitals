@@ -11,6 +11,7 @@ export default tseslint.config(
     // Build output, and what a Playwright run leaves behind (its HTML report holds the trace viewer's own scripts).
     ignores: [
       '**/dist/**',
+      'demo/out/**',
       '**/node_modules/**',
       '**/routeTree.gen.ts',
       '**/coverage/**',
@@ -76,8 +77,8 @@ export default tseslint.config(
     rules: { 'react-refresh/only-export-components': 'off' },
   },
   {
-    // Build and maintenance scripts run in Node.
-    files: ['**/scripts/**/*.{js,mjs}', '*.config.js'],
+    // Build and maintenance scripts run in Node, and so do the demo's tools (demo/README.md).
+    files: ['**/scripts/**/*.{js,mjs}', '*.config.js', 'demo/**/*.mjs'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: globals.node },
   },
 );

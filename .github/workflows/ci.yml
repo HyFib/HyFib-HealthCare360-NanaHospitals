@@ -295,6 +295,10 @@ jobs:
       - name: Unit tests
         run: pnpm -r test
 
+      # The rules the shareable demo answers the staff app by (src/web/demo/README.md).
+      - name: Demo replay tests
+        run: node --test "demo/**/*.test.ts"
+
       - name: Build
         run: pnpm -r --filter './apps/**' build
 
