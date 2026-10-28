@@ -1,6 +1,6 @@
 import { auth, RealtimeProvider, useSession } from '@hc360/core';
 import { LoadingState } from '@hc360/ui';
-import { createFileRoute, Outlet, redirect, useLocation, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Outlet, redirect, useNavigate, useRouter } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { AppShell } from '@/shell/AppShell';
 import { LockScreen } from '@/shell/LockScreen';
@@ -24,16 +24,22 @@ function AppLayout() {
   const user = useSession((s) => s.user);
   const locked = useSession((s) => s.locked);
   const navigate = useNavigate();
-  const location = useLocation();
+  const router = useRouter();
   useLockSync();
 
-  // Session ended elsewhere (signed out, revoked by an administrator, idle timeout on the server).
+  // Session ended elsewhere (signed out, revoked by an administrator, idle timeout on the server), or here from the
+  // account menu. Once, when it ends: the screen is read then, not followed. This layout stays on screen until the
+  // sign-in page is ready, and following the screen would send the sign-in page to itself again and again, each time
+  // "returning" to the one before.
   useEffect(() => {
     if (status === 'anonymous') {
-      // The session is over: unsaved changes cannot be saved any more, so nothing holds the sign-in page back.
-      void navigate({ to: '/login', search: { redirect: location.href }, replace: true, ignoreBlocker: true });
+      const { pathname, href } = router.state.location;
+      if (pathname !== '/login') {
+        // The session is over: unsaved changes cannot be saved any more, so nothing holds the sign-in page back.
+        void navigate({ to: '/login', search: { redirect: href }, replace: true, ignoreBlocker: true });
+      }
     }
-  }, [status, navigate, location.href]);
+  }, [status, navigate, router]);
 
   if (!user) {
     return <LoadingState label="Signing you in…" />;

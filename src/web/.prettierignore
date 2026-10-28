@@ -6,6 +6,7 @@ apps/staff/src/test/serverAccess.json
 
 # Build output, which `pnpm test:a11y` also leaves in each app's dist folder, and what a Playwright run leaves behind.
 **/dist/**
+demo/out/
 **/playwright-report/**
 **/test-results/**
 **/blob-report/**

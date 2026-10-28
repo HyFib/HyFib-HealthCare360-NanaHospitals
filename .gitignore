@@ -46,6 +46,9 @@ secrets.json
 # Web builds are copied into the server's wwwroot by `pnpm build` (staff app at /, portal at /portal).
 src/server/HyFib.HealthCare360.Server/wwwroot/
 
+# What the demo's scripts write (src/web/demo/README.md): the story's outcome, the recordings, the built demo.
+src/web/demo/out/
+
 # OS / editor
 .DS_Store
 Thumbs.db

@@ -3,13 +3,14 @@ import { PersonQuestionMarkRegular, SignOutRegular } from '@fluentui/react-icons
 import { markActivity, useIdle, useSession } from '@hc360/core';
 import { EmptyState } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import { Fragment, useEffect, useMemo, type ReactNode } from 'react';
 import { PortalPage } from '@/components/PortalPage';
 import { ErrorBlock, PageSpinner } from '@/components/States';
 import { useT } from '@/i18n';
 import { resolveActiveProfile } from '@/lib/profiles';
 import { useProfileStore } from '@/lib/profileStore';
+import { SIGN_IN_PATH } from '@/lib/redirect';
 import { forgetLocalState } from '@/lib/session';
 import { IDLE_SIGN_OUT_MINUTES, takeSessionEndReason, useCallActivity } from '@/lib/sessionEnd';
 import type { PortalProfile } from '@/lib/types';
@@ -37,19 +38,22 @@ export function SignedInFrame({ children, requireSession }: { children: ReactNod
   const status = useSession((s) => s.status);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const href = useLocation({ select: (location) => location.href });
+  const router = useRouter();
   const signOut = useSignOut();
   const inCall = useCallActivity((s) => s.inCall);
   const profiles = useQuery(profileQueries.list());
   const storedId = useProfileStore((s) => s.profileId);
 
   // The session ended elsewhere (signed out, expired, revoked by the hospital) or here: forget everything, then go
-  // to the sign-in page, which explains why.
+  // to the sign-in page, which explains why. Once, when the session ends: the page is read then, not followed. This
+  // frame stays on screen until the sign-in page is ready, and following the page would send the sign-in page to
+  // itself again and again, each time "returning" to the one before (and the reason is gone after the first).
   useEffect(() => {
     if (status === 'anonymous') {
       const reason = takeSessionEndReason();
       forgetLocalState(queryClient);
-      if (requireSession || reason) {
+      const { pathname, href } = router.state.location;
+      if ((requireSession || reason) && pathname !== SIGN_IN_PATH) {
         // The session is over: unsaved changes cannot be saved any more, so nothing holds the sign-in page back.
         void navigate({
           to: '/sign-in',
@@ -59,7 +63,7 @@ export function SignedInFrame({ children, requireSession }: { children: ReactNod
         });
       }
     }
-  }, [status, queryClient, navigate, href, requireSession]);
+  }, [status, queryClient, navigate, router, requireSession]);
 
   // Shared phones: sign out after a quiet spell, but never in the middle of a video consultation.
   useIdle(IDLE_SIGN_OUT_MINUTES * 60_000, () => void signOut('idle'), status === 'authenticated' && !inCall);
