@@ -251,6 +251,21 @@ public sealed class RecordRequest : AuditableEntity, IFacilityScoped
     public Guid? ReceivedByUserId { get; private set; }
     public string? CancelReason { get; private set; }
 
+    /// <summary>
+    /// A copy of the record asked for by the patient, their attendant or a legal authority is issued within 72 hours (Indian
+    /// Medical Council (Professional Conduct, Etiquette and Ethics) Regulations 2002, reg. 1.3.2).
+    /// </summary>
+    public static readonly TimeSpan CopyWithin = TimeSpan.FromHours(72);
+
+    /// <summary>A copy for the patient (from the portal or the desk) or for a legal authority: <see cref="CopyWithin"/> applies.</summary>
+    public bool IsCopy => IsPatientRequest || Purpose is RecordRequestPurpose.PatientCopy or RecordRequestPurpose.Legal;
+
+    /// <summary>When the copy is due, for a request that is a copy.</summary>
+    public DateTimeOffset? CopyDueAt => IsCopy ? RequestedAt + CopyWithin : null;
+
+    /// <summary>A copy not issued within its 72 hours: still waiting past them, or issued after them. A cancelled one is not late.</summary>
+    public bool IsCopyLate(DateTimeOffset now) => CopyDueAt is { } due && Status != RecordRequestStatus.Cancelled && (IssuedAt ?? now) > due;
+
     public RecordRequestStatus EffectiveStatus(DateOnly today) =>
         Status == RecordRequestStatus.Issued && DueBackOn is { } due && due < today ? RecordRequestStatus.Overdue : Status;
 

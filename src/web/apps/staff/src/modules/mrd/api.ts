@@ -376,6 +376,10 @@ export interface RecordRequestDto {
   dueBackOn: string | null;
   returnedAt: string | null;
   cancelReason: string | null;
+  /** A copy for the patient or a legal authority is issued within 72 hours (MCI Regulations 2002, reg. 1.3.2). */
+  copyDueAt: string | null;
+  /** Issued after its 72 hours, or still waiting past them. */
+  copyLate: boolean;
 }
 
 export interface CreateRecordRequestRequest {
@@ -406,6 +410,8 @@ export interface RecordListParams {
 
 export interface RequestListParams {
   status?: RecordRequestStatus;
+  /** Copies still waiting past their 72 hours, the longest-waiting first. */
+  copyOverdue?: boolean;
   page?: number;
 }
 

@@ -113,10 +113,15 @@ internal static class ChartEndpoints
     private static async Task<IResult> Archive(Guid id, ArchiveMedicalRecordRequest request, MedicalRecordService charts, CancellationToken ct) =>
         (await charts.ArchiveAsync(id, request.Location, ct)).ToOk();
 
-    private static async Task<IResult> ListRequests([AsParameters] PageQuery query, RecordRequestStatus? status, HospitalDbContext db, TimeProvider time,
-        CancellationToken ct)
+    /// <summary>
+    /// <c>copyOverdue</c> = copies for the patient or a legal authority still waiting past their 72 hours (MCI Regulations
+    /// 2002, reg. 1.3.2), the longest-waiting first.
+    /// </summary>
+    private static async Task<IResult> ListRequests([AsParameters] PageQuery query, RecordRequestStatus? status, bool? copyOverdue, HospitalDbContext db,
+        TimeProvider time, CancellationToken ct)
     {
         var today = time.Today();
+        var now = time.GetUtcNow();
         var requests = db.Set<RecordRequest>().AsNoTracking();
         requests = status switch
         {
@@ -126,13 +131,20 @@ internal static class ChartEndpoints
             null => requests,
         };
 
-        var page = await (
-                from r in requests
-                join p in db.Set<Patient>() on r.PatientId equals p.Id
-                orderby r.RequestedAt descending
-                select new { Request = r, p.Uhid, p.FullName })
-            .ToPagedResultAsync(query.ToRequest(), ct);
-        return TypedResults.Ok(page.Map(x => MedicalRecordService.ToDto(x.Request, x.Uhid, x.FullName, today)));
+        if (copyOverdue == true)
+        {
+            var askedBefore = now - RecordRequest.CopyWithin;
+            requests = requests.Where(r => r.Status == RecordRequestStatus.Requested && r.RequestedAt < askedBefore
+                && (r.IsPatientRequest || r.Purpose == RecordRequestPurpose.PatientCopy || r.Purpose == RecordRequestPurpose.Legal));
+        }
+
+        var rows =
+            from r in requests
+            join p in db.Set<Patient>() on r.PatientId equals p.Id
+            select new { Request = r, p.Uhid, p.FullName };
+        rows = copyOverdue == true ? rows.OrderBy(x => x.Request.RequestedAt) : rows.OrderByDescending(x => x.Request.RequestedAt);
+        var page = await rows.ToPagedResultAsync(query.ToRequest(), ct);
+        return TypedResults.Ok(page.Map(x => MedicalRecordService.ToDto(x.Request, x.Uhid, x.FullName, today, now)));
     }
 
     private static async Task<IResult> CreateRequest(CreateRecordRequestRequest request, MedicalRecordService charts, CancellationToken ct) =>

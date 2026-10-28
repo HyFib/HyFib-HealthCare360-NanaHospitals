@@ -455,7 +455,7 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | POST | `/mrd/records/deficiencies/{deficiencyId}/resolve` | mrd.records or emr.write | `ResolveDeficiencyRequest{note}` |
 | POST | `/mrd/records/{id}/scan` | mrd.records | detects unsigned encounters/notes, missing diagnosis, missing/unsigned discharge summary, pending coding; auto-closes fixed ones |
 | POST | `/mrd/records/{id}/complete`, `/archive` | mrd.records | `ArchiveMedicalRecordRequest{location}`; completion sets `retainUntil` (OP 3 y, IP 5 y, MLC permanent) |
-| GET / POST | `/mrd/record-requests` | mrd.records | `CreateRecordRequestRequest{patientId, medicalRecordId?, requestedByName, requestingDepartment, purpose, details}`; status filter `Overdue` supported |
+| GET / POST | `/mrd/record-requests` | mrd.records | `CreateRecordRequestRequest{patientId, medicalRecordId?, requestedByName, requestingDepartment, purpose, details}`; status filter `Overdue` supported; `copyOverdue=true` lists the copies still waiting past their 72 hours, the longest-waiting first. A copy for the patient (purpose `PatientCopy`, or asked through the portal) or for a legal authority (`Legal`) is due 72 hours after the request (Indian Medical Council (Professional Conduct, Etiquette and Ethics) Regulations 2002, reg. 1.3.2): `RecordRequestDto.copyDueAt`, and `copyLate` when it went, or is still waiting, past that. The records screen shows both and warns while any copy waits past its 72 hours |
 | POST | `/mrd/record-requests/{id}/issue` / `return` / `cancel` | mrd.records | `IssueRecordRequest{dueBackOn}` / — / `CancelRecordRequest{reason}` |
 
 #### Births and deaths (Registration of Births and Deaths Act 1969, as amended in 2023)
