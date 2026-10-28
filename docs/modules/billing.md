@@ -33,6 +33,17 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
   stores `placeOfSupply` and `igstAmount`. Tally posts IGST to the `Output IGST` ledger. A facility without a GSTIN bills
   CGST and SGST as before.
 * Only the **patient share** is rounded to the rupee (it is collected in cash); the payer share stays at paise.
+* **Cash limit** (Income-tax Act s.269ST; the penalty under s.271DA is the whole sum, and hospitals have no exemption):
+  ₹2,00,000 or more may not be taken in cash from one patient in a day, for one admission (deposits and the bills of the
+  stay, whatever the day), for one bill, or in one payment. A wallet counts as cash: rule 6ABBA's bank modes are cards,
+  net banking, IMPS, UPI, RTGS, NEFT and BHIM Aadhaar Pay. The day counts the cash taken at the billing counters and at
+  the pharmacy (each registers an `ICashReceiptSource`) at every facility under the same PAN (every facility when the
+  PAN is not recorded), from the IST midnight; money paid back is not taken off. A payment that would reach the limit is
+  refused (422 `payments.cash_limit`) with how much less to take in cash. `CashLimit` takes a per-patient advisory lock
+  inside the transaction that records the money, so two counters taking cash from the same patient at once are counted
+  one after the other. A payment taken online counts as cash when the gateway says it was made from a wallet, and is
+  held to the limit when its capture is recorded, on the day the gateway took it: refused, it is not recorded, and the
+  capture is left to the accountants (an unrecorded-payment exception) to refund.
 * Every document number is allocated inside the transaction that saves the document, so series are gap-free.
 * Charge posting (per source line), gateway payments, POS transactions and patient advances are idempotent — a WiFi
   retry or a replayed webhook can never charge or receipt twice (backed by unique indexes).
@@ -153,8 +164,8 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 |---|---|---|---|
 | GET | `/api/v1/billing/receipts?from&to&patientId&billId&ipAccountId&purpose&counter` (paged) | `charges.read` / `payments.collect` | → `PagedResult<ReceiptListItem>` |
 | GET | `/api/v1/billing/receipts/{id}` | same | → `ReceiptDto` |
-| POST | `/api/v1/billing/receipts` | `billing.payments.collect` | `CollectPaymentRequest(billId, payments[], notes)` → 201 `ReceiptDto` (`{FAC}RC{YY}{SEQ:7}`; split modes; cash needs an open shift when `billing.shift.required`) |
-| POST | `/api/v1/billing/ip-accounts/{id}/deposits` | `billing.deposits` | `CollectDepositRequest` → 201 `ReceiptDto` |
+| POST | `/api/v1/billing/receipts` | `billing.payments.collect` | `CollectPaymentRequest(billId, payments[], notes)` → 201 `ReceiptDto` (`{FAC}RC{YY}{SEQ:7}`; split modes; cash needs an open shift when `billing.shift.required`); 422 `payments.cash_limit` (the cash limit, above) |
+| POST | `/api/v1/billing/ip-accounts/{id}/deposits` | `billing.deposits` | `CollectDepositRequest` → 201 `ReceiptDto`; 422 `payments.cash_limit` |
 | GET | `/api/v1/billing/patients/{patientId}/dues` | `payments.collect` / `charges.read` | → `PatientDues` (open bills, IP deposits + open patient advances, `advances[]`) |
 | GET | `/api/v1/billing/patients/{patientId}/advances?openOnly` | `payments.collect` / `charges.read` | → `PatientAdvanceDto[]` (amount, adjusted, refunded, balance, refund pending) |
 | GET | `/api/v1/billing/refunds?status&patientId&billId` (paged) | `refunds.request` / `refunds.approve` / `charges.read` | → `PagedResult<RefundDto>` |

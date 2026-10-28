@@ -19,9 +19,11 @@ public sealed class SaleAdjustmentService(
     ControlledDrugRegisterService register,
     PharmacyRealtime realtime,
     IEInvoiceRegister einvoices,
+    CashLimit cashLimit,
     ICurrentUser currentUser,
     TimeProvider time)
 {
+    /// <summary>Collects a balance left on an invoice; cash is held to the Income-tax Act's limit (<see cref="CashLimit"/>).</summary>
     public async Task<Result> CollectAsync(Guid saleId, CollectPaymentRequest request, CancellationToken ct)
     {
         var sale = await db.Set<PharmacySale>().Include(s => s.Payments).FirstOrDefaultAsync(s => s.Id == saleId, ct);
@@ -30,10 +32,19 @@ public sealed class SaleAdjustmentService(
             return Error.NotFound(nameof(PharmacySale), saleId);
         }
 
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var cash = await cashLimit.CheckAsync(sale.FacilityId, sale.PatientId, request.Mode == PaymentMode.Cash ? request.Amount : 0m, "invoice",
+            c => PharmacyCashReceipts.CashForSaleAsync(db, sale.Id, c), ct);
+        if (cash.IsFailure)
+        {
+            return cash;
+        }
+
         var collected = sale.CollectPayment(request.Mode, request.Amount, request.Reference, time.GetUtcNow(), currentUser.UserId);
         if (collected.IsSuccess)
         {
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
 
         return collected;

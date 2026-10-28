@@ -80,6 +80,7 @@ public sealed class DispensingService(
     PatientAccessGuard guard,
     ISettingsService settings,
     IAntimicrobialStewardship stewardship,
+    CashLimit cashLimit,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -179,6 +180,12 @@ public sealed class DispensingService(
 
         var now = time.GetUtcNow();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var cash = await cashLimit.CheckAsync(store.Value.FacilityId, entry.PatientId, PharmacyCashReceipts.CashIn(request.Payments), "invoice", _ => Task.FromResult(0m), ct);
+        if (cash.IsFailure)
+        {
+            return cash.Error!;
+        }
+
         var sale = new PharmacySale
         {
             FacilityId = store.Value.FacilityId,
@@ -309,6 +316,12 @@ public sealed class DispensingService(
 
         var now = time.GetUtcNow();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var cash = await cashLimit.CheckAsync(store.Value.FacilityId, patient?.Id, PharmacyCashReceipts.CashIn(request.Payments), "invoice", _ => Task.FromResult(0m), ct);
+        if (cash.IsFailure)
+        {
+            return cash.Error!;
+        }
+
         var sale = new PharmacySale
         {
             FacilityId = store.Value.FacilityId,

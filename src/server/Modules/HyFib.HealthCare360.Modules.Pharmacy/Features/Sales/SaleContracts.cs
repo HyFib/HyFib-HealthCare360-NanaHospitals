@@ -193,7 +193,7 @@ public sealed class CollectPaymentRequestValidator : AbstractValidator<CollectPa
 {
     public CollectPaymentRequestValidator()
     {
-        RuleFor(x => x.Amount).GreaterThan(0);
+        RuleFor(x => x.Amount).GreaterThan(0).PrecisionScale(18, 2, true).WithMessage("Use at most 2 decimal places.");
         RuleFor(x => x.Mode).NotEqual(PaymentMode.Credit).WithMessage("Collect the balance in cash, card or UPI.");
         RuleFor(x => x.Reference).MaximumLength(64);
     }
