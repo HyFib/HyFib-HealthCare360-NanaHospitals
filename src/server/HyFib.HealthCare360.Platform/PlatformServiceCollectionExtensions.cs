@@ -309,6 +309,9 @@ public static class PlatformServiceCollectionExtensions
             services.AddSingleton<OutboxDispatcher>();
             services.AddHostedService(sp => sp.GetRequiredService<OutboxDispatcher>());
             services.AddHostedService<AuditSealer>();
+            services.AddHostedService<AuditChainCheckJob>();
+            services.AddSingleton<SystemHealthAlerts>();
+            services.AddHostedService(sp => sp.GetRequiredService<SystemHealthAlerts>());
             services.AddHostedService<IdempotencyCleanupService>();
             services.AddHostedService<PartitionMaintenanceJob>();
             services.AddHostedService<ClusterStoreCleanup>();

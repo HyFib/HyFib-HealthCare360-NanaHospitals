@@ -2,7 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Messaging;
+using HyFib.HealthCare360.Platform.Networking;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Settings;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -158,6 +163,101 @@ public sealed class AuditSealTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_check_that_finds_the_chain_broken_turns_System_health_critical_until_one_passes()
+    {
+        var first = (await RecordAndSealAsync(3))[0].ChainIndex!.Value;
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        await using var hold = await HoldSealerAsync();
+        var chain = await ChainFromAsync(first);
+        try
+        {
+            await RewriteAsync(chain, "Looked up the allergy history", keepSeals: true);
+            var check = await VerifyAsync();
+            check.Valid.ShouldBeFalse();
+
+            var warning = (await HealthWarningsAsync(admin)).Where(w => w.Code == "audit.chain_broken").ShouldHaveSingleItem();
+            warning.Severity.ShouldBe("critical");
+            warning.Message.ShouldContain(check.Message!);
+        }
+        finally
+        {
+            await PutBackAsync(chain);
+        }
+
+        (await VerifyAsync()).Valid.ShouldBeTrue();
+        (await HealthWarningsAsync(admin)).ShouldNotContain(w => w.Code == "audit.chain_broken");
+    }
+
+    [Fact]
+    public async Task A_broken_chain_is_told_to_administrators_once_while_it_lasts_and_again_when_it_comes_back()
+    {
+        var first = (await RecordAndSealAsync(3))[0].ChainIndex!.Value;
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var alerts = server.Services.GetRequiredService<SystemHealthAlerts>();
+        await using var hold = await HoldSealerAsync();
+        var chain = await ChainFromAsync(first);
+        try
+        {
+            await RewriteAsync(chain, "Looked up the allergy history", keepSeals: true);
+            var broken = (await VerifyAsync()).Message!;
+            await alerts.CheckAsync(Ct);
+            await alerts.CheckAsync(Ct);
+            (await AlertsAsync(admin, broken)).ShouldBe(1, "told once while it lasts");
+
+            await PutBackAsync(chain);
+            (await VerifyAsync()).Valid.ShouldBeTrue();
+            await alerts.CheckAsync(Ct);
+            await RewriteAsync(chain, "Looked up the allergy history", keepSeals: true);
+            (await VerifyAsync()).Valid.ShouldBeFalse();
+            await alerts.CheckAsync(Ct);
+            (await AlertsAsync(admin, broken)).ShouldBe(2, "told again when it comes back");
+        }
+        finally
+        {
+            await PutBackAsync(chain);
+        }
+
+        (await VerifyAsync()).Valid.ShouldBeTrue();
+        await alerts.CheckAsync(Ct);
+    }
+
+    /// <summary>
+    /// The SMS to the IT on-call number waits out an internet outage as long as any message does, not the six hours a WiFi
+    /// alert does: a warning is told once while it lasts, so one whose SMS expired unsent was never told again.
+    /// </summary>
+    [Fact]
+    public async Task A_broken_chain_texted_to_IT_on_call_is_tried_as_long_as_any_message()
+    {
+        const string onCallPhone = "+919800000142";
+        var first = (await RecordAndSealAsync(3))[0].ChainIndex!.Value;
+        using var alerts = ActivatorUtilities.CreateInstance<SystemHealthAlerts>(server.Services);
+        await using var onCall = await OnCallAsync(onCallPhone);
+        var from = DateTimeOffset.UtcNow;
+        await using var hold = await HoldSealerAsync();
+        var chain = await ChainFromAsync(first);
+        try
+        {
+            await RewriteAsync(chain, "Looked up the allergy history", keepSeals: true);
+            var broken = (await VerifyAsync()).Message!;
+            await alerts.CheckAsync(Ct);
+
+            var texts = await OnCallTextsAsync(onCallPhone, broken, from);
+            texts.ShouldNotBeEmpty("the broken chain is texted to IT on-call");
+            foreach (var text in texts)
+            {
+                (text.ExpiresAt!.Value - text.CreatedAt).ShouldBe(OutboxRetryPolicy.DefaultLifetime, "tried as long as any message");
+            }
+        }
+        finally
+        {
+            await PutBackAsync(chain);
+        }
+
+        var after = await VerifyAsync();
+        after.Valid.ShouldBeTrue(after.Message);
+    }
+
+    [Fact]
     public async Task Only_whoever_may_read_the_audit_trail_exports_it()
     {
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
@@ -165,6 +265,57 @@ public sealed class AuditSealTests(HospitalServer server)
         using var refused = await doctor.SendRawAsync(HttpMethod.Get,
             $"/api/v1/admin/audit/export?from={Uri.EscapeDataString(now.AddDays(-1).ToString("O"))}&to={Uri.EscapeDataString(now.ToString("O"))}");
         refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    private static async Task<IReadOnlyList<HealthWarning>> HealthWarningsAsync(ApiClient admin) =>
+        (await admin.GetAsync<HealthWarnings>("/api/v1/admin/system/health")).Warnings;
+
+    /// <summary>The critical System health alerts <paramref name="admin"/> has that say <paramref name="message"/>.</summary>
+    private static async Task<int> AlertsAsync(ApiClient admin, string message) =>
+        (await admin.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=200")).Items
+        .Count(n => n.Title == "System health: critical" && n.Severity == "critical" && n.Body?.Contains(message, StringComparison.Ordinal) == true);
+
+    private sealed record HealthWarnings(IReadOnlyList<HealthWarning> Warnings);
+
+    /// <summary>Sets the IT on-call number (<c>alerts.oncallPhone</c>); disposed, puts back the one before, or none.</summary>
+    private async Task<IAsyncDisposable> OnCallAsync(string phone)
+    {
+        const string key = "alerts.oncallPhone";
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+            var before = await settings.GetAsync<JsonElement?>(key, cancellationToken: Ct);
+            await settings.SetAsync(key, phone, cancellationToken: Ct);
+            return new Restore(async () =>
+            {
+                await using var restore = server.Services.CreateAsyncScope();
+                var saved = restore.ServiceProvider.GetRequiredService<ISettingsService>();
+                if (before is { } value)
+                {
+                    await saved.SetAsync(key, value, cancellationToken: CancellationToken.None);
+                }
+                else
+                {
+                    await saved.RemoveAsync(key, null, CancellationToken.None);
+                }
+            });
+        }
+    }
+
+    /// <summary>The SMS to IT on-call at <paramref name="phone"/> queued since <paramref name="from"/> that say <paramref name="message"/>.</summary>
+    private async Task<List<OutboxMessage>> OnCallTextsAsync(string phone, string message, DateTimeOffset from)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var queued = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<OutboxMessage>().AsNoTracking()
+            .Where(m => m.Type == NotificationService.SmsType && m.CreatedAt >= from)
+            .ToListAsync(Ct);
+        return queued.Where(m => m.Read<NotificationDelivery>() is { TemplateKey: "system.alert" } delivery
+            && delivery.To == Phone.Normalize(phone) && delivery.Values["message"].Contains(message, StringComparison.Ordinal)).ToList();
+    }
+
+    private sealed class Restore(Func<Task> restore) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await restore();
     }
 
     /// <summary>The integrity check as Administration › Audit log runs it.</summary>
@@ -177,9 +328,17 @@ public sealed class AuditSealTests(HospitalServer server)
     /// <summary>
     /// Holds the sealer's lock on a connection of its own, not from the pool: a pooled connection goes back to the pool when
     /// disposed with its session, and the lock, still held. Closing this one ends the session and lets the lock go.
+    /// The chain's end is anchored first. The server anchors it hourly, the first time as soon as there is a chain, and
+    /// without the sealer's lock: an anchor taken while a test has the chain changed would keep the changed hash after the
+    /// test puts the chain back.
     /// </summary>
     private async Task<NpgsqlConnection> HoldSealerAsync()
     {
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AuditChainService>().AnchorIfDueAsync(TimeSpan.Zero, Ct);
+        }
+
         var connection = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(OwnerConnectionString()) { Pooling = false }.ConnectionString);
         await connection.OpenAsync(Ct);
         await using var command = new NpgsqlCommand($"SELECT pg_advisory_lock({SealerLock})", connection);

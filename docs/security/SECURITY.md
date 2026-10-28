@@ -490,7 +490,15 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     point, is found even by someone who holds the key.
   - Administration › Audit log › *Verify integrity* re-checks the chain, the seals and the anchors, and names the position
     of the first entry changed, moved or removed, even by someone who turned the triggers off (ASVS V16.4.2). It also
-    fails on any seal outside the chain.
+    fails on any seal outside the chain. The server that runs the jobs makes the same check by itself an hour after it
+    starts and once a day after that. Every check, asked for or not, is written to the audit trail itself
+    (`audit.verified`, critical when it fails), and while the latest one failed System health shows `audit.chain_broken`
+    as critical.
+  - Critical System health warnings are not left for someone to open the page: every five minutes the server that runs
+    the jobs tells each new one to everyone who may see System health, in the app, and to the IT on-call number by SMS
+    (and WhatsApp when switched on), as Wi-Fi alerts are. A warning is told once while it lasts, and again if it clears
+    and comes back. Its SMS waits out an internet outage for up to seven days. The Wi-Fi warnings are left to the Wi-Fi
+    monitor, which tells them as they happen.
   - *Export for auditors* writes the sealed entries of a period, contiguous by position, with their hashes, seals and the
     anchors in range, to a JSON file (`audit.exported` is audited). An auditor checks it on any machine with
     `HyFib.HealthCare360.Server.exe audit verify-export --in <file> [--anchors <their copy of the anchor file>]`: the
