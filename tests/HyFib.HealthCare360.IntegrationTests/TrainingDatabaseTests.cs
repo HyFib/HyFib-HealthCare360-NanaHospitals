@@ -54,6 +54,35 @@ public sealed class TrainingDatabaseTests(HospitalServer server)
         (await TrainingDatabase.IsTrainingAsync(db, Ct)).ShouldBeTrue();
     }
 
+    /// <summary>
+    /// Before HC360 kept the key, the settings API saved any key, so a database may hold a value under it that the server did
+    /// not write (even <c>false</c>). It does not make a live database a training one; with no patients yet, the database is
+    /// marked as any other is, in place of that value.
+    /// </summary>
+    [Fact]
+    public async Task A_value_saved_under_the_key_before_HC360_kept_it_does_not_make_a_database_a_training_one()
+    {
+        await using var live = await NewDatabaseAsync();
+        await SaveBeforeHc360KeptTheKeyAsync(live.ConnectionString);
+        await RegisterPatientAsync(live.ConnectionString, "IT-LIVE-2");
+
+        var stopped = await Should.ThrowAsync<DatabaseUpgradeException>(() => StartAsync(live.ConnectionString, seedDemoData: true));
+
+        stopped.Message.ShouldBe(TrainingDatabase.LiveDatabaseMessage);
+        await using (var db = Context(live.ConnectionString))
+        {
+            (await TrainingDatabase.IsTrainingAsync(db, Ct)).ShouldBeFalse();
+        }
+
+        await using var empty = await NewDatabaseAsync();
+        await SaveBeforeHc360KeptTheKeyAsync(empty.ConnectionString);
+        await StartAsync(empty.ConnectionString, seedDemoData: true);
+        await using (var db = Context(empty.ConnectionString))
+        {
+            (await TrainingDatabase.IsTrainingAsync(db, Ct)).ShouldBeTrue();
+        }
+    }
+
     [Fact]
     public async Task The_load_test_adds_no_synthetic_patients_or_accounts_to_a_database_not_made_for_training()
     {
@@ -122,9 +151,17 @@ public sealed class TrainingDatabaseTests(HospitalServer server)
         await db.Set<SystemSetting>().IgnoreQueryFilters().Where(s => s.Key == TrainingDatabase.SettingKey).ExecuteDeleteAsync(Ct);
         if (training)
         {
-            db.Add(new SystemSetting { Key = TrainingDatabase.SettingKey, Value = "true" });
+            db.Add(new SystemSetting { Key = TrainingDatabase.SettingKey, Value = TrainingDatabase.MarkValue });
             await db.SaveChangesAsync(Ct);
         }
+    }
+
+    /// <summary>A value an administrator saved under the key through the settings API, which took any key before HC360 kept it.</summary>
+    private async Task SaveBeforeHc360KeptTheKeyAsync(string connectionString)
+    {
+        await using var db = Context(connectionString);
+        db.Add(new SystemSetting { Key = TrainingDatabase.SettingKey, Value = "false", CreatedBy = Guid.CreateVersion7() });
+        await db.SaveChangesAsync(Ct);
     }
 
     private HospitalDbContext Context(string connectionString) => new(

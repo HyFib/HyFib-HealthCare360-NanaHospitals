@@ -17,6 +17,12 @@ public static class TrainingDatabase
     /// <summary>The setting that marks the database as made for training or testing. Only the server sets it.</summary>
     public const string SettingKey = "database.training";
 
+    /// <summary>
+    /// The mark's value, which only the server writes. Before HC360 kept the key, the settings API saved any key: a value
+    /// saved under it then, even <c>false</c>, does not make a database one for training.
+    /// </summary>
+    internal const string MarkValue = "\"made for training or testing: no patients when marked\"";
+
     /// <summary>Why a server with demonstration data does not start on a database that holds a hospital's records.</summary>
     public const string LiveDatabaseMessage =
         "HealthCare360:SeedDemoData is on, but this database holds patients and was not made for demonstration data: it holds a " +
@@ -26,7 +32,7 @@ public static class TrainingDatabase
 
     /// <summary>Whether the database was made for training or testing.</summary>
     public static Task<bool> IsTrainingAsync(HospitalDbContext db, CancellationToken cancellationToken) =>
-        db.Set<SystemSetting>().AnyAsync(s => s.Key == SettingKey && s.FacilityId == null, cancellationToken);
+        db.Set<SystemSetting>().AnyAsync(s => s.Key == SettingKey && s.FacilityId == null && s.Value == MarkValue, cancellationToken);
 
     /// <summary>
     /// At start-up, before the seeders, with demonstration data on: marks a database that holds no patients as made for
@@ -52,12 +58,21 @@ public static class TrainingDatabase
             throw new DatabaseUpgradeException(LiveDatabaseMessage);
         }
 
-        db.Add(new SystemSetting
+        // The key is unique, deleted rows too: a value saved under it before HC360 kept it gives way to the mark.
+        var mark = await db.Set<SystemSetting>().IgnoreQueryFilters()
+            .SingleOrDefaultAsync(s => s.Key == SettingKey && s.FacilityId == null, cancellationToken);
+        if (mark is null)
         {
-            Key = SettingKey,
-            Value = "true",
-            Description = "Made for training or testing: a server with demonstration data (HealthCare360:SeedDemoData) may start on it.",
-        });
+            mark = new SystemSetting { Key = SettingKey };
+            db.Add(mark);
+        }
+
+        mark.Value = MarkValue;
+        mark.IsSecret = false;
+        mark.IsDeleted = false;
+        mark.DeletedAt = null;
+        mark.DeletedBy = null;
+        mark.Description = "Made for training or testing: a server with demonstration data (HealthCare360:SeedDemoData) may start on it.";
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
