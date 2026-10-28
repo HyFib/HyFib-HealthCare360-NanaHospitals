@@ -354,17 +354,7 @@ public static class VitalRegistration
     /// <summary>An institution reports a birth or death to the Registrar within this many days (RBD Rules, rule 5).</summary>
     public const int ReportWithinDays = 21;
 
-    private static readonly Lazy<TimeZoneInfo> India = new(() =>
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-    });
+    private static readonly Lazy<TimeZoneInfo> India = new(() => HospitalTimeZone.Zone);
 
     public static DateOnly LocalDate(DateTimeOffset instant) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, India.Value).DateTime);
 

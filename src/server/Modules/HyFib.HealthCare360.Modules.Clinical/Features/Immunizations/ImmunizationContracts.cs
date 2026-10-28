@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Modules.Patients.Services;
+
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Immunizations;
 
 public sealed record RecordImmunizationRequest(
@@ -44,7 +46,7 @@ public sealed class RecordImmunizationRequestValidator : AbstractValidator<Recor
 {
     public RecordImmunizationRequestValidator(TimeProvider time)
     {
-        var tomorrow = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(1);
+        var tomorrow = time.Today().AddDays(1);
         RuleFor(x => x.VaccineName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.VaccineCode).MaximumLength(32);
         RuleFor(x => x.DoseNumber).InclusiveBetween(1, 10);

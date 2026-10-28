@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Common;
 
@@ -57,7 +58,7 @@ public sealed class SaveDonorRequestValidator : AbstractValidator<SaveDonorReque
 {
     public SaveDonorRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        var today = time.Today();
         RuleFor(x => x.FirstName).NotEmpty().MaximumLength(100);
         RuleFor(x => x.LastName).MaximumLength(100);
         RuleFor(x => x.DateOfBirth).Must(d => d < today && d.Year >= 1900).WithMessage("Enter a valid date of birth.");

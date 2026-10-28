@@ -6,17 +6,7 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// </summary>
 public static class BillingTime
 {
-    private static readonly Lazy<TimeZoneInfo> Zone = new(() =>
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-    });
+    private static readonly Lazy<TimeZoneInfo> Zone = new(() => HospitalTimeZone.Zone);
 
     public static DateTimeOffset LocalNow(TimeProvider time) => TimeZoneInfo.ConvertTime(time.GetUtcNow(), Zone.Value);
 

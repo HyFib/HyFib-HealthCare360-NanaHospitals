@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.HR.Domain;
+using HyFib.HealthCare360.Modules.HR.Services;
 
 namespace HyFib.HealthCare360.Modules.HR.Features.Employees;
 
@@ -140,7 +141,7 @@ public sealed class SaveEmployeeRequestValidator : AbstractValidator<SaveEmploye
 {
     public SaveEmployeeRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        var today = time.LocalToday();
 
         RuleFor(x => x.FirstName).NotEmpty().WithMessage("First name is required.").MaximumLength(100)
             .Must(EmployeeRules.ValidName).WithMessage("Use letters, spaces, dots, apostrophes or hyphens.");

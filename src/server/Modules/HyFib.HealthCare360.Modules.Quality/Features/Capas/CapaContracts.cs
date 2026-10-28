@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Quality.Domain;
+using HyFib.HealthCare360.Modules.Quality.Services;
 
 namespace HyFib.HealthCare360.Modules.Quality.Features.Capas;
 
@@ -65,7 +66,7 @@ public sealed class CreateCapaRequestValidator : AbstractValidator<CreateCapaReq
     {
         RuleFor(x => x.Action).NotEmpty().SafeText(2000);
         RuleFor(x => x.OwnerUserId).NotEmpty();
-        RuleFor(x => x.DueDate).Must(d => d >= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(-1)).WithMessage("The due date cannot be in the past.");
+        RuleFor(x => x.DueDate).Must(d => d >= time.LocalToday().AddDays(-1)).WithMessage("The due date cannot be in the past.");
         RuleFor(x => x.IncidentId).NotNull().When(x => x.Source == CapaSource.Incident).WithMessage("Choose the incident.");
         RuleFor(x => x.RiskId).NotNull().When(x => x.Source == CapaSource.Risk).WithMessage("Choose the risk.");
     }

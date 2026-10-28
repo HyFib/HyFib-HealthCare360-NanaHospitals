@@ -400,15 +400,9 @@ public static class PlatformServiceCollectionExtensions
         return endpoints;
     }
 
-    internal static TimeZoneInfo ResolveTimeZone(string id)
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(id);
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Local;
-        }
-    }
+    /// <summary>
+    /// The zone the backups are scheduled in: India Standard Time where the machine does not know it, as every clock of the
+    /// hospital's (<see cref="SharedKernel.HospitalTimeZone"/>), not the machine's own, which may be UTC.
+    /// </summary>
+    internal static TimeZoneInfo ResolveTimeZone(string id) => SharedKernel.HospitalTimeZone.Resolve(id);
 }

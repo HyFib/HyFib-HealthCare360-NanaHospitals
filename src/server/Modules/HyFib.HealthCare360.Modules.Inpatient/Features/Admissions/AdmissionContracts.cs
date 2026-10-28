@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 
@@ -219,7 +220,7 @@ public sealed class AdmitPatientRequestValidator : AbstractValidator<AdmitPatien
             .Must(at => AdmissionRules.WithinWindow(at, time.GetUtcNow(), AdmissionRules.BackdateWindow))
             .WithMessage("The admission time must be within the last 3 days and not in the future.");
         RuleFor(x => x.ExpectedDischargeDate)
-            .Must(d => d is null || d >= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(-1))
+            .Must(d => d is null || d >= time.Today().AddDays(-1))
             .WithMessage("The expected discharge date cannot be in the past.");
     }
 }

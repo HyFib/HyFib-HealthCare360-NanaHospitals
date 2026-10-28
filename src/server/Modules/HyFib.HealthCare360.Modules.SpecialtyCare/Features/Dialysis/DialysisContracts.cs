@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Common;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Dialysis;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Common;
@@ -96,7 +97,7 @@ public sealed class SaveDialysisProfileRequestValidator : AbstractValidator<Save
 {
     public SaveDialysisProfileRequestValidator(TimeProvider time)
     {
-        var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(1);
+        var today = time.Today().AddDays(1);
         RuleFor(x => x.DryWeightKg).InclusiveBetween(10m, 250m).WithMessage("Enter a dry weight between 10 and 250 kg.");
         RuleFor(x => x.AccessSite).SafeText(200);
         RuleFor(x => x.ScheduleDays).NotEmpty().WithMessage("Choose the dialysis days.")

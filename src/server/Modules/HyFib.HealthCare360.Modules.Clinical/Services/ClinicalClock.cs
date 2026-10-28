@@ -6,17 +6,7 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 /// </summary>
 public static class ClinicalClock
 {
-    private static readonly Lazy<TimeZoneInfo> Zone = new(() =>
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-    });
+    private static readonly Lazy<TimeZoneInfo> Zone = new(() => HospitalTimeZone.Zone);
 
     /// <summary>UTC instant at which the local calendar day starts.</summary>
     public static DateTimeOffset StartOfDayUtc(DateOnly localDate)

@@ -7,17 +7,7 @@ namespace HyFib.HealthCare360.Modules.SupplyChain.Domain;
 /// </summary>
 public static class HospitalClock
 {
-    private static readonly Lazy<TimeZoneInfo> Zone = new(() =>
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-    });
+    private static readonly Lazy<TimeZoneInfo> Zone = new(() => HospitalTimeZone.Zone);
 
     public static DateTimeOffset LocalNow(TimeProvider time) => TimeZoneInfo.ConvertTime(time.GetUtcNow(), Zone.Value);
 

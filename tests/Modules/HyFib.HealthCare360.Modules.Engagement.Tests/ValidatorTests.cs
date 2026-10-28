@@ -46,6 +46,22 @@ public sealed class ValidatorTests
         validator.Validate(new ConvertLeadRequest(null, new NewPatientDetails(Gender.Male, new DateOnly(2027, 1, 1), null, false), null)).IsValid.ShouldBeFalse();
     }
 
+    /// <summary>
+    /// Audit P9: "today" is the hospital's date. At 00:30 in India it is still yesterday in UTC, and a baby born after
+    /// midnight was refused as born in the future until 05:30.
+    /// </summary>
+    [Fact]
+    public void A_baby_born_after_midnight_in_India_is_registered_from_a_lead_before_05_30()
+    {
+        var halfPastMidnightInIndia = new FixedTime(new DateTimeOffset(2026, 9, 26, 0, 30, 0, TimeSpan.FromMinutes(330)));
+        var validator = new ConvertLeadRequestValidator(halfPastMidnightInIndia);
+
+        validator.Validate(new ConvertLeadRequest(null, new NewPatientDetails(Gender.Female, new DateOnly(2026, 9, 26), null, false), null))
+            .IsValid.ShouldBeTrue();
+        validator.Validate(new ConvertLeadRequest(null, new NewPatientDetails(Gender.Female, new DateOnly(2026, 9, 27), null, false), null))
+            .IsValid.ShouldBeFalse();
+    }
+
     [Fact]
     public void Campaign_segments_must_be_consistent_and_sms_text_short()
     {

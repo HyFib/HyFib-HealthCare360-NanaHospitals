@@ -25,15 +25,5 @@ public static class IndiaClock
         return new DateTimeOffset(local, Zone.GetUtcOffset(local)).ToUniversalTime();
     }
 
-    private static TimeZoneInfo ResolveZone()
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-    }
+    private static TimeZoneInfo ResolveZone() => HospitalTimeZone.Zone;
 }
