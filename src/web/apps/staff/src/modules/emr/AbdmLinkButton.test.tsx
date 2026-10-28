@@ -87,9 +87,11 @@ describe('AbdmLinkButton', () => {
         'The ABDM gateway could not be reached.',
       ),
     );
-    expect(api.post).toHaveBeenCalledWith('/api/v1/abdm/links', {
-      records: [{ type: 'RadiologyReport', id: REPORT_ID }],
-    });
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v1/abdm/links',
+      { records: [{ type: 'RadiologyReport', id: REPORT_ID }] },
+      { idempotencyKey: expect.any(String) },
+    );
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
   });
 

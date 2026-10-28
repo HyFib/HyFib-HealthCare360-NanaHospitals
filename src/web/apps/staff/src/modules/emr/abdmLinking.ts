@@ -1,6 +1,7 @@
 import { isApiError } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation } from '@tanstack/react-query';
+import { useRef } from 'react';
 import { api } from '@/lib/api';
 
 /** A record the server links to an ABHA (`AbdmRecordType` on the server), by its own id. */
@@ -35,6 +36,15 @@ export const FOLLOW_EVERY_MS = 5_000;
 export const FOLLOW_TIMES = 24;
 
 const waiting = (status: AbdmLinkStatus) => status === 'AwaitingToken' || status === 'Sent';
+
+const recordKey = (record: AbdmLinkRecord) => `${record.type}/${record.id}`;
+
+/**
+ * Whether the server's answer to a request is lost (the WiFi dropped, the server failed, or it is still at work on it):
+ * the request may have reached ABDM. The server keeps every other answer under its Idempotency-Key and gives it again.
+ */
+const answerLost = (error: unknown) =>
+  !isApiError(error) || error.status === 0 || error.status === 409 || error.status >= 500;
 
 /**
  * Linking a record to the patient's ABHA (ABDM M2, HIP-initiated linking): the server sends it to the ABDM gateway as a
@@ -76,9 +86,20 @@ export function useAbdmLink() {
     tell(view);
   };
 
+  // One Idempotency-Key per record while the server's answer is lost: linking the record again then is the same request,
+  // which the server answers as it answered the first, and ABDM is not asked twice. Once answered, a new link is a new
+  // request (after a refusal, the patient's ABHA address may have been recorded since).
+  const attempts = useRef(new Map<string, string>());
+
   return useMutation({
-    mutationFn: (record: AbdmLinkRecord) => api.post<AbdmLinkView>(abdmLinksPath, { records: [record] }),
-    onSuccess: (view) => {
+    mutationFn: (record: AbdmLinkRecord) => {
+      const key = recordKey(record);
+      const idempotencyKey = attempts.current.get(key) ?? crypto.randomUUID();
+      attempts.current.set(key, idempotencyKey);
+      return api.post<AbdmLinkView>(abdmLinksPath, { records: [record] }, { idempotencyKey });
+    },
+    onSuccess: (view, record) => {
+      attempts.current.delete(recordKey(record));
       if (!waiting(view.status)) {
         tell(view);
         return;
@@ -87,6 +108,12 @@ export function useAbdmLink() {
       notify.info('Sent to ABDM', `It links the record to ${view.abhaAddress}. You are told here when it answers.`);
       void follow(view);
     },
-    onError: (error) => notify.error(error, "Could not link the record to the patient's ABHA"),
+    onError: (error, record) => {
+      if (!answerLost(error)) {
+        attempts.current.delete(recordKey(record));
+      }
+
+      notify.error(error, "Could not link the record to the patient's ABHA");
+    },
   });
 }

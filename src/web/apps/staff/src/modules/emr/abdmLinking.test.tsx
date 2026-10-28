@@ -31,17 +31,24 @@ const link = (status: AbdmLinkStatus, answer: Partial<AbdmLinkView> = {}): AbdmL
   ...answer,
 });
 
-async function linkTheReport() {
+function renderLink() {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  const { result } = renderHook(() => useAbdmLink(), { wrapper });
+  return renderHook(() => useAbdmLink(), { wrapper }).result;
+}
+
+/** Links the lab report as the button does, through `linking` (one screen's hook) when given. */
+async function linkTheReport(linking = renderLink()) {
   await act(async () => {
-    result.current.mutate({ type: 'LabReport', id: REPORT_ID });
+    linking.current.mutate({ type: 'LabReport', id: REPORT_ID });
     await vi.advanceTimersByTimeAsync(0);
   });
 }
+
+/** The Idempotency-Key each request to link was sent with. */
+const keysSent = () => vi.mocked(api.post).mock.calls.map(([, , options]) => options?.idempotencyKey);
 
 /** Lets the screen wait for ABDM the given number of times, each as long as it waits before asking again. */
 const waitFor = (times: number) => act(() => vi.advanceTimersByTimeAsync(times * FOLLOW_EVERY_MS));
@@ -64,7 +71,11 @@ describe('useAbdmLink', () => {
 
     await linkTheReport();
 
-    expect(api.post).toHaveBeenCalledWith('/api/v1/abdm/links', { records: [{ type: 'LabReport', id: REPORT_ID }] });
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v1/abdm/links',
+      { records: [{ type: 'LabReport', id: REPORT_ID }] },
+      { idempotencyKey: expect.any(String) },
+    );
     expect(notify.info).toHaveBeenCalledWith(
       'Sent to ABDM',
       'It links the record to meera.iyer@sbx. You are told here when it answers.',
@@ -157,6 +168,46 @@ describe('useAbdmLink', () => {
     expect(notify.info).toHaveBeenCalledTimes(1);
     expect(notify.success).not.toHaveBeenCalled();
     expect(notify.warning).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the WiFi dropped', new ApiError({ status: 0, title: 'Cannot reach the HealthCare360 server' })],
+    [
+      'the server is still at work on it',
+      new ApiError({ status: 409, title: 'The original request is still being processed' }),
+    ],
+    ['the server failed', new ApiError({ status: 503, title: 'Service unavailable' })],
+  ])('links the record again as the same request when its answer was lost: %s', async (_, lost) => {
+    vi.mocked(api.post).mockRejectedValueOnce(lost).mockResolvedValueOnce(link('Linked'));
+    const linking = renderLink();
+
+    await linkTheReport(linking);
+    await linkTheReport(linking);
+
+    // The server answers the second as it answered the first: ABDM is asked once.
+    const [first, second] = keysSent();
+    expect(first).toEqual(expect.any(String));
+    expect(second).toBe(first);
+  });
+
+  it('links the record again as a new request once the server has answered', async () => {
+    vi.mocked(api.post)
+      .mockRejectedValueOnce(
+        new ApiError({ status: 422, title: 'The patient has no ABHA address.', code: 'abdm.no_abha_address' }),
+      )
+      .mockResolvedValueOnce(link('Linked'))
+      .mockResolvedValueOnce(link('Linked'));
+    const linking = renderLink();
+
+    // Refused, then linked once the ABHA address is recorded, then linked again: the server stores each answer under
+    // its key, so each must be a request of its own.
+    await linkTheReport(linking);
+    await linkTheReport(linking);
+    await linkTheReport(linking);
+
+    const keys = keysSent();
+    expect(keys).toEqual([expect.any(String), expect.any(String), expect.any(String)]);
+    expect(new Set(keys).size).toBe(3);
   });
 
   it('says why the server would not link the record, for example no ABHA address on the patient', async () => {
