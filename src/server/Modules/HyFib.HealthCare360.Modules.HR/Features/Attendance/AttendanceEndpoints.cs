@@ -137,13 +137,16 @@ internal static class AttendanceEndpoints
         return TypedResults.Ok(punches);
     }
 
-    /// <summary>PINs seen on terminals but not assigned to any employee — usually an enrolment typo to fix.</summary>
+    /// <summary>
+    /// PINs seen on terminals but not assigned to any employee — usually an enrolment typo to fix. Sorted before the
+    /// projection: EF Core cannot translate a sort on a property of a record its constructor builds.
+    /// </summary>
     private static async Task<IResult> UnmatchedPins(HospitalDbContext db, CancellationToken ct) =>
         TypedResults.Ok(await db.Set<AttendancePunch>().AsNoTracking()
             .Where(p => p.EmployeeId == null)
             .GroupBy(p => p.Pin)
+            .OrderByDescending(g => g.Count())
             .Select(g => new UnmatchedPinDto(g.Key, g.Count(), g.Min(p => p.PunchedAt), g.Max(p => p.PunchedAt)))
-            .OrderByDescending(p => p.PunchCount)
             .Take(200)
             .ToListAsync(ct));
 
