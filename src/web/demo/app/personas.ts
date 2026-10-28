@@ -17,6 +17,9 @@ export interface Persona {
   places: Place[];
 }
 
+/** The patient the demo lets you be, on the patient portal (capture.mjs signs in as them): seen this morning. */
+export const PORTAL_PATIENT = 'Rajendran Pillai';
+
 export const PERSONAS: Persona[] = [
   {
     role: 'frontoffice',
@@ -49,11 +52,15 @@ export const PERSONAS: Persona[] = [
         note: 'Vimala Raghavan is in with you; results are back for Meenakshi, Rajendran and Karthik.',
       },
       {
-        label: 'Census',
-        path: '/inpatient',
-        note: 'Fatima Begum, day 2 of pneumonia; Sunita Devi went home at 10:47.',
+        label: 'Admissions',
+        path: '/inpatient/admissions',
+        note: 'Fatima Begum in GWF-01, admitted from casualty last evening with pneumonia; open her stay.',
       },
-      { label: 'ER board', path: '/emergency', note: 'Senthil Kumar, triage level 2 after a fall from a two-wheeler.' },
+      {
+        label: 'ER board',
+        path: '/emergency',
+        note: 'Senthil Kumar in casualty, ESI 2 after a fall from a two-wheeler, under your care.',
+      },
     ],
   },
   {
@@ -63,9 +70,13 @@ export const PERSONAS: Persona[] = [
       {
         label: 'Nursing station',
         path: '/nursing',
-        note: "Fatima Begum's bed: IV ceftriaxone on the medication round, her vitals and notes.",
+        note: 'The female ward: Fatima Begum in GWF-01, the medication round (nothing due this hour) and the handover sheet.',
       },
-      { label: 'ER board', path: '/emergency', note: 'Senthil Kumar, triaged with a pulse of 118.' },
+      {
+        label: 'ER board',
+        path: '/emergency',
+        note: 'Senthil Kumar, triaged ESI 2 (emergent) after a fall from a two-wheeler; he came in by 108 ambulance.',
+      },
     ],
   },
   {
@@ -92,7 +103,7 @@ export const PERSONAS: Persona[] = [
       {
         label: 'Result entry',
         path: '/lab/worklist',
-        note: "Fatima Begum's CBC and CRP (64 mg/L) wait for your verification.",
+        note: "Fatima Begum's CRP and CBC wait for your verification; open the CRP for its result, 64 mg/L.",
       },
       {
         label: 'Lab reports',
@@ -132,7 +143,11 @@ export const PERSONAS: Persona[] = [
         path: '/pharmacy/queue',
         note: "The OPD's prescriptions, Rajendran Pillai's metformin and Lakshmi Narayanan's medicines among them.",
       },
-      { label: 'Overview', path: '/pharmacy', note: 'Stock running low, batches near expiry and the day so far.' },
+      {
+        label: 'Overview',
+        path: '/pharmacy',
+        note: "Prescriptions waiting, the day's takings and the batches that expire soonest.",
+      },
     ],
   },
   {
@@ -145,39 +160,67 @@ export const PERSONAS: Persona[] = [
         note: "Lakshmi Narayanan's OP bill is due; the morning's collections so far.",
       },
       {
+        label: 'Bills',
+        path: '/billing/bills',
+        note: "Today's bills, Sunita Devi's final in-patient bill among them, paid by card when she went home.",
+      },
+      {
         label: 'In-patient accounts',
         path: '/billing/ip',
-        note: "Sunita Devi's final bill, settled by card at discharge.",
+        note: "Fatima Begum's running account, open since she was admitted last evening.",
       },
-      { label: 'Day-end report', path: '/billing/day-end', note: 'Cash, card and UPI collected today, by counter.' },
+      {
+        label: 'Day-end report',
+        path: '/billing/day-end',
+        note: 'Cash, card and UPI collected today, by mode and by cashier.',
+      },
     ],
   },
   {
     role: 'hospitaladmin',
     does: 'Watches the hospital: its numbers, beds and reports.',
     places: [
-      { label: 'Executive dashboard', path: '/analytics', note: "Today's footfall, revenue and occupancy." },
-      { label: 'Bed board', path: '/inpatient/beds', note: 'Every ward and bed, with who is in it.' },
+      {
+        label: 'Executive dashboard',
+        path: '/analytics',
+        note: 'The month so far: OP visits, admissions, occupancy, lab turnaround, revenue and collections.',
+      },
+      {
+        label: 'Bed board',
+        path: '/inpatient/beds',
+        note: 'Every ward and bed: Fatima Begum in GWF-01, and one bed being cleaned for the next patient.',
+      },
     ],
   },
   {
     role: 'admin',
     does: 'Runs the system: users, roles, settings, backups and the audit log.',
     places: [
-      { label: 'Users', path: '/admin/users', note: 'Every member of staff, with their roles and sign-in security.' },
+      {
+        label: 'Users',
+        path: '/admin/users',
+        note: 'Every member of staff, with their roles, two-step sign-in and last sign-in.',
+      },
       {
         label: 'Audit log',
         path: '/admin/audit',
-        note: 'Every record opened or changed this morning, in a tamper-evident chain.',
+        note: 'Every sign-in, record opened and change this morning, in a chain you can verify.',
       },
-      { label: 'System health', path: '/admin/system', note: 'The server, its database, backups and integrations.' },
+      {
+        label: 'System health',
+        path: '/admin/system',
+        note: 'What the server checks about itself. This demo machine fails several checks (disk, time server, messages, PDFs, backup key), as a new install would.',
+      },
     ],
   },
 ];
 
 /** The recorded morning, in the order it happened (IST), up to 11:10 am, the moment the demo shows. */
 export const MORNING: { time: string; what: string }[] = [
-  { time: '9:03', what: 'Ward round: Fatima Begum, day 2 of pneumonia; Sunita Devi fit for discharge.' },
+  {
+    time: '9:03',
+    what: 'Ward round: Fatima Begum, admitted last evening with pneumonia; Sunita Devi fit for discharge.',
+  },
   {
     time: '9:10',
     what: "The OPD's first tokens are seen in turn: Ravi Kumar's fever, Lakshmi Narayanan's knees, Aarav, Priya and Mohammed.",
