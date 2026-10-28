@@ -44,6 +44,7 @@ const data: DemoData = {
       'GET /api/v1/masters/lookups/departments': answer(200, [{ code: 'GM' }]),
       'GET /api/v1/queue?departmentId=gm': answer(200, [{ label: 'GM-010' }]),
       'POST /api/v1/emergency/cases/c1/triage/preview': answer(200, { level: 2 }),
+      'GET /api/v1/public/doctors': answer(200, [{ name: 'Dr. Arjun Mehta' }]),
     }),
     nurse: role('nurse', {}),
     patient: { ...role('patient', {}), phone: '+919000001021' },
@@ -141,6 +142,19 @@ describe('the replay', () => {
     assert.equal(store.get('hc360-demo:role'), 'patient');
     const check = await ask(replay, 'POST', '/api/v1/public/challenge', { action: 'otp', subject: null });
     assert.equal(check.body.required, false);
+  });
+
+  it('answers a signed-out page as the server does: public pages for anyone, the rest "sign in"', async () => {
+    await ask(replay, 'POST', '/api/v1/auth/logout');
+    const told: unknown[] = [];
+    const listen = (event: Event) => told.push((event as CustomEvent).detail);
+    window.addEventListener(MISSED, listen);
+    const record = await ask(replay, 'GET', '/api/v1/patients/p1');
+    const doctors = await ask(replay, 'GET', '/api/v1/public/doctors');
+    window.removeEventListener(MISSED, listen);
+    assert.equal(record.status, 401);
+    assert.deepEqual(doctors.body, [{ name: 'Dr. Arjun Mehta' }]);
+    assert.deepEqual(told, []);
   });
 
   it('turns the idle screen lock off and signs out', async () => {

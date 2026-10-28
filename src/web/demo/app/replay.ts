@@ -44,11 +44,13 @@ const ROLE_KEY = 'hc360-demo:role';
 const SEARCH = new Set(['search', 'q', 'query', 'term', 'text', 'name', 'uhid', 'phone', 'mobile']);
 const DATE = /^\d{4}-\d{2}-\d{2}/;
 /**
- * Answers that are the same whoever asks (masters, settings, the system's own details), which one role may borrow
- * from another. Everything else is answered only from the role's own recording, so the demo shows each role exactly
- * what the server let it see (a masked phone number stays masked).
+ * Answers that are the same whoever asks (masters, settings, the system's own details, the public pages anyone may
+ * open without signing in), which one role may borrow from another. Everything else is answered only from the role's
+ * own recording, so the demo shows each role exactly what the server let it see (a masked phone number stays masked).
  */
-const SAME_FOR_EVERYONE = /^\/api\/v1\/(masters|settings|system|print\/letterhead)(\/|$)/;
+const SAME_FOR_EVERYONE = /^\/api\/v1\/(masters|settings|system|print\/letterhead|public)(\/|$)/;
+
+const SIGN_IN = { title: 'Please sign in', code: 'auth.required' };
 
 /** The hospital's date (IST) on the demo's clock, which is a server's default for "today". */
 const today = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
@@ -273,6 +275,8 @@ export class Replay {
 
     const found = this.find(role, method, url);
     if (found) return this.respond(found.answer, found.adjust);
+    // Signed out (the app may still be asking for what its last screen showed): the server answers "sign in".
+    if (!recording) return problem(401, SIGN_IN);
     if (method !== 'GET') return problem(403, READ_ONLY);
     const screen = (window as { HC360_DEMO_HERE?: () => string }).HC360_DEMO_HERE?.() ?? '/';
     const miss: Miss = { role, request: `${method} ${path}${url.search}`, screen };
