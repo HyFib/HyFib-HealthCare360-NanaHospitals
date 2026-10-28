@@ -176,11 +176,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           selectedValue={current?.link.to ?? (pathname === '/' ? '/' : '')}
           selectedCategoryValue={current && current.module.links.length > 1 ? current.module.id : ''}
           openCategories={openCategories}
-          onNavCategoryItemToggle={(_, data) =>
-            setOpenCategories((open) =>
-              open.includes(String(data.value)) ? open.filter((v) => v !== data.value) : [String(data.value)],
-            )
-          }
+          // Fluent names the toggled category in categoryValue and leaves value empty, though its typings say value.
+          onNavCategoryItemToggle={(_, data) => {
+            const category = String(data.categoryValue || data.value);
+            setOpenCategories((open) => (open.includes(category) ? open.filter((v) => v !== category) : [category]));
+          }}
           onNavItemSelect={(_, data) => {
             void navigate({ href: String(data.value) });
             if (narrow) {
