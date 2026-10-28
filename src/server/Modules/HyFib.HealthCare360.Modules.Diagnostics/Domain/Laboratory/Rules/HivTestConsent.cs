@@ -28,6 +28,10 @@ public static partial class HivTestConsent
         || (depth < LabTest.MaxPanelDepth
             && test.Components.Any(c => tests.TryGetValue(c.TestId, out var component) && Needed(component, tests, depth + 1)));
 
+    /// <summary>
+    /// Whether the test is an HIV test. A released result of one outside its normal answers also puts the patient's record
+    /// in the HIV category (<c>LabReportService</c>).
+    /// </summary>
     public static bool IsHiv(LabTest test) =>
         (test.Loinc is { } loinc && Loinc.Contains(loinc.Trim())) || HivWord().IsMatch(test.Code) || HivWord().IsMatch(test.Name);
 

@@ -2,7 +2,10 @@ using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Diagnostics.Documents;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Notifications;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +15,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// Report release and amendment (LIS-02, LIS-07). Release is per test: every verified test not yet released goes out
 /// together, raising DiagnosticReportReleased for the EHR and queueing <c>lab.report_ready</c> to the patient.
 /// A correction after release is a numbered amendment with a reason, printed on the report and audited. A corrected
-/// value that is critical needs a new documented call.
+/// value that is critical needs a new documented call. A released HIV result outside its normal answers puts the
+/// patient's record in the HIV category (R-4), as an HIV diagnosis does.
 /// </summary>
 internal sealed class LabReportService(
     HospitalDbContext db,
@@ -23,6 +27,7 @@ internal sealed class LabReportService(
     DiagnosticsRealtime realtime,
     NotifiableDiseases notifiable,
     AntimicrobialCultureReview stewardship,
+    PatientAccessGuard records,
     INotificationService notifications,
     IAuditLogger audit,
     ICurrentUser currentUser,
@@ -216,22 +221,31 @@ internal sealed class LabReportService(
 
     /// <summary>
     /// A released positive result of a test that confirms a notifiable disease goes on the week's IDSP L form, in the
-    /// caller's save; a confirming result amended to negative takes the case off it.
+    /// caller's save; a confirming result amended to negative takes the case off it. A positive HIV result puts the
+    /// patient's record in the HIV category, in the same save; an amendment to negative leaves it there.
     /// </summary>
     private async Task NotifyAsync(IEnumerable<LabResult> results, DateTimeOffset at, bool amended, CancellationToken ct)
     {
         var list = results.ToList();
         var testIds = list.Select(r => r.LabTestId).Distinct().ToList();
-        var loinc = await db.Set<LabTest>().AsNoTracking().Where(t => testIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Loinc, ct);
+        var tests = await db.Set<LabTest>().AsNoTracking().Where(t => testIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
         foreach (var result in list)
         {
             if (IsPositive(result))
             {
+                var test = tests.GetValueOrDefault(result.LabTestId);
                 await notifiable.FromLabResultAsync(
                     new NotifiableLabFinding(
-                        result.FacilityId, result.PatientId, result.Id, result.TestCode, loinc.GetValueOrDefault(result.LabTestId), result.TestName,
+                        result.FacilityId, result.PatientId, result.Id, result.TestCode, test?.Loinc, result.TestName,
                         result.Describe(), result.Organism, at),
                     ct);
+                if (test is not null && HivTestConsent.IsHiv(test))
+                {
+                    // A record of HIV status, which the HIV and AIDS Act 2017 keeps confidential (s.8 to 11): the chart opens only
+                    // to staff holding the HIV category, as after an HIV diagnosis. The lab's own screens are not affected.
+                    await records.FlagAsync(result.PatientId, SensitiveCategory.Hiv, $"an HIV test result ({result.TestCode})", ct);
+                }
+
                 if (result.ResultType == LabResultType.Culture && !string.IsNullOrWhiteSpace(result.Organism))
                 {
                     // A culture that grew something: the patient's restricted antibiotics fall due for review, with the antibiogram.

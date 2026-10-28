@@ -125,8 +125,8 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | GET | `/{id}` | `lab.orders.read` | → `LabReportView` (letterhead, patient, sections → tests → result lines, signatories, amendment history, auto-validation note, QR `verificationCode` + `verificationPath` + `verificationUrl`) |
 | GET | `/{id}/document` | `lab.orders.read` | → `PrintableDocumentDto` (title, fileName, pageSize `A4`, landscape, html): the A4 report for the staff app to print. Same released-only rule and guard as `/{id}`; audit "Printed lab report …" |
 | GET | `/{id}/pdf` | `lab.orders.read` | → the same report as `application/pdf` (`lab-report-<number>.pdf`); 503 `pdf.unavailable` when the server can't make PDFs. Audit "Downloaded lab report … as a PDF" |
-| POST | `/{id}/release` | `lab.results.verify` | → `ReleaseOutcome` (releasedItemIds, isPartial, verificationCode) |
-| POST | `/{id}/amend` | `lab.results.verify` | `AmendReportRequest` (reason, `AmendmentChange[]` resultId/value/remarks, criticalCall) → 204; revision + 1, old → new values recorded and re-announced |
+| POST | `/{id}/release` | `lab.results.verify` | → `ReleaseOutcome` (releasedItemIds, isPartial, verificationCode); a released HIV result outside its normal answers puts the patient's record in the HIV category (R-4) |
+| POST | `/{id}/amend` | `lab.results.verify` | `AmendReportRequest` (reason, `AmendmentChange[]` resultId/value/remarks, criticalCall) → 204; revision + 1, old → new values recorded and re-announced; an HIV result corrected to reactive puts the record in the HIV category, and one corrected to non-reactive leaves it there |
 
 ### Quality control — `/api/v1/lab/qc`
 | Method | Path | Permission | Request → response |

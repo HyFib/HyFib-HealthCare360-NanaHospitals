@@ -200,7 +200,8 @@ public sealed class LabVerificationTests(HospitalServer server)
 
     /// <summary>A walk-in order for one test, its tube collected and received in the lab (the counter's payment gate waived).</summary>
     /// <summary>A received tube of the test, for <paramref name="patientId"/> or a new patient.</summary>
-    internal static async Task<CreatedSample> ReceivedSampleAsync(HospitalServer server, string testCode, Guid? patientId = null)
+    /// <param name="consented">The patient consented to the test (an HIV test is drawn only then: HIV and AIDS Act 2017, s.5).</param>
+    internal static async Task<CreatedSample> ReceivedSampleAsync(HospitalServer server, string testCode, Guid? patientId = null, bool consented = false)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
@@ -216,7 +217,11 @@ public sealed class LabVerificationTests(HospitalServer server)
         await SetPaymentGateAsync(admin, facilityId, required: false);
         try
         {
-            await lab.PostAsync<List<SampleLabel>>($"/api/v1/lab/orders/{order.Id}/collect", new CollectSamplesRequest(null, null, null));
+            var consents = consented
+                ? (await lab.GetAsync<LabOrderDetail>($"/api/v1/lab/orders/{order.Id}")).Items
+                    .Select(i => new TestConsentInput(i.Id, ConsentBasis.Patient, null, null, "ICTC/42")).ToList()
+                : null;
+            await lab.PostAsync<List<SampleLabel>>($"/api/v1/lab/orders/{order.Id}/collect", new CollectSamplesRequest(null, null, null, consents));
             var outcome = (await lab.PostAsync<List<ReceiveOutcome>>("/api/v1/lab/samples/receive", new ReceiveSamplesRequest([tube.Barcode]))).ShouldHaveSingleItem();
             outcome.Received.ShouldBeTrue(outcome.Message);
         }
