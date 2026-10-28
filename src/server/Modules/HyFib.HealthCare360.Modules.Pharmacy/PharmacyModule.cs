@@ -82,6 +82,9 @@ public sealed class PharmacyModule : IModule
         // The pharmacy counter's day for Billing's Tally day book (Billing reads it without referencing this module).
         services.AddScoped<ICounterSalesSource, PharmacyDayBookSource>();
         services.AddScoped<IEInvoiceSource, PharmacyEInvoiceSource>();
+
+        // The cash the counter takes, for the cash limit (s.269ST) that Billing's counters keep too.
+        services.AddScoped<ICashReceiptSource, PharmacyCashReceipts>();
         services.AddHostedService<RefillReminderJob>();
     }
 

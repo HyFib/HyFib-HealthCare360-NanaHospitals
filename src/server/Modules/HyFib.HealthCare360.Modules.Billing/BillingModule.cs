@@ -56,6 +56,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<EInvoiceService>();
         services.AddScoped<IEInvoiceSource, BillEInvoiceSource>();
         services.AddScoped<IEInvoiceRegister, EInvoiceRegisterLookup>();
+        services.AddScoped<ICashReceiptSource, BillingCashReceipts>();
         services.AddScoped<TallyReconciliationService>();
 
         // Gateway reconciliation (INT-PG): settlements, exceptions, follow-up of payments and refunds.

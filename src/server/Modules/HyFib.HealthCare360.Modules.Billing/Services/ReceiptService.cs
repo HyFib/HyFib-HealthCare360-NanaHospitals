@@ -28,7 +28,8 @@ internal sealed record ExternalPayment(
 /// Receipts (MB-04, OPB-05/06, IPB-01): split payments at the counter, IP advances, POS/gateway captures, advance
 /// adjustments and payer settlements. Every receipt number is allocated inside the transaction that records the money,
 /// the patient is sent the "bill.receipt" SMS through the outbox (and the bill on WhatsApp once a payment settles it,
-/// see <see cref="BillSharing"/>), and PaymentReceived is raised for patient money.
+/// see <see cref="BillSharing"/>), and PaymentReceived is raised for patient money. Cash at the counter is held to the
+/// Income-tax Act's limit (<see cref="CashLimit"/>): a bill of an admission counts with the admission.
 /// </summary>
 public sealed class ReceiptService(
     HospitalDbContext db,
@@ -37,6 +38,7 @@ public sealed class ReceiptService(
     INotificationService notifications,
     BillSharing bills,
     IRealtimePublisher realtime,
+    CashLimit cashLimit,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -66,6 +68,16 @@ public sealed class ReceiptService(
         }
 
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
+        var cash = bill.IpAccountId is { } accountId
+            ? await cashLimit.CheckAsync(bill.FacilityId, bill.PatientId, BillingCashReceipts.CashIn(lines.Value), "admission",
+                c => BillingCashReceipts.CashTakenAsync(db, r => r.IpAccountId == accountId, c), ct)
+            : await cashLimit.CheckAsync(bill.FacilityId, bill.PatientId, BillingCashReceipts.CashIn(lines.Value), "bill",
+                c => BillingCashReceipts.CashTakenAsync(db, r => r.BillId == bill.Id, c), ct);
+        if (cash.IsFailure)
+        {
+            return cash.Error!;
+        }
+
         var receipt = await NewReceiptAsync(bill.FacilityId, ReceiptPurpose.BillPayment, bill.PatientId, ReceiptSource.Counter, shift.Value, ct);
         receipt.BillId = bill.Id;
         receipt.VisitId = bill.VisitId;
@@ -124,6 +136,13 @@ public sealed class ReceiptService(
         }
 
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
+        var cash = await cashLimit.CheckAsync(account.FacilityId, account.PatientId, BillingCashReceipts.CashIn(lines.Value), "admission",
+            c => BillingCashReceipts.CashTakenAsync(db, r => r.IpAccountId == account.Id, c), ct);
+        if (cash.IsFailure)
+        {
+            return cash.Error!;
+        }
+
         var receipt = await NewReceiptAsync(account.FacilityId, ReceiptPurpose.Deposit, account.PatientId, ReceiptSource.Counter, shift.Value, ct);
         receipt.IpAccountId = account.Id;
         receipt.AdmissionId = account.AdmissionId;
