@@ -421,6 +421,10 @@ which installs as SYSTEM, keeps the version before in `HC360 Desktop.previous`, 
 fails. Its log and last result are `update.log` and `status.json` in the updater's folder. To leave a computer's version
 to your own software distribution, install with `-NoAutoUpdate` (`"autoUpdate": false` in `policy.json`).
 
+**DevTools** (the browser's developer tools) are off in HC360 Desktop: they show the signed-in user's token and every
+response. On a support computer IT can allow them with `"allowDevTools": true` in `policy.json`, which only an
+administrator can write; a user's own settings cannot turn them on, and `"disableDevTools": true` (kiosks) always wins.
+
 **Tablets and browsers**:
 1. Download `https://HC360-SRV:7360/api/v1/system/ca-certificate`.
 2. Install it as a trusted root certificate on the device (MDM or device settings).

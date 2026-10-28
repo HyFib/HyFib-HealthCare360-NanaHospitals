@@ -43,7 +43,12 @@ internal sealed class DesktopSettings
 
     public string StartPath { get; set; } = "/";
 
-    public bool AllowDevTools { get; set; }
+    /// <summary>
+    /// DevTools in the staff app, only where IT's machine policy allows them (<c>"allowDevTools": true</c>), never from this
+    /// user's own settings file: DevTools show the user's sign-in token and every response, and call the API with it.
+    /// </summary>
+    [JsonIgnore]
+    public bool AllowDevTools { get; private set; }
 
     /// <summary>Expected CA fingerprint from the IT policy (setup refuses any other server).</summary>
     [JsonIgnore]
@@ -102,13 +107,16 @@ internal sealed class DesktopSettings
     private static string PolicyPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "HyFib", "HC360Desktop", "policy.json");
 
-    public static DesktopSettings Load()
+    public static DesktopSettings Load() => Load(SettingsPath, PolicyPath);
+
+    /// <summary>This user's settings from <paramref name="settingsPath"/>, with the machine policy at <paramref name="policyPath"/> over them.</summary>
+    internal static DesktopSettings Load(string settingsPath, string policyPath)
     {
         DesktopSettings settings;
         try
         {
-            settings = File.Exists(SettingsPath)
-                ? JsonSerializer.Deserialize<DesktopSettings>(File.ReadAllText(SettingsPath), Json) ?? new DesktopSettings()
+            settings = File.Exists(settingsPath)
+                ? JsonSerializer.Deserialize<DesktopSettings>(File.ReadAllText(settingsPath), Json) ?? new DesktopSettings()
                 : new DesktopSettings();
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
@@ -117,7 +125,7 @@ internal sealed class DesktopSettings
             settings = new DesktopSettings();
         }
 
-        settings.ApplyPolicy();
+        settings.ApplyPolicy(policyPath);
         return settings;
     }
 
@@ -142,16 +150,16 @@ internal sealed class DesktopSettings
         File.Move(temp, SettingsPath, overwrite: true);
     }
 
-    private void ApplyPolicy()
+    private void ApplyPolicy(string policyPath)
     {
-        if (!File.Exists(PolicyPath))
+        if (!File.Exists(policyPath))
         {
             return;
         }
 
         try
         {
-            var policy = JsonSerializer.Deserialize<DesktopPolicy>(File.ReadAllText(PolicyPath), Json);
+            var policy = JsonSerializer.Deserialize<DesktopPolicy>(File.ReadAllText(policyPath), Json);
             if (policy is null)
             {
                 return;
@@ -188,10 +196,8 @@ internal sealed class DesktopSettings
                 StartPath = policy.StartPath;
             }
 
-            if (policy.DisableDevTools == true)
-            {
-                AllowDevTools = false;
-            }
+            // disableDevTools is what the installer writes for kiosks and TV boards; it wins over an allowDevTools left beside it.
+            AllowDevTools = policy.AllowDevTools == true && policy.DisableDevTools != true;
 
             if (policy.AutoUpdate == false)
             {
@@ -204,5 +210,6 @@ internal sealed class DesktopSettings
         }
     }
 
-    private sealed record DesktopPolicy(string? ServerUrl, string? CaFingerprint, bool? Kiosk, string? StartPath, bool? DisableDevTools, bool? AutoUpdate);
+    private sealed record DesktopPolicy(
+        string? ServerUrl, string? CaFingerprint, bool? Kiosk, string? StartPath, bool? AllowDevTools, bool? DisableDevTools, bool? AutoUpdate);
 }
