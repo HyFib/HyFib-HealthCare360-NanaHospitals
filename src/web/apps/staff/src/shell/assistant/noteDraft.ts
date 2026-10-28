@@ -4,10 +4,11 @@ import type { NoteDraft } from './intents';
 /**
  * Hands a dictated note to the EMR without putting clinical text in the address bar.
  *
- * The EMR note composer (modules/emr/NotesPanel.tsx, via useFormDraft) keeps each patient's unsaved note on this
- * computer under draftStorageKey(userId, `emr-note:${patientId}`) as `{ value: { type, title, body }, savedAt }` and
- * offers "Restore it" when the clinician opens Write note. Writing the dictated text there means it is reviewed and
- * saved in the normal screen. An unsaved note that is already there is never overwritten: the new text is appended.
+ * The EMR note composer (modules/emr/NotesPanel.tsx, via useFormDraft) keeps each patient's unsaved note in
+ * draftStorage (in memory, and on this computer encrypted) under draftStorageKey(userId, `emr-note:${patientId}`) as
+ * `{ value: { type, title, body }, savedAt }` and offers "Restore it" when the clinician opens Write note. Writing the
+ * dictated text there means it is reviewed and saved in the normal screen. An unsaved note that is already there is
+ * never overwritten: the new text is appended.
  * Drafts are per user and wiped at sign-out like every other draft.
  */
 

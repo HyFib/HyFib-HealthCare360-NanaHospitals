@@ -65,7 +65,8 @@ export function parseNumericResult(raw: string | null | undefined): ParsedNumber
       break;
     }
   }
-  if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(text)) {
+  // Digits, then a point and more digits if any: written so a long string that is not a number fails in linear time.
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) {
     return null;
   }
   const value = Number(text);

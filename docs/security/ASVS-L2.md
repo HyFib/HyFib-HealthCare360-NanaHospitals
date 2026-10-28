@@ -32,11 +32,11 @@ reviewed again once a year, and before each major release.
 | [V11 Cryptography](#v11-cryptography) | 10 | 3 | 0 | 1 |
 | [V12 Secure Communication](#v12-secure-communication) | 2 | 6 | 0 | 1 |
 | [V13 Configuration](#v13-configuration) | 7 | 4 | 2 | 0 |
-| [V14 Data Protection](#v14-data-protection) | 3 | 5 | 1 | 0 |
+| [V14 Data Protection](#v14-data-protection) | 4 | 5 | 0 | 0 |
 | [V15 Secure Coding and Architecture](#v15-secure-coding-and-architecture) | 8 | 5 | 0 | 0 |
 | [V16 Security Logging and Error Handling](#v16-security-logging-and-error-handling) | 4 | 11 | 1 | 0 |
 | [V17 WebRTC](#v17-webrtc) | 1 | 0 | 2 | 4 |
-| **Total** | **129** | **60** | **10** | **54** |
+| **Total** | **130** | **60** | **9** | **54** |
 
 ## Fixed while making this checklist
 
@@ -128,8 +128,8 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
   - a TOTP window of one step.
 - **Patient portal sign-in:** verify the mobile number at registration, before records are linked, and offer an
   optional stronger factor. (V6.6.1)
-- **Data in the browser, and data classes** (V14.1.1, V14.1.2, V14.3.1, V14.3.3, V8.1.2):
-  - encrypt form drafts, or keep them on the server, and purge them when the app starts without a session;
+- **Data in the browser, and data classes** (V14.1.1, V14.1.2, V14.3.1, V8.1.2):
+  - send Clear-Site-Data at sign-out;
   - classify sensitive data, with protection rules per class and a field-access matrix.
 - **Telehealth** (V17.1.1, V17.3.1, V4.4.3, V7.4.1):
   - per-connection and per-method limits on the telehealth hub;
@@ -445,9 +445,9 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 | V14.2.2 | L2 | Sensitive data not cached on the server side | Met | Stored idempotency responses are encrypted and purged after 24 h. PDFs of reports and other documents are made on request, or when a message is sent, and never stored. A backup's temporary database dump is deleted when the backup ends, and one left by an interrupted backup is removed before the next. | [Backup.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/Backup.cs), [Idempotency.cs](../../src/server/HyFib.HealthCare360.Platform/Http/Idempotency.cs), [DocumentResults.cs](../../src/server/HyFib.HealthCare360.Platform/Documents/DocumentResults.cs) |
 | V14.2.3 | L2 | No sensitive data sent to trackers or third parties | Met | No trackers or analytics; the only third-party script is Razorpay's checkout on portal pages, and connect-src now limits pages to the server (and Razorpay's hosts there). AI text is PHI-redacted, whichever provider is chosen. | [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs), [PhiRedactor.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.AI/Services/Privacy/PhiRedactor.cs) |
 | V14.2.4 | L2 | Encryption, retention and logging rules for sensitive data | Partial | Field encryption and masking exist, and a retention schedule deletes the outbox, message, integration and sign-in logs after their period. BitLocker (SRS SEC-05) is checked daily as SYSTEM and shown in System health, the DB password is DPAPI-protected (SEC-07), and PostgreSQL's slow-query log no longer records parameter values. The rules per data class are not yet written (V14.1.1, V14.1.2). | [DiskEncryption.cs](../../src/server/HyFib.HealthCare360.Platform/Security/DiskEncryption.cs), [RetentionService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Privacy/Services/RetentionService.cs), [Install-PostgreSQL.ps1](../../deploy/windows/Install-PostgreSQL.ps1), [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1) |
-| V14.3.1 | L1 | Client-side data cleared at sign-out | Partial | Drafts and the query cache are cleared at sign-out, even offline, and drafts when the app starts and the server says the session is over. No Clear-Site-Data, and PHI drafts remain if a session expires while the app is closed, or when the app starts while the server cannot answer (kept so that typing survives an outage, SRS DED-10). | [session.ts](../../src/web/packages/core/src/auth/session.ts), [session.ts](../../src/web/packages/core/src/auth/session.ts) |
+| V14.3.1 | L1 | Client-side data cleared at sign-out | Partial | Drafts and the query cache are cleared at sign-out, even offline, and drafts when the app starts and the server says the session is over. No Clear-Site-Data. Drafts remain if a session expires while the app is closed, or when the app starts while the server cannot answer (kept so that typing survives an outage, SRS DED-10), but only encrypted, for their user's next sign-in (V14.3.3). | [session.ts](../../src/web/packages/core/src/auth/session.ts), [drafts.ts](../../src/web/packages/core/src/auth/drafts.ts) |
 | V14.3.2 | L2 | Cache-Control: no-store for sensitive responses | Met | All /api and /fhir responses carry Cache-Control: no-store and Pragma: no-cache. The app shells are no-cache. | [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs) |
-| V14.3.3 | L2 | No sensitive data in browser storage | Gap | Registration forms, clinical notes, lab result edits and AI note drafts are saved to localStorage as plaintext PHI. | [useFormDraft.ts](../../src/web/apps/staff/src/lib/useFormDraft.ts), [ResultSheet.tsx](../../src/web/apps/staff/src/modules/lab/ResultSheet.tsx) |
+| V14.3.3 | L2 | No sensitive data in browser storage | Met | Drafts of registration forms, clinical notes, lab result edits and AI notes are held in memory and kept in localStorage only as AES-GCM ciphertext, bound to their storage key, under a key the server gives each signed-in user (never to a locked or restricted session) and the app holds in memory alone. Someone else signed in on the same Windows account cannot read them, and drafts an older version kept unencrypted are encrypted when their user signs in. Otherwise localStorage holds only preferences (theme, ward, counter) and WebAuthn credential ids. | [drafts.ts](../../src/web/packages/core/src/auth/drafts.ts), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [drafts.test.ts](../../src/web/packages/core/src/auth/drafts.test.ts), [DraftKeyTests.cs](../../tests/HyFib.HealthCare360.IntegrationTests/DraftKeyTests.cs) |
 
 ## V15 Secure Coding and Architecture
 

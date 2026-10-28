@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ApiError, CORRELATION_HEADER, LANGUAGE_HEADER, toApiError } from '../api/errors';
 import type { ClientType } from '../api/client';
+import { clearDrafts, openDrafts } from './drafts';
 
 export interface FacilityOption {
   id: string;
@@ -50,6 +51,11 @@ export interface AuthResult {
   mfaRequired?: boolean;
   challengeId?: string | null;
   restriction?: string | null;
+  /**
+   * The key the user's drafts are kept encrypted with on this computer (SRS DED-10): the same in each of their sessions,
+   * and not given while the session is locked or must first change its password or set up two-step verification.
+   */
+  draftKey?: string | null;
 }
 
 export type SessionStatus = 'unknown' | 'authenticated' | 'anonymous';
@@ -67,10 +73,8 @@ interface SessionState {
   clear(): void;
 }
 
-const DRAFT_PREFIX = 'hc360:draft:';
-
 /** In-memory session. The refresh token lives only in an HttpOnly cookie, never in JavaScript. */
-export const useSession = create<SessionState>((set) => ({
+export const useSession = create<SessionState>((set, get) => ({
   status: 'unknown',
   accessToken: null,
   expiresAt: null,
@@ -78,14 +82,19 @@ export const useSession = create<SessionState>((set) => ({
   locked: false,
   // A result never unlocks the screen by itself: only unlocking does (setLocked). The server locks a session left
   // unused even when the app did not, and says so with the "locked" restriction.
-  setAuth: (result) =>
+  setAuth: (result) => {
     set((state) => ({
       status: result.accessToken ? 'authenticated' : state.status,
       accessToken: result.accessToken ?? state.accessToken,
       expiresAt: result.expiresAt ? Date.parse(result.expiresAt) : state.expiresAt,
       user: result.user ?? state.user,
       locked: state.locked || result.user?.restriction === 'locked',
-    })),
+    }));
+    const userId = get().user?.id;
+    if (result.draftKey && userId) {
+      void openDrafts(userId, result.draftKey);
+    }
+  },
   setUser: (user) => set({ user }),
   setLocked: (locked) => set({ locked }),
   clear: () => {
@@ -350,21 +359,4 @@ function scheduleRefresh(): void {
   }
   const dueIn = Math.max(expiresAt - Date.now() - 60_000, 5_000);
   refreshTimer = setTimeout(() => void auth.refresh(), dueIn);
-}
-
-function clearDrafts(): void {
-  try {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(DRAFT_PREFIX)) {
-        localStorage.removeItem(key);
-      }
-    }
-  } catch {
-    // Storage unavailable (private mode) — nothing to clear.
-  }
-}
-
-export function draftStorageKey(userId: string, key: string): string {
-  return `${DRAFT_PREFIX}${userId}:${key}`;
 }

@@ -1,6 +1,7 @@
 export * from './api/client';
 export * from './api/errors';
 export * from './api/queryClient';
+export * from './auth/drafts';
 export * from './auth/session';
 export * from './auth/webauthn';
 export * from './bridge/bridge';

@@ -1,4 +1,14 @@
-import { auth, draftStorageKey, useSession, type AuthUser } from '@hc360/core';
+import {
+  auth,
+  clearDrafts,
+  closeDrafts,
+  draftStorage,
+  draftStorageKey,
+  openDrafts,
+  useDrafts,
+  useSession,
+  type AuthUser,
+} from '@hc360/core';
 import { act, renderHook } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,8 +40,12 @@ const staff = (id: string, userName: string): AuthUser => ({
   restriction: null,
 });
 
-function signIn(id: string): void {
+/** Each user's draft key, as the server gives it at sign-in. */
+const draftKeys = { asha: btoa('a'.repeat(32)), ravi: btoa('r'.repeat(32)) };
+
+async function signIn(id: keyof typeof draftKeys): Promise<void> {
   useSession.setState({ status: 'authenticated', accessToken: 't1', user: staff(id, id) });
+  await openDrafts(id, draftKeys[id]);
 }
 
 /** A nursing note form and its draft, as NursingNotes has them. */
@@ -43,8 +57,18 @@ function openNote(key = ADMISSION_NOTE) {
 }
 
 function stored(userId: string, key = ADMISSION_NOTE): { value: Note; savedAt: number } | null {
-  const raw = localStorage.getItem(draftStorageKey(userId, key));
+  const raw = draftStorage.getItem(draftStorageKey(userId, key));
   return raw ? (JSON.parse(raw) as { value: Note; savedAt: number }) : null;
+}
+
+/** Waits until the computer holds the user's draft of the form (encrypted, a moment after it is saved). */
+async function keptOnComputer(userId: string, key = ADMISSION_NOTE): Promise<void> {
+  await vi.waitFor(() => expect(localStorage.getItem(draftStorageKey(userId, key))).not.toBeNull());
+}
+
+/** Everything the computer holds, as text. */
+function onComputer(): string {
+  return Array.from({ length: localStorage.length }, (_, i) => localStorage.getItem(localStorage.key(i)!)).join('\n');
 }
 
 function type(note: ReturnType<typeof openNote>, text: string): void {
@@ -61,15 +85,16 @@ function wait(ms: number): void {
  * saved or its user signs out. Each draft belongs to one user and one form.
  */
 describe('useFormDraft', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
-    signIn('asha');
+    await signIn('asha');
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     useSession.setState({ status: 'unknown', accessToken: null, expiresAt: null, user: null, locked: false });
+    clearDrafts();
     localStorage.clear();
   });
 
@@ -182,7 +207,8 @@ describe('useFormDraft', () => {
     await auth.logout();
 
     expect(stored('asha')).toBeNull();
-    signIn('asha');
+    expect(onComputer()).not.toContain('hc360:draft');
+    await signIn('asha');
     expect(openNote().result.current.draft.saved).toBeNull();
   });
 
@@ -190,29 +216,32 @@ describe('useFormDraft', () => {
     const note = openNote();
     type(note, 'Wound dressing changed');
     wait(4_000);
+    await keptOnComputer('asha');
     note.unmount();
     // The app starts again while the server answers with an error (restarting after an update, its database down).
+    closeDrafts();
     useSession.setState({ status: 'unknown', accessToken: null, expiresAt: null, user: null, locked: false });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })));
 
     expect(await auth.restore()).toBe(false);
 
     expect(useSession.getState().status).toBe('anonymous');
-    signIn('asha');
+    await signIn('asha');
     expect(openNote().result.current.draft.saved?.value.note).toBe('Wound dressing changed');
   });
 
-  it('belongs to one user and one form', () => {
+  it('belongs to one user and one form', async () => {
     const asha = openNote();
     type(asha, "Asha's note");
     wait(4_000);
+    await keptOnComputer('asha');
     asha.unmount();
 
     // Not offered on another admission's note, nor to another nurse on the same computer…
     const other = openNote('nursing-note:adm-2');
     expect(other.result.current.draft.saved).toBeNull();
     other.unmount();
-    signIn('ravi');
+    await signIn('ravi');
     const ravi = openNote();
     expect(ravi.result.current.draft.saved).toBeNull();
     type(ravi, "Ravi's note");
@@ -221,7 +250,53 @@ describe('useFormDraft', () => {
 
     // …whose own draft of it leaves Asha's as it was.
     expect(stored('ravi')?.value.note).toBe("Ravi's note");
-    signIn('asha');
+    await keptOnComputer('ravi');
+    await signIn('asha');
     expect(openNote().result.current.draft.saved?.value.note).toBe("Asha's note");
+  });
+
+  it('keeps no clinical text on this computer, only what its user’s key opens (audit P10)', async () => {
+    const note = openNote();
+    type(note, 'Patient drowsy, GCS 14');
+    wait(4_000);
+
+    await keptOnComputer('asha');
+
+    expect(stored('asha')?.value.note).toBe('Patient drowsy, GCS 14');
+    expect(onComputer()).not.toContain('GCS 14');
+  });
+
+  it('is offered after HC360 crashes, once its user signs in again, and to nobody else', async () => {
+    const before = openNote();
+    type(before, 'Patient drowsy, GCS 14');
+    wait(4_000);
+    await keptOnComputer('asha');
+    // HC360 Desktop crashes: what it held in memory is gone, and Ravi signs in on the same Windows account.
+    before.unmount();
+    closeDrafts();
+    await signIn('ravi');
+    expect(openNote().result.current.draft.saved).toBeNull();
+
+    closeDrafts();
+    await signIn('asha');
+
+    expect(openNote().result.current.draft.saved?.value.note).toBe('Patient drowsy, GCS 14');
+  });
+
+  it('is offered by a form opened before its user’s drafts were', async () => {
+    const before = openNote();
+    type(before, 'Patient drowsy, GCS 14');
+    wait(4_000);
+    await keptOnComputer('asha');
+    before.unmount();
+    closeDrafts();
+
+    // The app starts again on the form, and the server's key comes a moment later.
+    const again = openNote();
+    expect(again.result.current.draft.saved).toBeNull();
+    await act(() => openDrafts('asha', draftKeys.asha));
+
+    expect(useDrafts.getState().openFor).toBe('asha');
+    expect(again.result.current.draft.saved?.value.note).toBe('Patient drowsy, GCS 14');
   });
 });
