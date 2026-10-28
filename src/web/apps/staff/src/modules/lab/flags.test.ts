@@ -101,6 +101,16 @@ describe('numeric parsing', () => {
     expect(parseNumericResult('')).toBeNull();
     expect(parseNumericResult('1e5')).toBeNull();
   });
+
+  it('refuses a long run of digits that is not a number at once', () => {
+    // A result pasted or restored from a draft can be anything. The pattern used to backtrack over every split of the
+    // digits, so a hundred thousand of them took seconds.
+    const started = performance.now();
+
+    expect(parseNumericResult('0'.repeat(100_000) + 'x')).toBeNull();
+
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
 
 describe('numeric classification', () => {
