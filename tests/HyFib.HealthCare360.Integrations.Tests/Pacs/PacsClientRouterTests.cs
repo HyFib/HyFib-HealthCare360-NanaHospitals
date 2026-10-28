@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Integrations.Common;
 using HyFib.HealthCare360.Integrations.Pacs;
+using HyFib.HealthCare360.Integrations.Tests.TestSupport;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
@@ -29,7 +30,7 @@ public sealed class PacsClientRouterTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private PacsClientRouter Router =>
-        new([_dicomWeb], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance), TimeProvider.System);
+        new([_dicomWeb], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), Servers.Live, NullLogger<IntegrationSettingsReader>.Instance), TimeProvider.System);
 
     private void Configure(PacsSettings? settings) =>
         _settings.GetAsync<PacsSettings>("integrations.pacs", Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(settings);

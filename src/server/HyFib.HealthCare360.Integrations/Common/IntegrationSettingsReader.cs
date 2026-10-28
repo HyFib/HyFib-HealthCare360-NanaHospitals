@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Integrations.Common;
 
@@ -34,9 +35,11 @@ internal sealed record IntegrationConfig<TSettings, TSecrets>(TSettings? Setting
 /// Reads per-facility integration configuration: non-secret <c>integrations.&lt;name&gt;</c> and encrypted
 /// <c>integrations.&lt;name&gt;.secret</c>. The facility is the signed-in user's unless one is given (webhooks);
 /// background work (the outbox) has no facility and therefore uses the global rows. Malformed or undecryptable
-/// settings become a problem message instead of an exception, so a bad configuration fails one call, not the host.
+/// settings become a problem message instead of an exception, so a bad configuration fails one call, not the host. So
+/// does the simulator on a hospital's live server (<see cref="TrainingSimulators"/>), whenever it was chosen.
 /// </summary>
-internal sealed class IntegrationSettingsReader(ISettingsService settings, ICurrentUser currentUser, ILogger<IntegrationSettingsReader> logger)
+internal sealed class IntegrationSettingsReader(
+    ISettingsService settings, ICurrentUser currentUser, IOptions<PlatformOptions> platform, ILogger<IntegrationSettingsReader> logger)
 {
     public Task<IntegrationConfig<TSettings, TSecrets>> ReadAsync<TSettings, TSecrets>(string integration, CancellationToken cancellationToken)
         where TSettings : class, IIntegrationSettings
@@ -69,6 +72,13 @@ internal sealed class IntegrationSettingsReader(ISettingsService settings, ICurr
         if (values is null)
         {
             return new(null, new TSecrets(), $"{display} is not configured. Set it up in Administration → Integrations.");
+        }
+
+        // Callbacks and reconciliation read it too: nothing a simulator answers is taken on a live server.
+        if (!platform.Value.AllowsSimulators && TrainingSimulators.IsSimulator(values.Provider))
+        {
+            return new(values, new TSecrets(),
+                $"{display} is set to the simulator, which only a training or test server can use. Choose the real provider in Administration → Integrations.");
         }
 
         if (requireEnabled && !values.Enabled)

@@ -40,7 +40,10 @@ public sealed class PlatformOptions
     /// </summary>
     public bool AutoMigrate { get; set; } = true;
 
-    /// <summary>Seed demonstration practitioners/patients (never enable in production).</summary>
+    /// <summary>
+    /// Seed demonstration practitioners/patients (never enable in production). It makes the server a training or test
+    /// server, the only kind whose integrations may use their simulators (<see cref="AllowsSimulators"/>).
+    /// </summary>
     public bool SeedDemoData { get; set; }
 
     /// <summary>Process role: <c>all</c> (default), <c>api</c> (no background jobs) or <c>worker</c> (jobs only).</summary>
@@ -72,6 +75,12 @@ public sealed class PlatformOptions
     public bool RunsJobs => !string.Equals(Role, "api", StringComparison.OrdinalIgnoreCase);
 
     public bool ServesApi => !string.Equals(Role, "worker", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether the integrations' simulators may stand in for the real ones (<see cref="Integrations.TrainingSimulators"/>):
+    /// only on a training or test server, one set up with demonstration data, never on a hospital's live server.
+    /// </summary>
+    public bool AllowsSimulators => SeedDemoData;
 }
 
 public sealed class SecurityOptions

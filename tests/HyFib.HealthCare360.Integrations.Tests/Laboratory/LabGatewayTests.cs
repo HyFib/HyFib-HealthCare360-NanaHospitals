@@ -398,6 +398,7 @@ public sealed class LabGatewayTests
         services.AddSingleton(settings);
         services.AddSingleton(Substitute.For<ICurrentUser>());
         services.AddSingleton<ILogger<IntegrationSettingsReader>>(NullLogger<IntegrationSettingsReader>.Instance);
+        services.AddSingleton(Options.Create(platform));
         services.AddScoped<IntegrationSettingsReader>();
         return new LabGatewayHostedService(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
             Options.Create(platform), Substitute.For<IHostEnvironment>(), Substitute.For<ILabMessageProcessor>(), _state, TimeProvider.System,

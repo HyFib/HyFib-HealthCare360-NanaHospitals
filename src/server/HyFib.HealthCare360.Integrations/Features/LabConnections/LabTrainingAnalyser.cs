@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Astm;
 using HyFib.HealthCare360.Integrations.Laboratory.Hl7;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Integrations.Features.LabConnections;
 
@@ -51,11 +52,18 @@ public sealed partial class TrainingResultsRequestValidator : AbstractValidator<
 /// would send in its protocol (HL7 ORU^R01 or ASTM E1394), decodes it with the same mappers as a real analyser's, and
 /// hands it to the LIS through the same path. So results are matched to the sample's tests by the analyser's channel
 /// codes, checked (auto-validation, delta checks, QC lockout) and logged as for a real analyser, and the lab can
-/// practise without one. Results can be sent only to a training analyser, never to a real one.
+/// practise without one. Results can be sent only to a training analyser, never to a real one, and only on a training
+/// or test server (<see cref="TrainingSimulators"/>): on a hospital's live server they would be patients' results that
+/// no analyser measured.
 /// </summary>
 internal sealed class LabTrainingAnalyser(
-    IntegrationSettingsReader settings, ILabMessageProcessor processor, IServiceProvider services, ICurrentUser currentUser, TimeProvider time)
+    IntegrationSettingsReader settings, ILabMessageProcessor processor, IServiceProvider services, ICurrentUser currentUser,
+    IOptions<PlatformOptions> platform, TimeProvider time)
 {
+    /// <summary>Why the training analyser, and making one, is refused on a live server.</summary>
+    internal static readonly Error LiveServer = Error.Rule("lab.training_server",
+        "The training analyser works only on a training or test server, one set up with demonstration data. On the hospital's live server results come from the analysers or are entered in the lab.");
+
     /// <summary>The tests the sample still needs on this analyser.</summary>
     public async Task<Result<TrainingSampleDto>> SampleAsync(string code, string barcode, CancellationToken cancellationToken)
     {
@@ -128,6 +136,11 @@ internal sealed class LabTrainingAnalyser(
     /// <summary>The analyser's connection, when it is a training analyser this user may use; otherwise why not.</summary>
     private async Task<(LabInstrumentSettings? Instrument, Error? Problem)> TrainingAnalyserAsync(string code, CancellationToken cancellationToken)
     {
+        if (!platform.Value.AllowsSimulators)
+        {
+            return (null, LiveServer);
+        }
+
         if (services.GetService<IInstrumentResultSink>() is not { } sink)
         {
             return (null, Error.Rule("lab.training_unavailable", "The LIS is not available on this server."));

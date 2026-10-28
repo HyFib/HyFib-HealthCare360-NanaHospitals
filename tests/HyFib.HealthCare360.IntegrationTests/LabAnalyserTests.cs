@@ -229,6 +229,54 @@ public sealed class LabAnalyserTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task On_a_live_server_no_results_are_typed_in_as_an_analysers()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        await EnableGatewayAsync(admin);
+        const string connections = "/api/v1/integrations/lab/connections";
+        try
+        {
+            // On the hospital's live server an analyser cannot be made the training analyser...
+            using (server.AsLiveServer())
+            {
+                var version = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+                using var refused = await admin.SendRawAsync(HttpMethod.Put, $"{connections}/EM360",
+                    new SaveLabConnectionRequest("Simulator", true, null, null, null, null, null, null, null, version));
+                refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+                (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("lab.training_server");
+            }
+
+            // ...and one made on a training server takes no results from the screen once the server is live.
+            var current = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+            await admin.PutAsync($"{connections}/EM360", new SaveLabConnectionRequest("Simulator", true, null, null, null, null, null, null, null, current));
+            var channel = (await admin.GetAsync<TrainingSampleDto>($"{connections}/EM360/training/samples/{tube.Barcode}")).Channels.ShouldHaveSingleItem();
+            using (server.AsLiveServer())
+            {
+                using var sample = await admin.SendRawAsync(HttpMethod.Get, $"{connections}/EM360/training/samples/{tube.Barcode}");
+                sample.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+                using var results = await admin.SendRawAsync(HttpMethod.Post, $"{connections}/EM360/training/results",
+                    new TrainingResultsRequest(tube.Barcode, [new TrainingResult(channel, "96", "mg/dL")]));
+                results.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+                (await results.Content.ReadAsStringAsync(Ct)).ShouldContain("lab.training_server");
+            }
+
+            var line = (await lab.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results")).Lines.ShouldHaveSingleItem();
+            (line.Value, line.InstrumentCode).ShouldBe((null, null));
+        }
+        finally
+        {
+            var list = await admin.GetAsync<LabConnectionsDto>(connections);
+            if (list.Connections.Any(c => c.Code == "EM360"))
+            {
+                using var removed = await admin.SendRawAsync(HttpMethod.Delete, $"{connections}/EM360?version={list.ListVersion}");
+                removed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+            }
+        }
+    }
+
     /// <summary>A walk-in fasting blood sugar, collected and received in the lab (the counter's payment gate waived).</summary>
     private async Task<CreatedSample> ReceivedFastingSugarSampleAsync(ApiClient admin, ApiClient lab)
     {

@@ -30,8 +30,9 @@ internal sealed class LabelJobs(IntegrationTrace trace, IntegrationSettingsReade
 {
     public async Task<bool> IsSimulatorAsync(CancellationToken cancellationToken)
     {
+        // A simulator the server cannot use (a live server's) leaves the labels on the workstations' printers.
         var config = await settings.ReadAsync<LabelSettings, NoSecrets>(IntegrationNames.Labels, null, requireEnabled: false, cancellationToken);
-        return string.Equals(config.Settings?.Provider?.Trim(), ProviderKeys.Simulator, StringComparison.OrdinalIgnoreCase);
+        return config.Problem is null && string.Equals(config.Settings?.Provider?.Trim(), ProviderKeys.Simulator, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

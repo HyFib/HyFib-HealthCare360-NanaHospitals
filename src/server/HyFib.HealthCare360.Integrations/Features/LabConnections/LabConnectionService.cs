@@ -132,6 +132,11 @@ internal sealed class LabConnectionService(
             "Simulator" => LabTransport.Simulator,
             _ => LabTransport.Tcp,
         };
+        if (transport == LabTransport.Simulator && !platform.Value.AllowsSimulators)
+        {
+            return LabTrainingAnalyser.LiveServer;
+        }
+
         var hl7 = profile.Protocol == "Hl7";
         string? agentName = null;
         if (transport == LabTransport.Tcp)

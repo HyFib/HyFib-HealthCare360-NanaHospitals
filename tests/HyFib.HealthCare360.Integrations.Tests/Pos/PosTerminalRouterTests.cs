@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Integrations.Common;
 using HyFib.HealthCare360.Integrations.Pos;
+using HyFib.HealthCare360.Integrations.Tests.TestSupport;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
@@ -29,7 +30,7 @@ public sealed class PosTerminalRouterTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private PosTerminalRouter Router() =>
-        new([_pineLabs], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance));
+        new([_pineLabs], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), Servers.Live, NullLogger<IntegrationSettingsReader>.Instance));
 
     private void Configure(PosSettings? settings) =>
         _settings.GetAsync<PosSettings>("integrations.pos", Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(settings);

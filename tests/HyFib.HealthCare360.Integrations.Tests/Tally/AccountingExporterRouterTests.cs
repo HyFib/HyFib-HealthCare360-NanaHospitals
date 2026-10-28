@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HyFib.HealthCare360.Integrations.Common;
 using HyFib.HealthCare360.Integrations.Tally;
+using HyFib.HealthCare360.Integrations.Tests.TestSupport;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
@@ -28,7 +29,7 @@ public sealed class AccountingExporterRouterTests
     public AccountingExporterRouterTests() => _tally.Key.Returns("tally");
 
     private AccountingExporterRouter Router =>
-        new([_tally], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance), Substitute.For<ICurrentUser>());
+        new([_tally], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), Servers.Live, NullLogger<IntegrationSettingsReader>.Instance), Substitute.For<ICurrentUser>());
 
     private static AccountingVoucher Voucher(string number) => new(
         "Receipt", Day, number, "Receipt", [new AccountingEntry("Cash", 10m, true), new AccountingEntry("Patient Receivables", 10m, false)], number);

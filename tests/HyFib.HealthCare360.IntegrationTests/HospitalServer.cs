@@ -210,6 +210,25 @@ public sealed class HospitalServer : IAsyncLifetime
 
     private PlatformOptions Platform => Services.GetRequiredService<IOptions<PlatformOptions>>().Value;
 
+    /// <summary>
+    /// The server as a hospital's live server, until the result is disposed: one set up without demonstration data
+    /// (<see cref="PlatformOptions.SeedDemoData"/>), where what only a training or test server allows is refused, such as
+    /// the integrations' simulators. Those rules read the setting at each request, and tests run one at a time, so only
+    /// the test that asked sees the change.
+    /// </summary>
+    public IDisposable AsLiveServer()
+    {
+        var platform = Platform;
+        var before = platform.SeedDemoData;
+        platform.SeedDemoData = false;
+        return new Restore(() => platform.SeedDemoData = before);
+    }
+
+    private sealed class Restore(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
+
     /// <summary>A caller who has not signed in, at one of the server's addresses, from the test's own address.</summary>
     public ApiClient AnonymousAt(Uri address)
     {

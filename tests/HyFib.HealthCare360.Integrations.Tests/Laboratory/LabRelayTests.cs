@@ -243,7 +243,7 @@ public sealed class LabRelayTests : IAsyncDisposable
         ];
         var settings = Substitute.For<ISettingsService>();
         settings.GetAsync<List<LabInstrumentSettings>>(LabSettingKeys.Instruments, null, Ct).ReturnsForAnyArgs(stored);
-        var reader = new IntegrationSettingsReader(settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance);
+        var reader = new IntegrationSettingsReader(settings, Substitute.For<ICurrentUser>(), Servers.Live, NullLogger<IntegrationSettingsReader>.Instance);
 
         var assigned = await LabAgentEndpoints.AssignedAsync(reader, agent, Ct);
 

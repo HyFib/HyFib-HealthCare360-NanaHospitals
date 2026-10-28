@@ -24,7 +24,7 @@ public sealed class SmsRouterTests
         _settings.GetAsync<SmsSecrets>("integrations.sms.secret", Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(new SmsSecrets { Msg91AuthKey = "k" });
     }
 
-    private SmsRouter Router => new([_msg91], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance), _tracing.Trace);
+    private SmsRouter Router => new([_msg91], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), Servers.Live, NullLogger<IntegrationSettingsReader>.Instance), _tracing.Trace);
 
     private void Configure(SmsSettings? settings) =>
         _settings.GetAsync<SmsSettings>("integrations.sms", Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(settings);

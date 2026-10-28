@@ -4,12 +4,14 @@ using HyFib.HealthCare360.Integrations.Labels.Templates;
 using HyFib.HealthCare360.Integrations.Simulator;
 using HyFib.HealthCare360.Integrations.Tests.Labels;
 using HyFib.HealthCare360.Integrations.Tests.TestSupport;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace HyFib.HealthCare360.Integrations.Tests.Features;
@@ -28,9 +30,11 @@ public sealed class LabelJobsTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private LabelJobs Jobs => new(
+    private LabelJobs Jobs => JobsOn(Servers.Training);
+
+    private LabelJobs JobsOn(IOptions<PlatformOptions> server) => new(
         _tracing.Trace,
-        new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance),
+        new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), server, NullLogger<IntegrationSettingsReader>.Instance),
         new SimulatorInbox(Substitute.For<IDbContextFactory<HospitalDbContext>>(), Substitute.For<ICurrentUser>(), TimeProvider.System));
 
     [Fact]
@@ -87,5 +91,14 @@ public sealed class LabelJobsTests
             .Returns(provider is null ? null : new LabelSettings { Provider = provider });
 
         (await Jobs.IsSimulatorAsync(Ct)).ShouldBe(simulator);
+    }
+
+    [Fact]
+    public async Task On_a_live_server_labels_go_to_the_printers_though_the_simulator_was_chosen()
+    {
+        _settings.GetAsync<LabelSettings>(IntegrationNames.SettingsKey(IntegrationNames.Labels), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new LabelSettings { Provider = "simulator" });
+
+        (await JobsOn(Servers.Live).IsSimulatorAsync(Ct)).ShouldBeFalse();
     }
 }

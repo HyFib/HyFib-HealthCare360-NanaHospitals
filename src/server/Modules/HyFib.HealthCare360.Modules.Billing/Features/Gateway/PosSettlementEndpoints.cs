@@ -1,6 +1,8 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services;
+using HyFib.HealthCare360.Platform.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 
@@ -117,9 +119,19 @@ internal static class PosSettlementEndpoints
     private static async Task<IResult> Unsettled(ICurrentUser user, PosSettlementService service, CancellationToken ct) =>
         user.FacilityId is { } facilityId ? TypedResults.Ok(await service.UnsettledAsync(facilityId, ct)) : BillingDb.FacilityRequired.ToProblem();
 
-    /// <summary>A settlement report of the training terminal's sales of <paramref name="date"/> (CSV), to practise with.</summary>
-    private static async Task<IResult> TrainingFile(DateOnly? date, ICurrentUser user, PosSettlementService service, TimeProvider time, CancellationToken ct)
+    /// <summary>
+    /// A settlement report of the training terminal's sales of <paramref name="date"/> (CSV), to practise with. Only a
+    /// training or test server makes one: on a hospital's live server it would settle sales no card paid.
+    /// </summary>
+    private static async Task<IResult> TrainingFile(
+        DateOnly? date, ICurrentUser user, PosSettlementService service, IOptions<PlatformOptions> platform, TimeProvider time, CancellationToken ct)
     {
+        if (!platform.Value.AllowsSimulators)
+        {
+            return Error.Rule("billing.pos_training_server",
+                "The training settlement report is made only on a training or test server, one set up with demonstration data.").ToProblem();
+        }
+
         if (user.FacilityId is not { } facilityId)
         {
             return BillingDb.FacilityRequired.ToProblem();

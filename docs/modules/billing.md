@@ -332,7 +332,7 @@ one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) fo
 | POST | `/lines/{id}/review` | `ReviewPosSettlementLineRequest(note, version)` (5–500 characters) → `PosSettlementLineDto`; 422 `billing.pos_settlement_matched` for a line that matches, `billing.pos_settlement_reviewed` for one already reviewed; 409 when someone changed it meanwhile. Audited `billing.pos.settlement_reviewed` |
 | POST | `/match` | → `PosMatchResult(checked, matched, toLookAt, message)`: matches again the transactions without a receipt or refund settled in the last 90 days, for example after a missing receipt was recorded |
 | GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting) |
-| GET | `/training-file?date` | → `text/csv` `training-card-settlement-<date>.csv`: the training terminal's approved sales of the day as an acquirer would report them, to practise the import |
+| GET | `/training-file?date` | → `text/csv` `training-card-settlement-<date>.csv`: the training terminal's approved sales of the day as an acquirer would report them, to practise the import; 422 `billing.pos_training_server` on a live server |
 
 ### Patient portal — `/api/v1/portal/bills` (`patients.portal`, own/linked patients only)
 | Method | Path | Request → response |
@@ -698,7 +698,9 @@ keeps its number, so Tally alters it.
 
 **Training.** `/training-file` turns the training terminal's approved sales of a day into a report, paid the next day
 with a 1.5 % charge on cards plus GST, under the UTR `SIMUTR<yyyyMMdd>`, so the whole flow can be tried without an
-acquirer.
+acquirer. Only a training or test server makes one (422 `billing.pos_training_server` on a hospital's live server, where
+it would settle sales no card paid); see *Simulators only on a training or test server* in
+[integrations.md](integrations.md).
 
 ## The Tally day book
 
