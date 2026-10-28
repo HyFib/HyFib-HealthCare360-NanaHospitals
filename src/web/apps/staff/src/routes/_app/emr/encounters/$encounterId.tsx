@@ -48,6 +48,8 @@ import { useServerDocuments } from '@/lib/documents';
 import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { AbdmConsultationButton } from '@/modules/emr/AbdmConsultationButton';
+import { consultationExportable } from '@/modules/emr/abdmConsultation';
+import { AbdmLinkButton } from '@/modules/emr/AbdmLinkButton';
 import { emrKeys, emrQueries, encounterTypeLabel, type EncounterDetail } from '@/modules/emr/api';
 import { LatestVitals } from '@/modules/emr/ChartSummary';
 import { BannerSkeleton, ClinicalBanner } from '@/modules/emr/ClinicalBanner';
@@ -432,6 +434,13 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
               </MenuPopover>
             </Menu>
             <AbdmConsultationButton encounter={encounter} disabled={note.amending} />
+            {consultationExportable(encounter) && (
+              <AbdmLinkButton
+                record={{ type: 'OpConsultation', id: encounter.id }}
+                what="consultation"
+                disabled={note.amending}
+              />
+            )}
           </>
         }
       />
