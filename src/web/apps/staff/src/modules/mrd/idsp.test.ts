@@ -50,6 +50,10 @@ describe('a tuberculosis case notified on Ni-kshay', () => {
     expect(caseFirstDay(tb)).toBe('2026-10-19');
     expect(caseFirstDay({ presumedAt: null, confirmedAt: '2026-10-20T06:00:00Z' })).toBe('2026-10-20');
     expect(caseFirstDay({ presumedAt: null, confirmedAt: null })).toBeNull();
+    // A culture grown before the doctor recorded the diagnosis: the case starts on the day of the result.
+    expect(caseFirstDay({ presumedAt: '2026-10-22T06:00:00Z', confirmedAt: '2026-10-20T06:00:00Z' })).toBe(
+      '2026-10-20',
+    );
     expect(daysWaiting(tb, '2026-10-28')).toBe(9);
     expect(daysWaiting(tb, '2026-10-19')).toBe(0);
   });

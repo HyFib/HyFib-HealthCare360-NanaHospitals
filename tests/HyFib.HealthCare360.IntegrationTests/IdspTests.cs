@@ -194,6 +194,21 @@ public sealed class IdspTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task A_tuberculosis_case_added_by_hand_also_asks_for_its_Nikshay_notification()
+    {
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+
+        // Diagnosed at another hospital and treated here: medical records adds the case by hand.
+        var added = await mrd.PostAsync<IdspCaseRow>("/api/v1/idsp/cases", new AddIdspCaseRequest(patient.Id, "TB", null, null, null));
+        var alert = await EventuallyAsync(async () => (await mrd.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=200")).Items
+            .FirstOrDefault(n => n.Link == $"/mrd/idsp?case={added.Id}"), "The surveillance officer was not told to notify the case added by hand.");
+        alert.Title.ShouldBe("Notify on Ni-kshay: Tuberculosis");
+        (await mrd.GetAsync<IdspTuberculosisDto>("/api/v1/idsp/tuberculosis")).ToNotify.ShouldContain(c => c.Id == added.Id);
+    }
+
     private static async Task<Guid> EncounterAsync(ApiClient doctor, Guid patientId) =>
         (await doctor.PostAsync<EncounterDetail>("/api/v1/emr/encounters", new StartEncounterRequest(
             patientId, VisitId: null, AdmissionId: null, Type: null, DepartmentId: null, PractitionerId: null, TemplateId: null, ChiefComplaint: "Fever"))).Id;

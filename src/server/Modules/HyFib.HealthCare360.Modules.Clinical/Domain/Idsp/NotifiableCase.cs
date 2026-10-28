@@ -98,6 +98,12 @@ public sealed class NotifiableCase : AuditableEntity, IFacilityScoped
 
     public DateTimeOffset LastEventAt => ConfirmedAt is { } c && (PresumedAt is not { } p || c > p) ? c : PresumedAt ?? CreatedAt;
 
+    /// <summary>
+    /// When the case began: its diagnosis or its confirming result, whichever came first (a culture can grow before the
+    /// doctor records the diagnosis).
+    /// </summary>
+    public DateTimeOffset FirstEventAt => ConfirmedAt is { } c && (PresumedAt is not { } p || c < p) ? c : PresumedAt ?? CreatedAt;
+
     /// <summary>A diagnosis of this disease, made at <paramref name="at"/>; a later diagnosis of a case already presumed changes nothing.</summary>
     public void Presume(Guid? diagnosisId, string? icdCode, DateTimeOffset at)
     {
@@ -176,7 +182,7 @@ public sealed class NotifiableCase : AuditableEntity, IFacilityScoped
             return Error.Field("nikshayId", "Enter the Ni-kshay ID as Ni-kshay gave it: letters and digits.");
         }
 
-        var first = VitalRegistration.LocalDate(PresumedAt ?? ConfirmedAt ?? CreatedAt);
+        var first = VitalRegistration.LocalDate(FirstEventAt);
         if (notifiedOn > today || notifiedOn < first)
         {
             return Error.Field("notifiedOn", $"Give the day it was notified: from {first:dd-MM-yyyy}, and not later than today.");

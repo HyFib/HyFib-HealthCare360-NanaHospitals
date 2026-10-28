@@ -102,7 +102,7 @@ internal sealed class IdspService(
             .ToListAsync(ct);
         var rows = (await RowsAsync(cases, ct)).ToDictionary(r => r.Id);
         return new IdspTuberculosisDto(
-            [.. cases.Where(c => c.NikshayId is null).OrderBy(c => c.PresumedAt ?? c.ConfirmedAt ?? c.CreatedAt).Select(c => rows[c.Id])],
+            [.. cases.Where(c => c.NikshayId is null).OrderBy(c => c.FirstEventAt).Select(c => rows[c.Id])],
             [.. cases.Where(c => c.NikshayId is not null).OrderByDescending(c => c.NikshayNotifiedOn).Select(c => rows[c.Id])]);
     }
 
@@ -241,7 +241,7 @@ internal sealed class IdspService(
         }
 
         db.Add(@case);
-        if (disease.Immediate)
+        if (disease.Immediate || disease.Nikshay)
         {
             @case.MarkAlerted(now);
             outbox.Enqueue(NotifiableDiseases.AlertType, NotifiableDiseases.AlertFor(@case, disease, @case.ConfirmedAt is null ? "suspected" : "confirmed"),

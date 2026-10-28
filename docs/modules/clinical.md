@@ -508,9 +508,10 @@ diagnoses or treats it (Health Ministry notification of 16 March 2018; not notif
 or *Mycobacterium tuberculosis* grown, opens a case, and a later one within a year (treatment runs six months or more) is
 the same case. It is not on the IHIP forms. Each new case alerts the holders of `mrd.idsp.report` to notify it on
 Ni-kshay ("Notify on Ni-kshay: Tuberculosis", no patient details), and it waits on the register, longest first, until
-its Ni-kshay ID and the day it was notified are recorded (from the day it was diagnosed to today; recording again
-corrects them). A case diagnosed elsewhere and treated here is added by hand, as disease `TB`. Not built: sending to
-Ni-kshay (each case is notified by hand on the portal), and the chemist's notification of anti-TB medicines sold.
+its Ni-kshay ID and the day it was notified are recorded (from the day of its first diagnosis or result to today;
+recording again corrects them). A case diagnosed elsewhere and treated here is added by hand, as disease `TB`, and
+alerts as any new case does. Not built: sending to Ni-kshay (each case is notified by hand on the portal), and the
+chemist's notification of anti-TB medicines sold.
 
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|

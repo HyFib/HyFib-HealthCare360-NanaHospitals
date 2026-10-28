@@ -203,10 +203,13 @@ export const IDSP_PERMISSION = 'mrd.idsp.report';
 
 const istDate = new Intl.DateTimeFormat('en-CA', { timeZone: HOSPITAL_TIME_ZONE });
 
-/** The day (yyyy-mm-dd, in India) a case was first diagnosed or confirmed: it cannot be notified before. */
+/**
+ * The day (yyyy-mm-dd, in India) a case was first diagnosed or confirmed, whichever came first: it cannot be notified
+ * before.
+ */
 export function caseFirstDay(row: Pick<IdspCaseRow, 'presumedAt' | 'confirmedAt'>): string | null {
-  const first = row.presumedAt ?? row.confirmedAt;
-  return first ? istDate.format(new Date(first)) : null;
+  const times = [row.presumedAt, row.confirmedAt].filter((at): at is string => at !== null).map((at) => Date.parse(at));
+  return times.length > 0 ? istDate.format(new Date(Math.min(...times))) : null;
 }
 
 /** Days a tuberculosis case has waited to be notified on Ni-kshay, from its first diagnosis or result to today. */

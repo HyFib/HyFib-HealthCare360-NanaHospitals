@@ -15,6 +15,7 @@ internal sealed class NotifiableCaseConfiguration : IEntityTypeConfiguration<Not
         b.Property(x => x.DiscardReason).HasMaxLength(500);
         b.Property(x => x.NikshayId).HasMaxLength(32);
         b.Ignore(x => x.LastEventAt);
+        b.Ignore(x => x.FirstEventAt);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.FacilityId, x.PresumedWeek });
         b.HasIndex(x => new { x.FacilityId, x.ConfirmedWeek });

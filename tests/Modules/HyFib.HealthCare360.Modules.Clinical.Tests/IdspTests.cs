@@ -83,6 +83,20 @@ public sealed class IdspTests
     }
 
     [Fact]
+    public void A_case_whose_result_came_before_the_diagnosis_is_notified_from_the_day_of_the_result()
+    {
+        var today = new DateOnly(2026, 10, 28);
+        var tb = new NotifiableCase { DiseaseCode = "TB" };
+        tb.Confirm(Guid.NewGuid(), "AFB culture", "Mycobacterium tuberculosis complex", Monday);
+        tb.Presume(Guid.NewGuid(), "A15.0", Monday.AddDays(3));
+        tb.FirstEventAt.ShouldBe(Monday);
+
+        // Notified on Ni-kshay the day the culture grew, before the doctor recorded the diagnosis.
+        tb.RecordNikshay("10234567", new DateOnly(2026, 10, 18), today, null, Monday).Error!.Fields!.Keys.ShouldBe(["notifiedOn"]);
+        tb.RecordNikshay("10234567", new DateOnly(2026, 10, 19), today, null, Monday.AddDays(4)).IsSuccess.ShouldBeTrue();
+    }
+
+    [Fact]
     public void Every_disease_has_a_unique_code_and_the_outbreak_prone_ones_are_marked()
     {
         IdspDiseases.Notifiable.Select(d => d.Code).ShouldBeUnique();
