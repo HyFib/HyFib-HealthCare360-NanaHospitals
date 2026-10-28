@@ -43,7 +43,11 @@ public sealed record LabOrderItemDto(
     DateTimeOffset? ExternalReportReceivedAt,
     DateTimeOffset? VerifiedAt,
     DateTimeOffset? ReleasedAt,
-    string? CancelReason);
+    string? CancelReason,
+
+    // For an HIV test: on what it is done (the patient's consent, a representative's, a court's order) and when it was recorded.
+    ConsentBasis? ConsentBasis = null,
+    DateTimeOffset? ConsentRecordedAt = null);
 
 public sealed record LabSampleDto(
     Guid Id,

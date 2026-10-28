@@ -1,4 +1,5 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
+import { ApiError } from '@hc360/core';
 import type * as Ui from '@hc360/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -98,6 +99,39 @@ describe('CollectDialog', () => {
     request.resolve(labels);
     expect(await within(dialog).findByText('1 tube collected for Meena Kumari')).toBeInTheDocument();
     await waitFor(() => expect(printSampleLabels).toHaveBeenCalledWith(labels));
+  });
+
+  it('asks for the consent to an HIV test the server holds back, and sends it with the collection', async () => {
+    collect.mockRejectedValueOnce(
+      new ApiError({
+        status: 422,
+        title: 'The request breaks a rule',
+        detail: "HIV 1 & 2 antibodies: an HIV test needs the patient's informed consent before its sample is drawn.",
+        code: 'lab.consent_required',
+        data: { tests: [{ itemId: 'i1', name: 'HIV 1 & 2 antibodies' }] },
+      }),
+    );
+    collect.mockResolvedValueOnce(labels);
+    printSampleLabels.mockResolvedValue(undefined);
+    const dialog = renderDialog();
+    const submit = within(dialog).getByRole('button', { name: 'Collect and print labels' });
+    await userEvent.click(submit);
+
+    // The test is named, and the samples are not collected until counselling is confirmed and the form numbered.
+    const consent = await within(dialog).findByRole('group', { name: 'Record the consent' });
+    expect(consent).toHaveTextContent('HIV 1 & 2 antibodies');
+    expect(submit).toBeDisabled();
+    await userEvent.type(within(consent).getByRole('textbox', { name: 'Consent form number' }), 'ICTC/42');
+    await userEvent.click(within(consent).getByRole('checkbox', { name: /Pre-test counselling was given/ }));
+    await userEvent.click(submit);
+
+    expect(await within(dialog).findByText('1 tube collected for Meena Kumari')).toBeInTheDocument();
+    expect(collect).toHaveBeenLastCalledWith(
+      'o1',
+      expect.objectContaining({
+        consents: [{ itemId: 'i1', basis: 'Patient', givenBy: null, relation: null, reference: 'ICTC/42' }],
+      }),
+    );
   });
 
   it('keeps focus on Print labels again, inside the dialog, while the labels print', async () => {

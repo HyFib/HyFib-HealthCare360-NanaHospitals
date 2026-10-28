@@ -178,3 +178,16 @@ public static class ResultFlags
 
     public static bool IsCritical(this ResultFlag flag) => ((ResultFlag?)flag).IsCritical();
 }
+
+/// <summary>On what an HIV test is done (HIV and AIDS Act 2017, s.5 and 6).</summary>
+public enum ConsentBasis
+{
+    /// <summary>The patient gave informed consent, after pre-test counselling.</summary>
+    Patient = 0,
+
+    /// <summary>The patient's representative did (for a child, or a patient who cannot consent).</summary>
+    Representative,
+
+    /// <summary>A court ordered the test (s.6).</summary>
+    CourtOrder,
+}

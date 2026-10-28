@@ -14,6 +14,8 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
+  Radio,
+  RadioGroup,
   Spinner,
   Switch,
   Text,
@@ -30,6 +32,8 @@ import type { OrderPriority } from './common/types';
 import {
   labApi,
   labKeys,
+  type ConsentBasis,
+  type ConsentTest,
   type ContainerType,
   type LabSection,
   type SampleLabel,
@@ -99,6 +103,7 @@ const useStyles = makeStyles({
   prep: { display: 'flex', gap: '6px', alignItems: 'center', color: tokens.colorPaletteMarigoldForeground1 },
   row: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' },
   timeRow: { display: 'flex', gap: '8px', alignItems: 'flex-end' },
+  consent: { display: 'flex', flexDirection: 'column', gap: '10px' },
   done: {
     display: 'flex',
     flexDirection: 'column',
@@ -125,6 +130,13 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
   const [printLabels, setPrintLabels] = useState(true);
   const [labels, setLabels] = useState<SampleLabel[] | null>(null);
   const [printing, setPrinting] = useState(false);
+  // HIV tests the server holds until consent is recorded (HIV and AIDS Act 2017, s.5), and the consent given for them.
+  const [consentTests, setConsentTests] = useState<ConsentTest[] | null>(null);
+  const [basis, setBasis] = useState<ConsentBasis>('Patient');
+  const [givenBy, setGivenBy] = useState('');
+  const [relation, setRelation] = useState('');
+  const [reference, setReference] = useState('');
+  const [counselled, setCounselled] = useState(false);
 
   const collectedIso = fromZonedInput(collectedAt);
   const timeProblem = !collectedIso
@@ -132,6 +144,11 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
     : isInFuture(collectedIso, new Date())
       ? 'The collection time cannot be in the future.'
       : null;
+  const consentIncomplete =
+    consentTests !== null &&
+    (basis === 'CourtOrder'
+      ? !reference.trim()
+      : !counselled || (basis === 'Representative' && (!givenBy.trim() || !relation.trim())));
 
   const print = async (toPrint: SampleLabel[]) => {
     setPrinting(true);
@@ -150,7 +167,20 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
         sampleIds: selected.length === target.tubes.length ? null : selected,
         collectedAt: collectedIso,
         collectionSite: site.trim() || null,
+        consents:
+          consentTests?.map((test) => ({
+            itemId: test.itemId,
+            basis,
+            givenBy: basis === 'Representative' ? givenBy.trim() : null,
+            relation: basis === 'Representative' ? relation.trim() : null,
+            reference: reference.trim() || null,
+          })) ?? null,
       }),
+    onError: (error) => {
+      if (hasErrorCode(error, 'lab.consent_required')) {
+        setConsentTests(errorData<{ tests?: ConsentTest[] }>(error)?.tests ?? []);
+      }
+    },
     onSuccess: async (result) => {
       rememberSite(site.trim());
       setLabels(result);
@@ -165,6 +195,7 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
   const unpaid = hasErrorCode(collect.error, 'lab.payment_pending')
     ? (errorData<{ tests?: UnpaidTest[] }>(collect.error)?.tests ?? [])
     : null;
+  const consentRefused = hasErrorCode(collect.error, 'lab.consent_required');
 
   const toggle = (sampleId: string, checked: boolean) =>
     setSelected((current) =>
@@ -174,7 +205,9 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
   const preparation = [...new Set(target.tubes.flatMap((tube) => tube.preparation ?? []))];
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ selected, collectedAt, site, printLabels }) && labels === null,
+    dirty:
+      useValuesChanged({ selected, collectedAt, site, printLabels, basis, givenBy, relation, reference, counselled }) &&
+      labels === null,
     busy: collect.isPending,
     onClose,
   });
@@ -226,7 +259,7 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              if (selected.length > 0 && !timeProblem && !collect.isPending) {
+              if (selected.length > 0 && !timeProblem && !consentIncomplete && !collect.isPending) {
                 collect.mutate();
               }
             }}
@@ -261,12 +294,59 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                     </MessageBarBody>
                   </MessageBar>
                 )}
-                {collect.error && !unpaid && (
+                {collect.error && !unpaid && !consentRefused && (
                   <MessageBar intent="error">
                     <MessageBarBody>
                       {errorMessage(collect.error, 'The samples could not be marked as collected.')}
                     </MessageBarBody>
                   </MessageBar>
+                )}
+
+                {consentTests && (
+                  <div className={styles.consent} role="group" aria-label="Record the consent">
+                    <MessageBar intent="warning" layout="multiline">
+                      <MessageBarBody>
+                        <MessageBarTitle>Consent for an HIV test</MessageBarTitle>
+                        {consentTests.map((test) => test.name).join(', ')}: draw the sample only after pre-test
+                        counselling and the patient&apos;s written consent (HIV and AIDS Act 2017, s.5).
+                      </MessageBarBody>
+                    </MessageBar>
+                    <RadioGroup
+                      aria-label="On what the test is done"
+                      value={basis}
+                      onChange={(_, data) => setBasis(data.value as ConsentBasis)}
+                    >
+                      <Radio value="Patient" label="The patient consented" />
+                      <Radio
+                        value="Representative"
+                        label="A representative consented (for a child, or a patient who cannot)"
+                      />
+                      <Radio value="CourtOrder" label="A court ordered the test" />
+                    </RadioGroup>
+                    {basis === 'Representative' && (
+                      <div className={styles.row}>
+                        <Field label="Representative's name" required>
+                          <Input value={givenBy} onChange={(_, data) => setGivenBy(data.value.slice(0, 200))} />
+                        </Field>
+                        <Field label="Relation to the patient" required>
+                          <Input value={relation} onChange={(_, data) => setRelation(data.value.slice(0, 64))} />
+                        </Field>
+                      </div>
+                    )}
+                    <Field
+                      label={basis === 'CourtOrder' ? 'Court order number' : 'Consent form number'}
+                      required={basis === 'CourtOrder'}
+                    >
+                      <Input value={reference} onChange={(_, data) => setReference(data.value.slice(0, 64))} />
+                    </Field>
+                    {basis !== 'CourtOrder' && (
+                      <Checkbox
+                        checked={counselled}
+                        onChange={(_, data) => setCounselled(data.checked === true)}
+                        label="Pre-test counselling was given and the consent form is signed"
+                      />
+                    )}
+                  </div>
                 )}
 
                 {preparation.length > 0 && (
@@ -341,7 +421,7 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                 <Button
                   type="submit"
                   appearance="primary"
-                  disabled={selected.length === 0 || Boolean(timeProblem)}
+                  disabled={selected.length === 0 || Boolean(timeProblem) || consentIncomplete}
                   // Likewise while collecting; the form ignores a submit while one is running.
                   disabledFocusable={collect.isPending}
                   icon={collect.isPending ? <Spinner size="tiny" aria-hidden /> : <PrintRegular />}

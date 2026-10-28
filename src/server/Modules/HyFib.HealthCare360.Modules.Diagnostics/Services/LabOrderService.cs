@@ -246,7 +246,7 @@ internal sealed class LabOrderService(
             order.Items.OrderBy(i => i.Section).ThenBy(i => i.CreatedAt).Select(i => new LabOrderItemDto(
                 i.Id, i.LabTestId, i.TestCode, i.TestName, i.Section, i.Status, i.Priority, i.SampleId, i.ServiceItemId, i.ChargeId, i.ChargeError,
                 i.PackageBookingId, i.Quantity, i.ReferralLabId, i.SentOutAt, i.ExternalReportReceivedAt, i.VerifiedAt, i.ReleasedAt,
-                i.CancelReason)).ToList(),
+                i.CancelReason, i.ConsentBasis, i.ConsentRecordedAt)).ToList(),
             samples.Select(s => new LabSampleDto(
                 s.Id, s.Barcode, s.SpecimenType, s.Container, s.Section, s.Priority, s.Status, s.CollectedAt,
                 s.CollectedBy is { } c ? users.GetValueOrDefault(c) : null, s.CollectionSite, s.ReceivedAt,

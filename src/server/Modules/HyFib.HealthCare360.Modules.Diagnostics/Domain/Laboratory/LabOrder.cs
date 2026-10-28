@@ -126,6 +126,19 @@ public sealed class LabOrderItem : AuditableEntity, IFacilityScoped
     public DateTimeOffset? CancelledAt { get; set; }
     public string? CancelReason { get; set; }
 
+    /// <summary>
+    /// For an HIV test (<see cref="Rules.HivTestConsent"/>): on what it is done, recorded before its sample is drawn. A
+    /// representative's consent names them and their relation to the patient; <see cref="ConsentReference"/> is the
+    /// signed consent form's number, or the court order's.
+    /// </summary>
+    public ConsentBasis? ConsentBasis { get; private set; }
+
+    public string? ConsentGivenBy { get; private set; }
+    public string? ConsentRelation { get; private set; }
+    public string? ConsentReference { get; private set; }
+    public DateTimeOffset? ConsentRecordedAt { get; private set; }
+    public Guid? ConsentRecordedBy { get; private set; }
+
     public bool IsActive => Status != LabOrderItemStatus.Cancelled;
 
     public bool IsPackageComponent => PackageBookingId is not null;
@@ -146,6 +159,39 @@ public sealed class LabOrderItem : AuditableEntity, IFacilityScoped
         Status = LabOrderItemStatus.Cancelled;
         CancelReason = reason;
         CancelledAt = now;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Records on what an HIV test is done: the patient's consent, their representative's (named, with the relation), or
+    /// a court's order (its number). Once recorded it stands, for a repeat sample too.
+    /// </summary>
+    public Result RecordConsent(ConsentBasis basis, string? givenBy, string? relation, string? reference, Guid? by, DateTimeOffset at)
+    {
+        if (ConsentRecordedAt is not null)
+        {
+            return Result.Success();
+        }
+
+        givenBy = string.IsNullOrWhiteSpace(givenBy) ? null : givenBy.Trim();
+        relation = string.IsNullOrWhiteSpace(relation) ? null : relation.Trim();
+        reference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim();
+        if (basis == Laboratory.ConsentBasis.Representative && (givenBy is null || relation is null))
+        {
+            return Error.Field("givenBy", $"Name the representative who consented to {TestName}, and their relation to the patient.");
+        }
+
+        if (basis == Laboratory.ConsentBasis.CourtOrder && reference is null)
+        {
+            return Error.Field("reference", $"Give the number of the court order for {TestName}.");
+        }
+
+        ConsentBasis = basis;
+        ConsentGivenBy = basis == Laboratory.ConsentBasis.Representative ? givenBy : null;
+        ConsentRelation = basis == Laboratory.ConsentBasis.Representative ? relation : null;
+        ConsentReference = reference;
+        ConsentRecordedAt = at;
+        ConsentRecordedBy = by;
         return Result.Success();
     }
 
