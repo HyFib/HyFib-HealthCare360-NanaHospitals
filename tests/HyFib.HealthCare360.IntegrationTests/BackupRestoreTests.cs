@@ -11,7 +11,6 @@ using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.Server;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -24,8 +23,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// Audit P4: a backup is worth what its restore gives back. Each backup is read back and its database dump listed by
 /// pg_restore as it is made, but nothing restored one and opened the hospital's data. Here the test server's own backup is
-/// restored as Restore-HC360.ps1 restores it: the server CLI's <c>backup restore</c> puts the documents and the keys back,
-/// then pg_restore fills a new database.
+/// restored as Restore-HC360.ps1 restores it, through the same server CLI commands in the same order: <c>backup decrypt</c>
+/// writes the database dump, pg_restore fills a new database, and only then <c>backup restore</c> puts the documents and the
+/// keys back.
 /// </summary>
 public sealed class BackupRestoreTests(HospitalServer server)
 {
@@ -59,8 +59,10 @@ public sealed class BackupRestoreTests(HospitalServer server)
         {
             var chainEnd = await SealedAsync();
             (backup, var recoveryKey) = await BackupAsync();
-            var protection = new EphemeralDataProtectionProvider();
-            await using var restored = await RestoreAsync(backup, recoveryKey, machine, protection);
+            await using var restored = await RestoreAsync(backup, recoveryKey, machine);
+
+            // The new machine's own Data Protection keys, which the CLI used there, as the server there will.
+            var protection = HospitalDataProtection.CreateProvider(machine);
 
             (await PatientsAsync(restored.ConnectionString)).ShouldBe(await PatientsAsync(LiveConnectionString()), "every patient is there");
 
@@ -131,20 +133,33 @@ public sealed class BackupRestoreTests(HospitalServer server)
     }
 
     /// <summary>
-    /// What Restore-HC360.ps1 does with a backup on <paramref name="machine"/>: the server CLI's <c>backup restore</c>, which
-    /// puts the documents and the keys back and writes the database dump, then pg_restore into a new database.
+    /// What Restore-HC360.ps1 does with a backup on <paramref name="machine"/>, step by step:
+    /// <list type="number">
+    /// <item>the server CLI's <c>backup decrypt</c> checks the whole backup and writes its database dump, and changes
+    /// nothing else;</item>
+    /// <item>a new database, with pg_trgm, filled by pg_restore;</item>
+    /// <item>only then the CLI's <c>backup restore</c> puts back the documents and the backup's keys.</item>
+    /// </list>
     /// </summary>
-    private static async Task<TestDatabase> RestoreAsync(string backup, byte[] recoveryKey, DataDirectories machine, IDataProtectionProvider protection)
+    private static async Task<TestDatabase> RestoreAsync(string backup, byte[] recoveryKey, DataDirectories machine)
     {
         var dump = Path.Combine(machine.Temp, "restore.dump");
-        var result = await BackupRestore.RestoreAsync(backup, recoveryKey, dump, machine, protection, TimeProvider.System, Ct);
-        result.KeyInstalled.ShouldBeTrue();
-        result.AuditSealKeyInstalled.ShouldBeTrue();
+        (await CliAsync(recoveryKey, "backup", "decrypt", "--in", backup, "--out", dump, "--data-dir", machine.Root)).ShouldBe(0, "backup decrypt");
+        File.Exists(dump).ShouldBeTrue();
+        File.Exists(FieldMasterKey.PathIn(machine)).ShouldBeFalse("backup decrypt puts no key in place");
 
         var database = await TestDatabase.CreateAsync(Ct);
         try
         {
+            await using (var connection = new NpgsqlConnection(database.ConnectionString))
+            {
+                await connection.OpenAsync(Ct);
+                await using var extension = new NpgsqlCommand("CREATE EXTENSION IF NOT EXISTS pg_trgm", connection);
+                await extension.ExecuteNonQueryAsync(Ct);
+            }
+
             await PgRestoreAsync(dump, database.ConnectionString);
+            (await CliAsync(recoveryKey, "backup", "restore", "--in", backup, "--data-dir", machine.Root)).ShouldBe(0, "backup restore");
             return database;
         }
         catch
@@ -154,7 +169,24 @@ public sealed class BackupRestoreTests(HospitalServer server)
         }
     }
 
-    /// <summary>pg_restore as Restore-HC360.ps1 runs it, as the new database's owner here.</summary>
+    /// <summary>
+    /// The server CLI run as the script runs it: the recovery key in HC360_RECOVERY_KEY for the call only, never on the
+    /// command line.
+    /// </summary>
+    private static async Task<int> CliAsync(byte[] recoveryKey, params string[] arguments)
+    {
+        Environment.SetEnvironmentVariable("HC360_RECOVERY_KEY", BackupRecoveryKey.Format(recoveryKey));
+        try
+        {
+            return await ServerCli.RunAsync(arguments);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("HC360_RECOVERY_KEY", null);
+        }
+    }
+
+    /// <summary>pg_restore as Restore-HC360.ps1 runs it, as the new database's owner here (the script restores as hc360_app).</summary>
     private static async Task PgRestoreAsync(string dump, string connectionString)
     {
         var target = new NpgsqlConnectionStringBuilder(connectionString);
