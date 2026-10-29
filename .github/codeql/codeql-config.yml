@@ -26,3 +26,4 @@ paths-ignore:
   - src/web/apps/portal/src/routeTree.gen.ts
   - "**/node_modules/**"
   - "**/dist/**"
+  - src/web/demo/site # the demo's published copy: the web apps' build output, already analysed as their source

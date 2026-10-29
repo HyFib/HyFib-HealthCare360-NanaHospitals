@@ -4,9 +4,11 @@
 # Written by StaffAccessFixtureTests from the server's roles and read rules, which compares it byte for byte.
 apps/staff/src/test/serverAccess.json
 
-# Build output, which `pnpm test:a11y` also leaves in each app's dist folder, and what a Playwright run leaves behind.
+# Build output, which `pnpm test:a11y` also leaves in each app's dist folder, and what a Playwright run leaves behind. The
+# demo's published copy (demo/site) is build output too, committed as verify.mjs checked it.
 **/dist/**
 demo/out/
+demo/site/
 **/playwright-report/**
 **/test-results/**
 **/blob-report/**
