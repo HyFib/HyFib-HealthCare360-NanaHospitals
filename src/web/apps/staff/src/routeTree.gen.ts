@@ -22,6 +22,7 @@ import { Route as AppAdminNotificationLogsRouteImport } from './routes/_app/admi
 import { Route as AppAdminNotificationTemplatesRouteImport } from './routes/_app/admin/notification-templates'
 import { Route as AppAdminRolesRouteImport } from './routes/_app/admin/roles'
 import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin/settings'
+import { Route as AppAdminSimulatorRecordsRouteImport } from './routes/_app/admin/simulator-records'
 import { Route as AppAdminSystemRouteImport } from './routes/_app/admin/system'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppAmbulanceIndexRouteImport } from './routes/_app/ambulance/index'
@@ -403,6 +404,12 @@ const AppAdminSettingsRoute = AppAdminSettingsRouteImport.update({
   path: '/admin/settings',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminSimulatorRecordsRoute =
+  AppAdminSimulatorRecordsRouteImport.update({
+    id: '/admin/simulator-records',
+    path: '/admin/simulator-records',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppAdminSystemRoute = AppAdminSystemRouteImport.update({
   id: '/admin/system',
   path: '/admin/system',
@@ -2053,6 +2060,7 @@ export interface FileRoutesByFullPath {
   '/admin/notification-templates': typeof AppAdminNotificationTemplatesRoute
   '/admin/roles': typeof AppAdminRolesRoute
   '/admin/settings': typeof AppAdminSettingsRoute
+  '/admin/simulator-records': typeof AppAdminSimulatorRecordsRoute
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
@@ -2381,6 +2389,7 @@ export interface FileRoutesByTo {
   '/admin/notification-templates': typeof AppAdminNotificationTemplatesRoute
   '/admin/roles': typeof AppAdminRolesRoute
   '/admin/settings': typeof AppAdminSettingsRoute
+  '/admin/simulator-records': typeof AppAdminSimulatorRecordsRoute
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
@@ -2711,6 +2720,7 @@ export interface FileRoutesById {
   '/_app/admin/notification-templates': typeof AppAdminNotificationTemplatesRoute
   '/_app/admin/roles': typeof AppAdminRolesRoute
   '/_app/admin/settings': typeof AppAdminSettingsRoute
+  '/_app/admin/simulator-records': typeof AppAdminSimulatorRecordsRoute
   '/_app/admin/system': typeof AppAdminSystemRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/analytics/extracts': typeof AppAnalyticsExtractsRoute
@@ -3041,6 +3051,7 @@ export interface FileRouteTypes {
     | '/admin/notification-templates'
     | '/admin/roles'
     | '/admin/settings'
+    | '/admin/simulator-records'
     | '/admin/system'
     | '/admin/users'
     | '/analytics/extracts'
@@ -3369,6 +3380,7 @@ export interface FileRouteTypes {
     | '/admin/notification-templates'
     | '/admin/roles'
     | '/admin/settings'
+    | '/admin/simulator-records'
     | '/admin/system'
     | '/admin/users'
     | '/analytics/extracts'
@@ -3698,6 +3710,7 @@ export interface FileRouteTypes {
     | '/_app/admin/notification-templates'
     | '/_app/admin/roles'
     | '/_app/admin/settings'
+    | '/_app/admin/simulator-records'
     | '/_app/admin/system'
     | '/_app/admin/users'
     | '/_app/analytics/extracts'
@@ -4111,6 +4124,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/settings'
       fullPath: '/admin/settings'
       preLoaderRoute: typeof AppAdminSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/simulator-records': {
+      id: '/_app/admin/simulator-records'
+      path: '/admin/simulator-records'
+      fullPath: '/admin/simulator-records'
+      preLoaderRoute: typeof AppAdminSimulatorRecordsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/admin/system': {
@@ -6325,6 +6345,7 @@ interface AppRouteChildren {
   AppAdminNotificationTemplatesRoute: typeof AppAdminNotificationTemplatesRoute
   AppAdminRolesRoute: typeof AppAdminRolesRoute
   AppAdminSettingsRoute: typeof AppAdminSettingsRoute
+  AppAdminSimulatorRecordsRoute: typeof AppAdminSimulatorRecordsRoute
   AppAdminSystemRoute: typeof AppAdminSystemRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAnalyticsExtractsRoute: typeof AppAnalyticsExtractsRoute
@@ -6652,6 +6673,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminNotificationTemplatesRoute: AppAdminNotificationTemplatesRoute,
   AppAdminRolesRoute: AppAdminRolesRoute,
   AppAdminSettingsRoute: AppAdminSettingsRoute,
+  AppAdminSimulatorRecordsRoute: AppAdminSimulatorRecordsRoute,
   AppAdminSystemRoute: AppAdminSystemRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAnalyticsExtractsRoute: AppAnalyticsExtractsRoute,

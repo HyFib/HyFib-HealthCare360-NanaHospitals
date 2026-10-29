@@ -217,6 +217,11 @@ public sealed class SystemHealthService(
             keyWarnings.Add(brokenChain);
         }
 
+        if (await SimulatorRecordSweep.WarningAsync(db, options.Value, ct) is { } simulatorRecords)
+        {
+            keyWarnings.Add(simulatorRecords);
+        }
+
         if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
         {
             keyWarnings.Add(new("keys.signing_due", "info", "The sign-in token key is over a year old. Rotate it under Encryption keys."));
@@ -686,6 +691,15 @@ internal static class SystemEndpoints
             .WithValidation<ReauthenticateRequest>();
         admin.MapPost("/keys/signing/rotate", async (KeyRotationService keys, CancellationToken ct) => (await keys.RotateSigningKeyAsync(ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);
+
+        // Records the integrations' simulators made (audit P6): the latest sweep, a sweep now, and the IT officer's sign-off.
+        admin.MapGet("/simulator-records", async (SimulatorRecordSweep sweep, CancellationToken ct) => TypedResults.Ok(await sweep.ViewAsync(ct)));
+        admin.MapPost("/simulator-records/sweep", async (SimulatorRecordSweep sweep, CancellationToken ct) => TypedResults.Ok(await sweep.SweepAsync(ct)))
+            .RequirePermission(PlatformPermissions.SystemManage);
+        admin.MapPost("/simulator-records/sign-off", async (SignOffSimulatorRecordsRequest request, SimulatorRecordSweep sweep, CancellationToken ct) =>
+                (await sweep.SignOffAsync(request, ct)).ToOk())
+            .RequirePermission(PlatformPermissions.SystemManage)
+            .WithValidation<SignOffSimulatorRecordsRequest>();
 
         admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
         {

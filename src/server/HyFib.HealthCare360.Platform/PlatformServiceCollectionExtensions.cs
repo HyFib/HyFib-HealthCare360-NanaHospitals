@@ -252,6 +252,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<CashLimit>();
         services.AddTransient<CorrelationIdForwardingHandler>();
         services.AddScoped<SystemHealthService>();
+        services.AddScoped<SimulatorRecordSweep>();
 
         // With several servers, each one's own part of System health, for the API node that answers (SCAL-01).
         services.AddSingleton<ServerNodeBoard>();
@@ -314,6 +315,7 @@ public static class PlatformServiceCollectionExtensions
             services.AddHostedService(sp => sp.GetRequiredService<OutboxDispatcher>());
             services.AddHostedService<AuditSealer>();
             services.AddHostedService<AuditChainCheckJob>();
+            services.AddHostedService<SimulatorSweepJob>();
             services.AddSingleton<SystemHealthAlerts>();
             services.AddHostedService(sp => sp.GetRequiredService<SystemHealthAlerts>());
             services.AddHostedService<IdempotencyCleanupService>();

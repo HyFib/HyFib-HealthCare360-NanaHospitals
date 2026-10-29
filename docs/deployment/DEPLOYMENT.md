@@ -379,6 +379,24 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    integration set up in step 7 as Administration › Integrations does, and when the hospital CA and the server
    certificate expire.
 
+### Going live on a database used for training
+
+Start the live server on a database of its own. Where a hospital trained on the database it goes live on, or set it up
+before HC360 refused the simulators on a live server, the integrations' simulators left records there that look real:
+payments marked received and refunds marked paid back, card sales approved, Aadhaar numbers linked with nobody's
+fingerprint, images and lab results from nowhere, messages marked sent, day books posted to a simulated Tally, and
+attendance punches.
+
+A live server sweeps its database for them ten minutes after it starts and every day after. **Administration ›
+Simulator records** lists each kind it found:
+- how many, and the money they say moved;
+- when they were made, and the references of the newest;
+- what to do about them.
+
+System health warns until an IT officer (`admin.system.manage`) has dealt with each kind and signed the sweep off there,
+with a note of what was done. Payments, refunds, card sales, Aadhaar links, images and lab results make the warning
+critical, which is sent to IT on-call. A record a simulator makes after the sign-off brings the warning back.
+
 ## 5. Install HC360 Desktop on workstations
 
 Administration works only in HC360 Desktop on an enrolled workstation or tablet (SRS SEC-08), not on a kiosk or queue display. Until the first workstation or tablet
@@ -1254,6 +1272,7 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | `Install-HC360Server.ps1` stops: "This machine's PostgreSQL is a warm standby" | Run it with `-Standby` on the standby. To make the standby the primary, fail over first (section 9) |
 | `Install-HC360Server.ps1` stops: "HC360 was installed here as a warm standby … and has no data encryption key yet" | Put the keys back from the latest backup with `backup restore` (section 9, "Failing over to the standby", step 3), then run the installer again |
 | HC360 does not start, and its log says "The database is a read-only warm standby" | HC360 was started on the standby. Leave its service disabled; to fail over, promote the standby first (section 9) |
+| "This live server's database holds records the integrations' simulators made" (System health) | The database was used for training, or set up before HC360 refused the simulators on a live server (section 4, "Going live on a database used for training"). Administration › Simulator records lists each kind and what to do about it. Deal with each, then sign them off there |
 | HC360 does not start, and its log says "HealthCare360:SeedDemoData is on, but this database holds patients" | `SeedDemoData` was turned on for the hospital's database. Demonstration data, its accounts and the simulators would mix into real records, so HC360 refuses. Remove `"SeedDemoData": true` from `config\hc360.settings.json` and start the service. A training or test server needs a database of its own, with demonstration data on before anyone is registered (docs/testing/LOAD-TESTS.md); one made before this check that holds patients needs a new database |
 | A node of several does not start: "this server has a data encryption key of its own …, and the shared folder … has none" | The keys are not in the shared folder yet. Put them there with `backup restore` (section 10, "Setting it up", step 4) |
 | A node of several does not start: "… names certificate …, which is not in the Local Computer's Personal store", or "… has no RSA private key this server may use" | Import the cluster key certificate on this node, with its private key, and give `NT SERVICE\HC360Server` *Read* on the key (section 10) |
