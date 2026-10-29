@@ -253,6 +253,9 @@ public static class PlatformServiceCollectionExtensions
         services.AddTransient<CorrelationIdForwardingHandler>();
         services.AddScoped<SystemHealthService>();
         services.AddScoped<SimulatorRecordSweep>();
+        services.AddScoped<AlertDrills>();
+        services.AddHttpClient(AlertHeartbeat.HttpClientName, client => client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HC360-Heartbeat"))
+            .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
 
         // With several servers, each one's own part of System health, for the API node that answers (SCAL-01).
         services.AddSingleton<ServerNodeBoard>();
@@ -318,6 +321,9 @@ public static class PlatformServiceCollectionExtensions
             services.AddHostedService<SimulatorSweepJob>();
             services.AddSingleton<SystemHealthAlerts>();
             services.AddHostedService(sp => sp.GetRequiredService<SystemHealthAlerts>());
+            services.AddSingleton<AlertHeartbeat>();
+            services.AddHostedService(sp => sp.GetRequiredService<AlertHeartbeat>());
+            services.AddScoped<IHealthWarningSource, AlertHeartbeatWarnings>();
             services.AddHostedService<IdempotencyCleanupService>();
             services.AddHostedService<PartitionMaintenanceJob>();
             services.AddHostedService<ClusterStoreCleanup>();
