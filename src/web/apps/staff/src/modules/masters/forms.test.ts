@@ -64,6 +64,7 @@ const doctor: PractitionerDto = {
   qualification: 'MBBS, MD',
   registrationCouncil: 'Tamil Nadu Medical Council',
   registrationNumber: 'TNMC 12345',
+  hprId: '71-3016-8543-4357',
   specialtyId: 's1',
   specialtyName: 'General medicine',
   departmentId: 'd1',
@@ -210,6 +211,19 @@ describe('practitioner form', () => {
     const values = { ...toPractitionerForm(doctor), registrationNumber: '' };
     expect(practitionerSchema.safeParse(values).error?.issues[0]?.path).toEqual(['registrationNumber']);
     expect(practitionerSchema.safeParse({ ...values, kind: 'Nurse' }).success).toBe(true);
+  });
+
+  it('takes the HPR ID as 14 digits, grouped or run together, or none', () => {
+    const values = toPractitionerForm(doctor);
+    expect(values.hprId).toBe('71-3016-8543-4357');
+    for (const hprId of ['71 3016 8543 4357', '71301685434357', ' 71-3016-8543-4357 ', '']) {
+      expect(practitionerSchema.safeParse({ ...values, hprId }).success).toBe(true);
+    }
+    for (const hprId of ['7130168543435', '713016854343570', '71/3016/8543/4357', 'drasha@hpr.abdm']) {
+      expect(practitionerSchema.safeParse({ ...values, hprId }).error?.issues[0]?.path).toEqual(['hprId']);
+    }
+    expect(toPractitionerRequest({ ...values, hprId: ' ' }, doctor, doctor.version).hprId).toBeNull();
+    expect(toPractitionerRequest(values, doctor, doctor.version).hprId).toBe('71-3016-8543-4357');
   });
 
   it('consults at every facility, or at least one chosen', () => {

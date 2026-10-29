@@ -119,7 +119,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         var lastName = surname[0] + surname[1..].ToLowerInvariant();
         var created = await admin.PostAsync<JsonElement>("/api/v1/masters/practitioners", new SavePractitionerRequest(
             Code: $"DF{Letters(8)}", Title: "Dr.", FirstName: "Arjun", LastName: lastName, Gender: Gender.Male, Qualification: "MS (General Surgery)",
-            RegistrationCouncil: "Tamil Nadu Medical Council", RegistrationNumber: Digits(6), SpecialtyId: null, DepartmentId: null,
+            RegistrationCouncil: "Tamil Nadu Medical Council", RegistrationNumber: Digits(6), HprId: null, SpecialtyId: null, DepartmentId: null,
             Kind: PractitionerKind.Visiting, Phone: null, Email: null, ConsultationFeeNew: 0m, ConsultationFeeFollowUp: 0m, FollowUpValidityDays: 0,
             Languages: null, Bio: null, PhotoFileId: null, SignatureFileId: null, AvailableForOnlineBooking: false, AvailableForTelehealth: false,
             FacilityIds: null, IsActive: true, Version: null));

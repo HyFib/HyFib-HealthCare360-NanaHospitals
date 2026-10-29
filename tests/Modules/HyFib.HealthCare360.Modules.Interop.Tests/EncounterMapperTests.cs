@@ -64,6 +64,18 @@ public sealed class EncounterMapperTests
         participant.Type.ShouldHaveSingleItem().Coding.ShouldHaveSingleItem().Code.ShouldBe("ATND");
     }
 
+    /// <summary>The FHIR API serves no Practitioner, so the doctor's reference carries their HPR ID, as a facility's carries its HFR id.</summary>
+    [Fact]
+    public void Names_the_doctor_with_their_hpr_id()
+    {
+        var doctor = EncounterMapper.FromVisit(Visit(), TestData.Directory).Participant.ShouldHaveSingleItem().Individual;
+
+        doctor.Reference.ShouldBeNull();
+        doctor.Display.ShouldBe("Dr. Asha Rao");
+        doctor.Identifier.System.ShouldBe("https://doctor.ndhm.gov.in");
+        doctor.Identifier.Value.ShouldBe("21-1521-3828-3227");
+    }
+
     [Theory]
     [InlineData(VisitType.OutPatient, "AMB")]
     [InlineData(VisitType.InPatient, "IMP")]

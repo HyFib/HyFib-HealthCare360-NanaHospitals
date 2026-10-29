@@ -116,3 +116,18 @@ public static partial class Abha
     [GeneratedRegex(@"^(?=[A-Za-z0-9._]{3,32}@)[A-Za-z0-9]+(?:[._][A-Za-z0-9]+)*@(?:abdm|sbx)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex AddressPattern();
 }
+
+/// <summary>
+/// A health professional's id in ABDM's Healthcare Professionals Registry (the HPR ID): 14 digits, written as an ABHA
+/// number is (<c>xx-xxxx-xxxx-xxxx</c>), as the NRCeS implementation guide's example doctors carry theirs. Like the ABHA
+/// number it has no published check digit, so only its length and characters are checked here; whether it belongs to the
+/// doctor is for the registry to say.
+/// </summary>
+public static class Hpr
+{
+    /// <summary>14 digits, grouped with spaces or hyphens or run together (<see cref="Abha.IsValidNumber"/>).</summary>
+    public static bool IsValidId(string? value) => Abha.IsValidNumber(value);
+
+    /// <summary>The written form <c>xx-xxxx-xxxx-xxxx</c>; a value that is not 14 digits is returned trimmed.</summary>
+    public static string Format(string value) => Abha.Format(value);
+}

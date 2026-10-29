@@ -86,6 +86,11 @@ public static class CommonRules
         rule.Must(value => string.IsNullOrWhiteSpace(value) || SharedKernel.Abha.IsValidNumber(value))
             .WithMessage("Enter a valid 14-digit ABHA number.");
 
+    /// <summary>HPR ID (ABDM's Healthcare Professionals Registry): 14 digits, as an ABHA number (<see cref="SharedKernel.Hpr.IsValidId"/>).</summary>
+    public static IRuleBuilderOptions<T, string?> HprId<T>(this IRuleBuilder<T, string?> rule) =>
+        rule.Must(value => string.IsNullOrWhiteSpace(value) || SharedKernel.Hpr.IsValidId(value))
+            .WithMessage("Enter a valid 14-digit HPR ID.");
+
     public const string AbhaAddressMessage = "Enter the ABHA address as name@abdm (letters, digits, and single dots or underscores).";
 
     /// <summary>ABHA address: a handle such as name@abdm (name@sbx on the ABDM sandbox).</summary>

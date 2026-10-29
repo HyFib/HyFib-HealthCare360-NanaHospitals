@@ -96,6 +96,24 @@ public sealed class HealthIdTests
     [InlineData(null)]
     public void Anything_else_is_not_an_abha_number(string? value) => Abha.IsValidNumber(value).ShouldBeFalse();
 
+    /// <summary>An HPR ID is 14 digits and is written as an ABHA number is, as the guide's example doctors' ids are.</summary>
+    [Theory]
+    [InlineData("21-1521-3828-3227", "21-1521-3828-3227")]
+    [InlineData("25 1531 3528 3228", "25-1531-3528-3228")]
+    [InlineData("21152138283227", "21-1521-3828-3227")]
+    public void An_hpr_id_is_14_digits_written_in_groups(string value, string written)
+    {
+        Hpr.IsValidId(value).ShouldBeTrue();
+        Hpr.Format(value).ShouldBe(written);
+    }
+
+    [Theory]
+    [InlineData("2115213828322")] // 13 digits
+    [InlineData("asha.rao@hpr.abdm")] // an HPR address, not the id
+    [InlineData("")]
+    [InlineData(null)]
+    public void Anything_else_is_not_an_hpr_id(string? value) => Hpr.IsValidId(value).ShouldBeFalse();
+
     [Fact]
     public void An_abha_number_is_shown_grouped_and_masked()
     {

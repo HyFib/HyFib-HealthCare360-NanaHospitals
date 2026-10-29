@@ -45,6 +45,19 @@ public sealed class NhcxClaimBundleTests
         bundle.Entry.ShouldAllBe(e => e.FullUrl == "urn:uuid:" + e.Resource.Id);
     }
 
+    /// <summary>The treating doctor is identified to the insurer by their HPR ID, as in the ABDM documents.</summary>
+    [Fact]
+    public void The_treating_doctor_is_identified_by_their_hpr_id()
+    {
+        var bundle = NhcxClaimBundle.Build(Request(NhcxClaimUse.Claim)).Value;
+
+        var hpr = bundle.Entry.Select(e => e.Resource).OfType<R4.Practitioner>().ShouldHaveSingleItem().Identifier[0];
+
+        hpr.System.ShouldBe("https://doctor.ndhm.gov.in");
+        hpr.Value.ShouldBe(AbdmTestData.HprId);
+        hpr.Type.Coding.ShouldHaveSingleItem().Code.ShouldBe("MD");
+    }
+
     [Fact]
     public void A_broken_request_fails_the_profile()
     {

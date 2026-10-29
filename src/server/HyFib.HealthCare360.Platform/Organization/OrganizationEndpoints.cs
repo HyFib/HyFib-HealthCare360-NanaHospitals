@@ -41,14 +41,14 @@ public sealed record SaveSpecialtyRequest(string Code, string Name, string? Desc
 
 public sealed record PractitionerDto(
     Guid Id, string Code, string Title, string FirstName, string? LastName, string DisplayName, Gender Gender, string? Qualification,
-    string? RegistrationCouncil, string? RegistrationNumber, Guid? SpecialtyId, string? SpecialtyName, Guid? DepartmentId, string? DepartmentName,
+    string? RegistrationCouncil, string? RegistrationNumber, string? HprId, Guid? SpecialtyId, string? SpecialtyName, Guid? DepartmentId, string? DepartmentName,
     PractitionerKind Kind, string? Phone, string? Email, decimal ConsultationFeeNew, decimal ConsultationFeeFollowUp, int FollowUpValidityDays,
     IReadOnlyList<string> Languages, string? Bio, Guid? PhotoFileId, Guid? SignatureFileId, bool AvailableForOnlineBooking,
     bool AvailableForTelehealth, IReadOnlyList<Guid> FacilityIds, bool IsActive, uint Version);
 
 public sealed record SavePractitionerRequest(
     string Code, string Title, string FirstName, string? LastName, Gender Gender, string? Qualification, string? RegistrationCouncil,
-    string? RegistrationNumber, Guid? SpecialtyId, Guid? DepartmentId, PractitionerKind Kind, string? Phone, string? Email,
+    string? RegistrationNumber, string? HprId, Guid? SpecialtyId, Guid? DepartmentId, PractitionerKind Kind, string? Phone, string? Email,
     decimal ConsultationFeeNew, decimal ConsultationFeeFollowUp, int FollowUpValidityDays, IReadOnlyList<string>? Languages, string? Bio,
     Guid? PhotoFileId, Guid? SignatureFileId, bool AvailableForOnlineBooking, bool AvailableForTelehealth, IReadOnlyList<Guid>? FacilityIds,
     bool IsActive, uint? Version);
@@ -154,6 +154,7 @@ public sealed class SavePractitionerRequestValidator : AbstractValidator<SavePra
         RuleFor(x => x.RegistrationNumber).SafeText(64);
         RuleFor(x => x.RegistrationNumber).NotEmpty().When(x => x.Kind is PractitionerKind.Consultant or PractitionerKind.Resident or PractitionerKind.Visiting)
             .WithMessage("Medical council registration number is required for doctors.");
+        RuleFor(x => x.HprId).HprId();
         RuleFor(x => x.Phone).PhoneNumber();
         RuleFor(x => x.Email).MaximumLength(256).EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x.ConsultationFeeNew).InclusiveBetween(0, MasterRules.MaxFee).PrecisionScale(12, 2, ignoreTrailingZeros: true);
@@ -640,7 +641,7 @@ internal static class OrganizationEndpoints
         orderby p.DisplayName
         select new PractitionerDto(
             p.Id, p.Code, p.Title, p.FirstName, p.LastName, p.DisplayName, p.Gender, p.Qualification, p.RegistrationCouncil, p.RegistrationNumber,
-            p.SpecialtyId, s != null ? s.Name : null, p.DepartmentId, d != null ? d.Name : null, p.Kind, p.Phone, p.Email,
+            p.HprId, p.SpecialtyId, s != null ? s.Name : null, p.DepartmentId, d != null ? d.Name : null, p.Kind, p.Phone, p.Email,
             p.ConsultationFeeNew, p.ConsultationFeeFollowUp, p.FollowUpValidityDays, p.Languages, p.Bio, p.PhotoFileId, p.SignatureFileId,
             p.AvailableForOnlineBooking, p.AvailableForTelehealth, p.FacilityIds, p.IsActive, p.Version);
 
@@ -742,6 +743,7 @@ internal static class OrganizationEndpoints
         practitioner.Qualification = Clean(request.Qualification);
         practitioner.RegistrationCouncil = Clean(request.RegistrationCouncil);
         practitioner.RegistrationNumber = Clean(request.RegistrationNumber);
+        practitioner.HprId = Clean(request.HprId) is { } hpr ? Hpr.Format(hpr) : null;
         practitioner.SpecialtyId = request.SpecialtyId;
         practitioner.DepartmentId = request.DepartmentId;
         practitioner.Kind = request.Kind;

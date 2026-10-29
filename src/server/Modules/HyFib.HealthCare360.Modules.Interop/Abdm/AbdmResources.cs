@@ -17,6 +17,7 @@ internal sealed record PractitionerRow
     public string? Qualification { get; init; }
     public string? RegistrationCouncil { get; init; }
     public string? RegistrationNumber { get; init; }
+    public string? HprId { get; init; }
     public required DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }
@@ -37,8 +38,9 @@ internal sealed record FacilityRow
 
 /// <summary>
 /// The Practitioner and Organization resources of a document. The IG requires a typed identifier on both: the doctor's
-/// medical-council registration (v2-0203 MD) and staff code, and the facility's Health Facility Registry id (HFR,
-/// v2-0203 PRN) and facility code. A doctor's own phone number and e-mail are not put in patients' documents.
+/// Healthcare Professionals Registry id (HPR ID) where the master has one, medical-council registration (v2-0203 MD) and
+/// staff code, and the facility's Health Facility Registry id (HFR, v2-0203 PRN) and facility code. A doctor's own phone
+/// number and e-mail are not put in patients' documents.
 /// </summary>
 internal static class AbdmParticipants
 {
@@ -50,6 +52,17 @@ internal static class AbdmParticipants
             Meta = FhirElements.Meta(p.CreatedAt, p.UpdatedAt, AbdmProfiles.Practitioner),
             Gender = PatientMapper.Gender(p.Gender),
         };
+
+        // First, as other ABDM systems look a doctor up by it: the guide's own examples identify a doctor by their HPR ID
+        // alone, at doctor.ndhm.gov.in, typed as a medical licence number.
+        if (FhirElements.Clean(p.HprId) is { } hpr)
+        {
+            practitioner.Identifier.Add(new R4.Identifier(FhirSystems.Hpr, Hpr.Format(hpr))
+            {
+                Use = R4.Identifier.IdentifierUse.Official,
+                Type = FhirElements.Concept(FhirSystems.IdentifierType, "MD", "Medical License number"),
+            });
+        }
 
         if (FhirElements.Clean(p.RegistrationNumber) is { } registration)
         {

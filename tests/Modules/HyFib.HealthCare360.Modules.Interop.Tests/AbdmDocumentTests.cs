@@ -142,7 +142,9 @@ public sealed class AbdmDocumentTests
 
         var doctor = bundle.Entry.Select(e => e.Resource).OfType<R4.Practitioner>().ShouldHaveSingleItem();
         doctor.Name[0].Text.ShouldBe("Dr. Asha Rao");
-        var registration = doctor.Identifier[0];
+        doctor.Identifier[0].System.ShouldBe(FhirSystems.Hpr);
+        doctor.Identifier[0].Value.ShouldBe(AbdmTestData.HprId);
+        var registration = doctor.Identifier[1];
         registration.Type.Coding[0].Code.ShouldBe("MD");
         registration.Value.ShouldBe("MMC-2009-041234");
         registration.Assigner.Display.ShouldBe("Maharashtra Medical Council");
@@ -154,6 +156,37 @@ public sealed class AbdmDocumentTests
         hospital.Identifier[0].Value.ShouldBe("IN2710000123");
         hospital.Identifier[0].Type.Coding[0].Code.ShouldBe("PRN");
         hospital.Type[0].Coding[0].Code.ShouldBe("prov");
+    }
+
+    /// <summary>
+    /// A doctor's HPR ID identifies them first, and as the NRCeS guide's own prescription example identifies its doctor:
+    /// the same system and the same type, so an ABDM system that reads the guide's documents reads HC360's.
+    /// </summary>
+    [Fact]
+    public void A_doctor_is_identified_by_their_hpr_id_as_the_guides_example_doctor_is()
+    {
+        var example = ((R4.Bundle)AbdmProfileValidator.Example("Bundle-Prescription-example-06.json")).Entry
+            .Select(e => e.Resource).OfType<R4.Practitioner>().Single().Identifier.ShouldHaveSingleItem();
+
+        var hpr = Sample("prescription").Entry.Select(e => e.Resource).OfType<R4.Practitioner>().Single().Identifier[0];
+
+        hpr.System.ShouldBe(example.System);
+        hpr.Value.ShouldBe(example.Value, "the test doctor has the example doctor's HPR ID");
+        hpr.Type.Coding.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            c => c.System.ShouldBe(example.Type.Coding[0].System),
+            c => c.Code.ShouldBe(example.Type.Coding[0].Code),
+            c => c.Display.ShouldBe(example.Type.Coding[0].Display));
+    }
+
+    [Fact]
+    public void A_doctor_without_an_hpr_id_keeps_their_other_identifiers()
+    {
+        var bundle = Sample("cardiology-report");
+
+        var cardiologist = bundle.Entry.Select(e => e.Resource).OfType<R4.Practitioner>().Single(p => p.Name[0].Text == "Dr. Vikram Shah");
+
+        cardiologist.Identifier.ShouldNotContain(i => i.System == FhirSystems.Hpr);
+        cardiologist.Identifier.Select(i => i.System).ShouldBe([AbdmSystems.Practitioner]);
     }
 
     [Fact]

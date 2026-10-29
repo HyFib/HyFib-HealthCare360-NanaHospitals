@@ -422,7 +422,7 @@ internal static class AbdmRecords
         var referredTo = string.Join(", ", new[]
         {
             people.Names.Department(note.ReferralDepartmentId),
-            note.ReferralPractitionerId is { } doctor && people.Names.Practitioners.TryGetValue(doctor, out var name) ? name : null,
+            note.ReferralPractitionerId is { } doctor && people.Names.Practitioners.TryGetValue(doctor, out var referred) ? referred.Name : null,
             FhirElements.Clean(note.ReferralExternal),
         }.OfType<string>());
         var referral = referredTo.Length == 0 ? null : Field($"Referred to {referredTo}", note.ReferralReason) ?? $"Referred to {referredTo}";
