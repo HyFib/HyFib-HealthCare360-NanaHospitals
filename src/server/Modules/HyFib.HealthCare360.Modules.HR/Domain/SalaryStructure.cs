@@ -6,6 +6,31 @@ public enum SalaryComponentKind
     Deduction,
 }
 
+/// <summary>
+/// How an earning counts in "wages", on which PF is paid: the Code on Social Security 2020, s.2(88), in force since
+/// 21 November 2025, which defines them as the Code on Wages 2019 does (s.2(y)).
+/// </summary>
+public enum WageTreatment
+{
+    /// <summary>
+    /// Wages: basic pay, dearness allowance, retaining allowance, and any other pay the definition does not leave out (a
+    /// special allowance, for instance).
+    /// </summary>
+    Wages = 0,
+
+    /// <summary>
+    /// Left out of wages by clauses (a) to (i): bonus, house rent, conveyance, the special expenses of the job, overtime,
+    /// commission and the like. What these come to above half of all the month's pay is wages all the same.
+    /// </summary>
+    Excluded,
+
+    /// <summary>
+    /// Paid on leaving, by clauses (j) and (k): gratuity, retrenchment compensation, other retirement benefits and ex gratia
+    /// payments. Not wages, and not counted in the half.
+    /// </summary>
+    PaidOnLeaving,
+}
+
 public enum SalaryCalculationType
 {
     /// <summary>A fixed monthly amount.</summary>
@@ -40,6 +65,9 @@ public sealed class SalaryComponent : AuditableEntity
     /// <summary>Counts towards taxable income (informational for TDS projections).</summary>
     public bool IsTaxable { get; set; } = true;
 
+    /// <summary>How the earning counts in the wages PF is paid on. BASIC is always wages.</summary>
+    public WageTreatment WageTreatment { get; set; }
+
     public bool IsStatutory { get; set; }
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;
@@ -64,7 +92,10 @@ public sealed class EmployeeSalaryStructure : AuditableEntity, IFacilityScoped
 
     public bool PfApplicable { get; set; } = true;
 
-    /// <summary>PF on the full basic instead of the ₹15,000 wage ceiling (voluntary higher contribution).</summary>
+    /// <summary>
+    /// PF on the full PF wages instead of the ₹15,000 wage ceiling (voluntary higher contribution). The name is from when PF
+    /// was paid on basic pay alone.
+    /// </summary>
     public bool PfOnActualBasic { get; set; }
 
     public bool EsiApplicable { get; set; } = true;

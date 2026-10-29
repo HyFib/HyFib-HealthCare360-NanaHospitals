@@ -1,9 +1,10 @@
 namespace HyFib.HealthCare360.Modules.HR.Domain;
 
 /// <summary>
-/// Employees' Provident Fund (EPF Act 1952): 12 % of basic wages from the employee, matched by the employer, on
-/// wages capped at the ₹15,000 statutory ceiling unless higher contributions are opted for. Contributions are
-/// rounded to the nearest rupee as EPFO does.
+/// Employees' Provident Fund: 12 % of wages from the employee, matched by the employer, on wages capped at the ₹15,000
+/// ceiling unless higher contributions are opted for. Wages are as the Code on Social Security 2020 defines them
+/// (s.2(88)), in force since 21 November 2025, not basic pay alone. Contributions are rounded to the nearest rupee as
+/// EPFO does.
 /// </summary>
 public static class ProvidentFund
 {
@@ -11,8 +12,25 @@ public static class ProvidentFund
     public const decimal EmployeeRate = 0.12m;
     public const decimal EmployerRate = 0.12m;
 
-    public static decimal Wage(decimal earnedBasic, bool onActualBasic) =>
-        Math.Max(0, onActualBasic ? earnedBasic : Math.Min(earnedBasic, WageCeiling));
+    /// <summary>
+    /// The first payroll month PF is taken on wages as the Code defines them: November 2025, the month it came into force
+    /// (21 November), whose wages are paid after that day. A month before keeps the rule HC360 applied then, PF on basic
+    /// pay, so processing it late, or again after reopening it, does not change what was paid and filed.
+    /// </summary>
+    public static readonly DateOnly CodeWagesFrom = new(2025, 11, 1);
+
+    /// <summary>Whether the payroll month takes PF on wages as the Code defines them (<see cref="CodeWagesFrom"/>).</summary>
+    public static bool OnCodeWages(int year, int month) => new DateOnly(year, month, 1) >= CodeWagesFrom;
+
+    /// <summary>
+    /// The month's PF wages: the wages, and of the pay left out of them by clauses (a) to (i), what comes to more than half
+    /// of the two together (s.2(88), first proviso).
+    /// </summary>
+    public static decimal Wages(decimal wages, decimal excluded) => wages + Math.Max(0, excluded - ((wages + excluded) / 2));
+
+    /// <summary>The wages contributions are paid on: up to the ceiling, or in full on actual wages.</summary>
+    public static decimal Wage(decimal wages, bool onActualWages) =>
+        Math.Max(0, onActualWages ? wages : Math.Min(wages, WageCeiling));
 
     public static decimal EmployeeContribution(decimal pfWage) => RoundRupee(pfWage * EmployeeRate);
 

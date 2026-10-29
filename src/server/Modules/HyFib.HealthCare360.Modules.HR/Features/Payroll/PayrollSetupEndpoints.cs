@@ -29,7 +29,7 @@ internal static class PayrollSetupEndpoints
     private static async Task<IResult> ListComponents(HospitalDbContext db, CancellationToken ct) =>
         TypedResults.Ok(await db.Set<SalaryComponent>().AsNoTracking()
             .OrderBy(c => c.Kind == SalaryComponentKind.Deduction).ThenBy(c => c.SortOrder).ThenBy(c => c.Code)
-            .Select(c => new SalaryComponentDto(c.Id, c.Code, c.Name, c.Kind, c.CalculationType, c.DefaultValue, c.IsTaxable, c.IsStatutory, c.SortOrder, c.IsActive, c.Version))
+            .Select(c => new SalaryComponentDto(c.Id, c.Code, c.Name, c.Kind, c.CalculationType, c.DefaultValue, c.IsTaxable, c.WageTreatment, c.IsStatutory, c.SortOrder, c.IsActive, c.Version))
             .ToListAsync(ct));
 
     private static async Task<IResult> SaveComponent(Guid? id, SaveSalaryComponentRequest request, HospitalDbContext db, CancellationToken ct)
@@ -54,9 +54,18 @@ internal static class PayrollSetupEndpoints
                 return Error.Rule("salary_component.statutory", "Statutory pay heads are maintained by the payroll engine.").ToProblem();
             }
 
-            if (found.Code == SalaryComponent.BasicCode && (code != SalaryComponent.BasicCode || request.CalculationType != SalaryCalculationType.Fixed))
+            if (found.Code == SalaryComponent.BasicCode && (code != SalaryComponent.BasicCode || request.CalculationType != SalaryCalculationType.Fixed
+                                                            || request.WageTreatment is not (null or WageTreatment.Wages)))
             {
-                return Error.Rule("salary_component.basic", "BASIC must stay a fixed earning; statutory deductions are computed from it.").ToProblem();
+                return Error.Rule("salary_component.basic", "BASIC must stay a fixed earning counted in wages; statutory deductions are computed from it.").ToProblem();
+            }
+
+            // Payroll inputs name their pay head by its code: changed, theirs would no longer be found, and an earning would
+            // count as wages whatever its pay head says.
+            if (found.Code != code && await db.Set<PayrollInput>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(i => i.ComponentCode == found.Code, ct))
+            {
+                return Error.Rule("salary_component.code_used",
+                    $"Pay head {found.Code} has payroll inputs, which name it by its code: keep the code and change the name, or add a new pay head.").ToProblem();
             }
 
             component = found;
@@ -77,6 +86,7 @@ internal static class PayrollSetupEndpoints
         component.CalculationType = request.CalculationType;
         component.DefaultValue = request.DefaultValue;
         component.IsTaxable = request.IsTaxable;
+        component.WageTreatment = request.WageTreatment ?? component.WageTreatment;
         component.SortOrder = request.SortOrder;
         component.IsActive = request.IsActive;
         await db.SaveChangesAsync(ct);

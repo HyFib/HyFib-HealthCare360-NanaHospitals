@@ -96,7 +96,7 @@ export function EmployeeSalary({
               <Detail label="Statutory">
                 <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
                   <Badge appearance="tint" color={current.pfApplicable ? 'success' : 'informative'}>
-                    PF {current.pfApplicable ? (current.pfOnActualBasic ? 'on actual basic' : 'on') : 'off'}
+                    PF {current.pfApplicable ? (current.pfOnActualBasic ? 'on actual wages' : 'on') : 'off'}
                   </Badge>
                   <Badge appearance="tint" color={current.esiApplicable ? 'success' : 'informative'}>
                     ESI {current.esiApplicable ? 'on' : 'off'}
