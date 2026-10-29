@@ -95,6 +95,18 @@ const manifest: ModuleManifest = {
       keywords: ['price list', 'rates', 'tariff plan'],
     },
     {
+      label: 'Rate list',
+      to: '/billing/rate-list',
+      permission: [
+        'billing.tariffs.manage',
+        'billing.charges.read',
+        'billing.op.create',
+        'billing.ip.manage',
+        'billing.payments.collect',
+      ],
+      keywords: ['rate list', 'price list', 'schedule of charges', 'display rates', 'charges board', 'local language'],
+    },
+    {
       label: 'Packages',
       to: '/billing/packages',
       permission: ['billing.tariffs.manage', 'billing.ip.manage', 'billing.charges.read'],

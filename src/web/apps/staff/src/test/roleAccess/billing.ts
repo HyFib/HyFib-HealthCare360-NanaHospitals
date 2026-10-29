@@ -26,6 +26,7 @@ import type {
   PosSettlementSummaryDto,
   UnsettledPosReceiptDto,
 } from '@/modules/billing/posSettlementApi';
+import type { RateListView } from '@/modules/billing/rateListApi';
 import type { AccountingVoucher, TallyDayCheck, TallyDayVouchers, TallyExportDto } from '@/modules/billing/tallyApi';
 import { ASHA, DRAFT, DRAFT_ID } from '../accessibility/fixtures/billing';
 import { paged, STAFF_USER, type FakeAnswers, type FakeRequest } from '../fakeApi';
@@ -457,6 +458,133 @@ const SUNIL_DUES: PatientDues = {
   advanceBalance: 20_000,
   bills: [],
   advances: [],
+};
+
+// ------------------------------------------------------------------ the rate list
+
+const RATE_LIST: RateListView = {
+  language: 'ta',
+  localLanguage: { code: 'ta', name: 'Tamil' },
+  unknownSetting: null,
+  unknownState: null,
+  rates: {
+    asOn: dateIn(0),
+    planName: 'General',
+    concessionPercent: 0,
+    registration: {
+      code: 'REG-NEW',
+      name: 'Registration fee (new patient)',
+      localName: null,
+      rate: 100,
+      gstRate: 0,
+      payable: 100,
+      mayVary: false,
+    },
+    doctors: [
+      {
+        name: 'Dr. Vikram Rao',
+        department: 'Cardiology',
+        fee: {
+          code: 'CONS-NEW',
+          name: 'Dr. Vikram Rao',
+          localName: null,
+          rate: 900,
+          gstRate: 0,
+          payable: 900,
+          mayVary: false,
+        },
+        video: {
+          code: 'CONS-TELE',
+          name: 'Dr. Vikram Rao',
+          localName: null,
+          rate: 900,
+          gstRate: 0,
+          payable: 900,
+          mayVary: false,
+        },
+        freeFollowUpDays: 7,
+      },
+    ],
+    rooms: [
+      {
+        day: {
+          code: 'BED-DLX',
+          name: 'Deluxe suite (per day)',
+          localName: null,
+          rate: 6500,
+          gstRate: 5,
+          payable: 6825,
+          mayVary: false,
+        },
+        intensiveCare: false,
+        wards: ['Deluxe Suites'],
+        nursing: {
+          code: 'NURS-DAY',
+          name: 'Nursing (per day)',
+          localName: null,
+          rate: 900,
+          gstRate: 0,
+          payable: 900,
+          mayVary: false,
+        },
+        visit: {
+          code: 'VISIT-DR',
+          name: 'Consultant visit',
+          localName: null,
+          rate: 1050,
+          gstRate: 0,
+          payable: 1050,
+          mayVary: false,
+        },
+        multiplier: 1.5,
+      },
+    ],
+    sections: [
+      {
+        category: 'Laboratory',
+        lines: [
+          {
+            code: 'LAB-CBC',
+            name: 'Complete blood count',
+            localName: 'முழு இரத்த எண்ணிக்கை',
+            rate: 350,
+            gstRate: 0,
+            payable: 350,
+            mayVary: false,
+          },
+        ],
+      },
+      {
+        category: 'Consumable',
+        lines: [
+          {
+            code: 'PHARM-MED',
+            name: 'Pharmacy — medicines',
+            localName: null,
+            rate: 0,
+            gstRate: 0,
+            payable: 0,
+            mayVary: true,
+          },
+        ],
+      },
+    ],
+    packages: [
+      {
+        price: {
+          code: 'PKG-NVD',
+          name: 'Normal delivery — 2 days',
+          localName: null,
+          rate: 30000,
+          gstRate: 0,
+          payable: 30000,
+          mayVary: false,
+        },
+        lengthOfStayDays: 2,
+        usedFor: 'InPatient',
+      },
+    ],
+  },
 };
 
 // ------------------------------------------------------------------ tariffs and packages
@@ -919,6 +1047,7 @@ export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/billing/ip-accounts/${RECORD_ID}/package-status`]: NO_PACKAGE,
   [`GET /api/v1/billing/ip-accounts/${RECORD_ID}/clearance`]: IP_CLEARANCE,
   [`GET /api/v1/billing/patients/${SUNIL.patientId}/dues`]: SUNIL_DUES,
+  'GET /api/v1/billing/rate-list': RATE_LIST,
   'GET /api/v1/billing/tariffs': PLANS,
   [`GET /api/v1/billing/tariffs/${RECORD_ID}`]: PLAN,
   [`GET /api/v1/billing/tariffs/${RECORD_ID}/prices`]: paged(PRICES),

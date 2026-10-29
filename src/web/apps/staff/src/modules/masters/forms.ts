@@ -4,6 +4,7 @@ import type {
   DepartmentDto,
   FacilityDto,
   LetterheadPreviewRequest,
+  LocalLanguageItem,
   PractitionerDto,
   SaveDepartmentRequest,
   SaveFacilityRequest,
@@ -464,6 +465,8 @@ export function displayNameOf(values: Pick<PractitionerForm, 'title' | 'firstNam
 export const serviceSchema = z.object({
   code: required(32, 'Enter a code, such as LAB-CBC.').regex(CODE, CODE_MESSAGE),
   name: required(200, 'Enter the service name printed on bills.'),
+  /** By language code: one field each for the languages {@link serviceNameLanguages} offers. */
+  localNames: z.record(z.string(), text(200)),
   shortName: text(64),
   category: z.enum(SERVICE_CATEGORIES),
   departmentId: z.string().nullable(),
@@ -484,10 +487,28 @@ export const serviceSchema = z.object({
 
 export type ServiceForm = z.infer<typeof serviceSchema>;
 
-export function toServiceForm(service: ServiceItemDto | null): ServiceForm {
+/**
+ * The languages the service form offers a name in: the local language of each active facility, whose rate list prints
+ * it, and any other the service already has a name in.
+ */
+export function serviceNameLanguages(
+  service: Pick<ServiceItemDto, 'localNames'> | null,
+  languages: readonly LocalLanguageItem[],
+): LocalLanguageItem[] {
+  return languages.filter((l) => l.atFacility || (service?.localNames[l.code] ?? '') !== '');
+}
+
+/** The form for a service, with a name field for each of `languages` (codes, from {@link serviceNameLanguages}). */
+export function toServiceForm(service: ServiceItemDto | null, languages: readonly string[] = []): ServiceForm {
   return {
     code: service?.code ?? '',
     name: service?.name ?? '',
+    localNames: Object.fromEntries(
+      [...new Set([...languages, ...Object.keys(service?.localNames ?? {})])].map((code) => [
+        code,
+        service?.localNames[code] ?? '',
+      ]),
+    ),
     shortName: service?.shortName ?? '',
     category: service?.category ?? 'Procedure',
     departmentId: service?.departmentId ?? null,
@@ -509,6 +530,11 @@ export function toServiceRequest(
   return {
     code: existing?.code ?? values.code.trim().toUpperCase(),
     name: values.name.trim(),
+    localNames: Object.fromEntries(
+      Object.entries(values.localNames)
+        .map(([code, name]) => [code, name.trim()])
+        .filter(([, name]) => name !== ''),
+    ),
     shortName: orNull(values.shortName),
     category: values.category,
     departmentId: values.departmentId,

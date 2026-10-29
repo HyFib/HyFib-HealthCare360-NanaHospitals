@@ -18,8 +18,21 @@ import { useForm, type Control } from 'react-hook-form';
 import { useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { SERVICE_CATEGORIES, SERVICE_CATEGORY_LABEL } from '@/modules/billing/labels';
-import { mastersApi, mastersQueries, refreshAfterMasterChange, type ServiceItemDto } from './api';
-import { PERMANENT_CODE_HINT, serviceSchema, toServiceForm, toServiceRequest, type ServiceForm } from './forms';
+import {
+  mastersApi,
+  mastersQueries,
+  refreshAfterMasterChange,
+  type LocalLanguageItem,
+  type ServiceItemDto,
+} from './api';
+import {
+  PERMANENT_CODE_HINT,
+  serviceNameLanguages,
+  serviceSchema,
+  toServiceForm,
+  toServiceRequest,
+  type ServiceForm,
+} from './forms';
 import { gstRateLabel, SERVICE_GST_RATES } from './labels';
 import { LoadingDrawer, MasterDrawer } from './MasterDrawer';
 import { EditorForm, EditorSection } from './parts';
@@ -29,20 +42,37 @@ import { useEditorGuard } from './useEditorGuard';
 /** Add a service to the catalogue (`serviceId` null), or change one. */
 export function ServiceEditorDrawer({ serviceId, onClose }: { serviceId: string | null; onClose: () => void }) {
   const existing = useQuery({ ...mastersQueries.service(serviceId ?? ''), enabled: serviceId !== null });
+  // The form has a name field for each facility's language, so it waits for them (none if they can't be read).
+  const languages = useQuery(mastersQueries.localLanguages());
   // Filled from the service as read now, not from an older copy kept from before (REL-04).
   if (serviceId !== null && (!existing.isFetchedAfterMount || !existing.data)) {
     return <LoadingDrawer error={existing.error} what="service" onClose={onClose} />;
   }
-  return <ServiceEditor service={existing.data ?? null} onClose={onClose} />;
+  if (!languages.isFetched) {
+    return <LoadingDrawer error={null} what="service" onClose={onClose} />;
+  }
+  return <ServiceEditor service={existing.data ?? null} languages={languages.data ?? []} onClose={onClose} />;
 }
 
-function ServiceEditor({ service, onClose }: { service: ServiceItemDto | null; onClose: () => void }) {
+function ServiceEditor({
+  service,
+  languages,
+  onClose,
+}: {
+  service: ServiceItemDto | null;
+  languages: readonly LocalLanguageItem[];
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const departments = useDepartments();
+  const [named] = useState(() => serviceNameLanguages(service, languages));
   const form = useForm<ServiceForm>({
     resolver: zodResolver(serviceSchema),
-    defaultValues: toServiceForm(service),
+    defaultValues: toServiceForm(
+      service,
+      named.map((l) => l.code),
+    ),
     mode: 'onTouched',
   });
   // The version the form was filled from, not a newer one read since (REL-04).
@@ -77,22 +107,29 @@ function ServiceEditor({ service, onClose }: { service: ServiceItemDto | null; o
         editing={service !== null}
         departmentOptions={departmentOptions}
         currentTaxRate={service?.taxRate ?? null}
+        languages={named}
       />
     </MasterDrawer>
   );
 }
 
-/** A billable service: its name and code on bills, its category and department, base price and GST. */
+/**
+ * A billable service: its name and code on bills, its name in each facility's local language for the rate list, its
+ * category and department, base price and GST.
+ */
 export function ServiceFields({
   control,
   editing,
   departmentOptions,
   currentTaxRate,
+  languages,
 }: {
   control: Control<ServiceForm>;
   editing: boolean;
   departmentOptions: OptionItem[];
   currentTaxRate: number | null;
+  /** The languages to name it in ({@link serviceNameLanguages}), each with its field in the form. */
+  languages: readonly LocalLanguageItem[];
 }) {
   const canPrice = usePermission('billing.tariffs.manage');
   const navigate = useNavigate();
@@ -117,6 +154,27 @@ export function ServiceFields({
               hint="Printed on bills, such as Complete blood count."
             />
           </FullRow>
+          {languages.map((language) => (
+            <FullRow key={language.code}>
+              <TextField
+                control={control}
+                name={`localNames.${language.code}`}
+                label={`Name in ${language.name}`}
+                maxLength={200}
+                hint={`Printed under the English name on the rate list of each facility whose local language is ${language.name}.`}
+              />
+            </FullRow>
+          ))}
+          {languages.length === 0 && (
+            <FullRow>
+              <MessageBar intent="info">
+                <MessageBarBody>
+                  A facility&apos;s rate list prints each service&apos;s name in the local language too. Enter the
+                  facility&apos;s state in Setup › Facilities to name services in its language here.
+                </MessageBarBody>
+              </MessageBar>
+            </FullRow>
+          )}
           <TextField
             control={control}
             name="code"

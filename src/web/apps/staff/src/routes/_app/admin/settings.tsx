@@ -65,6 +65,8 @@ const KNOWN: Record<string, string> = {
     'Work asked of every browser, in bits (14 if not set: under a second on a mid-range phone). Each bit doubles it; at most 20.',
   'security.antiAutomation.maxBits':
     'The most work asked of an address or number that keeps failing, in bits (18 if not set; at most 20, which a mid-range phone does in under a minute).',
+  'billing.rateList.language':
+    "A facility's local language, which its rate list is displayed in beside English and its services' names are printed in: a code or name, such as kn or Kannada (if not set, the official language of the facility's state). For the hospital or one facility.",
   'supportservices.diet.chargesEnabled':
     "Whether an admitted patient's diet is charged to the in-patient bill, once a day at the diet's rate (off if not set, true turns it on, for the hospital or one facility). Leave it off where food is included in the bed charge.",
 };

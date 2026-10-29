@@ -46,5 +46,8 @@ public sealed class ConsultantVisit : AuditableEntity, IFacilityScoped
     public Guid? ChargeId { get; set; }
     public string? ChargeError { get; set; }
 
-    public string ServiceCode => IsCriticalCare ? "VISIT-DR-ICU" : "VISIT-DR";
+    public string ServiceCode => ServiceCodeFor(IsCriticalCare);
+
+    /// <summary>The service a visit is charged as: VISIT-DR-ICU in a critical-care ward, VISIT-DR elsewhere.</summary>
+    public static string ServiceCodeFor(bool isCriticalCare) => isCriticalCare ? "VISIT-DR-ICU" : "VISIT-DR";
 }

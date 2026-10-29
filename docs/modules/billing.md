@@ -114,6 +114,15 @@ Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.c
 | DELETE | `/{id}/prices/{priceId}` | `billing.tariffs.manage` | → 204 |
 | GET | `/quote?serviceItemId&planId&date&bedServiceItemId` | readers | → `PriceQuoteDto` (price source: base, plan, override, free follow-up) |
 
+### Rate list — `/api/v1/billing/rate-list`
+Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.create`, `billing.ip.manage`,
+`billing.payments.collect`. For the signed-in facility, as on today; see [The rate list](#the-rate-list).
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/` | readers | → `RateListView` (`rates`: registration, doctors, rooms, sections by category, packages; `language`: the words' language, `hi`, `ta` or null; `localLanguage`: the facility's, `{code, name}` or null; `unknownSetting`, `unknownState`: what could not be read) |
+| GET | `/document` · `/pdf` | readers | → `PrintableDocumentDto` · the PDF |
+
 ### Packages — `/api/v1/billing/packages`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
@@ -434,6 +443,47 @@ language*).
   the stationery; the logo can be left off; a closing note ends the bill. The 80 mm counter bill and the IP running bill
   follow the same template (an 80 mm roll always prints the letterhead); receipts and refund vouchers follow
   **Receipts and refund vouchers**. See `docs/modules/print-templates.md`.
+
+## The rate list
+The Clinical Establishments (Central Government) Rules 2012, r.9(i), make a registered establishment display the rates
+it charges for each type of service and facility, in the local language as well as in English, where patients can see
+them; the states' own Acts say the same. *Billing › Rate list* shows them and prints them for display
+(`Domain/RateList.cs`, `Services/RateListService.cs`, `Documents/RateListDocument.cs`).
+
+* **What a self-paying patient is charged, worked out as a bill works it out.** The plan is the one that prices a
+  self-paying patient at the facility (`TariffService.ResolvePlanAsync(Self, …)`); each price is `PriceResolver`'s
+  (the plan's price in force today, else the base price), less the plan's concession on a service that allows a discount,
+  with GST on the rest (a room's by `RoomRentGst`), by `ChargeAmounts` — what `Charge.ApplyPrice` does for a bill's line.
+  The list shows the rate before GST, the GST rate, and what the patient pays.
+* **Parts.** The registration fee (REG-NEW, unless `billing.registrationFee.enabled` is off); each doctor's
+  consultation (consultants, visiting doctors and residents, `PractitionerKinds.Doctors`: a visit with any of them is
+  charged) in person and, when they consult by video, by video (their own fee, else the CONS-NEW
+  or CONS-TELE price, as `VisitChargesHandler` charges), with their free follow-up days (a follow-up is free within them
+  and a new consultation after, so CONS-FU has no price on the list); each class of bed of the facility's wards
+  (`IRoomClassDirectory`, from Inpatient): a day of it with its GST, the nursing and consultant-visit charges of a day
+  there, and the plan's multiplier for in-patient services in it; every other service in use, by category; the packages
+  the plan may bill, at their price.
+* **Marked prices.** A service the counter may price (`isPriceEditable`) is marked; one with no price of its own (the
+  pharmacy's, charged at MRP) shows "By what is used".
+* **Languages.** Each facility has a local language (`Platform/Localization/LocalLanguages.cs`): the one the hospital
+  chose in the setting `billing.rateList.language` (a code or name, for the hospital or one facility), else the official
+  language of the state its address names, else of its GSTIN's state. The state is read however it is written
+  (`SharedKernel/IndianStates.cs`: "TN", "Tamilnadu", "U.P.", "Orissa", "Pondicherry", ISO and vehicle codes), and a
+  facility's state is saved as GST writes it; one that names no state of India is refused. A state whose only official
+  language is English, or that has several on an equal footing (Jammu and Kashmir, Chandigarh, Sikkim, Arunachal
+  Pradesh, Nagaland, Meghalaya, Dadra and Nagar Haveli and Daman and Diu, Ladakh), gives none: the hospital chooses
+  one. Puducherry's is the district's, by PIN code: Tamil, Malayalam in Mahe, Telugu in Yanam.
+  * The list's own words are in English with the local language after them when HC360 writes it (Hindi, Tamil);
+    otherwise in English.
+  * Each service has a name in each language the hospital enters (`ServiceItem.LocalNames`, by language code; *Setup ›
+    Services* offers one for each active facility's language): a facility's list prints the one in its own language
+    under the English name, so one service prints in Tamil at a Chennai facility and in Hindi at a Delhi one.
+  * The screen says which languages the list is in, and when the local language is not known, why: the state it could
+    not read, a state with no one language, or a setting that names none.
+  The texts are `doc.rates.*` in the patient text catalogues (`docs/requirements/hindi-review.md`, `tamil-review.md`).
+* It prints under the **Other documents** template (print-templates.md). Print it again when prices change: the list
+  says the day it is as on.
+* Insurance, corporate and scheme patients pay their plan's rates; the list says so.
 
 ## GST e-invoicing
 GST rule 48(4) requires a B2B tax invoice of a taxpayer above the notified turnover to carry an IRN from the Invoice

@@ -18,6 +18,7 @@ import {
   toLetterheadRequest,
   toPractitionerForm,
   toPractitionerRequest,
+  serviceNameLanguages,
   toServiceForm,
   toServiceRequest,
   withCurrentItem,
@@ -276,6 +277,7 @@ describe('service form', () => {
     description: null,
     isActive: true,
     version: 4,
+    localNames: { ta: 'முழு இரத்த எண்ணிக்கை' },
   };
 
   it('round-trips the GST rate through the picker', () => {
@@ -287,6 +289,32 @@ describe('service form', () => {
   it('checks the SAC code and the code', () => {
     const result = serviceSchema.safeParse({ ...toServiceForm(null), code: 'LAB CBC', name: 'CBC', sacCode: '99931X' });
     expect(result.error?.issues.map((issue) => issue.path[0])).toEqual(expect.arrayContaining(['code', 'sacCode']));
+  });
+
+  it("offers a name in each facility's local language, and keeps one the service has in another", () => {
+    const languages = [
+      { code: 'hi', name: 'Hindi', atFacility: true },
+      { code: 'kn', name: 'Kannada', atFacility: false },
+      { code: 'ta', name: 'Tamil', atFacility: false },
+    ];
+    const offered = serviceNameLanguages(service, languages);
+    expect(offered.map((l) => l.code)).toEqual(['hi', 'ta']);
+
+    const values = toServiceForm(
+      service,
+      offered.map((l) => l.code),
+    );
+    expect(values.localNames).toEqual({ hi: '', ta: 'முழு இரத்த எண்ணிக்கை' });
+    expect(toServiceRequest(values, service, service.version).localNames).toEqual({ ta: 'முழு இரத்த எண்ணிக்கை' });
+  });
+
+  it('sends a name in each language it was given, and none for a blank one', () => {
+    const values = { ...toServiceForm(service, ['hi', 'ta']), localNames: { hi: ' पूर्ण रक्त गणना ', ta: '  ' } };
+    expect(toServiceRequest(values, service, service.version).localNames).toEqual({ hi: 'पूर्ण रक्त गणना' });
+    expect(serviceSchema.safeParse({ ...values, localNames: { hi: 'x'.repeat(201) } }).error?.issues[0]?.path).toEqual([
+      'localNames',
+      'hi',
+    ]);
   });
 
   it('starts a new service as exempt hospital service, discount allowed', () => {

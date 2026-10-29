@@ -98,6 +98,24 @@ public sealed class OrganizationMasterTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_facilitys_state_is_kept_as_gst_writes_it_and_one_of_no_state_is_refused()
+    {
+        // What the rate list's language is read from (Clinical Establishments Rules 2012, r.9(i)).
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var facility = await admin.PostAsync<Created>("/api/v1/masters/facilities", new SaveFacilityRequest(
+            Letters(6), "Nana Hospitals Annexe " + Letters(4), null, new Address { City = "Chennai", State = "tamilnadu", PinCode = "600002" },
+            null, null, null, null, null, null, null, null, null, null, IsActive: false, null));
+
+        var saved = await admin.GetAsync<FacilityDto>($"/api/v1/masters/facilities/{facility.Id}");
+        saved.Address.State.ShouldBe("Tamil Nadu");
+
+        using var refused = await admin.SendRawAsync(
+            HttpMethod.Put, $"/api/v1/masters/facilities/{facility.Id}", Edit(saved) with { Address = saved.Address with { State = "Tamizh" } });
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("state or union territory of India");
+    }
+
+    [Fact]
     public async Task A_value_too_long_for_its_column_is_a_field_error_not_a_server_error()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);

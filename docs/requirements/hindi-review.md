@@ -348,3 +348,72 @@ Points we would most like checked:
 | 100 | `doc.bill.ack_no` | Ack no. | पावती सं. | |
 | 101 | `doc.bill.ack_date` | Ack date | पावती दिनांक | |
 | 102 | `doc.bill.einvoice_qr` | Signed QR code of the e-invoice | ई-इनवॉइस का हस्ताक्षरित QR कोड | |
+
+## The rate list (displayed at the counter and in the wards)
+
+The hospital displays its rates in English and the local language (Clinical Establishments Rules 2012, r.9(i)). HC360
+prints the list's own words in English with Hindi after each, for a hospital in the states whose official language is Hindi. The services' names in
+Hindi are typed by the hospital in its service master and are not in this list. Please check especially "आप देंगे"
+(*you pay*), "उपयोग के अनुसार" (*by what is used*, for medicines charged at their MRP) and the notes at the end.
+
+| # | Key | English | Hindi | OK? |
+|---|---|---|---|---|
+| 1 | `doc.rates.title` | Rate list | सेवा दर सूची | |
+| 2 | `doc.rates.as_on` | Rates as on {date} | {date} को लागू दरें | |
+| 3 | `doc.rates.registration` | Registration of a new patient | नए रोगी का पंजीकरण | |
+| 4 | `doc.rates.consultations` | Consultation fees | परामर्श शुल्क | |
+| 5 | `doc.rates.doctor` | Doctor | डॉक्टर | |
+| 6 | `doc.rates.department` | Department | विभाग | |
+| 7 | `doc.rates.in_person` | In person | अस्पताल में | |
+| 8 | `doc.rates.by_video` | By video | वीडियो पर | |
+| 9 | `doc.rates.follow_up` | Follow-up | दोबारा दिखाना (फ़ॉलो-अप) | |
+| 10 | `doc.rates.follow_up_free` | Free within {days} days | {days} दिन के भीतर निःशुल्क | |
+| 11 | `doc.rates.follow_up_charged` | Charged as a consultation | परामर्श शुल्क लगता है | |
+| 12 | `doc.rates.rooms` | Rooms (per day) | कमरे (प्रति दिन) | |
+| 13 | `doc.rates.room` | Room | कमरा | |
+| 14 | `doc.rates.wards` | Wards | वार्ड | |
+| 15 | `doc.rates.bed` | Bed | बिस्तर | |
+| 16 | `doc.rates.nursing` | Nursing | नर्सिंग | |
+| 17 | `doc.rates.visit` | Doctor's visit | डॉक्टर की विज़िट | |
+| 18 | `doc.rates.multiplier` | Multiplier | गुणक | |
+| 19 | `doc.rates.intensive_care` | Intensive care | गहन चिकित्सा | |
+| 20 | `doc.rates.with_gst` | with {percent} GST | {percent} GST सहित | |
+| 21 | `doc.rates.code` | Code | कोड | |
+| 22 | `doc.rates.service` | Service | सेवा | |
+| 23 | `doc.rates.rate` | Rate | दर | |
+| 24 | `doc.rates.exempt` | Exempt | छूट प्राप्त | |
+| 25 | `doc.rates.payable` | You pay | आप देंगे | |
+| 26 | `doc.rates.as_used` | By what is used | उपयोग के अनुसार | |
+| 27 | `doc.rates.packages` | Packages | पैकेज | |
+| 28 | `doc.rates.package` | Package | पैकेज | |
+| 29 | `doc.rates.stay` | Stay | भर्ती अवधि | |
+| 30 | `doc.rates.package_stay` | {days} days | {days} दिन | |
+| 31 | `doc.rates.package_for` | For | किसके लिए | |
+| 32 | `doc.rates.package_use.in_patient` | In-patients | भर्ती रोगी | |
+| 33 | `doc.rates.package_use.out_patient` | Out-patients | बाह्य रोगी (ओपीडी) | |
+| 34 | `doc.rates.package_use.both` | In-patients and out-patients | भर्ती और बाह्य रोगी | |
+| 35 | `doc.rates.category.registration` | Registration | पंजीकरण | |
+| 36 | `doc.rates.category.consultation` | Other consultations | अन्य परामर्श | |
+| 37 | `doc.rates.category.laboratory` | Laboratory tests | प्रयोगशाला जाँचें | |
+| 38 | `doc.rates.category.radiology` | Radiology and imaging | रेडियोलॉजी और इमेजिंग | |
+| 39 | `doc.rates.category.cardiology` | Heart tests | हृदय जाँचें | |
+| 40 | `doc.rates.category.procedure` | Procedures | प्रक्रियाएँ | |
+| 41 | `doc.rates.category.surgery` | Surgery | सर्जरी | |
+| 42 | `doc.rates.category.nursing` | Nursing | नर्सिंग | |
+| 43 | `doc.rates.category.doctor_visit` | Doctors' visits | डॉक्टर की विज़िट | |
+| 44 | `doc.rates.category.health_checkup` | Health check-ups | स्वास्थ्य जाँच | |
+| 45 | `doc.rates.category.physiotherapy` | Physiotherapy | फ़िज़ियोथेरेपी | |
+| 46 | `doc.rates.category.dialysis` | Dialysis | डायलिसिस | |
+| 47 | `doc.rates.category.dietary` | Diet and nutrition | आहार और पोषण | |
+| 48 | `doc.rates.category.blood_bank` | Blood bank | ब्लड बैंक | |
+| 49 | `doc.rates.category.ambulance` | Ambulance | एम्बुलेंस | |
+| 50 | `doc.rates.category.consumable` | Medicines and consumables | दवाएँ और उपभोग्य सामग्री | |
+| 51 | `doc.rates.category.miscellaneous` | Other services | अन्य सेवाएँ | |
+| 52 | `doc.rates.note.self_pay` | These are the rates for a patient who pays the hospital. A patient covered by insurance, an employer or a government scheme is charged the rates agreed with them. | ये दरें स्वयं भुगतान करने वाले रोगी के लिए हैं। बीमा, नियोक्ता या सरकारी योजना से कवर रोगी से उनके साथ तय दरें ली जाती हैं। | |
+| 53 | `doc.rates.note.concession` | The rates include a concession of {percent}. | इन दरों में {percent} की रियायत शामिल है। | |
+| 54 | `doc.rates.note.gst` | GST is charged only where it is shown; other services are exempt. | GST केवल वहीं लगता है जहाँ वह दिखाया गया है; बाकी सेवाएँ छूट प्राप्त हैं। | |
+| 55 | `doc.rates.note.may_vary` | * The billing counter may set a different price by what is used, such as an implant or a consumable. | * उपयोग की गई चीज़ों (जैसे इम्प्लांट या उपभोग्य सामग्री) के अनुसार बिलिंग काउंटर अलग कीमत तय कर सकता है। | |
+| 56 | `doc.rates.note.medicines` | Medicines, consumables and implants are charged at no more than their MRP. | दवाएँ, उपभोग्य सामग्री और इम्प्लांट उनके MRP से अधिक पर नहीं लिए जाते। | |
+| 57 | `doc.rates.note.multiplier` | For a patient in a room, the procedures, surgery, nursing and doctors' visits listed below cost their rate times the room's multiplier. The nursing and visit charges in this table already include it. | किसी कमरे में भर्ती रोगी के लिए नीचे दी गई प्रक्रियाएँ, सर्जरी, नर्सिंग और डॉक्टर की विज़िट उनकी दर को उस कमरे के गुणक से गुणा करके लगती हैं। इस तालिका के नर्सिंग और विज़िट शुल्क में यह पहले से शामिल है। | |
+| 58 | `doc.rates.note.emergency_fee` | A doctor's own consultation fee, where they have one, is charged in place of the emergency consultation. | डॉक्टर का अपना परामर्श शुल्क हो तो आपातकालीन परामर्श की जगह वही लिया जाता है। | |
+| 59 | `doc.rates.note.packages` | A package covers the services its terms include, up to their limits; other services are charged at the rates in this list. | पैकेज में उसकी शर्तों में शामिल सेवाएँ उनकी सीमा तक आती हैं; बाकी सेवाओं पर इस सूची की दरें लगती हैं। | |
