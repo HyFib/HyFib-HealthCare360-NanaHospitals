@@ -68,15 +68,17 @@ jobs:
           if [ "$(jq -r '.build_type' "$RUNNER_TEMP/pages.json")" != workflow ]; then
             skip "GitHub Pages publishes from a branch. In Settings › Pages, set Source to GitHub Actions, then run this workflow again."
           fi
+          # The repository has one Pages site: while it answers at another domain, or at none, it may be serving something
+          # else, and the demo is not put over it.
           cname=$(jq -r '.cname // ""' "$RUNNER_TEMP/pages.json")
           if [ "$cname" != "$DOMAIN" ]; then
-            echo "::warning::The custom domain is '${cname:-none}', not $DOMAIN (Settings › Pages › Custom domain)."
+            skip "The Pages site's custom domain is '${cname:-none}', not $DOMAIN. In Settings › Pages, set Custom domain to $DOMAIN, then run this workflow again."
           fi
           https=$(jq -r '.https_enforced' "$RUNNER_TEMP/pages.json")
-          if [ "$cname" = "$DOMAIN" ] && [ "$https" != true ]; then
+          if [ "$https" != true ]; then
             echo "::warning::HTTPS is not enforced for $DOMAIN yet: tick Enforce HTTPS in Settings › Pages once GitHub has issued its certificate."
           fi
-          echo "https=$([ "$cname" = "$DOMAIN" ] && [ "$https" = true ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "https=$([ "$https" = true ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
   publish:
