@@ -141,6 +141,26 @@ public sealed class ObservabilityTests : IDisposable
         activity.GetTagItem("url.path").ShouldBe("/api/v1/public/unsubscribe/{token}");
     }
 
+    // The Digital Personal Data Protection Rules 2025 (r.6, from 13 May 2027) have logs kept a year, beyond the 180 days
+    // CERT-In asks for. The file sink applies its retention when it opens the day's file.
+    [Fact]
+    public void A_log_file_is_kept_a_year()
+    {
+        Directory.CreateDirectory(_logs);
+        string DaysAgo(int days) =>
+            Path.Combine(_logs, $"hc360-server-{DateTime.Now.AddDays(-days).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture)}.json");
+        File.WriteAllText(DaysAgo(200), "{}\n");
+        File.WriteAllText(DaysAgo(400), "{}\n");
+
+        using (var logger = new LoggerConfiguration().WriteToHospitalSinks(_logs, development: false, errorLog: null).CreateLogger())
+        {
+            logger.Information("Today's first event opens today's file");
+        }
+
+        File.Exists(DaysAgo(200)).ShouldBeTrue("A log 200 days old is kept.");
+        File.Exists(DaysAgo(400)).ShouldBeFalse("A log more than a year old is deleted.");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_logs))

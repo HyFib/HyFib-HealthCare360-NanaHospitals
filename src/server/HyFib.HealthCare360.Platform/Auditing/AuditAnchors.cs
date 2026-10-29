@@ -59,7 +59,7 @@ public sealed class AuditAnchors(DataDirectories directories, ILogger<AuditAncho
     /// <summary>The last anchor written, or null.</summary>
     public AuditAnchor? Last() => Read().Anchors.LastOrDefault();
 
-    /// <summary>Appends an anchor, and writes it to the server log (which CERT-In asks to keep for 180 days).</summary>
+    /// <summary>Appends an anchor, and writes it to the server log (kept a year: CERT-In and the DPDP Rules).</summary>
     public void Append(AuditAnchor anchor)
     {
         lock (_write)

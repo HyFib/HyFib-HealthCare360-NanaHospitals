@@ -179,7 +179,8 @@ of work already stop guessing.
 ### Reading the server log
 
 The server writes its log to `%ProgramData%\HyFib\HealthCare360\logs\hc360-server-<date>.json`, one event per line as a
-JSON object (SRS OBS-01), and keeps 180 days, as CERT-In's Directions of 28 April 2022 ask. Each line has the time (`@t`), the level (`@l`), the message (`@m`), the
+JSON object (SRS OBS-01), and keeps a year: the DPDP Rules 2025 ask for that from 13 May 2027 (r.6), beyond the 180
+days of CERT-In's Directions of 28 April 2022. Each line has the time (`@t`), the level (`@l`), the message (`@m`), the
 error (`@x`), the part of the server that wrote it (`SourceContext`) and the request's correlation id (`CorrelationId`),
 the "Reference" an error message in HC360 shows. Phone, Aadhaar and ABHA numbers, e-mail addresses and secrets
 are masked. Errors also go to Windows Event Viewer › Application (source *HyFib HealthCare360*). To list today's errors in
@@ -306,7 +307,7 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
      /syncfromflags:manual /update`), and allow NTP (UDP 123) to them. System health shows the clock's offset and warns
      when it is more than a second off or no time server answers; a hospital with its own time server that follows
      them lists it under `HealthCare360:TimeSync:Servers`.
-   - The server keeps its log files 180 days in `logs`; leave room for them on the data drive.
+   - The server keeps its log files a year in `logs`; leave room for them on the data drive.
    - **Privacy › Settings › CERT-In point of contact**: name the person CERT-In writes to and who reports an incident
      within the 6 hours, with an e-mail address and a phone number (direction (iii)). System health warns until it is
      set.
