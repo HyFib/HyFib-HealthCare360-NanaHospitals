@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '@/i18n';
 import { formattersFor } from '@/i18n/useFormat';
 import { billDocument, receiptDocument } from '@/modules/bills/print';
@@ -7,6 +7,7 @@ import { catchDownloads } from '@/test/downloads';
 import {
   downloadPortalDocument,
   escapeMultiline,
+  printPortalDocument,
   safeFileName,
   safeSvgMarkup,
   scopeStyles,
@@ -85,6 +86,70 @@ describe('downloaded copies ("Download a copy")', () => {
     const html = (await saved[0]?.blob.text()) ?? '';
     expect(html).toContain('<html lang="hi-IN">');
     expect(html).toContain('<body><h1>Bill</h1></body>');
+  });
+});
+
+describe('printing in the page', () => {
+  const doc = { title: 'Receipt R/1', body: '<h1>Receipt</h1>', fileName: 'receipt-R-1' };
+  const printCopy = () => document.getElementById('hc360-print-root')?.innerHTML;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    document.title = 'Bills';
+    vi.spyOn(window, 'print').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    document.getElementById('hc360-print-root')?.remove();
+  });
+
+  it('puts the copy in the page and takes it away once the print dialog closes', () => {
+    printPortalDocument(doc);
+    expect(window.print).toHaveBeenCalledTimes(1);
+    expect(printCopy()).toContain('<h1>Receipt</h1>');
+    expect(document.title).toBe('Receipt R/1');
+
+    window.dispatchEvent(new Event('afterprint'));
+    expect(printCopy()).toBe('');
+    expect(document.title).toBe('Bills');
+  });
+
+  it('leaves no timer and no listener behind once the dialog has closed', () => {
+    const listening = vi.spyOn(window, 'addEventListener');
+    printPortalDocument(doc);
+    window.dispatchEvent(new Event('afterprint'));
+
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(1000);
+    expect(listening.mock.calls.map(([type]) => type)).not.toContain('focus');
+  });
+
+  it('takes the copy away when the page has focus again, in a browser that never says the dialog closed', () => {
+    printPortalDocument(doc);
+    window.dispatchEvent(new Event('focus'));
+    expect(printCopy()).toContain('<h1>Receipt</h1>'); // too early: the dialog may still be opening
+
+    vi.advanceTimersByTime(1000);
+    window.dispatchEvent(new Event('focus'));
+    expect(printCopy()).toBe('');
+    expect(document.title).toBe('Bills');
+  });
+
+  it('does not reach for the window once it is gone, as when a test file ends before the fallback is due', () => {
+    printPortalDocument(doc);
+    const page = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    // What the test environment does at the end of a file: the window is no longer a global (CI, 28 Oct 2026:
+    // "ReferenceError: window is not defined" from the fallback below, a second after the last print in a file).
+    Reflect.deleteProperty(globalThis, 'window');
+    try {
+      expect(() => vi.advanceTimersByTime(1000)).not.toThrow();
+    } finally {
+      if (page) {
+        Object.defineProperty(globalThis, 'window', page);
+      }
+    }
   });
 });
 

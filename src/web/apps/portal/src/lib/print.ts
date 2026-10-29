@@ -61,25 +61,31 @@ function ensureRoot(): HTMLElement {
 
 /** Opens the browser's print dialog for the document (which also offers "Save as PDF"). */
 export function printPortalDocument(doc: PrintableDocument): void {
+  // The window and the page are held from here on, not looked up again: the fallback below runs a second later, when
+  // the window may be gone (in tests, once the file has ended).
+  const win = window;
+  const page = win.document;
   const root = ensureRoot();
   // eslint-disable-next-line no-unsanitized/property -- the modules' templates escape every value, and the styles are their constants
   root.innerHTML = `<style>@media print {${baseStyles(`#${ROOT_ID}`)}${scopeStyles(doc.styles ?? '')}}</style>${doc.body}`;
-  const previousTitle = document.title;
-  document.title = doc.title;
+  const previousTitle = page.title;
+  page.title = doc.title;
   let cleaned = false;
   const cleanup = () => {
     if (cleaned) {
       return;
     }
     cleaned = true;
+    clearTimeout(fallback);
     root.innerHTML = '';
-    document.title = previousTitle;
-    window.removeEventListener('afterprint', cleanup);
+    page.title = previousTitle;
+    win.removeEventListener('afterprint', cleanup);
+    win.removeEventListener('focus', cleanup);
   };
-  window.addEventListener('afterprint', cleanup);
+  win.addEventListener('afterprint', cleanup);
   // Some mobile browsers return from print() before the dialog closes and never fire afterprint.
-  setTimeout(() => window.addEventListener('focus', cleanup, { once: true }), 1000);
-  window.print();
+  const fallback = setTimeout(() => win.addEventListener('focus', cleanup, { once: true }), 1000);
+  win.print();
 }
 
 /**
