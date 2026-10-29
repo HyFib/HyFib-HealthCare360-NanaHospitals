@@ -34,6 +34,12 @@ const manifest: ModuleManifest = {
       keywords: ['wifi', 'server', 'ups', 'disk', 'certificate'],
     },
     {
+      label: 'Simulator records',
+      to: '/admin/simulator-records',
+      permission: 'admin.system.read',
+      keywords: ['simulator', 'training', 'go live', 'sweep', 'sign off', 'test payments', 'fake records'],
+    },
+    {
       label: 'Audit log',
       to: '/admin/audit',
       permission: 'admin.audit.read',

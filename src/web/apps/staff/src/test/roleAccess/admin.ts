@@ -13,6 +13,7 @@ import type {
 } from '@/modules/admin/api';
 import type { AbdmGatewayStatus, IntegrationStatusDto } from '@/modules/admin/integrationsApi';
 import type { NotificationLogDto, NotificationTemplateDto } from '@/modules/admin/notificationTemplatesApi';
+import type { SimulatorRecordsView } from '@/modules/admin/simulatorRecordsApi';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers, type FakeRequest } from '../fakeApi';
 
 // Administration: users (one locked with two-step verification, so every row action shows), roles, the audit log,
@@ -592,6 +593,44 @@ const ABDM_GATEWAY: AbdmGatewayStatus = {
   ],
 };
 
+// A live server's sweep that found payments the payment simulator took, not yet signed off, so Sweep now and the
+// sign-off form both show.
+const SIMULATOR_RECORDS: SimulatorRecordsView = {
+  latest: {
+    sweptAt: hoursAgo(2),
+    sweptBy: 'IT Officer',
+    total: 3,
+    newest: hoursAgo(400),
+    findings: [
+      {
+        code: 'payments',
+        title: 'Online payments the payment simulator took',
+        severity: 'critical',
+        count: 3,
+        amount: 1500,
+        first: hoursAgo(500),
+        last: hoursAgo(400),
+        examples: ['order_simA1B2C3', 'order_simD4E5F6', 'plink_simG7H8I9'],
+        guidance: 'No money was received: each was marked paid as it was made.',
+      },
+      {
+        code: 'labels',
+        title: 'Labels the label simulator did not print',
+        severity: 'info',
+        count: 0,
+        amount: null,
+        first: null,
+        last: null,
+        examples: [],
+        guidance: 'Nothing was printed.',
+      },
+    ],
+  },
+  signedOff: null,
+  outstanding: true,
+  liveServer: true,
+};
+
 export const ANSWERS: FakeAnswers = {
   'GET /api/v1/abdm/gateway': ABDM_GATEWAY,
   'GET /api/v1/admin/users': paged(USERS),
@@ -603,6 +642,7 @@ export const ANSWERS: FakeAnswers = {
   'GET /api/v1/admin/audit/verify': VERIFICATION,
   'GET /api/v1/admin/settings': SETTINGS,
   'GET /api/v1/admin/backups': BACKUPS,
+  'GET /api/v1/admin/system/simulator-records': SIMULATOR_RECORDS,
   'GET /api/v1/admin/backups/recovery-key': RECOVERY_KEY,
   'GET /api/v1/admin/integrations': INTEGRATIONS,
   'GET /api/v1/admin/notification-templates': TEMPLATES,
