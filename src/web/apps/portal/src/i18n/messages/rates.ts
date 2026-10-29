@@ -38,6 +38,7 @@ export const rateMessages = defineMessages({
     'rates.packageFor.Both': 'In-patients and out-patients',
     'rates.code': 'Code',
     'rates.payable': 'You pay',
+    'rates.asUsed': 'By what is used',
     'rates.withGst': 'with {percent} GST',
     'rates.notes': 'Please note',
     'rates.note.selfPay':
@@ -104,6 +105,7 @@ export const rateMessages = defineMessages({
     'rates.packageFor.Both': 'भर्ती और बाह्य रोगी',
     'rates.code': 'कोड',
     'rates.payable': 'आप देंगे',
+    'rates.asUsed': 'उपयोग के अनुसार',
     'rates.withGst': '{percent} GST सहित',
     'rates.notes': 'ध्यान दें',
     'rates.note.selfPay':
@@ -171,6 +173,7 @@ export const rateMessages = defineMessages({
     'rates.packageFor.Both': 'உள் மற்றும் வெளிநோயாளிகள்',
     'rates.code': 'குறியீடு',
     'rates.payable': 'நீங்கள் செலுத்துவது',
+    'rates.asUsed': 'பயன்பாட்டின்படி',
     'rates.withGst': '{percent} GST உட்பட',
     'rates.notes': 'கவனிக்கவும்',
     'rates.note.selfPay':

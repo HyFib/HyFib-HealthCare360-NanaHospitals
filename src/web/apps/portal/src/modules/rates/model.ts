@@ -1,4 +1,5 @@
-import type { MessageKey, MessageVars } from '@/i18n';
+import type { MessageKey, MessageVars, Translate } from '@/i18n';
+import type { Formatters } from '@/i18n/useFormat';
 import type { RateLine, RateList, ServiceCategory } from '@/lib/types';
 
 // Lower case, in one Unicode form: "X-Ray" finds "x-ray", and Tamil typed on a phone finds the name as entered.
@@ -29,6 +30,14 @@ export function filterRateList(rates: RateList, term: string): RateList {
       .filter((section) => section.lines.length > 0),
     packages: rates.packages.filter((p) => lineMatches(p.price, wanted)),
   };
+}
+
+/**
+ * What the patient pays, as the counter's list prints it (`RateListDocument.Payable`): a service the counter prices by
+ * what is used, with no price of its own, says so rather than ₹0.00.
+ */
+export function payableText(line: RateLine, f: Formatters, t: Translate): string {
+  return line.mayVary && line.payable === 0 ? t('rates.asUsed') : f.inr(line.payable);
 }
 
 /** Whether the list has nothing in it. */

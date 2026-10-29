@@ -308,7 +308,10 @@ const line = (code: string, name: string, rate: number, gstRate = 0, extra: Part
   ...extra,
 });
 
-/** The list a facility in Tamil Nadu displays: Tamil names under some services, GST on one, a price that may vary. */
+/**
+ * The list a facility in Tamil Nadu displays: Tamil names under some services, GST on one, a price that may vary, and
+ * one the counter sets by what is used.
+ */
 export const RATE_LIST: PublicRateList = {
   facility: RATE_FACILITY,
   language: 'ta',
@@ -347,6 +350,7 @@ export const RATE_LIST: PublicRateList = {
         lines: [
           line('PRC-DRS', 'Wound dressing — minor', 450, 18, { localName: 'சிறிய காயக் கட்டு' }),
           line('PRC-IMP', 'Implant fitting', 2000, 0, { mayVary: true }),
+          line('PRC-CON', 'Consumables used in a procedure', 0, 0, { mayVary: true }),
         ],
       },
     ],

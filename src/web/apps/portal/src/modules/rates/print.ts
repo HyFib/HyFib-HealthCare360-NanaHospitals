@@ -3,7 +3,7 @@ import type { Translate } from '@/i18n';
 import type { Formatters } from '@/i18n/useFormat';
 import { safeFileName, type PrintableDocument } from '@/lib/print';
 import type { PublicRateList, RateLine } from '@/lib/types';
-import { categoryKey, rateNotes } from './model';
+import { categoryKey, payableText, rateNotes } from './model';
 
 export interface RatePrintContext {
   t: Translate;
@@ -51,7 +51,7 @@ export function rateListDocument(list: PublicRateList, ctx: RatePrintContext): P
   const { t, f } = ctx;
   const { rates } = list;
   const lang = list.localLanguage?.code;
-  const money = (line: RateLine) => f.inr(line.payable);
+  const money = (line: RateLine) => payableText(line, f, t);
   const doctors = rates.doctors.map((d) =>
     row(
       `<strong>${escapeHtml(d.name)}</strong>${d.department ? `<span class="small muted"> · ${escapeHtml(d.department)}</span>` : ''}<span class="small muted local">${escapeHtml(

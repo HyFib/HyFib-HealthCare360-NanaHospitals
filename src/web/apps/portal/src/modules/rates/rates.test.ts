@@ -78,6 +78,13 @@ describe('the printed copy of the rate list', () => {
     expect(doc('ta').body).toContain('சேவைக் கட்டணப் பட்டியல்');
   });
 
+  it('prints a service the counter prices by what is used as the counter’s list does, not as nothing to pay', () => {
+    const english = doc('en').body;
+    expect(english).toContain('By what is used');
+    expect(english).not.toContain('₹0.00');
+    expect(doc('ta').body).toContain('பயன்பாட்டின்படி');
+  });
+
   it('escapes what the hospital typed', () => {
     const typed = {
       ...RATE_LIST,

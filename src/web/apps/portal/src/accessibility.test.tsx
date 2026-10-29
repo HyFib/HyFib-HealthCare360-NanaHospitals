@@ -139,6 +139,9 @@ describe('portal pages', () => {
     expect(await screen.findByText('Complete blood count', {}, SLOW)).toBeInTheDocument();
     // A service's Tamil name is marked as Tamil (WCAG 3.1.2, language of parts).
     expect(screen.getByText('சிறிய காயக் கட்டு')).toHaveAttribute('lang', 'ta');
+    // A service the counter prices by what is used says so, as the counter's list does, not ₹0.00.
+    expect(screen.getByText('By what is used')).toBeInTheDocument();
+    expect(screen.queryByText('₹0.00')).not.toBeInTheDocument();
     await expectNoAxeViolations();
 
     await userEvent.type(screen.getByRole('searchbox', { name: 'Find a service' }), 'dressing');

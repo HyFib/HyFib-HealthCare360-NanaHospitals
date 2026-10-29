@@ -15,7 +15,7 @@ import { usePortalFeatures } from '@/lib/features';
 import { guidParam, textParam } from '@/lib/ids';
 import type { PublicRateList, RateLine } from '@/lib/types';
 import { rateListPdfPath, rateListQueries } from '@/modules/rates/api';
-import { categoryKey, filterRateList, isEmptyRateList, rateNotes } from '@/modules/rates/model';
+import { categoryKey, filterRateList, isEmptyRateList, payableText, rateNotes } from '@/modules/rates/model';
 import { percentText, rateListDocument } from '@/modules/rates/print';
 import { ReportCard } from '@/modules/reports/ReportParts';
 
@@ -185,7 +185,7 @@ function Rates({ list, term }: { list: PublicRateList; term: string }) {
   const f = useFormat();
   const rates = filterRateList(list.rates, term);
   const lang = list.localLanguage?.code;
-  const money = (line: RateLine) => f.inr(line.payable);
+  const money = (line: RateLine) => payableText(line, f, t);
 
   if (term && isEmptyRateList(rates)) {
     return <EmptyState icon={<ReceiptMoneyRegular />} title={t('rates.search.none', { term })} />;
