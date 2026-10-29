@@ -169,6 +169,8 @@ export interface ServiceItemDto {
   description: string | null;
   isActive: boolean;
   version: number;
+  /** The name in the hospital's local language, printed under the English name on the rate list. */
+  localName: string | null;
 }
 
 export type SaveServiceItemRequest = Omit<ServiceItemDto, 'id' | 'version'> & { version: number | null };

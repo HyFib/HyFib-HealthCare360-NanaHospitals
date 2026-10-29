@@ -169,4 +169,10 @@ public sealed class ServiceItem : AuditableEntity
     public bool IsPriceEditable { get; set; }
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// The name in the hospital's local language, printed beside the English name on the rate list (Clinical
+    /// Establishments Rules 2012, r.9(i): rates displayed in the local language as well as in English).
+    /// </summary>
+    public string? LocalName { get; set; }
 }

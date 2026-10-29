@@ -360,3 +360,72 @@ Points we would most like checked:
 | 100 | `doc.bill.ack_no` | Ack no. | ஒப்புகை எண் | |
 | 101 | `doc.bill.ack_date` | Ack date | ஒப்புகை தேதி | |
 | 102 | `doc.bill.einvoice_qr` | Signed QR code of the e-invoice | மின்-விலைப்பட்டியலின் கையொப்பமிட்ட QR குறியீடு | |
+
+## The rate list (displayed at the counter and in the wards)
+
+The hospital displays its rates in English and the local language (Clinical Establishments Rules 2012, r.9(i)). HC360
+prints the list's own words in English with Tamil after each, for a hospital in Tamil Nadu and Puducherry. The services' names in
+Tamil are typed by the hospital in its service master and are not in this list. Please check especially "நீங்கள் செலுத்துவது"
+(*you pay*), "பயன்பாட்டின்படி" (*by what is used*, for medicines charged at their MRP) and the notes at the end.
+
+| # | Key | English | Tamil | OK? |
+|---|---|---|---|---|
+| 1 | `doc.rates.title` | Rate list | சேவைக் கட்டணப் பட்டியல் | |
+| 2 | `doc.rates.as_on` | Rates as on {date} | {date} அன்று உள்ள கட்டணங்கள் | |
+| 3 | `doc.rates.registration` | Registration of a new patient | புதிய நோயாளி பதிவு | |
+| 4 | `doc.rates.consultations` | Consultation fees | ஆலோசனைக் கட்டணங்கள் | |
+| 5 | `doc.rates.doctor` | Doctor | மருத்துவர் | |
+| 6 | `doc.rates.department` | Department | துறை | |
+| 7 | `doc.rates.in_person` | In person | நேரில் | |
+| 8 | `doc.rates.by_video` | By video | வீடியோ மூலம் | |
+| 9 | `doc.rates.follow_up` | Follow-up | மீண்டும் வருகை (ஃபாலோ-அப்) | |
+| 10 | `doc.rates.follow_up_free` | Free within {days} days | {days} நாட்களுக்குள் இலவசம் | |
+| 11 | `doc.rates.follow_up_charged` | Charged as a consultation | ஆலோசனைக் கட்டணம் உண்டு | |
+| 12 | `doc.rates.rooms` | Rooms (per day) | அறைகள் (ஒரு நாளுக்கு) | |
+| 13 | `doc.rates.room` | Room | அறை | |
+| 14 | `doc.rates.wards` | Wards | வார்டுகள் | |
+| 15 | `doc.rates.bed` | Bed | படுக்கை | |
+| 16 | `doc.rates.nursing` | Nursing | செவிலியர் சேவை | |
+| 17 | `doc.rates.visit` | Doctor's visit | மருத்துவர் வருகை | |
+| 18 | `doc.rates.multiplier` | Multiplier | பெருக்கி | |
+| 19 | `doc.rates.intensive_care` | Intensive care | தீவிர சிகிச்சை | |
+| 20 | `doc.rates.with_gst` | with {percent} GST | {percent} GST உட்பட | |
+| 21 | `doc.rates.code` | Code | குறியீடு | |
+| 22 | `doc.rates.service` | Service | சேவை | |
+| 23 | `doc.rates.rate` | Rate | விலை | |
+| 24 | `doc.rates.exempt` | Exempt | வரிவிலக்கு | |
+| 25 | `doc.rates.payable` | You pay | நீங்கள் செலுத்துவது | |
+| 26 | `doc.rates.as_used` | By what is used | பயன்பாட்டின்படி | |
+| 27 | `doc.rates.packages` | Packages | பேக்கேஜ்கள் | |
+| 28 | `doc.rates.package` | Package | பேக்கேஜ் | |
+| 29 | `doc.rates.stay` | Stay | தங்கும் காலம் | |
+| 30 | `doc.rates.package_stay` | {days} days | {days} நாட்கள் | |
+| 31 | `doc.rates.package_for` | For | யாருக்கு | |
+| 32 | `doc.rates.package_use.in_patient` | In-patients | உள்நோயாளிகள் | |
+| 33 | `doc.rates.package_use.out_patient` | Out-patients | வெளிநோயாளிகள் | |
+| 34 | `doc.rates.package_use.both` | In-patients and out-patients | உள் மற்றும் வெளிநோயாளிகள் | |
+| 35 | `doc.rates.category.registration` | Registration | பதிவு | |
+| 36 | `doc.rates.category.consultation` | Other consultations | பிற ஆலோசனைகள் | |
+| 37 | `doc.rates.category.laboratory` | Laboratory tests | ஆய்வகப் பரிசோதனைகள் | |
+| 38 | `doc.rates.category.radiology` | Radiology and imaging | ரேடியாலஜி மற்றும் ஸ்கேன் | |
+| 39 | `doc.rates.category.cardiology` | Heart tests | இதயப் பரிசோதனைகள் | |
+| 40 | `doc.rates.category.procedure` | Procedures | சிகிச்சை முறைகள் | |
+| 41 | `doc.rates.category.surgery` | Surgery | அறுவை சிகிச்சை | |
+| 42 | `doc.rates.category.nursing` | Nursing | செவிலியர் சேவை | |
+| 43 | `doc.rates.category.doctor_visit` | Doctors' visits | மருத்துவர் வருகைகள் | |
+| 44 | `doc.rates.category.health_checkup` | Health check-ups | உடல்நலப் பரிசோதனைகள் | |
+| 45 | `doc.rates.category.physiotherapy` | Physiotherapy | இயன்முறை மருத்துவம் (பிசியோதெரபி) | |
+| 46 | `doc.rates.category.dialysis` | Dialysis | டயாலிசிஸ் | |
+| 47 | `doc.rates.category.dietary` | Diet and nutrition | உணவு மற்றும் ஊட்டச்சத்து | |
+| 48 | `doc.rates.category.blood_bank` | Blood bank | இரத்த வங்கி | |
+| 49 | `doc.rates.category.ambulance` | Ambulance | ஆம்புலன்ஸ் | |
+| 50 | `doc.rates.category.consumable` | Medicines and consumables | மருந்துகள் மற்றும் நுகர்பொருட்கள் | |
+| 51 | `doc.rates.category.miscellaneous` | Other services | பிற சேவைகள் | |
+| 52 | `doc.rates.note.self_pay` | These are the rates for a patient who pays the hospital. A patient covered by insurance, an employer or a government scheme is charged the rates agreed with them. | இவை தாமே கட்டணம் செலுத்தும் நோயாளிக்கான கட்டணங்கள். காப்பீடு, பணியமர்த்துபவர் அல்லது அரசுத் திட்டத்தின் கீழ் உள்ள நோயாளிக்கு, அவர்களுடன் ஒப்புக்கொண்ட கட்டணங்கள் வசூலிக்கப்படும். | |
+| 53 | `doc.rates.note.concession` | The rates include a concession of {percent}. | இந்தக் கட்டணங்களில் {percent} சலுகை சேர்க்கப்பட்டுள்ளது. | |
+| 54 | `doc.rates.note.gst` | GST is charged only where it is shown; other services are exempt. | GST காட்டப்பட்டுள்ள இடங்களில் மட்டுமே வசூலிக்கப்படும்; பிற சேவைகளுக்கு வரிவிலக்கு உண்டு. | |
+| 55 | `doc.rates.note.may_vary` | * The billing counter may set a different price by what is used, such as an implant or a consumable. | * பயன்படுத்தப்படும் பொருட்களுக்கு (உள்வைப்பு அல்லது நுகர்பொருள் போன்றவை) ஏற்ப பில்லிங் கவுண்டர் வேறு விலையை நிர்ணயிக்கலாம். | |
+| 56 | `doc.rates.note.medicines` | Medicines, consumables and implants are charged at no more than their MRP. | மருந்துகள், நுகர்பொருட்கள் மற்றும் உள்வைப்புகளுக்கு அவற்றின் MRP-க்கு மேல் வசூலிக்கப்படாது. | |
+| 57 | `doc.rates.note.multiplier` | For a patient in a room, the procedures, surgery, nursing and doctors' visits listed below cost their rate times the room's multiplier. The nursing and visit charges in this table already include it. | ஒரு அறையில் உள்ள நோயாளிக்கு, கீழே உள்ள சிகிச்சை முறைகள், அறுவை சிகிச்சை, செவிலியர் சேவை மற்றும் மருத்துவர் வருகைகளின் கட்டணம், அவற்றின் விலையை அந்த அறையின் பெருக்கியால் பெருக்கிய தொகையாகும். இந்த அட்டவணையில் உள்ள செவிலியர் மற்றும் வருகைக் கட்டணங்களில் இது ஏற்கெனவே சேர்க்கப்பட்டுள்ளது. | |
+| 58 | `doc.rates.note.emergency_fee` | A doctor's own consultation fee, where they have one, is charged in place of the emergency consultation. | மருத்துவருக்குத் தனி ஆலோசனைக் கட்டணம் இருந்தால், அவசர ஆலோசனைக்குப் பதிலாக அதுவே வசூலிக்கப்படும். | |
+| 59 | `doc.rates.note.packages` | A package covers the services its terms include, up to their limits; other services are charged at the rates in this list. | பேக்கேஜில் அதன் விதிகளில் உள்ள சேவைகள் அவற்றின் வரம்பு வரை அடங்கும்; பிற சேவைகளுக்கு இந்தப் பட்டியலில் உள்ள கட்டணங்கள் பொருந்தும். | |

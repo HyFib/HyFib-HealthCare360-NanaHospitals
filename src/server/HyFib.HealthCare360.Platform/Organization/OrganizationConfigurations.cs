@@ -94,6 +94,7 @@ internal sealed class ServiceItemConfiguration : IEntityTypeConfiguration<Servic
         b.Property(x => x.Code).HasMaxLength(32);
         b.Property(x => x.Name).HasMaxLength(200);
         b.Property(x => x.ShortName).HasMaxLength(64);
+        b.Property(x => x.LocalName).HasMaxLength(200);
         b.Property(x => x.SacCode).HasMaxLength(16);
         b.Property(x => x.Description).HasMaxLength(1000);
         b.Property(x => x.TaxRate).HasPrecision(5, 2);

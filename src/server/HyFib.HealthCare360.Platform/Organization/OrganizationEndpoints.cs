@@ -55,11 +55,11 @@ public sealed record SavePractitionerRequest(
 
 public sealed record ServiceItemDto(
     Guid Id, string Code, string Name, string? ShortName, ServiceCategory Category, Guid? DepartmentId, decimal BasePrice, decimal TaxRate,
-    string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint Version);
+    string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint Version, string? LocalName);
 
 public sealed record SaveServiceItemRequest(
     string Code, string Name, string? ShortName, ServiceCategory Category, Guid? DepartmentId, decimal BasePrice, decimal TaxRate,
-    string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint? Version);
+    string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint? Version, string? LocalName = null);
 
 /// <summary>An address as the organisation tables store it: each part within its column, and a 6-digit PIN code.</summary>
 public sealed class AddressValidator : AbstractValidator<Address>
@@ -175,6 +175,7 @@ public sealed class SaveServiceItemRequestValidator : AbstractValidator<SaveServ
         RuleFor(x => x.Code).NotEmpty().MaximumLength(32).Matches(MasterRules.CodePattern).WithMessage(MasterRules.CodeMessage);
         RuleFor(x => x.Name).NotEmpty().SafeText(200);
         RuleFor(x => x.ShortName).SafeText(64);
+        RuleFor(x => x.LocalName).SafeText(200);
         RuleFor(x => x.Category).IsInEnum();
         RuleFor(x => x.BasePrice).InclusiveBetween(0, MasterRules.MaxPrice).PrecisionScale(12, 2, ignoreTrailingZeros: true);
         RuleFor(x => x.TaxRate).InclusiveBetween(0, 28).PrecisionScale(5, 2, ignoreTrailingZeros: true);
@@ -769,7 +770,7 @@ internal static class OrganizationEndpoints
 
     private static readonly Expression<Func<ServiceItem, ServiceItemDto>> ToServiceDto = s => new ServiceItemDto(
         s.Id, s.Code, s.Name, s.ShortName, s.Category, s.DepartmentId, s.BasePrice, s.TaxRate, s.SacCode, s.IsDiscountAllowed,
-        s.IsPriceEditable, s.Description, s.IsActive, s.Version);
+        s.IsPriceEditable, s.Description, s.IsActive, s.Version, s.LocalName);
 
     private static async Task<IResult> ListServices(
         [AsParameters] PageQuery query, ServiceCategory? category, Guid? departmentId, bool? active, HospitalDbContext db, CancellationToken ct)
@@ -855,6 +856,7 @@ internal static class OrganizationEndpoints
 
         service.Name = request.Name.Trim();
         service.ShortName = Clean(request.ShortName);
+        service.LocalName = Clean(request.LocalName);
         service.Category = request.Category;
         service.DepartmentId = request.DepartmentId;
         service.BasePrice = Money.Round(request.BasePrice);

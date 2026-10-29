@@ -59,6 +59,21 @@ public enum ChargeBillingState
 
 public sealed record DischargeClearance(bool Cleared, decimal Outstanding, string? Reason);
 
+/// <summary>
+/// A class of bed a facility charges by the day, for its rate list: the bed charge, the nursing charge of each day and
+/// the charge of each consultant's ward-round visit in it, whether its wards are intensive care (no GST on room rent,
+/// <see cref="RoomCharge"/>), and the names of its wards.
+/// </summary>
+public sealed record RoomClass(
+    Guid BedServiceItemId, bool IsIntensiveCare, Guid? NursingServiceItemId, Guid? VisitServiceItemId, IReadOnlyList<string> Wards);
+
+/// <summary>Implemented by the Inpatient module, which keeps the wards and charges their days and visits.</summary>
+public interface IRoomClassDirectory
+{
+    /// <summary>The bed classes of the facility's wards in use, in the wards' display order.</summary>
+    Task<IReadOnlyList<RoomClass>> ForFacilityAsync(Guid facilityId, CancellationToken cancellationToken);
+}
+
 /// <summary>Implemented by the Billing module; other modules post charges through it.</summary>
 public interface IChargePoster
 {
@@ -121,6 +136,12 @@ internal sealed class NullChargePoster : IChargePoster
 
     public Task<Result> CancelAsync(string sourceModule, string sourceReference, string reason, CancellationToken cancellationToken) =>
         Task.FromResult(Result.Success());
+}
+
+internal sealed class NullRoomClassDirectory : IRoomClassDirectory
+{
+    public Task<IReadOnlyList<RoomClass>> ForFacilityAsync(Guid facilityId, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<RoomClass>>([]);
 }
 
 internal sealed class NullPayerDirectory : IPayerDirectory

@@ -117,6 +117,15 @@ export function ServiceFields({
               hint="Printed on bills, such as Complete blood count."
             />
           </FullRow>
+          <FullRow>
+            <TextField
+              control={control}
+              name="localName"
+              label="Name in the local language"
+              maxLength={200}
+              hint="Printed under the English name on the rate list, which is displayed in English and the local language."
+            />
+          </FullRow>
           <TextField
             control={control}
             name="code"

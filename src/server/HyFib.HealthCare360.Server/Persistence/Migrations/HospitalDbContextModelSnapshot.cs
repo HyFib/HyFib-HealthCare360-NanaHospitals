@@ -42155,6 +42155,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_price_editable");
 
+                    b.Property<string>("LocalName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("local_name");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)

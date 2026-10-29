@@ -114,6 +114,15 @@ Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.c
 | DELETE | `/{id}/prices/{priceId}` | `billing.tariffs.manage` | → 204 |
 | GET | `/quote?serviceItemId&planId&date&bedServiceItemId` | readers | → `PriceQuoteDto` (price source: base, plan, override, free follow-up) |
 
+### Rate list — `/api/v1/billing/rate-list`
+Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.create`, `billing.ip.manage`,
+`billing.payments.collect`. For the signed-in facility, as on today; see [The rate list](#the-rate-list).
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/` | readers | → `RateListView` (`rates`: registration, doctors, rooms, sections by category, packages; `language`: `hi`, `ta` or null) |
+| GET | `/document` · `/pdf` | readers | → `PrintableDocumentDto` · the PDF |
+
 ### Packages — `/api/v1/billing/packages`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
@@ -434,6 +443,37 @@ language*).
   the stationery; the logo can be left off; a closing note ends the bill. The 80 mm counter bill and the IP running bill
   follow the same template (an 80 mm roll always prints the letterhead); receipts and refund vouchers follow
   **Receipts and refund vouchers**. See `docs/modules/print-templates.md`.
+
+## The rate list
+The Clinical Establishments (Central Government) Rules 2012, r.9(i), make a registered establishment display the rates
+it charges for each type of service and facility, in the local language as well as in English, where patients can see
+them; the states' own Acts say the same. *Billing › Rate list* shows them and prints them for display
+(`Domain/RateList.cs`, `Services/RateListService.cs`, `Documents/RateListDocument.cs`).
+
+* **What a self-paying patient is charged, worked out as a bill works it out.** The plan is the one that prices a
+  self-paying patient at the facility (`TariffService.ResolvePlanAsync(Self, …)`); each price is `PriceResolver`'s
+  (the plan's price in force today, else the base price), less the plan's concession on a service that allows a discount,
+  with GST on the rest (a room's by `RoomRentGst`), by `ChargeAmounts` — what `Charge.ApplyPrice` does for a bill's line.
+  The list shows the rate before GST, the GST rate, and what the patient pays.
+* **Parts.** The registration fee (REG-NEW, unless `billing.registrationFee.enabled` is off); each consultant's and
+  visiting doctor's consultation in person and, when they consult by video, by video (their own fee, else the CONS-NEW
+  or CONS-TELE price, as `VisitChargesHandler` charges), with their free follow-up days (a follow-up is free within them
+  and a new consultation after, so CONS-FU has no price on the list); each class of bed of the facility's wards
+  (`IRoomClassDirectory`, from Inpatient): a day of it with its GST, the nursing and consultant-visit charges of a day
+  there, and the plan's multiplier for in-patient services in it; every other service in use, by category; the packages
+  the plan may bill, at their price.
+* **Marked prices.** A service the counter may price (`isPriceEditable`) is marked; one with no price of its own (the
+  pharmacy's, charged at MRP) shows "By what is used".
+* **Languages.** The list's own words are in English with the local language after them, when HC360 writes the language
+  of the facility's state (`RateListLanguage`: Tamil in Tamil Nadu and Puducherry; Hindi in Bihar, Chhattisgarh, Delhi,
+  Haryana, Himachal Pradesh, Jharkhand, Madhya Pradesh, Rajasthan, Uttar Pradesh and Uttarakhand). The state is the
+  facility address's, else its GSTIN's. Elsewhere its words are in English, and the screen says so. Each service's
+  name in the local language (`ServiceItem.LocalName`, *Setup › Services*) prints under its English name in every
+  state. The texts are `doc.rates.*` in the patient text catalogues (`docs/requirements/hindi-review.md`,
+  `tamil-review.md`).
+* It prints under the **Other documents** template (print-templates.md). Print it again when prices change: the list
+  says the day it is as on.
+* Insurance, corporate and scheme patients pay their plan's rates; the list says so.
 
 ## GST e-invoicing
 GST rule 48(4) requires a B2B tax invoice of a taxpayer above the notified turnover to carry an IRN from the Invoice

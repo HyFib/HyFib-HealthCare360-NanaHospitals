@@ -276,6 +276,7 @@ describe('service form', () => {
     description: null,
     isActive: true,
     version: 4,
+    localName: 'முழு இரத்த எண்ணிக்கை',
   };
 
   it('round-trips the GST rate through the picker', () => {
@@ -287,6 +288,16 @@ describe('service form', () => {
   it('checks the SAC code and the code', () => {
     const result = serviceSchema.safeParse({ ...toServiceForm(null), code: 'LAB CBC', name: 'CBC', sacCode: '99931X' });
     expect(result.error?.issues.map((issue) => issue.path[0])).toEqual(expect.arrayContaining(['code', 'sacCode']));
+  });
+
+  it('keeps the name in the local language, and sends none for a blank one', () => {
+    const values = toServiceForm(service);
+    expect(values.localName).toBe('முழு இரத்த எண்ணிக்கை');
+    expect(toServiceRequest(values, service, service.version).localName).toBe('முழு இரத்த எண்ணிக்கை');
+    expect(toServiceRequest({ ...values, localName: '  ' }, service, service.version).localName).toBeNull();
+    expect(serviceSchema.safeParse({ ...values, localName: 'x'.repeat(201) }).error?.issues[0]?.path).toEqual([
+      'localName',
+    ]);
   });
 
   it('starts a new service as exempt hospital service, discount allowed', () => {

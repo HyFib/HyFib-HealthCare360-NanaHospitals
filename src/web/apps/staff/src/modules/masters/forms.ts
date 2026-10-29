@@ -464,6 +464,7 @@ export function displayNameOf(values: Pick<PractitionerForm, 'title' | 'firstNam
 export const serviceSchema = z.object({
   code: required(32, 'Enter a code, such as LAB-CBC.').regex(CODE, CODE_MESSAGE),
   name: required(200, 'Enter the service name printed on bills.'),
+  localName: text(200),
   shortName: text(64),
   category: z.enum(SERVICE_CATEGORIES),
   departmentId: z.string().nullable(),
@@ -488,6 +489,7 @@ export function toServiceForm(service: ServiceItemDto | null): ServiceForm {
   return {
     code: service?.code ?? '',
     name: service?.name ?? '',
+    localName: service?.localName ?? '',
     shortName: service?.shortName ?? '',
     category: service?.category ?? 'Procedure',
     departmentId: service?.departmentId ?? null,
@@ -509,6 +511,7 @@ export function toServiceRequest(
   return {
     code: existing?.code ?? values.code.trim().toUpperCase(),
     name: values.name.trim(),
+    localName: orNull(values.localName),
     shortName: orNull(values.shortName),
     category: values.category,
     departmentId: values.departmentId,

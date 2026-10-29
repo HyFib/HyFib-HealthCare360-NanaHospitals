@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Nursing;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Platform.Numbering;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HyFib.HealthCare360.Modules.Inpatient;
 
@@ -66,6 +67,7 @@ public sealed class InpatientModule : IModule
         services.AddScoped<BedBoardService>();
         services.AddScoped<CensusService>();
         services.AddScoped<InpatientChargeService>();
+        services.Replace(ServiceDescriptor.Scoped<IRoomClassDirectory, RoomClassDirectory>());
         services.AddScoped<MarService>();
         services.AddScoped<AdmissionAccess>();
         services.AddScoped<WardRoundQueries>();

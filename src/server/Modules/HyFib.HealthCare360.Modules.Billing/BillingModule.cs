@@ -37,6 +37,7 @@ public sealed class BillingModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<TariffService>();
+        services.AddScoped<RateListService>();
         services.AddScoped<ChargeService>();
         services.AddScoped<PayerCoverageService>();
         services.AddScoped<BillService>();
@@ -87,6 +88,7 @@ public sealed class BillingModule : IModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         TariffEndpoints.Map(endpoints);
+        RateListEndpoints.Map(endpoints);
         PackageEndpoints.Map(endpoints);
         HbpEndpoints.Map(endpoints);
         ChargeEndpoints.Map(endpoints);

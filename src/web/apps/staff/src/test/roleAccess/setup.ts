@@ -247,6 +247,7 @@ const service = (
   description: null,
   isActive: true,
   version: 1,
+  localName: null,
   ...more,
 });
 
