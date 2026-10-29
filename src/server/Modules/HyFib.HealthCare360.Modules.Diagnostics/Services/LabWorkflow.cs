@@ -18,8 +18,15 @@ internal sealed class LabWorkflow(HospitalDbContext db)
     public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<AnalyteSlot>>> AnalyteLayoutAsync(IEnumerable<Guid> orderedTestIds, CancellationToken ct)
     {
         var roots = orderedTestIds.Distinct().ToList();
+        var all = await TestsUnderAsync(db, roots, ct);
+        return roots.Where(all.ContainsKey).ToDictionary(id => id, id => (IReadOnlyList<AnalyteSlot>)Expand(all[id], all));
+    }
+
+    /// <summary>The tests and every test under them, by id: panels within panels, as far as the laboratory expands them.</summary>
+    internal static async Task<Dictionary<Guid, LabTest>> TestsUnderAsync(HospitalDbContext db, IEnumerable<Guid> testIds, CancellationToken ct)
+    {
         var all = new Dictionary<Guid, LabTest>();
-        var toLoad = roots;
+        var toLoad = testIds.Distinct().ToList();
         for (var depth = 0; depth <= MaxPanelDepth && toLoad.Count > 0; depth++)
         {
             var batch = toLoad;
@@ -36,7 +43,7 @@ internal sealed class LabWorkflow(HospitalDbContext db)
                 .ToList();
         }
 
-        return roots.Where(all.ContainsKey).ToDictionary(id => id, id => (IReadOnlyList<AnalyteSlot>)Expand(all[id], all));
+        return all;
     }
 
     /// <summary>

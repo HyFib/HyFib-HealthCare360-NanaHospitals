@@ -291,7 +291,8 @@ and grants nothing.
 - **Sensitive categories** (HIV, mental health, termination of pregnancy; HIV/AIDS Act 2017, Mental Healthcare Act 2017,
   MTP Act s.5A):
   - An HIV (B20–B24, Z21), mental-illness (F20–F69) or medical-abortion (O04) diagnosis puts the record in the category,
-    and so does a released HIV test result outside its normal answers (reactive or indeterminate), or one corrected to it;
+    and so does a released HIV test result outside its normal answers (reactive or indeterminate), or one corrected to it
+    (a result reported under an HIV panel, such as a band of an HIV confirmation, is one);
     a doctor (`patients.sensitive.manage`) can add or remove one with a reason, audited as a security event.
   - The clinical record (notes, diagnoses, encounters, prescriptions written, nursing and MAR, OT, dialysis, teleconsults,
     files) then opens only to staff holding the category: `patients.sensitive.hiv` and `.mental_health` (doctors, nurses,

@@ -227,8 +227,11 @@ internal sealed class LabReportService(
     private async Task NotifyAsync(IEnumerable<LabResult> results, DateTimeOffset at, bool amended, CancellationToken ct)
     {
         var list = results.ToList();
-        var testIds = list.Select(r => r.LabTestId).Distinct().ToList();
-        var tests = await db.Set<LabTest>().AsNoTracking().Where(t => testIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
+        // The test each result's item ordered, with every test under it: a result reported under an HIV test (a band of an
+        // "HIV confirmation" panel) is an HIV result, whatever its own name.
+        var itemIds = list.Select(r => r.LabOrderItemId).Distinct().ToList();
+        var orderedTests = await db.Set<LabOrderItem>().AsNoTracking().Where(i => itemIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, i => i.LabTestId, ct);
+        var tests = await LabWorkflow.TestsUnderAsync(db, [.. list.Select(r => r.LabTestId), .. orderedTests.Values], ct);
         foreach (var result in list)
         {
             if (IsPositive(result))
@@ -239,7 +242,8 @@ internal sealed class LabReportService(
                         result.FacilityId, result.PatientId, result.Id, result.TestCode, test?.Loinc, result.TestName,
                         result.Describe(), result.Organism, at),
                     ct);
-                if (test is not null && HivTestConsent.IsHiv(test))
+                var ordered = orderedTests.TryGetValue(result.LabOrderItemId, out var orderedId) ? tests.GetValueOrDefault(orderedId) : null;
+                if (HivTestConsent.IsHivResult(ordered, result.LabTestId, tests))
                 {
                     // A record of HIV status, which the HIV and AIDS Act 2017 keeps confidential (s.8 to 11): the chart opens only
                     // to staff holding the HIV category, as after an HIV diagnosis. The lab's own screens are not affected.

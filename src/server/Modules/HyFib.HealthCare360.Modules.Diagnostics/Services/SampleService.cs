@@ -101,20 +101,7 @@ internal sealed class SampleService(
 
         // The tests ordered and every test under them, through panels within panels, as the laboratory expands them.
         var testIds = pending.Select(i => i.LabTestId).Distinct().ToList();
-        var tests = new Dictionary<Guid, LabTest>();
-        var toLoad = testIds;
-        for (var depth = 0; depth <= LabTest.MaxPanelDepth && toLoad.Count > 0; depth++)
-        {
-            var batch = toLoad;
-            var loaded = await db.Set<LabTest>().AsNoTracking().Include(t => t.Components).Where(t => batch.Contains(t.Id)).ToListAsync(ct);
-            foreach (var test in loaded)
-            {
-                tests[test.Id] = test;
-            }
-
-            toLoad = loaded.SelectMany(t => t.Components.Select(c => c.TestId)).Where(id => !tests.ContainsKey(id)).Distinct().ToList();
-        }
-
+        var tests = await LabWorkflow.TestsUnderAsync(db, testIds, ct);
         var hiv = testIds.Where(id => tests.TryGetValue(id, out var test) && HivTestConsent.Needed(test, tests)).ToHashSet();
 
         var now = time.GetUtcNow();

@@ -54,6 +54,33 @@ public sealed class HivTestConsentTests
     }
 
     [Fact]
+    public void A_result_reported_under_an_hiv_panel_is_an_hiv_result_whatever_its_own_name()
+    {
+        // The bands of an HIV confirmation panel are named by their protein alone.
+        var gp41 = Test("WB-GP41", "gp41 band", null);
+        var p24 = Test("WB-P24", "p24 band", null);
+        var confirmation = Panel("SER-30", "HIV confirmation", gp41, p24);
+
+        HivTestConsent.IsHivResult(confirmation, gp41.Id, Master(confirmation, gp41, p24)).ShouldBeTrue();
+        var preOp = Panel("PRE-OP", "Pre-operative profile", Test("LAB-CBC", "Complete blood count", null), confirmation);
+        HivTestConsent.IsHivResult(preOp, p24.Id, Master(preOp, confirmation, gp41, p24)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Another_test_beside_an_hiv_test_in_a_panel_is_not_an_hiv_result()
+    {
+        var hbsag = Test("LAB-HBSAG", "Hepatitis B surface antigen", null);
+        var hiv = Test("LAB-HIV", "HIV 1 & 2 antibodies", null);
+        var viral = Panel("VIRAL", "Viral markers", hbsag, hiv);
+        var tests = Master(viral, hbsag, hiv);
+
+        HivTestConsent.IsHivResult(viral, hbsag.Id, tests).ShouldBeFalse();
+        HivTestConsent.IsHivResult(viral, hiv.Id, tests).ShouldBeTrue();
+        HivTestConsent.IsHivResult(hiv, hiv.Id, Master(hiv)).ShouldBeTrue();
+        HivTestConsent.IsHivResult(null, hbsag.Id, tests).ShouldBeFalse();
+    }
+
+    [Fact]
     public void The_patients_consent_is_recorded_once_and_stands_for_a_repeat_sample()
     {
         var item = new LabOrderItem { TestName = "HIV 1 & 2 antibodies" };
