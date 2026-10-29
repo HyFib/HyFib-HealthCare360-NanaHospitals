@@ -169,8 +169,18 @@ export interface ServiceItemDto {
   description: string | null;
   isActive: boolean;
   version: number;
-  /** The name in the hospital's local language, printed under the English name on the rate list. */
-  localName: string | null;
+  /**
+   * The name in local languages, by language code (such as ta or hi): a facility's rate list prints the one in its local
+   * language under the English name.
+   */
+  localNames: Record<string, string>;
+}
+
+/** A language a service may be named in, by its code (such as ta), and whether it is an active facility's local language. */
+export interface LocalLanguageItem {
+  code: string;
+  name: string;
+  atFacility: boolean;
 }
 
 export type SaveServiceItemRequest = Omit<ServiceItemDto, 'id' | 'version'> & { version: number | null };
@@ -297,6 +307,13 @@ export const mastersQueries = {
       queryKey: [...mastersKeys.services, id],
       queryFn: ({ signal }) => api.get<ServiceItemDto>(`${BASE}/services/${id}`, { signal }),
       staleTime: 0,
+    }),
+  /** The languages a service may be named in, marked when one is a facility's local language (it follows the facilities). */
+  localLanguages: () =>
+    queryOptions({
+      queryKey: [...mastersKeys.facilities, 'local-languages'],
+      queryFn: ({ signal }) => api.get<LocalLanguageItem[]>(`${BASE}/lookups/local-languages`, { signal }),
+      staleTime: LIST_STALE,
     }),
 };
 

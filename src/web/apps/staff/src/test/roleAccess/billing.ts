@@ -464,6 +464,9 @@ const SUNIL_DUES: PatientDues = {
 
 const RATE_LIST: RateListView = {
   language: 'ta',
+  localLanguage: { code: 'ta', name: 'Tamil' },
+  unknownSetting: null,
+  unknownState: null,
   rates: {
     asOn: dateIn(0),
     planName: 'General',

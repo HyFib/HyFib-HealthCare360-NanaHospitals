@@ -1,6 +1,5 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Platform.Contracts;
-using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Organization;
 
 namespace HyFib.HealthCare360.Modules.Billing.Tests;
@@ -26,7 +25,8 @@ public sealed class RateListTests
     private static readonly RateListItem Nursing = Item("NURS-DAY", "Nursing charges (per day)", ServiceCategory.Nursing, 600m);
     private static readonly RateListItem Visit = Item("VISIT-DR", "Consultant visit (in-patient)", ServiceCategory.DoctorVisit, 700m);
     private static readonly RateListItem IcuVisit = Item("VISIT-DR-ICU", "Consultant visit (ICU)", ServiceCategory.DoctorVisit, 1_000m);
-    private static readonly RateListItem Cbc = Item("LAB-CBC", "Complete blood count", ServiceCategory.Laboratory, 350m, localName: "முழு இரத்த எண்ணிக்கை");
+    private static readonly RateListItem Cbc = Item(
+        "LAB-CBC", "Complete blood count", ServiceCategory.Laboratory, 350m, localNames: new() { ["ta"] = "முழு இரத்த எண்ணிக்கை", ["hi"] = "पूर्ण रक्त गणना" });
     private static readonly RateListItem Dressing = Item("PROC-DRESS", "Dressing — minor", ServiceCategory.Procedure, 250m);
     private static readonly RateListItem Certificate = Item("MISC-CERT", "Medical certificate", ServiceCategory.Miscellaneous, 300m, taxRate: 18m, discountAllowed: false);
     private static readonly RateListItem Medicines = Item("PHARM-MED", "Pharmacy — medicines (in-patient)", ServiceCategory.Consumable, 0m, priceEditable: true);
@@ -167,13 +167,24 @@ public sealed class RateListTests
     }
 
     [Fact]
-    public void A_service_priced_at_the_counter_is_marked_and_a_local_name_is_kept()
+    public void A_service_priced_at_the_counter_is_marked()
     {
         var rates = RateListBuilder.Build(Input());
 
         var medicines = rates.Sections.Single(s => s.Category == ServiceCategory.Consumable).Lines.Single();
         (medicines.MayVary, medicines.Payable).ShouldBe((true, 0m));
-        rates.Sections.Single(s => s.Category == ServiceCategory.Laboratory).Lines.Single().LocalName.ShouldBe("முழு இரத்த எண்ணிக்கை");
+    }
+
+    [Theory]
+    [InlineData("ta", "முழு இரத்த எண்ணிக்கை")]
+    [InlineData("hi", "पूर्ण रक्त गणना")]
+    [InlineData("kn", null)] // no name in Kannada yet
+    [InlineData(null, null)] // the facility's language is not known
+    public void Each_facility_prints_a_services_name_in_its_own_local_language(string? language, string? name)
+    {
+        var rates = RateListBuilder.Build(Input() with { LocalLanguage = language });
+
+        rates.Sections.Single(s => s.Category == ServiceCategory.Laboratory).Lines.Single().LocalName.ShouldBe(name);
     }
 
     [Fact]
@@ -189,26 +200,12 @@ public sealed class RateListTests
         rates.Sections.Single(s => s.Category == ServiceCategory.Laboratory).Lines.Select(l => l.Name).ShouldBe(["Albumin", "Complete blood count"]);
     }
 
-    [Theory]
-    [InlineData("Tamil Nadu", null, PatientLanguages.Tamil)]
-    [InlineData(" tamil nadu ", null, PatientLanguages.Tamil)]
-    [InlineData("Puducherry", null, PatientLanguages.Tamil)]
-    [InlineData("Uttar Pradesh", null, PatientLanguages.Hindi)]
-    [InlineData("Delhi", null, PatientLanguages.Hindi)]
-    [InlineData("Maharashtra", null, null)]
-    [InlineData("Kerala", "33ABCDE1234F1Z5", null)] // the address decides
-    [InlineData(null, "33ABCDE1234F1Z5", PatientLanguages.Tamil)] // no state: the GSTIN's
-    [InlineData("", "09ABCDE1234F1Z5", PatientLanguages.Hindi)]
-    [InlineData(null, null, null)]
-    public void The_local_language_is_the_states_when_hc360_writes_it(string? state, string? gstin, string? language) =>
-        RateListLanguage.For(state, gstin).ShouldBe(language);
-
     private static RateListInput Input() => new() { AsOn = Today, Items = Catalogue };
 
     private static RateListItem Item(
         string code, string name, ServiceCategory category, decimal price, decimal taxRate = 0m, bool discountAllowed = true, bool priceEditable = false,
-        string? localName = null) =>
-        new(Guid.CreateVersion7(), code, name, localName, category, price, taxRate, discountAllowed, priceEditable);
+        Dictionary<string, string>? localNames = null) =>
+        new(Guid.CreateVersion7(), code, name, localNames, category, price, taxRate, discountAllowed, priceEditable);
 
     // The charge a bill would carry for one of the service at this price.
     private static Charge Charged(decimal unitPrice, RateListItem item, decimal concession = 0m, RoomCharge? room = null) =>

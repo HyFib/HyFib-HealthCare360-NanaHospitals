@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace HyFib.HealthCare360.Platform.Organization;
@@ -94,7 +96,16 @@ internal sealed class ServiceItemConfiguration : IEntityTypeConfiguration<Servic
         b.Property(x => x.Code).HasMaxLength(32);
         b.Property(x => x.Name).HasMaxLength(200);
         b.Property(x => x.ShortName).HasMaxLength(64);
-        b.Property(x => x.LocalName).HasMaxLength(200);
+        b.Property(x => x.LocalNames)
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<Dictionary<string, string>>(v, (JsonSerializerOptions?)null) ?? new Dictionary<string, string>(),
+                new ValueComparer<Dictionary<string, string>>(
+                    (a, b) => a!.Count == b!.Count && !a.Except(b).Any(),
+                    v => v.Aggregate(0, (hash, name) => hash ^ HashCode.Combine(name.Key, name.Value)),
+                    v => new Dictionary<string, string>(v)))
+            .HasColumnType("jsonb")
+            .HasDefaultValueSql("'{}'::jsonb");
         b.Property(x => x.SacCode).HasMaxLength(16);
         b.Property(x => x.Description).HasMaxLength(1000);
         b.Property(x => x.TaxRate).HasPrecision(5, 2);

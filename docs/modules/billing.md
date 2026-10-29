@@ -120,7 +120,7 @@ Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.c
 
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/` | readers | → `RateListView` (`rates`: registration, doctors, rooms, sections by category, packages; `language`: `hi`, `ta` or null) |
+| GET | `/` | readers | → `RateListView` (`rates`: registration, doctors, rooms, sections by category, packages; `language`: the words' language, `hi`, `ta` or null; `localLanguage`: the facility's, `{code, name}` or null; `unknownSetting`, `unknownState`: what could not be read) |
 | GET | `/document` · `/pdf` | readers | → `PrintableDocumentDto` · the PDF |
 
 ### Packages — `/api/v1/billing/packages`
@@ -455,8 +455,9 @@ them; the states' own Acts say the same. *Billing › Rate list* shows them and 
   (the plan's price in force today, else the base price), less the plan's concession on a service that allows a discount,
   with GST on the rest (a room's by `RoomRentGst`), by `ChargeAmounts` — what `Charge.ApplyPrice` does for a bill's line.
   The list shows the rate before GST, the GST rate, and what the patient pays.
-* **Parts.** The registration fee (REG-NEW, unless `billing.registrationFee.enabled` is off); each consultant's and
-  visiting doctor's consultation in person and, when they consult by video, by video (their own fee, else the CONS-NEW
+* **Parts.** The registration fee (REG-NEW, unless `billing.registrationFee.enabled` is off); each doctor's
+  consultation (consultants, visiting doctors and residents, `PractitionerKinds.Doctors`: a visit with any of them is
+  charged) in person and, when they consult by video, by video (their own fee, else the CONS-NEW
   or CONS-TELE price, as `VisitChargesHandler` charges), with their free follow-up days (a follow-up is free within them
   and a new consultation after, so CONS-FU has no price on the list); each class of bed of the facility's wards
   (`IRoomClassDirectory`, from Inpatient): a day of it with its GST, the nursing and consultant-visit charges of a day
@@ -464,13 +465,22 @@ them; the states' own Acts say the same. *Billing › Rate list* shows them and 
   the plan may bill, at their price.
 * **Marked prices.** A service the counter may price (`isPriceEditable`) is marked; one with no price of its own (the
   pharmacy's, charged at MRP) shows "By what is used".
-* **Languages.** The list's own words are in English with the local language after them, when HC360 writes the language
-  of the facility's state (`RateListLanguage`: Tamil in Tamil Nadu and Puducherry; Hindi in Bihar, Chhattisgarh, Delhi,
-  Haryana, Himachal Pradesh, Jharkhand, Madhya Pradesh, Rajasthan, Uttar Pradesh and Uttarakhand). The state is the
-  facility address's, else its GSTIN's. Elsewhere its words are in English, and the screen says so. Each service's
-  name in the local language (`ServiceItem.LocalName`, *Setup › Services*) prints under its English name in every
-  state. The texts are `doc.rates.*` in the patient text catalogues (`docs/requirements/hindi-review.md`,
-  `tamil-review.md`).
+* **Languages.** Each facility has a local language (`Platform/Localization/LocalLanguages.cs`): the one the hospital
+  chose in the setting `billing.rateList.language` (a code or name, for the hospital or one facility), else the official
+  language of the state its address names, else of its GSTIN's state. The state is read however it is written
+  (`SharedKernel/IndianStates.cs`: "TN", "Tamilnadu", "U.P.", "Orissa", "Pondicherry", ISO and vehicle codes), and a
+  facility's state is saved as GST writes it; one that names no state of India is refused. A state whose only official
+  language is English, or that has several on an equal footing (Jammu and Kashmir, Chandigarh, Sikkim, Arunachal
+  Pradesh, Nagaland, Meghalaya, Dadra and Nagar Haveli and Daman and Diu, Ladakh), gives none: the hospital chooses
+  one. Puducherry's is the district's, by PIN code: Tamil, Malayalam in Mahe, Telugu in Yanam.
+  * The list's own words are in English with the local language after them when HC360 writes it (Hindi, Tamil);
+    otherwise in English.
+  * Each service has a name in each language the hospital enters (`ServiceItem.LocalNames`, by language code; *Setup ›
+    Services* offers one for each active facility's language): a facility's list prints the one in its own language
+    under the English name, so one service prints in Tamil at a Chennai facility and in Hindi at a Delhi one.
+  * The screen says which languages the list is in, and when the local language is not known, why: the state it could
+    not read, a state with no one language, or a setting that names none.
+  The texts are `doc.rates.*` in the patient text catalogues (`docs/requirements/hindi-review.md`, `tamil-review.md`).
 * It prints under the **Other documents** template (print-templates.md). Print it again when prices change: the list
   says the day it is as on.
 * Insurance, corporate and scheme patients pay their plan's rates; the list says so.

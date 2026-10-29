@@ -3,8 +3,10 @@ using FluentValidation;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -55,11 +57,16 @@ public sealed record SavePractitionerRequest(
 
 public sealed record ServiceItemDto(
     Guid Id, string Code, string Name, string? ShortName, ServiceCategory Category, Guid? DepartmentId, decimal BasePrice, decimal TaxRate,
-    string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint Version, string? LocalName);
+    string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint Version,
+    IReadOnlyDictionary<string, string> LocalNames);
 
 public sealed record SaveServiceItemRequest(
     string Code, string Name, string? ShortName, ServiceCategory Category, Guid? DepartmentId, decimal BasePrice, decimal TaxRate,
-    string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint? Version, string? LocalName = null);
+    string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint? Version,
+    IReadOnlyDictionary<string, string>? LocalNames = null);
+
+/// <summary>A language a service may be named in, and whether it is the local language of an active facility.</summary>
+public sealed record LocalLanguageItem(string Code, string Name, bool AtFacility);
 
 /// <summary>An address as the organisation tables store it: each part within its column, and a 6-digit PIN code.</summary>
 public sealed class AddressValidator : AbstractValidator<Address>
@@ -71,9 +78,15 @@ public sealed class AddressValidator : AbstractValidator<Address>
         RuleFor(x => x.City).SafeText(100);
         RuleFor(x => x.District).SafeText(100);
         RuleFor(x => x.State).SafeText(100);
+        RuleFor(x => x.State).Must(state => IndianStates.Code(state) is not null).When(x => !string.IsNullOrWhiteSpace(x.State) && InIndia(x))
+            .WithMessage("Enter a state or union territory of India, such as Tamil Nadu.");
         RuleFor(x => x.PinCode).PinCode().When(x => !string.IsNullOrWhiteSpace(x.PinCode));
         RuleFor(x => x.Country).SafeText(100);
     }
+
+    /// <summary>An address in India, which is what one with no country is.</summary>
+    public static bool InIndia(Address address) =>
+        string.IsNullOrWhiteSpace(address.Country) || string.Equals(address.Country.Trim(), "India", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class SaveFacilityRequestValidator : AbstractValidator<SaveFacilityRequest>
@@ -152,7 +165,7 @@ public sealed class SavePractitionerRequestValidator : AbstractValidator<SavePra
         RuleFor(x => x.Qualification).SafeText(200);
         RuleFor(x => x.RegistrationCouncil).SafeText(128);
         RuleFor(x => x.RegistrationNumber).SafeText(64);
-        RuleFor(x => x.RegistrationNumber).NotEmpty().When(x => x.Kind is PractitionerKind.Consultant or PractitionerKind.Resident or PractitionerKind.Visiting)
+        RuleFor(x => x.RegistrationNumber).NotEmpty().When(x => PractitionerKinds.IsDoctor(x.Kind))
             .WithMessage("Medical council registration number is required for doctors.");
         RuleFor(x => x.HprId).HprId();
         RuleFor(x => x.Phone).PhoneNumber();
@@ -175,7 +188,11 @@ public sealed class SaveServiceItemRequestValidator : AbstractValidator<SaveServ
         RuleFor(x => x.Code).NotEmpty().MaximumLength(32).Matches(MasterRules.CodePattern).WithMessage(MasterRules.CodeMessage);
         RuleFor(x => x.Name).NotEmpty().SafeText(200);
         RuleFor(x => x.ShortName).SafeText(64);
-        RuleFor(x => x.LocalName).SafeText(200);
+        RuleForEach(x => x.LocalNames).ChildRules(name =>
+        {
+            name.RuleFor(n => n.Key).Must(LocalLanguages.IsCode).WithMessage("Name the language by its code, such as ta or hi.");
+            name.RuleFor(n => n.Value).SafeText(200);
+        });
         RuleFor(x => x.Category).IsInEnum();
         RuleFor(x => x.BasePrice).InclusiveBetween(0, MasterRules.MaxPrice).PrecisionScale(12, 2, ignoreTrailingZeros: true);
         RuleFor(x => x.TaxRate).InclusiveBetween(0, 28).PrecisionScale(5, 2, ignoreTrailingZeros: true);
@@ -307,6 +324,7 @@ internal static class OrganizationEndpoints
                 TypedResults.Ok(await db.Set<Specialty>().Where(s => s.IsActive).OrderBy(s => s.Name)
                     .Select(s => new LookupItem(s.Id, s.Code, s.Name)).ToListAsync(ct)))
             .RequirePermission(PlatformPermissions.MastersRead);
+        lookups.MapGet("/local-languages", LocalLanguagesAtFacilities).RequirePermission(PlatformPermissions.MastersRead);
         lookups.MapGet("/practitioners", async (Guid? departmentId, string? search, HospitalDbContext db, ICurrentUser user, CancellationToken ct) =>
             {
                 var query = db.Set<Practitioner>().Where(p => p.IsActive && (departmentId == null || p.DepartmentId == departmentId));
@@ -770,7 +788,7 @@ internal static class OrganizationEndpoints
 
     private static readonly Expression<Func<ServiceItem, ServiceItemDto>> ToServiceDto = s => new ServiceItemDto(
         s.Id, s.Code, s.Name, s.ShortName, s.Category, s.DepartmentId, s.BasePrice, s.TaxRate, s.SacCode, s.IsDiscountAllowed,
-        s.IsPriceEditable, s.Description, s.IsActive, s.Version, s.LocalName);
+        s.IsPriceEditable, s.Description, s.IsActive, s.Version, s.LocalNames);
 
     private static async Task<IResult> ListServices(
         [AsParameters] PageQuery query, ServiceCategory? category, Guid? departmentId, bool? active, HospitalDbContext db, CancellationToken ct)
@@ -856,7 +874,7 @@ internal static class OrganizationEndpoints
 
         service.Name = request.Name.Trim();
         service.ShortName = Clean(request.ShortName);
-        service.LocalName = Clean(request.LocalName);
+        service.LocalNames = CleanNames(request.LocalNames);
         service.Category = request.Category;
         service.DepartmentId = request.DepartmentId;
         service.BasePrice = Money.Round(request.BasePrice);
@@ -929,6 +947,7 @@ internal static class OrganizationEndpoints
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    // A state in India is kept as GST writes it ("TN" → "Tamil Nadu"), so what reads it can trust it.
     private static Address CleanAddress(Address? address) => address is null
         ? new Address()
         : new Address
@@ -937,10 +956,35 @@ internal static class OrganizationEndpoints
             Line2 = Clean(address.Line2),
             City = Clean(address.City),
             District = Clean(address.District),
-            State = Clean(address.State),
+            State = (AddressValidator.InIndia(address) ? IndianStates.Name(address.State) : null) ?? Clean(address.State),
             PinCode = Clean(address.PinCode),
             Country = Clean(address.Country) ?? "India",
         };
+
+    // A blank name is no name.
+    private static Dictionary<string, string> CleanNames(IReadOnlyDictionary<string, string>? names) =>
+        names?.Where(n => !string.IsNullOrWhiteSpace(n.Value)).ToDictionary(n => n.Key, n => n.Value.Trim(), StringComparer.Ordinal) ?? [];
+
+    /// <summary>
+    /// The languages a service may be named in, each marked when it is the local language of an active facility: the
+    /// editor offers a name in each of those, for the facility's rate list to print (<see cref="LocalLanguages"/>).
+    /// </summary>
+    private static async Task<IResult> LocalLanguagesAtFacilities(HospitalDbContext db, ISettingsService settings, CancellationToken ct)
+    {
+        var facilities = await db.Set<Facility>().AsNoTracking().Where(f => f.IsActive)
+            .Select(f => new { f.Id, f.Address, f.Gstin })
+            .ToListAsync(ct);
+        var local = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var facility in facilities)
+        {
+            if ((await LocalLanguages.OfFacilityAsync(settings, facility.Id, facility.Address, facility.Gstin, ct)).Language is { } language)
+            {
+                local.Add(language.Code);
+            }
+        }
+
+        return TypedResults.Ok(LocalLanguages.All.Select(l => new LocalLanguageItem(l.Code, l.Name, local.Contains(l.Code))).ToList());
+    }
 
     /// <summary>Field problems found against the database, answered together as one 400 validation problem.</summary>
     private sealed class FieldProblems

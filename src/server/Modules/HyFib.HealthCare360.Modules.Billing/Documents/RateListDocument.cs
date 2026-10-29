@@ -7,8 +7,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Documents;
 /// <summary>
 /// The hospital's rate list, to display at the counter and in the wards (Clinical Establishments Rules 2012, r.9(i): the
 /// rates of each service and facility, displayed in the local language as well as in English). Its own words are in
-/// English with the local language after them, when HC360 writes that language (<see cref="RateListLanguage"/>); each
-/// service's local name, where the hospital has entered one, is printed under its English name. It lists what a
+/// English with the facility's local language after them, when HC360 writes that language; each service's name in the
+/// local language, where the hospital has entered one, is printed under its English name. It lists what a
 /// self-paying patient is charged: registration, each doctor's consultation, a day in each class of room with its nursing
 /// and doctors' visits, every other service by category, and the packages.
 /// </summary>

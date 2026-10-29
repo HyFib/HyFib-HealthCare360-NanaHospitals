@@ -62,6 +62,29 @@ public sealed class OrganizationMasterValidationTests
             ["RegistrationNumber", "ConsultationFeeNew", "ConsultationFeeFollowUp", "Languages", "Bio"], ignoreOrder: true);
     }
 
+    [Theory]
+    [InlineData("TN")]
+    [InlineData("Tamilnadu")]
+    [InlineData("Pondicherry")]
+    [InlineData("")]
+    public void A_facilitys_state_may_be_written_as_people_write_it(string state) =>
+        new SaveFacilityRequestValidator().Validate(Facility() with { Address = Facility().Address! with { State = state } }).IsValid.ShouldBeTrue();
+
+    [Fact]
+    public void A_facilitys_state_must_be_one_of_india_unless_it_is_abroad()
+    {
+        var result = new SaveFacilityRequestValidator().Validate(Facility() with { Address = Facility().Address! with { State = "Tamizh" } });
+
+        result.Errors.Select(e => e.PropertyName).ShouldBe(["Address.State"]);
+        new SaveFacilityRequestValidator().Validate(Facility() with { Address = new Address { State = "Bavaria", Country = "Germany" } })
+            .IsValid.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_resident_is_a_doctor_and_needs_a_registration_number() =>
+        new SavePractitionerRequestValidator().Validate(Doctor() with { Kind = PractitionerKind.Resident, RegistrationNumber = null })
+            .Errors.Select(e => e.PropertyName).ShouldBe(["RegistrationNumber"]);
+
     [Fact]
     public void A_nurse_needs_no_council_registration() =>
         new SavePractitionerRequestValidator().Validate(Doctor() with { Kind = PractitionerKind.Nurse, RegistrationNumber = null }).IsValid.ShouldBeTrue();
@@ -91,10 +114,28 @@ public sealed class OrganizationMasterValidationTests
     }
 
     [Fact]
+    public void A_service_is_named_in_languages_by_their_codes()
+    {
+        var named = Service() with { LocalNames = new Dictionary<string, string> { ["ta"] = "முழு இரத்த எண்ணிக்கை", ["hi"] = "पूर्ण रक्त गणना" } };
+        new SaveServiceItemRequestValidator().Validate(named).IsValid.ShouldBeTrue();
+
+        var result = new SaveServiceItemRequestValidator().Validate(Service() with
+        {
+            LocalNames = new Dictionary<string, string> { ["Tamil"] = "முழு இரத்த எண்ணிக்கை", ["hi"] = new string('ह', 201) },
+        });
+
+        result.Errors.Count.ShouldBe(2);
+        result.Errors.ShouldAllBe(e => e.PropertyName.StartsWith("LocalNames[", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void A_service_like_the_seeded_ones_is_accepted() =>
         new SaveServiceItemRequestValidator().Validate(new SaveServiceItemRequest(
             "LAB-CBC", "Complete blood count", "CBC", ServiceCategory.Laboratory, null, 350m, 0m, "999312", true, false, null, true, 3))
             .IsValid.ShouldBeTrue();
+
+    private static SaveServiceItemRequest Service() =>
+        new("LAB-CBC", "Complete blood count", "CBC", ServiceCategory.Laboratory, null, 350m, 0m, "999312", true, false, null, true, 3);
 
     private static SaveFacilityRequest Facility() => new(
         "NH", "Nana Hospitals", "Nana Hospitals Private Limited", new Address { Line1 = "12 Anna Salai", City = "Chennai", State = "Tamil Nadu", PinCode = "600002" },

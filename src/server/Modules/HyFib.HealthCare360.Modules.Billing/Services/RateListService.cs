@@ -1,14 +1,18 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services.EventHandlers;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Billing.Services;
 
-/// <summary>
-/// A facility's rate list, and the language it is written in beside English (<see cref="RateListLanguage"/>; null when
-/// HC360 does not write the facility's language).
-/// </summary>
-public sealed record RateListView(RateList Rates, string? Language);
+/// <summary>A facility's rate list, and the languages it is printed in beside English.</summary>
+/// <param name="Rates">The rates.</param>
+/// <param name="Language">The language its own words are printed in beside English: the local language, when HC360 writes it.</param>
+/// <param name="LocalLanguage">The facility's local language (<see cref="LocalLanguages"/>): each service's name in it prints under the English one.</param>
+/// <param name="UnknownSetting">The hospital's choice of the facility's language, when it names no language.</param>
+/// <param name="UnknownState">The facility's state, when it names none and so gives no local language.</param>
+public sealed record RateListView(
+    RateList Rates, string? Language, IndianLanguage? LocalLanguage = null, string? UnknownSetting = null, string? UnknownState = null);
 
 /// <summary>
 /// The rates a self-paying patient is charged at a facility today, read from what a bill reads: the plan that prices a
@@ -22,23 +26,24 @@ public sealed class RateListService(
     IRoomClassDirectory roomClasses,
     TimeProvider time)
 {
-    private static readonly PractitionerKind[] Consulting = [PractitionerKind.Consultant, PractitionerKind.Visiting];
+    private static readonly PractitionerKind[] Doctors = [.. PractitionerKinds.Doctors];
 
     public async Task<RateListView?> ForFacilityAsync(Guid facilityId, CancellationToken ct)
     {
         var facility = await db.Set<Facility>().AsNoTracking()
             .Where(f => f.Id == facilityId && f.IsActive)
-            .Select(f => new { f.Gstin, f.Address.State })
+            .Select(f => new { f.Gstin, f.Address })
             .FirstOrDefaultAsync(ct);
         if (facility is null)
         {
             return null;
         }
 
+        var local = await LocalLanguages.OfFacilityAsync(settings, facilityId, facility.Address, facility.Gstin, ct);
         var plan = await tariffs.ResolvePlanAsync(PayerType.Self, null, facilityId, ct);
         var items = await db.Set<ServiceItem>().AsNoTracking()
             .Where(s => s.IsActive)
-            .Select(s => new RateListItem(s.Id, s.Code, s.Name, s.LocalName, s.Category, s.BasePrice, s.TaxRate, s.IsDiscountAllowed, s.IsPriceEditable))
+            .Select(s => new RateListItem(s.Id, s.Code, s.Name, s.LocalNames, s.Category, s.BasePrice, s.TaxRate, s.IsDiscountAllowed, s.IsPriceEditable))
             .ToListAsync(ct);
 
         var prices = plan is null
@@ -68,15 +73,22 @@ public sealed class RateListService(
                 Rooms = await roomClasses.ForFacilityAsync(facilityId, ct),
                 Packages = packages,
                 RegistrationFee = await settings.GetAsync<bool?>(VisitChargesHandler.RegistrationFeeSetting, facilityId, ct) ?? true,
+                LocalLanguage = local.Language?.Code,
             }),
-            RateListLanguage.For(facility.State, facility.Gstin));
+            local.Language is { } language && PatientLanguages.IsSupported(language.Code) ? language.Code : null,
+            local.Language,
+            local.UnknownSetting,
+            local.UnknownState);
     }
 
-    /// <summary>The consultants and visiting doctors who consult at the facility, with their department (or specialty).</summary>
+    /// <summary>
+    /// The doctors who consult at the facility (consultants, visiting doctors and residents: a visit with any of them is
+    /// charged at their fee), with their department (or specialty).
+    /// </summary>
     private async Task<IReadOnlyList<RateListDoctor>> DoctorsAsync(Guid facilityId, CancellationToken ct)
     {
         var doctors = await db.Set<Practitioner>().AsNoTracking()
-            .Where(p => p.IsActive && Consulting.Contains(p.Kind) && (p.FacilityIds.Count == 0 || p.FacilityIds.Contains(facilityId)))
+            .Where(p => p.IsActive && Doctors.Contains(p.Kind) && (p.FacilityIds.Count == 0 || p.FacilityIds.Contains(facilityId)))
             .Select(p => new { p.DisplayName, p.DepartmentId, p.SpecialtyId, p.ConsultationFeeNew, p.FollowUpValidityDays, p.AvailableForTelehealth })
             .ToListAsync(ct);
 

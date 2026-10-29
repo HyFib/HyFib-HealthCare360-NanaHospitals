@@ -1,6 +1,13 @@
 import type { LookupItem } from '@hc360/core';
 import type { FeatureDto } from '@/modules/features/api';
-import type { DepartmentDto, FacilityDto, PractitionerDto, ServiceItemDto, SpecialtyDto } from '@/modules/masters/api';
+import type {
+  DepartmentDto,
+  FacilityDto,
+  LocalLanguageItem,
+  PractitionerDto,
+  ServiceItemDto,
+  SpecialtyDto,
+} from '@/modules/masters/api';
 import type { NumberSeriesItem, NumberSeriesList } from '@/modules/numbering/api';
 import type { PrintTemplateItem, PrintTemplateList } from '@/modules/print-templates/api';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers, type FakeRequest } from '../fakeApi';
@@ -247,7 +254,7 @@ const service = (
   description: null,
   isActive: true,
   version: 1,
-  localName: null,
+  localNames: {},
   ...more,
 });
 
@@ -446,6 +453,12 @@ const PRINT_TEMPLATES: PrintTemplateList = {
   ],
 };
 
+/** A Tamil Nadu hospital: services may be named in Tamil, and in any other language of India. */
+const LOCAL_LANGUAGES: LocalLanguageItem[] = [
+  { code: 'hi', name: 'Hindi', atFacility: false },
+  { code: 'ta', name: 'Tamil', atFacility: true },
+];
+
 export const ANSWERS: FakeAnswers = {
   'GET /api/v1/masters/facilities': FACILITIES,
   'GET /api/v1/masters/facilities/*': byId(FACILITIES),
@@ -460,6 +473,7 @@ export const ANSWERS: FakeAnswers = {
   // Departments and practitioners are answered by the clinical screens' data (accessibility/fixtures/clinical.ts).
   'GET /api/v1/masters/lookups/specialties': SPECIALTY_LOOKUP,
   'GET /api/v1/masters/lookups/services': lookupServices,
+  'GET /api/v1/masters/lookups/local-languages': LOCAL_LANGUAGES,
   'GET /api/v1/admin/features': FEATURES,
   'GET /api/v1/admin/number-series': NUMBER_SERIES,
   'GET /api/v1/admin/print-templates': PRINT_TEMPLATES,

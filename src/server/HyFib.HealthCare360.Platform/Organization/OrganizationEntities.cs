@@ -77,6 +77,17 @@ public enum PractitionerKind
     Other,
 }
 
+/// <summary>
+/// The practitioners who are doctors: they need their medical council registration to consult and sign, and a
+/// consultation with one is charged at their fee (the rate list lists each of them).
+/// </summary>
+public static class PractitionerKinds
+{
+    public static IReadOnlyList<PractitionerKind> Doctors { get; } = [PractitionerKind.Consultant, PractitionerKind.Resident, PractitionerKind.Visiting];
+
+    public static bool IsDoctor(PractitionerKind kind) => Doctors.Contains(kind);
+}
+
 /// <summary>A doctor or other clinician. Linked to a user account for sign-in and to HR for employment.</summary>
 public sealed class Practitioner : AuditableEntity
 {
@@ -171,8 +182,9 @@ public sealed class ServiceItem : AuditableEntity
     public bool IsActive { get; set; } = true;
 
     /// <summary>
-    /// The name in the hospital's local language, printed beside the English name on the rate list (Clinical
-    /// Establishments Rules 2012, r.9(i): rates displayed in the local language as well as in English).
+    /// The name in local languages, by language code (<see cref="Localization.LocalLanguages"/>: "ta", "hi", "kn"). The
+    /// rate list of a facility prints the one in its local language under the English name (Clinical Establishments
+    /// Rules 2012, r.9(i): rates displayed in the local language as well as in English).
     /// </summary>
-    public string? LocalName { get; set; }
+    public Dictionary<string, string> LocalNames { get; set; } = [];
 }

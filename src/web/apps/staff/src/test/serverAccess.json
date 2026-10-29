@@ -1294,6 +1294,7 @@
     "/api/v1/masters/facilities masters.read",
     "/api/v1/masters/facilities/{id:guid} masters.read",
     "/api/v1/masters/lookups/departments masters.read",
+    "/api/v1/masters/lookups/local-languages masters.read",
     "/api/v1/masters/lookups/practitioners masters.read",
     "/api/v1/masters/lookups/services masters.read",
     "/api/v1/masters/lookups/specialties masters.read",

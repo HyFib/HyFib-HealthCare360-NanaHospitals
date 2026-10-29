@@ -25,7 +25,7 @@ Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Scr
 | Departments | `/setup/departments` | Kind, speciality, head of department, location, queue token prefix and position in lists, for the signed-in facility |
 | Specialities | `/setup/specialties` | Shared by every facility; patients choose one when booking online |
 | Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), HPR ID (ABDM's Healthcare Professionals Registry, which identifies the doctor in ABDM health records and NHCX claims), department, speciality, facilities, fees and follow-up days, online and video booking, languages, profile, photo and signature |
-| Services and prices | `/setup/services` | Category, department, base price, GST, SAC, whether discounts and price changes are allowed, and the name in the local language that the rate list prints under the English name (billing.md, *The rate list*) |
+| Services and prices | `/setup/services` | Category, department, base price, GST, SAC, whether discounts and price changes are allowed, and a name in each facility's local language, which that facility's rate list prints under the English name (billing.md, *The rate list*) |
 | Number formats | `/setup/numbering` | The format of every number the hospital issues, set before the first one if needed (`admin.numbering.manage`; see `docs/modules/numbering.md`) |
 | Print templates | `/setup/print-templates` | How each kind of document prints: the letterhead or pre-printed stationery, the logo, a closing note and the paper, hospital-wide or for one facility (`admin.print.manage`; see `docs/modules/print-templates.md`) |
 | Features | `/setup/features` | Switch the patient portal and video consultations on or off (`admin.settings.manage`; see `docs/modules/features.md`) |
@@ -63,6 +63,7 @@ embeds), keeping PNG transparency for logos and signatures, then stored in the f
 | GET | `/services?page&pageSize&search&sort&desc&category&departmentId&active` · `/services/{id}` | masters.read | → `PagedResult<ServiceItemDto>` (sort: code, name, price, category) · `ServiceItemDto` |
 | POST · PUT | `/services` · `/services/{id}` | masters.manage | `SaveServiceItemRequest` (+`version`) → 201 · 204 |
 | GET | `/lookups/departments?kind` · `/lookups/specialties` · `/lookups/practitioners?departmentId&search` · `/lookups/services?category&search` | masters.read | → active items for pickers (at most 50 doctors or services) |
+| GET | `/lookups/local-languages` | masters.read | → `LocalLanguageItem[]`: the languages a service may be named in (`code`, `name`), `atFacility` when one is an active facility's local language (billing.md, *The rate list*) |
 
 A save replaces every field, so screens send the whole record.
 
@@ -77,6 +78,12 @@ A save replaces every field, so screens send the whole record.
   decimals, 12 languages), so a long value is a field error rather than a server error. Doctors (consultant, visiting,
   resident) need their council registration number. An HPR ID is 14 digits, typed in groups or run together, and kept
   written `xx-xxxx-xxxx-xxxx`.
+- **A facility's state is one of India's.** In an Indian address it is read however it is commonly written ("TN",
+  "Tamilnadu", "Orissa", ISO and vehicle codes; `SharedKernel/IndianStates.cs`) and saved as GST writes it ("Tamil
+  Nadu"); one that names no state or union territory is a field error on `address.state`. The rate list's local
+  language is read from it.
+- **A service's names in other languages** are keyed by language code (`ta`, `hi`, `kn`…; `LocalLanguages.All`: the
+  Eighth Schedule's 22 and the official languages of Mizoram, Tripura and Meghalaya); a blank name is no name.
 - **References in use.** A newly chosen speciality, department, head of department or facility must be in use. One chosen
   earlier and since taken out of use doesn't block other edits. A practitioner's or service's department may belong to
   any facility.

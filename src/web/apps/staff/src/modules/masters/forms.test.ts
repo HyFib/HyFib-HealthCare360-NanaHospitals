@@ -18,6 +18,7 @@ import {
   toLetterheadRequest,
   toPractitionerForm,
   toPractitionerRequest,
+  serviceNameLanguages,
   toServiceForm,
   toServiceRequest,
   withCurrentItem,
@@ -276,7 +277,7 @@ describe('service form', () => {
     description: null,
     isActive: true,
     version: 4,
-    localName: 'முழு இரத்த எண்ணிக்கை',
+    localNames: { ta: 'முழு இரத்த எண்ணிக்கை' },
   };
 
   it('round-trips the GST rate through the picker', () => {
@@ -290,13 +291,29 @@ describe('service form', () => {
     expect(result.error?.issues.map((issue) => issue.path[0])).toEqual(expect.arrayContaining(['code', 'sacCode']));
   });
 
-  it('keeps the name in the local language, and sends none for a blank one', () => {
-    const values = toServiceForm(service);
-    expect(values.localName).toBe('முழு இரத்த எண்ணிக்கை');
-    expect(toServiceRequest(values, service, service.version).localName).toBe('முழு இரத்த எண்ணிக்கை');
-    expect(toServiceRequest({ ...values, localName: '  ' }, service, service.version).localName).toBeNull();
-    expect(serviceSchema.safeParse({ ...values, localName: 'x'.repeat(201) }).error?.issues[0]?.path).toEqual([
-      'localName',
+  it("offers a name in each facility's local language, and keeps one the service has in another", () => {
+    const languages = [
+      { code: 'hi', name: 'Hindi', atFacility: true },
+      { code: 'kn', name: 'Kannada', atFacility: false },
+      { code: 'ta', name: 'Tamil', atFacility: false },
+    ];
+    const offered = serviceNameLanguages(service, languages);
+    expect(offered.map((l) => l.code)).toEqual(['hi', 'ta']);
+
+    const values = toServiceForm(
+      service,
+      offered.map((l) => l.code),
+    );
+    expect(values.localNames).toEqual({ hi: '', ta: 'முழு இரத்த எண்ணிக்கை' });
+    expect(toServiceRequest(values, service, service.version).localNames).toEqual({ ta: 'முழு இரத்த எண்ணிக்கை' });
+  });
+
+  it('sends a name in each language it was given, and none for a blank one', () => {
+    const values = { ...toServiceForm(service, ['hi', 'ta']), localNames: { hi: ' पूर्ण रक्त गणना ', ta: '  ' } };
+    expect(toServiceRequest(values, service, service.version).localNames).toEqual({ hi: 'पूर्ण रक्त गणना' });
+    expect(serviceSchema.safeParse({ ...values, localNames: { hi: 'x'.repeat(201) } }).error?.issues[0]?.path).toEqual([
+      'localNames',
+      'hi',
     ]);
   });
 

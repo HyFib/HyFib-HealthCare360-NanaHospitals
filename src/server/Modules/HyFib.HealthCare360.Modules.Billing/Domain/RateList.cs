@@ -1,11 +1,12 @@
-using HyFib.HealthCare360.Platform.Localization;
-
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
 
-/// <summary>A service of the catalogue as the rate list prices it (free of EF types so the rules stay unit-testable).</summary>
+/// <summary>
+/// A service of the catalogue as the rate list prices it (free of EF types so the rules stay unit-testable), with its
+/// names in local languages by language code.
+/// </summary>
 public sealed record RateListItem(
-    Guid Id, string Code, string Name, string? LocalName, ServiceCategory Category, decimal BasePrice, decimal TaxRate,
-    bool IsDiscountAllowed, bool IsPriceEditable);
+    Guid Id, string Code, string Name, IReadOnlyDictionary<string, string>? LocalNames, ServiceCategory Category, decimal BasePrice,
+    decimal TaxRate, bool IsDiscountAllowed, bool IsPriceEditable);
 
 /// <summary>The plan that prices a self-paying patient: its concession and its bed-class multipliers.</summary>
 public sealed record RateListPlan(Guid Id, string Name, decimal ConcessionPercent, IReadOnlyDictionary<Guid, decimal> BedMultipliers)
@@ -45,6 +46,9 @@ public sealed record RateListInput
 
     /// <summary>Whether a patient's first visit is charged the registration fee (REG-NEW).</summary>
     public bool RegistrationFee { get; init; } = true;
+
+    /// <summary>The facility's local language (<c>LocalLanguages</c>): each service's name in it prints under the English one.</summary>
+    public string? LocalLanguage { get; init; }
 }
 
 /// <summary>
@@ -121,8 +125,12 @@ public static class RateListBuilder
         ArgumentNullException.ThrowIfNull(input);
         var items = input.Items.ToDictionary(i => i.Id);
         var byCode = input.Items.GroupBy(i => i.Code, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        RateLine Line(RateListItem item, decimal multiplier = 1m, decimal? unitPriceOverride = null, RoomCharge? room = null) =>
-            Price(item, input.PlanPrices.GetValueOrDefault(item.Id) ?? [], input.AsOn, input.Plan?.ConcessionPercent ?? 0m, multiplier, unitPriceOverride, room);
+        // Each line carries the service's name in the facility's local language, when it has one.
+        RateLine Line(RateListItem item, decimal multiplier = 1m, decimal? unitPriceOverride = null, RoomCharge? room = null)
+        {
+            var line = Price(item, input.PlanPrices.GetValueOrDefault(item.Id) ?? [], input.AsOn, input.Plan?.ConcessionPercent ?? 0m, multiplier, unitPriceOverride, room);
+            return input.LocalLanguage is { } language && item.LocalNames?.GetValueOrDefault(language) is { Length: > 0 } name ? line with { LocalName = name } : line;
+        }
 
         // A doctor's own fee takes the place of the consultation's price, as on a bill (PriceResolver.ConsultationOverride).
         var consultation = byCode.GetValueOrDefault(ConsultationCode);
@@ -194,41 +202,6 @@ public static class RateListBuilder
             ? RoomRentGst.RateFor(kind, quote.UnitPrice - Money.PercentOf(quote.UnitPrice, discount))
             : Math.Max(item.TaxRate, 0m);
         var amounts = ChargeAmounts.Calculate(1m, quote.UnitPrice, discount, taxRate);
-        return new RateLine(item.Code, item.Name, item.LocalName, amounts.Taxable, taxRate, amounts.Net, item.IsPriceEditable && unitPriceOverride is null);
-    }
-}
-
-/// <summary>
-/// The language a facility's rate list is written in beside English (Clinical Establishments Rules 2012, r.9(i): the
-/// local language as well as English): the language of the facility's state, when HC360 writes it. Tamil in Tamil Nadu
-/// and Puducherry; Hindi in the states and union territory whose official language it is. Null elsewhere: the list's
-/// own words are then in English only, and each service's local name is the hospital's to enter.
-/// </summary>
-public static class RateListLanguage
-{
-    // GST state codes (Gstin.States).
-    private static readonly Dictionary<string, string> ByState = new(StringComparer.Ordinal)
-    {
-        ["33"] = PatientLanguages.Tamil, // Tamil Nadu
-        ["34"] = PatientLanguages.Tamil, // Puducherry
-        ["02"] = PatientLanguages.Hindi, // Himachal Pradesh
-        ["05"] = PatientLanguages.Hindi, // Uttarakhand
-        ["06"] = PatientLanguages.Hindi, // Haryana
-        ["07"] = PatientLanguages.Hindi, // Delhi
-        ["08"] = PatientLanguages.Hindi, // Rajasthan
-        ["09"] = PatientLanguages.Hindi, // Uttar Pradesh
-        ["10"] = PatientLanguages.Hindi, // Bihar
-        ["20"] = PatientLanguages.Hindi, // Jharkhand
-        ["22"] = PatientLanguages.Hindi, // Chhattisgarh
-        ["23"] = PatientLanguages.Hindi, // Madhya Pradesh
-    };
-
-    /// <summary>The language of the facility's state: the state of its address, or failing that of its GSTIN.</summary>
-    public static string? For(string? state, string? gstin)
-    {
-        var named = state?.Trim();
-        var code = Gstin.States.FirstOrDefault(s => string.Equals(s.Value, named, StringComparison.OrdinalIgnoreCase)).Key
-                   ?? (Gstin.Normalize(gstin) is { Length: >= 2 } number && Gstin.States.ContainsKey(number[..2]) ? number[..2] : null);
-        return code is not null && ByState.TryGetValue(code, out var language) ? language : null;
+        return new RateLine(item.Code, item.Name, null, amounts.Taxable, taxRate, amounts.Net, item.IsPriceEditable && unitPriceOverride is null);
     }
 }

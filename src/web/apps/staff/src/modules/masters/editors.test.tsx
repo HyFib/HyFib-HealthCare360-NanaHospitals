@@ -195,7 +195,13 @@ describe('the service editor', () => {
   function ServiceHarness({ currentTaxRate }: { currentTaxRate: number | null }) {
     const form = useForm<ServiceForm>({ defaultValues: toServiceForm(null) });
     return (
-      <ServiceFields control={form.control} editing={false} departmentOptions={[]} currentTaxRate={currentTaxRate} />
+      <ServiceFields
+        control={form.control}
+        editing={false}
+        departmentOptions={[]}
+        currentTaxRate={currentTaxRate}
+        languages={[]}
+      />
     );
   }
 

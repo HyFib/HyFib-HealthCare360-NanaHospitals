@@ -7,7 +7,13 @@ import { createFileRoute } from '@tanstack/react-router';
 import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { PACKAGE_USE_LABEL, SERVICE_CATEGORY_LABEL } from '@/modules/billing/labels';
-import { RATE_LIST_PATH, rateListQueries, type RateLine, type RateList } from '@/modules/billing/rateListApi';
+import {
+  languageNotes,
+  RATE_LIST_PATH,
+  rateListQueries,
+  type RateLine,
+  type RateList,
+} from '@/modules/billing/rateListApi';
 import { Amount, NoAccess } from '@/modules/billing/ui';
 
 export const Route = createFileRoute('/_app/billing/rate-list')({
@@ -21,8 +27,6 @@ const READERS = [
   'billing.ip.manage',
   'billing.payments.collect',
 ] as const;
-
-const LANGUAGE_NAME: Record<string, string> = { hi: 'Hindi', ta: 'Tamil' };
 
 /**
  * The rate list (Clinical Establishments Rules 2012, r.9(i)): what a self-paying patient is charged today, worked out as
@@ -42,7 +46,6 @@ function RateListPage() {
   }
 
   const view = rateList.data;
-  const language = view?.language ? (LANGUAGE_NAME[view.language] ?? view.language) : null;
   return (
     <Page>
       <PageHeader
@@ -55,15 +58,12 @@ function RateListPage() {
         icon={<TagMultipleRegular />}
         actions={<DocumentButtons path={RATE_LIST_PATH} printLabel="Print for display" disabled={!view} />}
       />
-      {view && (
-        <MessageBar intent={language ? 'info' : 'warning'}>
-          <MessageBarBody>
-            {language
-              ? `The printed list is in English and ${language}, the language of this facility's state. Display it where patients can read it, and print it again when prices change.`
-              : "The printed list's own words are in English only: HC360 writes Hindi and Tamil, and this facility's state has neither, or its address has no state. Each service's name in the local language still prints under its English name: enter them in Setup › Services."}
-          </MessageBarBody>
-        </MessageBar>
-      )}
+      {view &&
+        languageNotes(view).map((note) => (
+          <MessageBar key={note.text} intent={note.intent}>
+            <MessageBarBody>{note.text}</MessageBarBody>
+          </MessageBar>
+        ))}
       {rateList.isLoading && <LoadingState label="Working out the rates…" />}
       {rateList.error && <ErrorState error={rateList.error} onRetry={() => void rateList.refetch()} />}
       {view && <RateTables rates={view.rates} />}
