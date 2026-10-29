@@ -8,10 +8,12 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    // Build output, and what a Playwright run leaves behind (its HTML report holds the trace viewer's own scripts).
+    // Build output, and what a Playwright run leaves behind (its HTML report holds the trace viewer's own scripts). The
+    // demo's published copy (demo/site) is build output too.
     ignores: [
       '**/dist/**',
       'demo/out/**',
+      'demo/site/**',
       '**/node_modules/**',
       '**/routeTree.gen.ts',
       '**/coverage/**',

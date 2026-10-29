@@ -14,7 +14,7 @@ It is made in five steps, each a script in this folder:
 | 2. The recording | `capture.mjs` | Signs in as each role in Chromium (the patient on the portal), walks its screens (`lib/walk.mjs`) and keeps every answer   |
 | 3. The build     | `build.mjs`   | Scrubs the answers, packs them into data files, and builds both apps around a replay (`app/`)                              |
 | 4. The check     | `verify.mjs`  | Walks the built demo the same way and fails when a guided place has unrecorded data or errors                              |
-| 5. Publishing    | —             | The built folder is one page with its files: publish it as an Artifact (or any static host)                                |
+| 5. Publishing    | `site/`       | The checked folder, committed as `site/`, is what https://hc360.hyfib.com serves (below)                                   |
 
 The replay's rules (what it answers a search, another day, another role, a write, a patient's sign-in) have tests of
 their own, run in CI: `node --test "demo/**/*.test.ts"`. CI also type-checks the demo against each app it starts:
@@ -71,6 +71,39 @@ The demo's clock starts where the story stopped the server's, and runs on from t
 The patient (`PORTAL_PATIENT` in `app/personas.ts`) signs in to the portal on the server's patients' port
 (`HC360_PORTAL`, `https://localhost:7361` by default) with a code sent by SMS. A demo server has no SMS gateway, so
 `capture.mjs` reads the code the server queued for one from its database, with `psql` and `HC360_DEMO_DB`.
+
+## Publishing at hc360.hyfib.com
+
+https://hc360.hyfib.com serves `site/`: a built folder that `verify.mjs` checked, committed as it was built. The _Demo
+site_ workflow (`.github/workflows/demo-site.yml`) deploys it with GitHub Pages when it changes on `main`, and can be
+run by hand. After a deploy it fetches each file from the live site, and fails if one is not the file committed.
+
+`site/` holds the demo built from the head of #138 (6a7b6e5): 12 roles, 1,336 screens walked, no unrecorded calls, no
+browser errors, and 30 of 30 guided places. Building that commit again from the same recordings gives the same 16 files,
+byte for byte. To publish a new recording, make it and check it as above, then replace the folder in a pull request:
+
+```bash
+rm -rf demo/site && cp -r demo/out/demo demo/site
+```
+
+It is set up once, by whoever administers the repository and hyfib.com's DNS. Until then, a run of the workflow says
+what is missing and deploys nothing.
+
+1. **DNS**: a `CNAME` record for `hc360.hyfib.com` with the value `hyfib.github.io`.
+2. **Settings › Pages**: Source _GitHub Actions_, and Custom domain `hc360.hyfib.com`. Once GitHub has checked the domain
+   and issued its certificate, tick _Enforce HTTPS_.
+3. **The organization's Settings › Pages**: verify `hyfib.com`, so that no other GitHub account can serve a site under
+   it.
+
+Cloudflare Pages (free) can serve the same folder instead, with GitHub Pages left off:
+
+1. In Cloudflare, **Workers & Pages › Create › Pages › Connect to Git**: this repository, production branch `main`, no
+   framework and no build command, build output directory `src/web/demo/site`.
+2. In the project, **Custom domains**: `hc360.hyfib.com`. When hyfib.com's DNS is on Cloudflare, the record is made for
+   you; otherwise add a `CNAME` for `hc360.hyfib.com` to the project's `pages.dev` address.
+
+Cloudflare then deploys on each push to `main`. Run the _Demo site_ workflow by hand with _check only_ to check that
+https://hc360.hyfib.com serves the committed files.
 
 ## What it replays, and what it does not
 
