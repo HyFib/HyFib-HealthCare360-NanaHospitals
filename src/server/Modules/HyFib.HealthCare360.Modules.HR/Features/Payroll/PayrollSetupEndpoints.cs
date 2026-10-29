@@ -60,6 +60,14 @@ internal static class PayrollSetupEndpoints
                 return Error.Rule("salary_component.basic", "BASIC must stay a fixed earning counted in wages; statutory deductions are computed from it.").ToProblem();
             }
 
+            // Payroll inputs name their pay head by its code: changed, theirs would no longer be found, and an earning would
+            // count as wages whatever its pay head says.
+            if (found.Code != code && await db.Set<PayrollInput>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(i => i.ComponentCode == found.Code, ct))
+            {
+                return Error.Rule("salary_component.code_used",
+                    $"Pay head {found.Code} has payroll inputs, which name it by its code: keep the code and change the name, or add a new pay head.").ToProblem();
+            }
+
             component = found;
             if (request.Version is { } version)
             {

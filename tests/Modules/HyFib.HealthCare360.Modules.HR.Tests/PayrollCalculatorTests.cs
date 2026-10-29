@@ -34,9 +34,11 @@ public sealed class PayrollCalculatorTests
         bool esi = true,
         decimal? earlierHalfYear = null,
         bool pfOnActual = false,
+        int year = 2026,
+        int month = 9,
         params PayrollAdjustmentInput[] adjustments) =>
         PayrollCalculator.Calculate(new PayrollCalculationInput(
-            2026, 9, 30, payableDays, lines, adjustments, new StatutoryProfile(pf, pfOnActual, esi, pt), tds, tdsOverride, earlierHalfYear));
+            year, month, 30, payableDays, lines, adjustments, new StatutoryProfile(pf, pfOnActual, esi, pt), tds, tdsOverride, earlierHalfYear));
 
     private static decimal Line(PayrollCalculationResult result, string code) => result.Lines.Single(l => l.Code == code).Amount;
 
@@ -190,6 +192,22 @@ public sealed class PayrollCalculatorTests
         result.PfWage.ShouldBe(10_000m);
         result.EmployeePf.ShouldBe(1_200m);
         result.EmployerPf.ShouldBe(1_200m);
+    }
+
+    /// <summary>
+    /// A month before the Code (in force 21 November 2025) keeps PF on basic pay, as it was paid and filed: processed late, or
+    /// again after it was reopened, it does not change.
+    /// </summary>
+    [Theory]
+    [InlineData(2025, 10, 6_000)]
+    [InlineData(2025, 11, 10_000)]
+    [InlineData(2026, 4, 10_000)]
+    public void Pf_follows_the_rule_of_the_payroll_month(int year, int month, double pfWage)
+    {
+        var result = Calculate(Structure(6_000, Special(2_000)), year: year, month: month,
+            adjustments: [new PayrollAdjustmentInput("OT", "Overtime", SalaryComponentKind.Earning, 8_000, WageTreatment.Excluded)]);
+
+        result.PfWage.ShouldBe((decimal)pfWage);
     }
 
     [Fact]

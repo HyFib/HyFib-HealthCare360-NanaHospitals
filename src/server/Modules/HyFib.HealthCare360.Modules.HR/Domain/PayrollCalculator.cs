@@ -104,9 +104,12 @@ public static class PayrollCalculator
 
         var gross = lines.Where(l => l.Kind == SalaryComponentKind.Earning).Sum(l => l.Amount);
 
-        var pfWages = Money.Round(ProvidentFund.Wages(
-            earned.Where(e => e.Treatment == WageTreatment.Wages).Sum(e => e.Amount),
-            earned.Where(e => e.Treatment == WageTreatment.Excluded).Sum(e => e.Amount)));
+        // A month before the Code keeps PF on basic pay, as it was paid and filed then.
+        var pfWages = ProvidentFund.OnCodeWages(input.Year, input.Month)
+            ? Money.Round(ProvidentFund.Wages(
+                earned.Where(e => e.Treatment == WageTreatment.Wages).Sum(e => e.Amount),
+                earned.Where(e => e.Treatment == WageTreatment.Excluded).Sum(e => e.Amount)))
+            : earnedBasic;
         var pfWage = input.Statutory.PfApplicable ? ProvidentFund.Wage(pfWages, input.Statutory.PfOnActualBasic) : 0;
         var employeePf = ProvidentFund.EmployeeContribution(pfWage);
         var employerPf = ProvidentFund.EmployerContribution(pfWage);

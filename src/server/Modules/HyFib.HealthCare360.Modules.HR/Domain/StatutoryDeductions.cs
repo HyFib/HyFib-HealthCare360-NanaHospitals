@@ -13,6 +13,16 @@ public static class ProvidentFund
     public const decimal EmployerRate = 0.12m;
 
     /// <summary>
+    /// The first payroll month PF is taken on wages as the Code defines them: November 2025, the month it came into force
+    /// (21 November), whose wages are paid after that day. A month before keeps the rule HC360 applied then, PF on basic
+    /// pay, so processing it late, or again after reopening it, does not change what was paid and filed.
+    /// </summary>
+    public static readonly DateOnly CodeWagesFrom = new(2025, 11, 1);
+
+    /// <summary>Whether the payroll month takes PF on wages as the Code defines them (<see cref="CodeWagesFrom"/>).</summary>
+    public static bool OnCodeWages(int year, int month) => new DateOnly(year, month, 1) >= CodeWagesFrom;
+
+    /// <summary>
     /// The month's PF wages: the wages, and of the pay left out of them by clauses (a) to (i), what comes to more than half
     /// of the two together (s.2(88), first proviso).
     /// </summary>

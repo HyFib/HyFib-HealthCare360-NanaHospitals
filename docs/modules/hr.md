@@ -192,7 +192,9 @@ Calculators (pure, unit-tested):
 
   For example, ₹20,000 of pay with ₹8,000 of wages and ₹12,000 left out gives PF wages of ₹10,000. The seeded house rent
   (`HRA`), conveyance (`CONV`) and overtime (`OT`) are `Excluded`; the other seeded earnings are wages. One-off inputs
-  count as their pay head does.
+  count as their pay head does, which they name by its code: a pay head with payroll inputs keeps its code (its name can
+  change). Payroll months before November 2025, the month the Code came into force, keep PF on earned basic, as it was
+  paid and filed then, when processed late or reopened.
 * **ESI** (`EmployeeStateInsurance`): 0.75 % of earned gross (employer 3.25 %) when *contracted* gross ≤ ₹21,000,
   rounded up to the next rupee.
 * **Professional tax** (`ProfessionalTaxCalculator`): state slab table. Monthly states apply to the month's gross,

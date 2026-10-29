@@ -51,6 +51,39 @@ public sealed class PfWagesTests(HospitalServer server)
         payslip.EmployerPf.ShouldBe(1_200m);
     }
 
+    /// <summary>
+    /// Payroll inputs name their pay head by its code: a pay head with inputs keeps its code, so overtime entered for the
+    /// month is not counted as wages because its pay head was renamed. Its name can still change.
+    /// </summary>
+    [Fact]
+    public async Task A_pay_head_with_payroll_inputs_keeps_its_code()
+    {
+        var hr = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var code = "OTX" + Letters(5).ToUpperInvariant();
+        var created = await hr.PostAsync<Created>("/api/v1/hr/payroll/components", new SaveSalaryComponentRequest(
+            code, "Extra overtime", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 0, true, 60, true, null, WageTreatment.Excluded));
+        var employee = await hr.PostAsync<EmployeeCreated>("/api/v1/hr/employees/", Employee());
+        var run = await RunAsync(hr, 2026, 6);
+        await hr.PostAsync<Guid>($"/api/v1/hr/payroll/runs/{run}/inputs",
+            new SavePayrollInputRequest(employee.Id, PayrollInputKind.Earning, code, "Overtime in June", 2_000));
+        var pathOf = $"/api/v1/hr/payroll/components/{created.Id}";
+        var version = (await hr.GetAsync<List<SalaryComponentDto>>("/api/v1/hr/payroll/components")).Single(c => c.Id == created.Id).Version;
+
+        using var renamed = await hr.SendRawAsync(HttpMethod.Put, pathOf, new SaveSalaryComponentRequest(
+            code + "2", "Extra overtime", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 0, true, 60, true, version));
+        using var retitled = await hr.SendRawAsync(HttpMethod.Put, pathOf, new SaveSalaryComponentRequest(
+            code, "Overtime beyond the roster", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 0, true, 60, true, version));
+
+        renamed.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        (await renamed.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("salary_component.code_used");
+        retitled.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var components = await hr.GetAsync<List<SalaryComponentDto>>("/api/v1/hr/payroll/components");
+        components.Single(c => c.Id == created.Id).ShouldSatisfyAllConditions(
+            c => c.Code.ShouldBe(code),
+            c => c.Name.ShouldBe("Overtime beyond the roster"),
+            c => c.WageTreatment.ShouldBe(WageTreatment.Excluded));
+    }
+
     /// <summary>The month's payroll: a new one, or the one already made for that month by another test.</summary>
     private static async Task<Guid> RunAsync(ApiClient hr, int year, int month)
     {
