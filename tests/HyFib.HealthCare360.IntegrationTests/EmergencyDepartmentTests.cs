@@ -95,13 +95,18 @@ public sealed class EmergencyDepartmentTests(HospitalServer server)
         (await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{visit.Id}")).Status.ShouldBe(VisitStatus.Completed);
     }
 
-    /// <summary>A new patient checked in as an emergency (on the ER board, untriaged).</summary>
-    internal static async Task<(Guid PatientId, VisitDetail Visit)> EmergencyVisitAsync(ApiClient frontOffice)
+    /// <summary>
+    /// A new patient checked in as an emergency (on the ER board, untriaged): a man born between 1985 and 1995, unless
+    /// <paramref name="gender"/> and <paramref name="dateOfBirth"/> say otherwise.
+    /// </summary>
+    internal static async Task<(Guid PatientId, VisitDetail Visit)> EmergencyVisitAsync(
+        ApiClient frontOffice, Gender gender = Gender.Male, DateOnly? dateOfBirth = null)
     {
         var departments = await frontOffice.GetAsync<List<LookupItem>>("/api/v1/masters/lookups/departments");
         var created = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: TestPatients.FirstName("Senthil"), MiddleName: null, LastName: "Casualty" + Letters(8), Gender: Gender.Male,
-            DateOfBirth: new DateOnly(1985, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
+            Title: gender == Gender.Female ? "Ms." : "Mr.", FirstName: TestPatients.FirstName(gender == Gender.Female ? "Kavya" : "Senthil"), MiddleName: null,
+            LastName: "Casualty" + Letters(8), Gender: gender,
+            DateOfBirth: dateOfBirth ?? new DateOnly(1985, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => Random.Shared.Next(10))), AlternatePhone: null, Email: null, Address: null,
             BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
             EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null, Category: null,

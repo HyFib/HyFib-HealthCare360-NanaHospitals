@@ -8442,6 +8442,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("AttendantKind")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("attendant_kind");
+
+                    b.Property<string>("AttendantName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("attendant_name");
+
                     b.Property<string>("BroughtBy")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -8462,6 +8472,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<bool?>("ConsciousOnArrival")
                         .HasColumnType("boolean")
                         .HasColumnName("conscious_on_arrival");
+
+                    b.Property<string>("ConsentGivenBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consent_given_by");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -8489,6 +8504,33 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("doctor_registration_number");
+
+                    b.Property<DateTimeOffset?>("ExaminationEndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("examination_ended_at");
+
+                    b.Property<DateTimeOffset?>("ExaminationStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("examination_started_at");
+
+                    b.Property<string>("ExaminerGender")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("examiner_gender");
+
+                    b.Property<Guid?>("ExaminerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("examiner_id");
+
+                    b.Property<string>("ExaminerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("examiner_name");
+
+                    b.Property<string>("ExaminerRegistration")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("examiner_registration");
 
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
@@ -8522,6 +8564,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("intimation_mode");
 
+                    b.Property<string>("InvestigatingOfficer")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("investigating_officer");
+
+                    b.Property<bool>("IsChild")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_child");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
@@ -8551,6 +8602,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("received_by");
+
+                    b.Property<DateTimeOffset?>("ReportForwardedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("report_forwarded_at");
+
+                    b.Property<string>("ReportedTo")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reported_to");
 
                     b.Property<bool?>("SmellOfAlcohol")
                         .HasColumnType("boolean")

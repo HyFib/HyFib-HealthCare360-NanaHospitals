@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Numbering;
+using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Realtime;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
@@ -49,7 +50,7 @@ internal sealed class EmergencyService(
                 var visit = visits.GetValueOrDefault(c.VisitId);
                 var mlc = mlcs.GetValueOrDefault(c.VisitId);
                 return new ErBoardRow(
-                    c.Id, c.VisitId, c.PatientId, person.Name, person.Uhid, person.Gender, person.AgeYears, c.ArrivedAt, c.ArrivalMode, c.Level,
+                    c.Id, c.VisitId, c.PatientId, person.Name, person.Uhid, person.Gender?.ToString(), person.AgeYears, c.ArrivedAt, c.ArrivalMode, c.Level,
                     complaints.GetValueOrDefault(c.Id) ?? visit?.ChiefComplaint, Minutes(c.ArrivedAt, now), c.TriagedAt is { } t ? Minutes(c.ArrivedAt, t) : null,
                     c.DoctorSeenAt is { } d ? Minutes(c.ArrivedAt, d) : null, c.DoctorName, visit?.IsMlc ?? false, mlc?.Number ?? visit?.MlcNumber,
                     mlc?.IntimationOverdue(now) ?? false, c.Version);
@@ -66,9 +67,9 @@ internal sealed class EmergencyService(
         var triages = await db.Set<EsiTriage>().AsNoTracking().Where(t => t.CaseId == c.Id).OrderByDescending(t => t.AssessedAt).ToListAsync(ct);
         var mlc = await db.Set<MlcRecord>().AsNoTracking().FirstOrDefaultAsync(m => m.VisitId == c.VisitId, ct);
         return new EmergencyCaseDetail(
-            c.Id, c.VisitId, c.PatientId, person.Name, person.Uhid, person.Gender, person.AgeYears, c.ArrivedAt, c.ArrivalMode, c.Level, c.TriagedAt,
+            c.Id, c.VisitId, c.PatientId, person.Name, person.Uhid, person.Gender?.ToString(), person.AgeYears, c.ArrivedAt, c.ArrivalMode, c.Level, c.TriagedAt,
             c.DoctorSeenAt, c.DoctorName, c.Disposition, c.DisposedAt, c.DisposedByName, c.DispositionNotes, c.ReferredTo,
-            triages.Select(Dto).ToList(), mlc is null ? null : Dto(mlc), c.Version);
+            triages.Select(Dto).ToList(), mlc is null ? null : Dto(mlc, person.Gender), c.Version);
     }
 
     public async Task<TriagePreview> PreviewAsync(EmergencyCase c, TriagePreviewRequest r, CancellationToken ct)
@@ -208,6 +209,16 @@ internal sealed class EmergencyService(
         }
 
         var now = time.GetUtcNow();
+
+        // A child is under 18 on the day of the incident (or of the case, when that is not known). A date of birth under 18
+        // makes the patient a child whatever is said; without one, the doctor says, for a sexual assault, as the POCSO Act
+        // protects a child.
+        var dateOfBirth = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == c.PatientId).Select(p => p.DateOfBirth).FirstOrDefaultAsync(ct);
+        if (request.Cause == MlcCause.SexualAssault && dateOfBirth is null && request.ChildVictim is null)
+        {
+            return Error.Field("childVictim", "The patient's date of birth is not known: say whether they are under 18, as the POCSO Act protects a child.");
+        }
+
         var mlc = await db.Set<MlcRecord>().FirstOrDefaultAsync(m => m.VisitId == c.VisitId, ct);
         if (mlc is null)
         {
@@ -236,9 +247,11 @@ internal sealed class EmergencyService(
             db.SetExpectedVersion(mlc, version);
         }
 
+        var incidentDay = DateOnly.FromDateTime((request.IncidentAt ?? mlc.IdentifiedAt).ToOffset(Ist).DateTime);
+        var isChild = (dateOfBirth is { } dob && dob.AddYears(18) > incidentDay) || request.ChildVictim == true;
         var described = mlc.Describe(
             request.BroughtBy, request.BroughtByName, request.Cause, request.IncidentAt, request.IncidentPlace, request.Injuries, request.ConsciousOnArrival,
-            request.SmellOfAlcohol, request.PoliceStation, now);
+            request.SmellOfAlcohol, request.PoliceStation, isChild, now);
         if (described.IsFailure)
         {
             return described.Error!;
@@ -272,10 +285,82 @@ internal sealed class EmergencyService(
         }
 
         db.SetExpectedVersion(mlc, request.Version);
-        var intimated = mlc.Intimate(request.IntimatedAt, request.Mode, request.ReceivedBy, request.PoliceEntryNumber, time.GetUtcNow());
+        var intimated = mlc.Intimate(request.IntimatedAt, request.Mode, request.ReceivedBy, request.PoliceEntryNumber, request.ReportedTo, time.GetUtcNow());
         if (intimated.IsFailure)
         {
             return intimated.Error!;
+        }
+
+        await db.SaveChangesAsync(ct);
+        await PublishAsync(c, ct);
+        return await DetailAsync(c, ct);
+    }
+
+    /// <summary>
+    /// Records the medical examination of a victim of sexual assault by a registered medical practitioner in the
+    /// practitioner master, whose name, registration and gender come from it (BNSS 2023, s.184; for a child, POCSO s.27).
+    /// </summary>
+    public async Task<Result<EmergencyCaseDetail>> RecordExaminationAsync(Guid id, MlcExaminationRequest request, CancellationToken ct)
+    {
+        var c = await db.Set<EmergencyCase>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null)
+        {
+            return Error.NotFound("Emergency case", id);
+        }
+
+        var mlc = await db.Set<MlcRecord>().FirstOrDefaultAsync(m => m.VisitId == c.VisitId, ct);
+        if (mlc is null)
+        {
+            return Error.Rule("mlc.missing", "Enter the case in the MLC register first.");
+        }
+
+        db.SetExpectedVersion(mlc, request.Version);
+        var examiner = await db.Set<Practitioner>().AsNoTracking()
+            .Where(p => p.Id == request.ExaminerId && p.IsActive && Doctors.Contains(p.Kind))
+            .Select(p => new { p.DisplayName, p.RegistrationCouncil, p.RegistrationNumber, p.Gender })
+            .FirstOrDefaultAsync(ct);
+        if (examiner is null)
+        {
+            return Error.Field("examinerId", "The examination is by a registered medical practitioner: choose the doctor from the practitioner list.");
+        }
+
+        var patientGender = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == c.PatientId).Select(p => p.Gender).FirstAsync(ct);
+        var registration = string.Join(" ", new[] { examiner.RegistrationCouncil, examiner.RegistrationNumber }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        var recorded = mlc.RecordExamination(
+            new SexualAssaultExamination(
+                request.ExaminerId, examiner.DisplayName, registration.Length == 0 ? null : registration, examiner.Gender, request.StartedAt, request.EndedAt,
+                request.ConsentGivenBy, request.AttendantKind, request.AttendantName),
+            patientGender, time.GetUtcNow());
+        if (recorded.IsFailure)
+        {
+            return recorded.Error!;
+        }
+
+        await db.SaveChangesAsync(ct);
+        await PublishAsync(c, ct);
+        return await DetailAsync(c, ct);
+    }
+
+    /// <summary>Records that the examination's report went to the investigating officer (BNSS s.184(6), within seven days).</summary>
+    public async Task<Result<EmergencyCaseDetail>> ForwardReportAsync(Guid id, MlcReportRequest request, CancellationToken ct)
+    {
+        var c = await db.Set<EmergencyCase>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null)
+        {
+            return Error.NotFound("Emergency case", id);
+        }
+
+        var mlc = await db.Set<MlcRecord>().FirstOrDefaultAsync(m => m.VisitId == c.VisitId, ct);
+        if (mlc is null)
+        {
+            return Error.Rule("mlc.missing", "Enter the case in the MLC register first.");
+        }
+
+        db.SetExpectedVersion(mlc, request.Version);
+        var forwarded = mlc.ForwardReport(request.ForwardedAt, request.InvestigatingOfficer, time.GetUtcNow());
+        if (forwarded.IsFailure)
+        {
+            return forwarded.Error!;
         }
 
         await db.SaveChangesAsync(ct);
@@ -294,9 +379,14 @@ internal sealed class EmergencyService(
         var cases = await db.Set<EmergencyCase>().AsNoTracking().Where(c => visitIds.Contains(c.VisitId)).ToDictionaryAsync(c => c.VisitId, c => c.Id, ct);
         var people = await PeopleAsync(entries.Select(e => e.PatientId), ct);
         var now = time.GetUtcNow();
-        return entries.Select(m => new MlcRegisterRow(
-            m.Id, cases.GetValueOrDefault(m.VisitId), m.Number, m.IdentifiedAt, people[m.PatientId].Name, people[m.PatientId].Uhid, m.Cause, m.PoliceStation,
-            m.IntimatedAt, m.ReceivedBy, m.IntimationOverdue(now), m.DoctorName)).ToList();
+        return entries.Select(m =>
+        {
+            var person = people[m.PatientId];
+            return new MlcRegisterRow(
+                m.Id, cases.GetValueOrDefault(m.VisitId), m.Number, m.IdentifiedAt, person.Name, person.Uhid, m.Cause, m.PoliceStation, m.IntimatedAt,
+                m.ReceivedBy, m.IntimationOverdue(now), m.DoctorName, m.IsPocso, m.ReportDueAt, m.ReportForwardedAt, m.ReportOverdue(now),
+                person.Gender is { } gender && m.MissingSafeguards(gender).Count > 0);
+        }).ToList();
     }
 
     public async Task<(MlcRecord Entry, Patient Patient)?> MlcAsync(EmergencyCase c, CancellationToken ct)
@@ -305,11 +395,16 @@ internal sealed class EmergencyService(
         return mlc is null ? null : (mlc, await db.Set<Patient>().AsNoTracking().FirstAsync(p => p.Id == c.PatientId, ct));
     }
 
+    /// <summary>India Standard Time, in which the hospital's days (and a patient's birthdays) begin.</summary>
+    private static readonly TimeSpan Ist = TimeSpan.FromHours(5.5);
+
+    private static readonly PractitionerKind[] Doctors = [.. PractitionerKinds.Doctors];
+
     private string Me => currentUser.DisplayName ?? currentUser.UserName ?? "Staff";
 
     private Task PublishAsync(EmergencyCase c, CancellationToken ct) => realtime.ToFacilityAsync(c.FacilityId, ChangedEvent, new { CaseId = c.Id }, ct);
 
-    private sealed record Person(string Name, string Uhid, string? Gender, int? AgeYears);
+    private sealed record Person(string Name, string Uhid, Gender? Gender, int? AgeYears);
 
     /// <summary>The patients' names; a restricted (VIP) patient the user may not open shows initials (R-3).</summary>
     private async Task<Dictionary<Guid, Person>> PeopleAsync(IEnumerable<Guid> patientIds, CancellationToken ct)
@@ -329,7 +424,7 @@ internal sealed class EmergencyService(
 
             var hidden = p.IsVip && !openable.Contains(p.Id);
             int? age = p.DateOfBirth is { } dob ? today.Year - dob.Year - (today < dob.AddYears(today.Year - dob.Year) ? 1 : 0) : null;
-            return new Person(hidden ? PatientNames.Restricted(p.FullName) : p.FullName, hidden ? Restricted : p.Uhid, p.Gender.ToString(), age);
+            return new Person(hidden ? PatientNames.Restricted(p.FullName) : p.FullName, hidden ? Restricted : p.Uhid, p.Gender, age);
         });
     }
 
@@ -340,7 +435,7 @@ internal sealed class EmergencyService(
     }
 
     /// <summary>The instant an Indian calendar day begins.</summary>
-    private static DateTimeOffset StartOfDay(DateOnly date) => new(date.ToDateTime(TimeOnly.MinValue), TimeSpan.FromHours(5.5));
+    private static DateTimeOffset StartOfDay(DateOnly date) => new(date.ToDateTime(TimeOnly.MinValue), Ist);
 
     private static int Minutes(DateTimeOffset from, DateTimeOffset to) => (int)Math.Max(0, (to - from).TotalMinutes);
 
@@ -354,10 +449,19 @@ internal sealed class EmergencyService(
         t.Id, t.AssessedAt, t.AssessedByName, t.ChiefComplaint, t.ComputedLevel, t.Level, t.Reasons.Split('\n', StringSplitOptions.RemoveEmptyEntries),
         t.OverrideReason, t.Pulse, t.RespiratoryRate, t.SpO2, t.SystolicBp, t.DiastolicBp, t.TemperatureCelsius, t.Gcs, t.PainScore);
 
-    private MlcDto Dto(MlcRecord m) => new(
-        m.Id, m.Number, m.IdentifiedAt, m.BroughtBy, m.BroughtByName, m.Cause, m.IncidentAt, m.IncidentPlace, m.Injuries, m.ConsciousOnArrival,
-        m.SmellOfAlcohol, m.DoctorName, m.DoctorRegistrationNumber, m.PoliceStation, m.IntimatedAt, m.IntimationMode, m.ReceivedBy, m.PoliceEntryNumber,
-        m.IntimationOverdue(time.GetUtcNow()), m.Version);
+    private MlcDto Dto(MlcRecord m, Gender? patientGender)
+    {
+        var now = time.GetUtcNow();
+        var examination = m is { ExaminerId: { } examinerId, ExaminationStartedAt: { } started, ExaminationEndedAt: { } ended }
+            ? new MlcExaminationDto(examinerId, m.ExaminerName ?? string.Empty, m.ExaminerRegistration, started, ended, m.ConsentGivenBy ?? string.Empty,
+                m.AttendantKind, m.AttendantName, patientGender is { } gender ? m.MissingSafeguards(gender) : [])
+            : null;
+        return new(
+            m.Id, m.Number, m.IdentifiedAt, m.BroughtBy, m.BroughtByName, m.Cause, m.IncidentAt, m.IncidentPlace, m.Injuries, m.ConsciousOnArrival,
+            m.SmellOfAlcohol, m.DoctorName, m.DoctorRegistrationNumber, m.PoliceStation, m.IntimatedAt, m.IntimationMode, m.ReceivedBy, m.PoliceEntryNumber,
+            m.IntimationOverdue(now), m.Version, m.IsChild, m.IsPocso, m.ReportedTo, examination, m.InvestigatingOfficer, m.ReportForwardedAt, m.ReportDueAt,
+            m.ReportOverdue(now));
+    }
 }
 
 /// <summary>An emergency visit opens its case in the ER, in the visit's own transaction, so the board never misses an arrival.</summary>

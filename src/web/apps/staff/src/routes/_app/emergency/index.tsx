@@ -42,6 +42,7 @@ import {
   erQueries,
   ESI_LEVELS,
   formatMinutes,
+  REPORTED_TO_LABELS,
   type ArrivalMode,
   type EmergencyCase,
   type EmergencyDisposition,
@@ -49,8 +50,10 @@ import {
   type MlcBroughtBy,
   type MlcCause,
   type MlcIntimationMode,
+  type PocsoReportedTo,
   type TriageInput,
 } from '@/modules/emergency/api';
+import { SexualAssaultExamination } from '@/modules/emergency/SexualAssaultExamination';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { errorMessage } from '@/modules/lab/common/errors';
 
@@ -459,9 +462,17 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
   const [injuries, setInjuries] = useState(m?.injuries ?? '');
   const [policeStation, setPoliceStation] = useState(m?.policeStation ?? '');
   const [registration, setRegistration] = useState(m?.doctorRegistrationNumber ?? '');
+  const [childVictim, setChildVictim] = useState<'' | 'yes' | 'no'>(
+    m?.cause === 'SexualAssault' ? (m.isChild ? 'yes' : 'no') : '',
+  );
   const [mode, setMode] = useState<MlcIntimationMode>('Phone');
   const [receivedBy, setReceivedBy] = useState('');
   const [entry, setEntry] = useState('');
+  const [reportedTo, setReportedTo] = useState<'' | PocsoReportedTo>('');
+  // A date of birth under 18 makes the patient a child; without one, the doctor says, for a sexual assault (POCSO Act).
+  const sexualAssault = cause === 'SexualAssault';
+  const knownChild = c.ageYears !== null && c.ageYears < 18;
+  const childUnknown = sexualAssault && c.ageYears === null && childVictim === '';
   const refresh = () => void queryClient.invalidateQueries({ queryKey: erKeys.all });
   const save = useMutation({
     mutationFn: () =>
@@ -477,6 +488,7 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
         policeStation: policeStation.trim(),
         doctorRegistrationNumber: registration.trim() || null,
         version: m?.version ?? null,
+        childVictim: sexualAssault && childVictim !== '' ? childVictim === 'yes' : null,
       }),
     onSuccess: () => {
       notify.success('MLC register updated', 'Inform the police station and record who received it.');
@@ -485,7 +497,15 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
   });
   const intimate = useMutation({
     mutationFn: () =>
-      erApi.intimate(c.id, new Date().toISOString(), mode, receivedBy.trim(), entry.trim() || null, m!.version),
+      erApi.intimate(
+        c.id,
+        new Date().toISOString(),
+        mode,
+        receivedBy.trim(),
+        entry.trim() || null,
+        m!.isPocso && reportedTo !== '' ? reportedTo : null,
+        m!.version,
+      ),
     onSuccess: refresh,
   });
   const editable = canMlc && !m?.intimatedAt;
@@ -495,8 +515,11 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
       {m && (
         <Text>
           MLC {m.number} · identified {formatDateTime(m.identifiedAt)} by {m.doctorName}
+          {m.isPocso ? ' · a child: POCSO Act' : ''}
           {m.intimatedAt
-            ? ` · police informed ${formatDateTime(m.intimatedAt)} (${m.intimationMode}), received by ${m.receivedBy}`
+            ? ` · police informed ${formatDateTime(m.intimatedAt)} (${m.intimationMode}), received by ${m.receivedBy}${
+                m.reportedTo ? `, ${REPORTED_TO_LABELS[m.reportedTo]}` : ''
+              }`
             : m.intimationOverdue
               ? ' · police not yet informed: overdue'
               : ' · police not yet informed'}
@@ -548,6 +571,25 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
           <Field label="Injuries as examined" required hint="Kind, site, size, and whether simple or grievous.">
             <Textarea value={injuries} rows={3} maxLength={4000} onChange={(_, d) => setInjuries(d.value)} />
           </Field>
+          {sexualAssault && knownChild && (
+            <Caption1>Under 18: the Protection of Children from Sexual Offences Act 2012 applies.</Caption1>
+          )}
+          {sexualAssault && !knownChild && (
+            <Field
+              label="Is the patient under 18?"
+              required={c.ageYears === null}
+              hint="The POCSO Act 2012 protects a child: the report goes to the Special Juvenile Police Unit or the local police, and a girl is examined by a woman doctor."
+            >
+              <RadioGroup
+                layout="horizontal"
+                value={childVictim}
+                onChange={(_, d) => setChildVictim(d.value as 'yes' | 'no')}
+              >
+                <Radio value="yes" label="Yes" />
+                <Radio value="no" label="No" />
+              </RadioGroup>
+            </Field>
+          )}
           {save.error && (
             <MessageBar intent="error">
               <MessageBarBody>{errorMessage(save.error, 'The MLC entry could not be saved.')}</MessageBarBody>
@@ -556,7 +598,7 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
           <Button
             appearance="primary"
             style={{ alignSelf: 'flex-start' }}
-            disabled={!injuries.trim() || !policeStation.trim() || save.isPending}
+            disabled={!injuries.trim() || !policeStation.trim() || childUnknown || save.isPending}
             onClick={() => save.mutate()}
           >
             {m ? 'Correct the MLC entry' : 'Enter in the MLC register'}
@@ -564,7 +606,26 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
         </>
       )}
       {m && canMlc && !m.intimatedAt && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr auto', gap: 8, alignItems: 'end' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: m.isPocso ? '1fr 1fr 2fr 1fr auto' : '1fr 2fr 1fr auto',
+            gap: 8,
+            alignItems: 'end',
+          }}
+        >
+          {m.isPocso && (
+            <Field label="Reported to (POCSO s.19)" required>
+              <Select value={reportedTo} onChange={(_, d) => setReportedTo(d.value as '' | PocsoReportedTo)}>
+                <option value="">Choose…</option>
+                {Object.entries(REPORTED_TO_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           <Field label="Informed by">
             <Select value={mode} onChange={(_, d) => setMode(d.value as MlcIntimationMode)}>
               <option value="Phone">Phone</option>
@@ -578,11 +639,20 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
           <Field label="GD/DD entry no.">
             <Input value={entry} maxLength={64} onChange={(_, d) => setEntry(d.value)} />
           </Field>
-          <Button disabled={!receivedBy.trim() || intimate.isPending} onClick={() => intimate.mutate()}>
+          <Button
+            disabled={!receivedBy.trim() || (m.isPocso && reportedTo === '') || intimate.isPending}
+            onClick={() => intimate.mutate()}
+          >
             Police informed now
           </Button>
         </div>
       )}
+      {intimate.error && (
+        <MessageBar intent="error">
+          <MessageBarBody>{errorMessage(intimate.error, 'The intimation could not be recorded.')}</MessageBarBody>
+        </MessageBar>
+      )}
+      {m?.cause === 'SexualAssault' && <SexualAssaultExamination c={c} canMlc={canMlc} />}
       {m && (
         <Button
           style={{ alignSelf: 'flex-start' }}
