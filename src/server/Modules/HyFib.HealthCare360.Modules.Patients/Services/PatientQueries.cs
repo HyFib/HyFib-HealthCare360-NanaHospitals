@@ -206,6 +206,7 @@ public sealed class PatientAccessGuard(
         (SensitiveCategory.Hiv, PatientsPermissions.SensitiveHiv),
         (SensitiveCategory.MentalHealth, PatientsPermissions.SensitiveMentalHealth),
         (SensitiveCategory.Mtp, PatientsPermissions.SensitiveMtp),
+        (SensitiveCategory.SexualViolence, PatientsPermissions.SensitiveSexualViolence),
     ];
 
     public async Task<Result<BreakGlassGrant>> BreakGlassAsync(Guid patientId, string reason, CancellationToken ct)

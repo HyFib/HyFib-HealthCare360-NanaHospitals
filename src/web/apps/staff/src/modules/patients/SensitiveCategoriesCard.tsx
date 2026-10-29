@@ -39,6 +39,7 @@ const sensitiveCategoryLabel: Record<SensitiveCategory, string> = {
   Hiv: 'HIV',
   MentalHealth: 'Mental health',
   Mtp: 'Termination of pregnancy (MTP)',
+  SexualViolence: 'Sexual violence',
 };
 
 const useStyles = makeStyles({
@@ -48,9 +49,10 @@ const useStyles = makeStyles({
 });
 
 /**
- * The record's sensitive categories (gap R-4) for the doctors who keep them: an HIV, mental-illness or abortion
- * diagnosis sets them; a doctor can add or remove one, with a reason. The clinical record of a patient in a category
- * opens only to staff holding that category, or through break-the-glass.
+ * The record's sensitive categories (gap R-4) for the doctors who keep them: an HIV, mental-illness, abortion or
+ * sexual-abuse diagnosis sets them, as does a sexual assault in the MLC register; a doctor can add or remove one, with a
+ * reason. The clinical record of a patient in a category opens only to staff holding that category, or through
+ * break-the-glass.
  */
 export function SensitiveCategoriesCard({ patientId }: { patientId: string }) {
   const canManage = usePermission(MANAGE);

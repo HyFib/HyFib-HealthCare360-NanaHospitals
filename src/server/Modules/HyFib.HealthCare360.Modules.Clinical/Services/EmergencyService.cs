@@ -265,6 +265,12 @@ internal sealed class EmergencyService(
             visit.MlcNumber = mlc.Number;
         }
 
+        if (request.Cause == MlcCause.SexualAssault)
+        {
+            // Nothing may make a victim's identity known (BNS 2023, s.72): the record is kept in the sexual-violence category.
+            await guard.FlagAsync(c.PatientId, SensitiveCategory.SexualViolence, $"a sexual-assault MLC ({mlc.Number})", ct);
+        }
+
         await db.SaveChangesAsync(ct);
         await PublishAsync(c, ct);
         return await DetailAsync(c, ct);

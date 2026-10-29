@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Patients.Tests;
 
@@ -13,6 +14,15 @@ public sealed class SensitiveCategoryTests
     [InlineData("F32.1", SensitiveCategory.MentalHealth)]
     [InlineData("F69", SensitiveCategory.MentalHealth)]
     [InlineData("O04.9", SensitiveCategory.Mtp)]
+    [InlineData("T74.2", SensitiveCategory.SexualViolence)]
+    [InlineData("T74.22", SensitiveCategory.SexualViolence)]
+    [InlineData("T76.21", SensitiveCategory.SexualViolence)]
+    [InlineData("Y05.0", SensitiveCategory.SexualViolence)]
+    [InlineData("Z04.4", SensitiveCategory.SexualViolence)]
+    [InlineData("Z044", SensitiveCategory.SexualViolence)]
+    [InlineData("T74.1", SensitiveCategory.None)]
+    [InlineData("T74", SensitiveCategory.None)]
+    [InlineData("Z04.1", SensitiveCategory.None)]
     [InlineData("F03", SensitiveCategory.None)]
     [InlineData("F10.2", SensitiveCategory.None)]
     [InlineData("F84.0", SensitiveCategory.None)]
@@ -25,6 +35,19 @@ public sealed class SensitiveCategoryTests
         SensitiveCategories.FromIcd(code).ShouldBe(expected);
 
     [Fact]
-    public void Categories_are_described_in_plain_words() =>
+    public void Categories_are_described_in_plain_words()
+    {
         SensitiveCategories.Describe(SensitiveCategory.Hiv | SensitiveCategory.Mtp).ShouldBe("HIV, termination of pregnancy");
+        SensitiveCategories.Describe(SensitiveCategory.SexualViolence).ShouldBe("sexual violence");
+    }
+
+    [Fact]
+    public void Every_category_has_the_permission_that_opens_it()
+    {
+        // A category with no permission would be held by everyone: the record would not be closed to anyone.
+        var categories = Enum.GetValues<SensitiveCategory>().Where(c => c != SensitiveCategory.None).ToList();
+        categories.Aggregate(SensitiveCategory.None, (all, c) => all | c).ShouldBe(SensitiveCategories.All);
+        PatientAccessGuard.CategoryPermissions.Select(p => p.Category).ShouldBe(categories, ignoreOrder: true);
+        PatientAccessGuard.CategoryPermissions.Select(p => p.Permission).ShouldBeUnique();
+    }
 }

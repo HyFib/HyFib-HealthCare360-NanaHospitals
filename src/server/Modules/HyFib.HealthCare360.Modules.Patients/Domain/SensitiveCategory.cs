@@ -19,17 +19,24 @@ public enum SensitiveCategory
 
     /// <summary>Termination of pregnancy (MTP Act s.5A; MTP Regulations 2003).</summary>
     Mtp = 4,
+
+    /// <summary>
+    /// A sexual offence: nothing may make the victim's identity known (Bharatiya Nyaya Sanhita 2023, s.72; for a child,
+    /// the POCSO Act 2012, s.23).
+    /// </summary>
+    SexualViolence = 8,
 }
 
 public static class SensitiveCategories
 {
-    public const SensitiveCategory All = SensitiveCategory.Hiv | SensitiveCategory.MentalHealth | SensitiveCategory.Mtp;
+    public const SensitiveCategory All = SensitiveCategory.Hiv | SensitiveCategory.MentalHealth | SensitiveCategory.Mtp | SensitiveCategory.SexualViolence;
 
     /// <summary>
     /// The category an ICD-10 diagnosis puts a record in, or none: HIV disease (B20–B24) and asymptomatic HIV infection
     /// (Z21); the mental and behavioural disorders from schizophrenia to personality disorders (F20–F69), which are
     /// what the Mental Healthcare Act calls mental illness, but not dementia, substance use or developmental disorders.
-    /// A medical abortion (O04) puts it in the MTP category.
+    /// A medical abortion (O04) puts it in the MTP category; sexual abuse (T74.2, or T76.2 suspected), a sexual assault
+    /// (Y05), or an examination after an alleged rape (Z04.4) in the sexual-violence category.
     /// </summary>
     public static SensitiveCategory FromIcd(string? code)
     {
@@ -40,10 +47,14 @@ public static class SensitiveCategories
 
         var c = code.Trim().ToUpperInvariant();
         var block = c[..3];
+        var subcategory = c[3..].TrimStart('.');
         return block switch
         {
             "B20" or "B21" or "B22" or "B23" or "B24" or "Z21" => SensitiveCategory.Hiv,
             "O04" => SensitiveCategory.Mtp,
+            "Y05" => SensitiveCategory.SexualViolence,
+            "T74" or "T76" when subcategory.StartsWith('2') => SensitiveCategory.SexualViolence,
+            "Z04" when subcategory.StartsWith('4') => SensitiveCategory.SexualViolence,
             _ when block[0] == 'F' && int.TryParse(block.AsSpan(1), out var n) && n is >= 20 and <= 69 => SensitiveCategory.MentalHealth,
             _ => SensitiveCategory.None,
         };
@@ -55,5 +66,6 @@ public static class SensitiveCategories
         categories.HasFlag(SensitiveCategory.Hiv) ? "HIV" : null,
         categories.HasFlag(SensitiveCategory.MentalHealth) ? "mental health" : null,
         categories.HasFlag(SensitiveCategory.Mtp) ? "termination of pregnancy" : null,
+        categories.HasFlag(SensitiveCategory.SexualViolence) ? "sexual violence" : null,
     }.Where(c => c is not null));
 }

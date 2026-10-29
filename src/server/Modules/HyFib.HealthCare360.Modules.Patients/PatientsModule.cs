@@ -33,6 +33,9 @@ public static class PatientsPermissions
     /// <summary>Open the clinical record of a patient in the MTP category. Medical records officers hold it by default: grant it to gynaecologists.</summary>
     public const string SensitiveMtp = "patients.sensitive.mtp";
 
+    /// <summary>Open the clinical record of a patient in the sexual-violence category.</summary>
+    public const string SensitiveSexualViolence = "patients.sensitive.sexual_violence";
+
     /// <summary>Put a patient's record in a sensitive category, or take it out, with a reason.</summary>
     public const string SensitiveManage = "patients.sensitive.manage";
     public const string Consents = "patients.consents";
@@ -70,7 +73,9 @@ public static class PatientsPermissions
         new(SensitiveHiv, "Patients", "Open the clinical record of patients in the HIV category", [.. Clinical, SystemRoles.MrdOfficer]),
         new(SensitiveMentalHealth, "Patients", "Open the clinical record of patients in the mental health category", [.. Clinical, SystemRoles.MrdOfficer]),
         new(SensitiveMtp, "Patients", "Open the clinical record of patients in the termination-of-pregnancy (MTP) category", [SystemRoles.MrdOfficer]),
-        new(SensitiveManage, "Patients", "Put a patient's record in a sensitive category (HIV, mental health, MTP) or take it out", [SystemRoles.Doctor]),
+        new(SensitiveSexualViolence, "Patients", "Open the clinical record of patients in the sexual-violence category", [.. Clinical, SystemRoles.MrdOfficer]),
+        new(SensitiveManage, "Patients", "Put a patient's record in a sensitive category (HIV, mental health, MTP, sexual violence) or take it out",
+            [SystemRoles.Doctor]),
         new(Consents, "Patients", "Capture and revoke patient consents", [.. Desk, .. Clinical]),
         new(Documents, "Patients", "Attach and view patient documents", [.. Desk, .. Clinical, SystemRoles.MrdOfficer, SystemRoles.InsuranceDesk]),
         new(IdentityVerify, "Patients", "Check a patient's identity with their Aadhaar fingerprint (UIDAI) or their ABHA (a code from ABDM)", Desk),
