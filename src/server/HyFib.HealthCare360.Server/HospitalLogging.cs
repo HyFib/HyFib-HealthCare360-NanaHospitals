@@ -23,9 +23,11 @@ internal static class HospitalLogging
     /// <summary>
     /// How long the log files are kept: a year, as the Digital Personal Data Protection Rules 2025 ask from 13 May 2027
     /// (r.6), which covers the 180 days within India that CERT-In's Directions of 28 April 2022 ask for (direction (iv)).
-    /// By age, not by count: a busy day rolls into several files at 100 MB each.
+    /// The file sink dates each day's file from its midnight, and deletes it once that midnight is older than this; the
+    /// day's last events are a day younger. So this is a leap year's 366 days, and the day the file holds: every event is
+    /// kept a full year. By age, not by count: a busy day rolls into several files at 100 MB each.
     /// </summary>
-    public const int RetentionDays = 365;
+    public const int RetentionDays = 367;
 
     /// <param name="logs">The folder the rolling file is written in.</param>
     /// <param name="development">A developer's machine: the console shows debug messages too.</param>

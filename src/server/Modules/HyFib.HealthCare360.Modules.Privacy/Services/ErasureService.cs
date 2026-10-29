@@ -242,7 +242,7 @@ public sealed class ErasureService(
                 HospitalDate(accessed).AddYears(auditYears), Permanently: false));
         }
 
-        var messageDays = await retention.ValueAsync(RetentionSchedule.Get(RetentionSchedule.MessageLog), ct) ?? 365;
+        var messageDays = await retention.ValueAsync(RetentionSchedule.Get(RetentionSchedule.MessageLog), ct) ?? RetentionSchedule.LogDays;
         var lastMessage = await db.Set<NotificationLog>().IgnoreQueryFilters().AsNoTracking()
             .Where(l => l.PatientId == patientId).MaxAsync(l => (DateTimeOffset?)l.CreatedAt, ct);
         if (lastMessage is { } messaged)

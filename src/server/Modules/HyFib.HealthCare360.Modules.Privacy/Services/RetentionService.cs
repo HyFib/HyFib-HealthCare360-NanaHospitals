@@ -268,7 +268,7 @@ public sealed class RetentionService(
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.OutpatientRecords), ct) ?? RecordRetention.MinimumOutpatientYears,
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.InpatientRecords), ct) ?? RecordRetention.MinimumInpatientYears,
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Finance), ct) ?? 8,
-        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.MessageLog), ct) ?? 365,
+        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.MessageLog), ct) ?? RetentionSchedule.LogDays,
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct) ?? 10);
 
     /// <summary>

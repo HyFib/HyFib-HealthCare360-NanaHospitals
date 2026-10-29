@@ -142,15 +142,17 @@ public sealed class ObservabilityTests : IDisposable
     }
 
     // The Digital Personal Data Protection Rules 2025 (r.6, from 13 May 2027) have logs kept a year, beyond the 180 days
-    // CERT-In asks for. The file sink applies its retention when it opens the day's file.
+    // CERT-In asks for. The file sink applies its retention when it opens the day's file, by the day in each file's name.
     [Fact]
-    public void A_log_file_is_kept_a_year()
+    public void A_log_file_is_kept_until_its_last_event_is_a_year_old_in_a_leap_year_too()
     {
         Directory.CreateDirectory(_logs);
         string DaysAgo(int days) =>
             Path.Combine(_logs, $"hc360-server-{DateTime.Now.AddDays(-days).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture)}.json");
-        File.WriteAllText(DaysAgo(200), "{}\n");
-        File.WriteAllText(DaysAgo(400), "{}\n");
+        foreach (var days in (int[])[200, 366, 368, 400])
+        {
+            File.WriteAllText(DaysAgo(days), "{}\n");
+        }
 
         using (var logger = new LoggerConfiguration().WriteToHospitalSinks(_logs, development: false, errorLog: null).CreateLogger())
         {
@@ -158,6 +160,8 @@ public sealed class ObservabilityTests : IDisposable
         }
 
         File.Exists(DaysAgo(200)).ShouldBeTrue("A log 200 days old is kept.");
+        File.Exists(DaysAgo(366)).ShouldBeTrue("The file of the day 366 days ago ends less than 366 days ago: a leap year, not yet past.");
+        File.Exists(DaysAgo(368)).ShouldBeFalse("The file of the day 368 days ago ended more than 366 days ago.");
         File.Exists(DaysAgo(400)).ShouldBeFalse("A log more than a year old is deleted.");
     }
 

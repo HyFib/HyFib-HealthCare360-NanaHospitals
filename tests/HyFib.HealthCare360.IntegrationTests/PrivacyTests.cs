@@ -40,7 +40,7 @@ public sealed class PrivacyTests(HospitalServer server)
         summary.Categories.Select(c => c.Key).ShouldContain("registration");
         summary.Consents.ShouldContain(c => c.Type == nameof(ConsentType.SmsWhatsAppUpdates) && c.Granted);
         summary.Categories.Single(c => c.Key == "registration").RetentionKind.ShouldBe(PersonalDataRetention.MedicalRecords);
-        summary.Periods.ShouldBe(new RetentionPeriods(3, 5, 8, 365, 10));
+        summary.Periods.ShouldBe(new RetentionPeriods(3, 5, 8, 366, 10));
 
         var created = await portal.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", new PortalDataRequestCreate(
             patient.Id, DataRequestType.Correction, RequesterRelation.Self, null, null,

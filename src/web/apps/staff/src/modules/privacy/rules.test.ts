@@ -414,6 +414,8 @@ describe('retention', () => {
     expect(retentionPeriodText(30, 'Days')).toBe('30 days');
     expect(retentionPeriodText(1, 'Days')).toBe('1 day');
     expect(retentionPeriodText(365, 'Days')).toBe('365 days (1 year)');
+    expect(retentionPeriodText(366, 'Days')).toBe('366 days (1 year)');
+    expect(retentionPeriodText(400, 'Days')).toBe('400 days');
     expect(retentionPeriodText(3650, 'Days')).toBe('3650 days (10 years)');
     expect(retentionPeriodText(5, 'Years')).toBe('5 years');
     expect(retentionPeriodText(1, 'Years')).toBe('1 year');

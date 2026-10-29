@@ -70,6 +70,12 @@ public static class RetentionSchedule
 
     private const string LogsBasis = "DPDP Rules 2025 (rules 6 and 8): logs of processing are kept for at least one year.";
 
+    /// <summary>
+    /// How long logs are kept at the least: a year has at most 366 days, so 366 keeps every line a full year, across a
+    /// leap day too. 365 would delete the line a day early whenever the year held a 29 February.
+    /// </summary>
+    public const int LogDays = 366;
+
     public static IReadOnlyList<RetentionRule> Rules { get; } =
     [
         new(Outbox, "Messages being sent",
@@ -77,13 +83,13 @@ public static class RetentionSchedule
             "Needed only to deliver the message.", RetentionAction.Delete, RetentionUnit.Days, 30, 7, 365, Editable: true),
         new(MessageLog, "Message log",
             "Which message went to which number or address (masked), and whether it was delivered.",
-            LogsBasis, RetentionAction.Delete, RetentionUnit.Days, 365, 365, 3650, Editable: true),
+            LogsBasis, RetentionAction.Delete, RetentionUnit.Days, LogDays, LogDays, 3650, Editable: true),
         new(IntegrationLog, "Integration log",
             "Calls to laboratory machines and to payment, messaging and other providers, with personal data removed from what was sent, and the payment gateway's notifications (their ids only).",
-            LogsBasis, RetentionAction.Delete, RetentionUnit.Days, 365, 365, 3650, Editable: true),
+            LogsBasis, RetentionAction.Delete, RetentionUnit.Days, LogDays, LogDays, 3650, Editable: true),
         new(SignInLog, "Sign-in records",
             "Requests for sign-in codes, sessions that have ended (when, from which address and on which device), and emergency access to restricted records once it has ended (the audit trail keeps every one).",
-            LogsBasis, RetentionAction.Delete, RetentionUnit.Days, 365, 365, 3650, Editable: true),
+            LogsBasis, RetentionAction.Delete, RetentionUnit.Days, LogDays, LogDays, 3650, Editable: true),
         new(OutpatientRecords, "Out-patient medical records",
             "The chart of each out-patient visit, counted from when the chart was completed.",
             "At least 3 years (SRS PRV-02). Check the state's rules and NABH before changing it.",
