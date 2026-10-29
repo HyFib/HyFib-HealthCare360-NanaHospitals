@@ -95,6 +95,16 @@ what is missing and deploys nothing.
 3. **The organization's Settings › Pages**: verify `hyfib.com`, so that no other GitHub account can serve a site under
    it.
 
+Cloudflare Pages (free) can serve the same folder instead, with GitHub Pages left off:
+
+1. In Cloudflare, **Workers & Pages › Create › Pages › Connect to Git**: this repository, production branch `main`, no
+   framework and no build command, build output directory `src/web/demo/site`.
+2. In the project, **Custom domains**: `hc360.hyfib.com`. When hyfib.com's DNS is on Cloudflare, the record is made for
+   you; otherwise add a `CNAME` for `hc360.hyfib.com` to the project's `pages.dev` address.
+
+Cloudflare then deploys on each push to `main`. Run the _Demo site_ workflow by hand with _check only_ to check that
+https://hc360.hyfib.com serves the committed files.
+
 ## What it replays, and what it does not
 
 - **Reads** answer from the recording. A search the walk did not make is answered by filtering what was recorded. A

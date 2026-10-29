@@ -4,7 +4,8 @@ name: Demo site
 # src/web/demo/site: the built folder that verify.mjs checked, deployed as it is. It runs when that folder changes on
 # main, and by hand. Pages is set up once, in Settings › Pages (Source: GitHub Actions; Custom domain: hc360.hyfib.com;
 # Enforce HTTPS); until it is, a run says what is missing and deploys nothing. After a deploy, each file of the folder
-# is fetched from the live site and must be the one committed.
+# is fetched from the live site and must be the one committed. Run by hand with "check only", it deploys nothing and
+# checks https://hc360.hyfib.com, whichever host serves it: GitHub Pages, or Cloudflare Pages serving the same folder.
 on:
   push:
     branches: [main]
@@ -12,6 +13,11 @@ on:
       - src/web/demo/site/**
       - .github/workflows/demo-site.yml
   workflow_dispatch:
+    inputs:
+      check_only:
+        description: "Deploy nothing: only check that https://hc360.hyfib.com serves the committed folder"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,6 +34,7 @@ env:
 jobs:
   settings:
     name: Pages settings
+    if: ${{ !inputs.check_only }}
     runs-on: ubuntu-latest
     permissions:
       pages: read
@@ -84,6 +91,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,16 +108,31 @@ jobs:
         id: deploy
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
+  check:
+    name: Check the live site
+    needs: [settings, publish]
+    if: ${{ always() && (inputs.check_only || needs.publish.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       # Each file of the folder, fetched from the live site, must be the one committed, and the site's address must
-      # answer with the page. The site is checked at the address GitHub gives the deploy, and at https://hc360.hyfib.com
-      # once HTTPS is on for it. A file that differs is fetched again for up to two minutes, while the new deploy
-      # reaches every server of the CDN.
+      # answer with the page. After a deploy, the site is checked at the address GitHub gives it, and at
+      # https://hc360.hyfib.com once HTTPS is on for it; a check only checks https://hc360.hyfib.com. A file that differs
+      # is fetched again for up to two minutes, while a new deploy reaches every server of the CDN.
       - name: Check the live site
         env:
-          PAGE_URL: ${{ steps.deploy.outputs.page_url }}
-          DOMAIN_HTTPS: ${{ needs.settings.outputs.https }}
+          PAGE_URL: ${{ needs.publish.outputs.page_url }}
+          DOMAIN_HTTPS: ${{ inputs.check_only && 'true' || needs.settings.outputs.https }}
         run: |
-          bases=("${PAGE_URL%/}")
+          bases=()
+          if [ -n "$PAGE_URL" ]; then
+            bases+=("${PAGE_URL%/}")
+          fi
           if [ "$DOMAIN_HTTPS" = true ] && [ "${PAGE_URL%/}" != "https://$DOMAIN" ]; then
             bases+=("https://$DOMAIN")
           fi
