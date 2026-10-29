@@ -333,12 +333,13 @@ public sealed class PayrollService(
             .Select(l =>
             {
                 var component = context.Components[l.SalaryComponentId];
-                return new SalaryLineInput(component.Code, component.Name, component.Kind, component.CalculationType, l.Value, component.SortOrder);
+                return new SalaryLineInput(component.Code, component.Name, component.Kind, component.CalculationType, l.Value, component.SortOrder, component.WageTreatment);
             })
             .ToList();
         var adjustments = inputs
             .Where(i => i.Kind is PayrollInputKind.Earning or PayrollInputKind.Deduction)
-            .Select(i => new PayrollAdjustmentInput(i.ComponentCode, i.Description, i.Kind == PayrollInputKind.Earning ? SalaryComponentKind.Earning : SalaryComponentKind.Deduction, i.Amount))
+            .Select(i => new PayrollAdjustmentInput(i.ComponentCode, i.Description, i.Kind == PayrollInputKind.Earning ? SalaryComponentKind.Earning : SalaryComponentKind.Deduction, i.Amount,
+                context.Components.Values.FirstOrDefault(c => c.Code == i.ComponentCode)?.WageTreatment ?? WageTreatment.Wages))
             .ToList();
 
         var schedule = structure.ProfessionalTaxState is { } state ? context.ProfessionalTax.GetValueOrDefault(state) : null;

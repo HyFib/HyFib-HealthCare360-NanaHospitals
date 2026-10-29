@@ -11,6 +11,7 @@ import {
   Page,
   PageHeader,
   Section,
+  SelectField,
   StatusBadge,
   SwitchField,
   TextField,
@@ -23,7 +24,13 @@ import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
 import { hrApi, hrKeys, hrQueries, type SalaryComponentDto } from '@/modules/hr/api';
-import { HR_PERMISSIONS as P, PAYROLL_VIEWERS } from '@/modules/hr/labels';
+import {
+  HR_PERMISSIONS as P,
+  PAYROLL_VIEWERS,
+  WAGE_TREATMENTS,
+  wageTreatmentLabel,
+  wageTreatmentShort,
+} from '@/modules/hr/labels';
 import { PAYROLL_NAV } from '@/modules/hr/nav';
 import { EditorDrawer } from '@/modules/hr/shared/EditorDrawer';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
@@ -106,6 +113,13 @@ function ComponentsPage() {
                       : 'Set per employee',
             },
             { key: 'tax', header: 'Taxable', width: 90, priority: 'low', render: (c) => (c.isTaxable ? 'Yes' : 'No') },
+            {
+              key: 'pf',
+              header: 'In PF wages',
+              width: 130,
+              priority: 'low',
+              render: (c) => (c.kind === 'Earning' && !c.isStatutory ? wageTreatmentShort[c.wageTreatment] : '—'),
+            },
             { key: 'order', header: 'Order', width: 70, align: 'end', priority: 'low', render: (c) => c.sortOrder },
             {
               key: 'active',
@@ -142,6 +156,7 @@ const schema = z
     calculationType: z.enum(['Fixed', 'PercentOfBasic']),
     defaultValue: z.number({ error: 'Enter a default (0 if set per employee).' }).min(0),
     isTaxable: z.boolean(),
+    wageTreatment: z.enum(WAGE_TREATMENTS),
     sortOrder: z.number({ error: 'Enter the order on the payslip.' }).int().min(0).max(800),
     isActive: z.boolean(),
   })
@@ -164,17 +179,21 @@ function ComponentDrawer({ component, onClose }: { component: SalaryComponentDto
       calculationType: component?.calculationType ?? 'Fixed',
       defaultValue: component?.defaultValue ?? 0,
       isTaxable: component?.isTaxable ?? true,
+      wageTreatment: component?.wageTreatment ?? 'Wages',
       sortOrder: component?.sortOrder ?? 100,
       isActive: component?.isActive ?? true,
     },
   });
   const calculationType = useWatch({ control: form.control, name: 'calculationType' });
+  const kind = useWatch({ control: form.control, name: 'kind' });
 
   const save = useMutation({
     mutationFn: (v: Values) =>
       hrApi.saveComponent(component?.id ?? null, {
         ...v,
         code: v.code.toUpperCase(),
+        // Only earnings count in PF wages.
+        wageTreatment: v.kind === 'Earning' ? v.wageTreatment : 'Wages',
         version: component?.version ?? null,
       }),
     onSuccess: () => {
@@ -242,6 +261,16 @@ function ComponentDrawer({ component, onClose }: { component: SalaryComponentDto
         step={calculationType === 'PercentOfBasic' ? 0.5 : 100}
         hint="Suggested when a salary structure is created; can be changed per employee."
       />
+      {kind === 'Earning' && (
+        <SelectField
+          control={form.control}
+          name="wageTreatment"
+          label="Counts in PF wages"
+          disabled={component?.code === 'BASIC'}
+          options={WAGE_TREATMENTS.map((t) => ({ value: t, label: wageTreatmentLabel[t] }))}
+          hint="PF is paid on wages (Code on Social Security 2020). Pay left out of wages counts too, for what it comes to above half of all the month's pay."
+        />
+      )}
       <SwitchField control={form.control} name="isTaxable" label="Taxable income" />
       <SwitchField control={form.control} name="isActive" label="In use" />
     </EditorDrawer>

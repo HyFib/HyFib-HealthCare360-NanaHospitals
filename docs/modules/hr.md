@@ -154,7 +154,7 @@ immediately.
 | Method | Path | Permission | Body → Response |
 |---|---|---|---|
 | GET | `/api/v1/hr/payroll/components` | payroll.process or .approve | → `SalaryComponentDto[]` |
-| POST/PUT | `/api/v1/hr/payroll/components[/{id}]` | payroll.process | `SaveSalaryComponentRequest {code, name, kind, calculationType: Fixed|PercentOfBasic, defaultValue, isTaxable, sortOrder, isActive}`; PF/ESI/PT/TDS are reserved |
+| POST/PUT | `/api/v1/hr/payroll/components[/{id}]` | payroll.process | `SaveSalaryComponentRequest {code, name, kind, calculationType: Fixed|PercentOfBasic, defaultValue, isTaxable, sortOrder, isActive, wageTreatment?: Wages|Excluded|PaidOnLeaving}` (none keeps it; BASIC and deductions are `Wages`); PF/ESI/PT/TDS are reserved |
 | GET | `/api/v1/hr/payroll/professional-tax` | payroll.process or .approve | → `ProfessionalTaxScheduleDto[]` |
 | PUT | `/api/v1/hr/payroll/professional-tax/{stateCode}` | payroll.approve | `SaveProfessionalTaxRequest {stateName, frequency: Monthly|HalfYearly, deductionMonths, bands[{incomeFrom, incomeTo, amount, februaryAmount}]}` replaces the state's table (audited) |
 | GET/POST | `/api/v1/hr/employees/{employeeId}/salary-structures` | GET: process/approve; POST: payroll.process | `SaveSalaryStructureRequest {effectiveFrom, annualCtc, monthlyTds, pfApplicable, pfOnActualBasic, esiApplicable, professionalTaxState, notes, lines[{salaryComponentId, value}]}`; a new structure closes the previous one |
@@ -180,8 +180,19 @@ Calculators (pure, unit-tested):
 * **LOP** (`LopCalculator`): calendar-day basis. LOP = absent days + unpaid leave within the employment period. Days
   with no computed attendance count as absent and are reported. Attendance-exempt staff lose pay only for unpaid
   leave. A `LopDaysOverride` input wins.
-* **PF** (`ProvidentFund`): 12 % of earned basic, capped at the ₹15,000 wage ceiling unless `pfOnActualBasic`,
-  rounded to the rupee. The employer share is reported.
+* **PF** (`ProvidentFund`): 12 % of the month's PF wages, capped at the ₹15,000 wage ceiling unless `pfOnActualBasic`
+  (which now means actual wages), rounded to the rupee. The employer share is reported. PF wages follow the Code on
+  Social Security 2020, s.2(88), in force since 21 November 2025. Each earning's `wageTreatment` says how it counts:
+  * `Wages`: basic pay, dearness allowance, retaining allowance, and any other pay the definition does not leave out
+    (a special allowance, for instance). The default for a new earning.
+  * `Excluded`: the pay clauses (a) to (i) leave out: bonus, house rent, conveyance, special expenses of the job,
+    overtime, commission. What these come to above half of all the month's pay is added to wages.
+  * `PaidOnLeaving`: gratuity, retrenchment compensation and other payments on leaving (clauses (j), (k)): neither
+    wages nor counted in the half.
+
+  For example, ₹20,000 of pay with ₹8,000 of wages and ₹12,000 left out gives PF wages of ₹10,000. The seeded house rent
+  (`HRA`), conveyance (`CONV`) and overtime (`OT`) are `Excluded`; the other seeded earnings are wages. One-off inputs
+  count as their pay head does.
 * **ESI** (`EmployeeStateInsurance`): 0.75 % of earned gross (employer 3.25 %) when *contracted* gross ≤ ₹21,000,
   rounded up to the next rupee.
 * **Professional tax** (`ProfessionalTaxCalculator`): state slab table. Monthly states apply to the month's gross,

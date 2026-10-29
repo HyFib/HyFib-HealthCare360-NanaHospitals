@@ -24,6 +24,7 @@ import type {
   SalaryPaymentMode,
   SeparationReason,
   StaffCategory,
+  WageTreatment,
   Weekday,
 } from './labels';
 
@@ -575,6 +576,7 @@ export interface SalaryComponentDto {
   calculationType: SalaryCalculationType;
   defaultValue: number;
   isTaxable: boolean;
+  wageTreatment: WageTreatment;
   isStatutory: boolean;
   sortOrder: number;
   isActive: boolean;
@@ -591,6 +593,7 @@ export interface SaveSalaryComponentRequest {
   sortOrder: number;
   isActive: boolean;
   version: number | null;
+  wageTreatment: WageTreatment;
 }
 
 export interface ProfessionalTaxBandDto {

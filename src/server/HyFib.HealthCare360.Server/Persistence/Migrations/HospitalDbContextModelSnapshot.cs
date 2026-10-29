@@ -19435,6 +19435,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<string>("WageTreatment")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("wage_treatment");
+
                     b.HasKey("Id")
                         .HasName("pk_salary_components");
 

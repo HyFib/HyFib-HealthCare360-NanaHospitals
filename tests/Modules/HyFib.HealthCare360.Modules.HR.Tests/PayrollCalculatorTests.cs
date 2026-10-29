@@ -16,10 +16,13 @@ public sealed class PayrollCalculatorTests
     private static List<SalaryLineInput> Structure(decimal basic, params SalaryLineInput[] extra) =>
     [
         new("BASIC", "Basic Salary", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, basic, 10),
-        new("HRA", "House Rent Allowance", SalaryComponentKind.Earning, SalaryCalculationType.PercentOfBasic, 40, 20),
-        new("CONV", "Conveyance", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 1_600, 30),
+        new("HRA", "House Rent Allowance", SalaryComponentKind.Earning, SalaryCalculationType.PercentOfBasic, 40, 20, WageTreatment.Excluded),
+        new("CONV", "Conveyance", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 1_600, 30, WageTreatment.Excluded),
         .. extra,
     ];
+
+    private static SalaryLineInput Special(decimal amount) =>
+        new("SPECIAL", "Special Allowance", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, amount, 50);
 
     private static PayrollCalculationResult Calculate(
         List<SalaryLineInput> lines,
@@ -30,9 +33,10 @@ public sealed class PayrollCalculatorTests
         bool pf = true,
         bool esi = true,
         decimal? earlierHalfYear = null,
+        bool pfOnActual = false,
         params PayrollAdjustmentInput[] adjustments) =>
         PayrollCalculator.Calculate(new PayrollCalculationInput(
-            2026, 9, 30, payableDays, lines, adjustments, new StatutoryProfile(pf, false, esi, pt), tds, tdsOverride, earlierHalfYear));
+            2026, 9, 30, payableDays, lines, adjustments, new StatutoryProfile(pf, pfOnActual, esi, pt), tds, tdsOverride, earlierHalfYear));
 
     private static decimal Line(PayrollCalculationResult result, string code) => result.Lines.Single(l => l.Code == code).Amount;
 
@@ -169,7 +173,64 @@ public sealed class PayrollCalculatorTests
         var result = Calculate([new SalaryLineInput("SPECIAL", "Special", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 10_000, 1)]);
 
         result.HasErrors.ShouldBeTrue();
-        result.EmployeePf.ShouldBe(0m);
+        result.Warnings.ShouldContain("The salary structure has no fixed BASIC component.");
+    }
+
+    // PF wages (Code on Social Security 2020, s.2(88)): the pay that counts as wages, and of the pay left out of them (house
+    // rent, conveyance, overtime…), what comes to more than half of all the pay.
+    [Fact]
+    public void Pf_is_on_wages_with_the_pay_left_out_above_half_added_back()
+    {
+        // ₹20,000 of pay: wages of ₹8,000 (basic and the special allowance), ₹12,000 left out (house rent, conveyance and
+        // overtime), which is ₹2,000 more than half.
+        var result = Calculate(Structure(6_000, Special(2_000)),
+            adjustments: [new PayrollAdjustmentInput("OT", "Overtime", SalaryComponentKind.Earning, 8_000, WageTreatment.Excluded)]);
+
+        result.GrossEarnings.ShouldBe(20_000m);
+        result.PfWage.ShouldBe(10_000m);
+        result.EmployeePf.ShouldBe(1_200m);
+        result.EmployerPf.ShouldBe(1_200m);
+    }
+
+    [Fact]
+    public void A_special_allowance_is_wages()
+    {
+        // Basic ₹8,000 and special allowance ₹4,000 are wages; house rent (₹3,200) and conveyance (₹1,600) are under half the pay.
+        var result = Calculate(Structure(8_000, Special(4_000)));
+
+        result.PfWage.ShouldBe(12_000m);
+        result.EmployeePf.ShouldBe(1_440m);
+    }
+
+    [Fact]
+    public void Pf_wages_are_the_month_s_pay_after_loss_of_pay()
+    {
+        var result = Calculate(Structure(6_000, Special(2_000)), payableDays: 27);
+
+        result.PfWage.ShouldBe(7_200m);
+        result.EmployeePf.ShouldBe(864m);
+    }
+
+    [Theory]
+    [InlineData(false, 15_000, 1_800)]
+    [InlineData(true, 18_000, 2_160)]
+    public void Pf_wages_above_the_ceiling_count_only_on_actual_wages(bool onActual, double pfWage, double employeePf)
+    {
+        var result = Calculate(Structure(12_000, Special(6_000)), pfOnActual: onActual);
+
+        result.PfWage.ShouldBe((decimal)pfWage);
+        result.EmployeePf.ShouldBe((decimal)employeePf);
+    }
+
+    [Fact]
+    public void Gratuity_paid_on_leaving_is_neither_wages_nor_counted_in_the_half()
+    {
+        var result = Calculate([new SalaryLineInput("BASIC", "Basic Salary", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 10_000, 10)],
+            adjustments: [new PayrollAdjustmentInput("GRATUITY", "Gratuity", SalaryComponentKind.Earning, 50_000, WageTreatment.PaidOnLeaving)]);
+
+        result.GrossEarnings.ShouldBe(60_000m);
+        result.PfWage.ShouldBe(10_000m);
+        result.EmployeePf.ShouldBe(1_200m);
     }
 
     [Fact]

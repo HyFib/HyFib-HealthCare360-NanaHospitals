@@ -10,8 +10,19 @@ public sealed class StatutoryDeductionsTests
     [InlineData(12_345, false, 12_345)]
     [InlineData(20_000, true, 20_000)]
     [InlineData(-10, false, 0)]
-    public void Pf_wage_is_basic_capped_at_the_ceiling_unless_opted_for_actual(double earnedBasic, bool onActual, double expected) =>
-        ProvidentFund.Wage((decimal)earnedBasic, onActual).ShouldBe((decimal)expected);
+    public void Pf_wage_is_capped_at_the_ceiling_unless_opted_for_actual(double wages, bool onActual, double expected) =>
+        ProvidentFund.Wage((decimal)wages, onActual).ShouldBe((decimal)expected);
+
+    // Code on Social Security 2020, s.2(88): of the pay left out of wages (house rent, conveyance, overtime…), what comes to
+    // more than half of all the pay is added back to wages.
+    [Theory]
+    [InlineData(8_000, 12_000, 10_000)]
+    [InlineData(13_000, 12_000, 13_000)]
+    [InlineData(10_000, 10_000, 10_000)]
+    [InlineData(0, 9_000, 4_500)]
+    [InlineData(6_000, 0, 6_000)]
+    public void Pf_wages_take_in_what_the_pay_left_out_comes_to_above_half_of_all_the_pay(double wages, double leftOut, double expected) =>
+        ProvidentFund.Wages((decimal)wages, (decimal)leftOut).ShouldBe((decimal)expected);
 
     [Theory]
     [InlineData(15_000, 1_800)]

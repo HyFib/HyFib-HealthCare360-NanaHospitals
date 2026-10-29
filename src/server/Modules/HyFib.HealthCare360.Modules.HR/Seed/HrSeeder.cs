@@ -59,6 +59,13 @@ internal sealed class HrSeeder(IOptions<PlatformOptions> options, INumberSeries 
         new() { Code = "LOP", Name = "Leave Without Pay", IsPaid = false, TracksBalance = false },
     ];
 
+    /// <summary>
+    /// The seeded earnings the Code on Social Security 2020 leaves out of wages: house rent, conveyance and overtime
+    /// (s.2(88)(f), (d) and (h)). The others (medical, special, night duty, arrears, incentive) count as wages: the
+    /// definition does not leave them out.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> ExcludedFromWages = new HashSet<string>(StringComparer.Ordinal) { "HRA", "CONV", "OT" };
+
     private static readonly (string Code, string Name, SalaryComponentKind Kind, SalaryCalculationType Type, decimal Value, bool Taxable, bool Statutory, int Sort)[] Components =
     [
         (SalaryComponent.BasicCode, "Basic Salary", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 0, true, false, 10),
@@ -179,6 +186,7 @@ internal sealed class HrSeeder(IOptions<PlatformOptions> options, INumberSeries 
                 CalculationType = c.Type,
                 DefaultValue = c.Value,
                 IsTaxable = c.Taxable,
+                WageTreatment = ExcludedFromWages.Contains(c.Code) ? WageTreatment.Excluded : WageTreatment.Wages,
                 IsStatutory = c.Statutory,
                 SortOrder = c.Sort,
             });

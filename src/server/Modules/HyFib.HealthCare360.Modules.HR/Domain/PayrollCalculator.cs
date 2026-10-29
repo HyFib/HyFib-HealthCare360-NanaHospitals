@@ -7,10 +7,11 @@ public sealed record SalaryLineInput(
     SalaryComponentKind Kind,
     SalaryCalculationType CalculationType,
     decimal Value,
-    int SortOrder);
+    int SortOrder,
+    WageTreatment Treatment = WageTreatment.Wages);
 
 /// <summary>A one-off earning or deduction for the month (arrears, canteen credit…).</summary>
-public sealed record PayrollAdjustmentInput(string Code, string Name, SalaryComponentKind Kind, decimal Amount);
+public sealed record PayrollAdjustmentInput(string Code, string Name, SalaryComponentKind Kind, decimal Amount, WageTreatment Treatment = WageTreatment.Wages);
 
 public sealed record StatutoryProfile(bool PfApplicable, bool PfOnActualBasic, bool EsiApplicable, ProfessionalTaxSchedule? ProfessionalTax);
 
@@ -55,9 +56,10 @@ public sealed record PayrollCalculationResult(
 /// <summary>
 /// Computes one payslip (HR-06/07). Earnings from the structure are pro-rated by payable days ÷ days in month;
 /// percentage heads are a percentage of basic. One-off inputs are added as they are. Statutory deductions follow:
-/// PF on earned basic (₹15,000 ceiling), ESI on earned gross when contracted gross ≤ ₹21,000, state professional
-/// tax, and the projected monthly TDS (or this month's override). Structure deductions are not pro-rated.
-/// A negative net pay is reported as an error rather than silently capped, because it means the inputs are wrong.
+/// PF on the month's wages (<see cref="ProvidentFund.Wages"/>; ₹15,000 ceiling), ESI on earned gross when contracted
+/// gross ≤ ₹21,000, state professional tax, and the projected monthly TDS (or this month's override). Structure
+/// deductions are not pro-rated. A negative net pay is reported as an error rather than silently capped, because it
+/// means the inputs are wrong.
 /// </summary>
 public static class PayrollCalculator
 {
@@ -85,21 +87,27 @@ public static class PayrollCalculator
         }
 
         var standardGross = 0m;
+        var earned = new List<(decimal Amount, WageTreatment Treatment)>();
         foreach (var line in input.Lines.Where(l => l.Kind == SalaryComponentKind.Earning).OrderBy(l => l.SortOrder))
         {
             var full = FullAmount(line, fullBasic);
             standardGross += full;
             lines.Add(new CalculatedPayLine(line.Code, line.Name, SalaryComponentKind.Earning, full, Money.Round(full * factor), false, line.SortOrder));
+            earned.Add((lines[^1].Amount, line.Treatment));
         }
 
         foreach (var adjustment in input.Adjustments.Where(a => a.Kind == SalaryComponentKind.Earning && a.Amount != 0))
         {
             lines.Add(new CalculatedPayLine(adjustment.Code, adjustment.Name, SalaryComponentKind.Earning, 0, Money.Round(adjustment.Amount), false, 500));
+            earned.Add((lines[^1].Amount, adjustment.Treatment));
         }
 
         var gross = lines.Where(l => l.Kind == SalaryComponentKind.Earning).Sum(l => l.Amount);
 
-        var pfWage = input.Statutory.PfApplicable ? ProvidentFund.Wage(earnedBasic, input.Statutory.PfOnActualBasic) : 0;
+        var pfWages = Money.Round(ProvidentFund.Wages(
+            earned.Where(e => e.Treatment == WageTreatment.Wages).Sum(e => e.Amount),
+            earned.Where(e => e.Treatment == WageTreatment.Excluded).Sum(e => e.Amount)));
+        var pfWage = input.Statutory.PfApplicable ? ProvidentFund.Wage(pfWages, input.Statutory.PfOnActualBasic) : 0;
         var employeePf = ProvidentFund.EmployeeContribution(pfWage);
         var employerPf = ProvidentFund.EmployerContribution(pfWage);
 

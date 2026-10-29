@@ -10,11 +10,13 @@ public sealed record SalaryComponentDto(
     SalaryCalculationType CalculationType,
     decimal DefaultValue,
     bool IsTaxable,
+    WageTreatment WageTreatment,
     bool IsStatutory,
     int SortOrder,
     bool IsActive,
     uint Version);
 
+/// <param name="WageTreatment">How the earning counts in PF wages; none keeps it as it is (wages, for a new pay head).</param>
 public sealed record SaveSalaryComponentRequest(
     string Code,
     string Name,
@@ -24,7 +26,8 @@ public sealed record SaveSalaryComponentRequest(
     bool IsTaxable,
     int SortOrder,
     bool IsActive,
-    uint? Version);
+    uint? Version,
+    WageTreatment? WageTreatment = null);
 
 public sealed record ProfessionalTaxBandDto(decimal IncomeFrom, decimal? IncomeTo, decimal Amount, decimal? FebruaryAmount);
 
@@ -195,6 +198,9 @@ public sealed class SaveSalaryComponentRequestValidator : AbstractValidator<Save
         RuleFor(x => x.DefaultValue).LessThanOrEqualTo(100).When(x => x.CalculationType == SalaryCalculationType.PercentOfBasic)
             .WithMessage("A percentage of basic cannot exceed 100.");
         RuleFor(x => x.SortOrder).InclusiveBetween(0, 800);
+        RuleFor(x => x.WageTreatment).IsInEnum();
+        RuleFor(x => x.WageTreatment).Must(t => t is null or WageTreatment.Wages).When(x => x.Kind == SalaryComponentKind.Deduction)
+            .WithMessage("A deduction is not pay: only earnings count in PF wages.");
     }
 }
 

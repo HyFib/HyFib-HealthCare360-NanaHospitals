@@ -156,6 +156,20 @@ export type SalaryComponentKind = (typeof SALARY_COMPONENT_KINDS)[number];
 export const SALARY_CALCULATION_TYPES = ['Fixed', 'PercentOfBasic'] as const;
 export type SalaryCalculationType = (typeof SALARY_CALCULATION_TYPES)[number];
 
+/** How an earning counts in the wages PF is paid on (Code on Social Security 2020, s.2(88)). */
+export const WAGE_TREATMENTS = ['Wages', 'Excluded', 'PaidOnLeaving'] as const;
+export type WageTreatment = (typeof WAGE_TREATMENTS)[number];
+export const wageTreatmentLabel: Record<WageTreatment, string> = {
+  Wages: 'Wages (basic, DA, special allowance…)',
+  Excluded: 'Left out of wages (house rent, conveyance, overtime…)',
+  PaidOnLeaving: 'Paid on leaving (gratuity, retrenchment compensation)',
+};
+export const wageTreatmentShort: Record<WageTreatment, string> = {
+  Wages: 'Wages',
+  Excluded: 'Above half only',
+  PaidOnLeaving: 'No',
+};
+
 export type PunchDirection = 'Unknown' | 'In' | 'Out';
 export type PunchSource = 'Adms' | 'DeviceApi' | 'Regularisation' | 'Pull';
 

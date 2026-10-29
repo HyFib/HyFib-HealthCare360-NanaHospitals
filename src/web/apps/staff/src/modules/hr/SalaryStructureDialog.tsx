@@ -312,7 +312,7 @@ function StructureForm({
             <SwitchField
               control={form.control}
               name="pfOnActualBasic"
-              label="PF on actual basic (above ₹15,000 ceiling)"
+              label="PF on actual wages (above the ₹15,000 ceiling)"
             />
             <SwitchField control={form.control} name="esiApplicable" label="ESI (when gross is ₹21,000 or less)" />
             <SelectField
