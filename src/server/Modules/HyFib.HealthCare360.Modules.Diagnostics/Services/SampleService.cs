@@ -53,6 +53,12 @@ internal sealed class SampleService(
             return payment.Error!;
         }
 
+        var consent = await RecordConsentsAsync(items, request.Consents, ct);
+        if (consent.IsFailure)
+        {
+            return consent.Error!;
+        }
+
         var now = time.GetUtcNow();
         var collectedAt = request.CollectedAt ?? now;
         if (collectedAt > now + DiagnosticsTime.FutureTolerance)
@@ -78,6 +84,66 @@ internal sealed class SampleService(
         await db.SaveChangesAsync(ct);
         await realtime.PublishAsync(order.FacilityId, "lab.sample.collected", new { OrderId = order.Id, SampleIds = tubeIds }, ct);
         return Result<IReadOnlyList<SampleLabel>>.Ok(await LabelsAsync(order, tubes, ct));
+    }
+
+    /// <summary>
+    /// An HIV test's sample is drawn only on the patient's informed consent, their representative's, or a court's order
+    /// (HIV and AIDS Act 2017, s.5 and 6), recorded on the test after pre-test counselling: now, from
+    /// <paramref name="given"/>, or before. Refused, the tests still waiting for it are named.
+    /// </summary>
+    private async Task<Result> RecordConsentsAsync(IReadOnlyList<LabOrderItem> items, IReadOnlyList<TestConsentInput>? given, CancellationToken ct)
+    {
+        var pending = items.Where(i => i.ConsentRecordedAt is null).ToList();
+        if (pending.Count == 0)
+        {
+            return Result.Success();
+        }
+
+        // The tests ordered and every test under them, through panels within panels, as the laboratory expands them.
+        var testIds = pending.Select(i => i.LabTestId).Distinct().ToList();
+        var tests = new Dictionary<Guid, LabTest>();
+        var toLoad = testIds;
+        for (var depth = 0; depth <= LabTest.MaxPanelDepth && toLoad.Count > 0; depth++)
+        {
+            var batch = toLoad;
+            var loaded = await db.Set<LabTest>().AsNoTracking().Include(t => t.Components).Where(t => batch.Contains(t.Id)).ToListAsync(ct);
+            foreach (var test in loaded)
+            {
+                tests[test.Id] = test;
+            }
+
+            toLoad = loaded.SelectMany(t => t.Components.Select(c => c.TestId)).Where(id => !tests.ContainsKey(id)).Distinct().ToList();
+        }
+
+        var hiv = testIds.Where(id => tests.TryGetValue(id, out var test) && HivTestConsent.Needed(test, tests)).ToHashSet();
+
+        var now = time.GetUtcNow();
+        var missing = new List<LabOrderItem>();
+        foreach (var item in pending.Where(i => hiv.Contains(i.LabTestId)))
+        {
+            if (given?.FirstOrDefault(c => c.ItemId == item.Id) is not { } consent)
+            {
+                missing.Add(item);
+                continue;
+            }
+
+            var recorded = item.RecordConsent(consent.Basis, consent.GivenBy, consent.Relation, consent.Reference, currentUser.UserId, now);
+            if (recorded.IsFailure)
+            {
+                return recorded;
+            }
+        }
+
+        if (missing.Count == 0)
+        {
+            return Result.Success();
+        }
+
+        var refused = Error.Rule(
+            "lab.consent_required",
+            $"{string.Join(", ", missing.Select(i => i.TestName))}: an HIV test needs the patient's informed consent, given after pre-test "
+            + "counselling, before its sample is drawn (HIV and AIDS Act 2017, s.5). Record who consented, or the court's order, then collect.");
+        return refused with { Data = new { tests = missing.Select(i => new { itemId = i.Id, name = i.TestName, sampleId = i.SampleId }).ToList() } };
     }
 
     /// <summary>Label data for reprinting (a torn or smudged label must be replaced with an identical one).</summary>

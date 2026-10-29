@@ -130,6 +130,9 @@ internal sealed class LabOrderItemConfiguration : IEntityTypeConfiguration<LabOr
         b.Property(x => x.DispatchReference).HasMaxLength(64);
         b.Property(x => x.ExternalReference).HasMaxLength(64);
         b.Property(x => x.CancelReason).HasMaxLength(300);
+        b.Property(x => x.ConsentGivenBy).HasMaxLength(200);
+        b.Property(x => x.ConsentRelation).HasMaxLength(64);
+        b.Property(x => x.ConsentReference).HasMaxLength(64);
         b.Ignore(x => x.IsActive);
         b.Ignore(x => x.IsPackageComponent);
         b.HasOne<LabTest>().WithMany().HasForeignKey(x => x.LabTestId).OnDelete(DeleteBehavior.Restrict);

@@ -548,6 +548,28 @@ export interface CollectSamplesRequest {
   sampleIds: string[] | null;
   collectedAt: string | null;
   collectionSite: string | null;
+  /** For HIV tests on the tubes: on what each is done, recorded before its sample is drawn. */
+  consents?: TestConsentInput[] | null;
+}
+
+/** On what an HIV test is done (HIV and AIDS Act 2017, s.5 and 6). */
+export type ConsentBasis = 'Patient' | 'Representative' | 'CourtOrder';
+
+/** The consent to an HIV test, after pre-test counselling: the signed form's number, or the court order's. */
+export interface TestConsentInput {
+  itemId: string;
+  basis: ConsentBasis;
+  givenBy: string | null;
+  relation: string | null;
+  reference: string | null;
+}
+
+/** An HIV test waiting for the patient's consent before its sample is drawn (the server's `lab.consent_required`). */
+export interface ConsentTest {
+  itemId: string;
+  name: string;
+  /** The tube the test is drawn in. */
+  sampleId: string;
 }
 
 /** Data for the 50 × 25 mm barcode label. */

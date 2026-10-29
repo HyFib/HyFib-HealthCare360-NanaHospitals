@@ -14123,6 +14123,34 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("charge_id");
 
+                    b.Property<string>("ConsentBasis")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("consent_basis");
+
+                    b.Property<string>("ConsentGivenBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consent_given_by");
+
+                    b.Property<DateTimeOffset?>("ConsentRecordedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consent_recorded_at");
+
+                    b.Property<Guid?>("ConsentRecordedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("consent_recorded_by");
+
+                    b.Property<string>("ConsentReference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("consent_reference");
+
+                    b.Property<string>("ConsentRelation")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("consent_relation");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

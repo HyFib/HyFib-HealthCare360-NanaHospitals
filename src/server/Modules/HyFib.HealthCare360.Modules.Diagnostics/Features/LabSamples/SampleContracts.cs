@@ -23,7 +23,17 @@ public sealed record PendingCollectionItem(
     DateTimeOffset OrderedAt,
     bool IsRecollection);
 
-public sealed record CollectSamplesRequest(IReadOnlyList<Guid>? SampleIds, DateTimeOffset? CollectedAt, string? CollectionSite);
+/// <param name="Consents">
+/// For HIV tests on the tubes: on what each is done, recorded before its sample is drawn (HIV and AIDS Act 2017, s.5).
+/// </param>
+public sealed record CollectSamplesRequest(
+    IReadOnlyList<Guid>? SampleIds, DateTimeOffset? CollectedAt, string? CollectionSite, IReadOnlyList<TestConsentInput>? Consents = null);
+
+/// <summary>
+/// The consent to an HIV test, after pre-test counselling: the patient's, or their representative's (named, with the
+/// relation), or a court's order. <paramref name="Reference"/> is the signed form's number, or the order's.
+/// </summary>
+public sealed record TestConsentInput(Guid ItemId, ConsentBasis Basis, string? GivenBy, string? Relation, string? Reference);
 
 /// <summary>Data for the 50 × 25 mm barcode label (printed through the Desktop bridge as ZPL/TSPL).</summary>
 public sealed record SampleLabel(
@@ -73,6 +83,21 @@ public sealed class CollectSamplesRequestValidator : AbstractValidator<CollectSa
     {
         RuleFor(x => x.SampleIds).Must(ids => ids is null || ids.Count <= 50).WithMessage("At most 50 samples at a time.");
         RuleFor(x => x.CollectionSite).SafeText(100);
+        RuleFor(x => x.Consents).Must(c => c is null || c.Count <= 50).WithMessage("At most 50 consents at a time.");
+        RuleForEach(x => x.Consents).ChildRules(consent =>
+        {
+            consent.RuleFor(c => c.ItemId).NotEmpty();
+            consent.RuleFor(c => c.Basis).IsInEnum();
+            consent.RuleFor(c => c.GivenBy).NotEmpty().When(c => c.Basis == ConsentBasis.Representative)
+                .WithMessage("Name the representative who consented.");
+            consent.RuleFor(c => c.GivenBy).SafeText(200);
+            consent.RuleFor(c => c.Relation).NotEmpty().When(c => c.Basis == ConsentBasis.Representative)
+                .WithMessage("Give the representative's relation to the patient.");
+            consent.RuleFor(c => c.Relation).SafeText(64);
+            consent.RuleFor(c => c.Reference).NotEmpty().When(c => c.Basis == ConsentBasis.CourtOrder)
+                .WithMessage("Give the number of the court order.");
+            consent.RuleFor(c => c.Reference).SafeText(64);
+        });
     }
 }
 
