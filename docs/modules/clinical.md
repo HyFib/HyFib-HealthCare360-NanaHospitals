@@ -657,8 +657,10 @@ the user may not open shows initials.
   absconded or died (these three with notes). The case leaves the board and the emergency visit closes; an admitted
   patient's stay goes on as the admission's own visit. A patient must be triaged first, unless they died or absconded.
 * **Medico-legal cases** (`PUT /cases/{id}/mlc`, `clinical.er.mlc`): the doctor enters the case in the MLC register,
-  numbered `mlc-register`: who brought the patient, the alleged cause (road accident, assault, sexual assault, burns,
-  poisoning…), where and when, the injuries as examined, the police station, and the doctor's council registration.
+  numbered `mlc-register`: who brought the patient, named unless a member of the public (a Good Samaritan is not
+  compelled to give their name or other details, for the MLC form either: Motor Vehicles Act 1988, s.134A, and Central
+  Motor Vehicles Rules 1989, rule 168), the alleged cause (road accident, assault, sexual assault, burns, poisoning…),
+  where and when, the injuries as examined, the police station, and the doctor's council registration.
   The visit is marked MLC with the number (and the chart is kept without a retention limit). The police intimation
   (`/mlc/intimation`) records when, how, who received it and the GD/DD entry; after it the entry's facts cannot change
   (422 `mlc.intimated`). `/mlc/document` prints the intimation; `GET /mlc?from&to` is the register

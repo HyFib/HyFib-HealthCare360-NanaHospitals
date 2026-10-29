@@ -515,7 +515,15 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
                 ))}
               </Select>
             </Field>
-            <Field label="Name (police: name and number)" required={broughtBy !== 'Self'}>
+            <Field
+              label="Name (police: name and number)"
+              required={broughtBy !== 'Self' && broughtBy !== 'Public'}
+              hint={
+                broughtBy === 'Public'
+                  ? 'A Good Samaritan need not give their name or any other details (Motor Vehicles Act, s.134A).'
+                  : undefined
+              }
+            >
               <Input value={broughtByName} maxLength={200} onChange={(_, d) => setBroughtByName(d.value)} />
             </Field>
             <Field label="Alleged cause">

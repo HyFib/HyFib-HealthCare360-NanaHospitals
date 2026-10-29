@@ -241,7 +241,7 @@ export const BROUGHT_BY_LABELS: Record<MlcBroughtBy, string> = {
   Self: 'Came alone',
   Relative: 'Relative or friend',
   Police: 'Police',
-  Public: 'Member of the public',
+  Public: 'Member of the public (Good Samaritan)',
   Ambulance: 'Ambulance',
 };
 

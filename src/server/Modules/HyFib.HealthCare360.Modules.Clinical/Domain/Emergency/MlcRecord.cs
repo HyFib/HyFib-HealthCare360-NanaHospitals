@@ -22,6 +22,12 @@ public enum MlcBroughtBy
     Self = 0,
     Relative,
     Police,
+
+    /// <summary>
+    /// A member of the public: a Good Samaritan, who is not compelled to give their name, address or other personal details,
+    /// for the medico-legal case form or otherwise (Motor Vehicles Act 1988, s.134A; Central Motor Vehicles Rules 1989,
+    /// rule 168).
+    /// </summary>
     Public,
     Ambulance,
 }
@@ -101,7 +107,8 @@ public sealed class MlcRecord : AuditableEntity, IFacilityScoped
             return Error.Field("incidentAt", "The incident cannot be in the future.");
         }
 
-        if (broughtBy != MlcBroughtBy.Self && string.IsNullOrWhiteSpace(broughtByName))
+        // A Good Samaritan gives their name only if they wish to (Central Motor Vehicles Rules 1989, rule 168).
+        if (broughtBy is not (MlcBroughtBy.Self or MlcBroughtBy.Public) && string.IsNullOrWhiteSpace(broughtByName))
         {
             return Error.Field("broughtByName", "Name who brought the patient (and the police officer's number, if police).");
         }

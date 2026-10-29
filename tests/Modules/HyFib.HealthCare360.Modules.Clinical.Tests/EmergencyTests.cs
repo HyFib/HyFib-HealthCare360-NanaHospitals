@@ -106,6 +106,7 @@ public sealed class EmergencyTests
         Describe(mlc, policeStation: " ").Error!.Fields!.Keys.ShouldContain("policeStation");
         Describe(mlc, injuries: "").Error!.Fields!.Keys.ShouldContain("injuries");
         mlc.Describe(MlcBroughtBy.Police, null, MlcCause.Assault, null, null, "Lacerated wound", null, null, "Adyar", Now).Error!.Fields!.Keys.ShouldContain("broughtByName");
+        mlc.Describe(MlcBroughtBy.Relative, " ", MlcCause.Assault, null, null, "Lacerated wound", null, null, "Adyar", Now).Error!.Fields!.Keys.ShouldContain("broughtByName");
         Describe(mlc).IsSuccess.ShouldBeTrue();
         mlc.IntimationOverdue(Now).ShouldBeTrue("An hour has passed without informing the police.");
 
@@ -116,6 +117,15 @@ public sealed class EmergencyTests
         mlc.IntimationOverdue(Now).ShouldBeFalse();
         Describe(mlc).Error!.Code.ShouldBe("mlc.intimated");
         mlc.Intimate(Now, MlcIntimationMode.Written, "SI Kumar", null, Now).Error!.Code.ShouldBe("mlc.intimated");
+    }
+
+    [Fact]
+    public void A_good_samaritan_need_not_give_their_name()
+    {
+        var mlc = new MlcRecord { IdentifiedAt = Now.AddMinutes(-30) };
+        mlc.Describe(MlcBroughtBy.Public, null, MlcCause.RoadTrafficAccident, Now.AddHours(-1), "OMR near Thoraipakkam", "Abrasion, right knee, simple",
+            true, false, "Adyar", Now).IsSuccess.ShouldBeTrue();
+        (mlc.BroughtBy, mlc.BroughtByName).ShouldBe((MlcBroughtBy.Public, (string?)null));
     }
 
     private static Result Describe(MlcRecord mlc, string injuries = "Lacerated wound 3 x 1 cm, left forearm, simple", string policeStation = "Adyar") =>
