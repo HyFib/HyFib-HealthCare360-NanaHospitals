@@ -8,10 +8,10 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -73,7 +73,7 @@ public sealed class ReportEditVersionTests(HospitalServer server)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var patient = await RegisterPatientAsync(admin);
-        var studyId = await AcquiredEcgAsync(patient.Id);
+        var studyId = await AcquiredEcgAsync(admin, patient.Id);
         var path = $"/api/v1/cardiology/studies/{studyId}/report";
         SaveCardiologyReportRequest Report(string conclusion, uint? version) => new(null, null, null, null, null, conclusion, null, false, null, version);
 
@@ -159,11 +159,13 @@ public sealed class ReportEditVersionTests(HospitalServer server)
         response.StatusCode.ShouldBe(status, await response.Content.ReadAsStringAsync(Ct));
     }
 
-    private async Task<Guid> AcquiredEcgAsync(Guid patientId)
+    // At the facility the reporter is signed in to: other tests add facilities, and one elsewhere is not found there.
+    private async Task<Guid> AcquiredEcgAsync(ApiClient reporter, Guid patientId)
     {
+        var facilityId = (await reporter.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
+                         ?? throw new InvalidOperationException("The reporter has no facility.");
         await using var scope = server.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-        var facilityId = await db.Set<Facility>().Select(f => f.Id).FirstAsync(Ct);
         var now = DateTimeOffset.UtcNow;
         var study = new CardiologyStudy
         {
