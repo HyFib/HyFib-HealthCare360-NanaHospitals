@@ -28,6 +28,28 @@ public static partial class HivTestConsent
         || (depth < LabTest.MaxPanelDepth
             && test.Components.Any(c => tests.TryGetValue(c.TestId, out var component) && Needed(component, tests, depth + 1)));
 
+    /// <summary>
+    /// Whether a result is an HIV test's: its own test is one, or a panel it is reported under is, on the way down from
+    /// the test ordered (the bands of an "HIV confirmation" panel). A released result outside its normal answers puts the
+    /// patient's record in the HIV category (<c>LabReportService</c>). Another test of a panel that merely holds an HIV
+    /// test, such as the hepatitis B test beside it in viral markers, is not one.
+    /// </summary>
+    /// <param name="ordered">The test ordered, with <paramref name="tests"/> holding the tests under it by id.</param>
+    /// <param name="resultTestId">The test the result is for: the one ordered, or an analyte under it.</param>
+    public static bool IsHivResult(LabTest? ordered, Guid resultTestId, IReadOnlyDictionary<Guid, LabTest> tests) =>
+        (tests.TryGetValue(resultTestId, out var own) && IsHiv(own))
+        || (ordered is not null && ReportedUnderHiv(ordered, resultTestId, tests, hivAbove: false, depth: 0));
+
+    private static bool ReportedUnderHiv(LabTest test, Guid resultTestId, IReadOnlyDictionary<Guid, LabTest> tests, bool hivAbove, int depth)
+    {
+        var hiv = hivAbove || IsHiv(test);
+        return test.Id == resultTestId
+            ? hiv
+            : depth < LabTest.MaxPanelDepth
+              && test.Components.Any(c => tests.TryGetValue(c.TestId, out var component) && ReportedUnderHiv(component, resultTestId, tests, hiv, depth + 1));
+    }
+
+    /// <summary>Whether the test is an HIV test.</summary>
     public static bool IsHiv(LabTest test) =>
         (test.Loinc is { } loinc && Loinc.Contains(loinc.Trim())) || HivWord().IsMatch(test.Code) || HivWord().IsMatch(test.Name);
 
