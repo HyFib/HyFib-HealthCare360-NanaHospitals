@@ -15,6 +15,7 @@ using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.WindowsInterop;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -135,6 +136,7 @@ public sealed class SystemHealthService(
     ServerNodeBoard servers,
     ServerClock clock,
     IAdministrationDesktops administrationDesktops,
+    ISettingsService settings,
     TimeProvider time)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
@@ -210,6 +212,23 @@ public sealed class SystemHealthService(
         }
 
         messageWarnings.AddRange(IntegrationWarnings(integrations));
+
+        // Whether a critical warning reaches IT at all (audit P2): who it goes to and how, the heartbeat that tells someone
+        // outside when this server stops, and a drill's test warning while one is open.
+        if (await AlertReadiness.WarningAsync(db, settings, options.Value, ct) is { } alertsNotReady)
+        {
+            messageWarnings.Add(alertsNotReady);
+        }
+
+        if (await AlertHeartbeat.OffWarningAsync(settings, options.Value, ct) is { } heartbeatOff)
+        {
+            messageWarnings.Add(heartbeatOff);
+        }
+
+        if (await AlertDrills.WarningAsync(db, time, ct) is { } drill)
+        {
+            messageWarnings.Add(drill);
+        }
 
         var keyWarnings = new List<HealthWarning>(await SecurityControlWarningsAsync(ct));
         if (await AuditChainChecks.WarningAsync(db, ct) is { } brokenChain)
@@ -700,6 +719,14 @@ internal static class SystemEndpoints
                 (await sweep.SignOffAsync(request, ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage)
             .WithValidation<SignOffSimulatorRecordsRequest>();
+
+        // Alert drills (audit P2): a test critical warning, told as any is, and when each step happened. Whoever may see
+        // System health acknowledges one: they are those the warning goes to in the app.
+        admin.MapGet("/alert-drills", async (AlertDrills drills, CancellationToken ct) => TypedResults.Ok(await drills.ListAsync(ct)));
+        admin.MapPost("/alert-drills", async (AlertDrills drills, CancellationToken ct) => (await drills.StartAsync(ct)).ToOk())
+            .RequirePermission(PlatformPermissions.SystemManage);
+        admin.MapPost("/alert-drills/{id:guid}/acknowledge", async (Guid id, AlertDrills drills, CancellationToken ct) =>
+            (await drills.AcknowledgeAsync(id, ct)).ToOk());
 
         admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
         {

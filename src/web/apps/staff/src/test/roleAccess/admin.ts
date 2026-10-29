@@ -13,6 +13,7 @@ import type {
 } from '@/modules/admin/api';
 import type { AbdmGatewayStatus, IntegrationStatusDto } from '@/modules/admin/integrationsApi';
 import type { NotificationLogDto, NotificationTemplateDto } from '@/modules/admin/notificationTemplatesApi';
+import type { AlertDrill } from '@/modules/admin/alertDrillsApi';
 import type { SimulatorRecordsView } from '@/modules/admin/simulatorRecordsApi';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers, type FakeRequest } from '../fakeApi';
 
@@ -631,6 +632,23 @@ const SIMULATOR_RECORDS: SimulatorRecordsView = {
   liveServer: true,
 };
 
+// A drill that went through, and none open, so Start a drill shows to those who manage the server.
+const ALERT_DRILLS: AlertDrill[] = [
+  {
+    id: '0194f2a0-0000-7000-8000-00000000d001',
+    code: '7F3A2C',
+    startedAt: hoursAgo(26),
+    startedBy: 'IT Officer',
+    state: 'acknowledged',
+    toldAt: hoursAgo(25.95),
+    toldTo: 3,
+    messages: [],
+    firstReadAt: hoursAgo(25.9),
+    acknowledgedAt: hoursAgo(25.88),
+    acknowledgedBy: 'IT Officer',
+  },
+];
+
 export const ANSWERS: FakeAnswers = {
   'GET /api/v1/abdm/gateway': ABDM_GATEWAY,
   'GET /api/v1/admin/users': paged(USERS),
@@ -643,6 +661,7 @@ export const ANSWERS: FakeAnswers = {
   'GET /api/v1/admin/settings': SETTINGS,
   'GET /api/v1/admin/backups': BACKUPS,
   'GET /api/v1/admin/system/simulator-records': SIMULATOR_RECORDS,
+  'GET /api/v1/admin/system/alert-drills': ALERT_DRILLS,
   'GET /api/v1/admin/backups/recovery-key': RECOVERY_KEY,
   'GET /api/v1/admin/integrations': INTEGRATIONS,
   'GET /api/v1/admin/notification-templates': TEMPLATES,

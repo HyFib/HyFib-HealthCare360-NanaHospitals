@@ -25,6 +25,7 @@ import {
   type SystemHealthReport,
   type WifiSample,
 } from '@/modules/admin/api';
+import { AlertDrills } from '@/modules/admin/AlertDrills';
 import { DatabasePassword } from '@/modules/admin/DatabasePassword';
 import { EncryptionKeys } from '@/modules/admin/EncryptionKeys';
 import { encryptionSummary } from '@/modules/admin/diskEncryption';
@@ -236,6 +237,9 @@ function SystemHealthPage() {
             </Row>
             <Row label="Oldest">{h.outbox.oldestPendingAt ? formatRelative(h.outbox.oldestPendingAt) : 'None'}</Row>
           </div>
+        </Section>
+        <Section title="Alert drills">
+          <AlertDrills />
         </Section>
         <Section title="Security certificates">
           <div className={styles.rows}>

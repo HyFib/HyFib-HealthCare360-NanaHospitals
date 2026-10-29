@@ -5,6 +5,7 @@ import type {
   SystemHealthReport,
   WifiSample,
 } from '@/modules/admin/api';
+import type { AlertDrill } from '@/modules/admin/alertDrillsApi';
 import type { FakeAnswers } from '../../fakeApi';
 
 // System health of the server machine with canned data: a link that dipped overnight, a backup that failed once,
@@ -188,11 +189,39 @@ export const ENCRYPTION_KEYS: EncryptionKeysStatus = {
   signingKey: { keyId: 'sk-2026-01', since: hoursAgo(24 * 280), lastRotation: null },
 };
 
+// A drill at go-live that went through: told in the app and by SMS, delivered, read and acknowledged within minutes.
+const ALERT_DRILLS: AlertDrill[] = [
+  {
+    id: '0194f2a0-0000-7000-8000-00000000d001',
+    code: '7F3A2C',
+    startedAt: hoursAgo(26),
+    startedBy: 'IT Officer',
+    state: 'acknowledged',
+    toldAt: hoursAgo(25.95),
+    toldTo: 3,
+    messages: [
+      {
+        channel: 'Sms',
+        recipient: '+91******0142',
+        status: 'Delivered',
+        queuedAt: hoursAgo(25.95),
+        sentAt: hoursAgo(25.949),
+        deliveredAt: hoursAgo(25.94),
+        error: null,
+      },
+    ],
+    firstReadAt: hoursAgo(25.9),
+    acknowledgedAt: hoursAgo(25.88),
+    acknowledgedBy: 'IT Officer',
+  },
+];
+
 export const SYSTEM_HEALTH_ANSWERS: FakeAnswers = {
   'GET /api/v1/admin/system/health': SYSTEM_HEALTH,
   'GET /api/v1/admin/system/wifi-samples': WIFI_SAMPLES,
   'GET /api/v1/admin/system/database-password': DATABASE_PASSWORD,
   'GET /api/v1/admin/system/keys': ENCRYPTION_KEYS,
+  'GET /api/v1/admin/system/alert-drills': ALERT_DRILLS,
 };
 
 // The devices page of a hospital enrolling its first workstation: a queue display and a lab PC, no workstation yet.
