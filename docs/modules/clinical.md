@@ -680,6 +680,9 @@ the user may not open shows initials.
   * a girl is examined by a woman doctor (s.27(2); 422 `pocso.woman_doctor`);
   * a parent, a person the child trusts, or a woman the head of the hospital nominates is present, named
     (s.27(3)–(4); 400 `attendantName`).
+  * A case found to be a child's only after its examination was recorded keeps the examination as it was done. The
+    case (`missingSafeguards`), the register and the printed intimation show which of s.27's safeguards it lacks; the
+    doctor corrects the examination if it was recorded wrongly. Its report still goes to the investigating officer.
 
   No police requisition is asked for before emergency care (POCSO Rules 2020, r.6(3)): the ER treats first.
 * **Not built:** ER bed allocation and a tracking display for the waiting area; trauma scores beyond ESI; the wound

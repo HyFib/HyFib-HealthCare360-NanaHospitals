@@ -180,7 +180,7 @@ internal static class MlcDocument
                     ? (to == PocsoReportedTo.SpecialJuvenilePoliceUnit ? "Special Juvenile Police Unit" : "Local police")
                     : null),
             ])}
-            {Examination(m)}
+            {Examination(m, p.Gender)}
             """);
         return new PrintableDocument
         {
@@ -194,8 +194,9 @@ internal static class MlcDocument
     }
 
     // The medical examination of a victim of sexual assault (BNSS s.184): by whom, its exact start and end, with whose
-    // consent, who was present for a child (POCSO s.27), and its report to the investigating officer.
-    private static Html Examination(MlcRecord m)
+    // consent, who was present for a child (POCSO s.27), what of s.27 a child's examination lacks when the case was found
+    // to be a child's only after it, and its report to the investigating officer.
+    private static Html Examination(MlcRecord m, Gender patientGender)
     {
         if (m is not { ExaminationStartedAt: { } started, ExaminationEndedAt: { } ended })
         {
@@ -209,6 +210,11 @@ internal static class MlcDocument
             ExaminationAttendant.WomanNominatedByHead => "a woman nominated by the head of the hospital",
             _ => null,
         };
+        var missing = m.MissingSafeguards(patientGender).Select(s => s switch
+        {
+            PocsoSafeguard.WomanDoctor => "a girl child examined by a woman doctor (s.27(2))",
+            _ => "a parent, a trusted person or a woman the head of the hospital nominated present (s.27(3)-(4))",
+        }).ToList();
         return Html.Of($"""
             {DocumentParts.Title("Medical examination (BNSS 2023, s.184)")}
             {DocumentParts.Fields([
@@ -217,6 +223,7 @@ internal static class MlcDocument
                 ("Ended", DocumentFormat.DateTime(ended)),
                 ("Consent given by", m.ConsentGivenBy),
                 ("Present (POCSO s.27)", m.AttendantName is { } name ? $"{name}, {attendant}" : null),
+                ("Not met (POCSO s.27)", missing.Count > 0 ? $"Examined before the case was known to be a child's, without {string.Join("; ", missing)}" : null),
                 ("Report to the investigating officer", m.ReportForwardedAt is { } at
                     ? $"{DocumentFormat.DateTime(at)}, to {m.InvestigatingOfficer}"
                     : $"Due by {DocumentFormat.DateTime(m.ReportDueAt!.Value)}"),

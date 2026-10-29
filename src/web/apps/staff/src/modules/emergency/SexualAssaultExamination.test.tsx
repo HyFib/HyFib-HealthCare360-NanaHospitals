@@ -89,9 +89,30 @@ const SENT: EmergencyCase = {
       consentGivenBy: 'Her mother, Selvi',
       attendantKind: 'Parent',
       attendantName: 'Mother, Selvi',
+      missingSafeguards: [],
     },
     investigatingOfficer: 'SI Meena, AWPS Velachery',
     reportForwardedAt: '2026-10-29T09:00:00Z',
+    reportDueAt: '2026-11-05T06:40:00Z',
+  },
+};
+
+// Entered as an adult's and examined by a man with nobody present; then found to be a girl child's.
+const FOUND_A_CHILD: EmergencyCase = {
+  ...CASE,
+  mlc: {
+    ...MLC,
+    examination: {
+      examinerId: '0192a000-0000-7000-8000-0000000000d8',
+      examinerName: 'Dr. Ravi Kumar',
+      examinerRegistration: 'TNMC 45679',
+      startedAt: '2026-10-29T06:00:00Z',
+      endedAt: '2026-10-29T06:40:00Z',
+      consentGivenBy: 'The patient',
+      attendantKind: null,
+      attendantName: null,
+      missingSafeguards: ['WomanDoctor', 'PersonPresent'],
+    },
     reportDueAt: '2026-11-05T06:40:00Z',
   },
 };
@@ -128,6 +149,17 @@ describe('SexualAssaultExamination', () => {
     expect(screen.queryByText('A child: the POCSO Act 2012 applies')).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /Who was present/ })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /Consent given by/ })).toBeInTheDocument();
+  });
+
+  it("says what a girl child's examination recorded before the case was known to be a child's lacks", async () => {
+    show(FOUND_A_CHILD);
+
+    expect(screen.getByText("Examined before the case was known to be a child's")).toBeInTheDocument();
+    expect(
+      screen.getByText(/a girl child is examined by a woman doctor \(s.27\(2\)\); and a parent/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Correct the examination' })).toBeInTheDocument();
+    await expectNoAxeViolations();
   });
 
   it('shows the examination and its report once sent, with nothing left to fill', async () => {

@@ -8513,6 +8513,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("examination_started_at");
 
+                    b.Property<string>("ExaminerGender")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("examiner_gender");
+
                     b.Property<Guid?>("ExaminerId")
                         .HasColumnType("uuid")
                         .HasColumnName("examiner_id");

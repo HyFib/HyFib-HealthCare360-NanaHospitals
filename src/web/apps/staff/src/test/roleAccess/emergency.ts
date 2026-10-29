@@ -74,6 +74,7 @@ const REGISTER: MlcRegisterRow[] = [
     reportDueAt: null,
     reportForwardedAt: null,
     reportOverdue: false,
+    pocsoSafeguardsMissing: false,
   },
   {
     id: id('m2'),
@@ -92,6 +93,7 @@ const REGISTER: MlcRegisterRow[] = [
     reportDueAt: new Date(Date.now() + 6 * 24 * 60 * 60_000).toISOString(),
     reportForwardedAt: null,
     reportOverdue: false,
+    pocsoSafeguardsMissing: false,
   },
 ];
 

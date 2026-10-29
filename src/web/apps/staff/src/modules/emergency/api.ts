@@ -28,6 +28,8 @@ export type MlcIntimationMode = 'Phone' | 'Written' | 'InPerson';
 export type PocsoReportedTo = 'SpecialJuvenilePoliceUnit' | 'LocalPolice';
 /** Who was present at a child's medical examination (POCSO Act 2012, s.27(3) and (4)). */
 export type ExaminationAttendant = 'Parent' | 'TrustedPerson' | 'WomanNominatedByHead';
+/** A safeguard of the POCSO Act 2012, s.27, for a child's examination (server `PocsoSafeguard`). */
+export type PocsoSafeguard = 'WomanDoctor' | 'PersonPresent';
 
 export interface ErBoardRow {
   caseId: string;
@@ -121,6 +123,8 @@ export interface MlcExamination {
   consentGivenBy: string;
   attendantKind: ExaminationAttendant | null;
   attendantName: string | null;
+  /** For a case found to be a child's only after the examination was recorded: what of s.27 the examination lacks. */
+  missingSafeguards: PocsoSafeguard[];
 }
 
 export interface EmergencyCase {
@@ -217,6 +221,8 @@ export interface MlcRegisterRow {
   reportDueAt: string | null;
   reportForwardedAt: string | null;
   reportOverdue: boolean;
+  /** A child's examination recorded before the case was known to be a child's lacks a safeguard of POCSO s.27. */
+  pocsoSafeguardsMissing: boolean;
 }
 
 export const ER_PERMISSIONS = {
@@ -283,6 +289,12 @@ export const CAUSE_LABELS: Record<MlcCause, string> = {
 export const REPORTED_TO_LABELS: Record<PocsoReportedTo, string> = {
   SpecialJuvenilePoliceUnit: 'Special Juvenile Police Unit',
   LocalPolice: 'Local police',
+};
+
+export const SAFEGUARD_LABELS: Record<PocsoSafeguard, string> = {
+  WomanDoctor: 'a girl child is examined by a woman doctor (s.27(2))',
+  PersonPresent:
+    'a parent, a person the child trusts or a woman the head of the hospital nominated is present (s.27(3)–(4))',
 };
 
 export const ATTENDANT_LABELS: Record<ExaminationAttendant, string> = {

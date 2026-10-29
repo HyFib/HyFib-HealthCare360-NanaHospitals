@@ -58,6 +58,16 @@ public enum ExaminationAttendant
     WomanNominatedByHead,
 }
 
+/// <summary>A safeguard of the POCSO Act 2012, s.27, for the medical examination of a child.</summary>
+public enum PocsoSafeguard
+{
+    /// <summary>A girl child is examined by a woman doctor (s.27(2)).</summary>
+    WomanDoctor = 0,
+
+    /// <summary>A parent, a person the child trusts or a woman the head of the hospital nominated is present, and named (s.27(3)–(4)).</summary>
+    PersonPresent,
+}
+
 /// <summary>The medical examination of a victim of sexual assault, as the examining doctor records it.</summary>
 /// <param name="ExaminerId">The examining doctor in the practitioner master.</param>
 /// <param name="ExaminerRegistration">The examining doctor's council and registration number.</param>
@@ -79,7 +89,8 @@ public sealed record SexualAssaultExamination(
 /// investigating officer, within seven days. A child's case (under 18) comes under the Protection of Children from
 /// Sexual Offences Act 2012: the report names the Special Juvenile Police Unit or the local police (s.19), a girl is
 /// examined by a woman doctor, and a parent, a person the child trusts or a woman the head of the hospital nominates
-/// is present (s.27).
+/// is present (s.27). A case found to be a child's only after its examination was recorded keeps the examination as it
+/// was done, and shows which of those safeguards it lacks: the report still goes to the investigating officer.
 /// </para>
 /// </summary>
 public sealed class MlcRecord : AuditableEntity, IFacilityScoped
@@ -130,6 +141,10 @@ public sealed class MlcRecord : AuditableEntity, IFacilityScoped
     public Guid? ExaminerId { get; private set; }
     public string? ExaminerName { get; private set; }
     public string? ExaminerRegistration { get; private set; }
+
+    /// <summary>The examining doctor's gender when the examination was recorded, which s.27(2) asks of a girl child's.</summary>
+    public Gender? ExaminerGender { get; private set; }
+
     public DateTimeOffset? ExaminationStartedAt { get; private set; }
     public DateTimeOffset? ExaminationEndedAt { get; private set; }
     public string? ConsentGivenBy { get; private set; }
@@ -152,6 +167,31 @@ public sealed class MlcRecord : AuditableEntity, IFacilityScoped
     public bool IntimationOverdue(DateTimeOffset now) => !IsIntimated && now - IdentifiedAt > IntimateWithin;
 
     public bool ReportOverdue(DateTimeOffset now) => ReportDueAt is { } due && ReportForwardedAt is null && now > due;
+
+    /// <summary>
+    /// The safeguards of s.27 a child's recorded examination lacks. The examination itself is refused for a child without
+    /// them, so this is a case found to be a child's only after its examination was recorded: empty for any other.
+    /// </summary>
+    public IReadOnlyList<PocsoSafeguard> MissingSafeguards(Gender patientGender)
+    {
+        if (!IsPocso || ExaminationEndedAt is null)
+        {
+            return [];
+        }
+
+        var missing = new List<PocsoSafeguard>();
+        if (patientGender == Gender.Female && ExaminerGender != Gender.Female)
+        {
+            missing.Add(PocsoSafeguard.WomanDoctor);
+        }
+
+        if (AttendantName is null)
+        {
+            missing.Add(PocsoSafeguard.PersonPresent);
+        }
+
+        return missing;
+    }
 
     /// <param name="isChild">The patient was under 18 on the day of the incident (<see cref="IsChild"/>).</param>
     public Result Describe(
@@ -279,6 +319,7 @@ public sealed class MlcRecord : AuditableEntity, IFacilityScoped
         ExaminerId = examination.ExaminerId;
         ExaminerName = examination.ExaminerName.Trim();
         ExaminerRegistration = string.IsNullOrWhiteSpace(examination.ExaminerRegistration) ? null : examination.ExaminerRegistration.Trim();
+        ExaminerGender = examination.ExaminerGender;
         ExaminationStartedAt = examination.StartedAt;
         ExaminationEndedAt = examination.EndedAt;
         ConsentGivenBy = examination.ConsentGivenBy.Trim();

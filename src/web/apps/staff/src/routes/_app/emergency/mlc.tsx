@@ -75,7 +75,10 @@ function MlcRegisterPage() {
             {
               key: 'cause',
               header: 'Alleged cause',
-              render: (r) => (r.isPocso ? `${CAUSE_LABELS[r.cause]} · a child (POCSO)` : CAUSE_LABELS[r.cause]),
+              render: (r) =>
+                r.isPocso
+                  ? `${CAUSE_LABELS[r.cause]} · a child (POCSO)${r.pocsoSafeguardsMissing ? ' · examined without the s.27 safeguards' : ''}`
+                  : CAUSE_LABELS[r.cause],
             },
             { key: 'station', header: 'Police station', render: (r) => r.policeStation },
             {

@@ -77,6 +77,7 @@ public sealed class PocsoTests(HospitalServer server)
         var examination = examined.Examination.ShouldNotBeNull();
         (examination.ExaminerId, examination.ExaminerName, examination.AttendantKind).ShouldBe((womanId, womanName, (ExaminationAttendant?)ExaminationAttendant.Parent));
         examination.ExaminerRegistration.ShouldNotBeNull().ShouldStartWith("Tamil Nadu Medical Council");
+        examination.MissingSafeguards.ShouldBeEmpty();
         examined.ReportDueAt.ShouldNotBeNull().ShouldBe(examination.EndedAt.AddDays(7), TimeSpan.FromSeconds(1));
         examined.ReportOverdue.ShouldBeFalse();
 
@@ -110,6 +111,7 @@ public sealed class PocsoTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var (manId, _) = await DoctorAsync(admin, Gender.Male, "Ravi");
+        var (womanId, _) = await DoctorAsync(admin, Gender.Female, "Lakshmi");
         var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice, Gender.Female);
         var caseId = (await doctor.GetAsync<ErBoard>($"{Er}/board")).Rows.Single(r => r.VisitId == visit.Id).CaseId;
 
@@ -133,9 +135,21 @@ public sealed class PocsoTests(HospitalServer server)
             new MlcExaminationRequest(manId, DateTimeOffset.UtcNow.AddMinutes(-40), DateTimeOffset.UtcNow.AddMinutes(-5), "The patient", null, null, adult.Version))).Mlc!;
         (examined.Examination.ShouldNotBeNull().AttendantName, examined.ReportOverdue).ShouldBe(((string?)null, false));
 
-        // Said to be a child, the same case is a POCSO case.
+        // Said to be a child, the same case is a POCSO case. The examination stays as it was done, and shows what it lacks of
+        // s.27: on the case, in the register and on the printed intimation, whose report still goes to the officer.
         var child = (await doctor.PutAsync<EmergencyCaseDetail>($"{Er}/cases/{caseId}/mlc", SexualAssault(examined.Version) with { ChildVictim = true })).Mlc!;
         (child.IsChild, child.IsPocso).ShouldBe((true, true));
+        child.Examination.ShouldNotBeNull().MissingSafeguards.ShouldBe([PocsoSafeguard.WomanDoctor, PocsoSafeguard.PersonPresent]);
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        (await mrd.GetAsync<List<MlcRegisterRow>>($"{Er}/mlc")).Single(r => r.Number == child.Number).PocsoSafeguardsMissing.ShouldBeTrue();
+        (await doctor.GetAsync<PrintableDocumentDto>($"{Er}/cases/{caseId}/mlc/document")).Html.ShouldContain("Examined before the case was known to be a child");
+
+        // Recorded wrongly, the examination is corrected as a child's is recorded, and then lacks nothing.
+        var corrected = (await doctor.PostAsync<EmergencyCaseDetail>($"{Er}/cases/{caseId}/mlc/examination", new MlcExaminationRequest(
+            womanId, DateTimeOffset.UtcNow.AddMinutes(-40), DateTimeOffset.UtcNow.AddMinutes(-5), "Her mother, Selvi", ExaminationAttendant.Parent,
+            "Mother, Selvi", child.Version))).Mlc!;
+        corrected.Examination.ShouldNotBeNull().MissingSafeguards.ShouldBeEmpty();
+        (await mrd.GetAsync<List<MlcRegisterRow>>($"{Er}/mlc")).Single(r => r.Number == child.Number).PocsoSafeguardsMissing.ShouldBeFalse();
     }
 
     [Fact]

@@ -16,13 +16,21 @@ import { useState } from 'react';
 import { PractitionerPicker, type PickedDoctor } from '@/modules/doctor-fees/PractitionerPicker';
 import { errorMessage } from '@/modules/lab/common/errors';
 import { isoToLocal, localToIso } from '@/modules/quality/downtimeApi';
-import { ATTENDANT_LABELS, erApi, erKeys, type EmergencyCase, type ExaminationAttendant } from './api';
+import {
+  ATTENDANT_LABELS,
+  erApi,
+  erKeys,
+  SAFEGUARD_LABELS,
+  type EmergencyCase,
+  type ExaminationAttendant,
+} from './api';
 
 /**
  * The medical examination of a victim of sexual assault, as the Bharatiya Nagarik Suraksha Sanhita 2023, s.184 asks it
  * recorded: by whom, its exact start and end, with whose consent, and its report to the investigating officer within
  * seven days. For a child, the POCSO Act 2012, s.27: a girl is examined by a woman doctor, and a parent, a person the
- * child trusts or a woman the head of the hospital nominates is present.
+ * child trusts or a woman the head of the hospital nominates is present. A case found to be a child's only after its
+ * examination was recorded says what of these the examination lacks.
  */
 export function SexualAssaultExamination({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
   const notify = useNotify();
@@ -91,6 +99,16 @@ export function SexualAssaultExamination({ c, canMlc }: { c: EmergencyCase; canM
         </Text>
       ) : (
         <Caption1>Not yet recorded.</Caption1>
+      )}
+      {e && e.missingSafeguards.length > 0 && (
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Examined before the case was known to be a child&apos;s</MessageBarTitle>
+            The POCSO Act asks that {e.missingSafeguards.map((s) => SAFEGUARD_LABELS[s]).join('; and ')}. Correct the
+            examination below if it was recorded wrongly; otherwise note in the case how it came about. Its report goes
+            to the investigating officer all the same.
+          </MessageBarBody>
+        </MessageBar>
       )}
       {m.reportForwardedAt ? (
         <Text>

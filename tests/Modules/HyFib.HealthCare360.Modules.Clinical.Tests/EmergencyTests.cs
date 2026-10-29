@@ -195,6 +195,30 @@ public sealed class EmergencyTests
     }
 
     [Fact]
+    public void A_case_found_to_be_a_childs_after_its_examination_shows_what_of_s27_the_examination_lacks()
+    {
+        // Entered as an adult's and examined by a man with nobody present, as the law allows for an adult.
+        var sent = AdultExaminedByAMan();
+        sent.MissingSafeguards(Gender.Female).ShouldBeEmpty();
+
+        // Found to be a child's: the correction stands, and the examination stays as it was done, showing what it lacks.
+        BecomesAChilds(sent).IsSuccess.ShouldBeTrue();
+        (sent.IsPocso, sent.ExaminerGender).ShouldBe((true, (Gender?)Gender.Male));
+        sent.MissingSafeguards(Gender.Female).ShouldBe([PocsoSafeguard.WomanDoctor, PocsoSafeguard.PersonPresent]);
+        sent.MissingSafeguards(Gender.Male).ShouldBe([PocsoSafeguard.PersonPresent]);
+
+        // Its report goes to the investigating officer all the same (BNSS s.184(6)), and still shows it.
+        sent.ForwardReport(Now, "SI Meena, AWPS Velachery", Now).IsSuccess.ShouldBeTrue();
+        sent.MissingSafeguards(Gender.Female).Count.ShouldBe(2);
+
+        // Recorded wrongly, it is corrected as a child's examination is recorded, and then lacks nothing.
+        var corrected = AdultExaminedByAMan();
+        BecomesAChilds(corrected).IsSuccess.ShouldBeTrue();
+        corrected.RecordExamination(Examination(Gender.Female), Gender.Female, Now).IsSuccess.ShouldBeTrue();
+        corrected.MissingSafeguards(Gender.Female).ShouldBeEmpty();
+    }
+
+    [Fact]
     public void A_time_a_desk_sends_as_now_is_taken_though_its_clock_runs_a_few_minutes_ahead()
     {
         // "Police informed now" and "Report sent now" send the desk's clock; more than five minutes ahead is the future.
@@ -216,6 +240,17 @@ public sealed class EmergencyTests
             true, false, "Velachery", isChild, Now).IsSuccess.ShouldBeTrue();
         return mlc;
     }
+
+    private static MlcRecord AdultExaminedByAMan()
+    {
+        var mlc = SexualAssault(isChild: false);
+        mlc.RecordExamination(Examination(Gender.Male) with { AttendantKind = null, AttendantName = null }, Gender.Female, Now).IsSuccess.ShouldBeTrue();
+        return mlc;
+    }
+
+    private static Result BecomesAChilds(MlcRecord mlc) => mlc.Describe(
+        MlcBroughtBy.Relative, "Mother, Selvi", MlcCause.SexualAssault, Now.AddHours(-3), "Near the school, Velachery", "Abrasions, both forearms", true, false,
+        "Velachery", true, Now);
 
     private static SexualAssaultExamination Examination(Gender examinerGender) => new(
         Guid.NewGuid(), examinerGender == Gender.Female ? "Dr. Lakshmi Iyer" : "Dr. Ravi Kumar", "TNMC 45678", examinerGender, Now.AddMinutes(-60),

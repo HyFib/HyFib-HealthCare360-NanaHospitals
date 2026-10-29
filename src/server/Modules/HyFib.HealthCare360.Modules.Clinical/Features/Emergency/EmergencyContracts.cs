@@ -77,6 +77,9 @@ public sealed record MlcDto(
     bool ReportOverdue = false);
 
 /// <summary>A sexual-assault victim's medical examination, as recorded (BNSS 2023, s.184; for a child, POCSO Act 2012, s.27).</summary>
+/// <param name="MissingSafeguards">
+/// For a child's case found to be one only after the examination was recorded: what of s.27 the examination lacks.
+/// </param>
 public sealed record MlcExaminationDto(
     Guid ExaminerId,
     string ExaminerName,
@@ -85,7 +88,8 @@ public sealed record MlcExaminationDto(
     DateTimeOffset EndedAt,
     string ConsentGivenBy,
     ExaminationAttendant? AttendantKind,
-    string? AttendantName);
+    string? AttendantName,
+    IReadOnlyList<PocsoSafeguard> MissingSafeguards);
 
 public sealed record EmergencyCaseDetail(
     Guid Id,
@@ -203,7 +207,8 @@ public sealed record MlcRegisterRow(
     bool IsPocso = false,
     DateTimeOffset? ReportDueAt = null,
     DateTimeOffset? ReportForwardedAt = null,
-    bool ReportOverdue = false);
+    bool ReportOverdue = false,
+    bool PocsoSafeguardsMissing = false);
 
 public sealed class TriageRequestValidator : AbstractValidator<TriageRequest>
 {

@@ -63,6 +63,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                 type: "timestamp with time zone",
                 nullable: true);
 
+            migrationBuilder.AddColumn<string>(
+                name: "examiner_gender",
+                schema: "clinical",
+                table: "mlc_records",
+                type: "character varying(64)",
+                maxLength: 64,
+                nullable: true);
+
             migrationBuilder.AddColumn<Guid>(
                 name: "examiner_id",
                 schema: "clinical",
@@ -145,6 +153,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
             migrationBuilder.DropColumn(
                 name: "examination_started_at",
+                schema: "clinical",
+                table: "mlc_records");
+
+            migrationBuilder.DropColumn(
+                name: "examiner_gender",
                 schema: "clinical",
                 table: "mlc_records");
 
