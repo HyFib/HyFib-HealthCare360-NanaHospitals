@@ -222,6 +222,8 @@ const REQUESTS: RecordRequestDto[] = [
     dueBackOn: null,
     returnedAt: null,
     cancelReason: null,
+    copyDueAt: null,
+    copyLate: false,
   },
   {
     id: id('fe02'),
@@ -239,6 +241,8 @@ const REQUESTS: RecordRequestDto[] = [
     dueBackOn: dateIn(5),
     returnedAt: null,
     cancelReason: null,
+    copyDueAt: null,
+    copyLate: false,
   },
   {
     id: id('fe03'),
@@ -256,6 +260,8 @@ const REQUESTS: RecordRequestDto[] = [
     dueBackOn: dateAgo(7),
     returnedAt: null,
     cancelReason: null,
+    copyDueAt: daysAgo(12),
+    copyLate: false,
   },
   {
     id: id('fe04'),
@@ -273,6 +279,8 @@ const REQUESTS: RecordRequestDto[] = [
     dueBackOn: dateAgo(22),
     returnedAt: daysAgo(23),
     cancelReason: null,
+    copyDueAt: daysAgo(27),
+    copyLate: false,
   },
 ];
 

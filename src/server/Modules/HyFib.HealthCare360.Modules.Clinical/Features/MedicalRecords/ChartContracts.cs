@@ -101,7 +101,12 @@ public sealed record RecordRequestDto(
     DateTimeOffset? IssuedAt,
     DateOnly? DueBackOn,
     DateTimeOffset? ReturnedAt,
-    string? CancelReason);
+    string? CancelReason,
+
+    // A copy for the patient or a legal authority is issued within 72 hours (MCI Regulations 2002, reg. 1.3.2): when it is
+    // due, and whether it went, or is still waiting, past that.
+    DateTimeOffset? CopyDueAt = null,
+    bool CopyLate = false);
 
 public sealed class CreateMedicalRecordRequestValidator : AbstractValidator<CreateMedicalRecordRequest>
 {

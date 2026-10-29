@@ -263,12 +263,13 @@ public sealed class MedicalRecordService(
     public async Task<RecordRequestDto> ToDtoAsync(RecordRequest r, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().Where(p => p.Id == r.PatientId).Select(p => new { p.Uhid, p.FullName }).FirstOrDefaultAsync(ct);
-        return ToDto(r, patient?.Uhid, patient?.FullName, time.Today());
+        return ToDto(r, patient?.Uhid, patient?.FullName, time.Today(), time.GetUtcNow());
     }
 
-    public static RecordRequestDto ToDto(RecordRequest r, string? uhid, string? patientName, DateOnly today) => new(
+    public static RecordRequestDto ToDto(RecordRequest r, string? uhid, string? patientName, DateOnly today, DateTimeOffset now) => new(
         r.Id, r.RequestNumber, r.PatientId, uhid, patientName, r.MedicalRecordId, r.RequestedByName, r.RequestingDepartment, r.Purpose, r.Details,
-        r.IsPatientRequest, r.EffectiveStatus(today), r.RequestedAt, r.IssuedAt, r.DueBackOn, r.ReturnedAt, r.CancelReason);
+        r.IsPatientRequest, r.EffectiveStatus(today), r.RequestedAt, r.IssuedAt, r.DueBackOn, r.ReturnedAt, r.CancelReason, r.CopyDueAt,
+        r.IsCopyLate(now));
 
     private async Task<Result<RecordRequestDto>> ChangeRequestAsync(Guid id, Func<RecordRequest, Result> change, CancellationToken ct)
     {

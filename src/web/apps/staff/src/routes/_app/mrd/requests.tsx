@@ -2,6 +2,7 @@ import {
   Badge,
   Button,
   Caption1,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogBody,
@@ -11,6 +12,9 @@ import {
   Field,
   Input,
   makeStyles,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
   Select,
   Spinner,
   Text,
@@ -56,6 +60,7 @@ export const Route = createFileRoute('/_app/mrd/requests')({
     status: RECORD_REQUEST_STATUSES.includes(s.status as RecordRequestStatus)
       ? (s.status as RecordRequestStatus)
       : undefined,
+    copyOverdue: s.copyOverdue === true ? true : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
   }),
   component: RecordRequestsPage,
@@ -246,13 +251,19 @@ function IssueBody({
   );
 }
 
-/** Requests for patient files (MRD-04): record, issue with a return date, track returns and overdue files. */
+/**
+ * Requests for patient files (MRD-04): record, issue with a return date, track returns and overdue files. A copy for the
+ * patient or a legal authority is due within 72 hours (MCI Regulations 2002, reg. 1.3.2), and those waiting past it are
+ * called out.
+ */
 function RecordRequestsPage() {
   const filters = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
   const queryClient = useQueryClient();
   const requests = useQuery(mrdQueries.requests(filters));
+  const overdueCopies = useQuery({ ...mrdQueries.requests({ copyOverdue: true }), enabled: !filters.copyOverdue });
+  const overdueCount = filters.copyOverdue ? 0 : (overdueCopies.data?.totalCount ?? 0);
   const [creating, setCreating] = useState(false);
   const [issuing, setIssuing] = useState<RecordRequestDto | null>(null);
   const [returning, setReturning] = useState<RecordRequestDto | null>(null);
@@ -298,6 +309,17 @@ function RecordRequestsPage() {
           </Button>
         }
       />
+      {overdueCount > 0 && (
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>
+            {overdueCount === 1 ? '1 copy' : `${overdueCount} copies`} for a patient or a court{' '}
+            {overdueCount === 1 ? 'is' : 'are'} waiting past 72 hours. A copy is due within 72 hours of the request.
+          </MessageBarBody>
+          <MessageBarActions>
+            <Button onClick={() => void navigate({ search: { copyOverdue: true }, replace: true })}>Show them</Button>
+          </MessageBarActions>
+        </MessageBar>
+      )}
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
@@ -319,6 +341,16 @@ function RecordRequestsPage() {
                 ))}
               </Select>
             </Field>
+            <Checkbox
+              checked={filters.copyOverdue === true}
+              onChange={(_, d) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, copyOverdue: d.checked === true ? true : undefined, page: undefined }),
+                  replace: true,
+                })
+              }
+              label="Copies waiting past 72 hours"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -357,6 +389,24 @@ function RecordRequestsPage() {
             },
             { key: 'purpose', header: 'Purpose', priority: 'low', render: (r) => purposeLabel[r.purpose] },
             { key: 'at', header: 'Requested', priority: 'low', render: (r) => formatDateTime(r.requestedAt) },
+            {
+              key: 'copy',
+              header: 'Copy by',
+              width: 190,
+              render: (r) =>
+                r.copyDueAt ? (
+                  <span>
+                    {formatDateTime(r.copyDueAt)}
+                    {r.copyLate && (
+                      <Badge size="small" color="danger" appearance="tint" style={{ marginLeft: 6 }}>
+                        Late
+                      </Badge>
+                    )}
+                  </span>
+                ) : (
+                  '—'
+                ),
+            },
             {
               key: 'due',
               header: 'Return by',
