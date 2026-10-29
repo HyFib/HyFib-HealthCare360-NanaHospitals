@@ -3,6 +3,8 @@ import type { IntegrationHealthSummary, ServerNodeHealth, SystemHealthReport } f
 import {
   clockText,
   expiryTone,
+  HOSPITAL_CA,
+  SERVER_CERTIFICATE,
   integrationsSummary,
   integrationTone,
   lowDiskSpace,
@@ -45,15 +47,24 @@ describe('clockText', () => {
 
 describe('expiryTone', () => {
   const now = new Date('2026-10-16T09:00:00Z');
+  const inDays = (days: number) => new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
 
-  it('is red once expired and amber within 30 days', () => {
-    expect(expiryTone('2026-10-16T08:59:59Z', now)).toBe('bad');
-    expect(expiryTone('2026-11-14T09:00:00Z', now)).toBe('warn');
+  it('marks the server certificate amber within 30 days and red within 14, as the server warns', () => {
+    expect(expiryTone(inDays(31), SERVER_CERTIFICATE, now)).toBeUndefined();
+    expect(expiryTone(inDays(29), SERVER_CERTIFICATE, now)).toBe('warn');
+    expect(expiryTone(inDays(13), SERVER_CERTIFICATE, now)).toBe('bad');
+    expect(expiryTone(inDays(-1), SERVER_CERTIFICATE, now)).toBe('bad');
   });
 
-  it('says nothing further out, or without a date', () => {
-    expect(expiryTone('2026-11-16T09:00:00Z', now)).toBeUndefined();
-    expect(expiryTone(null, now)).toBeUndefined();
+  it('marks the hospital CA amber a year ahead and red in its last 90 days', () => {
+    expect(expiryTone(inDays(366), HOSPITAL_CA, now)).toBeUndefined();
+    expect(expiryTone(inDays(364), HOSPITAL_CA, now)).toBe('warn');
+    expect(expiryTone(inDays(91), HOSPITAL_CA, now)).toBe('warn');
+    expect(expiryTone(inDays(89), HOSPITAL_CA, now)).toBe('bad');
+  });
+
+  it('says nothing without a date', () => {
+    expect(expiryTone(null, SERVER_CERTIFICATE, now)).toBeUndefined();
   });
 });
 

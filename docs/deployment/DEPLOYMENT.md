@@ -117,6 +117,10 @@ At the end it prints two things. Write them down:
 - the **hospital CA fingerprint**, which staff compare when setting up HC360 Desktop;
 - the **first administrator password** (user `admin`).
 
+Give the fingerprint to the certificate probe too, run every day from the server and from a machine in IT
+([CA-ROLLOVER.md](CA-ROLLOVER.md#the-certificate-probe)): it says when the certificate devices are served is about to
+expire or would be refused, even while HC360 is down.
+
 ### When PostgreSQL stops
 
 HC360 cannot work without its database, so PostgreSQL must come back by itself after a crash (SRS DED-01, REL-01). Two
@@ -1236,7 +1240,7 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | An analyser sends results but none arrive | Integration log (Administration › Integrations) for refused messages. Network analysers: is the analyser's IP the one in its connection, and the port open in the firewall? Serial: compare baud rate, parity and stop bits with the analyser's settings |
 | "PDFs can't be made on this server" (System health), or a PDF download fails | Is Microsoft Edge installed for all users? Set `HealthCare360:Pdf:BrowserPath` if it is somewhere unusual. The log says why the browser did not start. Printing from the screens still works |
 | "… is failing: the latest call failed" (System health) | Administration › Integrations shows the last error for that integration, and its log says more. Correct the settings or the provider's side, then *Send a test*: the warning clears once a call succeeds. An integration no longer used can be switched off instead |
-| "The hospital CA expires on …" or "… expired" (System health) | The CA is made for ten years when the server first starts and is never made again by itself, because every workstation, tablet and HC360 Desktop trusts it. Contact HyFib support to plan replacing it before then. "The server certificate expires on …" instead means the automatic renewal 30 days before expiry failed: the log says why |
+| "The hospital CA expires on …" or "… expired" (System health) | The CA is made for ten years when the server first starts and is never made again by itself, because every workstation, tablet, HC360 Desktop and lab agent trusts it. System health warns a year ahead: replace it before it expires as [CA-ROLLOVER.md](CA-ROLLOVER.md) says, with HyFib support, since every device must be set up again. A server whose CA has expired does not start, and says so in the Application event log. "The server certificate expires on …" instead means the automatic renewal 30 days before expiry failed: the log says why |
 | "The audit trail failed its check on …" (System health, critical) | A check of the audit chain, asked for under Administration › Audit log or made by the server once a day, found an entry changed, moved or removed in the database. Keep the database and its backups as they are, note the position the message names, and contact HyFib support. The warning clears when a later check passes |
 | "System health: critical" notifications, or an SMS from HC360 to the IT on-call number | A critical System health warning appeared; the notification says which. Open Administration › System health for what to do. Each is told again every day until it is fixed, and at once if it clears and comes back |
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |

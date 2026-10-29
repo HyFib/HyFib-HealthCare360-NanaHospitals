@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.ServiceProcess;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
@@ -93,6 +94,23 @@ internal static class ServerCli
               issues itself a new certificate from the imported CA when it starts. Prints the CA's fingerprint: it is the
               one HC360 Desktop pinned. The password is read as for export-ca.
 
+          certificates new-ca [--confirm] [--data-dir <folder>]
+              Makes a new hospital CA in place of this server's: for a CA in its last year, or one whose key may have been
+              seen by someone it should not have been. Every workstation, tablet, HC360 Desktop and lab agent trusts the CA
+              it replaces, so each must be set up again (docs/deployment/CA-ROLLOVER.md): without --confirm it says which
+              CA it would replace, and changes nothing. The CA it replaces is kept under a new name, so it can be put back.
+              Run it with the HC360 service stopped, then start the service: the server issues itself a certificate from
+              the new CA. Prints the new CA's fingerprint, which the devices pin when they are set up again.
+
+          certificates probe <https://address>... [--ca-fingerprint <fingerprint> | --ca-file <ca.crt>] [--event-log]
+              Checks each address from this machine as a device does: the certificate served is for that name, was issued
+              by the hospital CA, and neither expires within the periods System health warns in. With --ca-fingerprint (the
+              one the installer printed and the devices pinned) it reads the CA the server hands out and checks it is that
+              one; with --ca-file it trusts that CA certificate; with neither, the roots this machine trusts. --event-log
+              writes what needs doing to the Application event log as well. Run it from another machine too: it tells when
+              HC360 is down, or cannot send its own alerts. Exit code 0 when all is well, 1 when a certificate needs
+              planning, 2 when one needs action now or an address cannot be checked, as monitoring tools read it.
+
           disk-encryption check [--data-dir <folder>]
               Records whether BitLocker protects each fixed disk of this machine, for System health. It needs administrator
               rights; the "HC360 disk encryption check" scheduled task runs it as SYSTEM every day and at start-up. Exit code
@@ -122,14 +140,20 @@ internal static class ServerCli
               account made before takes the new password. Only on a test server with demonstration data.
         """;
 
+    /// <summary>The options that take no value.</summary>
+    private static readonly string[] Switches = ["--dry-run", "--confirm", "--event-log"];
+
     public static bool IsCommand(string argument) =>
         argument is "backup" or "audit" or "catalogue" or "settings" or "database" or "certificates" or "disk-encryption" or "loadtest" or "desktop" or "help"
             or "--help" or "-h";
 
     public static async Task<int> RunAsync(string[] args)
     {
+        // Switches that take no value, taken out before the "--name value" pairs are read.
         var dryRun = args.Contains("--dry-run", StringComparer.OrdinalIgnoreCase);
-        args = [.. args.Where(a => !string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase))];
+        var confirmed = args.Contains("--confirm", StringComparer.OrdinalIgnoreCase);
+        var eventLog = args.Contains("--event-log", StringComparer.OrdinalIgnoreCase);
+        args = [.. args.Where(a => !Switches.Contains(a, StringComparer.OrdinalIgnoreCase))];
         var options = args.Length > 2 ? ParseOptions(args[2..]) : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -150,6 +174,8 @@ internal static class ServerCli
                 ["disk-encryption", "check", ..] => CheckDiskEncryption(options),
                 ["certificates", "export-ca", ..] when options.ContainsKey("out") => ExportCa(options),
                 ["certificates", "import-ca", ..] when options.ContainsKey("in") => ImportCa(options),
+                ["certificates", "new-ca", ..] => NewCa(options, confirmed),
+                ["certificates", "probe", ..] when Positional(args[2..]).Length > 0 => await ProbeAsync(Positional(args[2..]), options, eventLog),
                 ["desktop", "publish", ..] when options.ContainsKey("package") => DesktopCli.Publish(options["package"], options.GetValueOrDefault("data-dir")),
                 ["desktop", "verify", ..] when options.ContainsKey("package") => DesktopCli.Verify(options["package"]),
                 ["desktop", "show", ..] => await DesktopCli.ShowAsync(options.GetValueOrDefault("data-dir")),
@@ -614,6 +640,125 @@ internal static class ServerCli
     }
 
     /// <summary>
+    /// Makes a new hospital CA in place of this server's, once the administrator has confirmed it: every device that trusts
+    /// the CA it replaces must be set up again (docs/deployment/CA-ROLLOVER.md). Needs administrator rights.
+    /// </summary>
+    private static int NewCa(Dictionary<string, string> options, bool confirmed)
+    {
+        var directories = SiteDirectories(options);
+        if (!confirmed)
+        {
+            using var current = LanCertificateManager.PublicCa(directories);
+            Console.WriteLine(current is null
+                ? "This server has no hospital CA yet: HC360 makes one when it first starts."
+                : $"This server's hospital CA is {GroupFingerprint(CertificateProbe.Fingerprint(current))}, valid until {current.NotAfter.ToUniversalTime():dd MMM yyyy}.");
+            Console.WriteLine("'certificates new-ca' makes a new CA in its place. Every workstation, tablet, HC360 Desktop and lab agent trusts this one,");
+            Console.WriteLine("so each must be set up again before it connects (docs/deployment/CA-ROLLOVER.md). Nothing has changed.");
+            Console.WriteLine("Run it again with --confirm, with the HC360 service stopped, to make the new CA.");
+            return 1;
+        }
+
+        var facilityName = SiteSettings(options)[$"{PlatformOptions.SectionName}:{nameof(PlatformOptions.DefaultFacilityName)}"] ?? new PlatformOptions().DefaultFacilityName;
+        NewHospitalCa made;
+        try
+        {
+            made = LanCertificateManager.NewCa(directories, HospitalDataProtection.CreateNodeProvider(directories), facilityName, DateTimeOffset.UtcNow);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or CryptographicException)
+        {
+            Console.Error.WriteLine($"The new hospital CA could not be made: {ex.Message} Run it on the Server Node from an elevated prompt; nothing has changed.");
+            return 2;
+        }
+
+        Console.WriteLine($"Made a new hospital CA in {directories.Certificates}, protected for this machine.");
+        Console.WriteLine($"Fingerprint: {GroupFingerprint(made.Fingerprint)} (valid until {made.ExpiresAt:dd MMM yyyy}). The devices pin it when they are set up again.");
+        if (made.PreviousKeptAs is { } keptAs)
+        {
+            Console.WriteLine(made.PreviousFingerprint is { } previous
+                ? $"The CA it replaces, {GroupFingerprint(previous)} (valid until {made.PreviousExpiresAt:dd MMM yyyy}), is kept as {keptAs}; CA-ROLLOVER.md says how to put it back."
+                : $"The CA it replaces is kept as {keptAs}; CA-ROLLOVER.md says how to put it back.");
+        }
+
+        Console.WriteLine("Next, as CA-ROLLOVER.md says:");
+        Console.WriteLine("  1. Start the HC360Server service (or restart it): it issues itself a certificate from the new CA.");
+        Console.WriteLine("  2. On a warm standby and every other server node, import the new CA: 'certificates export-ca' here, 'certificates import-ca' there.");
+        Console.WriteLine("  3. Set every device up again: HC360 Desktop (a new enrolment code, and the new fingerprint wherever IT set -CaFingerprint),");
+        Console.WriteLine("     the lab agents, and each tablet and browser (install the CA from https://<server>:7360/api/v1/system/ca-certificate).");
+        Console.WriteLine("  4. Give the certificate probe the new fingerprint.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Checks HC360 addresses as a device does, for a scheduled task or a monitoring tool (SRS DED-04): the exit code is the
+    /// worst outcome, numbered as monitoring tools read it.
+    /// </summary>
+    private static async Task<int> ProbeAsync(string[] addresses, Dictionary<string, string> options, bool eventLog)
+    {
+        var pinned = options.GetValueOrDefault("ca-fingerprint");
+        if (pinned is not null && CertificateProbe.Normalise(pinned).Length != 64)
+        {
+            Console.Error.WriteLine("A CA fingerprint is 64 hexadecimal characters, as the installer printed it and HC360 Desktop shows it.");
+            return (int)CertificateProbeOutcome.Critical;
+        }
+
+        X509Certificate2? ca = null;
+        if (options.GetValueOrDefault("ca-file") is { } caFile)
+        {
+            if (pinned is not null)
+            {
+                Console.Error.WriteLine("Give the CA's fingerprint or its file, not both.");
+                return (int)CertificateProbeOutcome.Critical;
+            }
+
+            try
+            {
+                ca = CertificateProbe.LoadCaFile(caFile);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
+            {
+                Console.Error.WriteLine($"The CA certificate could not be read from {caFile}: {ex.Message}");
+                return (int)CertificateProbeOutcome.Critical;
+            }
+        }
+
+        if (eventLog && !OperatingSystem.IsWindows())
+        {
+            Console.Error.WriteLine("The event log exists only on Windows: the findings are written here alone.");
+        }
+
+        using (ca)
+        {
+            var worst = CertificateProbeOutcome.Ok;
+            foreach (var given in addresses)
+            {
+                var result = Uri.TryCreate(given, UriKind.Absolute, out var address)
+                    ? await CertificateProbe.ProbeAsync(address, pinned, ca, DateTimeOffset.UtcNow, CancellationToken.None)
+                    : new CertificateProbeResult(new Uri("https://invalid/"), CertificateProbeOutcome.Critical, [$"{given} is not an https address."], null, null, null);
+                var label = result.Outcome switch
+                {
+                    CertificateProbeOutcome.Ok => "OK",
+                    CertificateProbeOutcome.Warning => "WARNING",
+                    _ => "CRITICAL",
+                };
+                Console.WriteLine($"{label,-8} {given}");
+                foreach (var finding in result.Findings)
+                {
+                    Console.WriteLine($"         {finding}");
+                }
+
+                worst = result.Outcome > worst ? result.Outcome : worst;
+                if (eventLog && result.Outcome != CertificateProbeOutcome.Ok && OperatingSystem.IsWindows())
+                {
+                    WriteEvent($"HC360 certificate probe, {given}: {string.Join(" ", result.Findings)}",
+                        result.Outcome == CertificateProbeOutcome.Critical ? EventLogEntryType.Error : EventLogEntryType.Warning);
+                }
+            }
+
+            return (int)worst;
+        }
+    }
+
+    /// <summary>
     /// The password of an exported CA: from <see cref="CaPasswordVariable"/>, from standard input when it is redirected, or
     /// from a hidden prompt, asked twice to <paramref name="confirm"/> it. Null, after saying why, when it is not usable.
     /// </summary>
@@ -841,6 +986,24 @@ internal static class ServerCli
         }
     }
 
+    /// <summary>The arguments that are neither an option ("--name") nor its value: the addresses 'certificates probe' checks.</summary>
+    private static string[] Positional(string[] args)
+    {
+        var result = new List<string>();
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i].StartsWith("--", StringComparison.Ordinal))
+            {
+                i++;
+                continue;
+            }
+
+            result.Add(args[i]);
+        }
+
+        return [.. result];
+    }
+
     // "--name value" pairs wherever they start: after a command of two words (settings protect) or three (database sign-in show).
     private static Dictionary<string, string> ParseOptions(string[] args)
     {
@@ -864,14 +1027,19 @@ internal static class ServerCli
     /// </summary>
     internal static DataDirectories SiteDirectories(Dictionary<string, string> options)
     {
+        var cluster = new ClusterOptions();
+        SiteSettings(options).GetSection($"{PlatformOptions.SectionName}:Cluster").Bind(cluster);
+        return new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir"), Cluster = cluster });
+    }
+
+    /// <summary>The site settings as the service reads them: config\hc360.settings.json, then the HC360_ environment variables.</summary>
+    private static IConfiguration SiteSettings(Dictionary<string, string> options)
+    {
         var local = new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") });
-        var settings = new ConfigurationBuilder()
+        return new ConfigurationBuilder()
             .AddProtectedJsonFile(ProtectedSettings.PathIn(local))
             .AddEnvironmentVariables("HC360_")
             .Build();
-        var cluster = new ClusterOptions();
-        settings.GetSection($"{PlatformOptions.SectionName}:Cluster").Bind(cluster);
-        return new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir"), Cluster = cluster });
     }
 
     private sealed class RecoveryKeyException(string message) : Exception(message);

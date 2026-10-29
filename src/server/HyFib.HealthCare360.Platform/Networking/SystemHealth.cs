@@ -144,8 +144,23 @@ public sealed class SystemHealthService(
 
     public static readonly TimeSpan DataKeyPeriod = TimeSpan.FromDays(2 * 365);
 
-    /// <summary>How long before a certificate expires System health starts to say so: the server certificate and the CA alike.</summary>
+    /// <summary>How long before the server certificate expires System health starts to say so.</summary>
     public static readonly TimeSpan CertificateWarningPeriod = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// The server certificate is issued again by itself 30 days before it expires (or, when an administrator supplied it,
+    /// replaced by them): one with less than this left was not, and the warning turns critical, which is told to IT on-call.
+    /// </summary>
+    public static readonly TimeSpan CertificateUrgentPeriod = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// How long before the hospital CA expires System health starts to say so. Every HC360 Desktop, lab agent and tablet
+    /// trusts this one CA, so replacing it means setting each of them up again (CA-ROLLOVER.md): months of work to plan.
+    /// </summary>
+    public static readonly TimeSpan CaPlanningPeriod = TimeSpan.FromDays(365);
+
+    /// <summary>How long before the hospital CA expires its warning turns critical, which is told to IT on-call.</summary>
+    public static readonly TimeSpan CaUrgentPeriod = TimeSpan.FromDays(90);
 
     public async Task<SystemHealthReport> BuildAsync(CancellationToken ct)
     {
@@ -405,27 +420,42 @@ public sealed class SystemHealthService(
     }
 
     /// <summary>
-    /// The server certificate is issued again by itself before it expires, so a warning about it means that failed. The
-    /// hospital CA is never made again by itself: every workstation, tablet and HC360 Desktop trusts it, so replacing it
-    /// needs planning, and once it has expired nothing trusts the server.
+    /// The server certificate is issued again by itself 30 days before it expires, so a warning about it that lasts means
+    /// that failed; one an administrator supplied is theirs to replace. The hospital CA is never made again by itself: every
+    /// workstation, tablet and HC360 Desktop trusts it, so replacing it is planned a year ahead, and once it has expired
+    /// nothing trusts the server. A server certificate that expires with the CA is left to the CA's warning.
     /// </summary>
     public static IReadOnlyList<HealthWarning> CertificateWarnings(CertificateInfo certificate, DateTimeOffset now)
     {
         var warnings = new List<HealthWarning>();
-        if (certificate.ServerExpiresAt is { } expires && expires - now < CertificateWarningPeriod)
+        var caExpires = certificate.CaExpiresAt;
+        if (certificate.ServerExpiresAt is { } expires && expires - now < CertificateWarningPeriod && !(caExpires <= expires))
         {
-            warnings.Add(new("cert.expiring", "warning", $"The server certificate expires on {expires:dd MMM yyyy}."));
+            var urgent = expires - now < CertificateUrgentPeriod;
+            var issuedHere = caExpires is not null;
+            var (expiry, lockedOut) = expires <= now
+                ? ($"expired on {expires:dd MMM yyyy}", "no workstation, tablet or HC360 Desktop connects")
+                : ($"expires on {expires:dd MMM yyyy}", "then no workstation, tablet or HC360 Desktop connects");
+            warnings.Add(new("cert.expiring", urgent ? "critical" : "warning", (urgent, issuedHere) switch
+            {
+                (false, _) => $"The server certificate {expiry}.",
+                (true, true) => $"The server certificate {expiry} and was not issued again: {lockedOut}. Restart HC360, and if this stays, send its log to HyFib support.",
+                (true, false) => $"The server certificate {expiry}: {lockedOut}. Replace the certificate file the server is set up with (Network:CertificatePath).",
+            }));
         }
 
-        if (certificate.CaExpiresAt is { } caExpires && caExpires <= now)
+        if (caExpires is { } caExpired && caExpired <= now)
         {
             warnings.Add(new("cert.ca_expired", "critical",
-                $"The hospital CA expired on {caExpires:dd MMM yyyy}: workstations, tablets and HC360 Desktop no longer trust this server. Contact HyFib support."));
+                $"The hospital CA expired on {caExpired:dd MMM yyyy}: workstations, tablets and HC360 Desktop no longer trust this server, and HC360 does not start again until it has a new CA. Make one now with HyFib support, as the CA rollover procedure says (CA-ROLLOVER.md)."));
         }
-        else if (certificate.CaExpiresAt is { } caExpiring && caExpiring - now < CertificateWarningPeriod)
+        else if (caExpires is { } caExpiring && caExpiring - now < CaPlanningPeriod)
         {
-            warnings.Add(new("cert.ca_expiring", "warning",
-                $"The hospital CA expires on {caExpiring:dd MMM yyyy}. Workstations, tablets and HC360 Desktop all trust it, so plan replacing it with HyFib support now."));
+            warnings.Add(caExpiring - now < CaUrgentPeriod
+                ? new("cert.ca_expiring", "critical",
+                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}: then no workstation, tablet or HC360 Desktop trusts this server. Replace it now with HyFib support, as the CA rollover procedure says (CA-ROLLOVER.md).")
+                : new("cert.ca_expiring", "warning",
+                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}. Every workstation, tablet, HC360 Desktop and lab agent trusts it, so replacing it means setting each up again: plan it with HyFib support now (CA-ROLLOVER.md)."));
         }
 
         return warnings;

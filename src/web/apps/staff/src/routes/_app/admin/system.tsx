@@ -32,6 +32,8 @@ import { healthDisplay } from '@/modules/admin/integrationsApi';
 import {
   clockText,
   expiryTone,
+  HOSPITAL_CA,
+  SERVER_CERTIFICATE,
   integrationsSummary,
   integrationTone,
   lowDiskSpace,
@@ -240,13 +242,16 @@ function SystemHealthPage() {
             <Row label="CA fingerprint">
               <span className={styles.mono}>{h.certificate.caFingerprint}</span>
             </Row>
-            <Row label="CA expires" tone={expiryTone(h.certificate.caExpiresAt)}>
+            <Row label="CA expires" tone={expiryTone(h.certificate.caExpiresAt, HOSPITAL_CA)}>
               {h.certificate.caExpiresAt ? formatDateTime(h.certificate.caExpiresAt) : 'Not issued by HC360'}
             </Row>
             {/* Each server of several has a certificate of its own, on its card. */}
             {!servers && (
               <>
-                <Row label="Server certificate expires" tone={expiryTone(h.certificate.serverExpiresAt)}>
+                <Row
+                  label="Server certificate expires"
+                  tone={expiryTone(h.certificate.serverExpiresAt, SERVER_CERTIFICATE)}
+                >
                   {h.certificate.serverExpiresAt ? formatDateTime(h.certificate.serverExpiresAt) : '—'}
                 </Row>
                 <Row label="Valid for">{h.certificate.subjectAlternativeNames.join(', ')}</Row>
@@ -343,7 +348,7 @@ function ServerCard({ node }: { node: ServerNodeHealth }) {
               : 'Mains'}
           </Row>
         )}
-        <Row label="Certificate expires" tone={expiryTone(node.certificate.serverExpiresAt)}>
+        <Row label="Certificate expires" tone={expiryTone(node.certificate.serverExpiresAt, SERVER_CERTIFICATE)}>
           {node.certificate.serverExpiresAt ? formatDateTime(node.certificate.serverExpiresAt) : '—'}
         </Row>
       </div>
