@@ -210,6 +210,14 @@ export function PractitionerFields({
             maxLength={64}
             hint={doctor ? 'Doctors need it to consult and sign.' : undefined}
           />
+          <TextField
+            control={control}
+            name="hprId"
+            label="HPR ID"
+            autoComplete="off"
+            maxLength={17}
+            hint="14 digits, from ABDM's Healthcare Professionals Registry. It identifies the doctor in ABDM health records and insurance claims."
+          />
         </FormGrid>
       </EditorSection>
 

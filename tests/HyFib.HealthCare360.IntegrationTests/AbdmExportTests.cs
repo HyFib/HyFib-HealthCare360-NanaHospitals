@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Diagnoses;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
@@ -374,6 +375,62 @@ public sealed class AbdmExportTests(HospitalServer server)
         finally
         {
             await SwitchAsync(enabled: false);
+        }
+    }
+
+    /// <summary>
+    /// A doctor's id in ABDM's Healthcare Professionals Registry (the HPR ID, 14 digits), kept in the practitioner master,
+    /// identifies them in their ABDM documents as the NRCeS guide's own examples identify a doctor: at
+    /// <c>https://doctor.ndhm.gov.in</c>, typed as a medical licence number (v2-0203 <c>MD</c>), written
+    /// <c>xx-xxxx-xxxx-xxxx</c>. Without it, a document named the doctor and gave only their council registration and
+    /// HC360 staff code, which no other ABDM system can look up.
+    /// </summary>
+    [Fact]
+    public async Task A_doctors_hpr_id_identifies_them_in_their_abdm_documents()
+    {
+        var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var practitionerId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
+        var master = $"/api/v1/masters/practitioners/{practitionerId}";
+        var hpr = Digits(14);
+        var written = $"{hpr[..2]}-{hpr[2..6]}-{hpr[6..10]}-{hpr[10..]}";
+
+        // The hospital administrator enters it as the registry's card shows it, in groups of digits.
+        await hospitalAdmin.PutAsync(master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", written.Replace('-', ' ')));
+        try
+        {
+            var abha = NewAbha();
+            var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+            var consultation = await ConsultAsync(doctor, patient.Id, sign: false);
+            var paracetamol = await DrugAsync(doctor, "Paracetamol", "DRG-PCM500");
+            var prescription = await PrescribeAsync(doctor, patient.Id, consultation, Tablet(paracetamol, DoseFrequency.TDS, days: 3, "After food"));
+            await SignAsync(doctor, prescription);
+            await SwitchAsync(enabled: true);
+
+            var bundle = await ExportAsync(
+                $"/api/v1/abdm/bundles/prescriptions/{prescription.Id}", PrescriptionRecord, abha, $"prescription-{prescription.PrescriptionNumber}");
+
+            // The doctor who wrote it (the Composition's author) is identified by the HPR ID first.
+            var author = Entry(bundle, Composition(bundle).GetProperty("author")[0].GetProperty("reference").GetString()!);
+            var identifier = author.GetProperty("identifier")[0];
+            identifier.GetProperty("system").GetString().ShouldBe("https://doctor.ndhm.gov.in");
+            identifier.GetProperty("value").GetString().ShouldBe(written);
+            var type = identifier.GetProperty("type").GetProperty("coding")[0];
+            (type.GetProperty("system").GetString(), type.GetProperty("code").GetString())
+                .ShouldBe(("http://terminology.hl7.org/CodeSystem/v2-0203", "MD"));
+
+            // The master keeps it written as the registry writes it, and refuses a number that is not 14 digits.
+            var record = await hospitalAdmin.GetAsync<JsonObject>(master);
+            record["hprId"].ShouldNotBeNull().GetValue<string>().ShouldBe(written);
+            using var refused = await hospitalAdmin.SendRawAsync(HttpMethod.Put, master, With(record, "hprId", hpr[..13]));
+            refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("errors").TryGetProperty("hprId", out _).ShouldBeTrue();
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+            await hospitalAdmin.PutAsync(master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", null));
         }
     }
 
@@ -1251,6 +1308,14 @@ public sealed class AbdmExportTests(HospitalServer server)
             var from = Math.Max(0, at - 80);
             return $"at {at}, after \"{Shown(a[from..at])}\": \"{Shown(a[at..Math.Min(a.Length, at + 160)])}\" then \"{Shown(b[at..Math.Min(b.Length, at + 160)])}\"";
         }
+    }
+
+    /// <summary>A master record as its edit screen sends it back, with one field changed.</summary>
+    private static JsonObject With(JsonObject record, string field, string? value)
+    {
+        var changed = record.DeepClone().AsObject();
+        changed[field] = value;
+        return changed;
     }
 
     /// <summary>The document's resources of one type, in document order.</summary>

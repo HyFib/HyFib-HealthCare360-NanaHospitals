@@ -121,6 +121,8 @@ export interface PractitionerDto {
   qualification: string | null;
   registrationCouncil: string | null;
   registrationNumber: string | null;
+  /** ABDM Healthcare Professionals Registry id, written 71-1234-5678-9012; identifies the doctor in ABDM records. */
+  hprId: string | null;
   specialtyId: string | null;
   specialtyName: string | null;
   departmentId: string | null;

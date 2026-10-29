@@ -75,6 +75,7 @@ internal sealed class PractitionerConfiguration : IEntityTypeConfiguration<Pract
         b.Property(x => x.Qualification).HasMaxLength(200);
         b.Property(x => x.RegistrationCouncil).HasMaxLength(128);
         b.Property(x => x.RegistrationNumber).HasMaxLength(64);
+        b.Property(x => x.HprId).HasMaxLength(17);
         b.Property(x => x.Phone).HasMaxLength(20);
         b.Property(x => x.Email).HasMaxLength(256);
         b.Property(x => x.Bio).HasMaxLength(2000);

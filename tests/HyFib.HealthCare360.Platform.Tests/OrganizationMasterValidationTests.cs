@@ -66,6 +66,21 @@ public sealed class OrganizationMasterValidationTests
     public void A_nurse_needs_no_council_registration() =>
         new SavePractitionerRequestValidator().Validate(Doctor() with { Kind = PractitionerKind.Nurse, RegistrationNumber = null }).IsValid.ShouldBeTrue();
 
+    [Theory]
+    [InlineData("71-3016-8543-4357", true)]
+    [InlineData("71 3016 8543 4357", true)]
+    [InlineData("71301685434357", true)]
+    [InlineData(null, true)] // a doctor not yet in the registry
+    [InlineData("7130168543435", false)] // 13 digits
+    [InlineData("asha.menon@hpr.abdm", false)] // the HPR address, not the id
+    public void An_hpr_id_is_14_digits(string? hprId, bool valid)
+    {
+        var result = new SavePractitionerRequestValidator().Validate(Doctor() with { HprId = hprId });
+
+        result.IsValid.ShouldBe(valid);
+        result.Errors.Select(e => e.PropertyName).ShouldAllBe(p => p == "HprId");
+    }
+
     [Fact]
     public void A_service_has_a_tidy_code_a_sac_code_and_a_tax_rate_within_gst()
     {
@@ -87,7 +102,7 @@ public sealed class OrganizationMasterValidationTests
         "IN3310000001", "NABH accredited hospital", null, true, null);
 
     private static SavePractitionerRequest Doctor() => new(
-        "DR101", "Dr.", "Asha", "Menon", Gender.Female, "MBBS, MD (General Medicine)", "Tamil Nadu Medical Council", "TNMC 12345", null, null,
+        "DR101", "Dr.", "Asha", "Menon", Gender.Female, "MBBS, MD (General Medicine)", "Tamil Nadu Medical Council", "TNMC 12345", null, null, null,
         PractitionerKind.Consultant, "9876543210", "asha.menon@nanahospitals.in", 500m, 300m, 7, ["English", "Tamil"], null, null, null, true, false,
         null, true, null);
 }

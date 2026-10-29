@@ -71,6 +71,15 @@ export function isWebAddress(value: string): boolean {
 const orNull = (value: string): string | null => value.trim() || null;
 
 /**
+ * HPR ID (ABDM's Healthcare Professionals Registry): 14 digits, run together or grouped as 71-1234-5678-9012 with spaces
+ * or hyphens (same rule as the server). It identifies the doctor in ABDM health records and NHCX claims.
+ */
+export function isValidHprId(value: string): boolean {
+  const trimmed = value.trim();
+  return /^[\d -]+$/.test(trimmed) && trimmed.replace(/\D/g, '').length === 14;
+}
+
+/**
  * Choices for a picker: the records in use, plus the one already chosen even when it has since been taken out of use (so
  * an older record still shows it, and can keep it).
  */
@@ -334,6 +343,10 @@ export const practitionerSchema = z
     qualification: text(200),
     registrationCouncil: text(128),
     registrationNumber: text(64),
+    hprId: z
+      .string()
+      .trim()
+      .refine((v) => !v || isValidHprId(v), 'Enter a valid 14-digit HPR ID.'),
     specialtyId: z.string().nullable(),
     departmentId: z.string().nullable(),
     phone,
@@ -383,6 +396,7 @@ export function toPractitionerForm(practitioner: PractitionerDto | null): Practi
     qualification: practitioner?.qualification ?? '',
     registrationCouncil: practitioner?.registrationCouncil ?? '',
     registrationNumber: practitioner?.registrationNumber ?? '',
+    hprId: practitioner?.hprId ?? '',
     specialtyId: practitioner?.specialtyId ?? null,
     departmentId: practitioner?.departmentId ?? null,
     phone: practitioner?.phone ?? '',
@@ -417,6 +431,7 @@ export function toPractitionerRequest(
     qualification: orNull(values.qualification),
     registrationCouncil: orNull(values.registrationCouncil),
     registrationNumber: orNull(values.registrationNumber),
+    hprId: orNull(values.hprId),
     specialtyId: values.specialtyId,
     departmentId: values.departmentId,
     phone: orNull(values.phone),

@@ -51,7 +51,7 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
             ? []
             : await db.Set<Practitioner>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
                 .Where(p => practitionerIds.Contains(p.Id))
-                .Select(p => new { p.Id, p.DisplayName })
+                .Select(p => new { p.Id, p.DisplayName, p.HprId })
                 .ToListAsync(ct);
 
         var departments = departmentIds.Count == 0
@@ -77,7 +77,7 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
 
         return new ReferenceDirectory
         {
-            Practitioners = practitioners.ToDictionary(p => p.Id, p => p.DisplayName),
+            Practitioners = practitioners.ToDictionary(p => p.Id, p => new PractitionerInfo(p.DisplayName, p.HprId)),
             Departments = departments.ToDictionary(d => d.Id, d => d.Name),
             Facilities = facilities.ToDictionary(f => f.Id, f => new FacilityInfo(f.Name, f.HfrId)),
             AdmissionVisits = admissions.ToDictionary(a => a.Id, a => a.VisitId),
@@ -104,6 +104,7 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
                     Qualification = p.Qualification,
                     RegistrationCouncil = p.RegistrationCouncil,
                     RegistrationNumber = p.RegistrationNumber,
+                    HprId = p.HprId,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
                 })

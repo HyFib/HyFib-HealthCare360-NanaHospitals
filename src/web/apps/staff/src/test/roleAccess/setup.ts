@@ -162,6 +162,7 @@ const practitioner = (
   qualification: kind === 'Nurse' ? 'B.Sc. Nursing' : 'MBBS, MD',
   registrationCouncil: kind === 'Nurse' ? 'Maharashtra Nursing Council' : 'Maharashtra Medical Council',
   registrationNumber: `MMC-${code.slice(1)}2011`,
+  hprId: null,
   specialtyId: specialty?.id ?? null,
   specialtyName: specialty?.name ?? null,
   departmentId,

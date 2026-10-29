@@ -2,7 +2,7 @@ namespace HyFib.HealthCare360.Modules.Interop.Domain;
 
 /// <summary>
 /// Code systems and identifier systems used by the facade: international terminologies (LOINC, ICD-10, SNOMED CT,
-/// UCUM), HL7 terminology code systems, ABDM registries (ABHA, HFR) and HC360's own identifier namespaces.
+/// UCUM), HL7 terminology code systems, ABDM registries (ABHA, HFR, HPR) and HC360's own identifier namespaces.
 /// </summary>
 internal static class FhirSystems
 {
@@ -51,9 +51,11 @@ internal static class FhirSystems
     // Profiles.
     public const string VitalSignsProfile = "http://hl7.org/fhir/StructureDefinition/";
 
-    // ABDM registries: ABHA number (Ayushman Bharat Health Account) and Health Facility Registry.
+    // ABDM registries: ABHA number (Ayushman Bharat Health Account), Health Facility Registry and Healthcare Professionals
+    // Registry (the system the NRCeS guide's examples give a doctor's HPR ID).
     public const string Abha = "https://healthid.ndhm.gov.in";
     public const string Hfr = "https://facility.ndhm.gov.in";
+    public const string Hpr = "https://doctor.ndhm.gov.in";
 
     // HC360 identifier namespaces.
     public const string Uhid = "urn:hc360:uhid";

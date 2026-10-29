@@ -6,17 +6,21 @@ namespace HyFib.HealthCare360.Modules.Interop.Mapping;
 /// <summary>Name and ABDM Health Facility Registry id of a facility.</summary>
 internal sealed record FacilityInfo(string Name, string? HfrId);
 
+/// <summary>Name and ABDM Healthcare Professionals Registry id (HPR ID) of a doctor or other practitioner.</summary>
+internal sealed record PractitionerInfo(string Name, string? HprId);
+
 /// <summary>
 /// Display names for the people, departments and facilities a page of resources refers to, loaded once per request.
-/// The facade does not serve Practitioner or Organization resources, so these become display references (with the HFR
-/// id for facilities, which ABDM systems recognise); an ABDM document, which includes them, links them (<see cref="Linked"/>).
+/// The facade does not serve Practitioner or Organization resources, so these become display references (with the HPR
+/// ID for practitioners and the HFR id for facilities, which ABDM systems recognise); an ABDM document, which includes
+/// them, links them (<see cref="Linked"/>).
 /// It also maps admissions to the in-patient visit that represents them as an Encounter.
 /// </summary>
 internal sealed class ReferenceDirectory
 {
     public static readonly ReferenceDirectory Empty = new();
 
-    public IReadOnlyDictionary<Guid, string> Practitioners { get; init; } = new Dictionary<Guid, string>();
+    public IReadOnlyDictionary<Guid, PractitionerInfo> Practitioners { get; init; } = new Dictionary<Guid, PractitionerInfo>();
 
     public IReadOnlyDictionary<Guid, string> Departments { get; init; } = new Dictionary<Guid, string>();
 
@@ -43,8 +47,14 @@ internal sealed class ReferenceDirectory
     };
 
     public R4.ResourceReference? Practitioner(Guid? id) =>
-        id is { } key && Practitioners.TryGetValue(key, out var name)
-            ? new R4.ResourceReference { Reference = Linked ? $"Practitioner/{FhirIds.Of(key)}" : null, Type = "Practitioner", Display = name }
+        id is { } key && Practitioners.TryGetValue(key, out var practitioner)
+            ? new R4.ResourceReference
+            {
+                Reference = Linked ? $"Practitioner/{FhirIds.Of(key)}" : null,
+                Type = "Practitioner",
+                Display = practitioner.Name,
+                Identifier = string.IsNullOrWhiteSpace(practitioner.HprId) ? null : new R4.Identifier(FhirSystems.Hpr, Hpr.Format(practitioner.HprId)),
+            }
             : null;
 
     public string? Department(Guid? id) => id is { } key && Departments.TryGetValue(key, out var name) ? name : null;

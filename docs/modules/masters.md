@@ -24,7 +24,7 @@ Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Scr
 | Facilities and letterhead | `/setup/facilities` | Name, legal name, address, contact, GSTIN, PAN, registration, NABH and HFR ids, the logo and the letterhead line. *Preview letterhead* shows the report letterhead the server prints, from the details being typed |
 | Departments | `/setup/departments` | Kind, speciality, head of department, location, queue token prefix and position in lists, for the signed-in facility |
 | Specialities | `/setup/specialties` | Shared by every facility; patients choose one when booking online |
-| Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), department, speciality, facilities, fees and follow-up days, online and video booking, languages, profile, photo and signature |
+| Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), HPR ID (ABDM's Healthcare Professionals Registry, which identifies the doctor in ABDM health records and NHCX claims), department, speciality, facilities, fees and follow-up days, online and video booking, languages, profile, photo and signature |
 | Services and prices | `/setup/services` | Category, department, base price, GST, SAC, whether discounts and price changes are allowed |
 | Number formats | `/setup/numbering` | The format of every number the hospital issues, set before the first one if needed (`admin.numbering.manage`; see `docs/modules/numbering.md`) |
 | Print templates | `/setup/print-templates` | How each kind of document prints: the letterhead or pre-printed stationery, the logo, a closing note and the paper, hospital-wide or for one facility (`admin.print.manage`; see `docs/modules/print-templates.md`) |
@@ -75,7 +75,8 @@ A save replaces every field, so screens send the whole record.
 - **Fields within their columns.** Every request is validated against the column it fills (length, control characters,
   enum, GSTIN, PAN, PIN code, web address, SAC/HSN code, fees up to ₹10 lakh and prices up to ₹1 crore with two
   decimals, 12 languages), so a long value is a field error rather than a server error. Doctors (consultant, visiting,
-  resident) need their council registration number.
+  resident) need their council registration number. An HPR ID is 14 digits, typed in groups or run together, and kept
+  written `xx-xxxx-xxxx-xxxx`.
 - **References in use.** A newly chosen speciality, department, head of department or facility must be in use. One chosen
   earlier and since taken out of use doesn't block other edits. A practitioner's or service's department may belong to
   any facility.

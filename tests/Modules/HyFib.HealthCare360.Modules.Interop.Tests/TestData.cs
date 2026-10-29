@@ -22,7 +22,7 @@ internal static class TestData
 
     public static ReferenceDirectory Directory { get; } = new()
     {
-        Practitioners = new Dictionary<Guid, string> { [DoctorId] = "Dr. Asha Rao" },
+        Practitioners = new Dictionary<Guid, PractitionerInfo> { [DoctorId] = new("Dr. Asha Rao", AbdmTestData.HprId) },
         Departments = new Dictionary<Guid, string> { [DepartmentId] = "General Medicine" },
         Facilities = new Dictionary<Guid, FacilityInfo> { [FacilityId] = new("Nana Hospitals, Pune", "IN2710000123") },
     };

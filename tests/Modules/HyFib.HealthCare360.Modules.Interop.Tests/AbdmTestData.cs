@@ -21,6 +21,9 @@ internal static class AbdmTestData
     /// <summary>An ABHA number: 14 digits.</summary>
     public const string AbhaNumber = "91123456789010";
 
+    /// <summary>Dr. Asha Rao's HPR ID: the one the NRCeS guide's examples give their doctor.</summary>
+    public const string HprId = "21-1521-3828-3227";
+
     public static readonly Guid OpVisitId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab001");
     public static readonly Guid EncounterId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab002");
     public static readonly Guid PrescriptionId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab003");
@@ -62,12 +65,12 @@ internal static class AbdmTestData
 
     public static ReferenceDirectory Names { get; } = new()
     {
-        Practitioners = new Dictionary<Guid, string>
+        Practitioners = new Dictionary<Guid, PractitionerInfo>
         {
-            [TestData.DoctorId] = "Dr. Asha Rao",
-            [CardiologistId] = "Dr. Vikram Shah",
-            [RadiologistId] = "Dr. Neha Joshi",
-            [ResidentId] = "Dr. Kiran Patil",
+            [TestData.DoctorId] = new("Dr. Asha Rao", HprId),
+            [CardiologistId] = new("Dr. Vikram Shah", null),
+            [RadiologistId] = new("Dr. Neha Joshi", null),
+            [ResidentId] = new("Dr. Kiran Patil", null),
         },
         Departments = new Dictionary<Guid, string> { [TestData.DepartmentId] = "General Medicine" },
         Facilities = new Dictionary<Guid, FacilityInfo> { [TestData.FacilityId] = new("Nana Hospitals, Pune", "IN2710000123") },
@@ -88,6 +91,7 @@ internal static class AbdmTestData
             Qualification = "MBBS, MD (General Medicine)",
             RegistrationCouncil = "Maharashtra Medical Council",
             RegistrationNumber = "MMC-2009-041234",
+            HprId = HprId,
             CreatedAt = TestData.Now.AddYears(-3),
             UpdatedAt = TestData.Now.AddMonths(-6),
         },

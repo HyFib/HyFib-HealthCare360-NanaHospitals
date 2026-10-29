@@ -389,7 +389,7 @@ narrative must read safely on its own.
 | Resource | Profile | What the IG adds to the read API's resource |
 |---|---|---|
 | Patient | `Patient` | ABHA number (`https://healthid.ndhm.gov.in`, `xx-xxxx-xxxx-xxxx`) typed `ABHA` from the IG's identifier types; UHID typed MR, and the UHIDs of merged duplicates that records in the document are still kept under, `old`. A patient without an ABHA is still exported, with the UHID |
-| Practitioner | `Practitioner` | From the practitioner master: medical-council registration (v2-0203 MD, the council as assigner) and staff code (PRN), name, gender, qualification. No personal phone or e-mail |
+| Practitioner | `Practitioner` | From the practitioner master: the HPR ID first where the master has one (`https://doctor.ndhm.gov.in`, v2-0203 MD, written `xx-xxxx-xxxx-xxxx`, as the guide's own examples identify a doctor), medical-council registration (v2-0203 MD, the council as assigner) and staff code (PRN), name, gender, qualification. No personal phone or e-mail |
 | Organization | `Organization` | From the facility master: HFR id (`https://facility.ndhm.gov.in`, PRN), facility code (XX), type `prov`, work phone, e-mail, address. For a test sent out, the referral laboratory from the laboratory's master: its code (`urn:hc360:referral-lab`, XX), name, phone, e-mail, address |
 | Encounter | `Encounter` | The visit (with its admission for a stay) or the clinical encounter; a consultation's link to its visit (`partOf`) is left out, as the visit is not in the document |
 | Condition | `Condition` | ICD-10 coding only (free-text diagnoses as text) |
@@ -816,14 +816,15 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
   echo, TMT, Holter, ABPM: their own studies, with no imaging study) are not exported as ABDM documents, nor are immunisations, wellness and
   invoice records. The FHIR read API's resources keep the ABDM-friendly identifiers (ABHA number, HFR id) but claim no
   NRCeS profiles; the ABDM documents do.
-* Doctors' Healthcare Professionals Registry (HPR) ids are not recorded: ABDM documents name a doctor by medical
-  council registration number and HC360 code until they are.
+* A doctor without an HPR ID in the practitioner master is identified in ABDM documents and NHCX claims by medical
+  council registration number and HC360 code only. HC360 checks that an HPR ID has 14 digits; it does not look it up
+  in the registry.
 * An ABDM download is in the patient's record access log (`patient.accessed`), but the privacy data summary does not
   list its recipient, as HC360 does not know who receives the file.
 * No `vread`/history, `_include`/`_revinclude`, `_sort`, `_summary`, `_elements`, XML, or bulk export (`$export`);
   clinical searches are per patient.
 * Practitioner, Organization and Location are not served by the FHIR API: references carry a display name (and the
-  HFR id for facilities). ABDM documents carry their doctor and hospital as entries. Binary is not served, so uploaded
+  HPR ID for doctors, the HFR id for facilities). ABDM documents carry their doctor and hospital as entries. Binary is not served, so uploaded
   documents are metadata only.
 * Not exported yet: immunizations, procedures, clinical notes, antibiotic susceptibilities, RPM device readings,
   vital-sign interpretation flags, the primary-diagnosis rank.

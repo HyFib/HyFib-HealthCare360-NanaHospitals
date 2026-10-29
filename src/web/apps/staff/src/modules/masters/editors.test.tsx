@@ -99,6 +99,7 @@ const doctor: PractitionerDto = {
   qualification: null,
   registrationCouncil: null,
   registrationNumber: 'TNMC 12345',
+  hprId: null,
   specialtyId: null,
   specialtyName: null,
   departmentId: null,

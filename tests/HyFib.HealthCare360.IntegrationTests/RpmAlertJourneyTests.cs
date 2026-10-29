@@ -130,7 +130,7 @@ public sealed class RpmAlertJourneyTests(HospitalServer server)
 
     private static SavePractitionerRequest Nurse(string code, string? phone, bool active, uint? version) => new(
         code, "Sr.", "Meena", "Rpm" + Letters(8), Gender.Female, Qualification: "B.Sc. Nursing", RegistrationCouncil: null, RegistrationNumber: null,
-        SpecialtyId: null, DepartmentId: null, PractitionerKind.Nurse, phone, Email: null, ConsultationFeeNew: 0, ConsultationFeeFollowUp: 0,
+        HprId: null, SpecialtyId: null, DepartmentId: null, PractitionerKind.Nurse, phone, Email: null, ConsultationFeeNew: 0, ConsultationFeeFollowUp: 0,
         FollowUpValidityDays: 0, Languages: null, Bio: null, PhotoFileId: null, SignatureFileId: null, AvailableForOnlineBooking: false,
         AvailableForTelehealth: false, FacilityIds: null, active, version);
 

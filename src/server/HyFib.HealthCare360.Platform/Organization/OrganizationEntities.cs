@@ -89,6 +89,13 @@ public sealed class Practitioner : AuditableEntity
     public string? Qualification { get; set; }
     public string? RegistrationCouncil { get; set; }
     public string? RegistrationNumber { get; set; }
+
+    /// <summary>
+    /// The professional's id in ABDM's Healthcare Professionals Registry, written <c>xx-xxxx-xxxx-xxxx</c>
+    /// (<see cref="Hpr.Format"/>): it identifies them in ABDM health records and NHCX claims.
+    /// </summary>
+    public string? HprId { get; set; }
+
     public Guid? SpecialtyId { get; set; }
     public Guid? DepartmentId { get; set; }
     public PractitionerKind Kind { get; set; }
