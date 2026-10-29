@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -14,14 +16,15 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// Alerts that reach someone (audit P2), over the real API, database and alerts. A drill's test warning is told as any
-/// critical warning is, and keeps when each step happened. The heartbeat fetches its outside address, and System health
-/// says when it fails. A live server says when a critical warning would not reach IT on-call, and when nothing outside the
-/// hospital would notice it stop.
+/// critical warning is, and keeps when each step happened; drills started at once start one. The heartbeat's address is
+/// kept secret, the heartbeat fetches it, and System health says when that fails. A live server says when a critical
+/// warning would not reach IT on-call, and when nothing outside the hospital would notice it stop.
 /// </summary>
 public sealed class AlertingTests(HospitalServer server)
 {
     private const string Drills = "/api/v1/admin/system/alert-drills";
     private const string Health = "/api/v1/admin/system/health";
+    private const string Settings = "/api/v1/admin/settings";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -37,9 +40,13 @@ public sealed class AlertingTests(HospitalServer server)
             refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden, "only those who manage the server start a drill");
         }
 
-        var drill = await admin.PostAsync<AlertDrill>(Drills);
+        // Started by several at once, as a double click or two people do: one drill starts, the others are refused.
+        var starts = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => admin.SendRawAsync(HttpMethod.Post, Drills)));
         try
         {
+            starts.Count(r => r.IsSuccessStatusCode).ShouldBe(1, "one drill at a time, however many start one at once");
+            starts.Where(r => !r.IsSuccessStatusCode).ShouldAllBe(r => r.StatusCode == HttpStatusCode.Conflict);
+            var drill = await ApiClient.ReadAsync<AlertDrill>(starts.Single(r => r.IsSuccessStatusCode), HttpMethod.Post, Drills);
             drill.State.ShouldBe("open");
             using (var second = await admin.SendRawAsync(HttpMethod.Post, Drills))
             {
@@ -75,8 +82,16 @@ public sealed class AlertingTests(HospitalServer server)
         }
         finally
         {
+            foreach (var start in starts)
+            {
+                start.Dispose();
+            }
+
             // The server is shared by every test of the run: no drill is left open.
-            using var _ = await admin.SendRawAsync(HttpMethod.Post, $"{Drills}/{drill.Id}/acknowledge");
+            foreach (var open in (await admin.GetAsync<List<AlertDrill>>(Drills)).Where(d => d.State == "open"))
+            {
+                using var _ = await admin.SendRawAsync(HttpMethod.Post, $"{Drills}/{open.Id}/acknowledge");
+            }
         }
     }
 
@@ -87,8 +102,23 @@ public sealed class AlertingTests(HospitalServer server)
         var heartbeat = server.Services.GetRequiredService<AlertHeartbeat>();
         var token = Guid.NewGuid().ToString("N");
         await using var monitor = Monitor.Start();
-        await using (await SettingAsync(AlertHeartbeat.UrlSetting, $"{monitor.Address}ping/{token}"))
+
+        // Set as an administrator sets it, without asking for a secret. The address holds the monitor's token: it is kept
+        // encrypted, never shown again, and left out of the audit trail.
+        await admin.PutAsync($"{Settings}/{AlertHeartbeat.UrlSetting}", new SaveSettingRequest(JsonValue.Create($"{monitor.Address}ping/{token}"), null, false, null));
+        try
         {
+            var saved = (await admin.GetAsync<List<SettingDto>>($"{Settings}?prefix={AlertHeartbeat.UrlSetting}")).Single(s => s.Key == AlertHeartbeat.UrlSetting);
+            (saved.IsSecret, saved.HasValue, saved.Value is null).ShouldBe((true, true, true), "the address is a secret, however it was saved");
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+                (await db.Set<SystemSetting>().AsNoTracking().SingleAsync(s => s.Key == AlertHeartbeat.UrlSetting && s.FacilityId == null, Ct)).Value
+                    .ShouldNotContain(token, Case.Sensitive, "kept encrypted, in the database and every backup");
+                (await db.Set<AuditEvent>().AsNoTracking().Where(e => e.Action == "setting.changed" && e.EntityId == AlertHeartbeat.UrlSetting)
+                    .OrderByDescending(e => e.OccurredAt).FirstAsync(Ct)).Details.ShouldNotBeNull().ShouldNotContain(token, Case.Sensitive);
+            }
+
             var ok = await heartbeat.BeatAsync(force: true, Ct);
             (ok.Host, ok.Failures, ok.LastError).ShouldBe(("127.0.0.1", 0, (string?)null));
             ok.LastSuccessAt.ShouldNotBeNull();
@@ -105,6 +135,11 @@ public sealed class AlertingTests(HospitalServer server)
             warning.Severity.ShouldBe("warning");
             warning.Message.ShouldContain("127.0.0.1");
             warning.Message.ShouldNotContain(token);
+        }
+        finally
+        {
+            await using var scope = server.Services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>().RemoveAsync(AlertHeartbeat.UrlSetting, null, CancellationToken.None);
         }
 
         // With the address taken away, the heartbeat is off and says nothing.

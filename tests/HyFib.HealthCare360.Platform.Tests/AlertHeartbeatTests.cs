@@ -59,7 +59,7 @@ public sealed class AlertHeartbeatTests
         warning.Message.ShouldContain("hc-ping.com");
         warning.Message.ShouldContain("29 Oct 2026 09:00 UTC");
         warning.Message.ShouldContain("no answer within 10 seconds.");
-        warning.Message.ShouldContain("alerts.heartbeatUrl");
+        warning.Message.ShouldContain(AlertHeartbeat.UrlSetting);
     }
 
     [Fact]

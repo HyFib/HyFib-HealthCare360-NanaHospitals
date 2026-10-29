@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 
 namespace HyFib.HealthCare360.Platform.Networking;
@@ -11,7 +12,7 @@ namespace HyFib.HealthCare360.Platform.Networking;
 /// What decides whether a critical warning reaches IT on-call by phone (audit P2): the on-call number, the SMS and WhatsApp
 /// providers, and the hospital-wide <c>system.alert</c> SMS template that carries the warning.
 /// </summary>
-/// <param name="OnCallPhone">The IT on-call number (<c>alerts.oncallPhone</c>), if one is set.</param>
+/// <param name="OnCallPhone">The IT on-call number (<c>alerts.oncallPhone</c>) as it is set, if it is.</param>
 /// <param name="SmsProvider">The hospital's SMS provider (<c>integrations.sms</c>) while SMS is switched on; null when it is off.</param>
 /// <param name="AlertSmsTemplate">An active hospital-wide <c>system.alert</c> SMS template exists.</param>
 /// <param name="AlertDltTemplateId">That template's DLT template id, if it has one.</param>
@@ -20,10 +21,11 @@ public sealed record AlertRoute(string? OnCallPhone, string? SmsProvider, bool A
 
 /// <summary>
 /// System health's warning, on a live server, when a critical warning would not reach IT on-call by phone (audit P2). The
-/// alerts themselves (<see cref="SystemHealthAlerts"/>) cannot say so: they are what fails. Critical when SMS is set up
-/// yet every alert SMS fails, unseen: there is no <c>system.alert</c> SMS template, or MSG91 refuses it for want of a DLT
-/// template id, and nothing goes on WhatsApp either. A warning when nobody set them up, or when the operators may drop an
-/// SMS whose template has no DLT id. WhatsApp alone, by the hospital's choice, is no warning.
+/// alerts themselves (<see cref="SystemHealthAlerts"/>) cannot say so: they are what fails. Critical when the alerts are
+/// set up yet every one fails, unseen: the on-call number is not a phone number; or there is no <c>system.alert</c> SMS
+/// template, or MSG91 refuses it for want of a DLT template id, and nothing goes on WhatsApp either. A warning when nobody
+/// set them up, or when the operators may drop an SMS whose template has no DLT id. WhatsApp alone, by the hospital's
+/// choice, is no warning.
 /// </summary>
 public static class AlertReadiness
 {
@@ -68,6 +70,14 @@ public static class AlertReadiness
         {
             return new(Code, "warning",
                 "No IT on-call number is set (alerts.oncallPhone under Administration › Settings), so critical warnings reach only those who open HC360. Set IT's mobile number.");
+        }
+
+        // The alerts send to the number as Phone.Normalize reads it: one it cannot read, the message log skips, unseen.
+        if (Phone.Normalize(route.OnCallPhone) is null)
+        {
+            return new(Code, "critical",
+                "Critical warnings do not reach IT on-call by phone: the on-call number (alerts.oncallPhone under Administration › Settings) is not a phone number, "
+                + "so every alert to it is skipped. Enter IT's mobile number, such as 98765 43210.");
         }
 
         var sms = route.SmsProvider is { Length: > 0 } provider && provider != Simulator ? provider : null;

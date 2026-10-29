@@ -31,7 +31,7 @@ public sealed record HeartbeatState(
 /// A dead-man's switch (audit P2). Everything that tells IT about a problem runs in the server itself
 /// (<see cref="SystemHealthAlerts"/>), so a power cut, a stopped HC360Server service, a server that cannot reach its
 /// database, or a site cut off from the internet tells nobody. So every few minutes (<c>alerts.heartbeatMinutes</c>, 5 if
-/// not set) the server that runs the jobs fetches the address the hospital set (<c>alerts.heartbeatUrl</c>) from a
+/// not set) the server that runs the jobs fetches the address the hospital set (<see cref="UrlSetting"/>) from a
 /// monitoring service outside the hospital, which raises its own alarm when the fetches stop. It fetches only while the
 /// database answers, so a server that cannot reach it counts as down. The address is https, or http to an address on the
 /// hospital's own network; the fetch carries nothing but the address, and follows no redirect (<see cref="Http.OutboundHttp"/>).
@@ -40,7 +40,12 @@ public sealed class AlertHeartbeat(
     IServiceScopeFactory scopes, IHttpClientFactory http, IOptions<PlatformOptions> options, TimeProvider time, ILogger<AlertHeartbeat> logger)
     : BackgroundService
 {
-    public const string UrlSetting = "alerts.heartbeatUrl";
+    /// <summary>
+    /// The address to fetch. Its path or query holds the monitoring service's token, and whoever has it could fetch it and
+    /// hide an outage: a secret setting (<see cref="SecretSettingKeys"/>), kept encrypted, never shown again, and left out
+    /// of the audit trail, however it is saved.
+    /// </summary>
+    public const string UrlSetting = "alerts.heartbeatUrl.secret";
     public const string MinutesSetting = "alerts.heartbeatMinutes";
     public const string HttpClientName = "alerts.heartbeat";
     public const string FailingCode = "alerts.heartbeat_failing";
@@ -157,7 +162,7 @@ public sealed class AlertHeartbeat(
             : new HealthWarning(FailingCode, "warning",
                 string.Create(CultureInfo.InvariantCulture,
                     $"The outside heartbeat to {state.Host} has failed {state.Failures} times in a row, since {state.FailingSince:dd MMM yyyy HH:mm} UTC: {state.LastError} ")
-                + "The monitoring service raises its alarm when the heartbeats stop. Check this server's internet access, and the address under Administration › Settings (alerts.heartbeatUrl).");
+                + $"The monitoring service raises its alarm when the heartbeats stop. Check this server's internet access, and the address under Administration › Settings ({UrlSetting}).");
     }
 
     /// <summary>On a live server: the warning that no heartbeat goes out, because no address is set or the one set is refused.</summary>
@@ -174,14 +179,14 @@ public sealed class AlertHeartbeat(
         if (string.IsNullOrWhiteSpace(value))
         {
             return new HealthWarning(OffCode, "warning",
-                "Nothing outside the hospital notices if this server stops: its own alerts stop with it. Set alerts.heartbeatUrl under Administration › Settings "
+                $"Nothing outside the hospital notices if this server stops: its own alerts stop with it. Set {UrlSetting} under Administration › Settings "
                 + "to the address a heartbeat monitor gives, as the deployment guide says (Alerts that reach someone).");
         }
 
         return TryParse(value, out _, out var problem)
             ? null
             : new HealthWarning(OffCode, "warning",
-                $"The heartbeat address (alerts.heartbeatUrl) {problem}, so no heartbeat goes out and nothing outside the hospital notices if this server stops.");
+                $"The heartbeat address ({UrlSetting}) {problem}, so no heartbeat goes out and nothing outside the hospital notices if this server stops.");
     }
 
     /// <summary>

@@ -59,8 +59,8 @@ const KNOWN: Record<string, string> = {
     "IT's mobile number, which gets an SMS for each critical warning in System health (a day later again while it lasts), and when the server's WiFi drops or its adapter disappears, its signal stays weak, or its network is not secure. With MSG91, the system.alert SMS template needs its DLT template id.",
   'alerts.oncallWhatsApp':
     'Also send those alerts to the on-call number on WhatsApp (off if not set, true turns it on). The WhatsApp provider must have the system_alert template approved.',
-  'alerts.heartbeatUrl':
-    "The address a heartbeat monitor outside the hospital gives (a dead-man's switch): the server that runs the jobs fetches it every few minutes while the database answers, and the monitor raises its alarm when that stops, as in a power cut or a stopped server. https, or http to a private address on the hospital's network.",
+  'alerts.heartbeatUrl.secret':
+    "The address a heartbeat monitor outside the hospital gives (a dead-man's switch): the server that runs the jobs fetches it every few minutes while the database answers, and the monitor raises its alarm when that stops, as in a power cut or a stopped server. https, or http to a private address on the hospital's network. Kept encrypted and never shown again: whoever has it could fetch it and hide an outage.",
   'alerts.heartbeatMinutes':
     'Minutes between heartbeats (5 if not set, 1 to 60). Give the monitor a period to match, and a grace time of a few minutes.',
   'security.antiAutomation.enabled':

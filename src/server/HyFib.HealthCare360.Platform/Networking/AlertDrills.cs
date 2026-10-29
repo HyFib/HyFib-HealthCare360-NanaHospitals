@@ -58,6 +58,8 @@ public sealed class AlertDrills(HospitalDbContext db, IAuditLogger audit, ICurre
     /// <summary>Starts a drill, unless one is open.</summary>
     public async Task<Result<AlertDrill>> StartAsync(CancellationToken ct)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await TakeTurnAsync(ct);
         var now = time.GetUtcNow();
         if (await OpenAsync(db, now, ct) is { } open)
         {
@@ -66,18 +68,22 @@ public sealed class AlertDrills(HospitalDbContext db, IAuditLogger audit, ICurre
 
         var id = Guid.CreateVersion7(now);
         var code = CodeOf(id);
-        await audit.WriteAsync(new AuditEntry(AuditCategories.Admin, StartedAction, $"Started alert drill {code}.")
+        audit.Add(new AuditEntry(AuditCategories.Admin, StartedAction, $"Started alert drill {code}.")
         {
             EntityType = Entity,
             EntityId = id.ToString(),
             Details = new StartedDetails(code, user.DisplayName),
-        }, ct);
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return (await BuildAsync(await StartsAsync(now - OpenFor, id, ct), ct)).Single();
     }
 
     /// <summary>Acknowledges an open drill: its warning reached whoever acknowledges it, and System health stops showing it.</summary>
     public async Task<Result<AlertDrill>> AcknowledgeAsync(Guid id, CancellationToken ct)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await TakeTurnAsync(ct);
         var start = await StartsAsync(time.GetUtcNow() - Kept, id, ct);
         if (start.Count == 0)
         {
@@ -92,12 +98,14 @@ public sealed class AlertDrills(HospitalDbContext db, IAuditLogger audit, ICurre
                 : $"Drill {drill.Code} expired: nobody acknowledged it within an hour.");
         }
 
-        await audit.WriteAsync(new AuditEntry(AuditCategories.Admin, AcknowledgedAction, $"Acknowledged alert drill {drill.Code}.")
+        audit.Add(new AuditEntry(AuditCategories.Admin, AcknowledgedAction, $"Acknowledged alert drill {drill.Code}.")
         {
             EntityType = Entity,
             EntityId = id.ToString(),
             Details = new AcknowledgedDetails(user.DisplayName),
-        }, ct);
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return (await BuildAsync(start, ct)).Single();
     }
 
@@ -146,6 +154,13 @@ public sealed class AlertDrills(HospitalDbContext db, IAuditLogger audit, ICurre
             Details = new ToldDetails(logIds),
         }, ct);
     }
+
+    /// <summary>
+    /// Starts and acknowledgements take turns, across the servers on the database, each writing in the transaction that
+    /// checked: two starts at once (a double click, or two people) cannot both find no drill open.
+    /// </summary>
+    private Task TakeTurnAsync(CancellationToken ct) =>
+        db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({Entity}, 0))", ct);
 
     private static async Task<OpenDrill?> OpenAsync(HospitalDbContext db, DateTimeOffset now, CancellationToken ct)
     {

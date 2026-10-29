@@ -25,6 +25,26 @@ public sealed class AlertReadinessTests
         warning.Message.ShouldContain("alerts.oncallPhone");
     }
 
+    [Theory]
+    [InlineData("9800")]
+    [InlineData("+91 98000")]
+    [InlineData("IT desk")]
+    public void An_on_call_number_that_is_not_a_phone_number_skips_every_alert_and_is_critical(string onCall)
+    {
+        var warning = AlertReadiness.Warning(Route() with { OnCallPhone = onCall, WhatsAppToOnCall = true }).ShouldNotBeNull();
+
+        warning.Severity.ShouldBe("critical", "a number was set, and every alert to it is skipped unseen, on WhatsApp too");
+        warning.Message.ShouldContain("alerts.oncallPhone");
+        warning.Message.ShouldContain("not a phone number");
+    }
+
+    [Theory]
+    [InlineData("98000 00142")]
+    [InlineData("098000-00142")]
+    [InlineData("919800000142")]
+    public void An_on_call_number_written_another_way_is_one_the_alerts_send_to(string onCall) =>
+        AlertReadiness.Warning(Route() with { OnCallPhone = onCall }).ShouldBeNull();
+
     [Fact]
     public void Msg91_without_a_dlt_template_id_fails_every_alert_and_is_critical()
     {

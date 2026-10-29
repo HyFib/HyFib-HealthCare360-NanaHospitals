@@ -388,8 +388,9 @@ A critical warning is told within five minutes: in the app to everyone who may s
 on-call number by SMS (and WhatsApp, where the hospital chose it), again a day later while it lasts. Three things make
 sure it reaches someone. On a live server, System health warns while one is missing.
 
-1. **The on-call number, and an SMS that goes** (`alerts.not_ready`). Set `alerts.oncallPhone` (step 7). The SMS is
-   the `system.alert` template (Administration › Message templates):
+1. **The on-call number, and an SMS that goes** (`alerts.not_ready`). Set `alerts.oncallPhone` (step 7) to IT's mobile
+   number: one that is not a phone number gets no alert, which System health says as critical. The SMS is the
+   `system.alert` template (Administration › Message templates):
    - with MSG91, give it the DLT template id its text was registered with on the DLT portal. MSG91 refuses an SMS
      without one, so every alert SMS would fail unseen: System health says so as critical;
    - other Indian gateways need the text registered too: operators drop SMS whose template is not registered on DLT.
@@ -400,12 +401,13 @@ sure it reaches someone. On a live server, System health warns while one is miss
    Better Stack, UptimeRobot and Cronitor host one; Uptime Kuma's push monitor runs on a machine of the hospital's own,
    never the HC360 server.
    - Create a heartbeat check with a period of 5 minutes and a grace time of 5 to 10, alerting IT and HyFib support.
-   - Set `alerts.heartbeatUrl` to its address, and `alerts.heartbeatMinutes` if the period is not 5. The server that
-     runs the jobs fetches it while the database answers, so a server that cannot reach its database counts as down.
-     The address is https, or http to a private address on the hospital's network.
+   - Set `alerts.heartbeatUrl.secret` to its address, and `alerts.heartbeatMinutes` if the period is not 5. The server
+     that runs the jobs fetches it while the database answers, so a server that cannot reach its database counts as
+     down. The address is https, or http to a private address on the hospital's network.
    - Let the server through the firewall to the monitor's host: one https request every few minutes, carrying nothing
      but the address.
-   - Keep the address to those who need it: whoever has it could fetch it and hide an outage.
+   - Keep the address to those who need it: whoever has it could fetch it and hide an outage. HC360 keeps it
+     encrypted, as a secret setting, and never shows it again or writes it in the audit trail.
 
    System health warns after three failed fetches in a row, naming the monitor's host.
 3. **A drill** (Administration › System health › Alert drills; starting one needs `admin.system.manage`). It raises a
@@ -1310,7 +1312,7 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | `Install-HC360Server.ps1` stops: "HC360 was installed here as a warm standby … and has no data encryption key yet" | Put the keys back from the latest backup with `backup restore` (section 9, "Failing over to the standby", step 3), then run the installer again |
 | HC360 does not start, and its log says "The database is a read-only warm standby" | HC360 was started on the standby. Leave its service disabled; to fail over, promote the standby first (section 9) |
 | "Critical warnings do not reach IT on-call by phone" or "…may not arrive by SMS" (System health) | The on-call number, the SMS provider, or the `system.alert` template's DLT template id: the warning names which (section 4, "Alerts that reach someone"). Then run an alert drill |
-| "The outside heartbeat to … has failed" (System health) | The server's internet access, the firewall towards the monitor's host, and `alerts.heartbeatUrl`. The monitoring service raises its own alarm meanwhile |
+| "The outside heartbeat to … has failed" (System health) | The server's internet access, the firewall towards the monitor's host, and `alerts.heartbeatUrl.secret`. The monitoring service raises its own alarm meanwhile |
 | "This live server's database holds records the integrations' simulators made" (System health) | The database was used for training, or set up before HC360 refused the simulators on a live server (section 4, "Going live on a database used for training"). Administration › Simulator records lists each kind and what to do about it. Deal with each, then sign them off there |
 | HC360 does not start, and its log says "HealthCare360:SeedDemoData is on, but this database holds patients" | `SeedDemoData` was turned on for the hospital's database. Demonstration data, its accounts and the simulators would mix into real records, so HC360 refuses. Remove `"SeedDemoData": true` from `config\hc360.settings.json` and start the service. A training or test server needs a database of its own, with demonstration data on before anyone is registered (docs/testing/LOAD-TESTS.md); one made before this check that holds patients needs a new database |
 | A node of several does not start: "this server has a data encryption key of its own …, and the shared folder … has none" | The keys are not in the shared folder yet. Put them there with `backup restore` (section 10, "Setting it up", step 4) |
