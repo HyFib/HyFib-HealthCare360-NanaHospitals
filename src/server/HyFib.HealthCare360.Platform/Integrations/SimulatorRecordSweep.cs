@@ -74,12 +74,13 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
     internal static readonly IReadOnlyList<SimulatorRecordKind> Kinds =
     [
         new("payments", "Online payments the payment simulator took", "critical",
-            "No money was received: each was marked paid as it was made. Cancel or correct the receipts they made, and the bills, deposits and appointments they settled.",
+            "No money was received, though each was marked paid. Cancel or correct the receipts they made, and the bills, deposits and appointments they settled.",
+            // Only the orders marked paid: a link nobody paid, one that failed, expired or was cancelled made no receipt.
             """
             SELECT count(*) AS count, sum(o.paid_amount) AS amount, min(o.created_at) AS first, max(o.created_at) AS last,
                    (array_agg(o.order_id ORDER BY o.created_at DESC))[1:5] AS examples
             FROM billing.gateway_orders o
-            WHERE lower(trim(o.provider)) = 'simulator' AND NOT o.is_deleted
+            WHERE lower(trim(o.provider)) = 'simulator' AND o.status = 'Paid' AND NOT o.is_deleted
             """),
         new("refunds", "Refunds the payment simulator said it paid back", "critical",
             "Nothing was paid back: the patient may still be owed the money. Check each with the patient, and pay it back another way.",
@@ -91,11 +92,12 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
             """),
         new("card-sales", "Card and UPI sales the terminal simulator approved", "critical",
             "No card or UPI payment was taken: correct the receipts the approved sales made, and the cashier shifts they were counted in.",
+            // Only the approved sales: a declined, cancelled or timed-out one made no receipt.
             """
-            SELECT count(*) AS count, sum(t.amount) FILTER (WHERE t.status = 'Approved') AS amount, min(t.created_at) AS first,
-                   max(t.created_at) AS last, (array_agg(t.transaction_id ORDER BY t.created_at DESC))[1:5] AS examples
+            SELECT count(*) AS count, sum(t.amount) AS amount, min(t.created_at) AS first, max(t.created_at) AS last,
+                   (array_agg(t.transaction_id ORDER BY t.created_at DESC))[1:5] AS examples
             FROM billing.pos_transactions t
-            WHERE lower(trim(t.provider)) = 'simulator' AND NOT t.is_deleted
+            WHERE lower(trim(t.provider)) = 'simulator' AND t.status = 'Approved' AND NOT t.is_deleted
             """),
         new("aadhaar-links", "Patients linked to an Aadhaar number by the Aadhaar simulator", "critical",
             "Nobody's fingerprint was checked: confirm each patient's Aadhaar number again with a real check, or remove it. A wrong link blocks the number's holder from being registered with it.",
@@ -115,11 +117,12 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
             """),
         new("lab-results", "Results typed into the training analyser", "critical",
             "These results came from no analyser. Find the samples by the barcodes listed, and correct or withdraw any report released with them.",
+            // Only the messages HC360 took: a rejected one gave no results.
             """
             SELECT count(*) AS count, NULL::numeric AS amount, min(l.created_at) AS first, max(l.created_at) AS last,
                    (array_agg(l.reference ORDER BY l.created_at DESC) FILTER (WHERE l.reference IS NOT NULL))[1:5] AS examples
             FROM integrations.integration_logs l
-            WHERE l.provider LIKE 'simulator:%' AND l.operation = 'results'
+            WHERE l.provider LIKE 'simulator:%' AND l.operation = 'results' AND l.success
             """),
         new("gateway-settlements", "Settlements the payment simulator made up", "warning",
             "No money reached the bank: reverse the bank-credit and gateway-charge entries they made in the day book.",

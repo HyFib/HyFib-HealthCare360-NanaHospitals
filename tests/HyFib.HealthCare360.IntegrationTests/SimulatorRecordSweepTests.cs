@@ -1,15 +1,19 @@
 using System.Net;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Organization;
+using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -98,6 +102,61 @@ public sealed class SimulatorRecordSweepTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task What_never_took_effect_is_not_found_a_link_nobody_paid_a_declined_sale_and_a_rejected_result()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var facilityId = (await billing.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId.ShouldNotBeNull();
+        await using var payments = await PaymentsToSimulatorAsync(admin);
+        var unpaid = await LinkAsync(billing);
+
+        // A card sale the terminal simulator declined, and a results message HC360 rejected, as each leaves its record.
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var declined = new PosTransaction
+        {
+            FacilityId = facilityId,
+            Provider = "simulator",
+            TerminalId = "SIM-TERM-1",
+            TransactionId = "possim_" + Letters(12),
+            Reference = "POS-" + Letters(8),
+            Amount = 777m,
+            Mode = PaymentMode.Card,
+            Purpose = ReceiptPurpose.BillPayment,
+            PatientId = Guid.CreateVersion7(),
+            Status = PosTransactionStatus.Declined,
+            Message = "Declined by the terminal simulator.",
+        };
+        var rejected = new IntegrationLog
+        {
+            CreatedAt = DateTimeOffset.UtcNow,
+            Integration = "lab-analyser",
+            Provider = "simulator:analyser",
+            Operation = "results",
+            Direction = IntegrationDirection.Inbound,
+            Success = false,
+            Reference = "SIMREJ" + Letters(8),
+            Error = "No such sample.",
+        };
+        db.AddRange(declined, rejected);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var sweep = await admin.PostAsync<SimulatorSweep>($"{Records}/sweep");
+
+        // All three are checked, so a sweep that finds more than one says so for each.
+        sweep.ShouldSatisfyAllConditions(
+            () => Examples(sweep, "payments").ShouldNotContain(unpaid.OrderId, "nobody paid the link: no receipt to correct"),
+            () => Examples(sweep, "card-sales").ShouldNotContain(declined.TransactionId, "a declined sale made no receipt"),
+            () => Examples(sweep, "lab-results").ShouldNotContain(rejected.Reference, "a rejected message gave no results"));
+
+        // The link once paid is found.
+        await billing.PostAsync<GatewayOrderDto>($"/api/v1/billing/payment-links/{unpaid.Id}/refresh");
+        Examples(await admin.PostAsync<SimulatorSweep>($"{Records}/sweep"), "payments").ShouldContain(unpaid.OrderId);
+    }
+
+    private static IReadOnlyList<string> Examples(SimulatorSweep sweep, string code) => sweep.Findings.Single(f => f.Code == code).Examples;
+
+    [Fact]
     public async Task The_hospital_administrator_sees_the_sweep_but_only_those_who_manage_the_server_sweep_and_sign_off()
     {
         var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -111,7 +170,14 @@ public sealed class SimulatorRecordSweepTests(HospitalServer server)
     }
 
     /// <summary>A new patient's registration bill, paid through a link the payment simulator takes at once.</summary>
-    private async Task<GatewayOrderDto> PaidLinkAsync(ApiClient billing)
+    private async Task<GatewayOrderDto> PaidLinkAsync(ApiClient billing) =>
+        await billing.PostAsync<GatewayOrderDto>($"/api/v1/billing/payment-links/{(await LinkAsync(billing)).Id}/refresh");
+
+    /// <summary>
+    /// A payment link for a new patient's registration bill. The simulator takes the payment at once, but HC360 marks the
+    /// order paid only when it hears so: until the link is refreshed (or the gateway calls back), there is no receipt.
+    /// </summary>
+    private async Task<GatewayOrderDto> LinkAsync(ApiClient billing)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var registered = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
@@ -126,8 +192,7 @@ public sealed class SimulatorRecordSweepTests(HospitalServer server)
         var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(null, registered.Id, null));
         var bill = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
 
-        var link = await billing.PostAsync<GatewayOrderDto>("/api/v1/billing/payment-links", new CreatePaymentLinkRequest(bill.Id, null, null, false, false));
-        return await billing.PostAsync<GatewayOrderDto>($"/api/v1/billing/payment-links/{link.Id}/refresh");
+        return await billing.PostAsync<GatewayOrderDto>("/api/v1/billing/payment-links", new CreatePaymentLinkRequest(bill.Id, null, null, false, false));
     }
 
     /// <summary>
