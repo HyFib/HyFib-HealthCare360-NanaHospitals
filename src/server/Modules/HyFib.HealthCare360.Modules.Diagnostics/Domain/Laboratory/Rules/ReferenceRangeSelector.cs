@@ -47,21 +47,18 @@ internal static class ReferenceRangeSelector
 
     /// <summary>
     /// The male and the female interval read together: low, high or abnormal only outside both, and critical past either's
-    /// critical limit or for an answer critical for either (a critical value is never missed). A low or high limit, or a
-    /// list of normal answers, that only one of them has is left out: the other sex's result would not be flagged by it.
-    /// Both intervals are printed.
+    /// critical limit or for an answer critical for either (a critical value is never missed, even when an interval has
+    /// nothing to print). A low or high limit, or a list of normal answers, that only one of them has is left out: the
+    /// other sex's result would not be flagged by it. Each interval that has a text is printed.
     /// </summary>
     private static ReferenceRange? BothSexes(IReadOnlyList<ReferenceRange> ranges, int? ageDays, int decimals)
     {
         if (Best(ranges.Where(r => r.Gender == Gender.Male), Gender.Male, ageDays) is not { } male
-            || Best(ranges.Where(r => r.Gender == Gender.Female), Gender.Female, ageDays) is not { } female
-            || ResultInterpreter.ReferenceText(male, decimals) is not { } maleText
-            || ResultInterpreter.ReferenceText(female, decimals) is not { } femaleText)
+            || Best(ranges.Where(r => r.Gender == Gender.Female), Gender.Female, ageDays) is not { } female)
         {
             return null;
         }
 
-        var text = $"Male {maleText}; Female {femaleText}";
         return new ReferenceRange
         {
             LabTestId = male.LabTestId,
@@ -77,11 +74,39 @@ internal static class ReferenceRangeSelector
                 ({ } m, { } f) => Math.Min(m, f),
                 var (m, f) => m ?? f,
             },
-            Text = text.Length <= MaxReferenceText ? text : string.Concat(text.AsSpan(0, MaxReferenceText - 1), "…"),
+            Text = Printed(ResultInterpreter.ReferenceText(male, decimals), ResultInterpreter.ReferenceText(female, decimals)),
             NormalValues = male.NormalValues.Count > 0 && female.NormalValues.Count > 0
                 ? [.. male.NormalValues.Union(female.NormalValues, StringComparer.OrdinalIgnoreCase)]
                 : [],
             CriticalValues = [.. male.CriticalValues.Union(female.CriticalValues, StringComparer.OrdinalIgnoreCase)],
         };
     }
+
+    /// <summary>
+    /// "Male 13.0 - 17.0; Female 12.0 - 15.0", or the one of them that has a text, within what a result holds. A long text
+    /// is shortened rather than the other interval cut off: the shorter text is kept whole when it fits in half the room.
+    /// </summary>
+    private static string? Printed(string? male, string? female)
+    {
+        const string Male = "Male ", Female = "Female ", Separator = "; ";
+        if (male is null || female is null)
+        {
+            return male is not null ? Clip(Male + male, MaxReferenceText)
+                : female is not null ? Clip(Female + female, MaxReferenceText)
+                : null;
+        }
+
+        var room = MaxReferenceText - Male.Length - Separator.Length - Female.Length;
+        if (male.Length + female.Length > room)
+        {
+            var half = room / 2;
+            var maleRoom = male.Length <= half ? male.Length : female.Length <= half ? room - female.Length : half;
+            (male, female) = (Clip(male, maleRoom), Clip(female, room - maleRoom));
+        }
+
+        return Male + male + Separator + Female + female;
+    }
+
+    private static string Clip(string text, int length) =>
+        text.Length <= length ? text : string.Concat(text.AsSpan(0, length - 1), "…");
 }

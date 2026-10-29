@@ -53,6 +53,32 @@ public sealed class ResultInterpreterTests
         ResultInterpreter.Interpret(Options("Negative", "Trace", "Positive", "Strongly positive"), both, value).Value.Flag.ShouldBe(expected);
     }
 
+    /// <summary>
+    /// A range may hold critical limits or critical answers and nothing to print. Read against both, a critical result is
+    /// still critical: reading both does not wait for a text to print.
+    /// </summary>
+    [Theory]
+    [InlineData("5.0", ResultFlag.CriticalLow)]
+    [InlineData("21.0", ResultFlag.CriticalHigh)]
+    public void A_transgender_patients_result_is_critical_against_critical_limits_alone(string value, ResultFlag expected)
+    {
+        var male = Range(null, null, criticalLow: 7, criticalHigh: 20, gender: SharedKernel.Gender.Male);
+        var female = Range(null, null, criticalLow: 6.5m, criticalHigh: 19, gender: SharedKernel.Gender.Female);
+        var both = ReferenceRangeSelector.Select([male, female], SharedKernel.Gender.Other, Years(30), decimals: 1);
+
+        ResultInterpreter.Interpret(Numeric(name: "Haemoglobin", unit: "g/dL"), both, value).Value.Flag.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void A_transgender_patients_answer_is_critical_against_critical_answers_alone()
+    {
+        var male = Answers([], ["Positive"], SharedKernel.Gender.Male);
+        var female = Answers([], ["Positive"], SharedKernel.Gender.Female);
+        var both = ReferenceRangeSelector.Select([male, female], SharedKernel.Gender.Other, Years(30));
+
+        ResultInterpreter.Interpret(Options("Negative", "Positive"), both, "Positive").Value.Flag.ShouldBe(ResultFlag.Critical);
+    }
+
     [Fact]
     public void An_answer_left_unflagged_for_one_sex_is_left_unflagged_for_a_transgender_patient()
     {
