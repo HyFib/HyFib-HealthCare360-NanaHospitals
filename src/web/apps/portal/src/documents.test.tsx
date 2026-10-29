@@ -583,6 +583,9 @@ describe('Download PDF', () => {
     expect(print).toHaveBeenCalledTimes(1);
     expect(document.getElementById('hc360-print-root')?.innerHTML).toContain('दवा का पर्चा');
     expect(calls.some((call) => call.path.endsWith('/pdf'))).toBe(false);
+    // The dialog closes, as a browser says it has: the copy leaves the page, and nothing waits on it after this test.
+    window.dispatchEvent(new Event('afterprint'));
+    expect(document.getElementById('hc360-print-root')?.innerHTML).toBe('');
 
     // The server writes the PDF in the language chosen here, whatever the patient's record prefers.
     await user.click(screen.getByRole('button', { name: 'PDF डाउनलोड करें' }));
