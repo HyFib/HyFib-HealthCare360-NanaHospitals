@@ -1,4 +1,4 @@
-import { Caption1, MessageBar, MessageBarBody, Text, tokens } from '@fluentui/react-components';
+import { Caption1, MessageBar, MessageBarBody, MessageBarTitle, Text, tokens } from '@fluentui/react-components';
 import { TagMultipleRegular } from '@fluentui/react-icons';
 import { formatDate } from '@hc360/core';
 import { DataTable, EmptyState, ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
@@ -61,17 +61,21 @@ function RateListPage() {
       {view &&
         languageNotes(view).map((note) => (
           <MessageBar key={note.text} intent={note.intent}>
-            <MessageBarBody>{note.text}</MessageBarBody>
+            {/* The title is what the bar is labelled by: without one, its label points at nothing. */}
+            <MessageBarBody>
+              <MessageBarTitle>Languages</MessageBarTitle>
+              {note.text}
+            </MessageBarBody>
           </MessageBar>
         ))}
       {rateList.isLoading && <LoadingState label="Working out the rates…" />}
       {rateList.error && <ErrorState error={rateList.error} onRetry={() => void rateList.refetch()} />}
-      {view && <RateTables rates={view.rates} />}
+      {view && <RateTables rates={view.rates} lang={view.localLanguage?.code} />}
     </Page>
   );
 }
 
-function RateTables({ rates }: { rates: RateList }) {
+function RateTables({ rates, lang }: { rates: RateList; lang: string | undefined }) {
   const anyVideo = rates.doctors.some((d) => d.video !== null);
   const empty =
     !rates.registration &&
@@ -143,7 +147,11 @@ function RateTables({ rates }: { rates: RateList }) {
                 key: 'room',
                 header: 'Room',
                 render: (r) => (
-                  <ServiceName line={r.day} note={r.intensiveCare ? 'Intensive care: no GST on the room' : undefined} />
+                  <ServiceName
+                    line={r.day}
+                    lang={lang}
+                    note={r.intensiveCare ? 'Intensive care: no GST on the room' : undefined}
+                  />
                 ),
               },
               { key: 'wards', header: 'Wards', priority: 'low', render: (r) => r.wards.join(', ') },
@@ -182,7 +190,7 @@ function RateTables({ rates }: { rates: RateList }) {
             rows={section.lines}
             getRowId={(line) => line.code}
             columns={[
-              { key: 'service', header: 'Service', render: (line) => <ServiceName line={line} /> },
+              { key: 'service', header: 'Service', render: (line) => <ServiceName line={line} lang={lang} /> },
               {
                 key: 'gst',
                 header: 'GST',
@@ -203,7 +211,7 @@ function RateTables({ rates }: { rates: RateList }) {
             rows={rates.packages}
             getRowId={(p) => p.price.code}
             columns={[
-              { key: 'package', header: 'Package', render: (p) => <ServiceName line={p.price} /> },
+              { key: 'package', header: 'Package', render: (p) => <ServiceName line={p.price} lang={lang} /> },
               {
                 key: 'stay',
                 header: 'Stay',
@@ -221,12 +229,19 @@ function RateTables({ rates }: { rates: RateList }) {
   );
 }
 
-/** The English name with the code, and the local name under it when there is one. */
-function ServiceName({ line, note }: { line: RateLine; note?: string }) {
+/**
+ * The English name with the code, and the local name under it when there is one, marked with its language so a screen
+ * reader reads it as that language (WCAG 3.1.2).
+ */
+function ServiceName({ line, note, lang }: { line: RateLine; note?: string; lang: string | undefined }) {
   return (
     <span>
       <Text weight="semibold">{line.name}</Text>
-      {line.localName && <Caption1 block>{line.localName}</Caption1>}
+      {line.localName && (
+        <Caption1 block lang={lang}>
+          {line.localName}
+        </Caption1>
+      )}
       <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>
         {note ? `${line.code} · ${note}` : line.code}
       </Caption1>

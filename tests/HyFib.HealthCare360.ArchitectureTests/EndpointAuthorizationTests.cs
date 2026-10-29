@@ -72,6 +72,12 @@ public sealed class EndpointAuthorizationTests
         "GET /api/v1/public/doctors/{id:guid}",
         "GET /api/v1/public/doctors/{id:guid}/slots",
 
+        // The rate list the hospital displays, for anyone to read (Clinical Establishments Rules 2012, r.9(i)): the
+        // facilities that publish it, a facility's list, and its PDF.
+        "GET /api/v1/public/rate-list/",
+        "GET /api/v1/public/rate-list/{facilityId:guid}",
+        "GET /api/v1/public/rate-list/{facilityId:guid}/pdf",
+
         // A proof-of-work challenge for the portal's sign-in and feedback forms (SRS SEC-06): a signed random value, no data.
         "POST /api/v1/public/challenge",
 

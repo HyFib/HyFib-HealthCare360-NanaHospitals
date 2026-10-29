@@ -53,3 +53,12 @@ describe('OP billing', SCREEN_TESTS, () => {
     await expectNoAxeViolations();
   });
 });
+
+describe('the rate list', SCREEN_TESTS, () => {
+  it("names each service in English and, marked as the facility's language, in Tamil", async () => {
+    openScreen('/billing/rate-list');
+    // WCAG 3.1.2: a screen reader reads the Tamil name as Tamil.
+    expect(await screen.findByText('சிறிய காயக் கட்டு', {}, SLOW)).toHaveAttribute('lang', 'ta');
+    await expectNoAxeViolations();
+  });
+});

@@ -5,7 +5,7 @@ import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { createFakeFetch } from '@hc360/ui/testing/fake-api';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLanguageStore } from '@/i18n';
@@ -130,6 +130,20 @@ describe('portal pages', () => {
   it('reports', async () => {
     openAt('/portal/reports');
     expect(await screen.findByText('Complete blood count', {}, SLOW)).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('the rate list, open to everyone, and finding a service in it', async () => {
+    openAt('/portal/rates', false);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Rate list' }, SLOW)).toBeInTheDocument();
+    expect(await screen.findByText('Complete blood count', {}, SLOW)).toBeInTheDocument();
+    // A service's Tamil name is marked as Tamil (WCAG 3.1.2, language of parts).
+    expect(screen.getByText('சிறிய காயக் கட்டு')).toHaveAttribute('lang', 'ta');
+    await expectNoAxeViolations();
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Find a service' }), 'dressing');
+    await waitFor(() => expect(screen.queryByText('Complete blood count')).not.toBeInTheDocument(), SLOW);
+    expect(screen.getByText(/Wound dressing — minor/)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 

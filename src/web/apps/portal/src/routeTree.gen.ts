@@ -16,6 +16,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthHomeRouteImport } from './routes/_auth/home'
 import { Route as OpenPaymentReturnRouteImport } from './routes/_open/payment-return'
 import { Route as OpenPrivacyRouteImport } from './routes/_open/privacy'
+import { Route as OpenRatesRouteImport } from './routes/_open/rates'
 import { Route as FeedbackTokenRouteImport } from './routes/feedback/$token'
 import { Route as TelehealthSessionIdRouteImport } from './routes/telehealth/$sessionId'
 import { Route as UnsubscribeTokenRouteImport } from './routes/unsubscribe/$token'
@@ -81,6 +82,11 @@ const OpenPaymentReturnRoute = OpenPaymentReturnRouteImport.update({
 const OpenPrivacyRoute = OpenPrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => OpenRoute,
+} as any)
+const OpenRatesRoute = OpenRatesRouteImport.update({
+  id: '/rates',
+  path: '/rates',
   getParentRoute: () => OpenRoute,
 } as any)
 const FeedbackTokenRoute = FeedbackTokenRouteImport.update({
@@ -262,6 +268,7 @@ export interface FileRoutesByFullPath {
   '/home': typeof AuthHomeRoute
   '/payment-return': typeof OpenPaymentReturnRoute
   '/privacy': typeof OpenPrivacyRoute
+  '/rates': typeof OpenRatesRoute
   '/feedback/$token': typeof FeedbackTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByTo {
   '/home': typeof AuthHomeRoute
   '/payment-return': typeof OpenPaymentReturnRoute
   '/privacy': typeof OpenPrivacyRoute
+  '/rates': typeof OpenRatesRoute
   '/feedback/$token': typeof FeedbackTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
@@ -345,6 +353,7 @@ export interface FileRoutesById {
   '/_auth/home': typeof AuthHomeRoute
   '/_open/payment-return': typeof OpenPaymentReturnRoute
   '/_open/privacy': typeof OpenPrivacyRoute
+  '/_open/rates': typeof OpenRatesRoute
   '/feedback/$token': typeof FeedbackTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
@@ -387,6 +396,7 @@ export interface FileRouteTypes {
     | '/home'
     | '/payment-return'
     | '/privacy'
+    | '/rates'
     | '/feedback/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
@@ -427,6 +437,7 @@ export interface FileRouteTypes {
     | '/home'
     | '/payment-return'
     | '/privacy'
+    | '/rates'
     | '/feedback/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
@@ -469,6 +480,7 @@ export interface FileRouteTypes {
     | '/_auth/home'
     | '/_open/payment-return'
     | '/_open/privacy'
+    | '/_open/rates'
     | '/feedback/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
@@ -564,6 +576,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof OpenPrivacyRouteImport
+      parentRoute: typeof OpenRoute
+    }
+    '/_open/rates': {
+      id: '/_open/rates'
+      path: '/rates'
+      fullPath: '/rates'
+      preLoaderRoute: typeof OpenRatesRouteImport
       parentRoute: typeof OpenRoute
     }
     '/feedback/$token': {
@@ -863,6 +882,7 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 interface OpenRouteChildren {
   OpenPaymentReturnRoute: typeof OpenPaymentReturnRoute
   OpenPrivacyRoute: typeof OpenPrivacyRoute
+  OpenRatesRoute: typeof OpenRatesRoute
   OpenDoctorsDoctorIdRoute: typeof OpenDoctorsDoctorIdRoute
   OpenDoctorsIndexRoute: typeof OpenDoctorsIndexRoute
   OpenVerifyIndexRoute: typeof OpenVerifyIndexRoute
@@ -872,6 +892,7 @@ interface OpenRouteChildren {
 const OpenRouteChildren: OpenRouteChildren = {
   OpenPaymentReturnRoute: OpenPaymentReturnRoute,
   OpenPrivacyRoute: OpenPrivacyRoute,
+  OpenRatesRoute: OpenRatesRoute,
   OpenDoctorsDoctorIdRoute: OpenDoctorsDoctorIdRoute,
   OpenDoctorsIndexRoute: OpenDoctorsIndexRoute,
   OpenVerifyIndexRoute: OpenVerifyIndexRoute,

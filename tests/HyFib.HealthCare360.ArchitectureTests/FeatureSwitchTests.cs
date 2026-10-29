@@ -31,12 +31,13 @@ public sealed class FeatureSwitchTests
     ]);
 
     [Fact]
-    public void Every_portal_api_and_the_booking_directory_stop_with_the_portal()
+    public void Every_portal_api_the_booking_directory_and_the_published_rate_list_stop_with_the_portal()
     {
         var portal = Endpoints.Value.Where(e => e.Route.StartsWith("/api/v1/portal/", StringComparison.Ordinal)
-                                                || e.Route.StartsWith("/api/v1/public/doctors", StringComparison.Ordinal)).ToList();
+                                                || e.Route.StartsWith("/api/v1/public/doctors", StringComparison.Ordinal)
+                                                || e.Route.StartsWith("/api/v1/public/rate-list", StringComparison.Ordinal)).ToList();
 
-        portal.Count.ShouldBeGreaterThan(40, "the portal's own API and the public doctor directory");
+        portal.Count.ShouldBeGreaterThan(40, "the portal's own API, the public doctor directory and the published rate list");
         portal.Where(e => !e.AlwaysNeeds(FeatureKeys.PatientPortal)).Select(e => e.Key).Order()
             .ShouldBeEmpty("Add .RequireFeature(FeatureKeys.PatientPortal) to these portal endpoints");
     }

@@ -11,6 +11,7 @@ import { homeMessages } from './messages/home';
 import { myPrivacyMessages } from './messages/myPrivacy';
 import { prescriptionMessages } from './messages/prescriptions';
 import { profileMessages } from './messages/profile';
+import { rateMessages } from './messages/rates';
 import { recordMessages } from './messages/records';
 import { reportMessages } from './messages/reports';
 import { verifyMessages } from './messages/verify';
@@ -30,6 +31,7 @@ export const MESSAGE_SETS = {
   reports: reportMessages,
   prescriptions: prescriptionMessages,
   bills: billMessages,
+  rates: rateMessages,
   records: recordMessages,
   feedback: feedbackMessages,
   profile: profileMessages,

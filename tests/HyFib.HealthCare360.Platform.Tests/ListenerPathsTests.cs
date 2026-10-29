@@ -23,6 +23,7 @@ public sealed class ListenerPathsTests
     [InlineData("/api/v1/auth/refresh")]
     [InlineData("/api/v1/auth/logout")]
     [InlineData("/api/v1/public/unsubscribe/abc")]
+    [InlineData("/api/v1/public/rate-list/0199b0c4-4b1c-7c3e-9d2f-2a1b3c4d5e6f")]
     [InlineData("/api/v1/radiology/reports/verify/ABC123")]
     [InlineData("/api/v1/system/info")]
     [InlineData("/api/v1/billing/webhooks/payment-gateway")]

@@ -3,7 +3,7 @@ import { ReceiptRegular, WalletRegular } from '@fluentui/react-icons';
 import { EmptyState } from '@hc360/ui';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { CardLink } from '@/components/links';
+import { CardLink, TextLink } from '@/components/links';
 import { ListRow } from '@/components/ListRow';
 import { PortalPage } from '@/components/PortalPage';
 import { ErrorBlock, LoadingCards } from '@/components/States';
@@ -127,6 +127,7 @@ function BillsPage() {
           </>
         )}
       </div>
+      <TextLink to="/rates">{t('rates.link')}</TextLink>
     </PortalPage>
   );
 }

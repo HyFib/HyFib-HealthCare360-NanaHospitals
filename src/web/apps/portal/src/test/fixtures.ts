@@ -13,7 +13,10 @@ import type {
   PortalWaitlistEntry,
   PublicDoctor,
   PublicDoctorProfile,
+  PublicRateList,
+  PublicRateListFacility,
   PublicSlotDay,
+  RateLine,
 } from '@/lib/types';
 
 // The portal's pages with canned data, for the accessibility checks in jsdom (accessibility.test.tsx) and in a real
@@ -288,6 +291,75 @@ export const PREFERENCES: CommunicationPreferences = {
 };
 
 /** What the portal's pages ask the server for, signed in as USER. */
+export const RATE_FACILITY: PublicRateListFacility = {
+  id: '3c2b1a09-8f7e-4d6c-9b5a-4e3d2c1b0a99',
+  name: 'Nana Hospitals',
+  city: 'Chennai',
+};
+
+const line = (code: string, name: string, rate: number, gstRate = 0, extra: Partial<RateLine> = {}): RateLine => ({
+  code,
+  name,
+  localName: null,
+  rate,
+  gstRate,
+  payable: Math.round(rate * (100 + gstRate)) / 100,
+  mayVary: false,
+  ...extra,
+});
+
+/** The list a facility in Tamil Nadu displays: Tamil names under some services, GST on one, a price that may vary. */
+export const RATE_LIST: PublicRateList = {
+  facility: RATE_FACILITY,
+  language: 'ta',
+  localLanguage: { code: 'ta', name: 'Tamil' },
+  rates: {
+    asOn: '2026-10-29',
+    planName: 'General',
+    concessionPercent: 0,
+    registration: line('REG-NEW', 'Registration fee (new patient)', 100, 0, { localName: 'பதிவுக் கட்டணம்' }),
+    doctors: [
+      {
+        name: 'Dr. Meera Iyer',
+        department: 'General medicine',
+        fee: line('CONS-NEW', 'Consultation — new visit', 500),
+        video: line('CONS-TELE', 'Tele-consultation', 400),
+        freeFollowUpDays: 7,
+      },
+    ],
+    rooms: [
+      {
+        day: line('BED-PVT', 'Private room', 4000, 0, { localName: 'தனி அறை' }),
+        intensiveCare: false,
+        wards: ['Ward 3A'],
+        nursing: line('NUR-DAY', 'Nursing care (per day)', 750),
+        visit: line('VIS-CONS', "Consultant's visit", 900),
+        multiplier: 1.5,
+      },
+    ],
+    sections: [
+      {
+        category: 'Laboratory',
+        lines: [line('LAB-CBC', 'Complete blood count', 350, 0, { localName: 'முழு இரத்தப் பரிசோதனை' })],
+      },
+      {
+        category: 'Procedure',
+        lines: [
+          line('PRC-DRS', 'Wound dressing — minor', 450, 18, { localName: 'சிறிய காயக் கட்டு' }),
+          line('PRC-IMP', 'Implant fitting', 2000, 0, { mayVary: true }),
+        ],
+      },
+    ],
+    packages: [
+      {
+        price: line('PKG-CAT', 'Cataract surgery package', 25000),
+        lengthOfStayDays: 1,
+        usedFor: 'InPatient',
+      },
+    ],
+  },
+};
+
 export const PORTAL_ANSWERS: FakeAnswers = {
   'GET /api/v1/system/info': { facilityName: 'Nana Hospitals', features: { patientPortal: true, telehealth: true } },
   // The anti-automation check (lib/proofOfWork): a challenge with almost no work, which this server does not check.
@@ -306,4 +378,6 @@ export const PORTAL_ANSWERS: FakeAnswers = {
   'GET /api/v1/public/doctors': { items: DOCTORS, page: 1, pageSize: 12, totalCount: DOCTORS.length },
   [`GET /api/v1/public/doctors/${DOCTOR_ID}`]: DOCTOR_PROFILE,
   [`GET /api/v1/public/doctors/${DOCTOR_ID}/slots`]: SLOT_DAYS,
+  'GET /api/v1/public/rate-list': [RATE_FACILITY],
+  [`GET /api/v1/public/rate-list/${RATE_FACILITY.id}`]: RATE_LIST,
 };

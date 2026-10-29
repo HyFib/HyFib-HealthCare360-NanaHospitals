@@ -1,4 +1,7 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
@@ -10,6 +13,7 @@ using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Settings;
@@ -21,16 +25,21 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// The rate list a hospital displays (Clinical Establishments Rules 2012, r.9(i): the rates of each service, in the local
 /// language as well as in English), over the real API: what it lists for a service, each doctor's consultation and the
-/// registration fee is what a self-paying patient's bill charges for them, and each service's name prints in the
-/// facility's own local language.
+/// registration fee is what a self-paying patient's bill charges for them, each service's name prints in the facility's own
+/// local language, and anyone may read the same list on the patient portal without signing in, unless the hospital keeps a
+/// facility's off it.
 /// </summary>
 public sealed class RateListTests(HospitalServer server)
 {
     private const string RateList = "/api/v1/billing/rate-list";
 
+    private const string PublicRateList = "/api/v1/public/rate-list";
+
     private const string Tamil = "பெரிய காயக் கட்டு";
 
     private const string Hindi = "घाव की बड़ी पट्टी";
+
+    private const string MinorTamil = "சிறிய காயக் கட்டு";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -185,6 +194,112 @@ public sealed class RateListTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Anyone_reads_on_the_portal_the_list_the_counter_prints_and_a_cash_bill_charges_it()
+    {
+        // A minor dressing with GST and a Tamil name, and a doctor with a fee of their own.
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var created = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+            $"SV-{Letters(8)}", "Wound dressing — minor", null, ServiceCategory.Procedure, null, 450m, 18m, "999312", true, false, null, true, null,
+            LocalNames: new Dictionary<string, string> { ["ta"] = MinorTamil }));
+        var dressing = await admin.GetAsync<ServiceItemDto>($"/api/v1/masters/services/{created.Id}");
+        var surgery = (await admin.GetAsync<List<LookupItem>>("/api/v1/masters/lookups/departments")).Single(d => d.Code == "GS");
+        var doctor = await DoctorAsync(admin, surgery.Id, PractitionerKind.Consultant, fee: 650m, freeFollowUpDays: 7);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var facilityId = (await billing.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId.ShouldNotBeNull();
+        var visitor = server.AnonymousOnPortal(ownAddress: true);
+
+        // The facility's language is Tamil, whatever other tests have made of its address.
+        await using var scope = server.Services.CreateAsyncScope();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+        await settings.SetAsync(LocalLanguages.Setting, "ta", facilityId, false, Ct);
+        try
+        {
+            (await visitor.GetAsync<List<PublicRateListFacility>>($"{PublicRateList}/")).ShouldContain(f => f.Id == facilityId);
+
+            // The published list is the counter's, to the line, in the same languages; what staff are to correct is not in it.
+            var (counter, published) = await CounterAndPublishedAsync(billing, visitor, facilityId);
+            Json(published.Rates).ShouldBe(Json(counter.Rates));
+            (published.Language, published.LocalLanguage).ShouldBe((counter.Language, counter.LocalLanguage));
+            (published.LocalLanguage?.Code).ShouldBe("ta");
+            published.Facility.Id.ShouldBe(facilityId);
+            (await visitor.GetAsync<JsonElement>($"{PublicRateList}/{facilityId}")).EnumerateObject().Select(p => p.Name)
+                .ShouldBe(["facility", "rates", "language", "localLanguage"]);
+
+            // A new patient pays for themselves: each line of their bill is what the published list says.
+            var listed = published.Rates.Sections.SelectMany(s => s.Lines).Single(l => l.Code == dressing.Code);
+            listed.LocalName.ShouldBe(MinorTamil);
+            listed.Payable.ShouldBe(531m, "₹450 and 18% GST");
+            var fee = published.Rates.Doctors.Single(d => d.Name == doctor.DisplayName).Fee;
+            var registration = published.Rates.Registration.ShouldNotBeNull("the hospital charges a new patient's registration");
+            var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+            var patientId = await PatientAsync(frontOffice);
+            var visit = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", new CreateVisitRequest(
+                patientId, VisitType.OutPatient, surgery.Id, doctor.Id, null, PayerType.Self, null, ReferralSource.Self, null, null, false, null, null,
+                TokenPriority.Normal, IssueToken: false, NotifyPatient: false));
+            await billing.PostAsync<ChargeDto>("/api/v1/billing/charges", new PostChargeRequest(
+                patientId, visit.Id, null, dressing.Id, 1m, null, null, null, null, null));
+            var bill = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(visit.Id, null, null));
+            bill.Lines.Single(l => l.ServiceItemId == dressing.Id).NetAmount.ShouldBe(listed.Payable);
+            bill.Lines.Single(l => l.ServiceCode == "CONS-NEW").NetAmount.ShouldBe(fee.Payable);
+            bill.Lines.Single(l => l.ServiceCode == "REG-NEW").NetAmount.ShouldBe(registration.Payable);
+
+            // Its PDF downloads without signing in; a server with no browser to make it says so, and nothing of why.
+            using var pdf = await visitor.SendRawAsync(HttpMethod.Get, $"{PublicRateList}/{facilityId}/pdf");
+            if (server.Services.GetRequiredService<IPdfRenderer>().Status.Available)
+            {
+                pdf.StatusCode.ShouldBe(HttpStatusCode.OK);
+                pdf.Content.Headers.ContentType?.MediaType.ShouldBe("application/pdf");
+                Encoding.ASCII.GetString(await pdf.Content.ReadAsByteArrayAsync(Ct), 0, 5).ShouldBe("%PDF-");
+                (pdf.Content.Headers.ContentDisposition?.FileNameStar ?? pdf.Content.Headers.ContentDisposition?.FileName?.Trim('"'))
+                    .ShouldStartWith("rate-list-");
+            }
+            else
+            {
+                pdf.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+                var problem = await pdf.Content.ReadFromJsonAsync<JsonElement>(Ct);
+                problem.GetProperty("code").GetString().ShouldBe("pdf.unavailable");
+                problem.GetProperty("detail").GetString().ShouldBe("The PDF cannot be made just now. The rates on this page are the same.");
+            }
+        }
+        finally
+        {
+            await settings.RemoveAsync(LocalLanguages.Setting, facilityId, Ct);
+        }
+    }
+
+    [Fact]
+    public async Task A_facility_the_hospital_keeps_off_the_portal_is_not_there_though_its_counter_prints_the_list()
+    {
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var facilityId = (await billing.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId.ShouldNotBeNull();
+        var visitor = server.AnonymousOnPortal(ownAddress: true);
+        await using var scope = server.Services.CreateAsyncScope();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+
+        await settings.SetAsync(RateListService.PublishSetting, false, facilityId, false, Ct);
+        try
+        {
+            (await visitor.GetAsync<List<PublicRateListFacility>>($"{PublicRateList}/")).ShouldNotContain(f => f.Id == facilityId);
+            foreach (var path in new[] { $"{PublicRateList}/{facilityId}", $"{PublicRateList}/{facilityId}/pdf" })
+            {
+                using var response = await visitor.SendRawAsync(HttpMethod.Get, path);
+                response.StatusCode.ShouldBe(HttpStatusCode.NotFound, path);
+            }
+
+            (await billing.GetAsync<RateListView>(RateList)).Rates.AsOn.ShouldNotBe(default);
+        }
+        finally
+        {
+            await settings.RemoveAsync(RateListService.PublishSetting, facilityId, Ct);
+        }
+
+        // Published again once the setting is gone; a facility that does not exist has no list.
+        (await visitor.GetAsync<List<PublicRateListFacility>>($"{PublicRateList}/")).ShouldContain(f => f.Id == facilityId);
+        using var unknown = await visitor.SendRawAsync(HttpMethod.Get, $"{PublicRateList}/{Guid.NewGuid()}");
+        unknown.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Staff_who_neither_bill_nor_keep_the_tariffs_cannot_read_it()
     {
         var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
@@ -193,6 +308,27 @@ public sealed class RateListTests(HospitalServer server)
 
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
+
+    /// <summary>
+    /// The counter's list and the published one, read while nothing changed the counter's: other tests add services and
+    /// doctors as they run.
+    /// </summary>
+    private async Task<(RateListView Counter, PublicRateList Published)> CounterAndPublishedAsync(
+        ApiClient billing, ApiClient visitor, Guid facilityId)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            var before = await billing.GetAsync<RateListView>(RateList);
+            var published = await visitor.GetAsync<PublicRateList>($"{PublicRateList}/{facilityId}");
+            var after = await billing.GetAsync<RateListView>(RateList);
+            if (Json(before.Rates) == Json(after.Rates) || attempt == 5)
+            {
+                return (after, published);
+            }
+        }
+    }
+
+    private static string Json(RateList rates) => JsonSerializer.Serialize(rates);
 
     private static async Task<PractitionerDto> DoctorAsync(ApiClient admin, Guid departmentId, PractitionerKind kind, decimal fee, int freeFollowUpDays)
     {
