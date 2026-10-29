@@ -74,6 +74,12 @@ const PAGES: PortalPage[] = [
     },
     check: { focus: { from: 'here' } },
   },
+  {
+    name: 'the rate list, not signed in',
+    path: '/portal/rates',
+    signedIn: false,
+    ready: (page) => page.getByText('Complete blood count'),
+  },
   { name: 'bills', path: '/portal/bills', ready: (page) => page.getByText('OP2600001') },
   { name: 'reports', path: '/portal/reports', ready: (page) => page.getByText('Complete blood count') },
   {
@@ -155,7 +161,15 @@ test.describe('computer, light theme', () => {
   test.use({ viewport: COMPUTER });
 
   for (const portalPage of PAGES.filter((p) =>
-    ['sign-in', 'home', 'appointments', "a doctor's page, a time chosen", 'bills', 'reports'].includes(p.name),
+    [
+      'sign-in',
+      'home',
+      'appointments',
+      "a doctor's page, a time chosen",
+      'the rate list, not signed in',
+      'bills',
+      'reports',
+    ].includes(p.name),
   )) {
     test(portalPage.name, async ({ page }, testInfo) => {
       await open(page, 'light', portalPage);

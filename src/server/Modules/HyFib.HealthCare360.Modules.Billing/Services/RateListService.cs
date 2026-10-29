@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services.EventHandlers;
 using HyFib.HealthCare360.Platform.Localization;
@@ -14,6 +15,19 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 public sealed record RateListView(
     RateList Rates, string? Language, IndianLanguage? LocalLanguage = null, string? UnknownSetting = null, string? UnknownState = null);
 
+/// <summary>A facility whose rate list anyone may read on the patient portal.</summary>
+public sealed record PublicRateListFacility(Guid Id, string Name, string? City);
+
+/// <summary>
+/// A facility's rate list as anyone may read it: the list the counter prints (<see cref="RateListView"/>) without what is
+/// for staff to correct.
+/// </summary>
+/// <param name="Facility">The facility.</param>
+/// <param name="Rates">The rates.</param>
+/// <param name="Language">The language the printed list's own words are in beside English.</param>
+/// <param name="LocalLanguage">The facility's local language, which each service's name is given in under the English one.</param>
+public sealed record PublicRateList(PublicRateListFacility Facility, RateList Rates, string? Language, IndianLanguage? LocalLanguage);
+
 /// <summary>
 /// The rates a self-paying patient is charged at a facility today, read from what a bill reads: the plan that prices a
 /// self-paying patient there, its prices and concession, the services in use, the doctors who consult there, the bed
@@ -26,7 +40,54 @@ public sealed class RateListService(
     IRoomClassDirectory roomClasses,
     TimeProvider time)
 {
+    /// <summary>
+    /// Whether a facility's rate list is published for anyone to read on the patient portal (true or false): published
+    /// unless the hospital turns it off, for one facility or for all. The counter prints it either way.
+    /// </summary>
+    public const string PublishSetting = "billing.rateList.publish";
+
     private static readonly PractitionerKind[] Doctors = [.. PractitionerKinds.Doctors];
+
+    /// <summary>The active facilities that publish their rate list (<see cref="PublishSetting"/>), by name.</summary>
+    public async Task<IReadOnlyList<PublicRateListFacility>> PublishedFacilitiesAsync(CancellationToken ct)
+    {
+        var facilities = await db.Set<Facility>().AsNoTracking()
+            .Where(f => f.IsActive)
+            .OrderBy(f => f.Name)
+            .Select(f => new PublicRateListFacility(f.Id, f.Name, f.Address.City))
+            .ToListAsync(ct);
+        var published = new List<PublicRateListFacility>(facilities.Count);
+        foreach (var facility in facilities)
+        {
+            if (await PublishesAsync(facility.Id, ct))
+            {
+                published.Add(facility);
+            }
+        }
+
+        return published;
+    }
+
+    /// <summary>The rate list of an active facility that publishes it, for anyone to read; null for any other.</summary>
+    public async Task<PublicRateList?> PublishedAsync(Guid facilityId, CancellationToken ct)
+    {
+        var facility = await db.Set<Facility>().AsNoTracking()
+            .Where(f => f.Id == facilityId && f.IsActive)
+            .Select(f => new PublicRateListFacility(f.Id, f.Name, f.Address.City))
+            .FirstOrDefaultAsync(ct);
+        return facility is not null && await PublishesAsync(facilityId, ct) && await ForFacilityAsync(facilityId, ct) is { } view
+            ? new PublicRateList(facility, view.Rates, view.Language, view.LocalLanguage)
+            : null;
+    }
+
+    // Off only for false (or "false"): a value that is neither leaves the list published, as it is unless turned off.
+    private async Task<bool> PublishesAsync(Guid facilityId, CancellationToken ct) =>
+        await settings.GetAsync<JsonElement?>(PublishSetting, facilityId, ct) switch
+        {
+            { ValueKind: JsonValueKind.False } => false,
+            { ValueKind: JsonValueKind.String } text when bool.TryParse(text.GetString()?.Trim(), out var on) => on,
+            _ => true,
+        };
 
     public async Task<RateListView?> ForFacilityAsync(Guid facilityId, CancellationToken ct)
     {

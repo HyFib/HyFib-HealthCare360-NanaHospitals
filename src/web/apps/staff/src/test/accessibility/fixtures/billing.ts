@@ -2,6 +2,7 @@ import type { PatientFlags } from '@/modules/emr/api';
 import type { BillDetail, BillLineDto, BillListItem, ChargeDto, PatientDues, ShiftDto } from '@/modules/billing/api';
 import type { DiscountAuthority } from '@/modules/billing/billTotals';
 import type { PackageListItem } from '@/modules/billing/mastersApi';
+import type { RateListView } from '@/modules/billing/rateListApi';
 import type { PatientDetail, PatientPayer, VisitListItem } from '@/modules/patients/api';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers } from '../../fakeApi';
 import { DOCTORS, OPD, PATIENTS } from './frontOffice';
@@ -347,7 +348,41 @@ const PACKAGES: PackageListItem[] = [
 
 const DISCOUNT_AUTHORITY: DiscountAuthority = { canApprove: false, maxPercent: 10, maxAmount: 500 };
 
+/** The rate list of a facility in Tamil Nadu: a service with its name in Tamil. */
+export const RATE_LIST: RateListView = {
+  language: 'ta',
+  localLanguage: { code: 'ta', name: 'Tamil' },
+  unknownSetting: null,
+  unknownState: null,
+  rates: {
+    asOn: '2026-10-29',
+    planName: 'General',
+    concessionPercent: 0,
+    registration: null,
+    doctors: [],
+    rooms: [],
+    sections: [
+      {
+        category: 'Procedure',
+        lines: [
+          {
+            code: 'PRC-DRS',
+            name: 'Wound dressing — minor',
+            localName: 'சிறிய காயக் கட்டு',
+            rate: 450,
+            gstRate: 18,
+            payable: 531,
+            mayVary: false,
+          },
+        ],
+      },
+    ],
+    packages: [],
+  },
+};
+
 export const BILLING_ANSWERS: FakeAnswers = {
+  'GET /api/v1/billing/rate-list': RATE_LIST,
   [`GET /api/v1/patients/${ASHA.id}`]: PATIENT,
   [`GET /api/v1/patients/${ASHA.id}/visits`]: paged(VISITS),
   [`GET /api/v1/patients/${ASHA.id}/payer`]: { current: PAYER },

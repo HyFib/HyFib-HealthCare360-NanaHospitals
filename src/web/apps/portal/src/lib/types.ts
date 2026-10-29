@@ -912,6 +912,115 @@ export interface PortalPaymentStatus {
   dueAmount: number;
 }
 
+// ------------------------------------------------------------------ rate list (Clinical Establishments Rules 2012, r.9(i))
+// Source: Modules.Billing/Domain/RateList.cs and Services/RateListService.cs. Public: the same list for everyone.
+
+/** A category of the hospital's services, as the server names it. */
+export type ServiceCategory =
+  | 'Registration'
+  | 'Consultation'
+  | 'Laboratory'
+  | 'Radiology'
+  | 'Cardiology'
+  | 'Procedure'
+  | 'Surgery'
+  | 'BedCharge'
+  | 'Nursing'
+  | 'DoctorVisit'
+  | 'Package'
+  | 'HealthCheckup'
+  | 'Physiotherapy'
+  | 'Dialysis'
+  | 'Dietary'
+  | 'BloodBank'
+  | 'Ambulance'
+  | 'Consumable'
+  | 'Miscellaneous';
+
+/** The bills a package may price. */
+export type PackageUse = 'InPatient' | 'OutPatient' | 'Both';
+
+/** GET /api/v1/public/rate-list → the facilities whose rate list anyone may read. */
+export interface PublicRateListFacility {
+  id: string;
+  name: string;
+  city: string | null;
+}
+
+/** One service: what a patient who pays for themselves is charged for one of it. */
+export interface RateLine {
+  code: string;
+  name: string;
+  /** Its name in the facility's local language, when the hospital has entered one. */
+  localName: string | null;
+  /** Before GST. */
+  rate: number;
+  gstRate: number;
+  /** With GST: what the patient pays. */
+  payable: number;
+  /** The billing counter may charge a different price by what is used. */
+  mayVary: boolean;
+}
+
+export interface DoctorFeeLine {
+  name: string;
+  department: string | null;
+  fee: RateLine;
+  /** By video, when the doctor consults by video. */
+  video: RateLine | null;
+  /** Days after a paid consultation in which a follow-up is free (none when 0). */
+  freeFollowUpDays: number;
+}
+
+export interface RoomRateLine {
+  day: RateLine;
+  intensiveCare: boolean;
+  wards: string[];
+  nursing: RateLine | null;
+  visit: RateLine | null;
+  /** In-patient procedures, surgery, nursing and doctors' visits cost this many times their rate in the room. */
+  multiplier: number;
+}
+
+export interface RateSection {
+  category: ServiceCategory;
+  lines: RateLine[];
+}
+
+export interface PackageLine {
+  price: RateLine;
+  lengthOfStayDays: number | null;
+  usedFor: PackageUse;
+}
+
+export interface RateList {
+  /** The day the rates are for (yyyy-MM-dd). */
+  asOn: string;
+  planName: string | null;
+  concessionPercent: number;
+  registration: RateLine | null;
+  doctors: DoctorFeeLine[];
+  rooms: RoomRateLine[];
+  sections: RateSection[];
+  packages: PackageLine[];
+}
+
+/** A language of India: its ISO 639 code ("ta", "kok") and its name in English. */
+export interface IndianLanguage {
+  code: string;
+  name: string;
+}
+
+/** GET /api/v1/public/rate-list/{facilityId}: the list the facility's counter prints and displays. */
+export interface PublicRateList {
+  facility: PublicRateListFacility;
+  rates: RateList;
+  /** The language the printed list's own words are in beside English ("hi", "ta"), when HC360 writes it. */
+  language: string | null;
+  /** The facility's local language, which each service's name is given in under the English one. */
+  localLanguage: IndianLanguage | null;
+}
+
 // ------------------------------------------------------------------ engagement
 
 export const FEEDBACK_ASPECTS = [

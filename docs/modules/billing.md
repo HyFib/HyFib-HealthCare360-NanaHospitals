@@ -123,6 +123,16 @@ Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.c
 | GET | `/` | readers | → `RateListView` (`rates`: registration, doctors, rooms, sections by category, packages; `language`: the words' language, `hi`, `ta` or null; `localLanguage`: the facility's, `{code, name}` or null; `unknownSetting`, `unknownState`: what could not be read) |
 | GET | `/document` · `/pdf` | readers | → `PrintableDocumentDto` · the PDF |
 
+### Published rate list — `/api/v1/public/rate-list`
+Anonymous and rate-limited (the "public" policy), and off while the patient portal is (503). For each active facility
+that publishes its list (`billing.rateList.publish`, on unless set to false); see [On the portal](#on-the-portal).
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/` | anyone | → `PublicRateListFacility[]` (`id`, `name`, `city`), by name |
+| GET | `/{facilityId}` | anyone | → `PublicRateList` (`facility`, `rates`, `language`, `localLanguage`: the counter's list, without what is for staff to correct); 404 for a facility that does not publish |
+| GET | `/{facilityId}/pdf` | anyone | → the PDF the counter prints; 503 `pdf.unavailable`, without the reason, when it cannot be made |
+
 ### Packages — `/api/v1/billing/packages`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
@@ -484,6 +494,26 @@ them; the states' own Acts say the same. *Billing › Rate list* shows them and 
 * It prints under the **Other documents** template (print-templates.md). Print it again when prices change: the list
   says the day it is as on.
 * Insurance, corporate and scheme patients pay their plan's rates; the list says so.
+
+### On the portal
+The same list is on the patient portal for anyone to read without signing in (*Rate list*, `/portal/rates`, linked
+from the sign-in page and *Bills*), so a patient can see what a visit costs before coming
+(`Features/Tariffs/PublicRateListEndpoints.cs`).
+
+* **The counter's list, to the line.** The endpoint reads `RateListService.ForFacilityAsync` for the facility in its
+  path, as the counter's screen does for the signed-in one; what the server does not know to be the facility's is not
+  read through the anonymous request (every query of the list names the facility). It leaves out `unknownSetting` and
+  `unknownState`, which are for staff to correct.
+* **Which facilities.** Every active facility, unless the hospital sets `billing.rateList.publish` to false for it (or
+  for all). The counter prints the list either way.
+* **The page.** A branch to choose where there are several, a search by a service's English or local name or code, a
+  doctor's name or department, or a ward; each service's name in the facility's language under the English one, marked
+  with that language (`lang`, so a screen reader reads it as Tamil or Hindi: WCAG 3.1.2); and the printed list's notes.
+  Its own words are in the patient's language (English, Hindi or Tamil), in the printed list's wording
+  (`i18n/messages/rates.ts`). *Download PDF* gives the list the counter prints; *Print* prints the page.
+* **The PDF.** The server's browser makes the PDFs staff print and send, a few at a time. Anonymous downloads take at
+  most one of its places, and each version of the list is made once (`Services/PublicRateListPdf.cs`: kept by the
+  SHA-256 of its HTML, an hour after it was last asked for), so they cannot hold up staff's.
 
 ## GST e-invoicing
 GST rule 48(4) requires a B2B tax invoice of a taxpayer above the notified turnover to carry an IRN from the Invoice

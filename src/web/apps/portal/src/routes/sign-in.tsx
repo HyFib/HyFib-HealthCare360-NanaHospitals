@@ -481,6 +481,9 @@ function SignInPage() {
                   <Caption1 className={styles.muted}>
                     {t('auth.privacyNote')} <TextLink to="/privacy">{t('auth.privacyLink')}</TextLink>
                   </Caption1>
+                  <Caption1 className={styles.muted}>
+                    <TextLink to="/rates">{t('rates.link')}</TextLink>
+                  </Caption1>
                 </form>
               </>
             ) : (

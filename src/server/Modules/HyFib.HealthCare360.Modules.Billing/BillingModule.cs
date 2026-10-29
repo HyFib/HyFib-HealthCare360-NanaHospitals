@@ -38,6 +38,7 @@ public sealed class BillingModule : IModule
     {
         services.AddScoped<TariffService>();
         services.AddScoped<RateListService>();
+        services.AddSingleton<PublicRateListPdf>();
         services.AddScoped<ChargeService>();
         services.AddScoped<PayerCoverageService>();
         services.AddScoped<BillService>();
@@ -89,6 +90,7 @@ public sealed class BillingModule : IModule
     {
         TariffEndpoints.Map(endpoints);
         RateListEndpoints.Map(endpoints);
+        PublicRateListEndpoints.Map(endpoints);
         PackageEndpoints.Map(endpoints);
         HbpEndpoints.Map(endpoints);
         ChargeEndpoints.Map(endpoints);
