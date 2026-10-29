@@ -95,17 +95,22 @@ internal sealed class ResultEvaluationContext(
     }
 
     /// <summary>The interval for this patient: sex and age on the day the specimen was collected.</summary>
-    public ReferenceRange? RangeFor(LabResult result)
-    {
-        if (Test(result.LabTestId) is not { } test)
-        {
-            return null;
-        }
+    public ReferenceRange? RangeFor(LabResult result) =>
+        Test(result.LabTestId) is { } test
+            ? ReferenceRangeSelector.Select(test.Ranges, GenderOf(result), AgeDaysAtCollection(result), test.Decimals)
+            : null;
 
-        var patient = patients.GetValueOrDefault(result.PatientId);
+    /// <summary>Whether the result is read against both the male and the female interval (a person then verifies it).</summary>
+    public bool ReadsBothSexes(LabResult result) =>
+        Test(result.LabTestId) is { } test
+        && ReferenceRangeSelector.ReadsBothSexes(test.Ranges, GenderOf(result), AgeDaysAtCollection(result));
+
+    private Gender GenderOf(LabResult result) => patients.GetValueOrDefault(result.PatientId)?.Gender ?? Gender.Unknown;
+
+    private int? AgeDaysAtCollection(LabResult result)
+    {
         var onDate = Sample(result.SampleId)?.CollectedAt is { } collected ? DiagnosticsTime.LocalDate(collected) : today;
-        return ReferenceRangeSelector.Select(
-            test.Ranges, patient?.Gender ?? Gender.Unknown, ReferenceRangeSelector.AgeInDays(patient?.DateOfBirth, onDate));
+        return ReferenceRangeSelector.AgeInDays(patients.GetValueOrDefault(result.PatientId)?.DateOfBirth, onDate);
     }
 
     public string? ReferenceTextFor(LabResult result) =>

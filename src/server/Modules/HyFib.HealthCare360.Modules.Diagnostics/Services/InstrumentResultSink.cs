@@ -113,7 +113,8 @@ internal sealed class InstrumentResultSink(
                 instrument.AutoValidationEnabled,
                 qcAccepted.Contains(target.LabTestId),
                 capture.Value.Delta,
-                reading.Flags));
+                reading.Flags,
+                context.ReadsBothSexes(target)));
             if (decision.Approved)
             {
                 target.Verify(null, now, automatic: true);

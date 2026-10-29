@@ -47,14 +47,113 @@ public sealed class ReferenceRangeSelectorTests
         ReferenceRangeSelector.Select([adult], Gender.Male, null).ShouldBeNull();
     }
 
-    [Fact]
-    public void Unknown_sex_only_uses_sex_neutral_intervals()
+    [Theory]
+    [InlineData(Gender.Other)]
+    [InlineData(Gender.Unknown)]
+    public void A_patient_neither_male_nor_female_gets_the_sex_neutral_interval_when_there_is_one(Gender gender)
     {
         var male = Range(13, 17, gender: Gender.Male);
         var female = Range(12, 15, gender: Gender.Female);
+        var neutral = Range(12, 17);
 
-        ReferenceRangeSelector.Select([male, female], Gender.Unknown, 20_000).ShouldBeNull();
-        ReferenceRangeSelector.Select([male, female, Range(12, 17)], Gender.Unknown, 20_000)!.Gender.ShouldBeNull();
+        ReferenceRangeSelector.Select([male, female, neutral], gender, 20_000).ShouldBe(neutral);
+        ReferenceRangeSelector.ReadsBothSexes([male, female, neutral], gender, 20_000).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(Gender.Other)]
+    [InlineData(Gender.Unknown)]
+    public void A_patient_neither_male_nor_female_is_read_against_both_intervals_when_only_those_apply(Gender gender)
+    {
+        // Adult haemoglobin has only a male and a female interval. A transgender patient, or one whose sex is not known
+        // (an unidentified casualty), got none: below 7 g/dL there was no critical alert.
+        var both = ReferenceRangeSelector.Select(SeededRanges("HB"), gender, Years(30), decimals: 1)!;
+
+        both.Low.ShouldBe(12.0m, "low only when below both intervals");
+        both.High.ShouldBe(17.0m, "high only when above both intervals");
+        both.CriticalLow.ShouldBe(7.0m);
+        both.CriticalHigh.ShouldBe(20.0m);
+        both.Text.ShouldBe("Male 13.0 - 17.0; Female 12.0 - 15.0");
+        ReferenceRangeSelector.ReadsBothSexes(SeededRanges("HB"), gender, Years(30)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Read_against_both_intervals_the_stricter_critical_limit_holds()
+    {
+        var male = Range(13, 17, criticalLow: 7, criticalHigh: 20, gender: Gender.Male);
+        var female = Range(12, 15, criticalLow: 8, criticalHigh: 19, gender: Gender.Female);
+
+        var both = ReferenceRangeSelector.Select([male, female], Gender.Other, 20_000)!;
+
+        both.CriticalLow.ShouldBe(8m);
+        both.CriticalHigh.ShouldBe(19m);
+    }
+
+    /// <summary>Only an interval with something to print is printed, and the result is still read against both.</summary>
+    [Fact]
+    public void Read_against_both_intervals_only_what_can_be_printed_is_printed()
+    {
+        var male = Range(13, 17, criticalLow: 7, gender: Gender.Male);
+        var female = Range(null, null, criticalLow: 6.5m, gender: Gender.Female);
+
+        var both = ReferenceRangeSelector.Select([male, female], Gender.Other, 20_000, decimals: 1)!;
+
+        both.Text.ShouldBe("Male 13.0 - 17.0");
+        (both.Low, both.High, both.CriticalLow).ShouldBe((null, null, 7m));
+        ReferenceRangeSelector.ReadsBothSexes([male, female], Gender.Other, 20_000).ShouldBeTrue();
+
+        var criticalOnly = Range(null, null, criticalLow: 7, gender: Gender.Male);
+        var nothingToPrint = ReferenceRangeSelector.Select([criticalOnly, female], Gender.Unknown, 20_000)!;
+        nothingToPrint.Text.ShouldBeNull();
+        nothingToPrint.CriticalLow.ShouldBe(7m);
+    }
+
+    /// <summary>
+    /// A result holds 500 characters of reference text. A long text for one sex is shortened, rather than the other
+    /// interval being cut off: the person verifying the result must see both.
+    /// </summary>
+    [Theory]
+    [InlineData(490, 0)]
+    [InlineData(0, 490)]
+    [InlineData(400, 400)]
+    public void Read_against_both_intervals_a_long_text_does_not_crowd_out_the_other_interval(int maleLength, int femaleLength)
+    {
+        var male = Range(13, 17, gender: Gender.Male, text: maleLength > 0 ? new string('m', maleLength) : null);
+        var female = Range(12, 15, gender: Gender.Female, text: femaleLength > 0 ? new string('f', femaleLength) : null);
+
+        var text = ReferenceRangeSelector.Select([male, female], Gender.Other, 20_000, decimals: 1)!.Text!;
+
+        text.Length.ShouldBe(500);
+        text.ShouldStartWith(maleLength > 0 ? "Male mmm" : "Male 13.0 - 17.0; ");
+        text.ShouldContain("; Female ");
+        text.ShouldEndWith(femaleLength > 0 ? "f…" : "; Female 12.0 - 15.0");
+        if (maleLength > 0)
+        {
+            text.ShouldContain("m…; Female ");
+        }
+    }
+
+    [Fact]
+    public void Both_intervals_are_read_only_when_both_apply_at_that_age()
+    {
+        var adultMale = Range(13, 17, gender: Gender.Male, from: Years(18));
+        var female = Range(12, 15, gender: Gender.Female);
+
+        ReferenceRangeSelector.Select([adultMale, female], Gender.Other, Years(10)).ShouldBeNull();
+        ReferenceRangeSelector.ReadsBothSexes([adultMale, female], Gender.Other, Years(10)).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(Gender.Male, 13.0, 17.0)]
+    [InlineData(Gender.Female, 12.0, 15.0)]
+    public void Male_and_female_patients_keep_their_own_interval(Gender gender, double low, double high)
+    {
+        var range = ReferenceRangeSelector.Select(SeededRanges("HB"), gender, Years(30), decimals: 1)!;
+
+        range.Low.ShouldBe((decimal)low);
+        range.High.ShouldBe((decimal)high);
+        range.Text.ShouldBeNull();
+        ReferenceRangeSelector.ReadsBothSexes(SeededRanges("HB"), gender, Years(30)).ShouldBeFalse();
     }
 
     [Fact]
