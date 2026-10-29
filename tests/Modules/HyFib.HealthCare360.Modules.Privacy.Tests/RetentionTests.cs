@@ -41,10 +41,22 @@ public sealed class RetentionTests
     public void A_period_stays_between_its_legal_minimum_and_maximum(int? stored, int effective) =>
         RetentionSchedule.Get(RetentionSchedule.OutpatientRecords).Effective(stored).ShouldBe(effective);
 
-    [Fact]
-    public void Logs_are_kept_for_at_least_a_year() =>
-        new[] { RetentionSchedule.MessageLog, RetentionSchedule.IntegrationLog, RetentionSchedule.SignInLog }
-            .ShouldAllBe(key => RetentionSchedule.Get(key).MinimumValue >= 365);
+    /// <summary>
+    /// The DPDP Rules keep logs a year. At the shortest period a hospital can set, a log line is deleted only once it is
+    /// a full calendar year old, on every day of three years, the one with 29 February 2028 among them.
+    /// </summary>
+    [Theory]
+    [InlineData(RetentionSchedule.MessageLog)]
+    [InlineData(RetentionSchedule.IntegrationLog)]
+    [InlineData(RetentionSchedule.SignInLog)]
+    public void Logs_are_kept_a_full_year_across_a_leap_day_too(string key)
+    {
+        var rule = RetentionSchedule.Get(key);
+        var shortest = rule.Effective(1).ShouldNotBeNull();
+        var days = Enumerable.Range(0, 3 * 365).Select(d => new DateTimeOffset(2027, 1, 1, 9, 0, 0, TimeSpan.Zero).AddDays(d));
+
+        days.ShouldAllBe(now => rule.Cutoff(now, shortest) <= now.AddYears(-1));
+    }
 
     [Fact]
     public void The_cut_off_is_counted_back_from_now()

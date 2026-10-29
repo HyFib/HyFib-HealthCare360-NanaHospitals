@@ -532,8 +532,10 @@ export function retentionPeriodText(value: number | null, unit: RetentionUnit): 
   if (unit === 'Years') {
     return plural(value, 'year');
   }
-  if (value >= 365 && value % 365 === 0) {
-    return `${value} days (${plural(value / 365, 'year')})`;
+  // A year of days is 365, or 366 so that a leap day never shortens it (the logs' period).
+  const years = value % 365 === 0 ? value / 365 : value % 366 === 0 ? value / 366 : 0;
+  if (years > 0) {
+    return `${value} days (${plural(years, 'year')})`;
   }
   return plural(value, 'day');
 }

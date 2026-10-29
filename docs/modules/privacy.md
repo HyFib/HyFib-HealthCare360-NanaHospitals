@@ -185,15 +185,18 @@ true until the report is recorded.
 | Key | Kept | Minimum | After the period |
 |---|---|---|---|
 | `messages.outbox` | 30 days | 7 days | Deleted: sent messages' full text, sign-in codes included (pending ones are never touched) |
-| `messages.log` | 365 days | 365 | Deleted |
-| `integrations.log` | 365 days | 365 | Deleted: the integration log and the payment gateway's webhook events (`billing.gateway_webhook_events`, ids only) |
-| `signin.log` | 365 days | 365 | Deleted: code requests, ended sessions and their refresh tokens, expired refresh tokens, ended break-the-glass grants (the audit trail keeps each emergency access) |
+| `messages.log` | 366 days | 366 | Deleted |
+| `integrations.log` | 366 days | 366 | Deleted: the integration log and the payment gateway's webhook events (`billing.gateway_webhook_events`, ids only) |
+| `signin.log` | 366 days | 366 | Deleted: code requests, ended sessions and their refresh tokens, expired refresh tokens, ended break-the-glass grants (the audit trail keeps each emergency access) |
 | `records.outpatient` | 3 years | 3 | Reviewed by MRD (never deleted automatically) |
 | `records.inpatient` | 5 years | 5 | Reviewed by MRD |
 | `records.mlc` | permanently | — | Kept |
 | `finance` | 8 years | 8 | Kept (used for erasure holds) |
 | `audit` | 10 years | 10 | Kept (tamper-evident, never edited) |
 | `backups` | from `HealthCare360:Backup:RetentionDays` | — | Deleted by the backup job |
+
+The logs are kept 366 days, not 365: a year has at most 366 days, so every line is kept the full year the DPDP Rules 2025
+ask for (rules 6 and 8), across a 29 February too. A period changed to less before is read as 366.
 
 | Method | Path | Body → Response |
 |---|---|---|
