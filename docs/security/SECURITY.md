@@ -519,7 +519,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   patient link a merge of duplicate records moves (`ControlledDrugRegisterGuardTests`). Each line, and each move of its
   link, is in the sealed audit trail (`[Audited]`).
 - CERT-In's Directions of 28 April 2022:
-  - The server's log files are kept 180 days (`HospitalLogging.RetentionDays`), on the Server Node, in India.
+  - The server's log files are kept a year (`HospitalLogging.RetentionDays`, 365 days), on the Server Node, in India:
+    the 180 days the Directions ask for, and the year the DPDP Rules 2025 ask for from 13 May 2027 (r.6).
   - Each server checks its clock against NPL's and NIC's NTP servers (time.nplindia.org, samay1/samay2.nic.in; or the
     hospital's own, `HealthCare360:TimeSync:Servers`) every 15 minutes, and System health warns when it is more than a
     second off (`HealthCare360:TimeSync:MaxOffset`) or none answers. Windows Time keeps the clock; the check shows when

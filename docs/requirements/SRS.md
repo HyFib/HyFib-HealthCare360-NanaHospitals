@@ -55,7 +55,7 @@ HC360 digitises the full patient journey — enquiry → appointment → registr
 | Workstation | Any Windows PC running HC360 Desktop |
 
 ### 1.4 Standards & references
-HL7 FHIR R4 (ABDM/NRCeS profiles), HL7 v2.5.1, ASTM E1381/E1394 (LIS2-A2), DICOM / DICOMweb (QIDO-RS, WADO-RS, STOW-RS), ICD-10 (WHO 2019) and ICD-11 MMS, ICD-10-PCS / ICHI for procedures, SNOMED CT (optional), LOINC (lab), NABH 5th edition, Digital Personal Data Protection Act 2023 (India), IT Act 2000 & SPDI Rules, HIPAA Security Rule (aligned), OWASP ASVS 4.0.3 Level 2, WCAG 2.2 AA, GST (India), TRAI DLT (SMS).
+HL7 FHIR R4 (ABDM/NRCeS profiles), HL7 v2.5.1, ASTM E1381/E1394 (LIS2-A2), DICOM / DICOMweb (QIDO-RS, WADO-RS, STOW-RS), ICD-10 (WHO 2019) and ICD-11 MMS, ICD-10-PCS / ICHI for procedures, SNOMED CT (optional), LOINC (lab), NABH 6th edition (2025), Digital Personal Data Protection Act 2023 (India), IT Act 2000 & SPDI Rules, HIPAA Security Rule (aligned), OWASP ASVS 4.0.3 Level 2, WCAG 2.2 AA, GST (India), TRAI DLT (SMS).
 
 ---
 
