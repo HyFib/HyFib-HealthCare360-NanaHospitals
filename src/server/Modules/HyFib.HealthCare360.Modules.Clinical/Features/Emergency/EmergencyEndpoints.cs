@@ -33,6 +33,8 @@ internal static class EmergencyEndpoints
         group.MapPost("/cases/{id:guid}/disposition", Dispose).RequirePermission(ClinicalPermissions.ErDisposition).WithValidation<DispositionRequest>();
         group.MapPut("/cases/{id:guid}/mlc", SaveMlc).RequirePermission(ClinicalPermissions.ErMlc).WithValidation<SaveMlcRequest>().FirstSaveCreates();
         group.MapPost("/cases/{id:guid}/mlc/intimation", Intimate).RequirePermission(ClinicalPermissions.ErMlc).WithValidation<MlcIntimationRequest>();
+        group.MapPost("/cases/{id:guid}/mlc/examination", Examine).RequirePermission(ClinicalPermissions.ErMlc).WithValidation<MlcExaminationRequest>();
+        group.MapPost("/cases/{id:guid}/mlc/report", ForwardReport).RequirePermission(ClinicalPermissions.ErMlc).WithValidation<MlcReportRequest>();
         group.MapGet("/cases/{id:guid}/mlc/document", Document).RequireAnyPermission(MlcReaders);
         group.MapGet("/mlc", Register).RequireAnyPermission(MlcReaders);
     }
@@ -85,6 +87,18 @@ internal static class EmergencyEndpoints
         return opened.IsFailure ? opened.Error!.ToProblem() : (await er.IntimateAsync(id, request, ct)).ToOk();
     }
 
+    private static async Task<IResult> Examine(Guid id, MlcExaminationRequest request, EmergencyService er, PatientAccessGuard guard, CancellationToken ct)
+    {
+        var opened = await OpenAsync(id, er, guard, ct);
+        return opened.IsFailure ? opened.Error!.ToProblem() : (await er.RecordExaminationAsync(id, request, ct)).ToOk();
+    }
+
+    private static async Task<IResult> ForwardReport(Guid id, MlcReportRequest request, EmergencyService er, PatientAccessGuard guard, CancellationToken ct)
+    {
+        var opened = await OpenAsync(id, er, guard, ct);
+        return opened.IsFailure ? opened.Error!.ToProblem() : (await er.ForwardReportAsync(id, request, ct)).ToOk();
+    }
+
     private static async Task<IResult> Document(
         Guid id, EmergencyService er, PatientAccessGuard guard, IAuditLogger audit, DocumentAssets assets, CancellationToken ct)
     {
@@ -127,16 +141,26 @@ internal static class EmergencyEndpoints
     }
 }
 
-/// <summary>The hospital's intimation of a medico-legal case to the police station, with the register's facts.</summary>
+/// <summary>
+/// The hospital's intimation of a medico-legal case to the police station, with the register's facts; for a sexual
+/// assault, its medical examination as recorded (BNSS 2023, s.184), and for a child, the POCSO Act 2012's particulars.
+/// </summary>
 internal static class MlcDocument
 {
     public static PrintableDocument Build(MlcRecord m, Patient p, DocumentLetterhead letterhead)
     {
+        var addressee = m.ReportedTo == PocsoReportedTo.SpecialJuvenilePoliceUnit
+            ? $"To the Special Juvenile Police Unit, through the Station House Officer, {m.PoliceStation}."
+            : $"To the Station House Officer, {m.PoliceStation}.";
+        var pocso = m.IsPocso
+            ? Html.Of($"<p><strong>A sexual offence against a child: the Protection of Children from Sexual Offences Act 2012 applies.</strong></p>")
+            : Html.Empty;
         var body = Html.Of($"""
             {DocumentParts.Letterhead(letterhead)}
             {DocumentParts.Title("Medico-legal case: intimation to the police")}
-            <p>To the Station House Officer, {m.PoliceStation}.</p>
+            <p>{addressee}</p>
             <p>This is to inform you that the patient below was brought to this hospital and is a medico-legal case.</p>
+            {pocso}
             {DocumentParts.Fields([
                 ("MLC no.", m.Number),
                 ("Identified", DocumentFormat.DateTime(m.IdentifiedAt)),
@@ -152,7 +176,11 @@ internal static class MlcDocument
                 ("Examining doctor", m.DoctorRegistrationNumber is { } reg ? $"{m.DoctorName} (Reg. {reg})" : m.DoctorName),
                 ("Intimated", m.IntimatedAt is { } i ? $"{DocumentFormat.DateTime(i)}, {m.IntimationMode}, received by {m.ReceivedBy}" : "Not yet"),
                 ("Police entry no.", m.PoliceEntryNumber),
+                ("Reported to (POCSO s.19)", m.IsPocso && m.ReportedTo is { } to
+                    ? (to == PocsoReportedTo.SpecialJuvenilePoliceUnit ? "Special Juvenile Police Unit" : "Local police")
+                    : null),
             ])}
+            {Examination(m)}
             """);
         return new PrintableDocument
         {
@@ -163,5 +191,36 @@ internal static class MlcDocument
             Footer = $"{m.Number} · Medico-legal: confidential",
             Template = letterhead.Template,
         };
+    }
+
+    // The medical examination of a victim of sexual assault (BNSS s.184): by whom, its exact start and end, with whose
+    // consent, who was present for a child (POCSO s.27), and its report to the investigating officer.
+    private static Html Examination(MlcRecord m)
+    {
+        if (m is not { ExaminationStartedAt: { } started, ExaminationEndedAt: { } ended })
+        {
+            return Html.Empty;
+        }
+
+        var attendant = m.AttendantKind switch
+        {
+            ExaminationAttendant.Parent => "parent",
+            ExaminationAttendant.TrustedPerson => "a person the child trusts",
+            ExaminationAttendant.WomanNominatedByHead => "a woman nominated by the head of the hospital",
+            _ => null,
+        };
+        return Html.Of($"""
+            {DocumentParts.Title("Medical examination (BNSS 2023, s.184)")}
+            {DocumentParts.Fields([
+                ("Examined by", m.ExaminerRegistration is { } reg ? $"{m.ExaminerName} (Reg. {reg})" : m.ExaminerName),
+                ("Began", DocumentFormat.DateTime(started)),
+                ("Ended", DocumentFormat.DateTime(ended)),
+                ("Consent given by", m.ConsentGivenBy),
+                ("Present (POCSO s.27)", m.AttendantName is { } name ? $"{name}, {attendant}" : null),
+                ("Report to the investigating officer", m.ReportForwardedAt is { } at
+                    ? $"{DocumentFormat.DateTime(at)}, to {m.InvestigatingOfficer}"
+                    : $"Due by {DocumentFormat.DateTime(m.ReportDueAt!.Value)}"),
+            ])}
+            """);
     }
 }

@@ -51,7 +51,14 @@ internal sealed class MlcRecordConfiguration : IEntityTypeConfiguration<MlcRecor
         b.Property(x => x.PoliceStation).HasMaxLength(200);
         b.Property(x => x.ReceivedBy).HasMaxLength(200);
         b.Property(x => x.PoliceEntryNumber).HasMaxLength(64);
+        b.Property(x => x.ExaminerName).HasMaxLength(200);
+        b.Property(x => x.ExaminerRegistration).HasMaxLength(100);
+        b.Property(x => x.ConsentGivenBy).HasMaxLength(200);
+        b.Property(x => x.AttendantName).HasMaxLength(200);
+        b.Property(x => x.InvestigatingOfficer).HasMaxLength(200);
         b.Ignore(x => x.IsIntimated);
+        b.Ignore(x => x.IsPocso);
+        b.Ignore(x => x.ReportDueAt);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Visit>().WithMany().HasForeignKey(x => x.VisitId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.VisitId).IsUnique();

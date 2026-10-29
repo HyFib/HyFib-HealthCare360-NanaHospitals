@@ -66,7 +66,26 @@ public sealed record MlcDto(
     string? ReceivedBy,
     string? PoliceEntryNumber,
     bool IntimationOverdue,
-    uint Version);
+    uint Version,
+    bool IsChild = false,
+    bool IsPocso = false,
+    PocsoReportedTo? ReportedTo = null,
+    MlcExaminationDto? Examination = null,
+    string? InvestigatingOfficer = null,
+    DateTimeOffset? ReportForwardedAt = null,
+    DateTimeOffset? ReportDueAt = null,
+    bool ReportOverdue = false);
+
+/// <summary>A sexual-assault victim's medical examination, as recorded (BNSS 2023, s.184; for a child, POCSO Act 2012, s.27).</summary>
+public sealed record MlcExaminationDto(
+    Guid ExaminerId,
+    string ExaminerName,
+    string? ExaminerRegistration,
+    DateTimeOffset StartedAt,
+    DateTimeOffset EndedAt,
+    string ConsentGivenBy,
+    ExaminationAttendant? AttendantKind,
+    string? AttendantName);
 
 public sealed record EmergencyCaseDetail(
     Guid Id,
@@ -136,6 +155,10 @@ public sealed record CaseVersionRequest(uint Version);
 public sealed record DispositionRequest(EmergencyDisposition Disposition, string? Notes, string? ReferredTo, uint Version);
 
 /// <summary>Opens or corrects the case's MLC entry. <paramref name="Version"/>: the entry's, when correcting one.</summary>
+/// <param name="ChildVictim">
+/// Whether the patient is under 18, said by the doctor for a sexual assault when the date of birth is not known; a date of
+/// birth under 18 makes the patient a child whatever is said.
+/// </param>
 public sealed record SaveMlcRequest(
     MlcBroughtBy BroughtBy,
     string? BroughtByName,
@@ -147,9 +170,22 @@ public sealed record SaveMlcRequest(
     bool? SmellOfAlcohol,
     string PoliceStation,
     string? DoctorRegistrationNumber,
-    uint? Version);
+    uint? Version,
+    bool? ChildVictim = null);
 
-public sealed record MlcIntimationRequest(DateTimeOffset IntimatedAt, MlcIntimationMode Mode, string ReceivedBy, string? PoliceEntryNumber, uint Version);
+/// <param name="ReportedTo">For a sexual offence against a child: the Special Juvenile Police Unit or the local police (POCSO s.19(1)).</param>
+public sealed record MlcIntimationRequest(
+    DateTimeOffset IntimatedAt, MlcIntimationMode Mode, string ReceivedBy, string? PoliceEntryNumber, uint Version, PocsoReportedTo? ReportedTo = null);
+
+/// <summary>The medical examination of a victim of sexual assault, by the examining doctor in the practitioner master.</summary>
+/// <param name="ConsentGivenBy">Who consented: the patient, or a person competent to consent for them, with their relation.</param>
+/// <param name="AttendantKind">For a child: who was present (POCSO s.27(3)–(4)).</param>
+public sealed record MlcExaminationRequest(
+    Guid ExaminerId, DateTimeOffset StartedAt, DateTimeOffset EndedAt, string ConsentGivenBy, ExaminationAttendant? AttendantKind,
+    string? AttendantName, uint Version);
+
+/// <summary>The examination's report forwarded to the investigating officer (BNSS s.184(6)).</summary>
+public sealed record MlcReportRequest(DateTimeOffset ForwardedAt, string InvestigatingOfficer, uint Version);
 
 public sealed record MlcRegisterRow(
     Guid Id,
@@ -163,7 +199,11 @@ public sealed record MlcRegisterRow(
     DateTimeOffset? IntimatedAt,
     string? ReceivedBy,
     bool IntimationOverdue,
-    string DoctorName);
+    string DoctorName,
+    bool IsPocso = false,
+    DateTimeOffset? ReportDueAt = null,
+    DateTimeOffset? ReportForwardedAt = null,
+    bool ReportOverdue = false);
 
 public sealed class TriageRequestValidator : AbstractValidator<TriageRequest>
 {
@@ -224,6 +264,26 @@ public sealed class MlcIntimationRequestValidator : AbstractValidator<MlcIntimat
         RuleFor(x => x.Mode).IsInEnum();
         RuleFor(x => x.ReceivedBy).NotEmpty().SafeText(200);
         RuleFor(x => x.PoliceEntryNumber).SafeText(64);
+        RuleFor(x => x.ReportedTo).IsInEnum();
+    }
+}
+
+public sealed class MlcExaminationRequestValidator : AbstractValidator<MlcExaminationRequest>
+{
+    public MlcExaminationRequestValidator()
+    {
+        RuleFor(x => x.ExaminerId).NotEmpty();
+        RuleFor(x => x.ConsentGivenBy).NotEmpty().SafeText(200);
+        RuleFor(x => x.AttendantKind).IsInEnum();
+        RuleFor(x => x.AttendantName).SafeText(200);
+    }
+}
+
+public sealed class MlcReportRequestValidator : AbstractValidator<MlcReportRequest>
+{
+    public MlcReportRequestValidator()
+    {
+        RuleFor(x => x.InvestigatingOfficer).NotEmpty().SafeText(200);
     }
 }
 

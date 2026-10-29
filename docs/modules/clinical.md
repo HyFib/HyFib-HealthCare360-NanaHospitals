@@ -50,7 +50,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `clinical.er.board` | The ER board and the cases on it | Doctor, Nurse, FrontOffice, HospitalAdmin |
 | `clinical.er.triage` | Triage emergency patients on the ESI | Nurse, Doctor |
 | `clinical.er.disposition` | See emergency patients and decide where they go | Doctor |
-| `clinical.er.mlc` | Enter medico-legal cases in the MLC register and record the police intimation | Doctor |
+| `clinical.er.mlc` | Enter medico-legal cases in the MLC register and record the police intimation, and a sexual-assault victim's examination and its report | Doctor |
 | `clinical.ams.approve` | Approve or reject restricted antibiotics and review antibiotic courses (grant it to the ID physician and clinical pharmacist the hospital names) | Pathologist |
 | `clinical.ams.read` | The stewardship queue and report | Doctor, Nurse, Pharmacist, Pathologist, QualityManager |
 | `mrd.mlc.register` | The MLC register | MrdOfficer, HospitalAdmin |
@@ -665,8 +665,26 @@ the user may not open shows initials.
   (`/mlc/intimation`) records when, how, who received it and the GD/DD entry; after it the entry's facts cannot change
   (422 `mlc.intimated`). `/mlc/document` prints the intimation; `GET /mlc?from&to` is the register
   (`clinical.er.mlc` or `mrd.mlc.register`).
+* **Sexual assault** (Bharatiya Nagarik Suraksha Sanhita 2023, s.184, formerly CrPC s.164A). The victim's medical
+  examination is recorded (`POST /cases/{id}/mlc/examination`, `clinical.er.mlc`): by a doctor in the practitioner
+  master, whose name, registration and gender come from it; its exact start and end; and who consented, the patient or
+  a person competent to consent for them. It may be corrected until its report goes to the investigating officer
+  (`/mlc/report`: who, when), due within seven days of the examination (s.184(6)); the register shows it due, overdue
+  or sent, and the printed intimation carries the examination.
+* **A child** (the Protection of Children from Sexual Offences Act 2012). The patient is a child when under 18 on the
+  day of the incident, or of the case when that is not known. A date of birth under 18 makes the patient a child
+  whatever is said; the doctor may say a patient with an older (perhaps estimated) one is a child; without one, the
+  doctor says (400 `childVictim` until they do). A sexual assault on a child is a POCSO case:
+  * the intimation names the Special Juvenile Police Unit or the local police (s.19(1); 400 `reportedTo` until it does),
+    and the printed intimation is addressed accordingly;
+  * a girl is examined by a woman doctor (s.27(2); 422 `pocso.woman_doctor`);
+  * a parent, a person the child trusts, or a woman the head of the hospital nominates is present, named
+    (s.27(3)–(4); 400 `attendantName`).
+
+  No police requisition is asked for before emergency care (POCSO Rules 2020, r.6(3)): the ER treats first.
 * **Not built:** ER bed allocation and a tracking display for the waiting area; trauma scores beyond ESI; the wound
-  certificate and the formal MLC report to the court.
+  certificate and the formal MLC report to the court; the examination report's own form (the hospital's proforma is
+  used, and HC360 keeps when it was made and sent).
 
 ## Antimicrobial stewardship
 Antibiotics are classified on the WHO AWaRe list (2023) by their generic name (`Aware`; a combination needs every part,

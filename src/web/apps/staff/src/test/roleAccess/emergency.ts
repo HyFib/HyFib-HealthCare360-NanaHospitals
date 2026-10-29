@@ -1,7 +1,8 @@
 import type { ErBoard, MlcRegisterRow } from '@/modules/emergency/api';
 import type { FakeAnswers } from '../fakeApi';
 
-// Emergency: two patients on the board (one untriaged, one an MLC waiting for the police) and the MLC register.
+// Emergency: two patients on the board (one untriaged, one an MLC waiting for the police) and the MLC register, with a
+// child's sexual-assault case whose examination report is due.
 
 const id = (suffix: string) => `0192a000-0000-7000-8000-${suffix.padStart(12, '0')}`;
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -69,6 +70,28 @@ const REGISTER: MlcRegisterRow[] = [
     receivedBy: null,
     intimationOverdue: true,
     doctorName: 'Dr. Meera Iyer',
+    isPocso: false,
+    reportDueAt: null,
+    reportForwardedAt: null,
+    reportOverdue: false,
+  },
+  {
+    id: id('m2'),
+    caseId: id('c3'),
+    number: 'NHMLC2600011',
+    identifiedAt: minutesAgo(26 * 60),
+    patientName: 'Kavya S',
+    uhid: 'NH26000103',
+    cause: 'SexualAssault',
+    policeStation: 'Velachery',
+    intimatedAt: minutesAgo(25 * 60),
+    receivedBy: 'SI Meena',
+    intimationOverdue: false,
+    doctorName: 'Dr. Lakshmi Iyer',
+    isPocso: true,
+    reportDueAt: new Date(Date.now() + 6 * 24 * 60 * 60_000).toISOString(),
+    reportForwardedAt: null,
+    reportOverdue: false,
   },
 ];
 

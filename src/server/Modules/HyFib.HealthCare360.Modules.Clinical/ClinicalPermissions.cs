@@ -128,7 +128,7 @@ public static class ClinicalPermissions
             [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.FrontOffice, SystemRoles.HospitalAdmin]),
         new(ErTriage, Emergency, "Triage emergency patients on the Emergency Severity Index", [SystemRoles.Nurse, SystemRoles.Doctor]),
         new(ErDisposition, Emergency, "See emergency patients and decide where they go: discharge, admit, refer, LAMA", [SystemRoles.Doctor]),
-        new(ErMlc, Emergency, "Enter medico-legal cases in the MLC register and record the police intimation", [SystemRoles.Doctor]),
+        new(ErMlc, Emergency, "Enter medico-legal cases in the MLC register and record the police intimation, and a sexual-assault victim's examination and its report", [SystemRoles.Doctor]),
         new(AmsApprove, Stewardship, "Approve or reject restricted antibiotics and review antibiotic courses", [SystemRoles.Pathologist]),
         new(AmsRead, Stewardship, "The antimicrobial stewardship queue and report",
             [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.Pharmacist, SystemRoles.Pathologist, SystemRoles.QualityManager]),

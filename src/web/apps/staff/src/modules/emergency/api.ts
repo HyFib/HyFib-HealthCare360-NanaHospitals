@@ -24,6 +24,10 @@ export type MlcCause =
   | 'Other';
 export type MlcBroughtBy = 'Self' | 'Relative' | 'Police' | 'Public' | 'Ambulance';
 export type MlcIntimationMode = 'Phone' | 'Written' | 'InPerson';
+/** Who was told of a sexual offence against a child (POCSO Act 2012, s.19(1)). */
+export type PocsoReportedTo = 'SpecialJuvenilePoliceUnit' | 'LocalPolice';
+/** Who was present at a child's medical examination (POCSO Act 2012, s.27(3) and (4)). */
+export type ExaminationAttendant = 'Parent' | 'TrustedPerson' | 'WomanNominatedByHead';
 
 export interface ErBoardRow {
   caseId: string;
@@ -94,6 +98,29 @@ export interface Mlc {
   policeEntryNumber: string | null;
   intimationOverdue: boolean;
   version: number;
+  /** Under 18 on the day of the incident. */
+  isChild: boolean;
+  /** A sexual offence against a child: the POCSO Act 2012 applies. */
+  isPocso: boolean;
+  reportedTo: PocsoReportedTo | null;
+  examination: MlcExamination | null;
+  investigatingOfficer: string | null;
+  reportForwardedAt: string | null;
+  /** When the examination's report is due at the investigating officer: seven days after it (BNSS s.184(6)). */
+  reportDueAt: string | null;
+  reportOverdue: boolean;
+}
+
+/** A sexual-assault victim's medical examination (BNSS 2023, s.184; for a child, POCSO Act 2012, s.27). */
+export interface MlcExamination {
+  examinerId: string;
+  examinerName: string;
+  examinerRegistration: string | null;
+  startedAt: string;
+  endedAt: string;
+  consentGivenBy: string;
+  attendantKind: ExaminationAttendant | null;
+  attendantName: string | null;
 }
 
 export interface EmergencyCase {
@@ -159,6 +186,18 @@ export interface MlcInput {
   policeStation: string;
   doctorRegistrationNumber: string | null;
   version: number | null;
+  /** Whether the patient is under 18, said for a sexual assault when the date of birth is not known. */
+  childVictim: boolean | null;
+}
+
+export interface ExaminationInput {
+  examinerId: string;
+  startedAt: string;
+  endedAt: string;
+  consentGivenBy: string;
+  attendantKind: ExaminationAttendant | null;
+  attendantName: string | null;
+  version: number;
 }
 
 export interface MlcRegisterRow {
@@ -174,6 +213,10 @@ export interface MlcRegisterRow {
   receivedBy: string | null;
   intimationOverdue: boolean;
   doctorName: string;
+  isPocso: boolean;
+  reportDueAt: string | null;
+  reportForwardedAt: string | null;
+  reportOverdue: boolean;
 }
 
 export const ER_PERMISSIONS = {
@@ -235,6 +278,17 @@ export const CAUSE_LABELS: Record<MlcCause, string> = {
   IndustrialAccident: 'Industrial accident',
   Unknown: 'Not known',
   Other: 'Other',
+};
+
+export const REPORTED_TO_LABELS: Record<PocsoReportedTo, string> = {
+  SpecialJuvenilePoliceUnit: 'Special Juvenile Police Unit',
+  LocalPolice: 'Local police',
+};
+
+export const ATTENDANT_LABELS: Record<ExaminationAttendant, string> = {
+  Parent: 'Parent',
+  TrustedPerson: 'A person the child trusts',
+  WomanNominatedByHead: 'A woman nominated by the head of the hospital',
 };
 
 export const BROUGHT_BY_LABELS: Record<MlcBroughtBy, string> = {
@@ -315,6 +369,7 @@ export const erApi = {
     mode: MlcIntimationMode,
     receivedBy: string,
     policeEntryNumber: string | null,
+    reportedTo: PocsoReportedTo | null,
     version: number,
   ) =>
     api.post<EmergencyCase>(`${base}/cases/${id}/mlc/intimation`, {
@@ -322,7 +377,12 @@ export const erApi = {
       mode,
       receivedBy,
       policeEntryNumber,
+      reportedTo,
       version,
     }),
+  recordExamination: (id: string, input: ExaminationInput) =>
+    api.post<EmergencyCase>(`${base}/cases/${id}/mlc/examination`, input),
+  forwardReport: (id: string, forwardedAt: string, investigatingOfficer: string, version: number) =>
+    api.post<EmergencyCase>(`${base}/cases/${id}/mlc/report`, { forwardedAt, investigatingOfficer, version }),
   mlcDocument: (id: string) => `${base}/cases/${id}/mlc/document`,
 };

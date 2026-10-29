@@ -30,7 +30,10 @@ function MlcRegisterPage() {
 
   return (
     <Page>
-      <PageHeader title="MLC register" subtitle="Medico-legal cases and their intimation to the police" />
+      <PageHeader
+        title="MLC register"
+        subtitle="Medico-legal cases, their intimation to the police, and a sexual-assault examination's report to the investigating officer"
+      />
       <Section flush>
         <div style={{ padding: '8px 16px 12px' }}>
           <FilterBar>
@@ -69,7 +72,11 @@ function MlcRegisterPage() {
             { key: 'number', header: 'MLC no.', width: 140, render: (r) => r.number },
             { key: 'identified', header: 'Identified', width: 160, render: (r) => formatDateTime(r.identifiedAt) },
             { key: 'patient', header: 'Patient', render: (r) => `${r.patientName} · ${r.uhid}` },
-            { key: 'cause', header: 'Alleged cause', render: (r) => CAUSE_LABELS[r.cause] },
+            {
+              key: 'cause',
+              header: 'Alleged cause',
+              render: (r) => (r.isPocso ? `${CAUSE_LABELS[r.cause]} · a child (POCSO)` : CAUSE_LABELS[r.cause]),
+            },
             { key: 'station', header: 'Police station', render: (r) => r.policeStation },
             {
               key: 'intimated',
@@ -85,6 +92,21 @@ function MlcRegisterPage() {
                     label={r.intimationOverdue ? 'Overdue' : 'Not yet'}
                   />
                 ),
+            },
+            {
+              key: 'report',
+              header: 'Examination report',
+              width: 190,
+              render: (r) =>
+                r.reportForwardedAt ? (
+                  `Sent ${formatDateTime(r.reportForwardedAt)}`
+                ) : r.reportDueAt ? (
+                  <StatusBadge
+                    status="Pending"
+                    tone={r.reportOverdue ? 'danger' : 'warning'}
+                    label={r.reportOverdue ? 'Overdue' : `Due ${formatDateTime(r.reportDueAt)}`}
+                  />
+                ) : null,
             },
             { key: 'doctor', header: 'Doctor', render: (r) => r.doctorName },
             {
