@@ -13,6 +13,12 @@ namespace HyFib.HealthCare360.Platform.Networking;
 /// <summary>The hospital CA as <see cref="LanCertificateManager.ExportCa"/> wrote it: a password-protected PKCS#12 file.</summary>
 public sealed record ExportedHospitalCa(byte[] Pkcs12, string Fingerprint, DateTimeOffset ExpiresAt);
 
+/// <summary>A hospital CA <see cref="LanCertificateManager.NewCa"/> made, and the one it replaced.</summary>
+/// <param name="PreviousKeptAs">The file name the CA it replaced is kept under; null when there was none.</param>
+/// <param name="PreviousFingerprint">The fingerprint of the CA it replaced; null when there was none, or it could not be opened.</param>
+/// <param name="PreviousExpiresAt">When the CA it replaced expires.</param>
+public sealed record NewHospitalCa(string Fingerprint, DateTimeOffset ExpiresAt, string? PreviousKeptAs, string? PreviousFingerprint, DateTimeOffset? PreviousExpiresAt);
+
 /// <summary>What <see cref="LanCertificateManager.ImportCa"/> did.</summary>
 /// <param name="Changed">False when this server already had that CA.</param>
 /// <param name="PreviousKeptAs">The file name a different CA that was here was kept under.</param>
@@ -27,6 +33,10 @@ public sealed record ImportedHospitalCa(string Fingerprint, DateTimeOffset Expir
 /// The CA can be exported, with a password, and imported on a warm standby Server Node or on replacement hardware
 /// (<see cref="ExportCa"/>, <see cref="ImportCa"/>; SRS DED-20). That server then issues its own server certificate from the
 /// same CA, so workstations and lab agents trust it as they trusted the first, and find it by the CA it announces.
+/// </para>
+/// <para>
+/// The CA is never renewed by itself: a new one (<see cref="NewCa"/>) means setting every device up again
+/// (docs/deployment/CA-ROLLOVER.md). A server whose CA has expired does not start, and says what to do.
 /// </para>
 /// </summary>
 public sealed class LanCertificateManager : IDisposable
@@ -142,7 +152,20 @@ public sealed class LanCertificateManager : IDisposable
 
         lock (_gate)
         {
-            _ca = LoadOrCreateCa();
+            var ca = LoadOrCreateCa();
+            var caExpires = new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+            if (caExpires <= _time.GetUtcNow())
+            {
+                // Nothing can be issued from it, and no device would trust what was: say so, rather than fail to issue.
+                ca.Dispose();
+                throw new InvalidOperationException(
+                    $"HC360 cannot start: the hospital CA expired on {caExpires:dd MMM yyyy}, so no workstation, tablet, HC360 Desktop or lab "
+                    + "agent would trust a certificate it issued. Make a new CA with 'HyFib.HealthCare360.Server.exe certificates new-ca' "
+                    + "and set every device up again, as docs/deployment/CA-ROLLOVER.md says, or give the server a certificate of the "
+                    + "hospital's own (Network:CertificatePath).");
+            }
+
+            _ca = ca;
             CaFingerprint = Convert.ToHexString(SHA256.HashData(_ca.RawData));
             CaPem = _ca.ExportCertificatePem();
             File.WriteAllText(Path.Combine(_directories.Certificates, CaPublicFile), CaPem);
@@ -183,6 +206,12 @@ public sealed class LanCertificateManager : IDisposable
 
         lock (_gate)
         {
+            // Nothing can be issued from a CA that has expired since the server started: System health says so.
+            if (_ca.NotAfter.ToUniversalTime() <= _time.GetUtcNow().UtcDateTime)
+            {
+                return false;
+            }
+
             // In the CA's last weeks a certificate issued again would expire with the CA, as this one does.
             var needsRenewal = _server is null
                 || (_server.NotAfter.ToUniversalTime() - _time.GetUtcNow().UtcDateTime < RenewBefore && IssuedUntil(_ca) > _server.NotAfter.ToUniversalTime())
@@ -207,20 +236,33 @@ public sealed class LanCertificateManager : IDisposable
             return X509CertificateLoader.LoadPkcs12(_protector.Unprotect(File.ReadAllBytes(path)), null);
         }
 
-        using var key = RSA.Create(3072);
-        var request = new CertificateRequest(
-            $"CN=HyFib HealthCare360 Hospital CA ({Environment.MachineName}), O=HyFib HealthCare360, OU={_options.DefaultFacilityName}",
-            key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
-        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
-        request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
-
-        var now = _time.GetUtcNow();
-        using var ca = request.CreateSelfSigned(now.AddDays(-1), now.AddYears(10));
+        using var ca = CreateCa(_options.DefaultFacilityName, _time.GetUtcNow());
         var pfx = ca.Export(X509ContentType.Pkcs12);
         WriteProtected(path, pfx);
         _logger.LogInformation("Created hospital CA certificate (valid until {Expiry:u})", ca.NotAfter);
         return X509CertificateLoader.LoadPkcs12(pfx, null);
+    }
+
+    /// <summary>
+    /// A new hospital CA with its private key: RSA 3072, valid for ten years, able to issue only the server certificates
+    /// under it. Its name carries the day it was made, so a device that trusts two (during a rollover) tells them apart; the
+    /// facility's name may hold a comma or other characters a distinguished name escapes.
+    /// </summary>
+    private static X509Certificate2 CreateCa(string facilityName, DateTimeOffset now)
+    {
+        var name = new X500DistinguishedNameBuilder();
+        name.AddOrganizationalUnitName(facilityName);
+        name.AddOrganizationName("HyFib HealthCare360");
+        name.AddCommonName($"HyFib HealthCare360 Hospital CA ({Environment.MachineName} {now.UtcDateTime:yyyy-MM-dd})");
+
+        using var key = RSA.Create(3072);
+        var request = new CertificateRequest(name.Build(), key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+        request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+
+        using var ca = request.CreateSelfSigned(now.AddDays(-1), now.AddYears(10));
+        return X509CertificateLoader.LoadPkcs12(ca.Export(X509ContentType.Pkcs12), null, X509KeyStorageFlags.Exportable);
     }
 
     private X509Certificate2 LoadOrCreateServerCertificate(X509Certificate2 ca, bool force)
@@ -319,6 +361,16 @@ public sealed class LanCertificateManager : IDisposable
             .Distinct();
 
     /// <summary>
+    /// This server's hospital CA, from the public certificate it hands out (no secret, so it opens without administrator
+    /// rights); null before the server first starts.
+    /// </summary>
+    public static X509Certificate2? PublicCa(DataDirectories directories)
+    {
+        var path = Path.Combine(directories.Certificates, CaPublicFile);
+        return File.Exists(path) ? X509Certificate2.CreateFromPem(File.ReadAllText(path)) : null;
+    }
+
+    /// <summary>
     /// This server's hospital CA, with its private key, as a PKCS#12 file encrypted with <paramref name="password"/>
     /// (AES-256-CBC, PBKDF2-SHA256), for a warm standby or replacement hardware to import with <see cref="ImportCa"/>.
     /// Whoever has the file and its password can issue certificates workstations trust: it is kept like the backup
@@ -383,20 +435,53 @@ public sealed class LanCertificateManager : IDisposable
 
         var fingerprint = Convert.ToHexString(SHA256.HashData(ca.RawData));
         var protector = dataProtection.CreateProtector(ProtectorPurpose);
+        var path = Path.Combine(directories.Certificates, CaFile);
+        if (File.Exists(path) && SameCertificate(path, protector, ca))
+        {
+            File.WriteAllText(Path.Combine(directories.Certificates, CaPublicFile), ca.ExportCertificatePem());
+            return new ImportedHospitalCa(fingerprint, expires, Changed: false, PreviousKeptAs: null);
+        }
+
+        return new ImportedHospitalCa(fingerprint, expires, Changed: true, Install(directories, protector, ca, now));
+    }
+
+    /// <summary>
+    /// Makes a new hospital CA in place of this server's: for a CA in its last year, or one whose key may have been seen by
+    /// someone it should not have been (docs/deployment/CA-ROLLOVER.md). The CA it replaces is kept under a new name
+    /// (<c>hospital-ca.pfx.protected.replaced-&lt;time&gt;</c>), never deleted, so it can be put back, and the server
+    /// certificate it issued is removed: the server issues a new one from the new CA when it next starts. Every workstation,
+    /// tablet, HC360 Desktop and lab agent trusts the CA it replaces, so each must be set up again. Run with the HC360
+    /// service stopped, or restart it after.
+    /// </summary>
+    public static NewHospitalCa NewCa(DataDirectories directories, IDataProtectionProvider dataProtection, string facilityName, DateTimeOffset now)
+    {
+        var protector = dataProtection.CreateProtector(ProtectorPurpose);
+        var path = Path.Combine(directories.Certificates, CaFile);
+        var previous = File.Exists(path) ? Open(path, protector) : null;
+        try
+        {
+            using var ca = CreateCa(facilityName, now);
+            var keptAs = Install(directories, protector, ca, now);
+            return new NewHospitalCa(
+                Convert.ToHexString(SHA256.HashData(ca.RawData)), new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero), keptAs,
+                previous is null ? null : Convert.ToHexString(SHA256.HashData(previous.RawData)),
+                previous is null ? null : new DateTimeOffset(previous.NotAfter.ToUniversalTime(), TimeSpan.Zero));
+        }
+        finally
+        {
+            previous?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Puts <paramref name="ca"/> in place of this server's CA, and removes the server certificate the CA it replaces issued.
+    /// Returns the file name that CA is kept under, null when there was none.
+    /// </summary>
+    private static string? Install(DataDirectories directories, IDataProtector protector, X509Certificate2 ca, DateTimeOffset now)
+    {
         Directory.CreateDirectory(directories.Certificates);
         var path = Path.Combine(directories.Certificates, CaFile);
-        var publicPath = Path.Combine(directories.Certificates, CaPublicFile);
-        string? keptAs = null;
-        if (File.Exists(path))
-        {
-            if (SameCertificate(path, protector, ca))
-            {
-                File.WriteAllText(publicPath, ca.ExportCertificatePem());
-                return new ImportedHospitalCa(fingerprint, expires, Changed: false, PreviousKeptAs: null);
-            }
-
-            keptAs = $"{path}.replaced-{now.UtcDateTime:yyyyMMdd-HHmmss}";
-        }
+        var keptAs = File.Exists(path) ? $"{path}.replaced-{now.UtcDateTime:yyyyMMdd-HHmmss}" : null;
 
         // The new CA is on disk before the old one is moved aside, and the old one goes back if the new one cannot take its
         // place, so the server never starts without a CA and makes a new one that no workstation trusts.
@@ -433,21 +518,27 @@ public sealed class LanCertificateManager : IDisposable
 
         File.Delete(Path.Combine(directories.Certificates, ServerFile));
         File.Delete(Path.Combine(directories.Certificates, ServerMetaFile));
-        File.WriteAllText(publicPath, ca.ExportCertificatePem());
-        return new ImportedHospitalCa(fingerprint, expires, Changed: true, keptAs is null ? null : Path.GetFileName(keptAs));
+        File.WriteAllText(Path.Combine(directories.Certificates, CaPublicFile), ca.ExportCertificatePem());
+        return keptAs is null ? null : Path.GetFileName(keptAs);
     }
 
     /// <summary>Whether the CA at <paramref name="path"/> is <paramref name="ca"/>; one this machine cannot open is not.</summary>
     private static bool SameCertificate(string path, IDataProtector protector, X509Certificate2 ca)
     {
+        using var existing = Open(path, protector);
+        return existing is not null && existing.RawData.AsSpan().SequenceEqual(ca.RawData);
+    }
+
+    /// <summary>The CA at <paramref name="path"/>; null when this machine cannot open it.</summary>
+    private static X509Certificate2? Open(string path, IDataProtector protector)
+    {
         try
         {
-            using var existing = X509CertificateLoader.LoadPkcs12(protector.Unprotect(File.ReadAllBytes(path)), null);
-            return existing.RawData.AsSpan().SequenceEqual(ca.RawData);
+            return X509CertificateLoader.LoadPkcs12(protector.Unprotect(File.ReadAllBytes(path)), null);
         }
         catch (CryptographicException)
         {
-            return false;
+            return null;
         }
     }
 

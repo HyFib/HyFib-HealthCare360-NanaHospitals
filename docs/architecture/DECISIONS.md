@@ -34,7 +34,7 @@ Each entry records a decision, its context, and the consequences. New decisions 
 **Status:** Accepted
 **Context:** Traffic crosses shared WiFi. Public certificates need a public DNS name and internet access.
 **Decision:** On first start the server creates a private CA and a server certificate (SANs: host, host.local, IPs). The Desktop pins the SHA-256 fingerprint during enrolment. Browsers or tablets install the CA from `/api/v1/system/ca-certificate`. An administrator may supply a corporate or public certificate instead.
-**Consequences:** Encryption and server authentication work with no internet dependency. The certificate must be renewed (dashboard warning at 30 days).
+**Consequences:** Encryption and server authentication work with no internet dependency. The server certificate renews itself 30 days before it expires. The CA, valid for ten years, never renews itself: every device trusts it, so a new one (`certificates new-ca`) means setting each device up again, and System health warns a year ahead (critical in the last 90 days). [CA-ROLLOVER.md](../deployment/CA-ROLLOVER.md) is the procedure, and `certificates probe` checks the served certificate from another machine. A rollover without setting devices up again (the next CA announced ahead, signed by the current one) is a later change.
 
 ## ADR-006 — Access tokens + rotating refresh cookies, server-side permissions
 **Status:** Accepted

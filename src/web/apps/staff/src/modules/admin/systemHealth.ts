@@ -2,19 +2,32 @@ import type { IntegrationHealthSummary, ServerNodeHealth, SystemHealthReport, Cl
 
 export type HealthTone = 'ok' | 'warn' | 'bad';
 
-/** System health starts to warn this long before a certificate expires, as the server does. */
-const CERTIFICATE_WARNING_DAYS = 30;
+/** When the server's warning about a certificate starts (amber) and turns critical (red), in days, as the server decides. */
+export interface ExpiryPeriods {
+  warnDays: number;
+  urgentDays: number;
+}
 
-/** How worrying a certificate's expiry is: red once expired, amber within the warning window, nothing before. */
-export function expiryTone(expiresAt: string | null, now: Date = new Date()): HealthTone | undefined {
+/** The server certificate: issued again by itself 30 days ahead, so one left with under 14 days was not. */
+export const SERVER_CERTIFICATE: ExpiryPeriods = { warnDays: 30, urgentDays: 14 };
+
+/** The hospital CA: every device trusts it, so replacing it is planned a year ahead, and urgent in its last 90 days. */
+export const HOSPITAL_CA: ExpiryPeriods = { warnDays: 365, urgentDays: 90 };
+
+/** How worrying a certificate's expiry is: red once expired or urgent, amber within the warning period, nothing before. */
+export function expiryTone(
+  expiresAt: string | null,
+  periods: ExpiryPeriods,
+  now: Date = new Date(),
+): HealthTone | undefined {
   if (!expiresAt) {
     return undefined;
   }
-  const left = new Date(expiresAt).getTime() - now.getTime();
-  if (left <= 0) {
+  const daysLeft = (new Date(expiresAt).getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
+  if (daysLeft < periods.urgentDays) {
     return 'bad';
   }
-  return left < CERTIFICATE_WARNING_DAYS * 24 * 60 * 60 * 1000 ? 'warn' : undefined;
+  return daysLeft < periods.warnDays ? 'warn' : undefined;
 }
 
 /** The tone of one integration's row: only those switched on can be in trouble. */
