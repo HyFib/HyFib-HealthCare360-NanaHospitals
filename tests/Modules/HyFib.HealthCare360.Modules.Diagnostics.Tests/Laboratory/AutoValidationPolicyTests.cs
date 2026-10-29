@@ -37,6 +37,16 @@ public sealed class AutoValidationPolicyTests
     }
 
     [Fact]
+    public void A_result_read_against_both_the_male_and_the_female_interval_is_verified_by_a_person()
+    {
+        var decision = AutoValidationPolicy.Evaluate(Clean with { ReadAgainstBothSexes = true });
+
+        decision.Approved.ShouldBeFalse();
+        decision.Reasons.ShouldContain(
+            "The patient is recorded as neither male nor female, so the result was read against both the male and the female interval.");
+    }
+
+    [Fact]
     public void Missing_or_failed_QC_blocks_auto_validation() =>
         AutoValidationPolicy.Evaluate(Clean with { QcAcceptedToday = false }).Approved.ShouldBeFalse();
 

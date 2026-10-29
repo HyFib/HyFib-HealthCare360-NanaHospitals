@@ -8,7 +8,8 @@ public sealed record AutoValidationInput(
     bool InstrumentAllowsAutoValidation,
     bool QcAcceptedToday,
     DeltaOutcome Delta,
-    string? InstrumentFlags);
+    string? InstrumentFlags,
+    bool ReadAgainstBothSexes = false);
 
 public sealed record AutoValidationDecision(bool Approved, IReadOnlyList<string> Reasons);
 
@@ -16,7 +17,8 @@ public sealed record AutoValidationDecision(bool Approved, IReadOnlyList<string>
 /// Auto-validation rules (LIS-04, pure; unit-tested). An analyser result is verified without a pathologist only if
 /// every condition holds: it is numeric, flagged Normal against an applicable interval, today's QC for the assay is
 /// accepted, the delta check passed, and the analyser raised no flag. Critical, abnormal or unflaggable results always
-/// wait for a person. The reasons explain to the pathologist why a result was held back.
+/// wait for a person, and so does a result read against both the male and the female interval (a patient recorded as
+/// neither). The reasons explain to the pathologist why a result was held back.
 /// </summary>
 internal static class AutoValidationPolicy
 {
@@ -42,6 +44,11 @@ internal static class AutoValidationPolicy
         if (input.Flag != ResultFlag.Normal)
         {
             reasons.Add(input.Flag is { } flag ? $"The result is flagged {flag}." : "No reference interval applies to this patient.");
+        }
+
+        if (input.ReadAgainstBothSexes)
+        {
+            reasons.Add("The patient is recorded as neither male nor female, so the result was read against both the male and the female interval.");
         }
 
         if (!input.QcAcceptedToday)

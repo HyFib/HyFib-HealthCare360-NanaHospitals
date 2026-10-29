@@ -275,11 +275,11 @@ public sealed class LabVerificationTests(HospitalServer server)
     private static Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
         admin.SaveSettingAsync("lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
 
-    internal static async Task<PatientCreated> RegisterPatientAsync(HospitalServer server)
+    internal static async Task<PatientCreated> RegisterPatientAsync(HospitalServer server, Gender gender = Gender.Male)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         return await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: TestPatients.FirstName("Suresh"), MiddleName: null, LastName: "Verify" + Letters(8), Gender: Gender.Male,
+            Title: gender == Gender.Male ? "Mr." : null, FirstName: TestPatients.FirstName("Suresh"), MiddleName: null, LastName: "Verify" + Letters(8), Gender: gender,
             DateOfBirth: new DateOnly(1960, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null,
             Phone: "9" + Digits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,

@@ -21,6 +21,48 @@ public sealed class ResultInterpreterTests
     public void Numeric_values_are_flagged_with_exclusive_limits(string value, ResultFlag expected) =>
         ResultInterpreter.Interpret(Numeric(), Potassium, value).Value.Flag.ShouldBe(expected);
 
+    [Theory]
+    [InlineData("5.0", ResultFlag.CriticalLow)]
+    [InlineData("11.0", ResultFlag.Low)]
+    [InlineData("12.5", ResultFlag.Normal)]
+    [InlineData("16.5", ResultFlag.Normal)]
+    [InlineData("17.5", ResultFlag.High)]
+    [InlineData("21.0", ResultFlag.CriticalHigh)]
+    public void A_transgender_patients_haemoglobin_is_flagged_against_both_intervals(string value, ResultFlag expected)
+    {
+        var both = ReferenceRangeSelector.Select(SeededRanges("HB"), SharedKernel.Gender.Other, Years(30), decimals: 1);
+
+        var result = ResultInterpreter.Interpret(Numeric(name: "Haemoglobin", unit: "g/dL"), both, value).Value;
+
+        result.Flag.ShouldBe(expected);
+        result.ReferenceText.ShouldBe("Male 13.0 - 17.0; Female 12.0 - 15.0");
+    }
+
+    [Theory]
+    [InlineData("Negative", ResultFlag.Normal)]
+    [InlineData("Trace", ResultFlag.Normal)]
+    [InlineData("Positive", ResultFlag.Abnormal)]
+    [InlineData("Strongly positive", ResultFlag.Critical)]
+    public void A_transgender_patients_answer_is_abnormal_only_when_abnormal_for_both_sexes(string value, ResultFlag expected)
+    {
+        // As with a number: "Trace", normal for a woman, is not flagged; an answer critical for either sex is critical.
+        var male = Answers(["Negative"], ["Strongly positive"], SharedKernel.Gender.Male);
+        var female = Answers(["Negative", "Trace"], gender: SharedKernel.Gender.Female);
+        var both = ReferenceRangeSelector.Select([male, female], SharedKernel.Gender.Other, Years(30));
+
+        ResultInterpreter.Interpret(Options("Negative", "Trace", "Positive", "Strongly positive"), both, value).Value.Flag.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void An_answer_left_unflagged_for_one_sex_is_left_unflagged_for_a_transgender_patient()
+    {
+        var male = Answers([], gender: SharedKernel.Gender.Male, text: "See the pathologist's remarks");
+        var female = Answers(["Negative"], gender: SharedKernel.Gender.Female);
+        var both = ReferenceRangeSelector.Select([male, female], SharedKernel.Gender.Other, Years(30));
+
+        ResultInterpreter.Interpret(Options("Negative", "Positive"), both, "Positive").Value.Flag.ShouldBeNull();
+    }
+
     [Fact]
     public void Flag_uses_the_unrounded_value_while_the_report_shows_the_rounded_one()
     {

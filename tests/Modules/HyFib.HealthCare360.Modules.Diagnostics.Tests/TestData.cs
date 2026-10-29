@@ -26,8 +26,10 @@ internal static class TestData
             Text = text,
         };
 
-    public static ReferenceRange Answers(string[] normal, string[]? critical = null) => new()
+    public static ReferenceRange Answers(string[] normal, string[]? critical = null, Gender? gender = null, string? text = null) => new()
     {
+        Gender = gender,
+        Text = text,
         NormalValues = [.. normal],
         CriticalValues = [.. critical ?? []],
     };
