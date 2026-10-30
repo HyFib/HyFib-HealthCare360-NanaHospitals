@@ -218,6 +218,14 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
             return Error.Rule("prescription.quantity_missing", $"Enter the quantity to dispense for {missing.DrugName}.");
         }
 
+        // Every physician prescribes by generic name (Indian Medical Council (Professional Conduct, Etiquette and Ethics)
+        // Regulations 2002, reg. 1.5, as amended in 2016), and the printed copy names each medicine by it.
+        if (Items.FirstOrDefault(i => string.IsNullOrWhiteSpace(i.GenericName)) is { } unnamed)
+        {
+            return Error.Rule("prescription.generic_missing",
+                $"Enter the generic name of {unnamed.DrugName}: a prescription names every medicine by its generic name.");
+        }
+
         if (HasControlledDrugs && !signature.ControlledDrugsConfirmed)
         {
             return Error.Rule("prescription.controlled_confirmation_required",

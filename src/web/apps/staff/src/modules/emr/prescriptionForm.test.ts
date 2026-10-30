@@ -9,6 +9,8 @@ import {
   effectiveQuantity,
   emptyLine,
   fromSavedItem,
+  medicineNames,
+  namedByItsGeneric,
   rxFormSchema,
   toItemRequest,
   toRequestBody,
@@ -57,6 +59,46 @@ describe('validation', () => {
     const custom = { ...paracetamol, frequency: 'Custom' as const, customFrequency: '', quantity: 6 };
     const result = rxFormSchema.safeParse({ lines: [custom], advice: '', notes: '', refillsAllowed: 0 });
     expect(result.error?.issues.map((issue) => issue.path.join('.'))).toContain('lines.0.customFrequency');
+  });
+
+  it('asks for the generic name of every medicine, as the server does before signing', () => {
+    const typed = { ...paracetamol, genericName: '  ' };
+    const result = rxFormSchema.safeParse({ lines: [typed], advice: '', notes: '', refillsAllowed: 0 });
+    expect(result.error?.issues.find((issue) => issue.path.join('.') === 'lines.0.genericName')?.message).toBe(
+      'Enter the generic name: the prescription names every medicine by it.',
+    );
+  });
+});
+
+describe('names', () => {
+  it('names a medicine by its generic name in capitals, then by the product chosen, as the prescription prints it', () => {
+    expect(
+      medicineNames({ drugName: 'Dolo 650', genericName: 'Paracetamol', strength: '650 mg', dosageForm: 'Tablet' }),
+    ).toEqual({
+      name: 'PARACETAMOL 650 mg',
+      detail: 'Dolo 650 · Tablet',
+    });
+    expect(
+      medicineNames({
+        drugName: 'Metformin',
+        genericName: 'Metformin hydrochloride',
+        strength: '500 mg',
+        dosageForm: 'Tablet',
+      }),
+    ).toEqual({ name: 'METFORMIN HYDROCHLORIDE 500 mg', detail: 'Tablet' });
+    expect(
+      medicineNames({ drugName: 'Ceftriaxone', genericName: null, strength: '1 g', dosageForm: 'Injection' }),
+    ).toEqual({
+      name: 'Ceftriaxone 1 g',
+      detail: null,
+    });
+  });
+
+  it('takes a product as its generic only when one name begins the other word for word', () => {
+    expect(namedByItsGeneric('Paracetamol 650 mg Tablet', 'Paracetamol')).toBe(true);
+    expect(namedByItsGeneric('tramadol', 'TRAMADOL')).toBe(true);
+    expect(namedByItsGeneric('Pan', 'Pantoprazole')).toBe(false);
+    expect(namedByItsGeneric('Augmentin 625 Duo', 'Amoxicillin + Clavulanic acid')).toBe(false);
   });
 });
 

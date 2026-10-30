@@ -16,7 +16,7 @@ import { useFormat } from '@/i18n/useFormat';
 import { isGuid } from '@/lib/ids';
 import type { PortalPrescriptionDetail } from '@/lib/types';
 import { prescriptionPdfPath, prescriptionQueries } from '@/modules/prescriptions/api';
-import { frequencyText, medicineName, RX_STATUS } from '@/modules/prescriptions/labels';
+import { frequencyText, medicineNames, RX_STATUS } from '@/modules/prescriptions/labels';
 import { prescriptionDocument } from '@/modules/prescriptions/print';
 import { RefillSheet } from '@/modules/prescriptions/RefillSheet';
 import { verificationPageUrl } from '@/modules/verify/verification';
@@ -157,32 +157,35 @@ function PrescriptionDetail({ rx, back }: { rx: PortalPrescriptionDetail; back: 
 
       <ReportCard title={t('rx.medicines')}>
         <ul className={styles.lines}>
-          {rx.lines.map((line, index) => (
-            <li key={`${line.drugName}-${index}`} className={styles.line}>
-              <span className={styles.lineName}>{medicineName(line)}</span>
-              {line.genericName && <span className={styles.generic}>{line.genericName}</span>}
-              <div className={styles.how}>
-                <span>
-                  <span className={styles.label}>{t('rx.dose')}</span>
-                  <span className={styles.strong}>{line.dose}</span>
-                </span>
-                <span>
-                  <span className={styles.label}>{t('rx.howOften')}</span>
-                  <span className={styles.strong}>{frequencyText(line, language)}</span>
-                </span>
-                <span>
-                  <span className={styles.label}>{t('rx.forDays', { count: line.durationDays })}</span>
-                  <span className={styles.strong}>{t('rx.quantity', { count: f.number(line.quantity) })}</span>
-                </span>
-              </div>
-              {line.instructions && (
-                <span>
-                  <span className={styles.label}>{t('rx.instructions')}</span>
-                  {line.instructions}
-                </span>
-              )}
-            </li>
-          ))}
+          {rx.lines.map((line, index) => {
+            const { name, detail } = medicineNames(line);
+            return (
+              <li key={`${line.drugName}-${index}`} className={styles.line}>
+                <span className={styles.lineName}>{name}</span>
+                {detail && <span className={styles.generic}>{detail}</span>}
+                <div className={styles.how}>
+                  <span>
+                    <span className={styles.label}>{t('rx.dose')}</span>
+                    <span className={styles.strong}>{line.dose}</span>
+                  </span>
+                  <span>
+                    <span className={styles.label}>{t('rx.howOften')}</span>
+                    <span className={styles.strong}>{frequencyText(line, language)}</span>
+                  </span>
+                  <span>
+                    <span className={styles.label}>{t('rx.forDays', { count: line.durationDays })}</span>
+                    <span className={styles.strong}>{t('rx.quantity', { count: f.number(line.quantity) })}</span>
+                  </span>
+                </div>
+                {line.instructions && (
+                  <span>
+                    <span className={styles.label}>{t('rx.instructions')}</span>
+                    {line.instructions}
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </ReportCard>
 

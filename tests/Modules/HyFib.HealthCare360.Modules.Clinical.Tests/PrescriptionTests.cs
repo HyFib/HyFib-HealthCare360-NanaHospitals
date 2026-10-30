@@ -78,6 +78,23 @@ public sealed class PrescriptionTests
         error.Message.ShouldContain("Dolo 650");
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void A_medicine_without_its_generic_name_cannot_be_signed(string? generic)
+    {
+        var typed = Item("Crocin Advance");
+        typed.GenericName = generic;
+        var prescription = Draft(Item(), typed);
+
+        var error = prescription.Sign(Signature(), Now).Error!;
+
+        error.Code.ShouldBe("prescription.generic_missing");
+        error.Message.ShouldContain("Crocin Advance");
+        prescription.Status.ShouldBe(PrescriptionStatus.Draft);
+    }
+
     [Fact]
     public void Controlled_drugs_need_explicit_confirmation()
     {

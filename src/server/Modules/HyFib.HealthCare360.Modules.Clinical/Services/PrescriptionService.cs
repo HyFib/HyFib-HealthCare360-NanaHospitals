@@ -464,7 +464,8 @@ public sealed class PrescriptionService(
     /// <summary>
     /// Whether a line is a controlled drug (Schedule H1/X, NDPS: the prescriber's confirmation and the controlled-drug
     /// register) is the drug master's to say when the line names one of its drugs, as the drug picker shows it; what the
-    /// client sent can only add the care, never take it away. A line typed in keeps what it says.
+    /// client sent can only add the care, never take it away. So is the generic name the prescription names the medicine
+    /// by, when the master has one. A line typed in keeps what it says.
     /// </summary>
     private async Task<List<PrescriptionItem>> FromDrugMasterAsync(IEnumerable<PrescriptionItem> lines, CancellationToken ct)
     {
@@ -476,13 +477,23 @@ public sealed class PrescriptionService(
         }
 
         var master = await db.Set<Item>().AsNoTracking().Where(i => drugIds.Contains(i.Id))
-            .Select(i => new { i.Id, i.Schedule, i.IsControlled }).ToDictionaryAsync(i => i.Id, ct);
+            .Select(i => new { i.Id, i.Schedule, i.IsControlled, i.GenericName }).ToDictionaryAsync(i => i.Id, ct);
         foreach (var item in items)
         {
-            if (item.DrugItemId is { } id && master.TryGetValue(id, out var drug) && Item.NeedsRegister(drug.Schedule, drug.IsControlled))
+            if (item.DrugItemId is not { } id || !master.TryGetValue(id, out var drug))
+            {
+                continue;
+            }
+
+            if (Item.NeedsRegister(drug.Schedule, drug.IsControlled))
             {
                 item.IsControlledDrug = true;
                 item.ControlledSchedule = drug.Schedule == DrugSchedule.X ? "X" : "H1";
+            }
+
+            if (!string.IsNullOrWhiteSpace(drug.GenericName))
+            {
+                item.GenericName = drug.GenericName.Trim();
             }
         }
 

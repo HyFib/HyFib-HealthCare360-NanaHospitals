@@ -189,6 +189,8 @@ function LineRow({
   const styles = useStyles();
   const [open, setOpen] = useState(false);
   const errors = form.formState.errors.lines?.[index];
+  // The generic name is in the details: they open when it is missing, so the doctor sees why the line is refused.
+  const showDetails = open || Boolean(errors?.genericName);
   const auto = autoQuantity(line);
   const name = line.drugName.trim() || `Medicine ${index + 1}`;
 
@@ -349,15 +351,15 @@ function LineRow({
         />
         <span className={styles.actions}>
           <Tooltip
-            content={open ? 'Hide details' : 'Generic, strength, form, route, Schedule H1/X'}
+            content={showDetails ? 'Hide details' : 'Generic name, strength, form, route, Schedule H1/X'}
             relationship="label"
           >
             <Button
               size="small"
               appearance="subtle"
-              icon={open ? <ChevronUpRegular /> : <ChevronDownRegular />}
-              onClick={() => setOpen((v) => !v)}
-              aria-expanded={open}
+              icon={showDetails ? <ChevronUpRegular /> : <ChevronDownRegular />}
+              onClick={() => setOpen(!showDetails)}
+              aria-expanded={showDetails}
             />
           </Tooltip>
           {canRemove && (
@@ -367,13 +369,18 @@ function LineRow({
           )}
         </span>
       </div>
-      {open && (
+      {showDetails && (
         <div className={styles.details}>
           <Controller
             control={control}
             name={`lines.${index}.genericName`}
             render={({ field }) => (
-              <Field label="Generic / composition">
+              <Field
+                label="Generic name / composition"
+                required
+                validationMessage={errors?.genericName?.message}
+                validationState={errors?.genericName ? 'error' : 'none'}
+              >
                 <Input {...field} maxLength={300} placeholder="Paracetamol" />
               </Field>
             )}
@@ -460,7 +467,7 @@ function LineRow({
       {line.drugName.trim() && line.dose.trim() && (
         <div className={styles.preview}>
           <Caption1>
-            {[line.genericName, line.strength].filter((v) => v.trim()).join(' ')}
+            {[line.genericName.trim().toUpperCase(), line.strength].filter((v) => v.trim()).join(' ')}
             {line.genericName.trim() || line.strength.trim() ? ' — ' : ''}
             {directionsText({
               dose: line.dose,

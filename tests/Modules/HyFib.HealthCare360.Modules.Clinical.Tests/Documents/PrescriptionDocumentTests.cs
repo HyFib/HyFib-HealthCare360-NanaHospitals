@@ -44,8 +44,8 @@ public sealed class PrescriptionDocumentTests
     {
         var body = PrescriptionDocument.Body(Model(), null, null).ToString();
 
-        body.ShouldContain("<div class=\"drug\">Metformin 500 mg</div>");
-        body.ShouldContain("<div class=\"small\">Metformin hydrochloride · Tablet</div>");
+        body.ShouldContain("<div class=\"drug\">METFORMIN HYDROCHLORIDE 500 mg</div>", Case.Sensitive);
+        body.ShouldContain("<div class=\"small\">Tablet</div>");
         body.ShouldContain("<div>1 tab · Twice a day</div>");
         body.ShouldContain("<div class=\"hindi\" lang=\"hi\">1 tab · दिन में दो बार</div>");
         body.ShouldContain("<div class=\"small\">After food</div>");
@@ -67,8 +67,8 @@ public sealed class PrescriptionDocumentTests
         html.ShouldContain("src: url(data:font/woff2;base64,");
         html.ShouldContain("font-family: \"Segoe UI\", \"HC360 Devanagari\", \"HC360 Tamil\", \"Nirmala UI\"");
 
-        // Medicine names, doses and codes stay as the doctor wrote them.
-        html.ShouldContain("<div class=\"drug\">Metformin 500 mg</div>");
+        // Medicine names, doses and codes are not translated.
+        html.ShouldContain("<div class=\"drug\">METFORMIN HYDROCHLORIDE 500 mg</div>", Case.Sensitive);
         html.ShouldContain("Type 2 diabetes mellitus (E11.9)");
     }
 
@@ -111,11 +111,39 @@ public sealed class PrescriptionDocumentTests
     {
         var body = PrescriptionDocument.Body(Model(), null, null).ToString();
 
-        body.ShouldContain("<div class=\"drug\">Tramadol 50 mg<span class=\"controlled\">Schedule H1/X</span></div>");
+        body.ShouldContain("<div class=\"drug\">TRAMADOL 50 mg<span class=\"controlled\">Schedule H1/X</span></div>", Case.Sensitive);
         body.ShouldContain("<div class=\"drug\">Ceftriaxone 1 g</div>");
         body.ShouldContain("<div>1 g · Immediately, once · IV</div>");
         body.ShouldNotContain("· Oral");
     }
+
+    [Fact]
+    public void Each_medicine_is_named_by_its_generic_name_in_capitals_and_then_by_the_product_chosen()
+    {
+        var model = Model();
+        var dolo = model.Lines[0] with { Sequence = 4, DrugName = "Dolo 650", GenericName = "Paracetamol", Strength = "650 mg" };
+        var body = PrescriptionDocument.Body(model with { Lines = [.. model.Lines, dolo] }, null, null).ToString();
+
+        // A brand: the generic name first, in capitals, then the brand and its form.
+        body.ShouldContain("<div class=\"drug\">PARACETAMOL 650 mg</div>", Case.Sensitive);
+        body.ShouldContain("<div class=\"small\">Dolo 650 · Tablet</div>", Case.Sensitive);
+
+        // A product named by its generic ("Metformin", for metformin hydrochloride) is not named twice.
+        body.ShouldNotContain(">Metformin ·");
+
+        // A line signed before a generic name was asked for prints as it did.
+        body.ShouldContain("<div class=\"drug\">Ceftriaxone 1 g</div>", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("Paracetamol 650 mg Tablet", "Paracetamol", true)]
+    [InlineData("Metformin", "Metformin hydrochloride", true)]
+    [InlineData("tramadol", "TRAMADOL", true)]
+    [InlineData("Dolo 650", "Paracetamol", false)]
+    [InlineData("Pan", "Pantoprazole", false)]
+    [InlineData("Augmentin 625 Duo", "Amoxicillin + Clavulanic acid", false)]
+    public void A_product_is_taken_as_its_generic_when_one_name_begins_the_other_word_for_word(string product, string generic, bool same) =>
+        PrescriptionDocument.NamedByItsGeneric(product, generic).ShouldBe(same);
 
     [Fact]
     public void A_stat_dose_reads_once_and_quantities_print_without_trailing_zeros()
@@ -294,7 +322,11 @@ public sealed class PrescriptionDocumentTests
             Prescriber = model.Prescriber! with { DisplayName = Hostile, Qualification = Hostile },
             Diagnoses = [Hostile],
             KnownAllergies = [Hostile],
-            Lines = [model.Lines[0] with { DrugName = Hostile, Dose = Hostile, Instructions = Hostile, FrequencyHindi = Hostile }],
+            Lines =
+            [
+                model.Lines[0] with { DrugName = Hostile, Dose = Hostile, Instructions = Hostile, FrequencyHindi = Hostile },
+                model.Lines[1] with { GenericName = Hostile },
+            ],
             Advice = Hostile,
             FollowUpAdvice = Hostile,
         };
@@ -302,8 +334,9 @@ public sealed class PrescriptionDocumentTests
         var document = PrescriptionDocument.Build(model, null, null);
         var html = document.ToHtml();
 
-        html.ShouldNotContain("<script");
+        html.ShouldNotContain("<script", Case.Insensitive);
         html.ShouldNotContain("<b>");
+        html.ShouldContain("&lt;SCRIPT&gt;ALERT(1)&lt;/SCRIPT&gt;", Case.Sensitive);
         html.ShouldContain("&lt;script&gt;alert(1)&lt;/script&gt;");
         html.ShouldContain("<div class=\"hindi\" lang=\"hi\">&lt;script&gt;");
         document.Footer.ShouldBe($"{Hostile} · UHID NH-1\"><b> · Prescription NHRX260000123");

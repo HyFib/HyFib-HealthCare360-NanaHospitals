@@ -114,6 +114,15 @@ const lineSchema = z
         message: 'Enter the quantity to dispense (it cannot be calculated for this dose).',
       });
     }
+    // The prescription names every medicine by its generic name (IMC Regulations 2002, reg. 1.5); the server will not
+    // sign one without it.
+    if (line.drugName.trim() && !line.genericName.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['genericName'],
+        message: 'Enter the generic name: the prescription names every medicine by it.',
+      });
+    }
   });
 
 export const rxFormSchema = z.object({
@@ -435,6 +444,40 @@ export function templateMedicineDefaults(m: {
 export function appendLines(lines: readonly RxLineValues[], added: readonly RxLineValues[]): RxLineValues[] {
   const kept = lines.filter((line, index) => !(index === lines.length - 1 && isBlankLine(line)));
   return [...kept, ...added];
+}
+
+/**
+ * What a prescription calls a medicine, as the server prints it (IMC Regulations 2002, reg. 1.5): its generic name in
+ * capitals with the strength ("PARACETAMOL 650 mg"), then the product the doctor chose with its form ("Dolo 650 ·
+ * Tablet"), or the form alone when the product is named by its generic. A line with no generic name, signed before one
+ * was asked for, keeps its product's name.
+ */
+export function medicineNames(line: {
+  drugName: string;
+  genericName: string | null;
+  strength: string | null;
+  dosageForm: string | null;
+}): { name: string; detail: string | null } {
+  const strength = line.strength?.trim() ? ` ${line.strength.trim()}` : '';
+  const generic = line.genericName?.trim();
+  if (!generic) {
+    return { name: `${line.drugName}${strength}`, detail: null };
+  }
+  const product = namedByItsGeneric(line.drugName, generic) ? null : line.drugName.trim();
+  const detail = [product, line.dosageForm?.trim()].filter(Boolean).join(' · ');
+  return { name: `${generic.toUpperCase()}${strength}`, detail: detail || null };
+}
+
+/**
+ * Whether a product is named by its generic: the shorter name's words begin the longer's, whatever their case
+ * ("Paracetamol 650 mg Tablet" for paracetamol, "Metformin" for metformin hydrochloride), but a brand is not ("Pan" for
+ * pantoprazole).
+ */
+export function namedByItsGeneric(product: string, generic: string): boolean {
+  const words = (name: string) => name.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const [a, b] = [words(product), words(generic)];
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.length > 0 && shorter.every((word, i) => word === longer[i]);
 }
 
 /** Generic names that appear on more than one row (a quick duplicate-therapy hint before the server check). */

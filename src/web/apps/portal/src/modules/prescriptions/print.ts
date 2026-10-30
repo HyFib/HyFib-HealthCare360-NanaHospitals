@@ -4,7 +4,7 @@ import type { Formatters } from '@/i18n/useFormat';
 import { GENDER_KEY } from '@/lib/people';
 import { escapeMultiline, safeFileName, safeSvgMarkup, type PrintableDocument } from '@/lib/print';
 import type { PortalPrescriptionDetail, PortalProfile } from '@/lib/types';
-import { frequencyText, medicineName } from './labels';
+import { frequencyText, medicineNames } from './labels';
 
 export interface PrescriptionPrintContext {
   t: Translate;
@@ -35,18 +35,16 @@ export function prescriptionDocument(rx: PortalPrescriptionDetail, ctx: Prescrip
   const qr = safeSvgMarkup(ctx.qrSvg);
   const doctor = [rx.doctor, rx.doctorQualification].filter(Boolean).join(', ');
   const rows = rx.lines
-    .map(
-      (line, index) =>
-        `<tr class="avoid-break"><td>${index + 1}</td><td><strong>${escapeHtml(medicineName(line))}</strong>${
-          line.genericName ? `<div class="small muted">${escapeHtml(line.genericName)}</div>` : ''
-        }</td><td>${escapeHtml(line.dose)}</td><td>${escapeHtml(frequencyText(line, language))}</td><td>${escapeHtml(
-          t('rx.forDays', { count: line.durationDays }),
-        )}</td><td class="right">${escapeHtml(line.quantity)}</td></tr>${
-          line.instructions
-            ? `<tr><td></td><td colspan="5" class="small">${escapeHtml(line.instructions)}</td></tr>`
-            : ''
-        }`,
-    )
+    .map((line, index) => {
+      const { name, detail } = medicineNames(line);
+      return `<tr class="avoid-break"><td>${index + 1}</td><td><strong>${escapeHtml(name)}</strong>${
+        detail ? `<div class="small muted">${escapeHtml(detail)}</div>` : ''
+      }</td><td>${escapeHtml(line.dose)}</td><td>${escapeHtml(frequencyText(line, language))}</td><td>${escapeHtml(
+        t('rx.forDays', { count: line.durationDays }),
+      )}</td><td class="right">${escapeHtml(line.quantity)}</td></tr>${
+        line.instructions ? `<tr><td></td><td colspan="5" class="small">${escapeHtml(line.instructions)}</td></tr>` : ''
+      }`;
+    })
     .join('');
   const body = `<div class="head"><div><div class="facility">${escapeHtml(rx.facility ?? '')}</div><div><strong>${escapeHtml(doctor)}</strong></div>${
     rx.doctorRegistrationNumber
