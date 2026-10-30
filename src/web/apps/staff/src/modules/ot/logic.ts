@@ -212,11 +212,19 @@ export function issuableQuantity(item: Pick<OtStoreItem, 'available' | 'batches'
 }
 
 /**
- * The price per unit once a batch is chosen: that batch's MRP, unless the user typed a price of their own (anything
- * other than the MRP filled in earlier), which is kept.
+ * The price per unit once a batch is chosen: the most that batch may be charged (see `packPrice`), unless the user typed
+ * a price of their own (anything other than the price filled in earlier), which is kept.
  */
-export function priceForBatch(current: number | null, filledMrp: number | null, batchMrp: number): number {
-  return current === null || current === filledMrp ? batchMrp : current;
+export function priceForBatch(current: number | null, filledPrice: number | null, packLimit: number): number {
+  return current === null || current === filledPrice ? packLimit : current;
+}
+
+/**
+ * The most a unit from a pack may be charged: its MRP, or a price-controlled implant's NPPA ceiling price when that is
+ * lower, as for a pack printed before the ceiling was cut (the server refuses more).
+ */
+export function packPrice(mrp: number, ceilingPrice: number | null | undefined): number {
+  return ceilingPrice && ceilingPrice > 0 && ceilingPrice < mrp ? ceilingPrice : mrp;
 }
 
 /** "Lot B123 · expires 31 Mar 2027 · 4 Nos available · MRP ₹1,250.00". */

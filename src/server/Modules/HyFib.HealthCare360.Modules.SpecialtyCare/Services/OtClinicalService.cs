@@ -184,10 +184,16 @@ public sealed class OtClinicalService(
             return Error.Rule("surgery.materials_closed", "Implants and consumables are recorded from pre-op until the surgery is completed.");
         }
 
-        var valid = SurgeryMaterial.Validate(request.Kind, request.LotNumber, request.SerialNumber, request.ExpiryDate, time.Today());
+        var fromStore = request.SupplyItemId is not null;
+        var valid = SurgeryMaterial.Validate(request.Kind, request.LotNumber, request.SerialNumber, request.ExpiryDate, time.Today(), fromStore);
         if (valid.IsFailure)
         {
             return valid.Error!;
+        }
+
+        if (!fromStore && SurgeryMaterial.ValidateConsignment(request.Kind, request.Brand, request.Manufacturer, request.Mrp) is { IsFailure: true } consignment)
+        {
+            return consignment.Error!;
         }
 
         var material = new SurgeryMaterial
@@ -198,12 +204,15 @@ public sealed class OtClinicalService(
             Kind = request.Kind,
             SupplyItemId = request.SupplyItemId,
             ItemName = request.ItemName.Trim(),
+            Brand = Clean(request.Brand),
             Manufacturer = Clean(request.Manufacturer),
+            Specification = Clean(request.Specification),
             LotNumber = Clean(request.LotNumber)?.ToUpperInvariant(),
             SerialNumber = Clean(request.SerialNumber)?.ToUpperInvariant(),
             ExpiryDate = request.ExpiryDate,
             Quantity = request.Quantity,
             UnitPrice = Money.Round(request.UnitPrice),
+            Mrp = request.Mrp,
             RecordedByName = SignerName(),
         };
 
@@ -213,6 +222,22 @@ public sealed class OtClinicalService(
         // Consignment or patient-supplied items have no SupplyItemId and are not issued from the OT store.
         if (material.SupplyItemId is { } itemId)
         {
+            // The item master says whose the item is and what it is, as its bill must (NPPA), whatever the dialog sent; the
+            // name may carry a size the nurse added.
+            var item = await db.Set<Item>().AsNoTracking().Where(i => i.Id == itemId)
+                .Select(i => new { i.BrandName, i.Manufacturer, i.Specification, i.CeilingPrice, i.Type })
+                .FirstOrDefaultAsync(ct);
+            if (item is null)
+            {
+                return Error.NotFound(nameof(Item), itemId);
+            }
+
+            material.Brand = item.BrandName;
+            material.Manufacturer = item.Manufacturer;
+            material.Specification = item.Specification;
+            material.CeilingPrice = item.Type == ItemType.Implant ? item.CeilingPrice : null;
+            material.Mrp = null;
+
             var store = await stock.ResolveStoreAsync(booking.FacilityId, StoreType.OT, ct);
             if (store.IsFailure)
             {
@@ -232,6 +257,19 @@ public sealed class OtClinicalService(
             {
                 return issued.Error!;
             }
+
+            // The bill and a recall name the batch the store issued, also when none was written and FEFO chose it; a unit
+            // is charged at most the lowest MRP among the packs issued.
+            var batches = string.Join(", ", issued.Value.Movements.Select(m => m.BatchNumber).Distinct());
+            material.LotNumber ??= batches.Length <= 64 ? batches : batches[..64];
+            var mrps = issued.Value.Movements.Where(m => m.Mrp > 0).Select(m => m.Mrp).ToList();
+            material.Mrp = mrps.Count == 0 ? null : mrps.Min();
+        }
+
+        var priced = material.CheckPrice();
+        if (priced.IsFailure)
+        {
+            return priced.Error!;
         }
 
         var outcome = await PostMaterialChargeAsync(booking, material, ct);
@@ -310,19 +348,17 @@ public sealed class OtClinicalService(
         return last;
     }
 
+    // The line names the item; its brand, maker, batch, serial, specification and MRP print beneath it (NPPA).
     private Task<ChargeOutcome> PostMaterialChargeAsync(SurgeryBooking booking, SurgeryMaterial material, CancellationToken ct)
     {
-        var traceability = string.Join(", ", new[] { material.LotNumber is null ? null : $"Lot {material.LotNumber}", material.SerialNumber is null ? null : $"S/N {material.SerialNumber}" }
-            .Where(p => p is not null));
-        var description = material.Kind == MaterialKind.Implant
-            ? $"Implant: {material.ItemName}{(traceability.Length > 0 ? $" ({traceability})" : string.Empty)}"
-            : $"OT consumable: {material.ItemName}";
+        var description = material.Kind == MaterialKind.Implant ? $"Implant: {material.ItemName}" : $"OT consumable: {material.ItemName}";
 
         return charges.PostAsync(
         [
             new ChargeLine(ChargeSources.Ot, MaterialReference(material), booking.PatientId, booking.VisitId, booking.AdmissionId,
                 material.Kind == MaterialKind.Implant ? OtServiceCodes.Implant : OtServiceCodes.Consumable,
-                Quantity: material.Quantity, UnitPriceOverride: material.UnitPrice, Description: description, ServiceDate: time.GetUtcNow()),
+                Quantity: material.Quantity, UnitPriceOverride: material.UnitPrice, Description: description, ServiceDate: time.GetUtcNow(),
+                Device: material.Device),
         ], ct);
     }
 
@@ -385,5 +421,5 @@ public sealed class OtClinicalService(
 
     internal static SurgeryMaterialDto ToDto(SurgeryMaterial m) => new(
         m.Id, m.Kind, m.SupplyItemId, m.ItemName, m.Manufacturer, m.LotNumber, m.SerialNumber, m.ExpiryDate, m.Quantity, m.UnitPrice, m.Amount,
-        m.RecordedByName, m.CreatedAt, m.ChargeStatus, m.ChargeError);
+        m.RecordedByName, m.CreatedAt, m.ChargeStatus, m.ChargeError, m.Brand, m.Specification, m.Mrp, m.CeilingPrice);
 }

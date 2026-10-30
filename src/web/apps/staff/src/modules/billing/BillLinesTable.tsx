@@ -3,6 +3,7 @@ import { ArrowUndoRegular, DeleteRegular } from '@fluentui/react-icons';
 import { formatDate, formatInr } from '@hc360/core';
 import { DataTable, type Column } from '@hc360/ui';
 import type { BillDetail, BillLineDto } from './api';
+import { deviceDetailsText } from './device';
 import { SERVICE_CATEGORY_LABEL } from './labels';
 import { formatPercent, fromPaise, toPaise } from './money';
 import { Amount } from './ui';
@@ -68,6 +69,7 @@ export function BillLinesTable({
             {line.practitionerName ? ` · ${line.practitionerName}` : ''} · {formatDate(line.serviceDate)}
             {line.sacCode ? ` · SAC ${line.sacCode}` : ''}
           </Caption1>
+          {line.device && <Caption1 className={styles.muted}>{deviceDetailsText(line.device)}</Caption1>}
         </span>
       ),
     },

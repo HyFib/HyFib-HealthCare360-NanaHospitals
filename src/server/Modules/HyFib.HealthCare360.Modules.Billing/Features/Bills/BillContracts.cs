@@ -51,7 +51,8 @@ public sealed record BillLineDto(
     string? PractitionerName,
     Guid? DepartmentId,
     DateTimeOffset ServiceDate,
-    bool IsReturn);
+    bool IsReturn,
+    DeviceDetails? Device = null);
 
 public sealed record ReceiptSummary(Guid Id, string ReceiptNumber, ReceiptPurpose Purpose, decimal Amount, string Modes, DateTimeOffset ReceivedAt);
 

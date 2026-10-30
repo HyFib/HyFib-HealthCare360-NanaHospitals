@@ -109,7 +109,8 @@ public sealed record IpIssueLineDto(
     decimal UnitMrp,
     decimal Amount,
     decimal ReturnedQuantity,
-    Guid? ChargeId);
+    Guid? ChargeId,
+    decimal UnitPrice);
 
 public sealed record WardReturnLineDto(Guid IpIssueLineId, string ItemName, string BatchNumber, decimal Quantity, decimal CreditAmount, bool Restocked, ChargeReversal ChargeReversal);
 

@@ -16,7 +16,8 @@ public sealed record ChargeLine(
     decimal? UnitPriceOverride = null,
     string? Description = null,
     Guid? PractitionerId = null,
-    DateTimeOffset? ServiceDate = null);
+    DateTimeOffset? ServiceDate = null,
+    DeviceDetails? Device = null);
 
 public sealed record ChargeOutcome(ChargeStatus Status, string? Error)
 {
@@ -75,6 +76,7 @@ public sealed class SpecialtyChargeService(HospitalDbContext db, IChargePoster p
                 SourceReference = line.SourceReference,
                 PractitionerId = line.PractitionerId,
                 ServiceDate = line.ServiceDate,
+                Device = line.Device,
             }, ct);
 
             if (result.IsFailure)

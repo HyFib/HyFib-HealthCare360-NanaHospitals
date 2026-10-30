@@ -55,7 +55,7 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | GET | `/items?page&type&categoryId&schedule&controlledOnly&includeInactive` | Catalog readers | → paged `ItemListItem` (trigram name search; sort code/name/genericName/type/gstRate) |
 | GET | `/items/lookup?search&storeId&type&take` | Catalog readers | → `ItemLookup[]` (≤ 50, with available stock, MRP and nearest expiry in `storeId`) |
 | GET | `/items/by-code/{code}` · `/items/{id}` | Catalog readers | → `ItemDetail` |
-| POST · PUT | `/items` · `/items/{id}` | `inventory.items.manage` | `SaveItemRequest` (code, name, genericName, brandName, type, categoryId, strength, dosageForm, packSize, baseUnit, purchaseUnit, purchaseUnitFactor, hsnCode, gstRate ∈ {0, 0.25, 3, 5, 12, 18, 28, 40}, schedule None/Otc/G/H/H1/X, isControlled, isColdChain, vedClass, reorder/min/max levels, manufacturer, barcode, isActive, version) → 201 `{id}` · 204 |
+| POST · PUT | `/items` · `/items/{id}` | `inventory.items.manage` | `SaveItemRequest` (code, name, genericName, brandName, type, categoryId, strength, dosageForm, packSize, baseUnit, purchaseUnit, purchaseUnitFactor, hsnCode, gstRate ∈ {0, 0.25, 3, 5, 12, 18, 28, 40}, schedule None/Otc/G/H/H1/X, isControlled, isColdChain, vedClass, reorder/min/max levels, manufacturer (or importer), barcode, isActive, version, specification, ceilingPrice) → 201 `{id}` · 204. `specification` says what a device is, as its bill prints it (for a stent, bare-metal or drug-eluting first, then material and size). `ceilingPrice` is the NPPA ceiling price of a unit of a price-controlled implant (a coronary stent, a knee implant), GST included: only an implant carries one, and it is more than 0 (`ceilingPrice`, 400). No patient is charged more for a unit, whatever an older pack's MRP: the OT and the IP pharmacy price within it, and Billing refuses more. NPPA revises it, so the store updates it |
 | GET | `/stores?type&includeInactive` | Catalog readers or `inventory.adjustments.approve` | → `StoreDto[]` (central, pharmacy, ward, OT, lab, canteen, CSSD) |
 | GET | `/stores/{id}` | Catalog readers | → `StoreDto` |
 | POST · PUT | `/stores` · `/stores/{id}` | `inventory.items.manage` | `SaveStoreRequest` (code, name, type, departmentId, inChargeUserId, location, isActive, version) → 201 `{id}` · 204 |
@@ -135,8 +135,9 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 
 GRN checks: duplicate vendor invoice (unique vendor + invoice number unless cancelled); the vendor's drug licence
 must be valid on the receipt date for drug items; an expired batch is refused; a batch expiring within 90 days
-needs `acceptShortExpiry`; rate ≤ MRP; purchase units are converted to base units, free goods lower the unit cost,
-and re-receipt of the same batch number/expiry/MRP averages the cost.
+needs `acceptShortExpiry`; a drug's or an implant's batch needs the MRP printed on its pack (`grn.mrp_required`: an
+implant's MRP is the most its bill may charge, NPPA); rate ≤ MRP; purchase units are converted to base units, free goods
+lower the unit cost, and re-receipt of the same batch number/expiry/MRP averages the cost.
 
 Pharmacy tags (INT-BAR): a posted receipt prints a tag per line (Print tags), with the medicine, batch, expiry, MRP per
 base unit and a barcode of the item code and batch (`PCM500#AB1234`); so does a batch on the stock screen (Tags). An

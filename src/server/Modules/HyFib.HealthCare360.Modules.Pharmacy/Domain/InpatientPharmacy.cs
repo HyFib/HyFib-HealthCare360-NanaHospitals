@@ -120,7 +120,7 @@ public sealed class IpIssue : AuditableEntity, IFacilityScoped
         Lines.Select(l => new DispensedLine(l.PrescriptionLineId, l.ItemId, l.ItemName, l.BatchNumber, l.Quantity)).ToList(),
         IssuedAt));
 
-    /// <summary>Returns part of a line from the ward and gives the credit due at the line's unit MRP.</summary>
+    /// <summary>Returns part of a line from the ward and gives the credit due at the line's unit price, as it was charged.</summary>
     public Result<decimal> ReturnLine(Guid lineId, decimal quantity, DateTimeOffset now)
     {
         var line = Lines.FirstOrDefault(l => l.Id == lineId);
@@ -136,7 +136,7 @@ public sealed class IpIssue : AuditableEntity, IFacilityScoped
 
         line.ReturnedQuantity += quantity;
         LastReturnedAt = now;
-        return Money.Round(quantity * line.UnitMrp);
+        return Money.Round(quantity * line.UnitPrice);
     }
 }
 
@@ -153,6 +153,13 @@ public sealed class IpIssueLine : Entity
     public DateOnly? ExpiryDate { get; set; }
     public decimal Quantity { get; set; }
     public decimal UnitMrp { get; set; }
+
+    /// <summary>
+    /// What a unit is charged: its MRP, or for a price-controlled implant its NPPA ceiling price when that is lower (a pack
+    /// printed before the ceiling was cut). A return is credited at the same price.
+    /// </summary>
+    public decimal UnitPrice { get; set; }
+
     public decimal Amount { get; set; }
     public Guid? WardIndentLineId { get; set; }
     public Guid? QueueLineId { get; set; }

@@ -114,9 +114,14 @@ pay out. Only unexpired stock is restocked; expired or damaged returns are refun
 | POST | `/ip-issues/{id}/returns` | `pharmacy.ip.issue` | `WardReturnRequest` (lines[ipIssueLineId, quantity, restock], reason) → 201 `WardReturnCreated` (id, number, creditAmount) |
 
 **Charges** go through `IChargePoster`, which is implemented by Billing and idempotent on SourceModule + SourceReference:
-* Each issue line is posted at its batch MRP (`UnitPriceOverride`) with `SourceModule = "pharmacy.ip"` and
-  `SourceReference = <issue line id>`. Service `PHARM-MED` (drugs), `PHARM-IMPL` (implants) or `PHARM-CONS`
-  (consumables and surgicals).
+* Each issue line is posted at its price (`UnitPriceOverride` = the line's `unitPrice`) with
+  `SourceModule = "pharmacy.ip"` and `SourceReference = <issue line id>`. Service `PHARM-MED` (drugs), `PHARM-IMPL`
+  (implants) or `PHARM-CONS` (consumables and surgicals). The price is the batch MRP, or for a price-controlled implant
+  its NPPA ceiling price (item master) when that is lower, as for a pack printed before the ceiling was cut; the line
+  keeps both (`unitMrp`, `unitPrice`), and a return is credited at `unitPrice`.
+* A device line (an implant, a consumable or a surgical item) also sends its `device`: brand, manufacturer, specification,
+  batch, MRP and ceiling, printed beneath it on the bill (NPPA); its name carries no batch. A medicine's name keeps
+  "(batch …)".
 * A ward return of a whole, untouched line cancels that charge (`CancelAsync("pharmacy.ip", lineId)`). Otherwise
   (a partial return, or Billing refuses because the line is already billed) it posts a **negative-quantity** credit
   line with `SourceModule = "pharmacy.ip.return"` and `SourceReference = <return line id>`.

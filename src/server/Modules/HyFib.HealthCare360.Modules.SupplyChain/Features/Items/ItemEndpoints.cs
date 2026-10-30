@@ -237,6 +237,8 @@ internal static class ItemEndpoints
         item.MinimumStock = request.MinimumStock;
         item.MaximumStock = request.MaximumStock;
         item.Manufacturer = Clean(request.Manufacturer);
+        item.Specification = Clean(request.Specification);
+        item.CeilingPrice = request.CeilingPrice;
         item.Barcode = barcode;
         item.IsActive = request.IsActive;
 
@@ -253,7 +255,8 @@ internal static class ItemEndpoints
     internal static ItemDetail ToDetail(Item i) => new(
         i.Id, i.Code, i.Name, i.GenericName, i.BrandName, i.Type, i.CategoryId, i.Strength, i.DosageForm, i.PackSize, i.BaseUnit, i.PurchaseUnit,
         i.PurchaseUnitFactor, i.HsnCode, i.GstRate, i.Schedule, i.IsControlled, i.IsColdChain, i.VedClass, i.ReorderLevel, i.ReorderQuantity,
-        i.MinimumStock, i.MaximumStock, i.Manufacturer, i.Barcode, i.IsActive, i.RequiresPrescription, i.RequiresRegister, i.Version);
+        i.MinimumStock, i.MaximumStock, i.Manufacturer, i.Barcode, i.IsActive, i.RequiresPrescription, i.RequiresRegister, i.Version,
+        i.Specification, i.CeilingPrice);
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

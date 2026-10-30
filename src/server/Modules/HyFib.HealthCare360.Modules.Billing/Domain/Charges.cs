@@ -45,6 +45,9 @@ public sealed class Charge : AuditableEntity, IFacilityScoped
     /// <summary>For a day of a bed, the kind of room: its GST follows <see cref="RoomRentGst"/>, not the service's own rate.</summary>
     public RoomCharge? Room { get; set; }
 
+    /// <summary>For an implant or another device, its brand, maker, batch, specification and MRP (NPPA); null for a service.</summary>
+    public DeviceDetails? Device { get; set; }
+
     public string SourceModule { get; set; } = string.Empty;
     public string SourceReference { get; set; } = string.Empty;
 

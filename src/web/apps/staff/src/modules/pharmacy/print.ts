@@ -222,7 +222,7 @@ export function buildIpIssueSlipHtml(
         l,
         index,
       ) => `<tr><td>${index + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.batchNumber)}</td><td>${escapeHtml(formatExpiry(l.expiryDate))}</td>
-        <td class="right">${escapeHtml(formatQty(l.quantity))}</td><td class="right">${escapeHtml(formatInr(l.unitMrp))}</td><td class="right">${escapeHtml(formatInr(l.amount))}</td></tr>`,
+        <td class="right">${escapeHtml(formatQty(l.quantity))}</td><td class="right">${escapeHtml(formatInr(l.unitMrp))}</td><td class="right">${escapeHtml(formatInr(l.unitPrice ?? l.unitMrp))}</td><td class="right">${escapeHtml(formatInr(l.amount))}</td></tr>`,
     )
     .join('');
   const template = templateFor(letterhead, 'other');
@@ -234,7 +234,7 @@ export function buildIpIssueSlipHtml(
       <tr><td>Patient</td><td>${escapeHtml(issue.patient.fullName)} (${escapeHtml(issue.patient.uhid)})</td><td>Ward / bed</td><td>${escapeHtml([ward?.wardName, ward?.bedLabel].filter(Boolean).join(' / ') || '—')}</td></tr>
     </table>
     <div class="rule"></div>
-    <table class="lines"><tr><th>#</th><th>Medicine</th><th>Batch</th><th>Expiry</th><th class="right">Qty</th><th class="right">MRP</th><th class="right">Amount</th></tr>${rows}</table>
+    <table class="lines"><tr><th>#</th><th>Medicine</th><th>Batch</th><th>Expiry</th><th class="right">Qty</th><th class="right">MRP</th><th class="right">Rate</th><th class="right">Amount</th></tr>${rows}</table>
     <div class="rule"></div>
     <table><tr><td>Charged to the in-patient account</td><td class="right"><b>${escapeHtml(formatInr(issue.totalAmount))}</b></td></tr></table>
     <div style="display:flex;justify-content:space-between;margin-top:28px">

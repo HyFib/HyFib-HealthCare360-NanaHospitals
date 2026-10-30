@@ -43,6 +43,19 @@ public sealed class InpatientPharmacyService(
         _ => ConsumablesServiceCode,
     };
 
+    /// <summary>
+    /// What a unit is charged: its MRP, or a price-controlled implant's NPPA ceiling price when that is lower, as for a pack
+    /// printed before the ceiling was cut (DPCO 2013).
+    /// </summary>
+    internal static decimal PriceOf(ItemSummary item, decimal mrp) =>
+        item.Type == ItemType.Implant && item.CeilingPrice is { } ceiling && ceiling > 0 && ceiling < mrp ? ceiling : mrp;
+
+    /// <summary>What the bill says of a device issued (NPPA): its brand, maker, specification, batch and MRP; none for a medicine.</summary>
+    internal static DeviceDetails? DeviceOf(ItemSummary item, IpIssueLine line) => item.Type == ItemType.Drug
+        ? null
+        : DeviceDetails.Of(item.BrandName, item.Manufacturer, item.Specification, line.BatchNumber, null, line.UnitMrp,
+            item.Type == ItemType.Implant ? item.CeilingPrice : null);
+
     // ------------------------------------------------------------------ ward indents
 
     public async Task<Result<PharmacyDocumentCreated>> RaiseIndentAsync(RaiseWardIndentRequest request, CancellationToken ct)
@@ -280,6 +293,7 @@ public sealed class InpatientPharmacyService(
         {
             foreach (var moved in issued.Value.Movements.Where(m => m.LineId == p.Key))
             {
+                var unitPrice = PriceOf(p.Item, moved.Mrp);
                 issue.Lines.Add(new IpIssueLine
                 {
                     IpIssueId = issue.Id,
@@ -293,7 +307,8 @@ public sealed class InpatientPharmacyService(
                     ExpiryDate = moved.ExpiryDate,
                     Quantity = moved.Quantity,
                     UnitMrp = moved.Mrp,
-                    Amount = Money.Round(moved.Quantity * moved.Mrp),
+                    UnitPrice = unitPrice,
+                    Amount = Money.Round(moved.Quantity * unitPrice),
                     WardIndentLineId = p.IndentLine?.Id,
                     QueueLineId = p.QueueLine?.Id,
                     PrescriptionLineId = p.QueueLine?.PrescriptionLineId,
@@ -315,6 +330,8 @@ public sealed class InpatientPharmacyService(
 
         foreach (var line in issue.Lines)
         {
+            // A device's brand, maker, batch and MRP print beneath its line (NPPA); a medicine's batch stays in its name.
+            var device = DeviceOf(items[line.ItemId], line);
             var charge = await charges.PostAsync(new ChargeRequest
             {
                 PatientId = patientId,
@@ -322,11 +339,12 @@ public sealed class InpatientPharmacyService(
                 AdmissionId = admissionId,
                 ServiceItemId = services.Value[ServiceCodeFor(line.ItemType)],
                 Quantity = line.Quantity,
-                UnitPriceOverride = line.UnitMrp,
-                Description = $"{line.ItemName} (batch {line.BatchNumber})",
+                UnitPriceOverride = line.UnitPrice,
+                Description = device is null ? $"{line.ItemName} (batch {line.BatchNumber})" : line.ItemName,
                 SourceModule = ChargeModule,
                 SourceReference = line.Id.ToString(),
                 ServiceDate = now,
+                Device = device,
             }, ct);
             if (charge.IsFailure)
             {
@@ -455,7 +473,7 @@ public sealed class InpatientPharmacyService(
                     AdmissionId = issue.AdmissionId,
                     ServiceItemId = services.Value[ServiceCodeFor(line.ItemType)],
                     Quantity = -input.Quantity,
-                    UnitPriceOverride = line.UnitMrp,
+                    UnitPriceOverride = line.UnitPrice,
                     Description = $"Returned: {line.ItemName} (batch {line.BatchNumber})",
                     SourceModule = ChargeReturnModule,
                     SourceReference = returnLine.Id.ToString(),

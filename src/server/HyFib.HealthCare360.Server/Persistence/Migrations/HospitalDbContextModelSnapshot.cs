@@ -1353,6 +1353,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(300)")
                         .HasColumnName("description");
 
+                    b.Property<string>("Device")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("device");
+
                     b.Property<decimal>("GrossAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
@@ -1691,6 +1695,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)")
                         .HasColumnName("description");
+
+                    b.Property<string>("Device")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("device");
 
                     b.Property<decimal>("DiscountAmount")
                         .HasPrecision(18, 2)
@@ -25031,6 +25039,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,4)")
                         .HasColumnName("unit_mrp");
 
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("unit_price");
+
                     b.Property<Guid?>("WardIndentLineId")
                         .HasColumnType("uuid")
                         .HasColumnName("ward_indent_line_id");
@@ -31615,6 +31628,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("Brand")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("brand");
+
+                    b.Property<decimal?>("CeilingPrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("ceiling_price");
+
                     b.Property<string>("ChargeError")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
@@ -31676,6 +31699,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("manufacturer");
 
+                    b.Property<decimal?>("Mrp")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("mrp");
+
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
@@ -31694,6 +31722,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("serial_number");
+
+                    b.Property<string>("Specification")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("specification");
 
                     b.Property<Guid?>("SupplyItemId")
                         .HasColumnType("uuid")
@@ -33481,6 +33514,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("category_id");
 
+                    b.Property<decimal?>("CeilingPrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("ceiling_price");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -33591,6 +33629,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("schedule");
+
+                    b.Property<string>("Specification")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("specification");
 
                     b.Property<string>("Strength")
                         .HasMaxLength(60)

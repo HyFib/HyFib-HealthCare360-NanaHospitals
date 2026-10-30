@@ -62,7 +62,15 @@ import {
   type SurgeryMaterialDto,
 } from './api';
 import { materialKindLabel } from './labels';
-import { batchForLot, batchLabel, issuableQuantity, materialsGate, otStoreProblem, priceForBatch } from './logic';
+import {
+  batchForLot,
+  batchLabel,
+  issuableQuantity,
+  materialsGate,
+  otStoreProblem,
+  packPrice,
+  priceForBatch,
+} from './logic';
 import { applyFormErrors, errorMessage } from './shared/errors';
 import { ActionError, ChargeBadge } from './shared/feedback';
 
@@ -81,6 +89,9 @@ const materialSchema = z
     supplyItemId: z.string().nullable(),
     itemName: z.string().trim().min(1, 'Enter the item name.').max(200),
     manufacturer: z.string().trim().max(200),
+    brand: z.string().trim().max(120),
+    specification: z.string().trim().max(200),
+    mrp: z.number().nullable(),
     lotNumber: z.string().trim().max(64),
     serialNumber: z.string().trim().max(64),
     expiryDate: z.string().nullable(),
@@ -117,6 +128,33 @@ const materialSchema = z
         code: 'custom',
         path: ['unitPrice'],
         message: 'Enter the price per unit in rupees (0 if not charged).',
+      });
+    }
+    // A consignment implant is not in the item master: its pack says what its bill must (NPPA), and its MRP caps its price.
+    if (v.source === 'outside' && v.kind === 'Implant') {
+      if (!v.brand) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['brand'],
+          message: "Enter the implant's brand, as on its pack: the bill names it.",
+        });
+      }
+      if (!v.manufacturer) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['manufacturer'],
+          message: "Enter the implant's manufacturer or importer, as on its pack: the bill names it.",
+        });
+      }
+      if (v.mrp === null || v.mrp <= 0) {
+        ctx.addIssue({ code: 'custom', path: ['mrp'], message: "Enter the MRP printed on the implant's pack." });
+      }
+    }
+    if (v.source === 'outside' && v.mrp !== null && v.mrp > 0 && v.unitPrice !== null && v.unitPrice > v.mrp) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['unitPrice'],
+        message: 'No more than the MRP printed on the pack may be charged.',
       });
     }
   });
@@ -275,7 +313,12 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
               <span>
                 <Text weight="semibold">{m.itemName}</Text>
                 <Caption1 block className={styles.muted}>
-                  {[m.manufacturer, m.supplyItemId ? 'From OT store' : 'Consignment / patient-supplied']
+                  {[
+                    m.brand,
+                    m.manufacturer,
+                    m.specification,
+                    m.supplyItemId ? 'From OT store' : 'Consignment / patient-supplied',
+                  ]
                     .filter(Boolean)
                     .join(' · ')}
                 </Caption1>
@@ -372,6 +415,9 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
       supplyItemId: null,
       itemName: '',
       manufacturer: '',
+      brand: '',
+      specification: '',
+      mrp: null,
       lotNumber: '',
       serialNumber: '',
       expiryDate: null,
@@ -390,12 +436,14 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
   const store = useQuery({ ...otQueries.storeItems(''), enabled: source === 'store' });
   const storeProblem = otStoreProblem(store.error);
 
-  const chooseBatch = (batch: OtStoreBatch) => {
+  // A unit is charged at most the batch's MRP, or a price-controlled implant's NPPA ceiling when that is lower.
+  const chooseBatch = (batch: OtStoreBatch, item: OtStoreItem | null = picked) => {
     form.setValue('lotNumber', batch.batchNumber, { shouldValidate: true });
     form.setValue('expiryDate', batch.expiryDate, { shouldValidate: true });
-    const price = priceForBatch(form.getValues('unitPrice'), filledPrice, batch.mrp);
+    const limit = packPrice(batch.mrp, item?.ceilingPrice);
+    const price = priceForBatch(form.getValues('unitPrice'), filledPrice, limit);
     form.setValue('unitPrice', price);
-    if (price === batch.mrp) {
+    if (price === limit) {
       setFilledPrice(price);
     }
   };
@@ -420,10 +468,11 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
     }
     const first = item.batches[0];
     if (first) {
-      chooseBatch(first);
+      chooseBatch(first, item);
     } else if (item.mrp !== null && form.getValues('unitPrice') === null) {
-      form.setValue('unitPrice', item.mrp);
-      setFilledPrice(item.mrp);
+      const limit = packPrice(item.mrp, item.ceilingPrice);
+      form.setValue('unitPrice', limit);
+      setFilledPrice(limit);
     }
   };
 
@@ -439,6 +488,10 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
         expiryDate: values.expiryDate,
         quantity: values.quantity ?? 1,
         unitPrice: values.unitPrice ?? 0,
+        // An OT store item's brand, specification and MRP come from the item master and the stock issued.
+        ...(values.source === 'outside'
+          ? { brand: values.brand || null, specification: values.specification || null, mrp: values.mrp }
+          : {}),
       }),
     onSuccess: (saved) => {
       notify.success(
@@ -564,7 +617,55 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                     hint={source === 'store' ? 'Filled from the store item; add the size if needed.' : undefined}
                   />
                 </FullRow>
-                <TextField control={form.control} name="manufacturer" label="Manufacturer" maxLength={200} />
+                {source === 'outside' && (
+                  <>
+                    <TextField
+                      control={form.control}
+                      name="brand"
+                      label="Brand"
+                      required={kind === 'Implant'}
+                      maxLength={120}
+                      hint="As on the pack: the bill names it."
+                    />
+                    <NumberField
+                      control={form.control}
+                      name="mrp"
+                      label="MRP on the pack (₹ a unit)"
+                      required={kind === 'Implant'}
+                      min={0}
+                      step={0.01}
+                      hint="No more may be charged."
+                    />
+                    <FullRow>
+                      <TextField
+                        control={form.control}
+                        name="specification"
+                        label="Specification"
+                        maxLength={200}
+                        hint="For a stent: bare-metal or drug-eluting first, then material and size."
+                      />
+                    </FullRow>
+                  </>
+                )}
+                {storePick && (storePick.brand || storePick.specification) && (
+                  <FullRow>
+                    <Caption1 className={styles.muted}>
+                      {[storePick.brand ? `Brand ${storePick.brand}` : null, storePick.specification]
+                        .filter(Boolean)
+                        .join(' · ')}
+                      , from the item master: the bill prints it.
+                    </Caption1>
+                  </FullRow>
+                )}
+                <TextField
+                  control={form.control}
+                  name="manufacturer"
+                  label="Manufacturer or importer"
+                  required={source === 'outside' && kind === 'Implant'}
+                  disabled={source === 'store'}
+                  maxLength={200}
+                  hint={source === 'store' ? 'From the item master.' : undefined}
+                />
                 <DateField control={form.control} name="expiryDate" label="Expiry date" min={todayIso()} />
                 <TextField
                   control={form.control}
@@ -597,6 +698,11 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                   required
                   min={0}
                   step={0.01}
+                  hint={
+                    chosenBatch && storePick?.ceilingPrice && storePick.ceilingPrice < chosenBatch.mrp
+                      ? `At most ${formatInr(storePick.ceilingPrice)}: its NPPA ceiling price, below the pack's MRP.`
+                      : undefined
+                  }
                 />
               </FormGrid>
               <Text>

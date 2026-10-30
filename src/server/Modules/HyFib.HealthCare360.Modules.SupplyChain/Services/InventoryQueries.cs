@@ -18,7 +18,10 @@ public sealed record ItemSummary(
     string BaseUnit,
     string? HsnCode,
     decimal GstRate,
-    bool IsActive)
+    bool IsActive,
+    string? Manufacturer,
+    string? Specification,
+    decimal? CeilingPrice)
 {
     public bool RequiresPrescription => Item.NeedsPrescription(Schedule, IsControlled);
 
@@ -76,7 +79,7 @@ public static class InventoryQueries
         return await db.Set<Item>().AsNoTracking()
             .Where(i => idList.Contains(i.Id))
             .Select(i => new ItemSummary(i.Id, i.Code, i.Name, i.GenericName, i.BrandName, i.Strength, i.DosageForm, i.Type, i.Schedule,
-                i.IsControlled, i.IsColdChain, i.BaseUnit, i.HsnCode, i.GstRate, i.IsActive))
+                i.IsControlled, i.IsColdChain, i.BaseUnit, i.HsnCode, i.GstRate, i.IsActive, i.Manufacturer, i.Specification, i.CeilingPrice))
             .ToDictionaryAsync(i => i.Id, ct);
     }
 

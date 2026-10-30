@@ -34,6 +34,13 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
     /// <summary>Procedures priced by Billing when a clinician orders them (reference = the order item id).</summary>
     public const string OrderSource = "billing.order";
 
+    /// <summary>
+    /// The services an implant is billed under: the OT's (SpecialtyCare seeds <c>OT-IMPLANT</c>) and the IP pharmacy's
+    /// (Pharmacy seeds <c>PHARM-IMPL</c>). Their records name the implant's brand, maker and batch and keep its price
+    /// within its MRP and NPPA ceiling, so the desk does not charge them by hand.
+    /// </summary>
+    public static readonly IReadOnlySet<string> ImplantServiceCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "OT-IMPLANT", "PHARM-IMPL" };
+
     public async Task<Result<Guid>> PostAsync(ChargeRequest request, CancellationToken cancellationToken)
     {
         var staged = await StageAsync(request, isFreeFollowUp: false, cancellationToken);
@@ -54,8 +61,13 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
     /// <summary>Manual charge from the billing desk (source <c>billing.manual</c>); saved immediately.</summary>
     public async Task<Result<ChargeDto>> PostManualAsync(PostChargeRequest request, CancellationToken ct)
     {
-        if (request.UnitPrice is not null
-            && await db.Set<ServiceItem>().Where(s => s.Id == request.ServiceItemId).Select(s => (bool?)s.IsPriceEditable).FirstOrDefaultAsync(ct) == false)
+        var service = await db.Set<ServiceItem>().Where(s => s.Id == request.ServiceItemId).Select(s => new { s.Code, s.IsPriceEditable }).FirstOrDefaultAsync(ct);
+        if (service is not null && ImplantAtTheDesk(service.Code) is { } implant)
+        {
+            return implant;
+        }
+
+        if (request.UnitPrice is not null && service is { IsPriceEditable: false })
         {
             return Error.Field("unitPrice", "The price of this service is fixed by the tariff.");
         }
@@ -201,6 +213,12 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
             item, context.Plan, BillingTime.LocalDate(serviceDate), context.Plan?.MultiplierFor(context.BedServiceItemId) ?? 1m,
             isFreeFollowUp, request.UnitPriceOverride, ct);
 
+        // A device is never charged above the MRP on its pack, nor a price-controlled one above its NPPA ceiling (DPCO 2013).
+        if (request.Device is { } device && device.PriceLimit() is { } limit && quote.UnitPrice > limit)
+        {
+            return DevicePriceError(device, item.Name, quote.UnitPrice, limit);
+        }
+
         var charge = new Charge
         {
             FacilityId = context.FacilityId,
@@ -222,6 +240,7 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
 
             // Only a bed's day is room rent.
             Room = item.Category == ServiceCategory.BedCharge ? request.Room : null,
+            Device = request.Device,
         };
         charge.ApplyPrice(quote, item.TaxRate, context.Plan?.DefaultDiscountPercent ?? 0m, context.Plan?.Id);
         if (charge.IsCredit)
@@ -273,6 +292,29 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
         return db.Set<Charge>().Local.FirstOrDefault(c => c.SourceModule == module && c.SourceReference == reference)
                ?? await db.Set<Charge>().IgnoreQueryFilters()
                    .FirstOrDefaultAsync(c => c.SourceModule == module && c.SourceReference == reference, ct);
+    }
+
+    /// <summary>
+    /// The refusal of an implant charged at the desk, by hand or as a line added to a draft: it is billed from the surgery
+    /// record or the IP pharmacy's issue, which name it and keep its price within its limits. Null for any other service.
+    /// </summary>
+    internal static Error? ImplantAtTheDesk(string serviceCode) => ImplantServiceCodes.Contains(serviceCode)
+        ? Error.Rule(
+            "billing.implant_from_record",
+            "An implant is billed from the surgery record or the IP pharmacy's issue, which name its brand, maker and batch and keep its price within its MRP and NPPA ceiling. Record it there.")
+        : null;
+
+    /// <summary>The refusal of a device charged above its limit, naming the limit that applies: the ceiling or the MRP.</summary>
+    internal static Error DevicePriceError(DeviceDetails device, string itemName, decimal unitPrice, decimal limit)
+    {
+        var name = device.Brand ?? itemName;
+        return device.CeilingLimits()
+            ? Error.Rule(
+                "billing.device_above_ceiling",
+                $"{name} is charged ₹{Money.FormatInr(unitPrice)} a unit, above its NPPA ceiling price of ₹{Money.FormatInr(limit)}.")
+            : Error.Rule(
+                "billing.device_above_mrp",
+                $"{name} is charged ₹{Money.FormatInr(unitPrice)} a unit, above the MRP of ₹{Money.FormatInr(limit)} printed on its pack.");
     }
 
     internal static ChargeDto ToDto(Charge c, string? practitionerName) => new(

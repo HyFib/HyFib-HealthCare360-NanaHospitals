@@ -215,6 +215,34 @@ describe('bill prints', () => {
     expect(html).not.toMatch(/sexual|acid|rape/i);
   });
 
+  it("prints an implant's brand, maker, batch, specification, MRP and NPPA ceiling beneath it", () => {
+    const html = buildCounterBillHtml(
+      bill({
+        lines: [
+          billLine({
+            serviceCode: 'OT-IMPLANT',
+            description: 'Implant: Knee system',
+            unitPrice: 57456,
+            netAmount: 57456,
+            device: {
+              brand: 'Attune',
+              manufacturer: 'DePuy Synthes',
+              specification: 'Primary total knee, cobalt-chromium',
+              batch: 'K1',
+              serial: 'SN-1',
+              mrp: 60000,
+              ceilingPrice: 57456,
+            },
+          }),
+        ],
+      }),
+      facility,
+    );
+    expect(html).toContain(
+      `<td colspan="2" class="small">Brand Attune · made or imported by DePuy Synthes · Batch K1 · S/N SN-1 · Primary total knee, cobalt-chromium · MRP ${formatInr(60000)} · NPPA ceiling price ${formatInr(57456)}</td>`,
+    );
+  });
+
   it('marks returns and cancelled bills', () => {
     const html = buildCounterBillHtml(
       bill({

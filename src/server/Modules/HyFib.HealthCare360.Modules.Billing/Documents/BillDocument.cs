@@ -364,7 +364,7 @@ internal static class BillDocument
         var rows = bill.Lines.Select((line, index) => Html.Of($"""
             <tr>
               <td>{index + 1}</td>
-              <td>{line.Description}{(line.IsReturn ? Html.Of($"<span class=\"tag\">{text["doc.bill.return"]}</span>") : Html.Empty)}<div class="muted">{LineDetail(line)}</div></td>
+              <td>{line.Description}{(line.IsReturn ? Html.Of($"<span class=\"tag\">{text["doc.bill.return"]}</span>") : Html.Empty)}<div class="muted">{LineDetail(line)}</div>{DeviceDetail(line, text)}</td>
               <td>{line.SacCode ?? DocumentFormat.Missing}</td>
               <td class="num">{Quantity(line.Quantity)}</td>
               <td class="num">{DocumentFormat.Money(line.UnitPrice)}</td>
@@ -441,6 +441,22 @@ internal static class BillDocument
     // "CONS-NEW · Dr. Asha Rao · 25 Sep 2026"
     private static string LineDetail(BillLineDto line) =>
         string.Join(" · ", new[] { line.ServiceCode, line.PractitionerName, DocumentFormat.Date(line.ServiceDate) }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
+    // What NPPA asks a bill to say of a stent or an implant, and the counter prints of any device from stock.
+    private static Html DeviceDetail(BillLineDto line, DocumentText text) =>
+        line.Device is { } device ? Html.Of($"<div class=\"muted\">{DeviceText(device, text)}</div>") : Html.Empty;
+
+    // "Brand XIENCE Sierra · made or imported by Abbott · Batch 7041231 · Drug-eluting stent, 3.0 × 28 mm · MRP ₹38,933.14"
+    internal static string DeviceText(DeviceDetails device, DocumentText text) => string.Join(" · ", new[]
+    {
+        device.Brand is { } brand ? text.Format("doc.bill.device.brand", ("brand", brand)) : null,
+        device.Manufacturer is { } maker ? text.Format("doc.bill.device.manufacturer", ("manufacturer", maker)) : null,
+        device.Batch is { } batch ? text.Format("doc.bill.device.batch", ("batch", batch)) : null,
+        device.Serial is { } serial ? text.Format("doc.bill.device.serial", ("serial", serial)) : null,
+        device.Specification,
+        device.Mrp is { } mrp ? text.Format("doc.bill.device.mrp", ("mrp", DocumentFormat.Money(mrp))) : null,
+        device.CeilingPrice is { } ceiling ? text.Format("doc.bill.device.ceiling", ("ceiling", DocumentFormat.Money(ceiling))) : null,
+    }.Where(part => !string.IsNullOrWhiteSpace(part)));
 
     // A mode added later without words of its own prints its name, and text that is no mode prints as it is.
     private static string ModeLabel(string mode, DocumentText text) => Enum.TryParse<PaymentMode>(mode, out var parsed) && Enum.IsDefined(parsed)

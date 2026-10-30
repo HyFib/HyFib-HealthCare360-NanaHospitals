@@ -25,7 +25,7 @@ public static class DrugSearch
             .ThenBy(i => i.Code)
             .Take(Take(take))
             .Select(i => new ItemSummary(i.Id, i.Code, i.Name, i.GenericName, i.BrandName, i.Strength, i.DosageForm, i.Type, i.Schedule,
-                i.IsControlled, i.IsColdChain, i.BaseUnit, i.HsnCode, i.GstRate, i.IsActive));
+                i.IsControlled, i.IsColdChain, i.BaseUnit, i.HsnCode, i.GstRate, i.IsActive, i.Manufacturer, i.Specification, i.CeilingPrice));
 
     /// <summary>
     /// Stock per item over the facility's active pharmacy stores; null when the facility has none (availability unknown).

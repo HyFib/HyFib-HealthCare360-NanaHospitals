@@ -17,6 +17,7 @@ internal sealed class ChargeConfiguration : IEntityTypeConfiguration<Charge>
         b.Property(x => x.DiscountPercent).HasPrecision(5, 2);
         b.Property(x => x.TaxRate).HasPrecision(5, 2);
         b.Property(x => x.BedMultiplier).HasPrecision(9, 4);
+        b.Property(x => x.Device).HasDeviceJson();
         b.Ignore(x => x.IsAvailableForBilling);
         b.Ignore(x => x.IsCredit);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
@@ -84,6 +85,7 @@ internal sealed class BillLineConfiguration : IEntityTypeConfiguration<BillLine>
         b.Property(x => x.Quantity).HasPrecision(18, 3);
         b.Property(x => x.TariffDiscountPercent).HasPrecision(5, 2);
         b.Property(x => x.TaxRate).HasPrecision(5, 2);
+        b.Property(x => x.Device).HasDeviceJson();
         b.Ignore(x => x.DiscountableAmount);
         b.HasIndex(x => x.ChargeId);
         b.HasIndex(x => new { x.PractitionerId, x.ServiceDate });

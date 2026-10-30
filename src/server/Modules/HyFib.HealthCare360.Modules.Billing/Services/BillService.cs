@@ -107,6 +107,11 @@ public sealed class BillService(
             return Error.Field("serviceItemId", "Choose an active service.");
         }
 
+        if (ChargeService.ImplantAtTheDesk(item.Code) is { } implant)
+        {
+            return implant;
+        }
+
         if (request.UnitPrice is not null && !item.IsPriceEditable)
         {
             return Error.Field("unitPrice", "The price of this service is fixed by the tariff.");

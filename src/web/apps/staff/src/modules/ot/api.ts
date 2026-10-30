@@ -433,8 +433,20 @@ export interface SurgeryMaterialDto {
   recordedAt: string;
   chargeStatus: ChargeStatus;
   chargeError: string | null;
+  /** What the bill says of the item (NPPA): from the item master for an OT store item, from the pack for a consignment one. */
+  brand: string | null;
+  specification: string | null;
+  /** The MRP of a unit printed on the pack: the lowest of the batches issued, or as typed for a consignment item. */
+  mrp: number | null;
+  /** The NPPA ceiling price of a unit of a price-controlled implant. */
+  ceilingPrice: number | null;
 }
 
+/**
+ * For an OT store item the item master and the stock issued say what it is, so `brand`, `specification` and `mrp` are for
+ * a consignment or patient-supplied item only (an implant needs its brand, maker and MRP). `unitPrice` may not be above
+ * the pack's MRP, nor a price-controlled implant's above its NPPA ceiling.
+ */
 export interface AddSurgeryMaterialRequest {
   kind: MaterialKind;
   supplyItemId: string | null;
@@ -445,6 +457,9 @@ export interface AddSurgeryMaterialRequest {
   expiryDate: string | null;
   quantity: number;
   unitPrice: number;
+  brand?: string | null;
+  specification?: string | null;
+  mrp?: number | null;
 }
 
 /** A usable batch of an OT store item (quantities in the item's base unit). */
@@ -474,6 +489,10 @@ export interface OtStoreItem {
   nearestExpiry: string | null;
   mrp: number | null;
   batches: OtStoreBatch[];
+  brand?: string | null;
+  specification?: string | null;
+  /** The NPPA ceiling price of a unit of a price-controlled implant: a unit is charged at most the lower of it and the MRP. */
+  ceilingPrice?: number | null;
 }
 
 /** Service catalogue item (masters look-up), used to pick the planned procedure. */
