@@ -12,6 +12,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Verification;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -110,6 +111,7 @@ public sealed class DiagnosticsModule : IModule
         services.AddScoped<INotificationDocumentSource, LabReportDocumentSource>();
         services.AddScoped<INotificationDocumentSource, RadiologyReportDocumentSource>();
         services.AddScoped<INotificationDocumentSource, CardiologyReportDocumentSource>();
+        services.AddScoped<IRecordDocumentSource, DiagnosticsRecordDocuments>();
         services.AddScoped<HealthCheckupResultsBuilder>();
         services.AddScoped<DiagnosticsRealtime>();
         services.AddScoped<ChargeService>();

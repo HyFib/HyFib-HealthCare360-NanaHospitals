@@ -251,6 +251,12 @@ public sealed class RecordRequest : AuditableEntity, IFacilityScoped
     public Guid? ReceivedByUserId { get; private set; }
     public string? CancelReason { get; private set; }
 
+    /// <summary>The files of a copy issued as documents, each as it was made then (BSA 2023, s.63).</summary>
+    public List<RecordCopyFile> Files { get; private set; } = [];
+
+    /// <summary>A chart lent out is due back this many days after it is issued, unless another date is given.</summary>
+    public const int LendDays = 7;
+
     /// <summary>
     /// A copy of the record asked for by the patient, their attendant or a legal authority is issued within 72 hours (Indian
     /// Medical Council (Professional Conduct, Etiquette and Ethics) Regulations 2002, reg. 1.3.2).
@@ -269,7 +275,12 @@ public sealed class RecordRequest : AuditableEntity, IFacilityScoped
     public RecordRequestStatus EffectiveStatus(DateOnly today) =>
         Status == RecordRequestStatus.Issued && DueBackOn is { } due && due < today ? RecordRequestStatus.Overdue : Status;
 
-    public Result Issue(DateOnly? dueBackOn, Guid? userId, DateTimeOffset now)
+    /// <summary>
+    /// Issues the chart, lent out until <paramref name="dueBackOn"/> (<see cref="LendDays"/> from <paramref name="today"/>
+    /// when none is given), or a copy, with its <paramref name="files"/> when it is issued as documents. A copy is not
+    /// returned: it is due back only on a date given, as for an original file taken to court.
+    /// </summary>
+    public Result Issue(DateOnly? dueBackOn, IReadOnlyCollection<RecordCopyFile> files, Guid? userId, DateTimeOffset now, DateOnly today)
     {
         if (Status != RecordRequestStatus.Requested)
         {
@@ -279,7 +290,8 @@ public sealed class RecordRequest : AuditableEntity, IFacilityScoped
         Status = RecordRequestStatus.Issued;
         IssuedAt = now;
         IssuedByUserId = userId;
-        DueBackOn = dueBackOn;
+        DueBackOn = dueBackOn ?? (IsCopy || files.Count > 0 ? null : today.AddDays(LendDays));
+        Files.AddRange(files);
         return Result.Success();
     }
 
@@ -306,5 +318,53 @@ public sealed class RecordRequest : AuditableEntity, IFacilityScoped
         Status = RecordRequestStatus.Cancelled;
         CancelReason = reason.Trim();
         return Result.Success();
+    }
+}
+
+/// <summary>
+/// One document of a copy of the record, as it was made when the copy was issued and kept unchanged since, with its
+/// SHA-256 (the hash a certificate under the Bharatiya Sakshya Adhiniyam 2023, s.63(4), states). The database refuses to
+/// change or delete it.
+/// </summary>
+public sealed class RecordCopyFile : Entity
+{
+    public Guid RecordRequestId { get; init; }
+
+    /// <summary>The file's place in the copy, from 1, as the hash report numbers it.</summary>
+    public int Sequence { get; init; }
+
+    /// <summary>The kind of document (<see cref="Platform.Documents.RecordDocumentEntry.Kind"/>) and its id there.</summary>
+    public string DocumentKind { get; init; } = string.Empty;
+
+    public Guid DocumentId { get; init; }
+    public string Title { get; init; } = string.Empty;
+
+    /// <summary>When the document was signed or released.</summary>
+    public DateTimeOffset DocumentDate { get; init; }
+
+    public Guid StoredFileId { get; init; }
+    public string FileName { get; init; } = string.Empty;
+    public long SizeBytes { get; init; }
+
+    /// <summary>SHA-256 of the file's bytes, in upper-case hex.</summary>
+    public string Sha256 { get; init; } = string.Empty;
+
+    public DateTimeOffset ProducedAt { get; init; }
+    public Guid? ProducedByUserId { get; init; }
+
+    /// <summary>The server that made the file (HC360's id for it, and the machine's name and system), for the certificate's device particulars.</summary>
+    public string ServerId { get; init; } = string.Empty;
+
+    public string MachineName { get; init; } = string.Empty;
+    public string OsDescription { get; init; } = string.Empty;
+
+    /// <summary>The HC360 version that made the file.</summary>
+    public string SoftwareVersion { get; init; } = string.Empty;
+
+    /// <summary>A SHA-256 as people copy it (either case, spaces or colons between groups), in the form it is kept; null if it is not one.</summary>
+    public static string? NormalizeSha256(string? value)
+    {
+        var hex = string.Concat((value ?? string.Empty).Where(c => !char.IsWhiteSpace(c) && c != ':')).ToUpperInvariant();
+        return hex.Length == 64 && hex.All(char.IsAsciiHexDigit) ? hex : null;
     }
 }

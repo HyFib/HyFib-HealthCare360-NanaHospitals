@@ -11230,6 +11230,108 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("procedure_records", "clinical");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.RecordCopyFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("DocumentDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("document_date");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("document_id");
+
+                    b.Property<string>("DocumentKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("document_kind");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("MachineName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("machine_name");
+
+                    b.Property<string>("OsDescription")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("os_description");
+
+                    b.Property<DateTimeOffset>("ProducedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("produced_at");
+
+                    b.Property<Guid?>("ProducedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("produced_by_user_id");
+
+                    b.Property<Guid>("RecordRequestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("record_request_id");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("ServerId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("server_id");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sha256");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("SoftwareVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("software_version");
+
+                    b.Property<Guid>("StoredFileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stored_file_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_record_copy_files");
+
+                    b.HasIndex("Sha256")
+                        .HasDatabaseName("ix_record_copy_files_sha256");
+
+                    b.HasIndex("StoredFileId")
+                        .HasDatabaseName("ix_record_copy_files_stored_file_id");
+
+                    b.HasIndex("RecordRequestId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ix_record_copy_files_record_request_id_sequence");
+
+                    b.ToTable("record_copy_files", "clinical");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.RecordRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -43146,6 +43248,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_procedure_records_patients_patient_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.RecordCopyFile", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Clinical.Domain.RecordRequest", null)
+                        .WithMany("Files")
+                        .HasForeignKey("RecordRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_record_copy_files_record_request_record_request_id");
+
+                    b.HasOne("HyFib.HealthCare360.Platform.Files.StoredFile", null)
+                        .WithMany()
+                        .HasForeignKey("StoredFileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_record_copy_files_stored_files_stored_file_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.RecordRequest", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
@@ -45502,6 +45621,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Prescription", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.RecordRequest", b =>
+                {
+                    b.Navigation("Files");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.ImagingStudy", b =>

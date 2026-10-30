@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
@@ -21,6 +22,7 @@ using HyFib.HealthCare360.SharedKernel;
 using HyFib.HealthCare360.WindowsInterop.Updates;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
@@ -143,6 +145,15 @@ public sealed class HospitalServer : IAsyncLifetime
         builder.Services.AddHttpClient<AbdmGatewayKeys>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbhaClient>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
+
+        // PDFs as a test asks for them in a request header (TestPdfRenderer); the server's own renderer for everything else.
+        var renderer = builder.Services.Last(d => d.ServiceType == typeof(IPdfRenderer));
+        builder.Services.Remove(renderer);
+        builder.Services.AddSingleton<IPdfRenderer>(services => new TestPdfRenderer(
+            (IPdfRenderer)(renderer.ImplementationInstance
+                ?? renderer.ImplementationFactory?.Invoke(services)
+                ?? ActivatorUtilities.CreateInstance(services, renderer.ImplementationType!)),
+            services.GetRequiredService<IHttpContextAccessor>()));
 
         _app = builder.Build();
         var platform = _app.Services.GetRequiredService<IOptions<PlatformOptions>>().Value;

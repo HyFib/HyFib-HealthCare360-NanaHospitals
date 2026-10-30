@@ -67,7 +67,7 @@ public sealed class MedicalRecordsTests
         var request = new RecordRequest { PatientId = Guid.CreateVersion7(), RequestedByName = "Dr. Mehta", RequestedAt = Now };
 
         request.Return(null, Now).Error!.Code.ShouldBe("record_request.not_issued");
-        request.Issue(Today.AddDays(3), null, Now).IsSuccess.ShouldBeTrue();
+        request.Issue(Today.AddDays(3), [], null, Now, Today).IsSuccess.ShouldBeTrue();
         request.EffectiveStatus(Today).ShouldBe(RecordRequestStatus.Issued);
         request.EffectiveStatus(Today.AddDays(4)).ShouldBe(RecordRequestStatus.Overdue);
         request.Cancel("No longer needed").Error!.Code.ShouldBe("record_request.not_pending");
@@ -77,13 +77,47 @@ public sealed class MedicalRecordsTests
     }
 
     [Fact]
+    public void A_chart_lent_out_is_due_back_in_a_week_and_a_copy_only_on_a_date_given()
+    {
+        RecordRequest Request(RecordRequestPurpose purpose, bool fromPortal = false) =>
+            new() { PatientId = Guid.CreateVersion7(), RequestedByName = "Dr. Mehta", Purpose = purpose, IsPatientRequest = fromPortal, RequestedAt = Now };
+        RecordCopyFile[] files = [new() { Sequence = 1, Title = "Discharge summary", Sha256 = new string('A', 64) }];
+
+        var ward = Request(RecordRequestPurpose.PatientCare);
+        ward.Issue(null, [], null, Now, Today).IsSuccess.ShouldBeTrue();
+        ward.DueBackOn.ShouldBe(Today.AddDays(RecordRequest.LendDays));
+        ward.EffectiveStatus(Today.AddDays(8)).ShouldBe(RecordRequestStatus.Overdue);
+
+        // A copy for a court, for the patient at the desk or from the portal, and a copy of documents for the insurer: kept, not returned.
+        foreach (var copy in new[]
+                 {
+                     Request(RecordRequestPurpose.Legal), Request(RecordRequestPurpose.PatientCopy), Request(RecordRequestPurpose.Other, fromPortal: true),
+                 })
+        {
+            copy.Issue(null, [], null, Now, Today).IsSuccess.ShouldBeTrue();
+            copy.DueBackOn.ShouldBeNull();
+            copy.EffectiveStatus(Today.AddYears(1)).ShouldBe(RecordRequestStatus.Issued);
+        }
+
+        var insurer = Request(RecordRequestPurpose.Insurance);
+        insurer.Issue(null, files, null, Now, Today).IsSuccess.ShouldBeTrue();
+        insurer.DueBackOn.ShouldBeNull();
+        insurer.Files.ShouldBe(files);
+
+        // The original file summoned to court comes back on the day given.
+        var summoned = Request(RecordRequestPurpose.Legal);
+        summoned.Issue(Today.AddDays(2), [], null, Now, Today).IsSuccess.ShouldBeTrue();
+        summoned.EffectiveStatus(Today.AddDays(3)).ShouldBe(RecordRequestStatus.Overdue);
+    }
+
+    [Fact]
     public void Pending_record_request_can_be_cancelled()
     {
         var request = new RecordRequest { PatientId = Guid.CreateVersion7(), RequestedByName = "Insurance desk", RequestedAt = Now };
 
         request.Cancel("Duplicate request").IsSuccess.ShouldBeTrue();
         request.Status.ShouldBe(RecordRequestStatus.Cancelled);
-        request.Issue(null, null, Now).Error!.Code.ShouldBe("record_request.not_pending");
+        request.Issue(null, [], null, Now, Today).Error!.Code.ShouldBe("record_request.not_pending");
     }
 
     [Fact]
