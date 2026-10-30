@@ -312,6 +312,7 @@ internal static partial class IcdCodeCatalogue
         new("T63.0", "Toxic effect: Snake venom", "snake bite envenomation"),
         new("T63.2", "Toxic effect: Venom of scorpion", "scorpion sting"),
         new("T67.0", "Heatstroke and sunstroke", "heat stroke"),
+        new("T74.2", "Sexual abuse", "child sexual abuse POCSO"),
         new("T75.1", "Drowning and nonfatal submersion", "near drowning"),
         new("T78.2", "Anaphylactic shock, unspecified", "anaphylaxis"),
         new("T78.3", "Angioneurotic oedema", "angioedema"),
@@ -325,12 +326,14 @@ internal static partial class IcdCodeCatalogue
         new("W54", "Bitten or struck by dog", "dog bite"),
         new("X20", "Contact with venomous snakes and lizards", "snake bite"),
         new("X68", "Intentional self-poisoning by and exposure to pesticides", "suicidal poisoning"),
+        new("Y05.9", "Sexual assault by bodily force, unspecified place", "rape sexual assault"),
 
         // XXI Factors influencing health status and contact with health services
         new("Z00.0", "General medical examination", "health checkup executive checkup"),
         new("Z00.1", "Routine child health examination", "well baby"),
         new("Z01.4", "Gynaecological examination (general)(routine)"),
         new("Z02.7", "Issue of medical certificate", "fitness certificate"),
+        new("Z04.4", "Examination and observation following alleged rape and seduction", "sexual assault examination MLC"),
         new("Z09.9", "Follow-up examination after unspecified treatment for other conditions", "follow-up review"),
         new("Z12.3", "Special screening examination for neoplasm of breast", "mammography screening"),
         new("Z12.4", "Special screening examination for neoplasm of cervix", "pap smear"),

@@ -288,16 +288,18 @@ and grants nothing.
     and safety flags stay, so the patient is still seen to.
   - Their stored files (documents, photos, reports) follow the same rules: opening a file, or its details, by its id
     is refused (403 `patient.restricted`) until the user may open the record, so knowing a file's id is not a way in.
-- **Sensitive categories** (HIV, mental health, termination of pregnancy; HIV/AIDS Act 2017, Mental Healthcare Act 2017,
-  MTP Act s.5A):
-  - An HIV (B20–B24, Z21), mental-illness (F20–F69) or medical-abortion (O04) diagnosis puts the record in the category,
-    and so does a released HIV test result outside its normal answers (reactive or indeterminate), or one corrected to it
-    (a result reported under an HIV panel, such as a band of an HIV confirmation, is one);
+- **Sensitive categories** (HIV, mental health, termination of pregnancy, sexual violence; HIV/AIDS Act 2017, Mental
+  Healthcare Act 2017, MTP Act s.5A, Bharatiya Nyaya Sanhita 2023 s.72 and POCSO Act 2012 s.23):
+  - An HIV (B20–B24, Z21), mental-illness (F20–F69), medical-abortion (O04) or sexual-abuse (T74.2, T76.2, Y05, Z04.4)
+    diagnosis puts the record in the category, and so does a released HIV test result outside its normal answers
+    (reactive or indeterminate), or one corrected to it (a result reported under an HIV panel, such as a band of an HIV
+    confirmation, is one), and a sexual assault entered in the MLC register;
     a doctor (`patients.sensitive.manage`) can add or remove one with a reason, audited as a security event.
   - The clinical record (notes, diagnoses, encounters, prescriptions written, nursing and MAR, OT, dialysis, teleconsults,
-    files) then opens only to staff holding the category: `patients.sensitive.hiv` and `.mental_health` (doctors, nurses,
-    medical records), `patients.sensitive.mtp` (medical records; grant it to gynaecologists), to those who may open
-    restricted records, or through break-the-glass, which is audited as for VIP records.
+    emergency cases with their MLC, files) then opens only to staff holding the category: `patients.sensitive.hiv`, `.mental_health` and
+    `.sexual_violence` (doctors, nurses, medical records), `patients.sensitive.mtp` (medical records; grant it to
+    gynaecologists), to those who may open restricted records, or through break-the-glass, which is audited as for VIP
+    records.
   - The patient's details, bills, pharmacy, lab and radiology orders, appointments, allergies and alerts are not closed,
     so the desk and the departments keep serving the patient; the categories themselves show only to doctors.
   - The FHIR API does not list these patients to clients that may not open restricted records.

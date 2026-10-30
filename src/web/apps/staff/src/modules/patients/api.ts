@@ -525,7 +525,7 @@ export interface VerifyIdentityRequest {
 }
 
 /** Confidential kinds of record (gap R-4, server `SensitiveCategory`). */
-export const SENSITIVE_CATEGORIES = ['Hiv', 'MentalHealth', 'Mtp'] as const;
+export const SENSITIVE_CATEGORIES = ['Hiv', 'MentalHealth', 'Mtp', 'SexualViolence'] as const;
 export type SensitiveCategory = (typeof SENSITIVE_CATEGORIES)[number];
 
 export interface SensitiveCategoriesDto {
