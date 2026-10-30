@@ -12,6 +12,7 @@ import {
 } from '@hc360/core';
 import { gstStateName } from '../inventory/gst';
 import type { BillDetail, DayEndReport, ReceiptDto, ReceiptPaymentDto, RefundDto } from './api';
+import { deviceDetailsText } from './device';
 import type { EInvoiceStamp } from './einvoiceApi';
 import type { RunningBill } from './ipApi';
 import {
@@ -188,6 +189,7 @@ export function buildCounterBillHtml(bill: BillDetail, letterhead: Letterhead): 
   const items = bill.lines
     .map(
       (line) => `<tr><td colspan="2" class="desc">${e(line.description)}${line.isReturn ? ' (return)' : ''}</td></tr>
+        ${line.device ? `<tr><td colspan="2" class="small">${e(deviceDetailsText(line.device))}</td></tr>` : ''}
         <tr><td class="small">${e(line.quantity)} × ${money(line.unitPrice)}${line.taxRate > 0 ? ` · GST ${e(formatPercent(line.taxRate))}` : ''}${line.sacCode ? ` · SAC ${e(line.sacCode)}` : ''}</td><td class="num">${money(line.netAmount)}</td></tr>`,
     )
     .join('');

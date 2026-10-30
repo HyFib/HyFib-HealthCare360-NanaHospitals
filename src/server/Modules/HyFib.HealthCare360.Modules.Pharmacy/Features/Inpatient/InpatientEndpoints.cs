@@ -181,7 +181,7 @@ internal static class InpatientEndpoints
             issue.Id, issue.Number, issue.StoreId, patient, issue.AdmissionId, issue.WardIndentId, issue.QueueEntryId, issue.IssuedAt, issuedBy,
             issue.TotalAmount,
             issue.Lines.OrderBy(l => l.ItemName).Select(l => new IpIssueLineDto(
-                l.Id, l.ItemId, l.ItemName, l.BatchNumber, l.ExpiryDate, l.Quantity, l.UnitMrp, l.Amount, l.ReturnedQuantity, l.ChargeId)).ToList(),
+                l.Id, l.ItemId, l.ItemName, l.BatchNumber, l.ExpiryDate, l.Quantity, l.UnitMrp, l.Amount, l.ReturnedQuantity, l.ChargeId, l.UnitPrice)).ToList(),
             returns.Select(r => new WardReturnDto(
                 r.Id, r.Number, r.ReturnedAt, r.Reason, r.CreditAmount,
                 r.Lines.Select(l => new WardReturnLineDto(l.IpIssueLineId, l.ItemName, l.BatchNumber, l.Quantity, l.CreditAmount, l.Restocked, l.ChargeReversal)).ToList()))

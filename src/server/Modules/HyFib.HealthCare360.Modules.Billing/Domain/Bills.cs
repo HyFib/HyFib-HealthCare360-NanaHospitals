@@ -577,6 +577,9 @@ public sealed class BillLine : Entity
     /// <summary>False for items the payer never pays for (IRDAI non-payables such as consumables).</summary>
     public bool IsPayerPayable { get; set; } = true;
 
+    /// <summary>For an implant or another device, what the bill prints of it (NPPA): brand, maker, batch, specification, MRP.</summary>
+    public DeviceDetails? Device { get; set; }
+
     public Guid? PractitionerId { get; set; }
     public Guid? DepartmentId { get; set; }
     public DateTimeOffset ServiceDate { get; set; }
@@ -602,6 +605,7 @@ public sealed class BillLine : Entity
         TaxRate = charge.TaxRate,
         IsDiscountAllowed = charge.IsDiscountAllowed,
         IsPayerPayable = isPayerPayable,
+        Device = charge.Device,
         PractitionerId = charge.PractitionerId,
         DepartmentId = charge.DepartmentId,
         ServiceDate = charge.ServiceDate,

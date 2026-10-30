@@ -95,7 +95,8 @@ public sealed record RunningBillLine(
     ChargeStatus Status,
     Guid? BillId,
     string? PractitionerName,
-    bool IsReturn);
+    bool IsReturn,
+    DeviceDetails? Device = null);
 
 public sealed record PackageLineStatus(Guid ChargeId, string ServiceCode, string Description, decimal Gross, decimal Covered, decimal Excess);
 

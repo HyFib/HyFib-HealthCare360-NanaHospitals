@@ -93,12 +93,17 @@ internal sealed class SurgeryMaterialConfiguration : IEntityTypeConfiguration<Su
         b.ToTable("surgery_materials", SpecialtyCareSchema.Name);
         b.Property(x => x.ItemName).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.Manufacturer).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.Brand).HasMaxLength(120);
+        b.Property(x => x.Specification).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.LotNumber).HasMaxLength(64);
         b.Property(x => x.SerialNumber).HasMaxLength(64);
         b.Property(x => x.RecordedByName).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.ChargeError).HasMaxLength(SpecialtyCareSchema.Reason);
         b.Property(x => x.Quantity).HasPrecision(18, 3);
+        b.Property(x => x.Mrp).HasPrecision(18, 4);
+        b.Property(x => x.CeilingPrice).HasPrecision(18, 4);
         b.Ignore(x => x.Amount);
+        b.Ignore(x => x.Device);
         b.HasOne<SurgeryBooking>().WithMany().HasForeignKey(x => x.SurgeryBookingId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.SurgeryBookingId);
         b.HasIndex(x => x.LotNumber);

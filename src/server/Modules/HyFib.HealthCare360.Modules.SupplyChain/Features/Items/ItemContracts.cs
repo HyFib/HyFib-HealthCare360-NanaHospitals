@@ -53,7 +53,9 @@ public sealed record ItemDetail(
     bool IsActive,
     bool RequiresPrescription,
     bool RequiresRegister,
-    uint Version);
+    uint Version,
+    string? Specification,
+    decimal? CeilingPrice);
 
 public sealed record SaveItemRequest(
     string Code,
@@ -81,7 +83,9 @@ public sealed record SaveItemRequest(
     string? Manufacturer,
     string? Barcode,
     bool IsActive,
-    uint? Version);
+    uint? Version,
+    string? Specification = null,
+    decimal? CeilingPrice = null);
 
 /// <summary>Picker row: the item plus its sellable stock in the chosen store (when a store is given).</summary>
 public sealed record ItemLookup(
@@ -141,6 +145,8 @@ public sealed class SaveItemRequestValidator : AbstractValidator<SaveItemRequest
         RuleFor(x => x.MinimumStock).GreaterThanOrEqualTo(0);
         RuleFor(x => x.MaximumStock).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Manufacturer).SafeText(120);
+        RuleFor(x => x.Specification).SafeText(200);
+        RuleFor(x => x.CeilingPrice).GreaterThan(0).LessThanOrEqualTo(10_000_000).When(x => x.CeilingPrice is not null);
         RuleFor(x => x.Barcode).MaximumLength(64);
     }
 }

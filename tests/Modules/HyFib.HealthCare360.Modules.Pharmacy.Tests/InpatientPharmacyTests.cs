@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Registers;
 using HyFib.HealthCare360.Modules.Pharmacy.Services;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Modules.SupplyChain.Services;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Tests;
 
@@ -40,17 +41,54 @@ public sealed class InpatientPharmacyTests
     }
 
     [Fact]
-    public void Ward_returns_are_credited_at_the_issued_mrp_and_never_exceed_what_was_issued()
+    public void Ward_returns_are_credited_at_the_price_charged_and_never_exceed_what_was_issued()
     {
         var issue = new IpIssue { Number = "NHIPI26000001", PatientId = Guid.CreateVersion7(), AdmissionId = Guid.CreateVersion7(), IssuedAt = Now };
-        var line = new IpIssueLine { ItemName = "Pantoprazole 40 mg", BatchNumber = "P1", Quantity = 10, UnitMrp = 10.6m };
+        var line = new IpIssueLine { ItemName = "Pantoprazole 40 mg", BatchNumber = "P1", Quantity = 10, UnitMrp = 10.6m, UnitPrice = 10.6m };
         issue.Lines.Add(line);
 
         issue.ReturnLine(line.Id, 3, Now).Value.ShouldBe(31.80m);
         issue.ReturnLine(line.Id, 8, Now).Error!.Code.ShouldBe("ward_return.exceeds_issued");
         line.ReturnedQuantity.ShouldBe(3);
         issue.LastReturnedAt.ShouldBe(Now);
+
+        // An implant charged at its NPPA ceiling, below the MRP on its older pack, is credited at the ceiling.
+        var knee = new IpIssueLine { ItemName = "Knee system", BatchNumber = "K1", Quantity = 2, UnitMrp = 60_000m, UnitPrice = 57_456m };
+        issue.Lines.Add(knee);
+        issue.ReturnLine(knee.Id, 1, Now).Value.ShouldBe(57_456m);
     }
+
+    [Fact]
+    public void An_implant_is_charged_at_its_ceiling_when_its_pack_says_more_and_a_device_carries_its_bill_details()
+    {
+        var knee = Summary(ItemType.Implant, ceiling: 57_456m);
+        (InpatientPharmacyService.PriceOf(knee, 60_000m), InpatientPharmacyService.PriceOf(knee, 50_000m)).ShouldBe((57_456m, 50_000m));
+        InpatientPharmacyService.PriceOf(Summary(ItemType.Consumable, ceiling: 100m), 150m).ShouldBe(150m, "Only an implant has an NPPA ceiling here.");
+
+        var line = new IpIssueLine { ItemName = "Knee system", BatchNumber = "K1", Quantity = 1, UnitMrp = 60_000m, UnitPrice = 57_456m };
+        InpatientPharmacyService.DeviceOf(knee, line).ShouldBe(new DeviceDetails("Attune", "DePuy Synthes", "Primary total knee", "K1", null, 60_000m, 57_456m));
+        InpatientPharmacyService.DeviceOf(Summary(ItemType.Consumable, ceiling: null), line)!.CeilingPrice.ShouldBeNull();
+        InpatientPharmacyService.DeviceOf(Summary(ItemType.Drug, ceiling: null), line).ShouldBeNull("A medicine's batch stays in its name.");
+    }
+
+    [Fact]
+    public void A_returned_device_is_credited_with_its_details_as_issued_not_a_ceiling_revised_since()
+    {
+        // Issued at the ceiling of ₹57,456 from a pack printed at ₹60,000; NPPA has cut the ceiling to ₹50,000 since.
+        var revised = Summary(ItemType.Implant, ceiling: 50_000m);
+        var atCeiling = new IpIssueLine { ItemName = "Knee system", BatchNumber = "K1", Quantity = 2, UnitMrp = 60_000m, UnitPrice = 57_456m };
+        InpatientPharmacyService.ReturnedDeviceOf(revised, atCeiling)
+            .ShouldBe(new DeviceDetails("Attune", "DePuy Synthes", "Primary total knee", "K1", null, 60_000m, 57_456m));
+
+        // Charged its MRP, the ceiling not limiting it: none is shown.
+        InpatientPharmacyService.ReturnedDeviceOf(Summary(ItemType.Implant, ceiling: 70_000m), new IpIssueLine { BatchNumber = "K1", UnitMrp = 60_000m, UnitPrice = 60_000m })!
+            .CeilingPrice.ShouldBeNull();
+        InpatientPharmacyService.ReturnedDeviceOf(Summary(ItemType.Drug, ceiling: null), atCeiling).ShouldBeNull("A medicine's credit names its batch.");
+    }
+
+    private static ItemSummary Summary(ItemType type, decimal? ceiling) => new(
+        Guid.CreateVersion7(), "IMP-1", "Knee system", null, "Attune", null, null, type, DrugSchedule.None, false, false, "PCS", "9021", 5m, true,
+        "DePuy Synthes", "Primary total knee", ceiling);
 
     [Fact]
     public void Issuing_to_the_ward_feeds_the_medication_administration_record()

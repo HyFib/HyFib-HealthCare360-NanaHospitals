@@ -461,6 +461,8 @@ export interface IpIssueLineDto {
   amount: number;
   returnedQuantity: number;
   chargeId: string | null;
+  /** What a unit was charged: its MRP, or a price-controlled implant's NPPA ceiling when that is lower. */
+  unitPrice: number;
 }
 
 export interface WardReturnDto {

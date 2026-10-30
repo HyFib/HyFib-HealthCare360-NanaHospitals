@@ -1,7 +1,7 @@
 import type { PagedResult, PayerType } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { BillDetail } from './api';
+import type { BillDetail, DeviceDetails } from './api';
 import type { ChargeStatus, IpAccountStatus, ServiceCategory } from './labels';
 
 /** In-patient accounts: /api/v1/billing/ip-accounts (IPB-01..08). */
@@ -99,6 +99,8 @@ export interface RunningBillLine {
   billId: string | null;
   practitionerName: string | null;
   isReturn: boolean;
+  /** An implant's or another device's bill details (NPPA); null for a service. */
+  device?: DeviceDetails | null;
 }
 
 export interface PackageLineStatus {

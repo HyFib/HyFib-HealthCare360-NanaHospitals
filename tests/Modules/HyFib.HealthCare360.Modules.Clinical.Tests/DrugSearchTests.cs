@@ -124,5 +124,5 @@ public sealed class DrugSearchTests
 
     private static ItemSummary Summary(DrugSchedule schedule, bool ndps) => new(
         Guid.CreateVersion7(), "DRG-010", "Augmentin 625", "Amoxicillin + Clavulanic acid", "Augmentin", "500 mg + 125 mg", "Tablet", ItemType.Drug, schedule,
-        ndps, false, "TAB", "30042019", 12, true);
+        ndps, false, "TAB", "30042019", 12, true, Manufacturer: null, Specification: null, CeilingPrice: null);
 }

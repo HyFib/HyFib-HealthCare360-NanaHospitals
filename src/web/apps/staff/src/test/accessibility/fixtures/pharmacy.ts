@@ -282,6 +282,8 @@ const drug = (
   requiresPrescription: true,
   requiresRegister: false,
   version: 1,
+  specification: null,
+  ceilingPrice: null,
   ...overrides,
 });
 

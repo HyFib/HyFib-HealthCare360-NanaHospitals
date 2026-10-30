@@ -11,6 +11,7 @@ import {
   localClashes,
   otStoreProblem,
   overlaps,
+  packPrice,
   phaseGate,
   placeBlocks,
   preOpGate,
@@ -359,6 +360,13 @@ describe('OT store materials', () => {
     expect(priceForBatch(null, null, 125000)).toBe(125000);
     expect(priceForBatch(125000, 125000, 130000)).toBe(130000);
     expect(priceForBatch(99000, 125000, 130000)).toBe(99000);
+  });
+
+  it('fills a price-controlled implant at its NPPA ceiling when its pack says more', () => {
+    expect(packPrice(60000, 57456)).toBe(57456);
+    expect(packPrice(50000, 57456)).toBe(50000);
+    expect(packPrice(1250, null)).toBe(1250);
+    expect(packPrice(1250, undefined)).toBe(1250);
   });
 
   it('describes a batch in words', () => {

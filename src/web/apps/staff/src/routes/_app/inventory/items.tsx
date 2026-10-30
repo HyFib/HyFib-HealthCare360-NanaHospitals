@@ -313,12 +313,21 @@ const itemSchema = z
     minimumStock: z.number({ error: 'Enter a number (0 if none).' }).min(0),
     maximumStock: z.number({ error: 'Enter a number (0 if none).' }).min(0),
     manufacturer: z.string().trim().max(120),
+    specification: z.string().trim().max(200),
+    ceilingPrice: z.number().nullable(),
     barcode: z.string().trim().max(64),
     isActive: z.boolean(),
   })
   .superRefine((v, ctx) => {
     if (v.maximumStock > 0 && v.minimumStock > v.maximumStock) {
       ctx.addIssue({ code: 'custom', path: ['minimumStock'], message: 'The minimum cannot be above the maximum.' });
+    }
+    if (v.type === 'Implant' && v.ceilingPrice !== null && (v.ceilingPrice <= 0 || v.ceilingPrice > 10_000_000)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ceilingPrice'],
+        message: 'Enter the ceiling price in rupees, or leave it empty.',
+      });
     }
   });
 
@@ -349,6 +358,8 @@ function toForm(item: ItemDetail | null): ItemValues {
     minimumStock: item?.minimumStock ?? 0,
     maximumStock: item?.maximumStock ?? 0,
     manufacturer: item?.manufacturer ?? '',
+    specification: item?.specification ?? '',
+    ceilingPrice: item?.ceilingPrice ?? null,
     barcode: item?.barcode ?? '',
     isActive: item?.isActive ?? true,
   };
@@ -436,6 +447,9 @@ function ItemEditor({
         minimumStock: values.minimumStock,
         maximumStock: values.maximumStock,
         manufacturer: values.manufacturer || null,
+        specification: values.specification || null,
+        // NPPA fixes ceilings for implants (coronary stents, knee implants) only.
+        ceilingPrice: values.type === 'Implant' ? values.ceilingPrice : null,
         barcode: values.barcode || null,
         isActive: values.isActive,
         version: loadedVersion,
@@ -671,7 +685,13 @@ function ItemEditor({
 
             <Subtitle2 as="h3">Other</Subtitle2>
             <FormGrid columns={2}>
-              <TextField control={form.control} name="manufacturer" label="Manufacturer" disabled={readOnly} />
+              <TextField
+                control={form.control}
+                name="manufacturer"
+                label="Manufacturer or importer"
+                disabled={readOnly}
+                hint={type === 'Drug' ? undefined : "A device's bill names it."}
+              />
               <TextField
                 control={form.control}
                 name="barcode"
@@ -680,6 +700,27 @@ function ItemEditor({
                 maxLength={64}
                 hint="Scan the pack to fill it"
               />
+              {type !== 'Drug' && (
+                <TextField
+                  control={form.control}
+                  name="specification"
+                  label="Specification"
+                  disabled={readOnly}
+                  maxLength={200}
+                  hint="What the device is, as its bill says. For a stent: bare-metal or drug-eluting first, then material and size."
+                />
+              )}
+              {type === 'Implant' && (
+                <NumberField
+                  control={form.control}
+                  name="ceilingPrice"
+                  label="NPPA ceiling price (₹ a unit, with GST)"
+                  disabled={readOnly}
+                  min={0}
+                  step={0.01}
+                  hint="Coronary stents and knee implants. No patient is charged more, whatever an older pack's MRP. Update it when NPPA revises it."
+                />
+              )}
             </FormGrid>
             <SwitchField
               control={form.control}

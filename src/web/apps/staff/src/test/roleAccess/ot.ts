@@ -309,6 +309,10 @@ const MATERIALS: SurgeryMaterialDto[] = [
     recordedAt: minutesAgo(10),
     chargeStatus: 'NotDue',
     chargeError: null,
+    brand: 'Hem-o-lok',
+    specification: 'Polymer ligating clip, medium',
+    mrp: 450,
+    ceilingPrice: null,
   },
 ];
 

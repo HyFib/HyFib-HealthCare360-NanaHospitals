@@ -56,6 +56,8 @@ internal sealed class ItemConfiguration : IEntityTypeConfiguration<Item>
         b.Property(x => x.MinimumStock).IsQuantity();
         b.Property(x => x.MaximumStock).IsQuantity();
         b.Property(x => x.Manufacturer).HasMaxLength(120);
+        b.Property(x => x.Specification).HasMaxLength(200);
+        b.Property(x => x.CeilingPrice).HasPrecision(18, 4);
         b.Property(x => x.Barcode).HasMaxLength(64);
         b.Ignore(x => x.RequiresPrescription);
         b.Ignore(x => x.RequiresRegister);

@@ -94,12 +94,17 @@ export interface ItemDetail {
   reorderQuantity: number;
   minimumStock: number;
   maximumStock: number;
+  /** The manufacturer, or for an imported device the importer: a device's bill names it (NPPA). */
   manufacturer: string | null;
   barcode: string | null;
   isActive: boolean;
   requiresPrescription: boolean;
   requiresRegister: boolean;
   version: number;
+  /** For an implant or another device, what it is as its bill says (for a stent, BMS or DES first; material, size). */
+  specification: string | null;
+  /** For a price-controlled implant (coronary stent, knee implant), the NPPA ceiling price of a unit with GST. */
+  ceilingPrice: number | null;
 }
 
 export type SaveItemRequest = Omit<ItemDetail, 'id' | 'requiresPrescription' | 'requiresRegister' | 'version'> & {

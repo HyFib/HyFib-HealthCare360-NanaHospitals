@@ -4,8 +4,10 @@ using HyFib.HealthCare360.Modules.SupplyChain.Services;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 
-/// <summary>An item of the OT store as the picker lists it.</summary>
-internal sealed record OtStoreCandidate(Guid Id, string Code, string Name, string? GenericName, string? Manufacturer, ItemType Type, string BaseUnit);
+/// <summary>An item of the OT store as the picker lists it, with what a device's bill says of it (NPPA).</summary>
+internal sealed record OtStoreCandidate(
+    Guid Id, string Code, string Name, string? GenericName, string? Manufacturer, ItemType Type, string BaseUnit, string? Brand = null,
+    string? Specification = null, decimal? CeilingPrice = null);
 
 /// <summary>A batch with stock in the OT store (quantities in the item's base unit).</summary>
 internal sealed record OtStoreBatchRow(
@@ -38,7 +40,7 @@ internal static class OtStoreLookup
             .OrderBy(i => i.Name)
             .ThenBy(i => i.Code)
             .Take(Take(take))
-            .Select(i => new OtStoreCandidate(i.Id, i.Code, i.Name, i.GenericName, i.Manufacturer, i.Type, i.BaseUnit));
+            .Select(i => new OtStoreCandidate(i.Id, i.Code, i.Name, i.GenericName, i.Manufacturer, i.Type, i.BaseUnit, i.BrandName, i.Specification, i.CeilingPrice));
     }
 
     public static IQueryable<OtStoreBatchRow> Batches(IQueryable<StockBatch> batches, Guid storeId, List<Guid> itemIds) =>
@@ -69,6 +71,9 @@ internal static class OtStoreLookup
             usable.Sum(b => b.OnHand - b.Reserved),
             usable.Count == 0 ? null : usable[0].ExpiryDate,
             usable.Count == 0 ? null : usable[0].Mrp,
-            usable.Take(BatchesPerItem).Select(b => new OtStoreBatch(b.BatchId, b.BatchNumber, b.ExpiryDate, b.OnHand - b.Reserved, b.Mrp)).ToList());
+            usable.Take(BatchesPerItem).Select(b => new OtStoreBatch(b.BatchId, b.BatchNumber, b.ExpiryDate, b.OnHand - b.Reserved, b.Mrp)).ToList(),
+            item.Brand,
+            item.Specification,
+            item.CeilingPrice);
     }
 }

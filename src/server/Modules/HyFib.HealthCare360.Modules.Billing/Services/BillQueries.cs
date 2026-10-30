@@ -63,7 +63,8 @@ internal static class BillQueries
             l.Id, l.ChargeId, l.ServiceItemId, l.ServiceCode, l.Description, l.Category, l.SacCode, l.Quantity, l.UnitPrice, l.GrossAmount,
             l.PackageCoveredAmount, l.TariffDiscountAmount, l.LineDiscountAmount, l.BillDiscountShare, l.TaxRate, l.TaxableAmount, l.CgstAmount,
             l.SgstAmount, l.IgstAmount, l.NetAmount, l.IsDiscountAllowed, l.IsPayerPayable, l.PractitionerId,
-            l.PractitionerId is { } pid ? practitioners.GetValueOrDefault(pid) : null, l.DepartmentId, l.ServiceDate, IsReturn: l.GrossAmount < 0)).ToList();
+            l.PractitionerId is { } pid ? practitioners.GetValueOrDefault(pid) : null, l.DepartmentId, l.ServiceDate, IsReturn: l.GrossAmount < 0,
+            l.Device)).ToList();
 
         var einvoice = await db.Set<EInvoice>().AsNoTracking()
             .FirstOrDefaultAsync(e => e.Source == "bill" && e.SourceId == bill.Id && e.Status == EInvoiceStatus.Registered, ct);

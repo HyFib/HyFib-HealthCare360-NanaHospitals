@@ -64,6 +64,7 @@ internal sealed class IpIssueLineConfiguration : IEntityTypeConfiguration<IpIssu
         b.Property(x => x.BatchNumber).HasMaxLength(40);
         b.Property(x => x.Quantity).IsQuantity();
         b.Property(x => x.UnitMrp).IsUnitRate();
+        b.Property(x => x.UnitPrice).IsUnitRate();
         b.Property(x => x.ReturnedQuantity).IsQuantity();
         b.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<StockBatch>().WithMany().HasForeignKey(x => x.BatchId).OnDelete(DeleteBehavior.Restrict);

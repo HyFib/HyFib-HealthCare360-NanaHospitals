@@ -580,6 +580,16 @@ is not set, nothing is listed and nothing can be recorded.
   and is billed on a patient-level OP bill (`POST /bills` with `patientId`).
 * Price: the payer's tariff plan price (bed-class multiplier for procedures, surgery, nursing and doctor visits),
   else the service's base price; `UnitPriceOverride` wins (MRP, implant invoice price). GST comes from the service item.
+* **A device** (`ChargeRequest.Device`, a `DeviceDetails`): the OT and the IP pharmacy send, for an implant or another
+  device from stock, what NPPA asks its bill to say: brand, manufacturer or importer, specification, the batch and
+  serial of the pack used, the MRP on that pack and, for a price-controlled implant (a coronary stent, a knee implant),
+  its NPPA ceiling price. The charge and its bill line keep them (`device`, jsonb); the bill prints them beneath the
+  line, in the patient's language, and so does the counter's 80 mm bill. A unit priced above the lower of the MRP and
+  the ceiling is refused (`billing.device_above_mrp`, `billing.device_above_ceiling`), whichever module posts it. A
+  credit (a device returned) gives back what was charged and is not held to the limit, which may have been cut since.
+* **Implants are not charged by hand**: a manual charge (`POST /charges`) on `OT-IMPLANT` or `PHARM-IMPL` is refused
+  (`billing.implant_from_record`, 422). An implant is billed from the surgery record or the IP pharmacy's issue, which
+  name it and keep its price within its limits.
 * Negative quantity = a **return**: it must name its admission (or visit) and may not credit more than was charged for
   the same service item there, net of earlier returns (`billing.credit_exceeds_charge`). Pharmacy posts these as
   `pharmacy.ip.return`; bill, running-bill and portal lines flag them with `isReturn`.

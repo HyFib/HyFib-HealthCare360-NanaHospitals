@@ -33,6 +33,56 @@ public sealed record ChargeRequest
 
     /// <summary>For a day of a bed (Inpatient's bed-day charge), the kind of room, which decides its GST; null otherwise.</summary>
     public RoomCharge? Room { get; init; }
+
+    /// <summary>
+    /// For an implant or another medical device from stock, what the bill must say of it (NPPA), and the most a unit
+    /// may be charged; null for a service.
+    /// </summary>
+    public DeviceDetails? Device { get; init; }
+}
+
+/// <summary>
+/// A medical device on a bill (an implant, a stent, a catheter, a consumable from stock) as NPPA asks a hospital to bill
+/// a coronary stent or a knee implant: its brand, its manufacturer or importer, its specification (for a stent, its
+/// category first: bare-metal or drug-eluting), the batch and serial number of the pack used, the MRP printed on that
+/// pack, and for a price-controlled device the NPPA ceiling price with GST. Prices are per unit of the charge.
+/// </summary>
+public sealed record DeviceDetails(
+    string? Brand,
+    string? Manufacturer,
+    string? Specification,
+    string? Batch,
+    string? Serial,
+    decimal? Mrp,
+    decimal? CeilingPrice)
+{
+    /// <summary>
+    /// The most a unit may be charged: the lower of the pack's MRP and the NPPA ceiling price, whichever are known.
+    /// A device is never sold above the price on its pack, nor a price-controlled one above its ceiling, even from a
+    /// pack printed before the ceiling was cut.
+    /// </summary>
+    public decimal? PriceLimit() => (Mrp is > 0 ? Mrp : null, CeilingPrice is > 0 ? CeilingPrice : null) switch
+    {
+        ({ } mrp, { } ceiling) => Math.Min(mrp, ceiling),
+        ({ } mrp, null) => mrp,
+        (null, { } ceiling) => ceiling,
+        _ => null,
+    };
+
+    /// <summary>True when the ceiling price, not the MRP, is what limits the price.</summary>
+    public bool CeilingLimits() => CeilingPrice is > 0 && (Mrp is not > 0 || CeilingPrice < Mrp);
+
+    /// <summary>The details, trimmed; null when there are none to print.</summary>
+    public static DeviceDetails? Of(
+        string? brand, string? manufacturer, string? specification, string? batch, string? serial, decimal? mrp, decimal? ceilingPrice)
+    {
+        var device = new DeviceDetails(
+            Clean(brand), Clean(manufacturer), Clean(specification), Clean(batch), Clean(serial), mrp is > 0 ? mrp : null,
+            ceilingPrice is > 0 ? ceilingPrice : null);
+        return device is { Brand: null, Manufacturer: null, Specification: null, Batch: null, Serial: null, Mrp: null, CeilingPrice: null } ? null : device;
+    }
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 /// <summary>

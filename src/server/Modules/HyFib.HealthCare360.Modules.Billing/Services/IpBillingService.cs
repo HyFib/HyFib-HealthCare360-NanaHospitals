@@ -263,7 +263,7 @@ public sealed class IpBillingService(
                 .ToList(),
             all.Select(c => new RunningBillLine(
                 c.Id, c.ServiceDate, c.ServiceCode, c.Description, c.Category, c.Quantity, c.UnitPrice, c.NetAmount, c.Status, c.BillId,
-                c.PractitionerId is { } pid ? doctors.GetValueOrDefault(pid) : null, c.IsCredit)).ToList(),
+                c.PractitionerId is { } pid ? doctors.GetValueOrDefault(pid) : null, c.IsCredit, c.Device)).ToList(),
             GrossTotal: all.Sum(c => c.GrossAmount),
             DiscountTotal: all.Sum(c => c.DiscountAmount),
             TaxTotal: all.Sum(c => c.TaxAmount),

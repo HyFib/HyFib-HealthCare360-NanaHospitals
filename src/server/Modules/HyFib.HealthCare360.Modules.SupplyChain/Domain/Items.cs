@@ -103,7 +103,22 @@ public sealed class Item : AuditableEntity
     public decimal ReorderQuantity { get; set; }
     public decimal MinimumStock { get; set; }
     public decimal MaximumStock { get; set; }
+
+    /// <summary>The manufacturer, or for an imported device the importer: a device's bill names it (NPPA).</summary>
     public string? Manufacturer { get; set; }
+
+    /// <summary>
+    /// For an implant or another device, what it is as its bill must say: for a stent, its category (bare-metal or
+    /// drug-eluting) first, then what it is made of and its size ("Drug-eluting, everolimus, cobalt-chromium, 3.0 × 28 mm").
+    /// </summary>
+    public string? Specification { get; set; }
+
+    /// <summary>
+    /// For a price-controlled implant (a coronary stent, a knee implant), the NPPA ceiling price of a base unit with the GST
+    /// on it: no patient is charged more, whatever the MRP printed on an older pack. NPPA revises it, so the store updates it.
+    /// </summary>
+    public decimal? CeilingPrice { get; set; }
+
     public string? Barcode { get; set; }
     public bool IsActive { get; set; } = true;
 
@@ -140,6 +155,11 @@ public sealed class Item : AuditableEntity
         if ((IsControlled || Schedule != DrugSchedule.None) && Type != ItemType.Drug)
         {
             return Error.Field("schedule", "Only drugs can carry a schedule or the controlled-drug flag.");
+        }
+
+        if (CeilingPrice is not null && (Type != ItemType.Implant || CeilingPrice <= 0))
+        {
+            return Error.Field("ceilingPrice", "An NPPA ceiling price is set on an implant (a coronary stent, a knee implant), and is more than zero.");
         }
 
         return GstCalculator.IsStandardRate(GstRate)

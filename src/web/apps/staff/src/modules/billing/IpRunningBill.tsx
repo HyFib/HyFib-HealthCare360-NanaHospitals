@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { AddChargeButton, CancelChargeDialog, type CancellableCharge } from './ChargeDialogs';
+import { deviceDetailsText } from './device';
 import { useCanManageCharges } from './hooks';
 import { ipQueries, type IpAccountDetail, type RunningBill } from './ipApi';
 import { SERVICE_CATEGORY_LABEL } from './labels';
@@ -189,6 +190,7 @@ export function IpRunningBill({ account }: { account: IpAccountDetail }) {
                       {l.serviceCode}
                       {l.practitionerName ? ` · ${l.practitionerName}` : ''}
                     </Caption1>
+                    {l.device && <Caption1 className={styles.muted}>{deviceDetailsText(l.device)}</Caption1>}
                   </span>
                 ),
               },

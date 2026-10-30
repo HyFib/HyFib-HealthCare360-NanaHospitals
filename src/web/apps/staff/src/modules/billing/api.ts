@@ -83,6 +83,23 @@ export interface BillLineDto {
   departmentId: string | null;
   serviceDate: string;
   isReturn: boolean;
+  /** An implant's or another device's bill details (NPPA); null for a service. */
+  device?: DeviceDetails | null;
+}
+
+/**
+ * A medical device on a bill, as NPPA asks a hospital to bill a coronary stent or a knee implant: its brand, its
+ * manufacturer or importer, its specification, the batch and serial number of the pack used, the MRP on that pack and,
+ * for a price-controlled implant, the NPPA ceiling price a unit is never charged above.
+ */
+export interface DeviceDetails {
+  brand: string | null;
+  manufacturer: string | null;
+  specification: string | null;
+  batch: string | null;
+  serial: string | null;
+  mrp: number | null;
+  ceilingPrice: number | null;
 }
 
 export interface ReceiptSummary {

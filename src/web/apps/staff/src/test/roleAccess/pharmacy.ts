@@ -383,6 +383,7 @@ const IP_ISSUE: IpIssueDetail = {
       amount: 50.4,
       returnedQuantity: 0,
       chargeId: id('591'),
+      unitPrice: 8.4,
     },
   ],
   returns: [],

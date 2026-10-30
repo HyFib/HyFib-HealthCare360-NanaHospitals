@@ -145,6 +145,11 @@ public sealed class StockDocumentTests
         new Item { Type = ItemType.Drug, GstRate = 7, PurchaseUnitFactor = 1 }.Validate().IsFailure.ShouldBeTrue();
         new Item { Type = ItemType.Drug, PurchaseUnitFactor = 0 }.Validate().IsFailure.ShouldBeTrue();
 
+        // An NPPA ceiling price is an implant's (a coronary stent, a knee implant), and more than nothing.
+        new Item { Type = ItemType.Implant, GstRate = 5, PurchaseUnitFactor = 1, CeilingPrice = 57_456m }.Validate().IsSuccess.ShouldBeTrue();
+        new Item { Type = ItemType.Consumable, GstRate = 5, PurchaseUnitFactor = 1, CeilingPrice = 900m }.Validate().Error!.Fields!.ShouldContainKey("ceilingPrice");
+        new Item { Type = ItemType.Implant, GstRate = 5, PurchaseUnitFactor = 1, CeilingPrice = 0m }.Validate().Error!.Fields!.ShouldContainKey("ceilingPrice");
+
         Item.NeedsPrescription(DrugSchedule.H, false).ShouldBeTrue();
         Item.NeedsPrescription(DrugSchedule.G, false).ShouldBeFalse();
         Item.NeedsRegister(DrugSchedule.H, false).ShouldBeFalse();

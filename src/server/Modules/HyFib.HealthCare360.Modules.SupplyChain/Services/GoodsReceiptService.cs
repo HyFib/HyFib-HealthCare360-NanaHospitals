@@ -117,7 +117,8 @@ public sealed class GoodsReceiptService(HospitalDbContext db, INumberSeries numb
                 GstRate = input.GstRate ?? item.GstRate,
                 UnitsPerPurchaseUnit = item.PurchaseUnitFactor,
                 RequiresBatch = item.TracksExpiry,
-                RequiresMrp = item.Type == ItemType.Drug,
+                // An implant's MRP is what its bill may charge at most (NPPA), so its batch must carry one, as a medicine's does.
+                RequiresMrp = item.Type is ItemType.Drug or ItemType.Implant,
                 AcceptShortExpiry = input.AcceptShortExpiry,
             });
         }
