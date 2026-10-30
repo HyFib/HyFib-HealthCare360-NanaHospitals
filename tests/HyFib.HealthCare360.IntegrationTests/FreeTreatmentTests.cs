@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
@@ -15,6 +16,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
@@ -28,11 +30,14 @@ using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using BillPaymentMode = HyFib.HealthCare360.Modules.Billing.Domain.PaymentMode;
 using BillStatus = HyFib.HealthCare360.Modules.Billing.Domain.BillStatus;
+using DiscrepancyKind = HyFib.HealthCare360.Modules.Billing.Domain.DiscrepancyKind;
+using GatewayDiscrepancy = HyFib.HealthCare360.Modules.Billing.Domain.GatewayDiscrepancy;
 using Migrations = HyFib.HealthCare360.Server.Persistence.Migrations;
 using PharmacyPaymentMode = HyFib.HealthCare360.Modules.Pharmacy.Domain.PaymentMode;
 
@@ -106,8 +111,10 @@ public sealed class FreeTreatmentTests(HospitalServer server)
         var entry = await pharmacist.GetAsync<QueueEntryDetail>($"/api/v1/pharmacy/queue/{waiting.Id}?storeId={store.Id}");
         entry.FreeTreatmentReason.ShouldBe(reason);
         var line = entry.Lines.ShouldHaveSingleItem();
+
+        // One tablet is handed over: the shelf is shared with every test of the run.
         DispenseRequest Dispense(params SalePayment[] payments) => new(
-            store.Id, [new DispenseLineRequest(line.Id, line.DrugItemId!.Value, line.RequestedQuantity, null, null, false)], null, 0m, payments, false);
+            store.Id, [new DispenseLineRequest(line.Id, line.DrugItemId!.Value, 1m, null, null, false)], null, 0m, payments, false);
         using (var paid = await pharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/queue/{entry.Id}/dispense",
                    Dispense(new SalePayment(PharmacyPaymentMode.Cash, 20m, null))))
         {
@@ -130,6 +137,7 @@ public sealed class FreeTreatmentTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
 
         // An acid attack, entered in the register; the patient is admitted from the ER to the ward.
         var victim = await ErCaseAsync(frontOffice, doctor, MlcCause.AcidAttack, Gender.Male);
@@ -161,12 +169,20 @@ public sealed class FreeTreatmentTests(HospitalServer server)
         (running.EstimatedPatientPayable, running.FreeTreatmentReason).ShouldBe((0m, reason));
         running.NetTotal.ShouldBeGreaterThan(0m, "The services are charged, and so valued, as usual.");
 
+        // The ward initiates the discharge, which drafts the final bill: it comes to nothing, is settled at ₹0, and clears the
+        // patient to go home. The bed is cleaned for the next.
+        await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/initiate",
+            new InitiateDischargeRequest(null, "Fit for discharge; grafting as a day case"));
         var final = await billing.PostAsync<BillDetail>($"/api/v1/billing/ip-accounts/{account.Id}/final-bill");
         (final.NetAmount, final.FreeTreatmentReason, final.FreeTreatmentAmount > 0m).ShouldBe((0m, reason, true));
         final = await billing.PostAsync<BillDetail>($"{Bills}/{final.Id}/finalize", new BillVersionRequest(final.Version));
         (final.Status, final.DueAmount).ShouldBe((BillStatus.Paid, 0m));
         var clearance = await billing.GetAsync<ClearanceDto>($"/api/v1/billing/ip-accounts/{account.Id}/clearance");
         (clearance.Cleared, clearance.Outstanding).ShouldBe((true, 0m), clearance.Reason);
+        var stay = await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admission.Id}");
+        (await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
+            new CompleteDischargeRequest(DischargeType.Normal, null, "Discharged home", NotifyPatient: false))).Status.ShouldBe(AdmissionStatus.Discharged);
+        await CleanBedAsync(nurse, stay);
     }
 
     [Fact]
@@ -220,6 +236,39 @@ public sealed class FreeTreatmentTests(HospitalServer server)
         }
 
         (await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{stay.Id}")).FreeTreatmentReason.ShouldBe(reason);
+        await CancelAdmissionAsync(frontOffice, await server.SignInAsync(HospitalServer.Users.Nurse), stay.Id);
+    }
+
+    [Fact]
+    public async Task An_advance_link_paid_after_the_stay_was_found_free_is_not_taken_and_waits_to_be_refunded()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+
+        // Admitted from the ER before the doctor entered the case, the stay is billed as usual: the desk sends a link for an
+        // advance.
+        var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice);
+        var caseId = (await doctor.GetAsync<ErBoard>($"{Er}/board")).Rows.Single(r => r.VisitId == visit.Id).CaseId;
+        var admission = await AdmitAsync(frontOffice, doctor, patientId, visit.Id, "GWM");
+        var account = await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}");
+        account.FreeTreatmentReason.ShouldBeNull();
+        var link = await billing.PostAsync<GatewayOrderDto>("/api/v1/billing/payment-links", new CreatePaymentLinkRequest(null, account.Id, 5_000m, false, false));
+
+        // The doctor then enters an acid attack, and the stay is free. A relative pays the link: the advance is not taken,
+        // and the payment waits for the accountants to refund it.
+        var mlc = (await doctor.PutAsync<EmergencyCaseDetail>($"{Er}/cases/{caseId}/mlc", Mlc(MlcCause.AcidAttack, null))).Mlc.ShouldNotBeNull();
+        (await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}")).FreeTreatmentReason
+            .ShouldBe($"BNSS 2023 s.397, MLC no. {mlc.Number}");
+        var paid = await billing.PostAsync<GatewayOrderDto>($"/api/v1/billing/payment-links/{link.Id}/refresh");
+        paid.ReceiptId.ShouldBeNull("No advance is recorded on a stay treated free.");
+        paid.LastError.ShouldNotBeNull().ShouldContain("free of cost by law");
+        (await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}")).DepositReceived.ShouldBe(0m);
+        await using var scope = server.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<GatewayDiscrepancy>().IgnoreQueryFilters().AsNoTracking()
+            .SingleAsync(d => d.Kind == DiscrepancyKind.UnrecordedPayment && d.Key == paid.PaymentId, Ct)).IpAccountId.ShouldBe(account.Id);
+        await CancelAdmissionAsync(frontOffice, await server.SignInAsync(HospitalServer.Users.Nurse), admission.Id);
     }
 
     [Fact]
@@ -351,6 +400,55 @@ public sealed class FreeTreatmentTests(HospitalServer server)
             AdmittedAt: null, Notes: null));
     }
 
+    /// <summary>
+    /// The front office cancels an admission made only to look at its account, and the bed is cleaned: the wards' beds are
+    /// shared by every test of the run.
+    /// </summary>
+    private static async Task CancelAdmissionAsync(ApiClient frontOffice, ApiClient nurse, Guid admissionId)
+    {
+        var stay = await frontOffice.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admissionId}");
+        using (var cancelled = await frontOffice.SendRawAsync(HttpMethod.Post, $"/api/v1/inpatient/admissions/{admissionId}/cancel",
+                   new CancelAdmissionRequest("Admitted only to look at the account")))
+        {
+            cancelled.EnsureSuccessStatusCode();
+        }
+
+        await CleanBedAsync(nurse, stay);
+    }
+
+    /// <summary>Housekeeping cleans the bed a discharge or a cancelled admission released; the bed is vacant again.</summary>
+    private static async Task CleanBedAsync(ApiClient nurse, AdmissionDetail stay)
+    {
+        var task = (await nurse.GetAsync<List<HousekeepingTaskDto>>($"/api/v1/beds/housekeeping?wardId={stay.WardId}"))
+            .Single(t => t.BedId == stay.BedId && t.AdmissionId == stay.Id);
+        await nurse.PostAsync<HousekeepingTaskDto>($"/api/v1/beds/housekeeping/{task.Id}/start");
+        (await nurse.PostAsync<HousekeepingTaskDto>($"/api/v1/beds/housekeeping/{task.Id}/complete", new BedNoteRequest("Cleaned")))
+            .Status.ShouldBe(HousekeepingStatus.Completed);
+    }
+
     private static Task<BillDetail> RefreshAsync(ApiClient billing, BillDetail draft) =>
         billing.PostAsync<BillDetail>($"{Bills}/{draft.Id}/refresh", new BillVersionRequest(draft.Version));
+
+    /// <summary>Payments go to the training gateway, which takes a link's payment at once, until the test ends.</summary>
+    private async Task<IAsyncDisposable> PaymentsToSimulatorAsync()
+    {
+        const string key = "integrations.payment";
+        const string secretKey = "integrations.payment.secret";
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
+            .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
+        await admin.SaveSettingAsync(key, new SaveSettingRequest(
+            new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["simulatorSettlementDays"] = 0 }, null, false, null));
+        await admin.SaveSettingAsync(secretKey, new SaveSettingRequest(new JsonObject { ["simulatorSecret"] = "free-treatment-simulator-key" }, null, true, null));
+        return new Restore(async () =>
+        {
+            await admin.SaveSettingAsync(key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
+            await admin.SaveSettingAsync(secretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
+        });
+    }
+
+    private sealed class Restore(Func<Task> restore) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await restore();
+    }
 }

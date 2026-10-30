@@ -55,7 +55,9 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
   * finalised, it is settled at ₹0 with nothing paid.
 
   An IP stay that is free takes no advance, at the counter, on a terminal or by a payment link (422
-  `billing.free_treatment`). Its running bill estimates nothing for the patient. The printed bill shows the services,
+  `billing.free_treatment`). A link or terminal sale made before the stay was marked, and paid after, is not recorded
+  as an advance either: the capture is left to the accountants, as an unrecorded payment, to refund. Its running bill
+  estimates nothing for the patient. The printed bill shows the services,
   then "Less: free treatment by law (…)", and a net of ₹0.
 * Only the **patient share** is rounded to the rupee (it is collected in cash); the payer share stays at paise.
 * **Cash limit** (Income-tax Act s.269ST; the penalty under s.271DA is the whole sum, and hospitals have no exemption):

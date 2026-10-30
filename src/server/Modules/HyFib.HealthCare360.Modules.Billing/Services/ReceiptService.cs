@@ -205,6 +205,13 @@ public sealed class ReceiptService(
             {
                 return Error.NotFound(nameof(IpAccount), accountId);
             }
+
+            // A link or a terminal sale for an advance can be paid after the stay was marked free of cost by law (BNSS
+            // 2023, s.397). Refused, the advance is not recorded: the capture is left to the accountants, to refund.
+            if (await BillFreeTreatment.ReasonAsync(db, account.VisitId, ct) is { } free)
+            {
+                return Error.Rule("billing.free_treatment", $"This stay is free of cost by law ({free}), so no advance is taken: refund the payment.");
+            }
         }
         else
         {

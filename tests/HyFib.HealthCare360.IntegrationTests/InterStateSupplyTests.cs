@@ -64,8 +64,9 @@ public sealed class InterStateSupplyTests(HospitalServer server)
         var store = (await pharmacist.GetAsync<List<StoreDto>>("/api/v1/inventory/stores?type=Pharmacy")).Single(s => s.Code == "OPPH");
         var medicine = (await pharmacist.GetAsync<List<PharmacyStockRow>>($"/api/v1/pharmacy/stock?storeId={store.Id}&search=paracetamol&take=5"))
             .First(r => r.Available > 0);
+        // Two units are sold from the batch below, so it must hold two: other tests dispense from the same shelf.
         var batch = (await pharmacist.GetAsync<List<BatchStock>>($"/api/v1/pharmacy/stock/batches?storeId={store.Id}&itemId={medicine.ItemId}"))
-            .First(b => b.Available > 0 && !b.IsExpired && !b.IsBlocked);
+            .First(b => b.Available >= 2 && !b.IsExpired && !b.IsBlocked);
         var price = Math.Round(batch.Mrp, MidpointRounding.AwayFromZero);
         CounterSaleRequest Sale(string? deliveryState) => new(
             store.Id, null, "Sree Clinic", null, null, [new CounterSaleLine(medicine.ItemId, 1m, batch.BatchId)], 0m,
