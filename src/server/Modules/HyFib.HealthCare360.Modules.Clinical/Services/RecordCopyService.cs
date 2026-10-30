@@ -101,6 +101,39 @@ public sealed class RecordCopyService(
 
         var now = time.GetUtcNow();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var kept = new List<StoredFile>();
+        var saved = false;
+        try
+        {
+            var issued = await IssueCopyAsync(request, body.DueBackOn, made, kept, now, ct);
+            if (issued.IsFailure)
+            {
+                return issued.Error!;
+            }
+
+            await db.SaveChangesAsync(ct);
+            saved = true;
+        }
+        finally
+        {
+            // The files' rows go with the transaction, but their content is already on the disk, where nothing would name
+            // it. Once saved, the files are the copy's: a commit that then fails may have taken effect, and a copy whose
+            // files have no content is worse than content no row names.
+            if (!saved)
+            {
+                files.Discard(kept);
+            }
+        }
+
+        await transaction.CommitAsync(ct);
+        return await charts.ToDtoAsync(request, ct);
+    }
+
+    // Keeps the copy's files (each kept one in kept, as it is), issues the request with them and records the issue in the
+    // audit log; the caller saves it all.
+    private async Task<Result> IssueCopyAsync(RecordRequest request, DateOnly? dueBackOn, List<(RecordDocumentEntry Entry, PrintableDocument Document, byte[] Pdf)> made,
+        List<StoredFile> kept, DateTimeOffset now, CancellationToken ct)
+    {
         var copy = new List<RecordCopyFile>();
         foreach (var (entry, document, pdf) in made)
         {
@@ -108,9 +141,11 @@ public sealed class RecordCopyService(
             var stored = await files.SaveAsync(content, document.FileName + ".pdf", FileCategory, request.PatientId, "clinical", ct);
             if (stored.IsFailure)
             {
-                return stored.Error!;
+                return Error.Rule("record_copy.document_not_kept",
+                    $"{entry.Title} can't be kept as a file of the copy: {stored.Error!.Message} Leave it out of the copy and give it on paper.");
             }
 
+            kept.Add(stored.Value);
             copy.Add(new RecordCopyFile
             {
                 RecordRequestId = request.Id,
@@ -132,7 +167,7 @@ public sealed class RecordCopyService(
             });
         }
 
-        var issued = request.Issue(body.DueBackOn, copy, currentUser.UserId, now, time.Today());
+        var issued = request.Issue(dueBackOn, copy, currentUser.UserId, now, time.Today());
         if (issued.IsFailure)
         {
             return issued.Error!;
@@ -157,9 +192,7 @@ public sealed class RecordCopyService(
             });
         }
 
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return await charts.ToDtoAsync(request, ct);
+        return Result.Success();
     }
 
     /// <summary>

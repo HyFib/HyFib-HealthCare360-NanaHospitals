@@ -68,7 +68,8 @@ public sealed class BackupRestoreTests(HospitalServer server)
 
             await using var db = Context(restored.ConnectionString);
             var protector = new FieldProtector(machine, protection);
-            var read = await new EncryptedFileStore(db, machine, protector, protector, new HttpCurrentUser(new HttpContextAccessor()), TimeProvider.System)
+            var read = await new EncryptedFileStore(db, machine, protector, protector, new HttpCurrentUser(new HttpContextAccessor()), TimeProvider.System,
+                    NullLogger<EncryptedFileStore>.Instance)
                 .ReadAsync(document, Ct);
             read.Value.Content.ShouldBe(scan, "the document reads as the file store reads it");
 

@@ -28,10 +28,7 @@ internal sealed class ClinicalRecordDocuments(
 
     public async Task<IReadOnlyList<RecordDocumentEntry>> ListAsync(Guid patientId, CancellationToken cancellationToken)
     {
-        var signed = await db.Set<Prescription>().AsNoTracking()
-            .Where(p => p.PatientId == patientId && p.Status == PrescriptionStatus.Signed)
-            .Select(p => new RecordDocumentEntry(Prescription, p.Id, "Prescription " + p.PrescriptionNumber, p.SignedAt ?? p.PrescribedAt, p.VisitId, p.AdmissionId))
-            .ToListAsync(cancellationToken);
+        var signed = await IssuablePrescriptionsAsync(patientId, cancellationToken);
         var discharges = await db.Set<DischargeSummary>().AsNoTracking()
             .Where(s => s.PatientId == patientId && s.Status != DischargeSummaryStatus.Draft && s.SignedAt != null)
             .Select(s => new RecordDocumentEntry(DischargeSummary, s.Id, "Discharge summary", s.AmendedAt ?? s.SignedAt!.Value, null, s.AdmissionId))
@@ -41,6 +38,27 @@ internal sealed class ClinicalRecordDocuments(
             .Select(m => new RecordDocumentEntry(Mlc, m.Id, "MLC intimation " + m.Number, m.IdentifiedAt, m.VisitId, null))
             .ToListAsync(cancellationToken);
         return [.. signed, .. discharges, .. mlcs];
+    }
+
+    /// <summary>
+    /// The signed prescriptions the DSC rules let the hospital issue, checked as <see cref="BuildAsync"/> checks them: where
+    /// it requires the doctor's DSC, one without a valid DSC is not offered, as a copy could not hold it.
+    /// </summary>
+    private async Task<List<RecordDocumentEntry>> IssuablePrescriptionsAsync(Guid patientId, CancellationToken ct)
+    {
+        var signed = await db.Set<Prescription>().AsNoTracking().Include(p => p.Items)
+            .Where(p => p.PatientId == patientId && p.Status == PrescriptionStatus.Signed)
+            .ToListAsync(ct);
+        var issuable = new List<RecordDocumentEntry>(signed.Count);
+        foreach (var p in signed)
+        {
+            if (PrescriptionFinalCopies.Problem(await finalCopies.CheckAsync(p, ct)) is null)
+            {
+                issuable.Add(new RecordDocumentEntry(Prescription, p.Id, "Prescription " + p.PrescriptionNumber, p.SignedAt ?? p.PrescribedAt, p.VisitId, p.AdmissionId));
+            }
+        }
+
+        return issuable;
     }
 
     public async Task<PrintableDocument?> BuildAsync(string kind, Guid id, Guid patientId, CancellationToken cancellationToken) => kind switch

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Platform.Files;
 
@@ -57,10 +58,23 @@ public interface IFileStore
     Task<Result<(StoredFile File, byte[] Content)>> ReadAsync(Guid id, CancellationToken cancellationToken);
 
     Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes the content of files saved in a transaction that is rolled back: their rows go with it, and content that no
+    /// row names is PHI that retention and deletion cannot find. Never for a file whose row is kept: <see cref="DeleteAsync"/>
+    /// keeps the content of those, for retention.
+    /// </summary>
+    void Discard(IEnumerable<StoredFile> files);
 }
 
 internal sealed class EncryptedFileStore(
-    HospitalDbContext db, DataDirectories directories, IFieldProtector protector, IFieldKeyRing keys, ICurrentUser currentUser, TimeProvider time) : IFileStore
+    HospitalDbContext db,
+    DataDirectories directories,
+    IFieldProtector protector,
+    IFieldKeyRing keys,
+    ICurrentUser currentUser,
+    TimeProvider time,
+    ILogger<EncryptedFileStore> logger) : IFileStore
 {
     public const long MaxBytes = 25 * 1024 * 1024;
 
@@ -145,6 +159,24 @@ internal sealed class EncryptedFileStore(
         db.Remove(file);
         await db.SaveChangesAsync(cancellationToken);
         return Result.Success();
+    }
+
+    public void Discard(IEnumerable<StoredFile> files)
+    {
+        foreach (var file in files)
+        {
+            db.Entry(file).State = EntityState.Detached;
+            var fullPath = Path.Combine(directories.Files, file.StoragePath);
+            try
+            {
+                File.Delete(fullPath);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Whatever failed before this is what the caller reports; this is left for IT to remove.
+                logger.LogWarning(e, "The content of file {FileId}, whose row was rolled back, could not be removed: {Path}", file.Id, fullPath);
+            }
+        }
     }
 
     // DICOM Part 10: a 128-byte preamble followed by "DICM" (ECG/echo/cardiology device output, key images).

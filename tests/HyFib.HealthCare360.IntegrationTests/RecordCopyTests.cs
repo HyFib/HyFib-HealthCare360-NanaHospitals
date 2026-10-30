@@ -14,6 +14,7 @@ using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
@@ -158,6 +159,23 @@ public sealed partial class RecordCopyTests(HospitalServer server)
             twice.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         }
 
+        // The second PDF is larger than the file store keeps: nothing is issued, and the first's content, already written to
+        // the server's disk, goes with it. No file is left there that no row names.
+        var folder = server.Services.GetRequiredService<DataDirectories>().Files;
+        var before = Blobs(folder);
+        using (var tooLarge = await IssueRawAsync(mrd, request, new IssueRecordRequest(null, documents), TestPdfRenderer.TooLargeAfterTheFirst))
+        {
+            (await CodeAsync(tooLarge, HttpStatusCode.UnprocessableEntity)).ShouldBe("record_copy.document_not_kept");
+        }
+
+        var written = Blobs(folder).Except(before).ToList();
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            var named = await db.Set<StoredFile>().IgnoreQueryFilters().AsNoTracking().Where(f => written.Contains(f.Id)).Select(f => f.Id).ToListAsync(Ct);
+            written.Except(named).ShouldBeEmpty("the content of a file whose row was rolled back");
+        }
+
         var pending = await RequestOfAsync(mrd, record.PatientId, request);
         (pending.Status, pending.Files.ShouldNotBeNull().Count).ShouldBe((RecordRequestStatus.Requested, 0));
         await using (var scope = server.Services.CreateAsyncScope())
@@ -177,6 +195,35 @@ public sealed partial class RecordCopyTests(HospitalServer server)
         (paperCopy.DueBackOn, paperCopy.Files.ShouldNotBeNull().Count).ShouldBe((null, 0));
         using var noCertificate = await mrd.SendRawAsync(HttpMethod.Get, $"{Requests}/{paper}/certificate/document");
         (await CodeAsync(noCertificate, HttpStatusCode.UnprocessableEntity)).ShouldBe("record_copy.no_files");
+    }
+
+    [Fact]
+    public async Task Where_the_hospital_requires_the_doctors_DSC_a_prescription_without_one_is_not_offered_for_a_copy()
+    {
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var facilityId = (await mrd.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId!.Value;
+        var record = await PatientAsync(withLabReport: false);
+        var request = await RequestAsync(mrd, record.PatientId, "Judicial Magistrate, Saidapet", RecordRequestPurpose.Legal);
+
+        await DscTestPki.SetPolicyAsync(server, facilityId, "required", Ct);
+        try
+        {
+            // The prescription was signed in HC360 but not with the doctor's DSC, so the hospital does not issue it: it is
+            // not offered, and chosen anyway it is refused. The rest of the record is copied as offered.
+            var documents = await mrd.GetAsync<List<RecordDocumentEntry>>($"{Requests}/{request}/documents");
+            documents.ShouldHaveSingleItem().Kind.ShouldBe(ClinicalKinds.Mlc);
+            using (var refused = await IssueRawAsync(mrd, request,
+                       new IssueRecordRequest(null, [new RecordCopyDocument(ClinicalKinds.Prescription, record.Prescription.Id)]), TestPdfRenderer.Made))
+            {
+                (await CodeAsync(refused, HttpStatusCode.UnprocessableEntity)).ShouldBe("record_copy.document_unavailable");
+            }
+
+            (await IssueAsync(mrd, request, [.. documents.Select(Pick)])).Files.ShouldNotBeNull().ShouldHaveSingleItem().DocumentId.ShouldBe(record.Mlc.Id);
+        }
+        finally
+        {
+            await DscTestPki.SetPolicyAsync(server, facilityId, null, Ct);
+        }
     }
 
     [Fact]
@@ -292,6 +339,11 @@ public sealed partial class RecordCopyTests(HospitalServer server)
         message.Headers.Add(TestPdfRenderer.Header, pdf);
         return mrd.Http.SendAsync(message, Ct);
     }
+
+    // The ids of the files whose content is on the server's disk (EncryptedFileStore names each "{id:N}.bin").
+    private static HashSet<Guid> Blobs(string folder) => Directory.Exists(folder)
+        ? [.. Directory.EnumerateFiles(folder, "*.bin", SearchOption.AllDirectories).Select(f => Guid.ParseExact(Path.GetFileNameWithoutExtension(f), "N"))]
+        : [];
 
     private static async Task<byte[]> DownloadAsync(ApiClient mrd, Guid request, Guid file)
     {

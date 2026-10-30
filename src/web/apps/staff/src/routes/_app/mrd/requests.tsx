@@ -31,7 +31,7 @@ import {
   SendRegular,
   ShieldCheckmarkRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
+import { formatDateOnly, formatDateTime } from '@hc360/core';
 import {
   CloseRequestScope,
   ConfirmDialog,
@@ -50,7 +50,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { addDaysIso } from '@/modules/emr/encounterForm';
 import { ReasonDialog } from '@/modules/emr/ui';
 import { isPdfUnavailable, useServerDocuments } from '@/lib/documents';
 import {
@@ -67,7 +66,8 @@ import {
   type RecordRequestStatus,
   type RequestListParams,
 } from '@/modules/mrd/api';
-import { fileSize, isCopyRequest, issueChoice, normalizeSha256, sha256Hex } from '@/modules/mrd/copies';
+import { fileSize, normalizeSha256, sha256Hex } from '@/modules/mrd/copies';
+import { type IssueChoice, IssueDialog } from '@/modules/mrd/IssueDialog';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 
 export const Route = createFileRoute('/_app/mrd/requests')({
@@ -200,146 +200,6 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
         </Button>
       </DialogActions>
       {guard.dialogs}
-    </DialogBody>
-  );
-}
-
-interface IssueChoice {
-  dueBackOn: string | null;
-  documents: { kind: string; id: string }[];
-}
-
-function IssueDialog({
-  request,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  request: RecordRequestDto | null;
-  busy: boolean;
-  onConfirm: (choice: IssueChoice) => void;
-  onCancel: () => void;
-}) {
-  return (
-    <Dialog open={request !== null} onOpenChange={(_, d) => !d.open && !busy && onCancel()}>
-      <DialogSurface>
-        {request && <IssueBody request={request} busy={busy} onConfirm={onConfirm} onCancel={onCancel} />}
-      </DialogSurface>
-    </Dialog>
-  );
-}
-
-/**
- * Issues the chart, lent out until a return date, or a copy. A copy may be issued as documents: each one ticked is made
- * into a PDF now and kept as it is handed over, with the SHA-256 its certificate states (BSA 2023, s.63). A copy is kept
- * by whoever asked, so it has no return date; nor does a request issued as documents.
- */
-function IssueBody({
-  request,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  request: RecordRequestDto;
-  busy: boolean;
-  onConfirm: (choice: IssueChoice) => void;
-  onCancel: () => void;
-}) {
-  const today = todayIso();
-  const copy = isCopyRequest(request);
-  const [dueBack, setDueBack] = useState(() => addDaysIso(today, request.purpose === 'PatientCare' ? 3 : 7));
-  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
-  // A chart lent to a ward does not list the patient's documents (listing them opens the chart): only a copy does.
-  const [asCopy, setAsCopy] = useState(copy);
-  const documents = useQuery({ ...mrdQueries.requestDocuments(request.id), enabled: asCopy });
-  const all = asCopy ? (documents.data ?? []) : [];
-  const keyOf = (d: { kind: string; id: string }) => `${d.kind}/${d.id}`;
-  const lent = !copy && chosen.size === 0;
-  const toggle = (key: string, on: boolean) =>
-    setChosen((current) => {
-      const next = new Set(current);
-      if (on) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-  return (
-    <DialogBody>
-      <DialogTitle>{copy ? 'Issue the copy' : 'Issue the file'}</DialogTitle>
-      <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Text>
-          {request.patientName} ({request.uhid}) to {request.requestedByName}
-          {request.requestingDepartment ? `, ${request.requestingDepartment}` : ''}.
-        </Text>
-        {!copy && (
-          <Checkbox
-            label="Give a copy of documents instead of lending the file"
-            checked={asCopy}
-            onChange={(_, d) => {
-              setAsCopy(d.checked === true);
-              setChosen(new Set());
-            }}
-          />
-        )}
-        {asCopy && (
-          <Field
-            label="Documents for the copy"
-            hint={
-              copy
-                ? 'Each document ticked is made into a PDF now and kept as it is handed over, with its SHA-256 for the certificate under the Bharatiya Sakshya Adhiniyam (s.63). Tick none for a copy given on paper.'
-                : 'Each document ticked is made into a PDF now and kept as it is handed over, with its SHA-256. Tick none to lend the file itself.'
-            }
-            validationMessage={documents.error ? 'The documents could not be listed.' : undefined}
-          >
-            {documents.isLoading ? (
-              <Spinner size="tiny" label="Listing the documents" />
-            ) : all.length === 0 ? (
-              <Caption1>No signed or released documents for this patient.</Caption1>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 240, overflowY: 'auto' }}>
-                <Checkbox
-                  label="All documents"
-                  checked={chosen.size === all.length ? true : chosen.size === 0 ? false : 'mixed'}
-                  onChange={(_, d) => setChosen(d.checked === true ? new Set(all.map(keyOf)) : new Set())}
-                />
-                {all.map((d) => (
-                  <Checkbox
-                    key={keyOf(d)}
-                    label={`${d.title} · ${formatDateTime(d.date)}`}
-                    checked={chosen.has(keyOf(d))}
-                    onChange={(_, e) => toggle(keyOf(d), e.checked === true)}
-                  />
-                ))}
-              </div>
-            )}
-          </Field>
-        )}
-        {lent && (
-          <Field label="Return by" hint="Files not returned by this date show as overdue">
-            <Input type="date" value={dueBack} min={today} onChange={(_, d) => setDueBack(d.value)} />
-          </Field>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onCancel} disabled={busy}>
-          Cancel
-        </Button>
-        <Button
-          appearance="primary"
-          disabled={busy || (asCopy && documents.isLoading)}
-          icon={busy ? <Spinner size="tiny" aria-hidden /> : <SendRegular />}
-          onClick={() =>
-            onConfirm(
-              issueChoice(
-                request,
-                all.filter((d) => chosen.has(keyOf(d))).map((d) => ({ kind: d.kind, id: d.id })),
-                dueBack,
-              ),
-            )
-          }
-        >
-          {chosen.size > 0 ? `Issue ${chosen.size === 1 ? '1 document' : `${chosen.size} documents`}` : 'Issue'}
-        </Button>
-      </DialogActions>
     </DialogBody>
   );
 }
