@@ -13,8 +13,6 @@ using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
-using HyFib.HealthCare360.Modules.SupplyChain.Features.Stores;
-using HyFib.HealthCare360.Modules.SupplyChain.Services;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Organization;
@@ -130,14 +128,11 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
     {
         await using var _ = await EInvoicingAsync(from: Today().AddDays(-1));
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
-        var store = (await pharmacist.GetAsync<List<StoreDto>>("/api/v1/inventory/stores?type=Pharmacy")).Single(s => s.Code == "OPPH");
-        var medicine = (await pharmacist.GetAsync<List<PharmacyStockRow>>($"/api/v1/pharmacy/stock?storeId={store.Id}&search=paracetamol&take=5"))
-            .First(r => r.Available > 1);
-        var batch = (await pharmacist.GetAsync<List<BatchStock>>($"/api/v1/pharmacy/stock/batches?storeId={store.Id}&itemId={medicine.ItemId}"))
-            .First(b => b.Available > 1 && !b.IsExpired && !b.IsBlocked);
+        // A medicine of the test's own: other tests sell from the seeded shelf at the same time.
+        var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
         async Task<PharmacySaleCreated> SellAsync(string? address) => await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter",
-            new CounterSaleRequest(store.Id, null, "Sree Clinic", null, null, [new CounterSaleLine(medicine.ItemId, 1m, batch.BatchId)], 0m,
-                [new SalePayment(PharmacyPaymentMode.Cash, Math.Round(batch.Mrp, MidpointRounding.AwayFromZero), null)], false,
+            new CounterSaleRequest(medicine.StoreId, null, "Sree Clinic", null, null, [new CounterSaleLine(medicine.ItemId, 1m, medicine.Batch.BatchId)], 0m,
+                [new SalePayment(PharmacyPaymentMode.Cash, Math.Round(medicine.Batch.Mrp, MidpointRounding.AwayFromZero), null)], false,
                 new B2bBuyer(KeralaCompany, "Sree Clinic", "32", address)));
 
         var withoutAddress = await SellAsync(null);

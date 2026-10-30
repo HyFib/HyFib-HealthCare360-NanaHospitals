@@ -17,8 +17,6 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
-using HyFib.HealthCare360.Modules.SupplyChain.Features.Stores;
-using HyFib.HealthCare360.Modules.SupplyChain.Services;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
@@ -381,16 +379,14 @@ public sealed class CashLimitTests(HospitalServer server)
     }
 
     /// <summary>Pharmacist: a counter sale of one strip of paracetamol to the patient, paid in full in the mode given.</summary>
-    private static async Task<Func<PharmacyPaymentMode, CounterSaleRequest>> MedicineSaleAsync(ApiClient pharmacist, Guid patientId)
+    /// <summary>A sale of one tablet to the patient, of a medicine of the test's own: other tests sell from the seeded shelf at the same time.</summary>
+    private async Task<Func<PharmacyPaymentMode, CounterSaleRequest>> MedicineSaleAsync(ApiClient pharmacist, Guid patientId)
     {
-        var store = (await pharmacist.GetAsync<List<StoreDto>>("/api/v1/inventory/stores?type=Pharmacy")).Single(s => s.Code == "OPPH");
-        var medicine = (await pharmacist.GetAsync<List<PharmacyStockRow>>($"/api/v1/pharmacy/stock?storeId={store.Id}&search=paracetamol&take=5"))
-            .First(r => r.Available > 0);
-        var batch = (await pharmacist.GetAsync<List<BatchStock>>($"/api/v1/pharmacy/stock/batches?storeId={store.Id}&itemId={medicine.ItemId}"))
-            .First(b => b.Available > 0 && !b.IsExpired && !b.IsBlocked);
-        var price = Math.Round(batch.Mrp, MidpointRounding.AwayFromZero);
+        var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
+        var price = Math.Round(medicine.Batch.Mrp, MidpointRounding.AwayFromZero);
         return mode => new CounterSaleRequest(
-            store.Id, patientId, null, null, null, [new CounterSaleLine(medicine.ItemId, 1m, batch.BatchId)], 0m, [new SalePayment(mode, price, mode == PharmacyPaymentMode.Upi ? "UTR" + Digits(9) : null)], false);
+            medicine.StoreId, patientId, null, null, null, [new CounterSaleLine(medicine.ItemId, 1m, medicine.Batch.BatchId)], 0m,
+            [new SalePayment(mode, price, mode == PharmacyPaymentMode.Upi ? "UTR" + Digits(9) : null)], false);
     }
 
     /// <summary>Posts to <paramref name="path"/>, is refused under the cash limit (422), and returns what the counter is told.</summary>
