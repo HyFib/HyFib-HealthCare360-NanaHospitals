@@ -71,6 +71,21 @@ public sealed class InpatientPharmacyTests
         InpatientPharmacyService.DeviceOf(Summary(ItemType.Drug, ceiling: null), line).ShouldBeNull("A medicine's batch stays in its name.");
     }
 
+    [Fact]
+    public void A_returned_device_is_credited_with_its_details_as_issued_not_a_ceiling_revised_since()
+    {
+        // Issued at the ceiling of ₹57,456 from a pack printed at ₹60,000; NPPA has cut the ceiling to ₹50,000 since.
+        var revised = Summary(ItemType.Implant, ceiling: 50_000m);
+        var atCeiling = new IpIssueLine { ItemName = "Knee system", BatchNumber = "K1", Quantity = 2, UnitMrp = 60_000m, UnitPrice = 57_456m };
+        InpatientPharmacyService.ReturnedDeviceOf(revised, atCeiling)
+            .ShouldBe(new DeviceDetails("Attune", "DePuy Synthes", "Primary total knee", "K1", null, 60_000m, 57_456m));
+
+        // Charged its MRP, the ceiling not limiting it: none is shown.
+        InpatientPharmacyService.ReturnedDeviceOf(Summary(ItemType.Implant, ceiling: 70_000m), new IpIssueLine { BatchNumber = "K1", UnitMrp = 60_000m, UnitPrice = 60_000m })!
+            .CeilingPrice.ShouldBeNull();
+        InpatientPharmacyService.ReturnedDeviceOf(Summary(ItemType.Drug, ceiling: null), atCeiling).ShouldBeNull("A medicine's credit names its batch.");
+    }
+
     private static ItemSummary Summary(ItemType type, decimal? ceiling) => new(
         Guid.CreateVersion7(), "IMP-1", "Knee system", null, "Attune", null, null, type, DrugSchedule.None, false, false, "PCS", "9021", 5m, true,
         "DePuy Synthes", "Primary total knee", ceiling);

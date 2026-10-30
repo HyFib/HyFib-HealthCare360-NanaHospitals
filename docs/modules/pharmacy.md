@@ -121,7 +121,8 @@ pay out. Only unexpired stock is restocked; expired or damaged returns are refun
   keeps both (`unitMrp`, `unitPrice`), and a return is credited at `unitPrice`.
 * A device line (an implant, a consumable or a surgical item) also sends its `device`: brand, manufacturer, specification,
   batch, MRP and ceiling, printed beneath it on the bill (NPPA); its name carries no batch. A medicine's name keeps
-  "(batch …)".
+  "(batch …)". A return's credit line carries the device as it was issued: its ceiling is the price charged when that
+  was below the pack's MRP, not a ceiling revised since.
 * A ward return of a whole, untouched line cancels that charge (`CancelAsync("pharmacy.ip", lineId)`). Otherwise
   (a partial return, or Billing refuses because the line is already billed) it posts a **negative-quantity** credit
   line with `SourceModule = "pharmacy.ip.return"` and `SourceReference = <return line id>`.

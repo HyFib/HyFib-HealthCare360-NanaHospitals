@@ -46,6 +46,9 @@ public sealed class DeviceBillingTests(HospitalServer server)
     private const decimal PackMrp = 60_000m;
     private const decimal Ceiling = 57_456m;
 
+    // A consignment drug-eluting stent's ceiling with GST, as a hospital's price list might give it.
+    private const decimal StentCeiling = 31_080m;
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -98,7 +101,23 @@ public sealed class DeviceBillingTests(HospitalServer server)
         printed.ShouldContain(
             $"Brand {Brand} · made or imported by {Maker} · Batch {batch} · S/N SN-A1 · {Specification} · MRP ₹60,000.00 · NPPA ceiling price ₹57,456.00");
 
-        // The other pack, with neither lot nor serial written, is recorded with the batch the store issues: a recall finds it.
+        // A later batch arrives. Two packs with no lot written would come from both batches: each is recorded on a line of
+        // its own, so that a recall by either lot finds this patient.
+        var later = $"KN{Letters(8)}";
+        using (var received = await ReceiveRawAsync(storeKeeper, store, Line(implant, later, 1, 41_000m, PackMrp, years: 4)))
+        {
+            received.EnsureSuccessStatusCode();
+        }
+
+        using (var two = await nurse.SendRawAsync(HttpMethod.Post, Materials(booking), StoreImplant(implant, name, Ceiling, null) with { Quantity = 2m }))
+        {
+            two.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            var problem = await two.Content.ReadAsStringAsync(Ct);
+            (problem.Contains("surgery.material_batches"), problem.Contains($"2 batches ({batch}, {later})")).ShouldBe((true, true), problem);
+        }
+
+        // The other pack of the first batch, with neither lot nor serial written, is recorded with the batch the store issues:
+        // a recall finds it.
         (await nurse.PostAsync<SurgeryMaterialDto>(Materials(booking), StoreImplant(implant, name, Ceiling, null))).LotNumber.ShouldBe(batch);
 
         // The desk cannot charge an implant by hand, nor add one to the draft, outside the surgery record or the IP pharmacy.
@@ -117,7 +136,7 @@ public sealed class DeviceBillingTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task A_consignment_stent_needs_its_brand_maker_and_mrp_and_is_charged_no_more_than_its_mrp()
+    public async Task A_consignment_stent_needs_its_brand_maker_and_mrp_and_is_charged_no_more_than_its_mrp_or_its_ceiling()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
@@ -143,11 +162,20 @@ public sealed class DeviceBillingTests(HospitalServer server)
             (await ProblemTextAsync(aboveMrp)).ShouldBe("unitPrice: Coronary stent can be charged at most ₹38,933.14 a unit: the MRP printed on its pack.");
         }
 
-        // Below its MRP it is recorded and billed so, its details beneath it.
-        (await nurse.PostAsync<SurgeryMaterialDto>(Materials(booking), stent)).Amount.ShouldBe(38_000m);
+        // A price-controlled stent is held to its NPPA ceiling too, which the nurse takes from the hospital's price list:
+        // below the pack's MRP, ₹38,000 a unit is still too much.
+        var priceControlled = stent with { CeilingPrice = StentCeiling };
+        using (var aboveCeiling = await nurse.SendRawAsync(HttpMethod.Post, Materials(booking), priceControlled))
+        {
+            aboveCeiling.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            (await ProblemTextAsync(aboveCeiling)).ShouldBe("unitPrice: Coronary stent can be charged at most ₹31,080.00 a unit: its NPPA ceiling price.");
+        }
+
+        // At its ceiling it is recorded and billed so, its details beneath it.
+        (await nurse.PostAsync<SurgeryMaterialDto>(Materials(booking), priceControlled with { UnitPrice = StentCeiling })).Amount.ShouldBe(StentCeiling);
         var line = (await billing.PostAsync<BillDetail>(Bills, new CreateBillRequest(visit.Id, null, null))).Lines.Single(l => l.ServiceCode == "OT-IMPLANT");
-        (line.Description, line.UnitPrice).ShouldBe(("Implant: Coronary stent", 38_000m));
-        line.Device.ShouldBe(new DeviceDetails("XIENCE Sierra", "Abbott Vascular", spec, "7041231", null, 38_933.14m, null));
+        (line.Description, line.UnitPrice).ShouldBe(("Implant: Coronary stent", StentCeiling));
+        line.Device.ShouldBe(new DeviceDetails("XIENCE Sierra", "Abbott Vascular", spec, "7041231", null, 38_933.14m, StentCeiling));
     }
 
     [Fact]
@@ -188,10 +216,16 @@ public sealed class DeviceBillingTests(HospitalServer server)
         (line.Description, line.Quantity, line.UnitPrice).ShouldBe((name, 2m, Ceiling));
         line.Device.ShouldBe(new DeviceDetails(Brand, Maker, Specification, batch, null, PackMrp, Ceiling));
 
-        // One comes back unused: it is credited at what it was charged.
+        // NPPA cuts the ceiling, and the store keeper follows. One pack comes back unused: it is credited at what it was
+        // charged, and its credit line carries its details as issued, not the new ceiling.
+        await ReviseCeilingAsync(storeKeeper, implant, 50_000m);
         var returned = await pharmacist.PostAsync<WardReturnCreated>($"/api/v1/pharmacy/ip-issues/{created.Id}/returns",
             new WardReturnRequest([new WardReturnLineInput(issued.Id, 1m, true)], "Unused, returned unopened"));
         returned.CreditAmount.ShouldBe(Ceiling);
+        var credit = (await billing.GetAsync<RunningBill>($"/api/v1/billing/ip-accounts/{account.Id}/running-bill")).Lines
+            .Single(l => l.ServiceCode == "PHARM-IMPL" && l.IsReturn);
+        (credit.Description, credit.Quantity, credit.UnitPrice).ShouldBe(($"Returned: {name}", -1m, Ceiling));
+        credit.Device.ShouldBe(new DeviceDetails(Brand, Maker, Specification, batch, null, PackMrp, Ceiling));
 
         // The upgrade prices the lines issued before it at their MRP, which is what they were charged.
         await using (var scope = server.Services.CreateAsyncScope())
@@ -232,6 +266,9 @@ public sealed class DeviceBillingTests(HospitalServer server)
         (await poster.PostAsync(Charge(61_000m, null), Ct)).Error.ShouldNotBeNull().Code.ShouldBe("billing.device_above_mrp");
         (await poster.PostAsync(Charge(58_000m, Ceiling), Ct)).Error.ShouldNotBeNull().Code.ShouldBe("billing.device_above_ceiling");
         (await poster.PostAsync(Charge(Ceiling, Ceiling), Ct)).IsSuccess.ShouldBeTrue();
+
+        // A credit gives back what was charged, whatever the limit is now.
+        (await poster.PostAsync(Charge(Ceiling, 50_000m) with { Quantity = -1m }, Ct)).IsSuccess.ShouldBeTrue();
     }
 
     private static string Materials(Guid bookingId) => $"/api/v1/ot/bookings/{bookingId}/materials";
@@ -252,8 +289,18 @@ public sealed class DeviceBillingTests(HospitalServer server)
     private static async Task<Guid> StoreAsync(ApiClient storeKeeper, string code) =>
         (await storeKeeper.GetAsync<List<StoreDto>>("/api/v1/inventory/stores")).Single(s => s.Code == code).Id;
 
-    private static GoodsReceiptLineInput Line(Guid itemId, string batch, decimal pieces, decimal rate, decimal mrp) =>
-        new(itemId, null, batch, null, DateOnly.FromDateTime(DateTime.UtcNow.AddYears(3)), pieces, 0m, rate, mrp, 0m, null, AcceptShortExpiry: true);
+    private static GoodsReceiptLineInput Line(Guid itemId, string batch, decimal pieces, decimal rate, decimal mrp, int years = 3) =>
+        new(itemId, null, batch, null, DateOnly.FromDateTime(DateTime.UtcNow.AddYears(years)), pieces, 0m, rate, mrp, 0m, null, AcceptShortExpiry: true);
+
+    /// <summary>Store keeper: NPPA revises the implant's ceiling price, and the item master follows.</summary>
+    private static async Task ReviseCeilingAsync(ApiClient storeKeeper, Guid itemId, decimal ceiling)
+    {
+        var d = await storeKeeper.GetAsync<ItemDetail>($"/api/v1/inventory/items/{itemId}");
+        await storeKeeper.PutAsync($"/api/v1/inventory/items/{itemId}", new SaveItemRequest(
+            d.Code, d.Name, d.GenericName, d.BrandName, d.Type, d.CategoryId, d.Strength, d.DosageForm, d.PackSize, d.BaseUnit, d.PurchaseUnit,
+            d.PurchaseUnitFactor, d.HsnCode, d.GstRate, d.Schedule, d.IsControlled, d.IsColdChain, d.VedClass, d.ReorderLevel, d.ReorderQuantity,
+            d.MinimumStock, d.MaximumStock, d.Manufacturer, d.Barcode, d.IsActive, d.Version, d.Specification, ceiling));
+    }
 
     /// <summary>Store keeper: receives a vendor invoice into the store and posts it to stock.</summary>
     private static async Task<HttpResponseMessage> ReceiveRawAsync(ApiClient storeKeeper, Guid storeId, GoodsReceiptLineInput line)

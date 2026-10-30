@@ -460,6 +460,8 @@ export interface AddSurgeryMaterialRequest {
   brand?: string | null;
   specification?: string | null;
   mrp?: number | null;
+  /** A consignment coronary stent's or knee implant's NPPA ceiling price with GST, from the hospital's price list. */
+  ceilingPrice?: number | null;
 }
 
 /** A usable batch of an OT store item (quantities in the item's base unit). */

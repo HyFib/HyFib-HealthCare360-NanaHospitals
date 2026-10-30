@@ -585,7 +585,8 @@ is not set, nothing is listed and nothing can be recorded.
   serial of the pack used, the MRP on that pack and, for a price-controlled implant (a coronary stent, a knee implant),
   its NPPA ceiling price. The charge and its bill line keep them (`device`, jsonb); the bill prints them beneath the
   line, in the patient's language, and so does the counter's 80 mm bill. A unit priced above the lower of the MRP and
-  the ceiling is refused (`billing.device_above_mrp`, `billing.device_above_ceiling`), whichever module posts it.
+  the ceiling is refused (`billing.device_above_mrp`, `billing.device_above_ceiling`), whichever module posts it. A
+  credit (a device returned) gives back what was charged and is not held to the limit, which may have been cut since.
 * **Implants are not charged by hand**: a manual charge (`POST /charges`) on `OT-IMPLANT` or `PHARM-IMPL` is refused
   (`billing.implant_from_record`, 422). An implant is billed from the surgery record or the IP pharmacy's issue, which
   name it and keep its price within its limits.

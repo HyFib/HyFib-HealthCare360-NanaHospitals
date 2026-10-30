@@ -191,7 +191,7 @@ public sealed class OtClinicalService(
             return valid.Error!;
         }
 
-        if (!fromStore && SurgeryMaterial.ValidateConsignment(request.Kind, request.Brand, request.Manufacturer, request.Mrp) is { IsFailure: true } consignment)
+        if (!fromStore && SurgeryMaterial.ValidateConsignment(request.Kind, request.Brand, request.Manufacturer, request.Mrp, request.CeilingPrice) is { IsFailure: true } consignment)
         {
             return consignment.Error!;
         }
@@ -213,6 +213,7 @@ public sealed class OtClinicalService(
             Quantity = request.Quantity,
             UnitPrice = Money.Round(request.UnitPrice),
             Mrp = request.Mrp,
+            CeilingPrice = request.CeilingPrice,
             RecordedByName = SignerName(),
         };
 
@@ -258,10 +259,19 @@ public sealed class OtClinicalService(
                 return issued.Error!;
             }
 
-            // The bill and a recall name the batch the store issued, also when none was written and FEFO chose it; a unit
-            // is charged at most the lowest MRP among the packs issued.
-            var batches = string.Join(", ", issued.Value.Movements.Select(m => m.BatchNumber).Distinct());
-            material.LotNumber ??= batches.Length <= 64 ? batches : batches[..64];
+            // The bill and a recall name the batch the store issued, also when none was written and FEFO chose it. A line
+            // names one batch, so that a recall by lot finds every patient: packs from several are recorded a line each.
+            var batches = issued.Value.Movements.Select(m => m.BatchNumber).Where(b => b != StockService.NoBatch).Distinct().ToList();
+            if (material.LotNumber is null && batches.Count > 1)
+            {
+                return Error.Rule(
+                    "surgery.material_batches",
+                    $"The OT store would issue {material.ItemName} from {batches.Count} batches ({string.Join(", ", batches)}). Record each batch on its own line, with its lot, so that a recall by lot finds this patient.");
+            }
+
+            material.LotNumber ??= batches.FirstOrDefault();
+
+            // A unit is charged at most the lowest MRP among the packs issued.
             var mrps = issued.Value.Movements.Where(m => m.Mrp > 0).Select(m => m.Mrp).ToList();
             material.Mrp = mrps.Count == 0 ? null : mrps.Min();
         }

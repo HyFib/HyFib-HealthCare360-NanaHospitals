@@ -22,6 +22,13 @@ public sealed class SurgeryMaterialPriceTests
     }
 
     [Fact]
+    public void A_consignment_implant_may_have_an_nppa_ceiling_and_a_consumable_none()
+    {
+        SurgeryMaterial.ValidateConsignment(MaterialKind.Implant, "XIENCE Sierra", "Abbott Vascular", 38_933.14m, 31_080m).IsSuccess.ShouldBeTrue();
+        SurgeryMaterial.ValidateConsignment(MaterialKind.Consumable, null, null, null, 1_500m).Error!.Fields!.ShouldContainKey("ceilingPrice");
+    }
+
+    [Fact]
     public void An_implant_from_the_ot_store_needs_no_lot_written_as_the_store_records_the_batch_it_issues()
     {
         SurgeryMaterial.Validate(MaterialKind.Implant, null, null, null, TestData.Today, fromStore: true).IsSuccess.ShouldBeTrue();

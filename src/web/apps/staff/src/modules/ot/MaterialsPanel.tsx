@@ -92,6 +92,7 @@ const materialSchema = z
     brand: z.string().trim().max(120),
     specification: z.string().trim().max(200),
     mrp: z.number().nullable(),
+    ceilingPrice: z.number().nullable(),
     lotNumber: z.string().trim().max(64),
     serialNumber: z.string().trim().max(64),
     expiryDate: z.string().nullable(),
@@ -156,6 +157,22 @@ const materialSchema = z
         path: ['unitPrice'],
         message: 'No more than the MRP printed on the pack may be charged.',
       });
+    }
+    // A price-controlled consignment implant (a coronary stent, a knee implant) is held to its NPPA ceiling as well.
+    if (v.source === 'outside' && v.kind === 'Implant' && v.ceilingPrice !== null) {
+      if (v.ceilingPrice <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['ceilingPrice'],
+          message: 'Enter a ceiling price above zero, or leave it empty.',
+        });
+      } else if (v.unitPrice !== null && v.unitPrice > v.ceilingPrice) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['unitPrice'],
+          message: 'No more than its NPPA ceiling price may be charged.',
+        });
+      }
     }
   });
 
@@ -418,6 +435,7 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
       brand: '',
       specification: '',
       mrp: null,
+      ceilingPrice: null,
       lotNumber: '',
       serialNumber: '',
       expiryDate: null,
@@ -490,7 +508,12 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
         unitPrice: values.unitPrice ?? 0,
         // An OT store item's brand, specification and MRP come from the item master and the stock issued.
         ...(values.source === 'outside'
-          ? { brand: values.brand || null, specification: values.specification || null, mrp: values.mrp }
+          ? {
+              brand: values.brand || null,
+              specification: values.specification || null,
+              mrp: values.mrp,
+              ceilingPrice: values.kind === 'Implant' ? values.ceilingPrice : null,
+            }
           : {}),
       }),
     onSuccess: (saved) => {
@@ -645,6 +668,16 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                         hint="For a stent: bare-metal or drug-eluting first, then material and size."
                       />
                     </FullRow>
+                    {kind === 'Implant' && (
+                      <NumberField
+                        control={form.control}
+                        name="ceilingPrice"
+                        label="NPPA ceiling price (₹ a unit, with GST)"
+                        min={0}
+                        step={0.01}
+                        hint="For a coronary stent or a knee implant, from the hospital's NPPA price list: no more may be charged."
+                      />
+                    )}
                   </>
                 )}
                 {storePick && (storePick.brand || storePick.specification) && (

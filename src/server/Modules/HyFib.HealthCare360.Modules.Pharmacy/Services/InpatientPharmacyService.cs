@@ -56,6 +56,13 @@ public sealed class InpatientPharmacyService(
         : DeviceDetails.Of(item.BrandName, item.Manufacturer, item.Specification, line.BatchNumber, null, line.UnitMrp,
             item.Type == ItemType.Implant ? item.CeilingPrice : null);
 
+    /// <summary>
+    /// A device returned, on its credit line: as it was issued. Its ceiling is the one it was charged at, when that was below
+    /// the pack's MRP; a ceiling revised since is not what was charged.
+    /// </summary>
+    internal static DeviceDetails? ReturnedDeviceOf(ItemSummary item, IpIssueLine line) =>
+        DeviceOf(item, line) is { } device ? device with { CeilingPrice = line.UnitPrice < line.UnitMrp ? line.UnitPrice : null } : null;
+
     // ------------------------------------------------------------------ ward indents
 
     public async Task<Result<PharmacyDocumentCreated>> RaiseIndentAsync(RaiseWardIndentRequest request, CancellationToken ct)
@@ -417,6 +424,7 @@ public sealed class InpatientPharmacyService(
         };
         var reference = new StockReference(PharmacyStockReferences.WardReturn, wardReturn.Id, wardReturn.Number, $"Ward return against {issue.Number}");
         var movements = new List<StockMovement>();
+        var returnedItems = await InventoryQueries.ItemSummariesAsync(db, issue.Lines.Select(l => l.ItemId), ct);
         foreach (var input in request.Lines)
         {
             var line = issue.Lines.FirstOrDefault(l => l.Id == input.IpIssueLineId);
@@ -466,6 +474,8 @@ public sealed class InpatientPharmacyService(
             }
             else
             {
+                // A device's credit line carries its details, as its charge did; a medicine's names its batch.
+                var device = returnedItems.TryGetValue(line.ItemId, out var item) ? ReturnedDeviceOf(item, line) : null;
                 var credited = await charges.PostAsync(new ChargeRequest
                 {
                     PatientId = issue.PatientId,
@@ -474,10 +484,11 @@ public sealed class InpatientPharmacyService(
                     ServiceItemId = services.Value[ServiceCodeFor(line.ItemType)],
                     Quantity = -input.Quantity,
                     UnitPriceOverride = line.UnitPrice,
-                    Description = $"Returned: {line.ItemName} (batch {line.BatchNumber})",
+                    Description = device is null ? $"Returned: {line.ItemName} (batch {line.BatchNumber})" : $"Returned: {line.ItemName}",
                     SourceModule = ChargeReturnModule,
                     SourceReference = returnLine.Id.ToString(),
                     ServiceDate = now,
+                    Device = device,
                 }, ct);
                 if (credited.IsFailure)
                 {

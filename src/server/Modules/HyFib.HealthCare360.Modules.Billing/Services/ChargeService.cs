@@ -214,7 +214,8 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
             isFreeFollowUp, request.UnitPriceOverride, ct);
 
         // A device is never charged above the MRP on its pack, nor a price-controlled one above its NPPA ceiling (DPCO 2013).
-        if (request.Device is { } device && device.PriceLimit() is { } limit && quote.UnitPrice > limit)
+        // A credit (a device returned) gives back what was charged, whatever the limit is now.
+        if (request.Device is { } device && request.Quantity > 0 && device.PriceLimit() is { } limit && quote.UnitPrice > limit)
         {
             return DevicePriceError(device, item.Name, quote.UnitPrice, limit);
         }

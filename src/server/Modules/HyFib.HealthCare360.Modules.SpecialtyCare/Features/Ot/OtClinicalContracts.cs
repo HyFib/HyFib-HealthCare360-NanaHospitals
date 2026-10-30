@@ -105,10 +105,12 @@ public sealed record SurgeryMaterialDto(
     decimal? CeilingPrice);
 
 /// <summary>
-/// An implant or consumable used in a surgery. For an item from the OT store the item master gives its name, brand, maker
-/// and specification, and the stock issued gives its batch and MRP, so <see cref="Brand"/>, <see cref="Specification"/>
-/// and <see cref="Mrp"/> are for a consignment or patient-supplied item only (an implant needs its brand, maker and MRP).
-/// <see cref="UnitPrice"/> may not be above the MRP of the pack, nor a price-controlled implant's above its NPPA ceiling.
+/// An implant or consumable used in a surgery. For an item from the OT store the item master gives its name, brand, maker,
+/// specification and NPPA ceiling, and the stock issued gives its batch and MRP, so <see cref="Brand"/>,
+/// <see cref="Specification"/>, <see cref="Mrp"/> and <see cref="CeilingPrice"/> are for a consignment or patient-supplied
+/// item only (an implant needs its brand, maker and MRP, and a price-controlled one its ceiling with GST, from the hospital's
+/// NPPA price list). <see cref="UnitPrice"/> may not be above the MRP of the pack, nor a price-controlled implant's above
+/// its NPPA ceiling.
 /// </summary>
 public sealed record AddSurgeryMaterialRequest(
     MaterialKind Kind,
@@ -122,7 +124,8 @@ public sealed record AddSurgeryMaterialRequest(
     decimal UnitPrice,
     string? Brand = null,
     string? Specification = null,
-    decimal? Mrp = null);
+    decimal? Mrp = null,
+    decimal? CeilingPrice = null);
 
 /// <summary>
 /// An item in stock in the facility's OT store, for the implants and consumables dialog. Record it with
@@ -262,6 +265,7 @@ public sealed class AddSurgeryMaterialRequestValidator : AbstractValidator<AddSu
         RuleFor(x => x.Quantity).GreaterThan(0).LessThanOrEqualTo(1000);
         RuleFor(x => x.UnitPrice).GreaterThanOrEqualTo(0).LessThanOrEqualTo(10_000_000);
         RuleFor(x => x.Mrp).GreaterThan(0).LessThanOrEqualTo(10_000_000).When(x => x.Mrp is not null);
+        RuleFor(x => x.CeilingPrice).GreaterThan(0).LessThanOrEqualTo(10_000_000).When(x => x.CeilingPrice is not null);
 
         // An implant from the OT store is recorded with the batch the store issues.
         RuleFor(x => x)

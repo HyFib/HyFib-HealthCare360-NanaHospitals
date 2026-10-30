@@ -78,13 +78,16 @@ public sealed class SurgeryMaterial : AuditableEntity, IFacilityScoped
 
     /// <summary>
     /// A consignment or patient-supplied implant is not in the item master, so its bill details come from its pack: its
-    /// brand, its manufacturer or importer, and the MRP printed on it (NPPA).
+    /// brand, its manufacturer or importer, and the MRP printed on it (NPPA). A price-controlled one (a coronary stent, a
+    /// knee implant) also has its NPPA ceiling price, from the hospital's price list; only an implant has one.
     /// </summary>
-    public static Result ValidateConsignment(MaterialKind kind, string? brand, string? manufacturer, decimal? mrp)
+    public static Result ValidateConsignment(MaterialKind kind, string? brand, string? manufacturer, decimal? mrp, decimal? ceilingPrice = null)
     {
         if (kind != MaterialKind.Implant)
         {
-            return Result.Success();
+            return ceilingPrice is null
+                ? Result.Success()
+                : Error.Field("ceilingPrice", "An NPPA ceiling price is set on an implant (a coronary stent, a knee implant).");
         }
 
         if (string.IsNullOrWhiteSpace(brand))
