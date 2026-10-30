@@ -75,6 +75,7 @@ function IpAccountPage() {
 
   const a = account.data;
   const active = a.status === 'Open' || a.status === 'DischargeInitiated';
+  const free = Boolean(a.freeTreatmentReason);
 
   const printRunningBill = async () => {
     try {
@@ -109,12 +110,12 @@ function IpAccountPage() {
             <Button icon={<PrintRegular />} onClick={() => void printRunningBill()}>
               Print running bill
             </Button>
-            {canLink && active && (
+            {canLink && active && !free && (
               <Button icon={<LinkRegular />} onClick={() => setDialog('link')}>
                 Advance by link
               </Button>
             )}
-            {canDeposit && active && (
+            {canDeposit && active && !free && (
               <Button appearance="primary" icon={<WalletRegular />} onClick={() => setDialog('deposit')}>
                 Collect advance
               </Button>
@@ -122,8 +123,16 @@ function IpAccountPage() {
           </>
         }
       />
-      {canDeposit && active && <ShiftBar />}
+      {canDeposit && active && !free && <ShiftBar />}
       <BillingPatientBanner patientId={a.patientId} />
+      {a.freeTreatmentReason && (
+        <MessageBar intent="info" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Free treatment by law</MessageBarTitle>
+            This stay is free of cost ({a.freeTreatmentReason}). No advance is taken, and its bills come to nothing.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       {a.status === 'Cancelled' && (
         <MessageBar intent="warning">
           <MessageBarBody>

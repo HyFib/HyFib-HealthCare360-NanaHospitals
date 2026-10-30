@@ -57,6 +57,11 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
 * **Pricing**: MRP is GST-inclusive. The discount is capped by the facility setting `pharmacy.discount.max_percent`
   (default 10, `pharmacy.discount_limit`). Each line shows taxable value and CGST = SGST (half the rate each), and
   the bill is rounded to the rupee (round-off shown).
+* **Free treatment by law** (BNSS 2023, s.397): the medicines of a visit the MLC register marks (the victim of a sexual
+  offence or an acid attack; `QueueEntryDetail.freeTreatmentReason`) are given, not sold. The sale prices every line at
+  nothing (its whole MRP off, recorded as `freeTreatmentReason`, not as a staff discount, so the limit does not apply)
+  and takes no payment: a payment offered is refused (422 `pharmacy.free_treatment`). A refill of such a prescription
+  is free too. The invoice prints "Free treatment by law (…)" where a discount would be.
 * **B2B invoices**: a counter sale may name a `buyer` registered for GST (GSTIN with a valid check character, legal
   name, and the state the goods are dispatched to, if any). The hospital's own GSTIN must be set
   (`gst.facility_gstin`). Goods handed over at the counter are supplied in the hospital's state (IGST Act s.10(1)(a):

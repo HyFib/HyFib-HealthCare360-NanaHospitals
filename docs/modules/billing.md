@@ -41,6 +41,22 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
   over the line by its charge after the plan's concession; a discount given later on the bill lowers the tax, not the
   rate. A bed charge posted by hand at the desk keeps the service's own rate, and bed days charged before this rule keep
   the GST they were charged with.
+* **Free treatment by law** (Bharatiya Nagarik Suraksha Sanhita 2023, s.397, formerly CrPC s.357C; the person in
+  charge of a hospital that does not give it is punishable, BNS 2023 s.200). The victim of rape or another sexual
+  offence, or of an acid attack, is treated free of cost. The MLC register marks the visit (Clinical's
+  `FreeTreatment`; `visit.freeTreatmentReason`, e.g. "BNSS 2023 s.397, MLC no. …"). It names the law and the MLC entry,
+  never the offence, as a bill may be seen by anyone. A bill of a marked visit (`BillFreeTreatment`, applied wherever a
+  draft's terms are: the OP draft, its refresh and finalisation, and the IP interim, final and supplementary bills)
+  charges nothing to anyone:
+  * package cover and tariff concessions still say what each line was worth, kept as `freeTreatmentAmount`;
+  * staff discounts are cleared and refused (422 `billing.free_treatment`), and a discount awaiting approval no longer
+    holds the bill;
+  * there is no payer share, no taxable value and no tax: nothing is supplied for a price;
+  * finalised, it is settled at ₹0 with nothing paid.
+
+  An IP stay that is free takes no advance, at the counter, on a terminal or by a payment link (422
+  `billing.free_treatment`). Its running bill estimates nothing for the patient. The printed bill shows the services,
+  then "Less: free treatment by law (…)", and a net of ₹0.
 * Only the **patient share** is rounded to the rupee (it is collected in cash); the payer share stays at paise.
 * **Cash limit** (Income-tax Act s.269ST; the penalty under s.271DA is the whole sum, and hospitals have no exemption):
   ₹2,00,000 or more may not be taken in cash from one patient in a day, for one admission (deposits and the bills of the

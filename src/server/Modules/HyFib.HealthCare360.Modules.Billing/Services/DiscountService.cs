@@ -61,6 +61,11 @@ public sealed class DiscountService(
             return Error.Rule("billing.bill_not_draft", "Discounts can be changed only on draft bills.");
         }
 
+        if (bill.FreeTreatmentReason is not null)
+        {
+            return Error.Rule("billing.free_treatment", "This bill is free of cost by law, so there is nothing to discount.");
+        }
+
         db.GuardVersion(bill, request.Version);
         var lineAmounts = ResolveLineDiscounts(bill, request.LineDiscounts);
         if (lineAmounts.IsFailure)

@@ -121,6 +121,10 @@ function totalsRows(bill: BillDetail): [string, number, boolean?][] {
   if (staff !== 0) {
     rows.push([`Less: discount${bill.discountReason ? ` (${bill.discountReason})` : ''}`, -staff]);
   }
+  if (bill.freeTreatmentReason) {
+    // Free of cost by law: the law and the MLC entry, never the offence (the server's A4 bill prints the same).
+    rows.push([`Less: free treatment by law (${bill.freeTreatmentReason})`, -(bill.freeTreatmentAmount ?? 0)]);
+  }
   if (bill.isTaxInvoice) {
     rows.push(['Taxable value', bill.taxableAmount]);
     if (bill.igstAmount !== 0) {

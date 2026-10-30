@@ -63,6 +63,14 @@ public sealed class Visit : AuditableEntity, IFacilityScoped
     public bool IsMlc { get; set; }
 
     public string? MlcNumber { get; set; }
+
+    /// <summary>
+    /// Why the visit is treated free of cost by law, as its bills and pharmacy sales print it: the victim of a sexual
+    /// offence or an acid attack (BNSS 2023, s.397), from the MLC register; <c>null</c> when it is billed as usual. It names
+    /// the law and the MLC entry, never the offence.
+    /// </summary>
+    public string? FreeTreatmentReason { get; set; }
+
     public string? Notes { get; set; }
     public string? CancelReason { get; set; }
 

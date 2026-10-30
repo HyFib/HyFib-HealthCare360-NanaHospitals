@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Patients;
@@ -248,6 +249,10 @@ public sealed class AdmissionService(
             visit.DepartmentId = admission.DepartmentId;
             visit.IsMlc = admission.IsMlc;
             visit.MlcNumber = admission.MlcNumber;
+
+            // A stay linked to the MLC entry of a victim treated free of cost (BNSS 2023, s.397) is free, and no longer
+            // once it is unlinked, unless it goes on from a visit that is.
+            visit.FreeTreatmentReason = await FreeTreatment.ForVisitAsync(db, visit, ct);
         }
 
         await db.SaveChangesAsync(ct);

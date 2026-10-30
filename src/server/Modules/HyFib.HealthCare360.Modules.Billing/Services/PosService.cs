@@ -48,6 +48,12 @@ internal static class PaymentTargets
                 return Error.Rule("billing.ip_account_inactive", "Advances can be collected only while the patient is admitted.");
             }
 
+            // No advance is asked of a victim treated free of cost by law (BNSS 2023, s.397), by terminal or by link.
+            if (await BillFreeTreatment.ReasonAsync(db, account.VisitId, ct) is { } free)
+            {
+                return Error.Rule("billing.free_treatment", $"This stay is free of cost by law ({free}), so no advance is taken.");
+            }
+
             if (amount is not > 0)
             {
                 return Error.Field("amount", "Enter the advance amount.");

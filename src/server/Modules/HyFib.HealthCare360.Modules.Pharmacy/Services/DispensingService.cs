@@ -120,12 +120,21 @@ public sealed class DispensingService(
             return store.Error!;
         }
 
-        var discount = await CheckDiscountAsync(store.Value.FacilityId, request.DiscountPercent, ct);
+        // The victim of a sexual offence or an acid attack is treated free of cost (BNSS 2023, s.397): the medicines of a
+        // visit the MLC register marks are given, at nothing, and no payment is taken.
+        var free = await FreeTreatmentAsync(db, entry.VisitId, ct);
+        if (free is not null && request.Payments.Count > 0)
+        {
+            return Error.Rule("pharmacy.free_treatment", $"These medicines are free of cost by law ({free}), so take no payment.");
+        }
+
+        var discount = free is null ? await CheckDiscountAsync(store.Value.FacilityId, request.DiscountPercent, ct) : Result.Success();
         if (discount.IsFailure)
         {
             return discount.Error!;
         }
 
+        var discountPercent = free is null ? request.DiscountPercent : 100m;
         var itemIds = request.Lines.Select(l => l.ItemId).Concat(entry.Lines.Where(l => l.DrugItemId != null).Select(l => l.DrugItemId!.Value));
         var items = await InventoryQueries.ItemSummariesAsync(db, itemIds, ct);
         var planned = new List<PlannedLine>();
@@ -203,7 +212,8 @@ public sealed class DispensingService(
             SoldAt = now,
             SoldByUserId = currentUser.UserId,
             CounsellingNotes = request.CounsellingNotes?.Trim(),
-            DiscountPercent = request.DiscountPercent,
+            DiscountPercent = free is null ? request.DiscountPercent : 0m,
+            FreeTreatmentReason = free,
         };
         sale.InvoiceNumber = await numbers.NextAsync(PharmacyNumberSeries.Invoice, sale.FacilityId, ct);
 
@@ -221,7 +231,7 @@ public sealed class DispensingService(
         {
             foreach (var moved in issued.Value.Movements.Where(m => m.LineId == p.Key))
             {
-                var saleItem = PharmacyLookups.SaleItem(sale.Id, p.Item, moved, request.DiscountPercent);
+                var saleItem = PharmacyLookups.SaleItem(sale.Id, p.Item, moved, discountPercent);
                 saleItem.QueueLineId = p.Line.Id;
                 saleItem.PrescriptionLineId = p.Line.PrescriptionLineId;
                 saleItem.IsSubstitution = p.IsSubstitution;
@@ -387,6 +397,10 @@ public sealed class DispensingService(
     }
 
     /// <summary>Discounts above the facility's limit (setting <c>pharmacy.discount.max_percent</c>, default 10%) are refused.</summary>
+    /// <summary>Why a visit's medicines are free of cost by law (BNSS 2023, s.397); <c>null</c> when they are sold as usual.</summary>
+    internal static async Task<string?> FreeTreatmentAsync(HospitalDbContext db, Guid? visitId, CancellationToken ct) =>
+        visitId is { } id ? await db.Set<Visit>().Where(v => v.Id == id).Select(v => v.FreeTreatmentReason).FirstOrDefaultAsync(ct) : null;
+
     private async Task<Result> CheckDiscountAsync(Guid facilityId, decimal percent, CancellationToken ct)
     {
         if (percent <= 0)

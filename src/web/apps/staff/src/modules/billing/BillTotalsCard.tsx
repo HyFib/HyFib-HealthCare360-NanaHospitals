@@ -46,20 +46,23 @@ export function BillTotalsCard({ bill }: { bill: BillDetail }) {
   const isDraft = bill.status === 'Draft';
   const cancelled = bill.status === 'Cancelled' || bill.status === 'Refunded';
   const settled = !isDraft && !cancelled && bill.dueAmount === 0;
+  const free = !cancelled && Boolean(bill.freeTreatmentReason);
 
-  const heroLabel = isDraft
-    ? bill.payerAmount > 0
-      ? 'Payable by patient'
-      : 'Amount payable'
-    : cancelled
-      ? bill.refundableAmount > 0
-        ? 'To refund'
-        : 'Cancelled'
-      : bill.refundableAmount > 0
-        ? 'Refundable to patient'
-        : settled
-          ? 'Fully paid'
-          : 'Balance due';
+  const heroLabel = free
+    ? 'Free of cost by law'
+    : isDraft
+      ? bill.payerAmount > 0
+        ? 'Payable by patient'
+        : 'Amount payable'
+      : cancelled
+        ? bill.refundableAmount > 0
+          ? 'To refund'
+          : 'Cancelled'
+        : bill.refundableAmount > 0
+          ? 'Refundable to patient'
+          : settled
+            ? 'Fully paid'
+            : 'Balance due';
   const heroValue = isDraft ? bill.patientAmount : bill.refundableAmount > 0 ? bill.refundableAmount : bill.dueAmount;
 
   return (
@@ -92,6 +95,11 @@ export function BillTotalsCard({ bill }: { bill: BillDetail }) {
         {nonZero(staffDiscount) && (
           <SummaryRow label="Discount" hint={bill.discountReason ?? undefined}>
             <Amount value={-staffDiscount} />
+          </SummaryRow>
+        )}
+        {bill.freeTreatmentReason && (
+          <SummaryRow label="Free treatment by law" hint={bill.freeTreatmentReason}>
+            <Amount value={-(bill.freeTreatmentAmount ?? 0)} />
           </SummaryRow>
         )}
         {nonZero(bill.taxAmount) && (

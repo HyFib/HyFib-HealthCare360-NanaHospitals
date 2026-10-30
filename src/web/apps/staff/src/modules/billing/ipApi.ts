@@ -56,6 +56,8 @@ export interface IpAccountDetail {
   dischargeApprovalReason: string | null;
   notes: string | null;
   version: number;
+  /** Why the stay is free of cost by law (BNSS 2023 s.397, with the MLC entry): no advance is taken and its bills come to nothing. */
+  freeTreatmentReason?: string | null;
 }
 
 export interface UpdateIpAccountRequest {
@@ -150,6 +152,8 @@ export interface RunningBill {
   package: PackageStatus | null;
   insurance: InsuranceEstimate | null;
   returnsNet: number;
+  /** Why the stay is free of cost by law: the estimate the patient pays is nothing. */
+  freeTreatmentReason?: string | null;
 }
 
 export interface SettlementResult {

@@ -304,7 +304,8 @@ diagnostics screen.
   cancelled. A second scan at receipt returns 409 `sample.already_received`; receipt before collection is refused.
 * **Payment gate** (`lab.requirePaymentBeforeCollection`, default true): OP and external patients must have paid each test
   (`IBillingStatusProvider.GetStatesAsync("diagnostics.lab", itemIds)` = Paid). IP, ER and day-care work is never held,
-  and health-checkup package components are settled with the package.
+  nor is that of a visit treated free of cost by law (the victim of a sexual offence or an acid attack, BNSS 2023
+  s.397, marked from the MLC register), and health-checkup package components are settled with the package.
 * **Interpretation**: the reference interval is chosen by sex and age in days (sex-specific first, then the narrowest age
   band); an unknown age only matches all-age intervals. Flags are computed on the unrounded value (a potassium of 6.54
   prints "6.5" but is CriticalHigh against 6.5). Comparator values (`<0.005`, `>600`, `≤`/`≥`) and Indian digit grouping

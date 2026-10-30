@@ -51,7 +51,8 @@ public sealed record IpAccountDetail(
     bool DischargeWithDuesApproved,
     string? DischargeApprovalReason,
     string? Notes,
-    uint Version);
+    uint Version,
+    string? FreeTreatmentReason = null);
 
 /// <summary>
 /// Changes the payer/tariff of an admission (for example cash converted to cashless mid-stay). With
@@ -133,7 +134,8 @@ public sealed record RunningBill(
     decimal EstimatedAmount,
     PackageStatus? Package,
     InsuranceEstimate? Insurance,
-    decimal ReturnsNet);
+    decimal ReturnsNet,
+    string? FreeTreatmentReason = null);
 
 public sealed record CreateInterimBillRequest(DateOnly? UpTo);
 

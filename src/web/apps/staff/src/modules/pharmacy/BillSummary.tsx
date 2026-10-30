@@ -25,12 +25,15 @@ export function BillSummary({
   discountPercent,
   label = 'To collect',
   interState = false,
+  freeTreatment = false,
 }: {
   totals: SaleTotals;
   discountPercent: number;
   label?: string;
   /** Dispatched to a buyer in another state: the same GST, as IGST. */
   interState?: boolean;
+  /** Given free of cost by law (BNSS 2023 s.397): the whole MRP comes off, as free treatment, not a discount. */
+  freeTreatment?: boolean;
 }) {
   const styles = useStyles();
   return (
@@ -39,7 +42,7 @@ export function BillSummary({
       <Text className={styles.right}>{formatInr(totals.gross)}</Text>
       {totals.discount > 0 && (
         <>
-          <Text>Discount ({formatPercent(discountPercent)})</Text>
+          <Text>{freeTreatment ? 'Free treatment by law' : `Discount (${formatPercent(discountPercent)})`}</Text>
           <Text className={styles.right}>−{formatInr(totals.discount)}</Text>
         </>
       )}

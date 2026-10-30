@@ -22,6 +22,7 @@ public sealed record SplitTerms(bool HasPayer, decimal CoPayPercent, decimal? Co
     public static SplitTerms SelfPay { get; } = new(false, 0m, null);
 }
 
+/// <param name="FreeTreatment">On a bill free of cost by law, what the line would have cost; the line itself comes to nothing.</param>
 public sealed record BillLineResult(
     decimal Billable,
     decimal TariffDiscount,
@@ -31,7 +32,8 @@ public sealed record BillLineResult(
     decimal Cgst,
     decimal Sgst,
     decimal Tax,
-    decimal Net);
+    decimal Net,
+    decimal FreeTreatment = 0m);
 
 public sealed record BillTotals(
     IReadOnlyList<BillLineResult> Lines,
@@ -49,7 +51,8 @@ public sealed record BillTotals(
     decimal PayerAmount,
     decimal PatientAmount,
     decimal CoPay,
-    decimal NonPayable)
+    decimal NonPayable,
+    decimal FreeTreatment = 0m)
 {
     public decimal TotalDiscount => TariffDiscount + LineDiscount + BillDiscount;
 
@@ -72,10 +75,16 @@ public sealed record BillTotals(
 /// and takes a proportional (negative) share of the bill discount — so no discount is ever given on goods that came
 /// back — while staff line discounts never apply to credits.
 /// </para>
+/// <para>
+/// A bill free of cost by law (<c>freeTreatment</c>: the victim of a sexual offence or an acid attack, BNSS 2023 s.397)
+/// charges nothing to anyone. Package cover and tariff concessions still say what each line was worth, which is recorded
+/// as its free treatment; staff discounts and the payer split do not apply, and with nothing charged there is no taxable
+/// value and no tax.
+/// </para>
 /// </summary>
 public static class BillTotalsCalculator
 {
-    public static BillTotals Calculate(IReadOnlyList<BillLineInput> lines, BillDiscountInput discount, SplitTerms terms)
+    public static BillTotals Calculate(IReadOnlyList<BillLineInput> lines, BillDiscountInput discount, SplitTerms terms, bool freeTreatment = false)
     {
         var count = lines.Count;
         var billable = new decimal[count];
@@ -92,7 +101,7 @@ public static class BillTotalsCalculator
             {
                 billable[i] = Math.Max(gross - Math.Max(Money.Round(line.PackageCovered), 0m), 0m);
                 tariff[i] = line.DiscountAllowed ? Math.Min(Money.PercentOf(billable[i], tariffPercent), billable[i]) : 0m;
-                lineDiscount[i] = line.DiscountAllowed ? Math.Clamp(Money.Round(line.LineDiscount), 0m, billable[i] - tariff[i]) : 0m;
+                lineDiscount[i] = line.DiscountAllowed && !freeTreatment ? Math.Clamp(Money.Round(line.LineDiscount), 0m, billable[i] - tariff[i]) : 0m;
             }
             else
             {
@@ -102,6 +111,11 @@ public static class BillTotalsCalculator
             }
 
             afterLine[i] = billable[i] - tariff[i] - lineDiscount[i];
+        }
+
+        if (freeTreatment)
+        {
+            return Free(lines, billable, tariff, afterLine);
         }
 
         var shares = AllocateBillDiscount(lines, afterLine, discount);
@@ -141,6 +155,33 @@ public static class BillTotalsCalculator
             PatientAmount: patientAmount,
             CoPay: coPay,
             NonPayable: terms.HasPayer ? netBeforeRounding - payable : 0m);
+    }
+
+    /// <summary>A bill free of cost by law: every line comes to nothing, and what it would have cost is its free treatment.</summary>
+    private static BillTotals Free(IReadOnlyList<BillLineInput> lines, decimal[] billable, decimal[] tariff, decimal[] afterLine)
+    {
+        var results = Enumerable.Range(0, lines.Count)
+            .Select(i => new BillLineResult(billable[i], tariff[i], 0m, 0m, 0m, 0m, 0m, 0m, 0m, afterLine[i]))
+            .ToList();
+        var gross = lines.Sum(l => Money.Round(l.Gross));
+        return new BillTotals(
+            results,
+            Gross: gross,
+            PackageCovered: gross - results.Sum(r => r.Billable),
+            TariffDiscount: results.Sum(r => r.TariffDiscount),
+            LineDiscount: 0m,
+            BillDiscount: 0m,
+            Taxable: 0m,
+            Cgst: 0m,
+            Sgst: 0m,
+            Tax: 0m,
+            RoundOff: 0m,
+            Net: 0m,
+            PayerAmount: 0m,
+            PatientAmount: 0m,
+            CoPay: 0m,
+            NonPayable: 0m,
+            FreeTreatment: results.Sum(r => r.FreeTreatment));
     }
 
     private static decimal[] AllocateBillDiscount(IReadOnlyList<BillLineInput> lines, decimal[] afterLine, BillDiscountInput discount)

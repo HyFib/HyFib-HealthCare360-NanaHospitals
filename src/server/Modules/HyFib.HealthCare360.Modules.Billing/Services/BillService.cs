@@ -73,6 +73,7 @@ public sealed class BillService(
         var terms = visit is null ? await coverage.SelfPayAsync(facilityId, ct) : await coverage.ForVisitAsync(visit, ct);
         var bill = Bill.Draft(facilityId, BillType.OutPatient, false, patientId, visit?.Id, null, null, terms);
         await BillPlaceOfSupply.ApplyAsync(db, bill, ct);
+        await BillFreeTreatment.ApplyAsync(db, bill, ct);
         db.Add(bill);
         await AttachAsync(bill, await AvailableOpChargesAsync(patientId, visit?.Id, request.ChargeIds, ct), ct);
         await db.SaveChangesAsync(ct);
@@ -291,6 +292,9 @@ public sealed class BillService(
         }
 
         db.GuardVersion(bill, version);
+
+        // The visit may have been marked free by law (BNSS 2023, s.397) since the draft was made.
+        await BillFreeTreatment.ApplyAsync(db, bill, ct);
         var available = await AvailableOpChargesAsync(bill.PatientId, bill.VisitId, null, ct);
         await AttachAsync(bill, available, ct);
         await OpPackageCover.ApplyAsync(db, bill, ct);
@@ -317,13 +321,17 @@ public sealed class BillService(
         }
 
         db.GuardVersion(bill, version);
-        if (await db.Set<DiscountApproval>().AnyAsync(a => a.BillId == billId && a.Status == DiscountApprovalStatus.Pending, ct))
+
+        // The payer's GSTIN may have been entered since the draft, and the visit marked free by law: the bill is taxed and
+        // charged as it is finalised. A discount awaiting approval holds a bill up, unless nothing is left to discount.
+        await BillPlaceOfSupply.ApplyAsync(db, bill, ct);
+        await BillFreeTreatment.ApplyAsync(db, bill, ct);
+        if (bill.FreeTreatmentReason is null
+            && await db.Set<DiscountApproval>().AnyAsync(a => a.BillId == billId && a.Status == DiscountApprovalStatus.Pending, ct))
         {
             return Error.Rule("billing.discount_pending", "A discount on this bill is awaiting approval.");
         }
 
-        // The payer's GSTIN may have been entered since the draft: the bill is taxed as it is finalised.
-        await BillPlaceOfSupply.ApplyAsync(db, bill, ct);
         var totals = bill.Recalculate();
         var authority = await discounts.AuthorityAsync(ct);
         if (DiscountPolicy.RequiresApproval(totals.UserDiscount, totals.DiscountBase, authority, bill.ApprovedDiscountAmount))

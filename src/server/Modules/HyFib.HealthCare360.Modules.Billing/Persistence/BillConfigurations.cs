@@ -41,6 +41,7 @@ internal sealed class BillConfiguration : IEntityTypeConfiguration<Bill>
         b.Property(x => x.BillNumber).HasMaxLength(24);
         b.Property(x => x.PlaceOfSupply).HasMaxLength(2);
         b.Property(x => x.DiscountReason).HasMaxLength(300);
+        b.Property(x => x.FreeTreatmentReason).HasMaxLength(200);
         b.Property(x => x.CancelReason).HasMaxLength(300);
         b.Property(x => x.Notes).HasMaxLength(1000);
         b.Property(x => x.CoPayPercent).HasPrecision(5, 2);

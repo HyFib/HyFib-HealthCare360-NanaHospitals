@@ -79,6 +79,7 @@ internal sealed class PharmacySaleConfiguration : IEntityTypeConfiguration<Pharm
         b.Property(x => x.BuyerAddress).HasMaxLength(300);
         b.Property(x => x.PlaceOfSupply).HasMaxLength(2);
         b.Property(x => x.DiscountPercent).IsPercent();
+        b.Property(x => x.FreeTreatmentReason).HasMaxLength(200);
         b.Property(x => x.CancelReason).HasMaxLength(300);
         b.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.PharmacySaleId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(x => x.Payments).WithOne().HasForeignKey(x => x.PharmacySaleId).OnDelete(DeleteBehavior.Cascade);

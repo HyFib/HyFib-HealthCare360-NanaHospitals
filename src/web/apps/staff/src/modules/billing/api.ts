@@ -218,6 +218,13 @@ export interface BillDetail {
   version: number;
   /** The IRN the e-invoice portal gave this B2B tax invoice, printed with its signed QR code. */
   eInvoice?: EInvoiceStamp | null;
+  /**
+   * Why the bill is free of cost by law: the law and the MLC entry (the victim of a sexual offence or an acid attack,
+   * BNSS 2023 s.397), never the offence. Every line comes to nothing and nothing is collected.
+   */
+  freeTreatmentReason?: string | null;
+  /** What the services would have cost, had the treatment not been free. */
+  freeTreatmentAmount?: number;
 }
 
 export interface CreateBillRequest {

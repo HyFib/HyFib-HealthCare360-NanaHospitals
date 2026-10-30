@@ -1,4 +1,4 @@
-import { DEFAULT_PRINT_TEMPLATE, type Letterhead, type PrintTemplate } from '@hc360/core';
+import { DEFAULT_PRINT_TEMPLATE, formatInr, type Letterhead, type PrintTemplate } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
 import type { BillDetail, BillLineDto, ReceiptDto } from './api';
 import { billTitle, buildCounterBillHtml, buildReceiptHtml } from './print';
@@ -193,6 +193,26 @@ describe('bill prints', () => {
     expect(html).toContain('<td>IGST</td>');
     expect(html).not.toContain('<td>CGST</td>');
     expect(html).toContain('<td>Place of supply</td><td class="right">Kerala (32)</td>');
+  });
+
+  it('prints a bill free of cost by law with the law and the MLC entry, and nothing to pay', () => {
+    const html = buildCounterBillHtml(
+      bill({
+        status: 'Paid',
+        lines: [billLine({ netAmount: 0, taxableAmount: 0 })],
+        netAmount: 0,
+        patientAmount: 0,
+        paidAmount: 0,
+        dueAmount: 0,
+        freeTreatmentReason: 'BNSS 2023 s.397, MLC no. NHMLC2600012',
+        freeTreatmentAmount: 500,
+      }),
+      facility,
+    );
+    expect(html).toContain(
+      `<td>Less: free treatment by law (BNSS 2023 s.397, MLC no. NHMLC2600012)</td><td class="num">${formatInr(-500)}</td>`,
+    );
+    expect(html).not.toMatch(/sexual|acid|rape/i);
   });
 
   it('marks returns and cancelled bills', () => {

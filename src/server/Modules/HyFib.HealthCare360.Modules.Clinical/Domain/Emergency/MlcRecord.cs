@@ -15,6 +15,9 @@ public enum MlcCause
     IndustrialAccident,
     Unknown,
     Other,
+
+    /// <summary>An attack with acid (BNS 2023, s.124). Its victim is treated free of cost, as a victim of a sexual offence is (BNSS 2023, s.397).</summary>
+    AcidAttack,
 }
 
 public enum MlcBroughtBy

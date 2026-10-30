@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -10,7 +11,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// <summary>
 /// Pre-analytical workflow (LIS-02, LIS-03): collection with barcode labels, receipt in the lab by scanning, and
 /// rejection with a standard reason followed by a recollection tube. Out-patient collection is gated on payment
-/// (setting <c>lab.requirePaymentBeforeCollection</c>, default on); in-patient, emergency and day-care work is never held up.
+/// (setting <c>lab.requirePaymentBeforeCollection</c>, default on); in-patient, emergency and day-care work is never held up,
+/// nor is that of a victim treated free of cost by law (BNSS 2023, s.397).
 /// </summary>
 internal sealed class SampleService(
     HospitalDbContext db,
@@ -297,6 +299,12 @@ internal sealed class SampleService(
     {
         var required = await settings.GetAsync<bool?>(RequirePaymentSetting, order.FacilityId, ct) ?? true;
         if (!required || !order.PatientClass.PaysBeforeService() || items.Count == 0)
+        {
+            return Result.Success();
+        }
+
+        // The victim of a sexual offence or an acid attack is treated free of cost (BNSS 2023, s.397): nothing is paid first.
+        if (order.VisitId is { } visitId && await db.Set<Visit>().AnyAsync(v => v.Id == visitId && v.FreeTreatmentReason != null, ct))
         {
             return Result.Success();
         }

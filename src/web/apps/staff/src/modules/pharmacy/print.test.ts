@@ -152,6 +152,26 @@ describe('pharmacy prints', () => {
     expect(html).toContain('<div class="closing-note">Medicines once sold are taken back only with the bill.</div>');
   });
 
+  it('prints medicines given free of cost by law with the law and the MLC entry, not as a discount', () => {
+    const html = buildReceiptHtml(
+      {
+        ...sale,
+        discountPercent: 0,
+        discountAmount: sale.grossAmount,
+        taxableAmount: 0,
+        cgstAmount: 0,
+        sgstAmount: 0,
+        netAmount: 0,
+        paidAmount: 0,
+        payments: [],
+        freeTreatmentReason: 'BNSS 2023 s.397, MLC no. NHMLC2600012',
+      },
+      { name: 'Nana Hospitals' },
+    );
+    expect(html).toContain('Free treatment by law (BNSS 2023 s.397, MLC no. NHMLC2600012)');
+    expect(html).not.toContain('Discount (');
+  });
+
   it('marks cancelled invoices', () => {
     expect(
       buildReceiptHtml({ ...sale, status: 'Cancelled', cancelReason: 'Wrong patient' }, { name: 'Nana Hospitals' }),
