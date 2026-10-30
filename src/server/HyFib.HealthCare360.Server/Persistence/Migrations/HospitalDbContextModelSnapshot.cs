@@ -1074,6 +1074,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("finalized_by");
 
+                    b.Property<decimal>("FreeTreatmentAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("free_treatment_amount");
+
+                    b.Property<string>("FreeTreatmentReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("free_treatment_reason");
+
                     b.Property<decimal>("GrossAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
@@ -24223,6 +24233,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
 
+                    b.Property<string>("FreeTreatmentReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("free_treatment_reason");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
@@ -25571,6 +25586,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
+
+                    b.Property<string>("FreeTreatmentReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("free_treatment_reason");
 
                     b.Property<decimal>("GrossAmount")
                         .HasPrecision(18, 2)

@@ -91,6 +91,7 @@ internal sealed class VisitConfiguration : IEntityTypeConfiguration<Visit>
         b.Property(x => x.ReferredBy).HasMaxLength(200);
         b.Property(x => x.ChiefComplaint).HasMaxLength(500);
         b.Property(x => x.MlcNumber).HasMaxLength(64);
+        b.Property(x => x.FreeTreatmentReason).HasMaxLength(200);
         b.Property(x => x.Notes).HasMaxLength(1000);
         b.Property(x => x.CancelReason).HasMaxLength(300);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);

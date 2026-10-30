@@ -66,6 +66,7 @@
   "doc.bill.less_tariff": "Less: tariff concession",
   "doc.bill.less_discount": "Less: discount",
   "doc.bill.less_discount_reason": "Less: discount ({reason})",
+  "doc.bill.free_treatment": "Less: free treatment by law ({reason})",
   "doc.bill.taxable_value": "Taxable value",
   "doc.bill.round_off": "Round off",
   "doc.bill.net_amount": "Net amount",

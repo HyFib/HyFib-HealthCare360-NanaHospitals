@@ -223,7 +223,7 @@ public sealed class IpBillingService(
             a.Id, a.AdmissionId, a.AdmissionNumber, a.PatientId, patient?.Uhid, patient?.FullName, a.VisitId, a.PayerType, a.PayerId, payerName,
             a.TariffPlanId, planName, a.PolicyId, a.AttendingPractitionerId, doctor, a.BedServiceItemId, bedCode, a.AdmittedAt, a.DischargeInitiatedAt,
             a.DischargedAt, a.Status, a.EstimatedAmount, a.DepositReceived, a.DepositAdjusted, a.DepositRefunded, a.DepositBalance, a.PackageId,
-            packageName, a.DischargeWithDuesApproved, a.DischargeApprovalReason, a.Notes, a.Version);
+            packageName, a.DischargeWithDuesApproved, a.DischargeApprovalReason, a.Notes, a.Version, await BillFreeTreatment.ReasonAsync(db, a.VisitId, ct));
     }
 
     public async Task<Result<RunningBill>> RunningBillAsync(Guid id, CancellationToken ct)
@@ -247,7 +247,8 @@ public sealed class IpBillingService(
         var services = all.Where(c => c.SourceModule != ChargeService.PackageSource).ToList();
         var package = await EvaluatePackageAsync(account, services, ct);
         var terms = await coverage.ForAccountAsync(account, ct);
-        var estimate = await EstimateAsync(services, package, terms, ct);
+        var free = await BillFreeTreatment.ReasonAsync(db, account.VisitId, ct);
+        var estimate = await EstimateAsync(services, package, terms, free is not null, ct);
         var payerName = terms.HasPayer ? await db.Set<Payer>().Where(p => p.Id == terms.PayerId).Select(p => p.Name).FirstOrDefaultAsync(ct) : null;
 
         return new RunningBill(
@@ -278,7 +279,8 @@ public sealed class IpBillingService(
             Insurance: terms.HasPayer
                 ? new InsuranceEstimate(terms.PayerId, payerName, terms.CoverageLimit, terms.CoPayPercent, estimate.PayerAmount, estimate.PatientAmount)
                 : null,
-            ReturnsNet: all.Where(c => c.IsCredit).Sum(c => c.NetAmount));
+            ReturnsNet: all.Where(c => c.IsCredit).Sum(c => c.NetAmount),
+            FreeTreatmentReason: free);
     }
 
     public async Task<Result<PackageStatus?>> PackageStatusAsync(Guid id, CancellationToken ct)
@@ -458,6 +460,7 @@ public sealed class IpBillingService(
 
         var bill = Bill.Draft(account.FacilityId, BillType.InPatient, false, account.PatientId, account.VisitId, account.AdmissionId, account.Id, terms);
         await BillPlaceOfSupply.ApplyAsync(db, bill, ct);
+        await BillFreeTreatment.ApplyAsync(db, bill, ct);
         db.Add(bill);
         await bills.AttachAsync(bill, available, ct);
         await db.SaveChangesAsync(ct);
@@ -495,6 +498,7 @@ public sealed class IpBillingService(
                 BillPayerTerms.SelfPay(account.PayerType, account.TariffPlanId));
             bill.Notes = "Supplementary bill for services charged after the final bill.";
             await BillPlaceOfSupply.ApplyAsync(db, bill, ct);
+            await BillFreeTreatment.ApplyAsync(db, bill, ct);
             db.Add(bill);
             await bills.AttachAsync(bill, late, ct);
         }
@@ -660,6 +664,7 @@ public sealed class IpBillingService(
         }
 
         await BillPlaceOfSupply.ApplyAsync(db, bill, ct);
+        await BillFreeTreatment.ApplyAsync(db, bill, ct);
         var packageCharge = await StagePackageChargeAsync(account, ct);
         await bills.AttachAsync(bill, await AvailableChargesAsync(account.AdmissionId, null, ct), ct);
         await ApplyPackageAsync(bill, account, packageCharge, ct);
@@ -789,8 +794,12 @@ public sealed class IpBillingService(
         return new PackageEvaluation(package.Price, taxRate, outcome, status);
     }
 
-    /// <summary>What the stay would cost if billed now (package cover and payer split applied, no staff discounts).</summary>
-    private async Task<BillTotals> EstimateAsync(IReadOnlyList<Charge> services, PackageEvaluation? package, BillPayerTerms terms, CancellationToken ct)
+    /// <summary>
+    /// What the stay would cost if billed now (package cover and payer split applied, no staff discounts): nothing, when it
+    /// is free of cost by law.
+    /// </summary>
+    private async Task<BillTotals> EstimateAsync(
+        IReadOnlyList<Charge> services, PackageEvaluation? package, BillPayerTerms terms, bool freeTreatment, CancellationToken ct)
     {
         var isNonPayable = await coverage.NonPayableMatcherAsync(terms.HasPayer ? terms.PayerId : null, ct);
         var covered = package?.Outcome.Lines.ToDictionary(l => l.Key, l => l.Covered) ?? new Dictionary<Guid, decimal>();
@@ -802,7 +811,7 @@ public sealed class IpBillingService(
             inputs.Add(new BillLineInput(package.Price, 0m, 0m, 0m, false, package.TaxRate, true));
         }
 
-        return BillTotalsCalculator.Calculate(inputs, BillDiscountInput.None, new SplitTerms(terms.HasPayer, terms.CoPayPercent, terms.CoverageLimit));
+        return BillTotalsCalculator.Calculate(inputs, BillDiscountInput.None, new SplitTerms(terms.HasPayer, terms.CoPayPercent, terms.CoverageLimit), freeTreatment);
     }
 
     private sealed record PackageEvaluation(decimal Price, decimal TaxRate, PackageOutcome Outcome, PackageStatus Status);

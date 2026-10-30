@@ -35,6 +35,13 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     public Guid? SoldByUserId { get; set; }
     public string? CounsellingNotes { get; set; }
     public decimal DiscountPercent { get; set; }
+
+    /// <summary>
+    /// Why the medicines are given free of cost by law: the visit's reason (the victim of a sexual offence or an acid
+    /// attack, BNSS 2023 s.397, and the MLC entry). Every line comes to nothing and no payment is taken; <c>null</c> for a
+    /// sale paid as usual.
+    /// </summary>
+    public string? FreeTreatmentReason { get; set; }
     public decimal GrossAmount { get; private set; }
     public decimal DiscountAmount { get; private set; }
     public decimal TaxableAmount { get; private set; }

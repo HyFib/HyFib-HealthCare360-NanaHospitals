@@ -111,8 +111,13 @@ public sealed class TallyService(
             var lines = bill.Lines.Select(l =>
             {
                 var department = l.DepartmentId is { } d ? departments.GetValueOrDefault(d) : null;
+                var income = l.GrossAmount - l.PackageCoveredAmount;
+
+                // A bill free of cost by law (BNSS 2023, s.397) gives each service away whole: nothing is owed and no tax
+                // charged, so the voucher balances with its value as a discount allowed.
                 return new TallySaleLine(
-                    department?.Code, department?.Name, l.GrossAmount - l.PackageCoveredAmount, l.TariffDiscountAmount + l.LineDiscountAmount + l.BillDiscountShare,
+                    department?.Code, department?.Name, income,
+                    bill.FreeTreatmentReason is null ? l.TariffDiscountAmount + l.LineDiscountAmount + l.BillDiscountShare : income,
                     l.CgstAmount, l.SgstAmount, l.IgstAmount);
             }).ToList();
             var sale = new TallySale(

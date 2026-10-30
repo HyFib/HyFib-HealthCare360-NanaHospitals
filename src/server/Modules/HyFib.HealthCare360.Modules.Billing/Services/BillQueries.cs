@@ -83,7 +83,9 @@ internal static class BillQueries
             pending is null ? null : ToDto(pending, bill.BillNumber, patient?.Uhid, patient?.FullName),
             package,
             bill.Version,
-            einvoice is null ? null : EInvoiceService.Stamp(einvoice));
+            einvoice is null ? null : EInvoiceService.Stamp(einvoice),
+            bill.FreeTreatmentReason,
+            bill.FreeTreatmentAmount);
     }
 
     /// <summary>The package pricing a bill: the OP bill's own, or the IP account's on a final bill.</summary>

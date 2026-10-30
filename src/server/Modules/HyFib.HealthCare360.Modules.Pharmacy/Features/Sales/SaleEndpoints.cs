@@ -189,7 +189,8 @@ internal static class SaleEndpoints
             sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund)).ToList(),
             sale.Version,
             sale.BuyerAddress,
-            sale.BuyerGstin is null ? null : await einvoices.FindAsync(PharmacyEInvoiceSource.Key, sale.Id, ct)));
+            sale.BuyerGstin is null ? null : await einvoices.FindAsync(PharmacyEInvoiceSource.Key, sale.Id, ct),
+            sale.FreeTreatmentReason));
     }
 
     private static async Task<IResult> Returns(Guid id, HospitalDbContext db, CancellationToken ct)

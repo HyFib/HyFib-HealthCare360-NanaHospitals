@@ -99,6 +99,16 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public bool IsInterState { get; private set; }
 
     public decimal RoundOffAmount { get; set; }
+
+    /// <summary>
+    /// Why the bill is free of cost by law: its visit's reason (the victim of a sexual offence or an acid attack, BNSS 2023
+    /// s.397, and the MLC entry). Every line comes to nothing and nothing is collected; <c>null</c> for a bill charged as usual.
+    /// </summary>
+    public string? FreeTreatmentReason { get; private set; }
+
+    /// <summary>What the services would have cost, after package cover and tariff concessions, had the treatment not been free.</summary>
+    public decimal FreeTreatmentAmount { get; set; }
+
     public decimal NetAmount { get; set; }
     public decimal PayerAmount { get; set; }
     public decimal PatientAmount { get; set; }
@@ -218,6 +228,11 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
             return NotDraft();
         }
 
+        if (FreeTreatmentReason is not null)
+        {
+            return Error.Rule("billing.free_treatment", "This bill is free of cost by law, so there is nothing to discount.");
+        }
+
         foreach (var line in Lines)
         {
             line.LineDiscountAmount = line.IsDiscountAllowed && line.GrossAmount > 0 && lineAmounts.TryGetValue(line.Id, out var amount)
@@ -287,13 +302,39 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         IsInterState = payerState is not null && facilityState is not null && payerState != facilityState;
     }
 
+    /// <summary>
+    /// Bills a draft free of cost by law (BNSS 2023, s.397), or as usual again (<c>null</c>): the visit's reason. Its staff
+    /// discounts are cleared, as nothing is left to discount. A draft only; the next <see cref="Recalculate"/> applies it.
+    /// </summary>
+    public void SetFreeTreatment(string? reason)
+    {
+        if (Status != BillStatus.Draft)
+        {
+            return;
+        }
+
+        FreeTreatmentReason = reason;
+        if (reason is not null)
+        {
+            foreach (var line in Lines)
+            {
+                line.LineDiscountAmount = 0m;
+            }
+
+            BillDiscountPercent = null;
+            BillDiscountValue = null;
+            DiscountReason = null;
+        }
+    }
+
     public BillTotals Recalculate()
     {
         var ordered = Lines.OrderBy(l => l.SortOrder).ToList();
         var totals = BillTotalsCalculator.Calculate(
             ordered.Select(l => l.ToInput()).ToList(),
             new BillDiscountInput(BillDiscountPercent, BillDiscountValue),
-            new SplitTerms(HasPayer, CoPayPercent, PayerCoverageLimit));
+            new SplitTerms(HasPayer, CoPayPercent, PayerCoverageLimit),
+            FreeTreatmentReason is not null);
 
         for (var i = 0; i < ordered.Count; i++)
         {
@@ -312,6 +353,7 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         IgstAmount = IsInterState ? totals.Cgst + totals.Sgst : 0m;
         TaxAmount = totals.Tax;
         RoundOffAmount = totals.RoundOff;
+        FreeTreatmentAmount = totals.FreeTreatment;
         NetAmount = totals.Net;
         PayerAmount = totals.PayerAmount;
         PatientAmount = totals.PatientAmount;

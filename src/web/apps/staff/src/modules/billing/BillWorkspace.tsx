@@ -139,6 +139,8 @@ export function BillWorkspace({
   const isDraft = bill.status === 'Draft';
   const isCancelled = bill.status === 'Cancelled' || bill.status === 'Refunded';
   const isOpDraft = isDraft && bill.type === 'OutPatient';
+  // Free of cost by law (the victim of a sexual offence or an acid attack, BNSS 2023 s.397): nothing to discount or collect.
+  const isFree = Boolean(bill.freeTreatmentReason);
   const hasDue = !isDraft && !isCancelled && bill.dueAmount > 0;
   const refundable = refundableNow(bill);
   const creditable = !isDraft && !isCancelled ? creditableAmount(bill) : 0;
@@ -225,7 +227,7 @@ export function BillWorkspace({
 
   const openDialog = (kind: DialogKind) => () => setDialog(kind);
   const noDialog = dialog === null;
-  useHotkey('f4', () => canDiscount && isDraft && setDialog('discount'), {
+  useHotkey('f4', () => canDiscount && isDraft && !isFree && setDialog('discount'), {
     enabled: noDialog && isDraft,
     allowInInputs: true,
   });
@@ -247,9 +249,9 @@ export function BillWorkspace({
         className={styles.big}
         icon={<DocumentCheckmarkRegular />}
         onClick={openDialog('finalize')}
-        disabled={bill.lines.length === 0 || Boolean(bill.pendingDiscount)}
+        disabled={bill.lines.length === 0 || (Boolean(bill.pendingDiscount) && !isFree)}
       >
-        {bill.type === 'OutPatient' && canCollect ? 'Finalise and collect' : 'Finalise bill'}
+        {bill.type === 'OutPatient' && canCollect && !isFree ? 'Finalise and collect' : 'Finalise bill'}
         <KeyHint>F8</KeyHint>
       </Button>
     )
@@ -269,7 +271,16 @@ export function BillWorkspace({
   return (
     <div className={styles.layout}>
       <div className={styles.main}>
-        {bill.pendingDiscount && (
+        {isFree && (
+          <MessageBar intent="info" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>Free treatment by law</MessageBarTitle>
+              This patient is treated free of cost ({bill.freeTreatmentReason}). Every service on the bill comes to
+              nothing: take no payment and give no discount.
+            </MessageBarBody>
+          </MessageBar>
+        )}
+        {bill.pendingDiscount && !isFree && (
           <MessageBar intent="warning" layout="multiline">
             <MessageBarBody>
               <MessageBarTitle>
@@ -406,7 +417,7 @@ export function BillWorkspace({
         </Section>
         <div className={styles.actions}>
           {primary}
-          {isDraft && canDiscount && (
+          {isDraft && canDiscount && !isFree && (
             <Button icon={<TagPercentRegular />} onClick={openDialog('discount')} disabled={bill.lines.length === 0}>
               Discount
               <KeyHint>F4</KeyHint>

@@ -691,6 +691,18 @@ the user may not open shows initials.
   Act s.23). An emergency case opens as the chart does: the board lists the patient, but the case, its MLC and the
   examination open only to staff holding each of the record's categories (403 `patient.restricted`), or by
   break-the-glass.
+* **Free treatment** (Bharatiya Nagarik Suraksha Sanhita 2023, s.397, formerly CrPC s.357C; BNS s.200 punishes the
+  person in charge of a hospital that does not give it). Every hospital treats the victim of rape or another sexual
+  offence, or of an acid attack (cause `AcidAttack`, BNS s.124), free of cost. The register marks who is such a victim
+  (`FreeTreatment`): an entry for a sexual assault or an acid attack marks the case's visit (`visit.freeTreatmentReason`,
+  "BNSS 2023 s.397, MLC no. …", naming the law and the entry, never the offence), and:
+  * the stay the patient is admitted to from it, at admission or when the cause is entered later;
+  * a later visit the desk links to the entry by its MLC number (a follow-up for the same case, at check-in or on the
+    admission). The entry must be the same patient's: another patient's visit given the number is billed as usual.
+
+  Billing, the pharmacy and the lab then charge nothing and ask nothing first (see billing.md, pharmacy.md and
+  diagnostics' payment gate). A cause corrected to another unmarks the visits it marked; a bill already finalised stays
+  as issued.
 * **Not built:** ER bed allocation and a tracking display for the waiting area; trauma scores beyond ESI; the wound
   certificate and the formal MLC report to the court; the examination report's own form (the hospital's proforma is
   used, and HC360 keeps when it was made and sent).

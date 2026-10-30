@@ -112,7 +112,8 @@ public sealed record PharmacySaleDetail(
     IReadOnlyList<PharmacyPaymentDto> Payments,
     uint Version,
     string? BuyerAddress = null,
-    EInvoiceStamp? EInvoice = null);
+    EInvoiceStamp? EInvoice = null,
+    string? FreeTreatmentReason = null);
 
 public sealed record CollectPaymentRequest(PaymentMode Mode, decimal Amount, string? Reference);
 

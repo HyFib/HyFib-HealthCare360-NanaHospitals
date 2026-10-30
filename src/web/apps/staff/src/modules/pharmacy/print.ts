@@ -114,7 +114,7 @@ export function buildReceiptHtml(
       <div class="dash"></div>
       <table class="totals">
         <tr><td>MRP value</td><td class="right">${escapeHtml(formatInr(sale.grossAmount))}</td></tr>
-        ${sale.discountAmount ? `<tr><td>Discount (${escapeHtml(formatPercent(sale.discountPercent))})</td><td class="right">−${escapeHtml(formatInr(sale.discountAmount))}</td></tr>` : ''}
+        ${sale.discountAmount ? `<tr><td>${sale.freeTreatmentReason ? `Free treatment by law (${escapeHtml(sale.freeTreatmentReason)})` : `Discount (${escapeHtml(formatPercent(sale.discountPercent))})`}</td><td class="right">−${escapeHtml(formatInr(sale.discountAmount))}</td></tr>` : ''}
         <tr><td>Taxable value</td><td class="right">${escapeHtml(formatInr(sale.taxableAmount))}</td></tr>
         ${
           interState

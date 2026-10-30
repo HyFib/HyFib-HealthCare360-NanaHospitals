@@ -144,7 +144,9 @@ public sealed record BillDetail(
     DiscountApprovalDto? PendingDiscount,
     BillPackageSummary? Package,
     uint Version,
-    EInvoiceStamp? EInvoice = null);
+    EInvoiceStamp? EInvoice = null,
+    string? FreeTreatmentReason = null,
+    decimal FreeTreatmentAmount = 0m);
 
 /// <summary>
 /// The package a bill is priced at: an OP bill's own, or the IP account's on a final bill. <see cref="Price"/> is the

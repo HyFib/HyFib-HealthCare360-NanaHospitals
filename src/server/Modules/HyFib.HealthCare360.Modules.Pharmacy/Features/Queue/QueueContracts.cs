@@ -68,7 +68,8 @@ public sealed record QueueEntryDetail(
     DateOnly? RefillValidUntil,
     Guid? RefillOfEntryId,
     IReadOnlyList<QueueLineDto> Lines,
-    uint Version);
+    uint Version,
+    string? FreeTreatmentReason = null);
 
 /// <param name="ItemId">Item handed over — the prescribed one, or a generic equivalent (substitution).</param>
 /// <param name="BatchId">Batch scanned at the counter; FEFO when omitted.</param>

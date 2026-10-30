@@ -101,6 +101,8 @@ export interface QueueEntryDetail {
   refillOfEntryId: string | null;
   lines: QueueLineDto[];
   version: number;
+  /** Why the visit's medicines are free of cost by law (BNSS 2023 s.397, with the MLC entry): they are given, not sold. */
+  freeTreatmentReason?: string | null;
 }
 
 export interface SalePayment {
@@ -298,6 +300,8 @@ export interface PharmacySaleDetail {
   buyerAddress?: string | null;
   /** The IRN the e-invoice portal gave this B2B invoice. */
   eInvoice?: EInvoiceStamp | null;
+  /** Why the medicines were given free of cost by law (BNSS 2023 s.397, with the MLC entry); no payment was taken. */
+  freeTreatmentReason?: string | null;
 }
 
 export interface SaleReturnRequest {

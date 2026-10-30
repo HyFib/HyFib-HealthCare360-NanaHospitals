@@ -66,6 +66,7 @@
   "doc.bill.less_tariff": "घटाएँ: टैरिफ़ रियायत",
   "doc.bill.less_discount": "घटाएँ: छूट",
   "doc.bill.less_discount_reason": "घटाएँ: छूट ({reason})",
+  "doc.bill.free_treatment": "घटाएँ: क़ानून के तहत नि:शुल्क उपचार ({reason})",
   "doc.bill.taxable_value": "कर योग्य मूल्य",
   "doc.bill.round_off": "पूर्णांकन",
   "doc.bill.net_amount": "शुद्ध राशि",

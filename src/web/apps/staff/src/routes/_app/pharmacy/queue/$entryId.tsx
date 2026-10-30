@@ -303,7 +303,9 @@ function EntryScreen({
   );
   const stock = usePharmacyBatches(open ? storeId : null, itemIds);
   const master = useItemMaster(itemIds);
-  const discountPercent = entry.isInpatient ? 0 : (parseNumber(discount) ?? 0);
+  // The victim of a sexual offence or an acid attack is treated free of cost (BNSS 2023 s.397): the medicines are given.
+  const free = !entry.isInpatient && Boolean(entry.freeTreatmentReason);
+  const discountPercent = entry.isInpatient ? 0 : free ? 100 : (parseNumber(discount) ?? 0);
 
   const plans: LinePlan[] = openLines.map((line) => {
     const choice = choices[line.id] ?? {};
@@ -402,7 +404,7 @@ function EntryScreen({
     !pending &&
     problems.length === 0 &&
     (controlled.length === 0 || confirmControlled) &&
-    (entry.isInpatient || (paymentCheck.ok && !discountInvalid));
+    (entry.isInpatient || free || (paymentCheck.ok && !discountInvalid));
 
   const setChoice = (lineId: string, patch: Partial<LineChoice>) =>
     setChoices((prev) => ({ ...prev, [lineId]: { ...prev[lineId], ...patch } }));
@@ -504,10 +506,12 @@ function EntryScreen({
         storeId,
         lines,
         counsellingNotes: notes.trim() || null,
-        discountPercent,
-        payments: resolved
-          .filter((p) => p.amount > 0)
-          .map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference })),
+        discountPercent: free ? 0 : discountPercent,
+        payments: free
+          ? []
+          : resolved
+              .filter((p) => p.amount > 0)
+              .map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference })),
         confirmControlledDrugs: controlled.length > 0 && confirmControlled,
       });
       return { kind: 'sale', sale, labels };
@@ -930,6 +934,18 @@ function EntryScreen({
                   <Text weight="bold" size={500}>
                     {formatInr(ipTotal)}
                   </Text>
+                </div>
+              </Section>
+            ) : free ? (
+              <Section title="Bill">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <MessageBar intent="info" layout="multiline">
+                    <MessageBarBody>
+                      <MessageBarTitle>Free treatment by law</MessageBarTitle>
+                      These medicines are given free of cost ({entry.freeTreatmentReason}). Take no payment.
+                    </MessageBarBody>
+                  </MessageBar>
+                  <BillSummary totals={totals} discountPercent={discountPercent} freeTreatment />
                 </div>
               </Section>
             ) : (

@@ -42,6 +42,7 @@ import {
   erQueries,
   ESI_LEVELS,
   formatMinutes,
+  isTreatedFree,
   REPORTED_TO_LABELS,
   type ArrivalMode,
   type EmergencyCase,
@@ -516,6 +517,7 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
         <Text>
           MLC {m.number} · identified {formatDateTime(m.identifiedAt)} by {m.doctorName}
           {m.isPocso ? ' · a child: POCSO Act' : ''}
+          {isTreatedFree(m.cause) ? ' · treated free of cost (BNSS s.397)' : ''}
           {m.intimatedAt
             ? ` · police informed ${formatDateTime(m.intimatedAt)} (${m.intimationMode}), received by ${m.receivedBy}${
                 m.reportedTo ? `, ${REPORTED_TO_LABELS[m.reportedTo]}` : ''
@@ -589,6 +591,12 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
                 <Radio value="no" label="No" />
               </RadioGroup>
             </Field>
+          )}
+          {isTreatedFree(cause) && (
+            <Caption1>
+              The victim is treated free of cost (BNSS 2023, s.397): this visit, a stay admitted from it and its
+              medicines are not charged, and no advance is asked.
+            </Caption1>
           )}
           {save.error && (
             <MessageBar intent="error">

@@ -21,7 +21,8 @@ export type MlcCause =
   | 'Firearm'
   | 'IndustrialAccident'
   | 'Unknown'
-  | 'Other';
+  | 'Other'
+  | 'AcidAttack';
 export type MlcBroughtBy = 'Self' | 'Relative' | 'Police' | 'Public' | 'Ambulance';
 export type MlcIntimationMode = 'Phone' | 'Written' | 'InPerson';
 /** Who was told of a sexual offence against a child (POCSO Act 2012, s.19(1)). */
@@ -275,6 +276,7 @@ export const CAUSE_LABELS: Record<MlcCause, string> = {
   Assault: 'Assault',
   SexualAssault: 'Sexual assault',
   Burns: 'Burns',
+  AcidAttack: 'Acid attack',
   Poisoning: 'Poisoning',
   Fall: 'Fall',
   Hanging: 'Hanging',
@@ -285,6 +287,12 @@ export const CAUSE_LABELS: Record<MlcCause, string> = {
   Unknown: 'Not known',
   Other: 'Other',
 };
+
+/**
+ * Whether the victim of a case of this cause is treated free of cost (BNSS 2023, s.397): a sexual assault or an acid
+ * attack. The server marks the visit from the MLC entry (Clinical's `FreeTreatment.Covers`), and its bills come to nothing.
+ */
+export const isTreatedFree = (cause: MlcCause) => cause === 'SexualAssault' || cause === 'AcidAttack';
 
 export const REPORTED_TO_LABELS: Record<PocsoReportedTo, string> = {
   SpecialJuvenilePoliceUnit: 'Special Juvenile Police Unit',

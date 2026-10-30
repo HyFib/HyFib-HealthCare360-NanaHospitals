@@ -187,6 +187,12 @@ internal static class BillDocument
                 -staffDiscount));
         }
 
+        if (bill.FreeTreatmentReason is { } reason)
+        {
+            // Free of cost by law: what the services were worth, with the law and the MLC entry, never the offence.
+            rows.Add(new(text.Format("doc.bill.free_treatment", ("reason", reason)), -bill.FreeTreatmentAmount));
+        }
+
         if (bill.IsTaxInvoice)
         {
             rows.Add(new(text["doc.bill.taxable_value"], bill.TaxableAmount));

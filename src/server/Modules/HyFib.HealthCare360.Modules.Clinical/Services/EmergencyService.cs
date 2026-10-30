@@ -271,6 +271,10 @@ internal sealed class EmergencyService(
             await guard.FlagAsync(c.PatientId, SensitiveCategory.SexualViolence, $"a sexual-assault MLC ({mlc.Number})", ct);
         }
 
+        // The victim of a sexual offence or an acid attack is treated free of cost (BNSS 2023, s.397): the visit, and the
+        // visits that go on from it, are billed at nothing. A corrected cause bills them as usual again.
+        await FreeTreatment.MarkAsync(db, mlc, ct);
+
         await db.SaveChangesAsync(ct);
         await PublishAsync(c, ct);
         return await DetailAsync(c, ct);

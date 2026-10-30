@@ -146,7 +146,8 @@ internal static class QueueEndpoints
                     l.DurationDays, l.Instructions, l.IsControlledDrug, l.RequestedQuantity, l.DispensedQuantity, l.RemainingQuantity, l.Status,
                     available?.Available, available?.CurrentMrp, available?.NearestExpiry);
             }).ToList(),
-            entry.Version));
+            entry.Version,
+            await DispensingService.FreeTreatmentAsync(db, entry.VisitId, ct)));
     }
 
     private static async Task<IResult> Close(Guid id, PharmacyReasonRequest request, HospitalDbContext db, PharmacyRealtime realtime, TimeProvider time, CancellationToken ct)
