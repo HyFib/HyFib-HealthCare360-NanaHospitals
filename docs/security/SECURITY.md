@@ -296,7 +296,7 @@ and grants nothing.
     confirmation, is one), and a sexual assault entered in the MLC register;
     a doctor (`patients.sensitive.manage`) can add or remove one with a reason, audited as a security event.
   - The clinical record (notes, diagnoses, encounters, prescriptions written, nursing and MAR, OT, dialysis, teleconsults,
-    files) then opens only to staff holding the category: `patients.sensitive.hiv`, `.mental_health` and
+    emergency cases with their MLC, files) then opens only to staff holding the category: `patients.sensitive.hiv`, `.mental_health` and
     `.sexual_violence` (doctors, nurses, medical records), `patients.sensitive.mtp` (medical records; grant it to
     gynaecologists), to those who may open restricted records, or through break-the-glass, which is audited as for VIP
     records.

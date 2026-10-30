@@ -129,6 +129,9 @@ internal static class EmergencyEndpoints
         return TypedResults.Ok(await er.RegisterAsync(start, end, ct));
     }
 
+    // A case is the patient's clinical record (triage, disposition, the MLC and a victim's examination): it opens as the
+    // chart does, closed for a restricted record and for one in a sensitive category the user does not hold (R-4), until
+    // break-the-glass. The board lists the patients the ER is treating; a case is read and changed only through here.
     private static async Task<Result<EmergencyCase>> OpenAsync(Guid id, EmergencyService er, PatientAccessGuard guard, CancellationToken ct)
     {
         if (await er.FindAsync(id, ct) is not { } c)
@@ -136,7 +139,7 @@ internal static class EmergencyEndpoints
             return Error.NotFound("Emergency case", id);
         }
 
-        var allowed = await guard.EnsureCanOpenAsync(c.PatientId, ct);
+        var allowed = await guard.EnsureCanOpenChartAsync(c.PatientId, ct);
         return allowed.IsFailure ? allowed.Error! : c;
     }
 }

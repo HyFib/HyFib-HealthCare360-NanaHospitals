@@ -688,7 +688,9 @@ the user may not open shows initials.
 * **The victim's record is confidential.** Entering a sexual assault in the register puts the patient's record in the
   sexual-violence category (`patients.sensitive.sexual_violence`; doctors, nurses and medical records hold it), as a
   diagnosis of sexual abuse does: nothing may make a victim's identity known (Bharatiya Nyaya Sanhita 2023, s.72; POCSO
-  Act s.23).
+  Act s.23). An emergency case opens as the chart does: the board lists the patient, but the case, its MLC and the
+  examination open only to staff holding each of the record's categories (403 `patient.restricted`), or by
+  break-the-glass.
 * **Not built:** ER bed allocation and a tracking display for the waiting area; trauma scores beyond ESI; the wound
   certificate and the formal MLC report to the court; the examination report's own form (the hospital's proforma is
   used, and HC360 keeps when it was made and sent).

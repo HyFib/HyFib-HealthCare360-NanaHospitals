@@ -1,3 +1,4 @@
+using System.Net;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain.Emergency;
 using HyFib.HealthCare360.Modules.Clinical.Features.Diagnoses;
@@ -16,8 +17,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// A victim of sexual violence, over the real API: nothing may make the victim's identity known (Bharatiya Nyaya Sanhita
 /// 2023, s.72; for a child, the POCSO Act 2012, s.23), so the record is kept confidential as an HIV or MTP record is. A
-/// sexual assault entered in the MLC register, or a diagnosis of sexual abuse, puts it in the sexual-violence category;
-/// the upgrade does the same for the entries and diagnoses already recorded.
+/// sexual assault entered in the MLC register, or a diagnosis of sexual abuse, puts it in the sexual-violence category,
+/// and the emergency case opens, as the chart does, only to staff holding it; the upgrade does the same for the entries
+/// and diagnoses already recorded.
 /// </summary>
 public sealed class SexualViolenceRecordTests(HospitalServer server)
 {
@@ -33,13 +35,20 @@ public sealed class SexualViolenceRecordTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
 
         // A road accident in the register leaves the record as it was; a sexual assault puts it in the category.
-        var (accident, _) = await MlcAsync(frontOffice, doctor, MlcCause.RoadTrafficAccident);
+        var (accident, accidentCase) = await MlcAsync(frontOffice, doctor, MlcCause.RoadTrafficAccident);
         (await CategoriesAsync(admin, accident)).ShouldBeEmpty();
         var (victim, victimCase) = await MlcAsync(frontOffice, doctor, MlcCause.SexualAssault);
         (await CategoriesAsync(admin, victim)).ShouldBe([SensitiveCategory.SexualViolence]);
 
-        // Doctors, nurses and medical records hold the category: the ER doctor carries on with the case.
+        // Doctors, nurses and medical records hold the category: the ER doctor carries on with the case. The front office,
+        // which sees the ER board, opens the road accident's case but not the victim's: it is her clinical record.
         (await doctor.GetAsync<EmergencyCaseDetail>($"{Er}/cases/{victimCase}")).Mlc.ShouldNotBeNull().Cause.ShouldBe(MlcCause.SexualAssault);
+        (await frontOffice.GetAsync<EmergencyCaseDetail>($"{Er}/cases/{accidentCase}")).Mlc.ShouldNotBeNull();
+        using (var closed = await frontOffice.SendRawAsync(HttpMethod.Get, $"{Er}/cases/{victimCase}"))
+        {
+            closed.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            (await closed.Content.ReadAsStringAsync(Ct)).ShouldContain("patient.restricted");
+        }
 
         // A diagnosis of sexual abuse in a consultation does the same.
         var abused = await AbuseDiagnosedAsync(frontOffice, doctor);
