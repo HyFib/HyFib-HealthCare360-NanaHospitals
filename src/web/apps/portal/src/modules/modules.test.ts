@@ -1,6 +1,8 @@
 import { ApiError } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
-import type { LabReportSection, PublicSlot } from '@/lib/types';
+import { createTranslator } from '@/i18n';
+import { formattersFor } from '@/i18n/useFormat';
+import type { LabReportSection, PortalPrescriptionDetail, PublicSlot } from '@/lib/types';
 import { isDue, totalDue } from './bills/labels';
 import {
   chooseDay,
@@ -21,7 +23,8 @@ import {
   type FeedbackQuestions,
 } from './feedback/model';
 import { greetingKey } from './home/greeting';
-import { frequencyText, medicineName } from './prescriptions/labels';
+import { frequencyText, medicineNames, namedByItsGeneric } from './prescriptions/labels';
+import { prescriptionDocument } from './prescriptions/print';
 import { splitLines } from './records/labels';
 import { parseRange, parseResultNumber, rangePosition, summarizeResults } from './reports/labResults';
 import { reportVerifyUrl } from './reports/verifyLink';
@@ -322,7 +325,75 @@ describe('prescriptions', () => {
         'en',
       ),
     ).toBe('When needed (SOS)');
-    expect(medicineName({ drugName: 'Paracetamol', strength: '500 mg', dosageForm: null })).toBe('Paracetamol 500 mg');
+  });
+
+  it('names a medicine by its generic name in capitals, then by the product the doctor chose', () => {
+    expect(
+      medicineNames({ drugName: 'Dolo 650', genericName: 'Paracetamol', strength: '650 mg', dosageForm: 'Tablet' }),
+    ).toEqual({
+      name: 'PARACETAMOL 650 mg',
+      detail: 'Dolo 650 · Tablet',
+    });
+    // A product named by its generic is not named twice.
+    expect(
+      medicineNames({
+        drugName: 'Paracetamol 500 mg Tablet',
+        genericName: 'Paracetamol',
+        strength: '500 mg',
+        dosageForm: 'Tablet',
+      }),
+    ).toEqual({ name: 'PARACETAMOL 500 mg', detail: 'Tablet' });
+    // A line signed before a generic name was asked for reads as it did.
+    expect(medicineNames({ drugName: 'Paracetamol', genericName: null, strength: '500 mg', dosageForm: null })).toEqual(
+      {
+        name: 'Paracetamol 500 mg',
+        detail: null,
+      },
+    );
+    expect(namedByItsGeneric('Metformin', 'Metformin hydrochloride')).toBe(true);
+    expect(namedByItsGeneric('Pan', 'Pantoprazole')).toBe(false);
+  });
+
+  it('prints each medicine by its generic name in capitals, then the product the doctor chose', () => {
+    const line = {
+      drugName: 'Dolo 650',
+      genericName: 'Paracetamol',
+      strength: '650 mg',
+      dosageForm: 'Tablet',
+      dose: '1 tablet',
+      frequency: 'TDS',
+      frequencyEnglish: 'Three times a day',
+      frequencyHindi: 'दिन में तीन बार',
+      frequencyTamil: 'நாளொன்றுக்கு மூன்று முறை',
+      durationDays: 3,
+      quantity: 9,
+      instructions: null,
+    };
+    const rx = {
+      id: 'rx1',
+      prescriptionNumber: 'RX2600125',
+      patientId: 'p1',
+      status: 'Signed',
+      signedAt: '2026-10-29T06:00:00Z',
+      doctor: 'Dr. Meera Iyer',
+      doctorQualification: 'MBBS',
+      doctorRegistrationNumber: 'KMC 12345',
+      facility: 'Nana Hospitals, Pune',
+      advice: null,
+      lines: [line],
+      refillsRemaining: 0,
+      verificationToken: null,
+    } as PortalPrescriptionDetail;
+    const { body } = prescriptionDocument(rx, {
+      t: createTranslator('en'),
+      f: formattersFor('en'),
+      language: 'en',
+      printedAt: '2026-10-29T10:00:00+05:30',
+      patient: { fullName: 'Asha Rao', uhid: 'NH-000123', age: '34 y', gender: 'Female' },
+      qrSvg: null,
+      verifyUrl: null,
+    });
+    expect(body).toContain('<strong>PARACETAMOL 650 mg</strong><div class="small muted">Dolo 650 · Tablet</div>');
   });
 });
 

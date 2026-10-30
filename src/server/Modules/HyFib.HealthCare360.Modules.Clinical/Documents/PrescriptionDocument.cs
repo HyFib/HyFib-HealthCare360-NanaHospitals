@@ -139,15 +139,50 @@ internal static class PrescriptionDocument
         _ => "doc.rx.draft",
     };
 
-    // One medicine: name, strength and Schedule H1/X tag; generic and form; the dose with English directions and the
-    // route (unless oral), the same in the patient's language, and the instructions; duration and quantity.
+    /// <summary>
+    /// What the prescription calls a medicine. Every physician prescribes by generic name, legibly and preferably in
+    /// capitals (Indian Medical Council (Professional Conduct, Etiquette and Ethics) Regulations 2002, reg. 1.5, as
+    /// amended in 2016), so a line is named by its generic name in capitals with the strength ("PARACETAMOL 650 mg"), and
+    /// then by the product the doctor chose with its form ("Dolo 650 · Tablet"), or the form alone when the product is
+    /// named by its generic. A line signed before HC360 asked for the generic name keeps the name it was printed with.
+    /// </summary>
+    internal static (string Name, string? Detail) Names(PrescriptionPrintLine line)
+    {
+        var strength = line.Strength is { Length: > 0 } s ? $" {s}" : string.Empty;
+        if (string.IsNullOrWhiteSpace(line.GenericName))
+        {
+            return (line.DrugName + strength, null);
+        }
+
+        var generic = line.GenericName.Trim();
+        var product = NamedByItsGeneric(line.DrugName, generic) ? null : line.DrugName.Trim();
+        var detail = string.Join(" · ", new[] { product, line.DosageForm }.Where(part => !string.IsNullOrWhiteSpace(part)));
+        return (generic.ToUpperInvariant() + strength, detail.Length > 0 ? detail : null);
+    }
+
+    /// <summary>
+    /// Whether a product is named by its generic: the shorter name's words begin the longer's, whatever their case
+    /// ("Paracetamol 650 mg Tablet" for paracetamol, "Metformin" for metformin hydrochloride). A brand is not, even one
+    /// that begins like its generic ("Pan" for pantoprazole).
+    /// </summary>
+    internal static bool NamedByItsGeneric(string product, string genericName)
+    {
+        var named = Words(product);
+        var generic = Words(genericName);
+        var (shorter, longer) = named.Length <= generic.Length ? (named, generic) : (generic, named);
+        return shorter.Length > 0 && shorter.SequenceEqual(longer.Take(shorter.Length), StringComparer.OrdinalIgnoreCase);
+
+        static string[] Words(string name) => name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    // One medicine: its generic name in capitals, the strength and the Schedule H1/X tag; the product chosen and its form;
+    // the dose with English directions and the route (unless oral), the same in the patient's language, and the
+    // instructions; duration and quantity.
     private static Html Line(PrescriptionPrintLine line, DocumentText second)
     {
-        var name = line.Strength is { Length: > 0 } strength ? $"{line.DrugName} {strength}" : line.DrugName;
+        var (name, detail) = Names(line);
         var controlled = line.IsControlledDrug ? Html.Of($"<span class=\"controlled\">Schedule H1/X</span>") : Html.Empty;
-        var generic = line.GenericName is { Length: > 0 } genericName
-            ? Html.Of($"<div class=\"small\">{(line.DosageForm is { Length: > 0 } form ? $"{genericName} · {form}" : genericName)}</div>")
-            : Html.Empty;
+        var generic = detail is not null ? Html.Of($"<div class=\"small\">{detail}</div>") : Html.Empty;
         var route = line.Route is { Length: > 0 } via && via != "Oral" ? $" · {via}" : null;
         var instructions = line.Instructions is { Length: > 0 } text ? Html.Of($"<div class=\"small\">{text}</div>") : Html.Empty;
         return Html.Of($"""

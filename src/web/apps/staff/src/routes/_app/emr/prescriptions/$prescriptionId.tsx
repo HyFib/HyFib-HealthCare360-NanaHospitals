@@ -23,6 +23,7 @@ import { directionsText } from '@/modules/emr/dosing';
 import { DigitalSignatureBadge, DigitalSignatureSection } from '@/modules/emr/DigitalSignature';
 import { useClinicalSummary } from '@/modules/emr/hooks';
 import { PrescriptionEditor } from '@/modules/emr/PrescriptionEditor';
+import { medicineNames } from '@/modules/emr/prescriptionForm';
 import {
   canIssueFinalCopy,
   prescriptionDocument,
@@ -187,33 +188,35 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
             </MessageBar>
           )}
           <ul className={styles.lines}>
-            {rx.items.map((item) => (
-              <li key={item.id} className={styles.line}>
-                <span className={styles.row}>
-                  <Text weight="semibold">
-                    {item.sequence}. {item.drugName}
-                    {item.strength ? ` ${item.strength}` : ''}
+            {rx.items.map((item) => {
+              const { name, detail } = medicineNames(item);
+              return (
+                <li key={item.id} className={styles.line}>
+                  <span className={styles.row}>
+                    <Text weight="semibold">
+                      {item.sequence}. {name}
+                    </Text>
+                    {detail && <Caption1 className={styles.muted}>{detail}</Caption1>}
+                    {item.isControlledDrug && (
+                      <Badge size="small" color="danger" appearance="outline">
+                        Schedule {item.controlledSchedule ?? 'H1/X'}
+                      </Badge>
+                    )}
+                  </span>
+                  <Text>
+                    {directionsText({
+                      dose: item.dose,
+                      frequency: item.frequency,
+                      customFrequency: item.customFrequency,
+                      durationDays: item.durationDays,
+                      route: item.route,
+                      instructions: item.instructions,
+                    })}
                   </Text>
-                  {item.genericName && <Caption1 className={styles.muted}>{item.genericName}</Caption1>}
-                  {item.isControlledDrug && (
-                    <Badge size="small" color="danger" appearance="outline">
-                      Schedule {item.controlledSchedule ?? 'H1/X'}
-                    </Badge>
-                  )}
-                </span>
-                <Text>
-                  {directionsText({
-                    dose: item.dose,
-                    frequency: item.frequency,
-                    customFrequency: item.customFrequency,
-                    durationDays: item.durationDays,
-                    route: item.route,
-                    instructions: item.instructions,
-                  })}
-                </Text>
-                <Caption1 className={styles.muted}>Quantity {item.quantity}</Caption1>
-              </li>
-            ))}
+                  <Caption1 className={styles.muted}>Quantity {item.quantity}</Caption1>
+                </li>
+              );
+            })}
           </ul>
           {rx.advice && (
             <>

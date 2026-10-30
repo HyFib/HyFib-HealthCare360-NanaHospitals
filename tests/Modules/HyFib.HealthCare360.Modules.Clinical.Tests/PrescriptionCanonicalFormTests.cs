@@ -37,7 +37,7 @@ public sealed class PrescriptionCanonicalFormTests
             + "\"durationDays\":30,\"frequency\":\"BD\",\"genericName\":\"Metformin hydrochloride\",\"instructions\":\"After food\","
             + "\"isControlledDrug\":false,\"quantity\":\"60\",\"route\":\"Oral\",\"sequence\":1,\"strength\":\"500 mg\"},"
             + "{\"controlledSchedule\":\"H1\",\"customFrequency\":\"1-0-1\",\"dosageForm\":null,\"dose\":\"½ tab\",\"drugName\":\"Tramadol \\\"SR\\\"\","
-            + "\"durationDays\":3,\"frequency\":\"Custom\",\"genericName\":null,\"instructions\":null,"
+            + "\"durationDays\":3,\"frequency\":\"Custom\",\"genericName\":\"Tramadol hydrochloride\",\"instructions\":null,"
             + "\"isControlledDrug\":true,\"quantity\":\"1.5\",\"route\":null,\"sequence\":2,\"strength\":\"50 mg\"}"
             + "],"
             + "\"notes\":null,\"number\":\"NHRX260000123\",\"refillOfPrescriptionId\":null,\"refillsAllowed\":2,"
@@ -116,6 +116,7 @@ public sealed class PrescriptionCanonicalFormTests
         ? new PrescriptionItem
         {
             DrugName = name,
+            GenericName = "Tramadol hydrochloride",
             Strength = "50 mg",
             Dose = "½ tab",
             Frequency = DoseFrequency.Custom,
