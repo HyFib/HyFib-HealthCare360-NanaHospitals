@@ -73,14 +73,57 @@ public sealed record CreateRecordRequestRequest(
     RecordRequestPurpose Purpose,
     string? Details);
 
-public sealed record IssueRecordRequest(DateOnly? DueBackOn);
+/// <summary>
+/// Issues a request: the chart, lent out until <see cref="DueBackOn"/>, or a copy. A copy issued as documents holds
+/// <see cref="Documents"/>, each made now and kept as it is handed over (BSA 2023, s.63).
+/// </summary>
+public sealed record IssueRecordRequest(DateOnly? DueBackOn, IReadOnlyList<RecordCopyDocument>? Documents = null);
 
-/// <summary>A chart issued is due back today or later; left empty, a week from today.</summary>
+/// <summary>A document to put in a copy: the kind and id the request's document list gives.</summary>
+public sealed record RecordCopyDocument(string Kind, Guid Id);
+
+/// <summary>
+/// A chart issued is due back today or later; left empty, a week from today, and a copy not at all. A copy holds each
+/// document once, and up to <see cref="MaxDocuments"/>.
+/// </summary>
 public sealed class IssueRecordRequestValidator : AbstractValidator<IssueRecordRequest>
 {
-    public IssueRecordRequestValidator(TimeProvider time) =>
+    public const int MaxDocuments = 50;
+
+    public IssueRecordRequestValidator(TimeProvider time)
+    {
         RuleFor(x => x.DueBackOn).GreaterThanOrEqualTo(_ => time.Today()).WithMessage("Choose today or a later day for its return.");
+        RuleFor(x => x.Documents).Must(d => d is null || d.Count <= MaxDocuments)
+            .WithMessage($"A copy holds up to {MaxDocuments} documents: issue the rest on another request.");
+        RuleFor(x => x.Documents).Must(d => d is null || d.DistinctBy(x => (x.Kind, x.Id)).Count() == d.Count)
+            .WithMessage("Choose each document once.");
+        RuleForEach(x => x.Documents).ChildRules(d =>
+        {
+            d.RuleFor(x => x.Kind).NotEmpty().MaximumLength(64);
+            d.RuleFor(x => x.Id).NotEmpty();
+        });
+    }
 }
+
+/// <summary>A file of a copy issued, with the SHA-256 its certificate states.</summary>
+public sealed record RecordCopyFileDto(
+    Guid Id, int Sequence, string DocumentKind, Guid DocumentId, string Title, DateTimeOffset DocumentDate, string FileName, long SizeBytes,
+    string Sha256, DateTimeOffset ProducedAt);
+
+/// <summary>A SHA-256 to look for among the files of the copies issued: the certificate's value, or one worked out from a file.</summary>
+public sealed record VerifyRecordCopyRequest(string Sha256);
+
+public sealed class VerifyRecordCopyRequestValidator : AbstractValidator<VerifyRecordCopyRequest>
+{
+    public VerifyRecordCopyRequestValidator() =>
+        RuleFor(x => x.Sha256).Must(h => RecordCopyFile.NormalizeSha256(h) is not null)
+            .WithMessage("Enter a SHA-256 value: 64 characters, 0-9 and A-F.");
+}
+
+/// <summary>A file issued with the SHA-256 looked for: which copy it was, of whose record, to whom, and when.</summary>
+public sealed record RecordCopyMatch(
+    Guid RequestId, string RequestNumber, string? Uhid, string? PatientName, RecordRequestPurpose Purpose, string RequestedByName,
+    DateTimeOffset? IssuedAt, int Sequence, string Title, string FileName, long SizeBytes, string Sha256);
 
 public sealed record CancelRecordRequest(string Reason);
 
@@ -106,7 +149,10 @@ public sealed record RecordRequestDto(
     // A copy for the patient or a legal authority is issued within 72 hours (MCI Regulations 2002, reg. 1.3.2): when it is
     // due, and whether it went, or is still waiting, past that.
     DateTimeOffset? CopyDueAt = null,
-    bool CopyLate = false);
+    bool CopyLate = false,
+
+    // The files of a copy issued as documents (BSA 2023, s.63), in the order its certificate lists them.
+    IReadOnlyList<RecordCopyFileDto>? Files = null);
 
 public sealed class CreateMedicalRecordRequestValidator : AbstractValidator<CreateMedicalRecordRequest>
 {

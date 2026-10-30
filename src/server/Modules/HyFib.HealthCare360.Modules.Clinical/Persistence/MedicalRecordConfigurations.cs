@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Files;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Persistence;
 
@@ -150,9 +151,32 @@ internal sealed class RecordRequestConfiguration : IEntityTypeConfiguration<Reco
         b.Property(x => x.Details).HasMaxLength(1000);
         b.Property(x => x.CancelReason).HasMaxLength(300);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.Files).WithOne().HasForeignKey(x => x.RecordRequestId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.RequestNumber).IsUnique();
         b.HasIndex(x => new { x.Status, x.RequestedAt });
         b.HasIndex(x => x.PatientId);
+    }
+}
+
+internal sealed class RecordCopyFileConfiguration : IEntityTypeConfiguration<RecordCopyFile>
+{
+    public void Configure(EntityTypeBuilder<RecordCopyFile> b)
+    {
+        b.ToTable("record_copy_files", ClinicalSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.DocumentKind).HasMaxLength(64);
+        b.Property(x => x.Title).HasMaxLength(200);
+        b.Property(x => x.FileName).HasMaxLength(255);
+        b.Property(x => x.Sha256).HasMaxLength(64);
+        b.Property(x => x.ServerId).HasMaxLength(64);
+        b.Property(x => x.MachineName).HasMaxLength(64);
+        b.Property(x => x.OsDescription).HasMaxLength(200);
+        b.Property(x => x.SoftwareVersion).HasMaxLength(64);
+        b.HasOne<StoredFile>().WithMany().HasForeignKey(x => x.StoredFileId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.RecordRequestId, x.Sequence }).IsUnique();
+
+        // A file handed over is found again by its hash alone (a court asks: is this what the hospital issued?).
+        b.HasIndex(x => x.Sha256);
     }
 }
 

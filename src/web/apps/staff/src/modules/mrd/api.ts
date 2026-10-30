@@ -1,4 +1,4 @@
-import type { PagedResult } from '@hc360/core';
+import { saveFile, type PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { DiagnosisType } from '@/modules/emr/api';
@@ -380,6 +380,48 @@ export interface RecordRequestDto {
   copyDueAt: string | null;
   /** Issued after its 72 hours, or still waiting past them. */
   copyLate: boolean;
+  /** The files of a copy issued as documents, in the order its certificate lists them (BSA 2023, s.63). */
+  files?: RecordCopyFileDto[] | null;
+}
+
+/** A document of the patient's record that a copy can hold: signed or released, as the hospital prints it. */
+export interface RecordDocumentEntry {
+  kind: string;
+  id: string;
+  title: string;
+  date: string;
+  visitId: string | null;
+  admissionId: string | null;
+}
+
+/** A file of a copy issued: the document as it was made then, kept unchanged, with the SHA-256 its certificate states. */
+export interface RecordCopyFileDto {
+  id: string;
+  sequence: number;
+  documentKind: string;
+  documentId: string;
+  title: string;
+  documentDate: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  producedAt: string;
+}
+
+/** A file issued with the SHA-256 looked for: which copy, of whose record, to whom and when. */
+export interface RecordCopyMatch {
+  requestId: string;
+  requestNumber: string;
+  uhid: string | null;
+  patientName: string | null;
+  purpose: RecordRequestPurpose;
+  requestedByName: string;
+  issuedAt: string | null;
+  sequence: number;
+  title: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
 }
 
 export interface CreateRecordRequestRequest {
@@ -444,6 +486,7 @@ export const mrdKeys = {
   records: (params: RecordListParams) => ['mrd', 'records', params] as const,
   record: (id: string) => ['mrd', 'record', id] as const,
   requests: (params: RequestListParams) => ['mrd', 'requests', params] as const,
+  requestDocuments: (id: string) => ['mrd', 'request-documents', id] as const,
   morbidity: (params: MorbidityParams) => ['mrd', 'morbidity', params] as const,
 };
 
@@ -589,6 +632,13 @@ export const mrdQueries = {
         }),
       placeholderData: keepPreviousData,
     }),
+  /** The patient's documents a copy of the request can hold, newest first. */
+  requestDocuments: (id: string) =>
+    queryOptions({
+      queryKey: mrdKeys.requestDocuments(id),
+      queryFn: ({ signal }) =>
+        api.get<RecordDocumentEntry[]>(`/api/v1/mrd/record-requests/${id}/documents`, { signal }),
+    }),
   morbidity: (params: MorbidityParams) =>
     queryOptions({
       queryKey: mrdKeys.morbidity(params),
@@ -634,9 +684,27 @@ export const mrdApi = {
     api.post<MedicalRecordDto>(`/api/v1/mrd/records/${recordId}/archive`, { location }),
   createRequest: (request: CreateRecordRequestRequest) =>
     api.post<RecordRequestDto>('/api/v1/mrd/record-requests', request),
-  issueRequest: (id: string, dueBackOn: string | null) =>
-    api.post<RecordRequestDto>(`/api/v1/mrd/record-requests/${id}/issue`, { dueBackOn }),
+  /**
+   * Issues the chart, or a copy. A copy's `documents` are made into PDFs now and kept as they are handed over, so this
+   * waits as long as making a PDF may take.
+   */
+  issueRequest: (id: string, dueBackOn: string | null, documents: { kind: string; id: string }[]) =>
+    api.post<RecordRequestDto>(
+      `/api/v1/mrd/record-requests/${id}/issue`,
+      { dueBackOn, documents },
+      { timeoutMs: 120_000 },
+    ),
+  /** A file of a copy, byte for byte as it was issued. */
+  downloadCopyFile: async (requestId: string, file: RecordCopyFileDto) => {
+    const { blob } = await api.download(`/api/v1/mrd/record-requests/${requestId}/files/${file.id}`);
+    saveFile(blob, file.fileName);
+  },
+  /** Which copy issued a file with this SHA-256, if any. The file itself never leaves this computer. */
+  verifyCopy: (sha256: string) => api.post<RecordCopyMatch[]>('/api/v1/mrd/record-copies/verify', { sha256 }),
   returnRequest: (id: string) => api.post<RecordRequestDto>(`/api/v1/mrd/record-requests/${id}/return`),
   cancelRequest: (id: string, reason: string) =>
     api.post<RecordRequestDto>(`/api/v1/mrd/record-requests/${id}/cancel`, { reason }),
 };
+
+/** The certificate of a copy under BSA 2023 s.63(4): `<path>/document` to print, `<path>/pdf` to download. */
+export const copyCertificatePath = (requestId: string) => `/api/v1/mrd/record-requests/${requestId}/certificate`;

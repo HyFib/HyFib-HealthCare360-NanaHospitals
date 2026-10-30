@@ -251,9 +251,6 @@ public sealed class MedicalRecordService(
         return await ToDtoAsync(entry, ct);
     }
 
-    public Task<Result<RecordRequestDto>> IssueAsync(Guid id, DateOnly? dueBackOn, CancellationToken ct) =>
-        ChangeRequestAsync(id, r => r.Issue(dueBackOn ?? time.Today().AddDays(7), currentUser.UserId, time.GetUtcNow()), ct);
-
     public Task<Result<RecordRequestDto>> ReturnAsync(Guid id, CancellationToken ct) =>
         ChangeRequestAsync(id, r => r.Return(currentUser.UserId, time.GetUtcNow()), ct);
 
@@ -263,13 +260,17 @@ public sealed class MedicalRecordService(
     public async Task<RecordRequestDto> ToDtoAsync(RecordRequest r, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().Where(p => p.Id == r.PatientId).Select(p => new { p.Uhid, p.FullName }).FirstOrDefaultAsync(ct);
-        return ToDto(r, patient?.Uhid, patient?.FullName, time.Today(), time.GetUtcNow());
+        var files = await db.Set<RecordCopyFile>().AsNoTracking().Where(f => f.RecordRequestId == r.Id).ToListAsync(ct);
+        return ToDto(r, patient?.Uhid, patient?.FullName, time.Today(), time.GetUtcNow(), files);
     }
 
-    public static RecordRequestDto ToDto(RecordRequest r, string? uhid, string? patientName, DateOnly today, DateTimeOffset now) => new(
+    public static RecordRequestDto ToDto(RecordRequest r, string? uhid, string? patientName, DateOnly today, DateTimeOffset now, IEnumerable<RecordCopyFile> files) => new(
         r.Id, r.RequestNumber, r.PatientId, uhid, patientName, r.MedicalRecordId, r.RequestedByName, r.RequestingDepartment, r.Purpose, r.Details,
         r.IsPatientRequest, r.EffectiveStatus(today), r.RequestedAt, r.IssuedAt, r.DueBackOn, r.ReturnedAt, r.CancelReason, r.CopyDueAt,
-        r.IsCopyLate(now));
+        r.IsCopyLate(now), [.. files.OrderBy(f => f.Sequence).Select(ToDto)]);
+
+    public static RecordCopyFileDto ToDto(RecordCopyFile f) =>
+        new(f.Id, f.Sequence, f.DocumentKind, f.DocumentId, f.Title, f.DocumentDate, f.FileName, f.SizeBytes, f.Sha256, f.ProducedAt);
 
     private async Task<Result<RecordRequestDto>> ChangeRequestAsync(Guid id, Func<RecordRequest, Result> change, CancellationToken ct)
     {

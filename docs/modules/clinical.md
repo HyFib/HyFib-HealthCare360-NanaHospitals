@@ -456,7 +456,36 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | POST | `/mrd/records/{id}/scan` | mrd.records | detects unsigned encounters/notes, missing diagnosis, missing/unsigned discharge summary, pending coding; auto-closes fixed ones |
 | POST | `/mrd/records/{id}/complete`, `/archive` | mrd.records | `ArchiveMedicalRecordRequest{location}`; completion sets `retainUntil` (OP 3 y, IP 5 y, MLC permanent) |
 | GET / POST | `/mrd/record-requests` | mrd.records | `CreateRecordRequestRequest{patientId, medicalRecordId?, requestedByName, requestingDepartment, purpose, details}`; status filter `Overdue` supported; `copyOverdue=true` lists the copies still waiting past their 72 hours, the longest-waiting first. A copy for the patient (purpose `PatientCopy`, or asked through the portal) or for a legal authority (`Legal`) is due 72 hours after the request (Indian Medical Council (Professional Conduct, Etiquette and Ethics) Regulations 2002, reg. 1.3.2): `RecordRequestDto.copyDueAt`, and `copyLate` when it went, or is still waiting, past that. The records screen shows both and warns while any copy waits past its 72 hours |
-| POST | `/mrd/record-requests/{id}/issue` / `return` / `cancel` | mrd.records | `IssueRecordRequest{dueBackOn}` / — / `CancelRecordRequest{reason}` |
+| GET | `/mrd/record-requests/{id}/documents` | mrd.records | → `RecordDocumentEntry[]{kind, id, title, date, visitId, admissionId}`: the patient's documents a copy can hold, newest first (signed prescriptions the DSC rules let the hospital issue, signed or amended discharge summaries, MLC intimations, released lab, radiology and cardiology reports; a radiology or cardiology report goes by its study's id). Listing them opens the chart (PHI audit, restricted records guarded) |
+| POST | `/mrd/record-requests/{id}/issue` / `return` / `cancel` | mrd.records | `IssueRecordRequest{dueBackOn, documents?: [{kind, id}]}` (at most 50, each once) / — / `CancelRecordRequest{reason}`. A chart lent out is due back on `dueBackOn`, a week from today when none is given; a copy (for the patient or a legal authority) and a request issued with documents are due back only on a date given, so they never show as overdue. With documents, see *Copies of the record as evidence*: 503 `pdf.unavailable` when a PDF can't be made, 422 `record_copy.document_unavailable` for a document that is not the patient's or not signed or released, 400 for a kind nobody prints, 422 `record_copy.document_not_kept` for a PDF the file store can't keep (over 25 MB); nothing is issued then |
+| GET | `/mrd/record-requests/{id}/files/{fileId}` | mrd.records | A file of the copy, byte for byte as issued (`application/pdf`), after its SHA-256 is checked; 409 `record_copy.altered` when the stored file no longer matches (recorded as a critical security event) |
+| GET | `/mrd/record-requests/{id}/certificate/document`, `/certificate/pdf` | mrd.records | The certificate under the Bharatiya Sakshya Adhiniyam 2023, s.63(4), to print and sign; 422 `record_copy.no_files` for a request not issued with documents |
+| POST | `/mrd/record-copies/verify` | mrd.records | `VerifyRecordCopyRequest{sha256}` (either case, spaces or colons allowed) → `RecordCopyMatch[]`: the copies that issued a file with that SHA-256, or none |
+
+#### Copies of the record as evidence (Bharatiya Sakshya Adhiniyam 2023, s.63)
+A printout or file of an electronic record is evidence only with a certificate under s.63(4), in the form of the Act's
+Schedule: Part A signed by the person in charge of the computer (or of the activity), Part B by an expert, each stating
+the hash of the electronic record, with a hash report enclosed. A copy is made so that the certificate is true of it:
+
+* **Made once.** When a request is issued with documents, each document is built as the hospital prints it, in English,
+  and made into a PDF then. A PDF made again of the same page differs in its bytes (the browser stamps it), so the
+  copy is the file kept: `RecordCopyFile` holds each file's SHA-256 (of its bytes), its size, and the server that made
+  it (HC360's server ID, machine, system and HC360 version). The documents come from the modules that print them, through
+  `IRecordDocumentSource` (Platform): Clinical's prescriptions, discharge summaries and MLC intimations, and
+  Diagnostics' reports. Every document is built and made into a PDF before anything is saved, so a copy is issued
+  whole or not at all; a file already kept when a later one can't be is removed with the rows rolled back, so no
+  file's content is left on the disk that no row names.
+* **Kept as issued.** Every download is the file kept, checked against its SHA-256 first. The database refuses to change
+  or delete a copy's rows (`clinical.protect_record_copy_files`), and the issue is recorded in the audit log
+  (`record.copy_issued`, PHI) with every file's hash, where the sealed chain keeps them. A document corrected after the
+  copy was issued does not change the copy.
+* **The certificate.** Part A and Part B of the Schedule, each with the server ticked as the source and SHA256 as the
+  algorithm, HC360's server ID and what it knows of the server, and every file's hash; then the hash report: the copy,
+  the patient, who asked and why, when it was issued and by whom, and each file with its size and SHA-256. The
+  signatories' names, the server's make, model and serial number, and the date, time and place of signing are left to
+  be written in. It is printed for each submission the hospital makes.
+* **Checking a file.** The records screen works out a file's SHA-256 on the clerk's computer (the file is not sent),
+  or takes the value from a certificate, and the server says which copy issued it, or that none did.
 
 #### Births and deaths (Registration of Births and Deaths Act 1969, as amended in 2023)
 A birth in the hospital is recorded against the mother (Form 1; Form 3 for a still birth, a foetus of at least 28 weeks

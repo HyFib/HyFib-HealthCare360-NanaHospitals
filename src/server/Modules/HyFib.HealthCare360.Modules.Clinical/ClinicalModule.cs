@@ -20,6 +20,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Templates;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Clinical.Services.Catalogue;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -60,6 +61,7 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<CodingService>();
         services.AddScoped<IVerifiedCodingSource, VerifiedCodingSource>();
         services.AddScoped<MedicalRecordService>();
+        services.AddScoped<RecordCopyService>();
         services.AddScoped<HealthCheckupService>();
         services.AddScoped<ProcedureService>();
         services.AddScoped<VitalRegistrationService>();
@@ -77,6 +79,9 @@ public sealed class ClinicalModule : IModule
         // The PDFs that messages to patients carry (the prescription with the "prescription shared" message).
         services.AddScoped<INotificationDocumentSource, PrescriptionDocumentSource>();
         services.AddScoped<INotificationDocumentSource, DischargeSummaryDocumentSource>();
+
+        // The documents a copy of the record holds (MRD-04, BSA 2023 s.63), with the other modules' own.
+        services.AddScoped<IRecordDocumentSource, ClinicalRecordDocuments>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

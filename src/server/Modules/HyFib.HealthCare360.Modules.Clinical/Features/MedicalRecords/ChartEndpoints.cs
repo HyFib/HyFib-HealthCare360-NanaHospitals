@@ -2,10 +2,14 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Documents;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.MedicalRecords;
 
-/// <summary>/api/v1/mrd — chart tracking, deficiencies, archival/retention (MRD-03/05) and record requests (MRD-04).</summary>
+/// <summary>
+/// /api/v1/mrd — chart tracking, deficiencies, archival/retention (MRD-03/05), and record requests (MRD-04) with the copies
+/// issued as documents and their certificates under the Bharatiya Sakshya Adhiniyam 2023, s.63.
+/// </summary>
 internal static class ChartEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
@@ -24,7 +28,12 @@ internal static class ChartEndpoints
 
         group.MapGet("/record-requests", ListRequests).RequirePermission(ClinicalPermissions.MrdRecords);
         group.MapPost("/record-requests", CreateRequest).RequirePermission(ClinicalPermissions.MrdRecords).WithValidation<CreateRecordRequestRequest>();
+        group.MapGet("/record-requests/{id:guid}/documents", Documents).RequirePermission(ClinicalPermissions.MrdRecords);
         group.MapPost("/record-requests/{id:guid}/issue", Issue).RequirePermission(ClinicalPermissions.MrdRecords).WithValidation<IssueRecordRequest>();
+        group.MapGet("/record-requests/{id:guid}/files/{fileId:guid}", CopyFile).RequirePermission(ClinicalPermissions.MrdRecords);
+        group.MapGet("/record-requests/{id:guid}/certificate/document", Certificate).RequirePermission(ClinicalPermissions.MrdRecords);
+        group.MapGet("/record-requests/{id:guid}/certificate/pdf", CertificatePdf).RequirePermission(ClinicalPermissions.MrdRecords);
+        group.MapPost("/record-copies/verify", Verify).RequirePermission(ClinicalPermissions.MrdRecords).WithValidation<VerifyRecordCopyRequest>();
         group.MapPost("/record-requests/{id:guid}/return", Return).RequirePermission(ClinicalPermissions.MrdRecords);
         group.MapPost("/record-requests/{id:guid}/cancel", CancelRequest).RequirePermission(ClinicalPermissions.MrdRecords).WithValidation<CancelRecordRequest>();
     }
@@ -144,14 +153,53 @@ internal static class ChartEndpoints
             select new { Request = r, p.Uhid, p.FullName };
         rows = copyOverdue == true ? rows.OrderBy(x => x.Request.RequestedAt) : rows.OrderByDescending(x => x.Request.RequestedAt);
         var page = await rows.ToPagedResultAsync(query.ToRequest(), ct);
-        return TypedResults.Ok(page.Map(x => MedicalRecordService.ToDto(x.Request, x.Uhid, x.FullName, today, now)));
+        var ids = page.Items.Select(x => x.Request.Id).ToList();
+        var files = (await db.Set<RecordCopyFile>().AsNoTracking().Where(f => ids.Contains(f.RecordRequestId)).ToListAsync(ct)).ToLookup(f => f.RecordRequestId);
+        return TypedResults.Ok(page.Map(x => MedicalRecordService.ToDto(x.Request, x.Uhid, x.FullName, today, now, files[x.Request.Id])));
     }
 
     private static async Task<IResult> CreateRequest(CreateRecordRequestRequest request, MedicalRecordService charts, CancellationToken ct) =>
         (await charts.CreateRequestAsync(request, isPatientRequest: false, facilityId: null, ct)).ToCreated(r => $"/api/v1/mrd/record-requests/{r.Id}");
 
-    private static async Task<IResult> Issue(Guid id, IssueRecordRequest request, MedicalRecordService charts, CancellationToken ct) =>
-        (await charts.IssueAsync(id, request.DueBackOn, ct)).ToOk();
+    /// <summary>The patient's documents a copy can hold (signed, released), newest first.</summary>
+    private static async Task<IResult> Documents(Guid id, RecordCopyService copies, CancellationToken ct) => (await copies.DocumentsAsync(id, ct)).ToOk();
+
+    /// <summary>Issues the chart, or a copy; a copy with documents is made now, or not at all when a PDF can't be made (503).</summary>
+    private static async Task<IResult> Issue(Guid id, IssueRecordRequest request, RecordCopyService copies, CancellationToken ct)
+    {
+        try
+        {
+            return (await copies.IssueAsync(id, request, ct)).ToOk();
+        }
+        catch (PdfRenderException ex)
+        {
+            return DocumentResults.PdfUnavailable(ex.Message);
+        }
+    }
+
+    /// <summary>A file of a copy, byte for byte as it was issued.</summary>
+    private static async Task<IResult> CopyFile(Guid id, Guid fileId, RecordCopyService copies, CancellationToken ct)
+    {
+        var file = await copies.FileAsync(id, fileId, ct);
+        return file.IsFailure ? file.Error!.ToProblem() : TypedResults.File(file.Value.Content, "application/pdf", file.Value.File.FileName);
+    }
+
+    /// <summary>The certificate under BSA 2023 s.63(4) for a copy, to print and sign.</summary>
+    private static async Task<IResult> Certificate(Guid id, RecordCopyService copies, CancellationToken ct)
+    {
+        var certificate = await copies.CertificateAsync(id, ct);
+        return certificate.IsFailure ? certificate.Error!.ToProblem() : TypedResults.Ok(certificate.Value.ToDto());
+    }
+
+    private static async Task<IResult> CertificatePdf(Guid id, RecordCopyService copies, IPdfRenderer renderer, CancellationToken ct)
+    {
+        var certificate = await copies.CertificateAsync(id, ct);
+        return certificate.IsFailure ? certificate.Error!.ToProblem() : await certificate.Value.ToPdfAsync(renderer, ct);
+    }
+
+    /// <summary>Which copy issued a file with this SHA-256, if any (the staff app works the value out from the file).</summary>
+    private static async Task<IResult> Verify(VerifyRecordCopyRequest request, RecordCopyService copies, CancellationToken ct) =>
+        (await copies.VerifyAsync(request.Sha256, ct)).ToOk();
 
     private static async Task<IResult> Return(Guid id, MedicalRecordService charts, CancellationToken ct) => (await charts.ReturnAsync(id, ct)).ToOk();
 
