@@ -218,6 +218,16 @@ public sealed class PrescriptionService(
             return used.Error!;
         }
 
+        // A refill is issued as it stands, so a medicine typed in without its generic name, before a prescription had to
+        // name it, can't be named here: the doctor repeats the prescription as a draft and names it there.
+        var items = await FromDrugMasterAsync(source.Items.OrderBy(i => i.Sequence).Select(i => ToItem(ToRequest(i))), ct);
+        if (Prescription.WithoutGenericName(items) is { } unnamed)
+        {
+            return Error.Rule("prescription.generic_missing",
+                $"{unnamed.DrugName} has no generic name on prescription {source.PrescriptionNumber}, and a refill can't be edited. "
+                + "Repeat the prescription as a new draft, enter the generic name and sign that.");
+        }
+
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var refill = new Prescription
         {
@@ -231,7 +241,7 @@ public sealed class PrescriptionService(
             RefillOfPrescriptionId = source.Id,
         };
         refill.PrescriptionNumber = await numbers.NextAsync(ClinicalNumberSeries.Prescription, refill.FacilityId, ct);
-        refill.ReplaceItems(await FromDrugMasterAsync(source.Items.OrderBy(i => i.Sequence).Select(i => ToItem(ToRequest(i))), ct));
+        refill.ReplaceItems(items);
 
         var signed = await SignCoreAsync(refill, request.OverrideReason, request.AcknowledgeWarnings, request.ConfirmControlledDrugs, ct);
         if (signed.IsFailure)

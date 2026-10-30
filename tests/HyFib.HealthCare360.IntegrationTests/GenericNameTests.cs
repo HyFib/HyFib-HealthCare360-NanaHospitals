@@ -4,6 +4,9 @@ using System.Text.Json;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -58,6 +61,40 @@ public sealed class GenericNameTests(HospitalServer server)
         html.ShouldContain("<div class=\"small\">Pan 40 · Tablet</div>", Case.Sensitive);
         html.ShouldNotContain(paracetamol.Name);
         html.ShouldNotContain("Acetaminophen");
+    }
+
+    [Fact]
+    public async Task A_refill_cannot_name_a_generic_its_prescription_left_out_and_says_to_repeat_the_prescription()
+    {
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(await server.SignInAsync(HospitalServer.Users.FrontOffice));
+        var paracetamol = (await doctor.GetAsync<List<PrescribableDrug>>("/api/v1/emr/drugs?search=Paracetamol")).Single(d => d.Code == ParacetamolCode);
+        var draft = await doctor.PostAsync<PrescriptionDto>(Prescriptions, new CreatePrescriptionRequest(
+            patient.Id, EncounterId: null, VisitId: null, AdmissionId: null, IsInpatient: false, PractitionerId: null, Notes: null, Advice: null,
+            RefillsAllowed: 1, [Line(paracetamol.Id, paracetamol.Name, null, "500 mg"), Line(null, "Pan 40", "Pantoprazole", "40 mg")]));
+        var source = (await doctor.PostAsync<SignPrescriptionResult>($"{Prescriptions}/{draft.Id}/sign", Sign(draft.Version))).Prescription;
+
+        // As signed before a prescription had to name every generic: neither line names one.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<PrescriptionItem>()
+                .Where(i => i.PrescriptionId == source.Id)
+                .ExecuteUpdateAsync(set => set.SetProperty(i => i.GenericName, (string?)null), Ct);
+        }
+
+        // The drug master names the paracetamol's again. Nothing names Pan 40's, so the refill is refused and not used up.
+        using (var refused = await doctor.SendRawAsync(HttpMethod.Post, $"{Prescriptions}/{source.Id}/refill",
+            new RefillPrescriptionRequest(OverrideReason: null, AcknowledgeWarnings: false, ConfirmControlledDrugs: false)))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            var problem = await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
+            problem.GetProperty("code").GetString().ShouldBe("prescription.generic_missing");
+            problem.GetProperty("detail").GetString().ShouldBe(
+                $"Pan 40 has no generic name on prescription {source.PrescriptionNumber}, and a refill can't be edited. "
+                + "Repeat the prescription as a new draft, enter the generic name and sign that.");
+        }
+
+        (await doctor.GetAsync<PrescriptionDto>($"{Prescriptions}/{source.Id}")).RefillsRemaining.ShouldBe(1);
     }
 
     private static PrescriptionItemRequest Line(Guid? drugItemId, string name, string? generic, string strength) => new(

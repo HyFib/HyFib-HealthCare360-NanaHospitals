@@ -182,6 +182,10 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
 
     public bool HasControlledDrugs => Items.Any(i => i.IsControlledDrug);
 
+    /// <summary>The first medicine that does not name its generic name: a prescription with one is not signed.</summary>
+    public static PrescriptionItem? WithoutGenericName(IEnumerable<PrescriptionItem> items) =>
+        items.FirstOrDefault(i => string.IsNullOrWhiteSpace(i.GenericName));
+
     public Result ReplaceItems(IEnumerable<PrescriptionItem> items)
     {
         if (Status != PrescriptionStatus.Draft)
@@ -220,7 +224,7 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
 
         // Every physician prescribes by generic name (Indian Medical Council (Professional Conduct, Etiquette and Ethics)
         // Regulations 2002, reg. 1.5, as amended in 2016), and the printed copy names each medicine by it.
-        if (Items.FirstOrDefault(i => string.IsNullOrWhiteSpace(i.GenericName)) is { } unnamed)
+        if (WithoutGenericName(Items) is { } unnamed)
         {
             return Error.Rule("prescription.generic_missing",
                 $"Enter the generic name of {unnamed.DrugName}: a prescription names every medicine by its generic name.");
