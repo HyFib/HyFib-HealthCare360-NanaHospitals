@@ -10,8 +10,6 @@ using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
-using HyFib.HealthCare360.Modules.SupplyChain.Features.Stores;
-using HyFib.HealthCare360.Modules.SupplyChain.Services;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -61,15 +59,11 @@ public sealed class InterStateSupplyTests(HospitalServer server)
     public async Task A_b2b_pharmacy_invoice_needs_the_hospitals_gstin_and_medicines_sent_to_another_state_carry_igst()
     {
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
-        var store = (await pharmacist.GetAsync<List<StoreDto>>("/api/v1/inventory/stores?type=Pharmacy")).Single(s => s.Code == "OPPH");
-        var medicine = (await pharmacist.GetAsync<List<PharmacyStockRow>>($"/api/v1/pharmacy/stock?storeId={store.Id}&search=paracetamol&take=5"))
-            .First(r => r.Available > 0);
-        // Two units are sold from the batch below, so it must hold two: other tests dispense from the same shelf.
-        var batch = (await pharmacist.GetAsync<List<BatchStock>>($"/api/v1/pharmacy/stock/batches?storeId={store.Id}&itemId={medicine.ItemId}"))
-            .First(b => b.Available >= 2 && !b.IsExpired && !b.IsBlocked);
-        var price = Math.Round(batch.Mrp, MidpointRounding.AwayFromZero);
+        // Two tablets are sold, of a medicine of the test's own: other tests sell from the seeded shelf at the same time.
+        var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
+        var price = Math.Round(medicine.Batch.Mrp, MidpointRounding.AwayFromZero);
         CounterSaleRequest Sale(string? deliveryState) => new(
-            store.Id, null, "Sree Clinic", null, null, [new CounterSaleLine(medicine.ItemId, 1m, batch.BatchId)], 0m,
+            medicine.StoreId, null, "Sree Clinic", null, null, [new CounterSaleLine(medicine.ItemId, 1m, medicine.Batch.BatchId)], 0m,
             [new SalePayment(PharmacyPaymentMode.Cash, price, null)], false, new B2bBuyer(KeralaClinic, "Sree Clinic", deliveryState));
 
         await using (await HospitalGstinAsync(null))
