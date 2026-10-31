@@ -23,7 +23,7 @@ import {
 } from '@fluentui/react-components';
 import { FoodRegular } from '@fluentui/react-icons';
 import { isApiError, todayIso, useDebouncedValue, type LookupItem } from '@hc360/core';
-import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
+import { CheckboxGroup, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { searchPractitioners } from '@/lib/lookups';
@@ -292,7 +292,11 @@ export function DietOrderDialog({
                 </Field>
               </div>
               {!nilByMouth && (
-                <Field label="Meal rounds" required hint={slots === null ? 'The diet’s usual rounds' : undefined}>
+                <CheckboxGroup
+                  label="Meal rounds"
+                  required
+                  hint={slots === null ? 'The diet’s usual rounds' : undefined}
+                >
                   <div className={styles.slots}>
                     {MEAL_SLOTS.map((slot) => (
                       <Checkbox
@@ -309,7 +313,7 @@ export function DietOrderDialog({
                       />
                     ))}
                   </div>
-                </Field>
+                </CheckboxGroup>
               )}
               <Field label="Instructions for the kitchen">
                 <Textarea

@@ -21,7 +21,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { todayIso } from '@hc360/core';
-import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
+import { CheckboxGroup, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -271,8 +271,8 @@ export function CaseDialog({ existing, onClose }: { existing: MtpCaseDto | null;
                   </div>
                 )}
               </div>
-              <Field label="Grounds of the opinion" required validationMessage={show(problems.grounds)}>
-                <div className={styles.grounds} role="group" aria-label="Grounds of the opinion">
+              <CheckboxGroup label="Grounds of the opinion" required validationMessage={show(problems.grounds)}>
+                <div className={styles.grounds}>
                   {MTP_GROUNDS.map((ground) => (
                     <Checkbox
                       key={ground}
@@ -288,7 +288,7 @@ export function CaseDialog({ existing, onClose }: { existing: MtpCaseDto | null;
                     />
                   ))}
                 </div>
-              </Field>
+              </CheckboxGroup>
               {weeksValue > ONE_OPINION_WEEKS && (
                 <Field
                   label="Category (rule 3B)"

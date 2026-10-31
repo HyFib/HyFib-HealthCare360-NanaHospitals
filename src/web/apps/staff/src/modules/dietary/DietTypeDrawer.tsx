@@ -5,7 +5,6 @@ import {
   DrawerFooter,
   DrawerHeader,
   DrawerHeaderTitle,
-  Field,
   MessageBar,
   MessageBarBody,
   OverlayDrawer,
@@ -16,6 +15,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr, isApiError } from '@hc360/core';
 import {
   applyServerErrors,
+  CheckboxGroup,
   FormGrid,
   NumberField,
   SelectField,
@@ -155,7 +155,7 @@ export function DietTypeDrawer({ dietType, onClose }: { dietType: DietTypeDto | 
               control={form.control}
               name="meals"
               render={({ field, fieldState }) => (
-                <Field
+                <CheckboxGroup
                   label="Usual meal rounds"
                   required
                   validationMessage={fieldState.error?.message}
@@ -177,7 +177,7 @@ export function DietTypeDrawer({ dietType, onClose }: { dietType: DietTypeDto | 
                       />
                     ))}
                   </div>
-                </Field>
+                </CheckboxGroup>
               )}
             />
             <SwitchField control={form.control} name="isActive" label="In use" />

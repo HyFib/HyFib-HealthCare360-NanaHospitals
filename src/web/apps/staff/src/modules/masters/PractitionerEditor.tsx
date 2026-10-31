@@ -1,6 +1,7 @@
-import { Checkbox, Field, makeStyles } from '@fluentui/react-components';
+import { Checkbox, makeStyles } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  CheckboxGroup,
   FormGrid,
   FullRow,
   NumberField,
@@ -357,12 +358,12 @@ function FacilitiesPicker({
             const chosen = field.value;
             const shown = facilities.filter((f) => f.isActive || chosen.includes(f.id));
             return (
-              <Field
+              <CheckboxGroup
                 label="Consults at"
                 validationMessage={fieldState.error?.message}
                 validationState={fieldState.error ? 'error' : 'none'}
               >
-                <div className={styles.facilities} role="group" aria-label="Consults at">
+                <div className={styles.facilities}>
                   {shown.map((facility) => (
                     <Checkbox
                       key={facility.id}
@@ -376,7 +377,7 @@ function FacilitiesPicker({
                     />
                   ))}
                 </div>
-              </Field>
+              </CheckboxGroup>
             );
           }}
         />

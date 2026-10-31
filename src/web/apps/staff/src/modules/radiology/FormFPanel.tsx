@@ -23,7 +23,15 @@ import {
   useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import { formatDate, formatDateTime, todayIso } from '@hc360/core';
-import { ErrorState, LoadingState, Section, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
+import {
+  CheckboxGroup,
+  ErrorState,
+  LoadingState,
+  Section,
+  useNotify,
+  useUnsavedChanges,
+  useValuesChanged,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { DocumentButtons } from '@/lib/DocumentButtons';
@@ -369,8 +377,8 @@ function DeclarationDialog({
                   </Field>
                 </div>
               )}
-              <Field label="Indications" required validationMessage={show(problems.indications)}>
-                <div className={styles.indications} role="group" aria-label="Indications">
+              <CheckboxGroup label="Indications" required validationMessage={show(problems.indications)}>
+                <div className={styles.indications}>
                   {FORM_F_INDICATIONS.map((indication) => (
                     <Checkbox
                       key={indication}
@@ -386,7 +394,7 @@ function DeclarationDialog({
                     />
                   ))}
                 </div>
-              </Field>
+              </CheckboxGroup>
               <Field label="Other indication">
                 <Input value={other} maxLength={500} onChange={(_, d) => setOther(d.value)} />
               </Field>

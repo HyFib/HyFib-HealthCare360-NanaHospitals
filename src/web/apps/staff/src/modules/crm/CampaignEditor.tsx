@@ -17,7 +17,7 @@ import {
 } from '@fluentui/react-components';
 import { PeopleRegular, SaveRegular, ShieldCheckmarkRegular } from '@fluentui/react-icons';
 import { isApiError, useDebouncedValue, useHotkey, type Gender } from '@hc360/core';
-import { DataTable, sameValues, Section, useLeaveGuard, useNotify } from '@hc360/ui';
+import { CheckboxGroup, DataTable, sameValues, Section, useLeaveGuard, useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useDepartments } from '@/lib/lookups';
@@ -320,7 +320,7 @@ export function CampaignEditor({
                 <Input type="date" value={draft.lastVisitTo} onChange={(_, d) => set('lastVisitTo', d.value)} />
               </Field>
             </div>
-            <Field
+            <CheckboxGroup
               label={`Visited these departments${draft.departmentIds.length ? ` (${draft.departmentIds.length} chosen)` : ''}`}
               hint="Any visit to a chosen department counts."
             >
@@ -341,7 +341,7 @@ export function CampaignEditor({
                   />
                 ))}
               </div>
-            </Field>
+            </CheckboxGroup>
           </Stack>
         </Section>
         {canManage && (

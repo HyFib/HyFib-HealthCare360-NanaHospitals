@@ -6,7 +6,6 @@ import {
   DrawerFooter,
   DrawerHeader,
   DrawerHeaderTitle,
-  Field,
   makeStyles,
   MessageBar,
   MessageBarBody,
@@ -20,6 +19,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
 import {
   applyServerErrors,
+  CheckboxGroup,
   ChoiceField,
   CloseRequestScope,
   ConfirmDialog,
@@ -323,13 +323,13 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
             control={form.control}
             name="weekdays"
             render={({ field, fieldState }) => (
-              <Field
+              <CheckboxGroup
                 label={schedule ? 'Day' : 'Days'}
                 required
                 validationMessage={fieldState.error?.message}
                 validationState={fieldState.error ? 'error' : 'none'}
               >
-                <div className={styles.days} role="group" aria-label="Weekdays">
+                <div className={styles.days}>
                   {WEEKDAYS.map((day) => (
                     <Checkbox
                       key={day}
@@ -362,7 +362,7 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
                     ))}
                   </div>
                 )}
-              </Field>
+              </CheckboxGroup>
             )}
           />
           <FormGrid columns={2} minColumnWidth={150}>
