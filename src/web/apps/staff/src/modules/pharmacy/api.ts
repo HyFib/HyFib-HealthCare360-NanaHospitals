@@ -78,6 +78,12 @@ export interface QueueLineDto {
   available: number | null;
   mrp: number | null;
   nearestExpiry: string | null;
+  /**
+   * The prescribed item's schedule in the drug master, and `isNdps` its NDPS flag, whatever catalogue permissions the user
+   * holds. `isControlledDrug` is the line's own mark: true for Schedule H1 and X as well as NDPS.
+   */
+  schedule: DrugSchedule | null;
+  isNdps: boolean;
 }
 
 export interface QueueEntryDetail {

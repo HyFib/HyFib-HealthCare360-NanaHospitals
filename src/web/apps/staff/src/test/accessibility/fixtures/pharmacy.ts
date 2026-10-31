@@ -169,6 +169,8 @@ const drugLine = (
   available: null,
   mrp: null,
   nearestExpiry: null,
+  schedule: 'H',
+  isNdps: false,
   ...overrides,
 });
 
@@ -212,6 +214,7 @@ export const ENTRY: QueueEntryDetail = {
       drugName: 'Paracetamol 500 mg tablet',
       genericName: 'Paracetamol',
       strength: '500 mg',
+      schedule: 'Otc',
       frequency: 'Three times a day',
       instructions: 'After food',
       requestedQuantity: 15,
@@ -246,6 +249,8 @@ export const ENTRY: QueueEntryDetail = {
       durationDays: 3,
       instructions: 'Only when the knee pain is severe',
       isControlledDrug: true,
+      schedule: 'H1',
+      isNdps: true,
       requestedQuantity: 6,
       available: 20,
       mrp: 9.5,
