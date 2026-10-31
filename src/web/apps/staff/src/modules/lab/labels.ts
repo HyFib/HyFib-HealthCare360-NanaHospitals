@@ -147,7 +147,7 @@ export const unmatchedReasonLabel: Record<UnmatchedResultReason, string> = {
   NoMatchingTest: 'No test ordered for it',
   DiffersFromVerified: 'Differs from the verified result',
   InvalidValue: 'Value not valid for the test',
-  RepeatedInMessage: 'Sent twice, another value',
+  RepeatedInMessage: 'Sent twice, differently',
 };
 
 export const unmatchedStatusLabel: Record<UnmatchedResultStatus, string> = {

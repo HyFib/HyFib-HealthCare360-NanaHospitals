@@ -15,13 +15,19 @@ public enum UnmatchedResultReason
     /// <summary>None of the tube's tests maps any channel the analyser sent for it.</summary>
     NoMatchingTest,
 
-    /// <summary>The test already has a verified result, and the analyser sent another value.</summary>
+    /// <summary>
+    /// The test already has a verified result, and the analyser sent another value, or the same value with another unit,
+    /// flags, status or comment (a correction, say), or for a result typed in or from another analyser.
+    /// </summary>
     DiffersFromVerified,
 
     /// <summary>The value is not one the test can hold (not a number for a numeric test, not one of its answers).</summary>
     InvalidValue,
 
-    /// <summary>The analyser sent the test twice in one message with another value; the first is on the test.</summary>
+    /// <summary>
+    /// The analyser sent the test twice in one message, the second time with another value or the same value read
+    /// otherwise; the first is on the test.
+    /// </summary>
     RepeatedInMessage,
 }
 

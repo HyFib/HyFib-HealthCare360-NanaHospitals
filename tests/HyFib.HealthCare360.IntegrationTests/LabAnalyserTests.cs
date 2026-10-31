@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -504,6 +505,82 @@ public sealed class LabAnalyserTests(HospitalServer server)
             .ShouldBe((UnmatchedResultReason.UnknownSample, code, unknown, "97"));
     }
 
+    [Fact]
+    public async Task The_same_value_sent_for_a_verified_result_as_a_correction_is_kept_for_the_lab_and_only_a_resend_changes_nothing()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        string[] final = [$"O|1|{tube.Barcode}||^^^GLU|R", "R|1|^^^GLU|94|mg/dL||N||F"];
+        (await AnalyserSendsAsync("EM360", final)).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        var stored = (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem();
+        if (stored.Status != LabResultStatus.Verified)
+        {
+            await pathologist.PostAsync<VerificationOutcome>("/api/v1/lab/results/verify", new VerifyResultsRequest([stored.ResultId], null, null, Release: false));
+        }
+
+        var verified = (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem();
+        verified.Status.ShouldBe(LabResultStatus.Verified);
+
+        // The analyser sends the value again as a correction (status C): not the message sent again, so not dropped.
+        (await AnalyserSendsAsync("EM360", $"O|1|{tube.Barcode}||^^^GLU|R", "R|1|^^^GLU|94|mg/dL||N||C")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Version.ShouldBe(verified.Version);
+        var kept = (await UnmatchedAsync(lab, tube.Barcode)).ShouldHaveSingleItem();
+        (kept.Reason, kept.LabResultId, kept.Value, kept.InstrumentStatus)
+            .ShouldBe((UnmatchedResultReason.DiffersFromVerified, verified.ResultId, "94", "C"));
+        kept.Detail.ShouldBe($"{verified.TestName} on sample {tube.Barcode} is verified as 94 mg/dL; EM360 sent the same value with status C.");
+
+        // The final reading sent again after a lost acknowledgement is the one on the test: nothing more is kept.
+        (await AnalyserSendsAsync("EM360", final)).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await UnmatchedAsync(lab, tube.Barcode)).ShouldHaveSingleItem().Id.ShouldBe(kept.Id);
+    }
+
+    [Fact]
+    public async Task Results_for_an_unknown_sample_that_differ_only_in_what_the_analyser_said_are_each_kept_and_each_once()
+    {
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var unknown = "7" + Digits(8);
+        (await AnalyserSendsAsync("EM360", $"O|1|{unknown}||^^^GLU|R", "R|1|^^^GLU|97|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+
+        // A rerun of the tube: the same value, as a correction and flagged, two readings in one message.
+        string[] rerun = [$"O|1|{unknown}||^^^GLU|R", "R|1|^^^GLU|97|mg/dL||N||C", "R|2|^^^GLU|97|mg/dL||H||F"];
+        (await AnalyserSendsAsync("EM360", rerun)).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await UnmatchedAsync(lab, unknown)).Select(k => (k.Value, k.InstrumentFlags, k.InstrumentStatus))
+            .ShouldBe([("97", "N", "F"), ("97", "N", "C"), ("97", "H", "F")], ignoreOrder: true);
+
+        // The rerun sent again: each of its readings is kept already.
+        (await AnalyserSendsAsync("EM360", rerun)).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await UnmatchedAsync(lab, unknown)).Count.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task A_result_assigned_from_the_unmatched_results_is_entered_at_the_time_the_analyser_measured_it()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        var channel = "T" + Letters(6).ToUpperInvariant();
+        var measured = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddMinutes(-90).ToUnixTimeSeconds());
+        (await AnalyserSendsAsync("EM360", "O|1||||R", $"R|1|^^^{channel}|93|mg/dL||N||F||||{Stamp(measured)}")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        var kept = (await UnmatchedAsync(lab, channel)).ShouldHaveSingleItem();
+        kept.ResultedAt.ShouldBe(measured);
+
+        await AssignAsync(lab, kept.Id, (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().ResultId);
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().EnteredAt.ShouldBe(measured, "entered as measured, not when it was assigned");
+
+        // An analyser whose clock runs a day ahead: its result is entered when assigned, never in the future.
+        var ahead = await ReceivedFastingSugarSampleAsync(admin, lab);
+        var aheadChannel = "T" + Letters(6).ToUpperInvariant();
+        (await AnalyserSendsAsync("EM360", "O|1||||R", $"R|1|^^^{aheadChannel}|95|mg/dL||N||F||||{Stamp(DateTimeOffset.UtcNow.AddDays(1))}"))
+            .ShouldNotBeNull().Accepted.ShouldBeTrue();
+        var early = (await UnmatchedAsync(lab, aheadChannel)).ShouldHaveSingleItem();
+        var before = DateTimeOffset.UtcNow;
+        await AssignAsync(lab, early.Id, (await SheetAsync(lab, ahead)).Lines.ShouldHaveSingleItem().ResultId);
+        (await SheetAsync(lab, ahead)).Lines.ShouldHaveSingleItem().EnteredAt.ShouldNotBeNull()
+            .ShouldBeInRange(before.AddSeconds(-1), DateTimeOffset.UtcNow.AddSeconds(1));
+    }
+
     /// <summary>A walk-in fasting blood sugar, collected and received in the lab (the counter's payment gate waived).</summary>
     private async Task<CreatedSample> ReceivedFastingSugarSampleAsync(ApiClient admin, ApiClient lab)
     {
@@ -557,6 +634,16 @@ public sealed class LabAnalyserTests(HospitalServer server)
         ApiClient lab, string search, UnmatchedResultStatus status = UnmatchedResultStatus.Open) =>
         (await lab.GetAsync<PagedResult<UnmatchedResultDto>>(
             $"/api/v1/lab/unmatched-results?search={Uri.EscapeDataString(search)}&status={status}&pageSize=50")).Items;
+
+    /// <summary>A lab user puts an analyser result kept aside on a sample's test.</summary>
+    private static async Task AssignAsync(ApiClient lab, Guid unmatchedId, Guid resultId)
+    {
+        using var assigned = await lab.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/unmatched-results/{unmatchedId}/assign", new AssignUnmatchedResultRequest(resultId));
+        assigned.StatusCode.ShouldBe(HttpStatusCode.NoContent, await assigned.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>A time as an analyser in the lab writes it (ASTM, the lab's zone).</summary>
+    private static string Stamp(DateTimeOffset at) => TimeZoneInfo.ConvertTime(at, India).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
 
     private static async Task<AuditEventDto> AuditedAsync(ApiClient admin, string action, Guid unmatchedId) =>
         (await admin.GetAsync<PagedResult<AuditEventDto>>(

@@ -98,7 +98,10 @@ internal sealed class UnmatchedResultService(
             return assigned;
         }
 
-        var recorded = target.Record(capture.Value, currentUser.UserId, now);
+        // Entered at the time the analyser measured it, as a result straight from the analyser is (never in the future);
+        // the assignment keeps its own time.
+        var resultedAt = unmatched.ResultedAt is { } at && at <= now ? at : now;
+        var recorded = target.Record(capture.Value, currentUser.UserId, resultedAt);
         if (recorded.IsFailure)
         {
             return recorded;

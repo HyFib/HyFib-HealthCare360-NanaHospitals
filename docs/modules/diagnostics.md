@@ -548,15 +548,17 @@ acknowledged:
 | `UnknownSample` | No tube of the analyser's facility has the barcode |
 | `SampleNotInLab` | The tube is not collected yet, rejected or cancelled |
 | `NoMatchingTest` | None of the tube's tests maps any channel the message sent for it (when some do, the others are only logged, as analysers send whole profiles) |
-| `DiffersFromVerified` | The test is verified and the analyser sent another value (a rerun after a lost acknowledgement sends the same value, which changes nothing) |
+| `DiffersFromVerified` | The test is verified and the analyser sent another value, or the same value with another unit, flags, status or comment (a correction, status `C`), or for a result typed in or from another analyser. Only the reading on the test sent again (after a lost acknowledgement) changes nothing |
 | `InvalidValue` | The value is not one the test can hold (not a number for a numeric test, not one of its answers) |
-| `RepeatedInMessage` | The message gave the test twice with different values; the first is on the test |
+| `RepeatedInMessage` | The message gave the test twice, the second time with another value or the same value read otherwise; the first is on the test |
 
-The same result sent again for the same sample id is kept once; results without a sample id are each kept, since two
-samples' results cannot be told from a resend. **Lab › Unmatched analyser results** lists them, newest first, and the
+The same result sent again for the same sample id (the same channel, value, unit, flags, status, comment and time, as
+stored) is kept once; one differing in any of them is kept too, and results without a sample id are each kept, since
+two samples' results cannot be told from a resend. **Lab › Unmatched analyser results** lists them, newest first, and the
 lab overview and result entry show how many wait. Someone with `lab.results.enter` assigns one to a sample's test (found
 by the tube's barcode; not a verified one, which a pathologist reopens first): it goes through result entry, interpreted
-and delta-checked, with the analyser's reading, and is never auto-validated, since a person chose where it goes. Or
+and delta-checked, with the analyser's reading and the time it measured the sample (never later than the assignment),
+and is never auto-validated, since a person chose where it goes. Or
 discards it with a reason (a control run, a duplicate, a rerun on its own tube). Both are audited
 (`lab.unmatched.assigned`, `lab.unmatched.discarded`), and the rows keep who did it and when.
 
