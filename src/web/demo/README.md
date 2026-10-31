@@ -85,9 +85,10 @@ serves it, as the Worker `hc360-demo` with static assets only (no Worker script 
   committed. It also fails if a header is missing or Cloudflare is not in front.
 - **Check only.** Run by hand with _check only_, it deploys nothing and checks the live site.
 
-`site/` holds the demo built from the head of #138 (6a7b6e5): 12 roles, 1,336 screens walked, no unrecorded calls, no
-browser errors, and 30 of 30 guided places. Building that commit again from the same recordings gives the same 16 files,
-byte for byte. To publish a new recording, make it and check it as above, then replace the folder in a pull request:
+`site/` holds the morning recorded on 31 October from `main` at 06e8f71: 12 roles, 1,343 screens walked, no unrecorded
+calls, no browser errors, and 30 of 30 guided places. Building it again from the same recordings gives the same 16
+files, byte for byte. To publish a new recording, make it and check it as above, then replace the folder in a pull
+request:
 
 ```bash
 rm -rf demo/site && cp -r demo/out/demo demo/site
@@ -130,12 +131,16 @@ Then run the workflow. Its summary lists each file, each header, and the certifi
 ## What the build refuses to ship
 
 `build.mjs` stops if a guided place in `app/personas.ts` was not recorded for its role. It also stops if an answer
-still holds a token or a private key. It replaces these before packing:
+still holds a token, a private key, a draft key or a password. It replaces these before packing:
 
 - the recording machine's folders, with `D:\HC360\Data`
 - its private addresses, with `192.0.2.10`
+- the addresses it gives for itself on System health, whatever their range, with `192.0.2.10` (`2001:db8::10` for
+  IPv6)
 - the name it gives itself (the server name on System information and System health), with `HC360-SRV01`
 - its CA certificate's fingerprint, with zeros
 
 It also reports any phone number outside the story's fictional series (90000 0xxxx). The sign-in answers keep their
-shape, but the token is a stand-in. Its report sits beside the built folder (`<out-dir>.report.json`).
+shape, but the token is a stand-in, and so is the key the staff app encrypts drafts with: the recording server makes
+that from its own key, so the demo's is 32 zero bytes. Its report sits beside the built folder
+(`<out-dir>.report.json`).
