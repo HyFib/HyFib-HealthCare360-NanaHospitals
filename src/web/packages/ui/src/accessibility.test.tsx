@@ -1,4 +1,4 @@
-import { Button, FluentProvider } from '@fluentui/react-components';
+import { Button, Checkbox, FluentProvider } from '@fluentui/react-components';
 import { AddRegular, MoreHorizontalRegular, PeopleRegular } from '@fluentui/react-icons';
 import { ApiError } from '@hc360/core';
 import { act, useEffect, type ReactNode } from 'react';
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, it, vi } from 'vitest';
 import { PatientBanner, PatientFlagBadges, type PatientBannerData } from './clinical/PatientBanner';
 import { DataTable, type Column } from './data/DataTable';
 import { ConfirmDialog, EmptyState, ErrorState, KpiCard, LoadingState, StatusBadge } from './feedback/feedback';
+import { CheckboxGroup } from './forms/checkboxGroup';
 import {
   ChoiceField,
   DateField,
@@ -218,6 +219,18 @@ function RegistrationForm({ withErrors }: { withErrors?: boolean }) {
           initialItems={[{ id: 'd1', code: 'D001', name: 'Dr. Meera Iyer' }]}
         />
         <SwitchField control={control} name="smsConsent" label="Send SMS updates" hint="Appointment reminders" />
+        <FullRow>
+          <CheckboxGroup
+            label="Remind by"
+            required
+            hint="Every channel ticked gets the reminder"
+            validationMessage={withErrors ? 'Check this field' : undefined}
+          >
+            <Checkbox label="SMS" />
+            <Checkbox label="WhatsApp" />
+            <Checkbox label="Email" />
+          </CheckboxGroup>
+        </FullRow>
         <FullRow>
           <TextAreaField control={control} name="notes" label="Notes" maxLength={500} />
         </FullRow>

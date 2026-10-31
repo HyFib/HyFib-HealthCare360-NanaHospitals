@@ -17,7 +17,7 @@ import {
 } from '@fluentui/react-components';
 import { SaveRegular } from '@fluentui/react-icons';
 import { isApiError, useHotkey } from '@hc360/core';
-import { Section, useLeaveGuard, useNotify, type LeaveQuestion } from '@hc360/ui';
+import { CheckboxGroup, Section, useLeaveGuard, useNotify, type LeaveQuestion } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { useBaseVersion } from '@/lib/baseVersion';
@@ -326,7 +326,7 @@ export function FeedbackFormEditor({
                   ))}
                 </Select>
               </Field>
-              <Field
+              <CheckboxGroup
                 label="Rated from 1 to 5 stars"
                 validationMessage={errors.aspects}
                 validationState={errors.aspects ? 'error' : 'none'}
@@ -342,7 +342,7 @@ export function FeedbackFormEditor({
                     />
                   ))}
                 </div>
-              </Field>
+              </CheckboxGroup>
               <Switch
                 checked={draft.includesNps}
                 onChange={(_, d) => set('includesNps', d.checked)}

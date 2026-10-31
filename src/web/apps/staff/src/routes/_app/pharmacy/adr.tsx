@@ -20,7 +20,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, PrintRegular, SendRegular } from '@fluentui/react-icons';
 import { formatDateOnly, todayIso } from '@hc360/core';
-import { DataTable, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import { CheckboxGroup, DataTable, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -403,7 +403,7 @@ function ReportDialog({ existing, onClose }: { existing: AdrReport | null; onClo
                   <Input type="number" inputMode="decimal" value={weight} onChange={(_, d) => setWeight(d.value)} />
                 </Field>
               </div>
-              <Field label="Serious because" hint="None ticked: not serious.">
+              <CheckboxGroup label="Serious because" hint="None ticked: not serious.">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {SERIOUSNESS.map(([name, , label]) => (
                     <Checkbox
@@ -414,7 +414,7 @@ function ReportDialog({ existing, onClose }: { existing: AdrReport | null; onClo
                     />
                   ))}
                 </div>
-              </Field>
+              </CheckboxGroup>
               <Text weight="semibold">Drugs</Text>
               {problems.drugs && tried && (
                 <MessageBar intent="warning">

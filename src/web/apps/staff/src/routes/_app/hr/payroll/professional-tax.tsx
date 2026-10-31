@@ -27,6 +27,7 @@ import {
 import { AddRegular, DeleteRegular, EditRegular, MoneyRegular } from '@fluentui/react-icons';
 import { formatInr } from '@hc360/core';
 import {
+  CheckboxGroup,
   EmptyState,
   ErrorState,
   LoadingState,
@@ -253,7 +254,7 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
               </Field>
             </div>
             {frequency === 'HalfYearly' && (
-              <Field label="Deducted in">
+              <CheckboxGroup label="Deducted in">
                 <div className={styles.months}>
                   {MONTH_NAMES.map((name, index) => (
                     <Checkbox
@@ -266,7 +267,7 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
                     />
                   ))}
                 </div>
-              </Field>
+              </CheckboxGroup>
             )}
             <Table size="small" aria-label="Income bands">
               <TableHeader>

@@ -118,7 +118,9 @@ export const bedQueries = {
   `StatusBadge` (colour from the status word), `KpiCard`, `ConfirmDialog` (every destructive/irreversible action),
   `useNotify()` toasts (success after saves; `notify.error(error, 'Could not …')` on failures).
 * Forms: react-hook-form + zod (`zodResolver`) + `TextField`, `TextAreaField`, `NumberField`, `SelectField`,
-  `DateField`, `SwitchField`, `ChoiceField`, `LookupField`, laid out with `FormGrid`. On submit errors call
+  `DateField`, `SwitchField`, `ChoiceField`, `LookupField`, laid out with `FormGrid`. A set of checkboxes goes in a
+  `CheckboxGroup`, never in a Fluent `Field`: a Field gives its id, `required` and aria-* to every control inside it,
+  so each box's own label would name and tick the first box. On submit errors call
   `applyServerErrors(error, form.setError)` so server validation lands on the right field. Long clinical forms use
   `useFormDraft(form, key)` (auto-save to the workstation) and `useHotkey('mod+s', …)`. A page's shortcuts do nothing
   while a dialog or drawer is open over it; a shortcut that belongs to a dialog passes its surface as `within` (a ref

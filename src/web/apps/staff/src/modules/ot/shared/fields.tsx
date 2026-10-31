@@ -1,4 +1,6 @@
 import { Checkbox, Field, Input, makeStyles, type FieldProps } from '@fluentui/react-components';
+import { CheckboxGroup } from '@hc360/ui';
+import type { ReactNode } from 'react';
 import { Controller, type Control, type FieldPath, type FieldValues } from 'react-hook-form';
 
 const useStyles = makeStyles({
@@ -98,7 +100,11 @@ export function CheckboxGroupField<T extends FieldValues>({
   disabled,
   options,
   layout = 'wrap',
-}: BaseProps<T> & { options: readonly { value: string; label: string }[]; layout?: 'wrap' | 'columns' }) {
+}: Omit<BaseProps<T>, 'hint'> & {
+  hint?: ReactNode;
+  options: readonly { value: string; label: string }[];
+  layout?: 'wrap' | 'columns';
+}) {
   const styles = useStyles();
   return (
     <Controller
@@ -107,14 +113,14 @@ export function CheckboxGroupField<T extends FieldValues>({
       render={({ field, fieldState }) => {
         const selected = (field.value as string[] | null | undefined) ?? [];
         return (
-          <Field
+          <CheckboxGroup
             label={label}
             hint={hint}
             required={required}
             validationMessage={fieldState.error?.message}
             validationState={fieldState.error ? 'error' : 'none'}
           >
-            <div className={layout === 'columns' ? styles.columns : styles.group} role="group" aria-label={label}>
+            <div className={layout === 'columns' ? styles.columns : styles.group}>
               {options.map((option) => (
                 <Checkbox
                   key={option.value}
@@ -131,7 +137,7 @@ export function CheckboxGroupField<T extends FieldValues>({
                 />
               ))}
             </div>
-          </Field>
+          </CheckboxGroup>
         );
       }}
     />

@@ -45,6 +45,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatRelative, isApiError, normalizePhone, useDebouncedValue, useSession } from '@hc360/core';
 import {
   applyServerErrors,
+  CheckboxGroup,
   ConfirmDialog,
   DataTable,
   FilterBar,
@@ -610,7 +611,7 @@ function UserDrawerForm({
               control={form.control}
               name="roleIds"
               render={({ field, fieldState }) => (
-                <Field
+                <CheckboxGroup
                   label="Roles"
                   required
                   validationMessage={fieldState.error?.message}
@@ -630,7 +631,7 @@ function UserDrawerForm({
                       />
                     ))}
                   </div>
-                </Field>
+                </CheckboxGroup>
               )}
             />
             <LookupField
