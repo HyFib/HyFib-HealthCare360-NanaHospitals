@@ -5,7 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ItemDetail } from '@/modules/inventory/api';
 import type { QueueEntryDetail, QueueLineDto } from '@/modules/pharmacy/api';
 import { ENTRY, ENTRY_ID, ITEMS, PHARMACY_ANSWERS } from './accessibility/fixtures/pharmacy';
-import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, STAFF_USER, stubBrowserApis, type FakeRequest } from './appScreen';
+import {
+  fakeServer,
+  openScreen,
+  paged,
+  SCREEN_TESTS,
+  SLOW,
+  STAFF_USER,
+  stubBrowserApis,
+  type FakeRequest,
+} from './appScreen';
 
 // The dispensing screen marks each medicine with its schedule from the drug master. In the production-style run it
 // marked ceftriaxone, a Schedule H1 antibiotic, with a red "NDPS" badge: it took the prescription line's controlled
