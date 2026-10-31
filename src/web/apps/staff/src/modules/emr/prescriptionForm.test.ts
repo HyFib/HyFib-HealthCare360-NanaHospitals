@@ -3,14 +3,17 @@ import {
   appendLines,
   applyDefaults,
   autoQuantity,
+  defaultRoute,
   drugMasterDefaults,
   drugOptionView,
   duplicateGenerics,
   effectiveQuantity,
   emptyLine,
+  fromCurrentMedication,
   fromSavedItem,
   medicineNames,
   namedByItsGeneric,
+  routeProblem,
   rxFormSchema,
   toItemRequest,
   toRequestBody,
@@ -27,6 +30,7 @@ const paracetamol = line({
   genericName: 'Paracetamol',
   strength: '650 mg',
   dosageForm: 'Tablet',
+  route: 'Oral',
   dose: '1 tab',
   frequency: 'TDS',
   durationDays: 3,
@@ -143,6 +147,7 @@ describe('mapping', () => {
     const next = applyDefaults(emptyLine(), {
       drugName: 'Alprazolam 0.25',
       genericName: 'Alprazolam',
+      dosageForm: 'Tablet',
       dose: '1 tab',
       frequency: 'HS',
       durationDays: 7,
@@ -197,6 +202,7 @@ describe('drug master', () => {
       genericName: 'Paracetamol',
       strength: '650 mg',
       dosageForm: 'Tablet',
+      route: 'Oral',
       isControlledDrug: false,
       controlledSchedule: null,
     });
@@ -240,5 +246,97 @@ describe('drug master', () => {
   it('describes the medicine by generic, strength and form', () => {
     expect(drugOptionView(drug()).detail).toBe('Paracetamol · 650 mg · Tablet');
     expect(drugOptionView(drug({ genericName: null, dosageForm: null })).detail).toBe('650 mg');
+  });
+});
+
+describe('route', () => {
+  it('takes the route from the dosage form when the form leaves no doubt', () => {
+    const routes = Object.fromEntries(
+      [
+        'Tablet',
+        'Tablet (enteric-coated)',
+        'Soft gelatin capsule',
+        'Orally disintegrating tablet',
+        'Powder for oral suspension',
+        'Oral solution',
+        'IV infusion',
+        'Metered-dose inhaler',
+        'Nebuliser suspension',
+        'Cream',
+        'Jelly',
+        'Eye drops',
+        'Ear drops',
+        'Rectal suppository',
+      ].map((form) => [form, defaultRoute(form)]),
+    );
+    expect(routes).toEqual({
+      Tablet: 'Oral',
+      'Tablet (enteric-coated)': 'Oral',
+      'Soft gelatin capsule': 'Oral',
+      'Orally disintegrating tablet': 'Oral',
+      'Powder for oral suspension': 'Oral',
+      'Oral solution': 'Oral',
+      'IV infusion': 'IV',
+      'Metered-dose inhaler': 'Inhalation',
+      'Nebuliser suspension': 'Inhalation',
+      Cream: 'Topical',
+      Jelly: 'Topical',
+      'Eye drops': 'Eye',
+      'Ear drops': 'Ear',
+      'Rectal suppository': 'Rectal',
+    });
+  });
+
+  it('leaves the route of an injection, or of a form that does not say, to the doctor', () => {
+    expect(defaultRoute('Injection')).toBe('');
+    expect(defaultRoute('Powder for injection')).toBe('');
+    expect(defaultRoute('Solution')).toBe('');
+    expect(defaultRoute(null, 'Inj. Ceftriaxone 1 g')).toBe('');
+    expect(defaultRoute(null, 'Paracetamol 500 mg Tablet')).toBe('Oral');
+  });
+
+  it('gives an injection from the drug master no route, so it is not signed as oral (it was)', () => {
+    const ceftriaxone = drugMasterDefaults({
+      id: 'd2',
+      name: 'Ceftriaxone 1 g Injection',
+      genericName: 'Ceftriaxone',
+      strength: '1 g',
+      dosageForm: 'Powder for injection',
+      isControlled: true,
+      controlledSchedule: 'H1',
+    });
+    const picked = { ...applyDefaults(emptyLine(), ceftriaxone), dose: '1 g', durationDays: 3, quantity: 6 };
+    expect(picked.route).toBe('');
+    const result = rxFormSchema.safeParse({ lines: [picked], advice: '', notes: '', refillsAllowed: 0 });
+    expect(result.error?.issues.find((issue) => issue.path.join('.') === 'lines.0.route')?.message).toBe(
+      'Choose how the injection is given: IV, IM or SC.',
+    );
+    expect(
+      rxFormSchema.safeParse({ lines: [{ ...picked, route: 'IV' }], advice: '', notes: '', refillsAllowed: 0 }).success,
+    ).toBe(true);
+  });
+
+  it('refuses a route the dosage form contradicts, as the server does', () => {
+    const injection = line({ drugName: 'Ceftriaxone 1 g Injection', dosageForm: 'Powder for injection' });
+    expect(routeProblem({ ...injection, route: 'Oral' })).toBe('An injection is not given by the oral route.');
+    expect(routeProblem({ ...injection, route: 'IM' })).toBeNull();
+    expect(routeProblem({ ...injection, route: 'Other' })).toBeNull();
+    expect(routeProblem({ ...paracetamol, route: 'IV' })).toBe('A medicine taken by mouth is not given IV.');
+    expect(routeProblem({ ...paracetamol, route: 'Oral' })).toBeNull();
+    expect(routeProblem({ ...paracetamol, route: '' })).toBe('Choose how the medicine is given.');
+  });
+
+  it('keeps the route of a medicine continued from its name', () => {
+    const continued = (drugName: string) =>
+      fromCurrentMedication({
+        drugName,
+        genericName: null,
+        strength: null,
+        dose: '1',
+        frequency: 'BD',
+        durationDays: 3,
+      });
+    expect(continued('Paracetamol 500 mg Tablet').route).toBe('Oral');
+    expect(continued('Ceftriaxone 1 g Injection').route).toBe('');
   });
 });

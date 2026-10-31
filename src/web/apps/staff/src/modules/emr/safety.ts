@@ -14,7 +14,8 @@ export type SafetyAlertKind =
   | 'MaxDose'
   | 'DoseUnverified'
   | 'HighAlertMedication'
-  | 'ControlledDrug';
+  | 'ControlledDrug'
+  | 'Route';
 
 export type SafetyAlertSeverity = 'Info' | 'Minor' | 'Moderate' | 'Major';
 
@@ -48,6 +49,7 @@ export const alertKindLabel: Record<SafetyAlertKind, string> = {
   DoseUnverified: 'Dose could not be checked',
   HighAlertMedication: 'High-alert medicine',
   ControlledDrug: 'Schedule H1/X medicine',
+  Route: 'Route',
 };
 
 const SEVERITY_WEIGHT: Record<SafetyAlertSeverity, number> = { Major: 3, Moderate: 2, Minor: 1, Info: 0 };

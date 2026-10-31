@@ -54,6 +54,9 @@ describe('PrescriptionEditor', () => {
     expect(api.post).not.toHaveBeenCalled();
 
     await user.type(generic, 'Pantoprazole');
+    // A medicine typed in has no form to tell its route: the doctor names it.
+    expect(screen.getByText('Choose how the medicine is given.')).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: /^Route/ }), 'Oral');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
 
     await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
@@ -62,6 +65,40 @@ describe('PrescriptionEditor', () => {
     expect((body as CreatePrescriptionRequest).items[0]).toMatchObject({
       drugName: 'Pan 40',
       genericName: 'Pantoprazole',
+      route: 'Oral',
+    });
+  });
+
+  it('asks how an injection is given, in its details, and never sends one by mouth', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.post).mockResolvedValue({
+      id: 'rx2',
+      prescriptionNumber: 'NHRX260000043',
+      version: 1,
+    } as PrescriptionDto);
+    renderEditor();
+
+    await user.type(screen.getByRole('combobox', { name: 'Medicine 1' }), 'Inj. Ceftriaxone 1 g');
+    await user.type(screen.getByRole('textbox', { name: 'Inj. Ceftriaxone 1 g dose' }), '1 g');
+    // Six vials: a dose in grams cannot be counted from the name alone.
+    await user.type(screen.getByRole('spinbutton', { name: 'Inj. Ceftriaxone 1 g quantity' }), '6');
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    // The details open on the route, which says why; nothing is sent.
+    const route = await screen.findByRole('combobox', { name: /^Route/ });
+    expect(screen.getByText('Choose how the injection is given: IV, IM or SC.')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: /Generic name/ }), 'Ceftriaxone');
+    await user.selectOptions(route, 'Oral');
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(await screen.findByText('An injection is not given by the oral route.')).toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+
+    await user.selectOptions(route, 'IV');
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    await vi.waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    expect((vi.mocked(api.post).mock.calls[0]![1] as CreatePrescriptionRequest).items[0]).toMatchObject({
+      drugName: 'Inj. Ceftriaxone 1 g',
+      route: 'IV',
     });
   });
 });

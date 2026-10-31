@@ -890,7 +890,13 @@ prescriptions still within their course, all facilities) and active drug/other a
 | Maximum daily dose, **summed per ingredient** across the new lines and current medicines | Major, **blocking** |
 | Dose not computable although a limit exists | Minor warning (never silently skipped) |
 | Methotrexate on a daily schedule | Major, **blocking** |
+| Route against the dosage form (the line's form, or its name when it has none): an injection with no route, or with a route no injection is given by (Oral, Topical, Inhalation…); a tablet, capsule or syrup given IV, IM or SC. `Other` stays open for intrathecal, intra-articular and similar | Major, **blocking** |
 | Schedule H1/X medicine | Info + explicit `confirmControlledDrugs` + controlled-drug register entry |
+
+The editor fills a line's route from the drug master's dosage form when the form leaves no doubt (tablet: Oral, cream:
+Topical, inhaler or nebuliser: Inhalation, IV infusion: IV) and leaves it empty when it does not (an injection: IV, IM
+or SC is the doctor's choice; a solution; drops); a line is not saved without a route, and one the form contradicts is
+refused as the server refuses it. The route goes to the pharmacy label and the nurse's medication chart.
 
 Blocking alerts need `overrideReason` (≥ 10 characters; audited as `prescription.safety_override`, severity Critical);
 every other warning needs `acknowledgeWarnings`. The alerts shown at signing are stored on the prescription

@@ -189,8 +189,8 @@ function LineRow({
   const styles = useStyles();
   const [open, setOpen] = useState(false);
   const errors = form.formState.errors.lines?.[index];
-  // The generic name is in the details: they open when it is missing, so the doctor sees why the line is refused.
-  const showDetails = open || Boolean(errors?.genericName);
+  // The generic name and the route are in the details: they open when either is refused, so the doctor sees why.
+  const showDetails = open || Boolean(errors?.genericName) || Boolean(errors?.route);
   const auto = autoQuantity(line);
   const name = line.drugName.trim() || `Medicine ${index + 1}`;
 
@@ -414,7 +414,12 @@ function LineRow({
             control={control}
             name={`lines.${index}.route`}
             render={({ field }) => (
-              <Field label="Route">
+              <Field
+                label="Route"
+                required
+                validationMessage={errors?.route?.message}
+                validationState={errors?.route ? 'error' : 'none'}
+              >
                 <Select value={field.value} onChange={(_, d) => field.onChange(d.value)}>
                   <option value="">—</option>
                   {ROUTES.map((r) => (
