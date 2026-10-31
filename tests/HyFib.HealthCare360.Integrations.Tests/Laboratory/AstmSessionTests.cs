@@ -190,6 +190,40 @@ public sealed class AstmSessionTests
     }
 
     [Fact]
+    public async Task Results_under_an_order_with_no_sample_id_reach_the_lis_before_the_message_is_acknowledged()
+    {
+        // The analyser put its sample number where the gateway does not read it: the order record's O.3 and O.4 are empty.
+        string[] records =
+        [
+            @"H|\^&|||XN-550^00-23|||||||P|1|20260925103000",
+            "P|1",
+            "O|1||||R",
+            "R|1|^^^^WBC^1|7.92|10*3/uL||N||F",
+            "L|1|N",
+        ];
+        var frames = AstmFrames.BuildMessage(records, Latin1);
+        _processor.SubmitResultsAsync(default!, default!, default!, Ct)
+            .ReturnsForAnyArgs(new LabSubmitOutcome(false, "LIS not available"), LabSubmitOutcome.Ok);
+        var run = Start();
+
+        await OpenAsync();
+        await SendAcknowledgedAsync(frames.SkipLast(1));
+        await SendAsync(frames[^1]);
+        await ExpectAsync(AstmControl.Nak);
+        await SendAsync(frames[^1]);
+        await ExpectAsync(AstmControl.Ack);
+        await SendAsync(AstmControl.Eot);
+        await FinishAsync(run);
+
+        await _processor.Received(2).SubmitResultsAsync(
+            Arg.Is(LabSamples.AstmInstrument),
+            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m.Count == 1 && m[0].SampleBarcode == "" && m[0].Results.Count == 1),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+        Logged("astm.message").ShouldBeEmpty("the results are not taken for a message with nothing to store");
+    }
+
+    [Fact]
     public async Task Naks_corrupted_frames_and_accepts_the_retransmission()
     {
         var run = Start();

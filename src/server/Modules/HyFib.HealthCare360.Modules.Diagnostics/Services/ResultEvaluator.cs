@@ -116,7 +116,9 @@ internal sealed class ResultEvaluationContext(
     public string? ReferenceTextFor(LabResult result) =>
         Test(result.LabTestId) is { } test ? ResultInterpreter.ReferenceText(RangeFor(result), test.Decimals) : null;
 
-    public Result<ResultCapture> Capture(LabResult result, string? value, string? remarks, string? organism, string? colonyCount, string? instrumentCode)
+    /// <param name="reading">What the analyser said besides the value; null for a value typed in.</param>
+    public Result<ResultCapture> Capture(
+        LabResult result, string? value, string? remarks, string? organism, string? colonyCount, string? instrumentCode, AnalyserReading? reading = null)
     {
         if (Test(result.LabTestId) is not { } test)
         {
@@ -138,6 +140,7 @@ internal sealed class ResultEvaluationContext(
             test.ResultType == LabResultType.Culture ? TextLimits.ClipOrNull(organism, 200) : null,
             test.ResultType == LabResultType.Culture ? TextLimits.ClipOrNull(colonyCount, 100) : null,
             test.Method,
-            instrumentCode);
+            instrumentCode,
+            reading);
     }
 }

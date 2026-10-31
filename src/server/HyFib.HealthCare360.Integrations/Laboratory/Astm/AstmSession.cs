@@ -15,7 +15,9 @@ internal sealed record AstmTimings(TimeSpan FrameTimeout, TimeSpan ReplyTimeout,
 /// Receiving: ENQ is acknowledged; each frame is checked (number, checksum) and answered ACK or NAK; a retransmitted
 /// frame after a lost ACK is re-acknowledged without being applied twice. The frame completing a message (the one
 /// carrying the L record) is acknowledged only after the LIS has stored the results — if it cannot (LIS unavailable,
-/// sample unknown) the frame is NAKed and the analyser retransmits it, so results are never acknowledged and lost.
+/// database down) the frame is NAKed and the analyser retransmits it, so results are never acknowledged and lost.
+/// Results the LIS cannot put on a sample's tests (no sample id, an unknown sample) are stored among its unmatched
+/// results and acknowledged, so the analyser moves on instead of sending them for ever.
 /// </para>
 /// <para>
 /// Sending (host query answers, and orders sent unasked while the line is idle): HC360 bids with ENQ. If both bid, the

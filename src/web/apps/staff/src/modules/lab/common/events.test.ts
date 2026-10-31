@@ -9,6 +9,10 @@ describe('realtime invalidation map', () => {
     expect(invalidationTargets('lab.critical')).toContainEqual(['lab', 'critical-calls']);
   });
 
+  it('refreshes the unmatched analyser results, and only them, when an analyser result is kept aside', () => {
+    expect(invalidationTargets('lab.results.unmatched')).toEqual([['lab', 'unmatched']]);
+  });
+
   it('covers other departments and unknown events', () => {
     expect(invalidationTargets('radiology.study.changed')).toEqual([['radiology']]);
     expect(invalidationTargets('cardiology.study.changed')).toEqual([['cardiology']]);

@@ -34,6 +34,9 @@ public sealed class LabTrainingAnalyserTests
         sample.Results.Select(r => (r.ChannelCode, r.Value, r.Units)).ShouldBe(
             [("GLU", "96", "mg/dL"), ("CREA", "Haemolysed", null), ("NA", "<120", "mmol/L")]);
         sample.Results[0].ResultedAt.ShouldBe(LocalNow);
+
+        // Final results (OBX-11), as an analyser reports them, so they are auto-validated as a real analyser's would be.
+        sample.Results.ShouldAllBe(r => r.Status == "F");
     }
 
     [Fact]
@@ -47,6 +50,7 @@ public sealed class LabTrainingAnalyserTests
         sample.Results.Select(r => (r.ChannelCode, r.Value, r.Units)).ShouldBe(
             [("GLU", "96", "mg/dL"), ("CREA", "Haemolysed", null), ("NA", "<120", "mmol/L")]);
         sample.Results[1].ResultedAt.ShouldBe(LocalNow);
+        sample.Results.ShouldAllBe(r => r.Status == "F");
     }
 
     [Theory]

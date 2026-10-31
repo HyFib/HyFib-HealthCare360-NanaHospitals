@@ -132,6 +132,7 @@ import { Route as AppLabOutsourcingRouteImport } from './routes/_app/lab/outsour
 import { Route as AppLabReceiveRouteImport } from './routes/_app/lab/receive'
 import { Route as AppLabSetupRouteImport } from './routes/_app/lab/setup'
 import { Route as AppLabTatRouteImport } from './routes/_app/lab/tat'
+import { Route as AppLabUnmatchedRouteImport } from './routes/_app/lab/unmatched'
 import { Route as AppLabWorklistRouteImport } from './routes/_app/lab/worklist'
 import { Route as AppLinenIndexRouteImport } from './routes/_app/linen/index'
 import { Route as AppMortuaryIndexRouteImport } from './routes/_app/mortuary/index'
@@ -957,6 +958,11 @@ const AppLabSetupRoute = AppLabSetupRouteImport.update({
 const AppLabTatRoute = AppLabTatRouteImport.update({
   id: '/lab/tat',
   path: '/lab/tat',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLabUnmatchedRoute = AppLabUnmatchedRouteImport.update({
+  id: '/lab/unmatched',
+  path: '/lab/unmatched',
   getParentRoute: () => AppRoute,
 } as any)
 const AppLabWorklistRoute = AppLabWorklistRouteImport.update({
@@ -2146,6 +2152,7 @@ export interface FileRoutesByFullPath {
   '/lab/receive': typeof AppLabReceiveRoute
   '/lab/setup': typeof AppLabSetupRoute
   '/lab/tat': typeof AppLabTatRoute
+  '/lab/unmatched': typeof AppLabUnmatchedRoute
   '/lab/worklist': typeof AppLabWorklistRoute
   '/mrd/icd': typeof AppMrdIcdRoute
   '/mrd/idsp': typeof AppMrdIdspRoute
@@ -2475,6 +2482,7 @@ export interface FileRoutesByTo {
   '/lab/receive': typeof AppLabReceiveRoute
   '/lab/setup': typeof AppLabSetupRoute
   '/lab/tat': typeof AppLabTatRoute
+  '/lab/unmatched': typeof AppLabUnmatchedRoute
   '/lab/worklist': typeof AppLabWorklistRoute
   '/mrd/icd': typeof AppMrdIcdRoute
   '/mrd/idsp': typeof AppMrdIdspRoute
@@ -2806,6 +2814,7 @@ export interface FileRoutesById {
   '/_app/lab/receive': typeof AppLabReceiveRoute
   '/_app/lab/setup': typeof AppLabSetupRoute
   '/_app/lab/tat': typeof AppLabTatRoute
+  '/_app/lab/unmatched': typeof AppLabUnmatchedRoute
   '/_app/lab/worklist': typeof AppLabWorklistRoute
   '/_app/mrd/icd': typeof AppMrdIcdRoute
   '/_app/mrd/idsp': typeof AppMrdIdspRoute
@@ -3137,6 +3146,7 @@ export interface FileRouteTypes {
     | '/lab/receive'
     | '/lab/setup'
     | '/lab/tat'
+    | '/lab/unmatched'
     | '/lab/worklist'
     | '/mrd/icd'
     | '/mrd/idsp'
@@ -3466,6 +3476,7 @@ export interface FileRouteTypes {
     | '/lab/receive'
     | '/lab/setup'
     | '/lab/tat'
+    | '/lab/unmatched'
     | '/lab/worklist'
     | '/mrd/icd'
     | '/mrd/idsp'
@@ -3796,6 +3807,7 @@ export interface FileRouteTypes {
     | '/_app/lab/receive'
     | '/_app/lab/setup'
     | '/_app/lab/tat'
+    | '/_app/lab/unmatched'
     | '/_app/lab/worklist'
     | '/_app/mrd/icd'
     | '/_app/mrd/idsp'
@@ -4894,6 +4906,13 @@ declare module '@tanstack/react-router' {
       path: '/lab/tat'
       fullPath: '/lab/tat'
       preLoaderRoute: typeof AppLabTatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/lab/unmatched': {
+      id: '/_app/lab/unmatched'
+      path: '/lab/unmatched'
+      fullPath: '/lab/unmatched'
+      preLoaderRoute: typeof AppLabUnmatchedRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/lab/worklist': {
@@ -6431,6 +6450,7 @@ interface AppRouteChildren {
   AppLabReceiveRoute: typeof AppLabReceiveRoute
   AppLabSetupRoute: typeof AppLabSetupRoute
   AppLabTatRoute: typeof AppLabTatRoute
+  AppLabUnmatchedRoute: typeof AppLabUnmatchedRoute
   AppLabWorklistRoute: typeof AppLabWorklistRoute
   AppMrdIcdRoute: typeof AppMrdIcdRoute
   AppMrdIdspRoute: typeof AppMrdIdspRoute
@@ -6759,6 +6779,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppLabReceiveRoute: AppLabReceiveRoute,
   AppLabSetupRoute: AppLabSetupRoute,
   AppLabTatRoute: AppLabTatRoute,
+  AppLabUnmatchedRoute: AppLabUnmatchedRoute,
   AppLabWorklistRoute: AppLabWorklistRoute,
   AppMrdIcdRoute: AppMrdIcdRoute,
   AppMrdIdspRoute: AppMrdIdspRoute,

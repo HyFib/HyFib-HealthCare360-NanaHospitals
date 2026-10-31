@@ -50,6 +50,12 @@ const manifest: ModuleManifest = {
       permission: [P.enter, P.verify],
       keywords: ['worklist', 'verify', 'bench', 'results', 'critical'],
     },
+    {
+      label: 'Unmatched analyser results',
+      to: '/lab/unmatched',
+      permission: [P.enter, P.verify],
+      keywords: ['analyser', 'unknown sample', 'no sample id', 'interface', 'assign'],
+    },
     { label: 'Lab reports', to: '/lab/reports', permission: P.read, keywords: ['release', 'print', 'amend', 'qr'] },
     {
       label: 'Quality control',

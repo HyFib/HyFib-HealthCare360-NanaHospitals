@@ -157,4 +157,51 @@ public sealed class LabResultTests
         result.Unit = null;
         result.Describe().ShouldBe("6.8");
     }
+
+    [Fact]
+    public void An_analysers_result_keeps_what_the_analyser_said_and_why_it_was_held()
+    {
+        var result = Result();
+        var reading = new AnalyserReading("mmol/L", "H", "P", "Haemolysed sample");
+
+        result.Record(Capture("5.4", 5.4m, ResultFlag.High) with { InstrumentCode = "EM360", Reading = reading }, null, Now);
+        result.HoldForReview(["The result is flagged High.", "The analyser did not report the result as final (status P)."]);
+
+        (result.InstrumentCode, result.InstrumentUnit, result.InstrumentFlags, result.InstrumentStatus, result.InstrumentComment)
+            .ShouldBe(("EM360", "mmol/L", "H", "P", "Haemolysed sample"));
+        result.HeldReasons.ShouldBe(["The result is flagged High.", "The analyser did not report the result as final (status P)."]);
+    }
+
+    [Fact]
+    public void A_value_typed_over_an_analysers_result_carries_none_of_what_the_analyser_said()
+    {
+        var result = Result();
+        result.Record(Capture("5.4", 5.4m) with { InstrumentCode = "EM360", Reading = new AnalyserReading("mmol/L", "W", "F", "Clot") }, null, Now);
+        result.HoldForReview(["The analyser flagged the result (W)."]);
+
+        result.Record(Capture("4.9", 4.9m), UserId, Now.AddMinutes(3));
+
+        (result.InstrumentCode, result.InstrumentUnit, result.InstrumentFlags, result.InstrumentStatus, result.InstrumentComment)
+            .ShouldBe((null, null, null, null, null));
+        result.HeldReasons.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void The_same_reading_sent_again_is_recognised_and_another_value_or_flag_is_not()
+    {
+        var result = Result();
+        var reading = new AnalyserReading("mmol/L", null, "F", null);
+        var sent = Capture("4.2", 4.2m) with { InstrumentCode = "EM360", Reading = reading };
+        result.Record(sent, null, Now);
+
+        result.HoldsReading(sent).ShouldBeTrue();
+        result.HoldsReading(sent with { InstrumentCode = "em360" }).ShouldBeTrue();
+        result.HoldsReading(Capture("4.3", 4.3m) with { InstrumentCode = "EM360", Reading = reading }).ShouldBeFalse();
+        result.HoldsReading(sent with { Reading = reading with { Flags = "H" } }).ShouldBeFalse();
+        result.HoldsReading(sent with { InstrumentCode = "BACKUP" }).ShouldBeFalse();
+
+        // The value alone, whoever sent it: what a verified result is compared with.
+        result.HoldsValue(Capture("4.2", 4.2m)).ShouldBeTrue();
+        result.HoldsValue(Capture("4.2", 4.25m)).ShouldBeFalse();
+    }
 }

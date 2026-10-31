@@ -79,4 +79,47 @@ public sealed class AutoValidationPolicyTests
 
         decision.Reasons.Count.ShouldBe(3);
     }
+
+    [Theory]
+    [InlineData("P")]
+    [InlineData("S")]
+    [InlineData("C")]
+    [InlineData("R")]
+    public void A_result_the_analyser_did_not_report_as_final_waits_for_a_person(string status)
+    {
+        var decision = AutoValidationPolicy.Evaluate(Clean with { InstrumentStatus = status });
+
+        decision.Approved.ShouldBeFalse();
+        decision.Reasons.ShouldBe([$"The analyser did not report the result as final (status {status})."]);
+    }
+
+    [Theory]
+    [InlineData("F")]
+    [InlineData("f")]
+    [InlineData(null)]
+    [InlineData("")]
+    public void A_final_result_or_one_sent_without_a_status_may_be_auto_validated(string? status) =>
+        AutoValidationPolicy.Evaluate(Clean with { InstrumentStatus = status }).Approved.ShouldBeTrue();
+
+    [Fact]
+    public void A_value_sent_in_another_unit_than_the_tests_waits_for_a_person()
+    {
+        // A glucose in mmol/L read against an interval in mg/dL: 5.4 would be flagged low, or pass in another analyte.
+        var decision = AutoValidationPolicy.Evaluate(Clean with { InstrumentUnit = "mmol/L", TestUnit = "mg/dL" });
+
+        decision.Approved.ShouldBeFalse();
+        decision.Reasons.ShouldBe(["The analyser sent the value in mmol/L, not in the test's unit, mg/dL."]);
+        AutoValidationPolicy.Evaluate(Clean with { InstrumentUnit = "%", TestUnit = null }).Reasons
+            .ShouldBe(["The analyser sent the value in %, and the test has no unit to compare it with."]);
+    }
+
+    [Theory]
+    [InlineData("mg/dL", "mg/dl")]
+    [InlineData("10*3/uL", "10*3/µL")]
+    [InlineData("µIU/mL", "μIU/mL")]
+    [InlineData(" g/dL ", "g / dL")]
+    [InlineData(null, "mmol/L")]
+    [InlineData("", "mmol/L")]
+    public void The_same_unit_written_another_way_or_no_unit_from_the_analyser_is_not_a_mismatch(string? analyser, string? test) =>
+        AutoValidationPolicy.Evaluate(Clean with { InstrumentUnit = analyser, TestUnit = test }).Approved.ShouldBeTrue();
 }

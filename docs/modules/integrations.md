@@ -750,14 +750,18 @@ Messages are framed `0x0B … 0x1C 0x0D`. Every message the analyser sends gets 
 acknowledgements are never acknowledged in turn.
 
 * **Results**: ORU^R01/R30/R32 and OUL^R21–R24.
-  * Samples are identified by `sampleIdFields`, default SPM-2, SAC-3, OBR-3, OBR-2.
+  * Samples are identified by `sampleIdFields`, default SPM-2, SAC-3, OBR-3, OBR-2. Results of an order with none of
+    them go to the LIS under no sample id, which keeps them for the lab to assign.
   * OBX handling:
     * NM, ST and TX values are read as text.
     * CE, CWE and CNE use the coded value's text.
     * SN is joined, for example `<5` or `1:160`.
     * ED, RP and AD values, and D, W and X statuses, are skipped.
+    * The unit (OBX-6), the abnormal flags (OBX-8) and the result status (OBX-11: F final, P preliminary, C
+      correction…) go with the value, and the NTE segments straight after an OBX are its comment.
   * Results are timed from OBX-14, falling back to OBR-7 and then MSH-7, interpreted in the lab's zone.
-  * Acknowledgements: `MSA|AA` once the LIS has stored the results; `MSA|AE` when it could not, so the analyser keeps
+  * Acknowledgements: `MSA|AA` once the LIS has stored the results, on the sample's tests or among its unmatched
+    results; `MSA|AE` when it could not store them (the LIS away, the analyser not in Lab setup), so the analyser keeps
     and resends them; `MSA|AR` for other message types or text that cannot be read. The ACK swaps sender and receiver
     and echoes the version.
 * **Host query**:
@@ -780,9 +784,13 @@ acknowledgements are never acknowledged in turn.
   ACK is acknowledged again without being applied twice, ETB continuation, frame numbers modulo 8. Frames up to 64 KB
   are accepted, since some analysers exceed E1381's 247 bytes.
 * **Results**: the frame completing a message (the one with the L record) is ACKed **only after** the LIS stored the
-  results. If the LIS is unavailable or rejects a sample, that frame is NAKed and the analyser retransmits it, so a
-  result is never acknowledged and then lost. Records H/P/O/R/C/L use the delimiters from the header. The sample comes
-  from O.3, falling back to O.4. Results with status X or I are skipped.
+  results, on the sample's tests or, when they cannot go on one (an unknown sample, a sample not in the lab), among its
+  unmatched results for the lab to assign. If the LIS is unavailable or refuses the analyser, that frame is NAKed and
+  the analyser retransmits it, so a result is never acknowledged and then lost. Records H/P/O/R/C/L use the delimiters
+  from the header. The sample comes from O.3, falling back to O.4; results under an order record with neither, or with
+  no order record, go to the LIS under no sample id rather than being dropped. Results with status X or I are skipped;
+  the others carry their unit (R.5), abnormal flags (R.7) and status (R.9: F final, P preliminary, C correction…), and
+  the C records after an R record are its comment.
 * **Size limit**: once a message passes `maxMessageKilobytes`, the transfer is refused as a whole: that frame and every
   later one are NAKed until the analyser gives up with EOT, and nothing of it is stored, not even frames already
   acknowledged. The rejection is logged without the message.
@@ -845,8 +853,9 @@ it, so the lab can practise without an analyser. Code: `Features/LabConnections/
 * **Sending results.** In Lab setup › Analysers, *Send results* (needs `integrations.lab.connections`) takes a received
   sample's barcode and lists the analyser's channel codes the sample still needs (the same answer as a host query,
   `IInstrumentResultSink.GetOrderForSampleAsync`). Someone enters the values, and HC360 writes the message the analyser
-  would send: an ORU^R01 (HL7 2.5.1, the barcode in OBR-2, OBR-3 and SPM-2) or an ASTM E1394 message (the barcode in
-  O.3), per the analyser's protocol in Lab setup.
+  would send: an ORU^R01 (HL7 2.5.1, the barcode in OBR-2, OBR-3 and SPM-2, each result final in OBX-11 and timed in
+  OBX-14) or an ASTM E1394 message (the barcode in O.3, each result final in R.9), per the analyser's protocol in Lab
+  setup.
 * **The same path.** The message is read back with the gateway's own mappers (`Hl7ResultMapper`, honouring the
   analyser's sample-id fields, or `AstmMessageMapper`) and handed to the LIS through `ILabMessageProcessor`. So results
   are matched by channel code, auto-validated, delta-checked and held by QC lockout as a real analyser's are, and are

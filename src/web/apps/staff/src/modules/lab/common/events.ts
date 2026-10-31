@@ -14,6 +14,7 @@ const TAT: KeyPrefix = ['lab', 'tat'];
 const CRITICAL: KeyPrefix = ['lab', 'critical-calls'];
 const OUTSOURCING: KeyPrefix = ['lab', 'outsourcing'];
 const QC: KeyPrefix = ['lab', 'qc'];
+const UNMATCHED: KeyPrefix = ['lab', 'unmatched'];
 
 const LAB_EVENTS: Record<string, KeyPrefix[]> = {
   'lab.order.created': [ORDERS, SAMPLES, REPORTS],
@@ -23,6 +24,7 @@ const LAB_EVENTS: Record<string, KeyPrefix[]> = {
   'lab.sample.rejected': [ORDERS, SAMPLES, WORKLIST, SHEET, TAT],
   'lab.sample.recollection': [ORDERS, SAMPLES, WORKLIST],
   'lab.results.entered': [ORDERS, WORKLIST, SHEET],
+  'lab.results.unmatched': [UNMATCHED],
   'lab.results.received': [ORDERS, WORKLIST, SHEET],
   'lab.results.verified': [ORDERS, WORKLIST, SHEET, REPORTS, TAT],
   'lab.results.reopened': [ORDERS, WORKLIST, SHEET, REPORTS],

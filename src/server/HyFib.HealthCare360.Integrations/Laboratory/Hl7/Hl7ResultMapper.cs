@@ -8,8 +8,10 @@ internal sealed record Hl7MappingResult(IReadOnlyList<InstrumentResultMessage> M
 
 /// <summary>
 /// Maps result messages (ORU^R01, and OUL^R22 from Lab Automation profiles) to <see cref="InstrumentResultMessage"/>s,
-/// one per sample. Each OBR starts an order block; its OBX segments are the results. The sample barcode is taken from
-/// the configured fields in order (default SPM-2, SAC-3, OBR-3, OBR-2) because analysers disagree about where they put it.
+/// one per sample. Each OBR starts an order block; its OBX segments are the results, and the NTE segments after an
+/// OBX its comments. The sample barcode is taken from the configured fields in order (default SPM-2, SAC-3, OBR-3,
+/// OBR-2) because analysers disagree about where they put it. Results of a block with no sample id in any of them come
+/// under an empty sample id, which the LIS keeps for a person to assign.
 /// </summary>
 internal static class Hl7ResultMapper
 {
@@ -39,12 +41,8 @@ internal static class Hl7ResultMapper
         var bySample = new Dictionary<string, List<InstrumentResult>>(StringComparer.Ordinal);
         foreach (var block in blocks.Where(b => b.Observations.Count > 0))
         {
-            var sampleId = SampleId(block, fields);
-            if (string.IsNullOrWhiteSpace(sampleId))
-            {
-                return Hl7MappingResult.Failed($"No sample id found in {string.Join(", ", fields)}.");
-            }
-
+            // No sample id in any of the fields: the results are still the analyser's, kept for a person to assign.
+            var sampleId = SampleId(block, fields) ?? string.Empty;
             var blockTime = LabTime.Parse(block.Order?.Value(7), zone) ?? messageTime;
             if (!bySample.TryGetValue(sampleId, out var results))
             {
@@ -52,7 +50,13 @@ internal static class Hl7ResultMapper
                 bySample[sampleId] = results;
             }
 
-            results.AddRange(block.Observations.Select(obx => Result(obx, zone, blockTime)).OfType<InstrumentResult>());
+            foreach (var obx in block.Observations)
+            {
+                if (Result(obx, zone, blockTime) is { } result)
+                {
+                    results.Add(block.Comments.TryGetValue(obx, out var notes) ? result with { Comment = string.Join(" ", notes) } : result);
+                }
+            }
         }
 
         var messages = bySample.Where(s => s.Value.Count > 0)
@@ -80,7 +84,17 @@ internal static class Hl7ResultMapper
         var units = FirstNonEmpty(obx.Component(6, 1), obx.Component(6, 2));
         var flags = string.Join(",", Enumerable.Range(0, obx.Repetitions(8).Count).Select(i => obx.Component(8, 1, i).Trim()).Where(f => f.Length > 0));
         return new InstrumentResult(code.Trim(), value.Trim(), string.IsNullOrWhiteSpace(units) ? null : units.Trim(),
-            flags.Length == 0 ? null : flags, LabTime.Parse(obx.Value(14), zone) ?? fallbackTime);
+            flags.Length == 0 ? null : flags, LabTime.Parse(obx.Value(14), zone) ?? fallbackTime)
+        {
+            Status = string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToUpperInvariant(),
+        };
+    }
+
+    /// <summary>NTE-3, its repetitions joined; null for an empty note.</summary>
+    private static string? Note(Hl7Segment nte)
+    {
+        var text = string.Join(" ", nte.Repetitions(3).Select(r => nte.Encoding.Decode(r).Trim()).Where(r => r.Length > 0));
+        return text.Length == 0 ? null : text;
     }
 
     /// <summary>NM/ST/TX as text; coded values as their text (or code); SN as comparator + numbers ("&lt;10", "10-20").</summary>
@@ -134,7 +148,8 @@ internal static class Hl7ResultMapper
 
     /// <summary>
     /// Groups segments into order blocks. ORU^R01 carries SPM after its OBR (it belongs to that order); OUL^R22 carries
-    /// SPM/SAC before the OBRs they apply to, so there a new block inherits the current specimen and container.
+    /// SPM/SAC before the OBRs they apply to, so there a new block inherits the current specimen and container. NTE
+    /// segments straight after an OBX are that result's comments; notes on the order or the patient are not results.
     /// </summary>
     private static List<OrderBlock> Blocks(Hl7Message message)
     {
@@ -142,8 +157,14 @@ internal static class Hl7ResultMapper
         var blocks = new List<OrderBlock>();
         Hl7Segment? patient = null, specimen = null, container = null;
         OrderBlock? current = null;
+        Hl7Segment? noted = null;
         foreach (var segment in message.Segments)
         {
+            if (segment.Id is not ("OBX" or "NTE"))
+            {
+                noted = null;
+            }
+
             switch (segment.Id)
             {
                 case "PID":
@@ -186,6 +207,16 @@ internal static class Hl7ResultMapper
                     }
 
                     current.Observations.Add(segment);
+                    noted = segment;
+                    break;
+                case "NTE" when current is not null && noted is not null && Note(segment) is { } note:
+                    if (!current.Comments.TryGetValue(noted, out var notes))
+                    {
+                        notes = [];
+                        current.Comments[noted] = notes;
+                    }
+
+                    notes.Add(note);
                     break;
             }
         }
@@ -202,5 +233,8 @@ internal static class Hl7ResultMapper
         public Hl7Segment? Specimen { get; set; }
         public Hl7Segment? Container { get; set; }
         public List<Hl7Segment> Observations { get; } = [];
+
+        /// <summary>The analyser's notes on each result, by its OBX segment.</summary>
+        public Dictionary<Hl7Segment, List<string>> Comments { get; } = [];
     }
 }

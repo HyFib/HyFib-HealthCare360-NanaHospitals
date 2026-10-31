@@ -10,14 +10,19 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// <summary>Today's QC position for a set of analytes.</summary>
 internal sealed record QcDayState(IReadOnlyList<QcLockout> Lockouts, IReadOnlySet<Guid> AcceptedTestIds);
 
-internal sealed record QcRunFact(Guid Id, Guid LabTestId, Guid QcLotId, DateTimeOffset RunAt, QcOutcome Outcome, List<string> Violations);
+/// <summary>A run, with the analyser it was run on (its lot's when it was recorded; null for a lot tied to none).</summary>
+internal sealed record QcRunFact(
+    Guid Id, Guid LabTestId, Guid QcLotId, string? InstrumentCode, DateTimeOffset RunAt, QcOutcome Outcome, List<string> Violations);
+
+/// <summary>An analyte asked about, with the assay (its QC group, or its own code) whose QC it shares.</summary>
+internal sealed record QcAssay(Guid LabTestId, string TestName, string Key);
 
 /// <summary>
 /// Internal quality control (LIS-06). Each run is judged by the Westgard rules against the assay's recent accepted
 /// runs. The assay's state today drives two safety rules. First, verification is locked while the latest run of the
-/// day on any control lot is rejected, unless a supervisor records an audited override. Second, auto-validation is
-/// allowed only when every lot run today was accepted. Tests in one QC group (fasting and post-prandial glucose) share
-/// the assay's QC.
+/// day on any control lot is rejected, unless a supervisor records an audited override. Second, an analyser's result
+/// is auto-validated only when that analyser ran the assay's QC today and every lot's latest run today was accepted.
+/// Tests in one QC group (fasting and post-prandial glucose) share the assay's QC.
 /// </summary>
 internal sealed class QualityControlService(
     HospitalDbContext db,
@@ -99,10 +104,11 @@ internal sealed class QualityControlService(
     }
 
     public async Task<IReadOnlyList<QcLockout>> LockoutsAsync(Guid facilityId, IReadOnlyCollection<Guid> testIds, CancellationToken ct) =>
-        (await TodayAsync(facilityId, testIds, ct)).Lockouts;
+        (await TodayAsync(facilityId, instrumentCode: null, testIds, ct)).Lockouts;
 
-    public async Task<IReadOnlySet<Guid>> AcceptedTestsAsync(Guid facilityId, IReadOnlyCollection<Guid> testIds, CancellationToken ct) =>
-        (await TodayAsync(facilityId, testIds, ct)).AcceptedTestIds;
+    /// <summary>The analytes whose QC is accepted today on the analyser, so that its results may be auto-validated.</summary>
+    public async Task<IReadOnlySet<Guid>> AcceptedTestsAsync(Guid facilityId, string instrumentCode, IReadOnlyCollection<Guid> testIds, CancellationToken ct) =>
+        (await TodayAsync(facilityId, instrumentCode, testIds, ct)).AcceptedTestIds;
 
     /// <summary>
     /// Records an audited supervisor override for every rejected run that is locking the given analytes. Runs in the
@@ -241,11 +247,10 @@ internal sealed class QualityControlService(
         run.ReviewedBy is { } reviewer ? users.GetValueOrDefault(reviewer) : null, run.ReviewNote, run.CorrectiveAction, overridden);
 
     /// <summary>
-    /// Today's latest run per control lot for the assays (QC groups) of the given analytes. A lot whose latest run is
-    /// rejected and not overridden locks the assay. The assay counts as accepted only when it has runs today and none of
-    /// the lots' latest runs is rejected.
+    /// Today's latest run per control lot for the assays (QC groups) of the given analytes, judged by
+    /// <see cref="Judge"/>; <paramref name="instrumentCode"/> is the analyser whose results may be auto-validated.
     /// </summary>
-    private async Task<QcDayState> TodayAsync(Guid facilityId, IReadOnlyCollection<Guid> testIds, CancellationToken ct)
+    private async Task<QcDayState> TodayAsync(Guid facilityId, string? instrumentCode, IReadOnlyCollection<Guid> testIds, CancellationToken ct)
     {
         if (testIds.Count == 0)
         {
@@ -255,7 +260,7 @@ internal sealed class QualityControlService(
         var ids = testIds.Distinct().ToList();
         var tests = await db.Set<LabTest>().AsNoTracking()
             .Where(t => ids.Contains(t.Id))
-            .Select(t => new { t.Id, t.Name, Key = t.QcGroup ?? t.Code })
+            .Select(t => new QcAssay(t.Id, t.Name, t.QcGroup ?? t.Code))
             .ToListAsync(ct);
         var keys = tests.Select(t => t.Key).Distinct().ToList();
         var related = await db.Set<LabTest>().AsNoTracking()
@@ -268,7 +273,7 @@ internal sealed class QualityControlService(
         var dayStart = DiagnosticsTime.StartOfDayUtc(DiagnosticsTime.Today(time));
         var runs = await db.Set<QcRun>().AsNoTracking()
             .Where(r => r.FacilityId == facilityId && relatedIds.Contains(r.LabTestId) && r.RunAt >= dayStart)
-            .Select(r => new QcRunFact(r.Id, r.LabTestId, r.QcLotId, r.RunAt, r.Outcome, r.Violations))
+            .Select(r => new QcRunFact(r.Id, r.LabTestId, r.QcLotId, r.InstrumentCode, r.RunAt, r.Outcome, r.Violations))
             .ToListAsync(ct);
         var latestPerLot = runs.GroupBy(r => r.QcLotId).Select(g => g.MaxBy(r => r.RunAt)!).ToList();
 
@@ -277,20 +282,47 @@ internal sealed class QualityControlService(
             ? []
             : await db.Set<QcOverride>().AsNoTracking().Where(o => rejectedIds.Contains(o.QcRunId)).Select(o => o.QcRunId).ToListAsync(ct);
 
+        return Judge(tests, keyByTest, latestPerLot, overridden, instrumentCode);
+    }
+
+    /// <summary>
+    /// Today's QC position from the latest run of each control lot (pure; unit-tested).
+    /// <list type="bullet">
+    /// <item>The lockout is per assay: a lot whose latest run is rejected and not overridden locks the verification of
+    /// the assay's results, whichever analyser the lot is run on and whichever analyser (or none, for a value typed in)
+    /// gave the result. A typed-in or carried-over value cannot be traced to the analyser that failed with certainty,
+    /// and a lockout too wide costs an audited override where one too narrow lets a failing analyser's result out
+    /// unchecked.</item>
+    /// <item>Auto-validation trusts only QC run on the analyser that measured the result: the assay is accepted for
+    /// <paramref name="instrumentCode"/> when that analyser ran QC on it today, and no lot of the assay, on any analyser,
+    /// has a rejected latest run, overridden or not, so auto-validation never verifies what a pathologist could verify
+    /// only with an override. A lot tied to no analyser counts for none.</item>
+    /// </list>
+    /// </summary>
+    internal static QcDayState Judge(
+        IReadOnlyCollection<QcAssay> tests,
+        IReadOnlyDictionary<Guid, string> keyByTest,
+        IReadOnlyCollection<QcRunFact> latestPerLot,
+        IReadOnlyCollection<Guid> overriddenRunIds,
+        string? instrumentCode)
+    {
         var lockouts = new List<QcLockout>();
         var accepted = new HashSet<Guid>();
         foreach (var test in tests)
         {
             var assayRuns = latestPerLot.Where(r => keyByTest.GetValueOrDefault(r.LabTestId) == test.Key).ToList();
-            var blocking = assayRuns.Where(r => r.Outcome == QcOutcome.Rejected && !overridden.Contains(r.Id)).ToList();
+            var blocking = assayRuns.Where(r => r.Outcome == QcOutcome.Rejected && !overriddenRunIds.Contains(r.Id)).ToList();
             if (blocking.Count > 0)
             {
-                lockouts.Add(new QcLockout(test.Id, test.Name, blocking.Select(r => r.Id).ToList(), blocking.SelectMany(r => r.Violations).Distinct().ToList()));
+                lockouts.Add(new QcLockout(
+                    test.LabTestId, test.TestName, blocking.Select(r => r.Id).ToList(), blocking.SelectMany(r => r.Violations).Distinct().ToList()));
             }
 
-            if (assayRuns.Count > 0 && assayRuns.All(r => r.Outcome != QcOutcome.Rejected))
+            var runOnAnalyser = instrumentCode is not null
+                                && assayRuns.Any(r => string.Equals(r.InstrumentCode, instrumentCode, StringComparison.OrdinalIgnoreCase));
+            if (runOnAnalyser && assayRuns.All(r => r.Outcome != QcOutcome.Rejected))
             {
-                accepted.Add(test.Id);
+                accepted.Add(test.LabTestId);
             }
         }
 

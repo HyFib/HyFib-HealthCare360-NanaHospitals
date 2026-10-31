@@ -14767,10 +14767,35 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("group_name");
 
+                    b.PrimitiveCollection<List<string>>("HeldReasons")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("held_reasons");
+
                     b.Property<string>("InstrumentCode")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("instrument_code");
+
+                    b.Property<string>("InstrumentComment")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("instrument_comment");
+
+                    b.Property<string>("InstrumentFlags")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("instrument_flags");
+
+                    b.Property<string>("InstrumentStatus")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("instrument_status");
+
+                    b.Property<string>("InstrumentUnit")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("instrument_unit");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
@@ -15648,6 +15673,169 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_referral_labs_is_deleted");
 
                     b.ToTable("referral_labs", "diagnostics");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.UnmatchedLabResult", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AssignedResultId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_result_id");
+
+                    b.Property<string>("ChannelCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("channel_code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("DiscardReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("discard_reason");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("InstrumentCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("instrument_code");
+
+                    b.Property<string>("InstrumentComment")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("instrument_comment");
+
+                    b.Property<string>("InstrumentFlags")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("instrument_flags");
+
+                    b.Property<string>("InstrumentStatus")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("instrument_status");
+
+                    b.Property<string>("InstrumentUnit")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("instrument_unit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid?>("LabResultId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lab_result_id");
+
+                    b.Property<Guid?>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by");
+
+                    b.Property<DateTimeOffset?>("ResultedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resulted_at");
+
+                    b.Property<string>("SampleBarcode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sample_barcode");
+
+                    b.Property<Guid?>("SampleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sample_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("value");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lab_unmatched_results");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_lab_unmatched_results_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_lab_unmatched_results_is_deleted");
+
+                    b.HasIndex("SampleId")
+                        .HasDatabaseName("ix_lab_unmatched_results_sample_id");
+
+                    b.HasIndex("InstrumentCode", "SampleBarcode")
+                        .HasDatabaseName("ix_lab_unmatched_results_instrument_code_sample_barcode");
+
+                    b.HasIndex("FacilityId", "Status", "ReceivedAt")
+                        .HasDatabaseName("ix_lab_unmatched_results_facility_id_status_received_at");
+
+                    b.ToTable("lab_unmatched_results", "diagnostics");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality.QcLot", b =>
@@ -43579,6 +43767,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_lab_reference_ranges_lab_tests_lab_test_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.UnmatchedLabResult", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.LabSample", null)
+                        .WithMany()
+                        .HasForeignKey("SampleId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_lab_unmatched_results_lab_samples_sample_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality.QcLot", b =>

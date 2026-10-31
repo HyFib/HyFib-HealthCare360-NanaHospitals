@@ -15,6 +15,8 @@ import type {
   SampleRejectionReason,
   SampleStatus,
   SpecimenType,
+  UnmatchedResultReason,
+  UnmatchedResultStatus,
 } from './api';
 
 export const sectionLabel: Record<LabSection, string> = {
@@ -135,6 +137,23 @@ export const rejectionReasonLabel: Record<SampleRejectionReason, string> = {
   Leaked: 'Leaked',
   Contaminated: 'Contaminated',
   Other: 'Other reason',
+};
+
+/** Why an analyser's result could not go on a sample's test, in the words of the bench. */
+export const unmatchedReasonLabel: Record<UnmatchedResultReason, string> = {
+  NoSampleId: 'No sample id',
+  UnknownSample: 'Unknown sample',
+  SampleNotInLab: 'Sample not in the lab',
+  NoMatchingTest: 'No test ordered for it',
+  DiffersFromVerified: 'Differs from the verified result',
+  InvalidValue: 'Value not valid for the test',
+  RepeatedInMessage: 'Sent twice, another value',
+};
+
+export const unmatchedStatusLabel: Record<UnmatchedResultStatus, string> = {
+  Open: 'Waiting',
+  Assigned: 'Assigned',
+  Discarded: 'Discarded',
 };
 
 export const qcOutcomeLabel: Record<QcOutcome, string> = {

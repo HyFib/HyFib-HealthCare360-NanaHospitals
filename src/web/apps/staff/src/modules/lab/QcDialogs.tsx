@@ -234,9 +234,12 @@ export function QcLotDrawer({
                 control={form.control}
                 name="instrumentCode"
                 render={({ field }) => (
-                  <Field label="Analyser" hint="QC is judged per analyser">
+                  <Field
+                    label="Analyser"
+                    hint="QC is judged per analyser: only QC run on an analyser lets its results be auto-verified"
+                  >
                     <Select value={field.value ?? ''} onChange={(_, data) => field.onChange(data.value || null)}>
-                      <option value="">Any / manual</option>
+                      <option value="">None (manual method)</option>
                       {instruments.data?.map((instrument) => (
                         <option key={instrument.id} value={instrument.code}>
                           {instrument.name} ({instrument.code})

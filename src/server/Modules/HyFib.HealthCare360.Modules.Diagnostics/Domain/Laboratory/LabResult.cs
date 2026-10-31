@@ -2,6 +2,13 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 
+/// <summary>
+/// What an analyser said about a result besides its value, kept as it sent it: the unit (ASTM R.5, HL7 OBX-6), the
+/// abnormal flags (R.7, OBX-8), the result status (R.9, OBX-11: F final, P preliminary…) and its comment (C records,
+/// NTE segments).
+/// </summary>
+public sealed record AnalyserReading(string? Unit, string? Flags, string? Status, string? Comment);
+
 /// <summary>Everything captured for one result entry, already interpreted against the patient's reference interval.</summary>
 public sealed record ResultCapture(
     InterpretedResult Value,
@@ -10,7 +17,8 @@ public sealed record ResultCapture(
     string? Organism,
     string? ColonyCount,
     string? Method,
-    string? InstrumentCode);
+    string? InstrumentCode,
+    AnalyserReading? Reading = null);
 
 /// <summary>
 /// One analyte result on one order item (LIS-02, LIS-04). A placeholder row is created when the tube is received,
@@ -49,6 +57,24 @@ public sealed class LabResult : AuditableEntity, IFacilityScoped
     public bool DeltaExceeded { get; set; }
     public string? Method { get; set; }
     public string? InstrumentCode { get; set; }
+
+    /// <summary>The unit the analyser sent with the value; null for a value typed in, or an analyser that sent none.</summary>
+    public string? InstrumentUnit { get; set; }
+
+    /// <summary>The analyser's abnormal flags as it sent them (H, L, W, a suspect-count flag…).</summary>
+    public string? InstrumentFlags { get; set; }
+
+    /// <summary>The analyser's result status (F final, P preliminary, C correction…); null when it sent none.</summary>
+    public string? InstrumentStatus { get; set; }
+
+    /// <summary>The analyser's comment on the result.</summary>
+    public string? InstrumentComment { get; set; }
+
+    /// <summary>
+    /// Why the auto-validation rules left an analyser result for a person, as they found it when the result came, so
+    /// the pathologist verifying it sees why. Empty for a value typed in and for an auto-validated result.
+    /// </summary>
+    public List<string> HeldReasons { get; set; } = [];
 
     /// <summary>Verified by the auto-validation rules (in range, QC accepted, delta passed) rather than by a person.</summary>
     public bool AutoValidated { get; set; }
@@ -96,6 +122,25 @@ public sealed class LabResult : AuditableEntity, IFacilityScoped
         AutoValidated = automatic;
         return Result.Success();
     }
+
+    /// <summary>An analyser result left for a person: why the auto-validation rules did not verify it.</summary>
+    public void HoldForReview(IEnumerable<string> reasons) => HeldReasons = [.. reasons];
+
+    /// <summary>
+    /// The value the analyser sent now, from the same analyser and with the same unit, flags, status and comment: the
+    /// message sent again (its acknowledgement was lost), which changes nothing.
+    /// </summary>
+    public bool HoldsReading(ResultCapture capture) =>
+        HoldsValue(capture)
+        && string.Equals(InstrumentCode, capture.InstrumentCode, StringComparison.OrdinalIgnoreCase)
+        && InstrumentUnit == capture.Reading?.Unit
+        && InstrumentFlags == capture.Reading?.Flags
+        && InstrumentStatus == capture.Reading?.Status
+        && InstrumentComment == capture.Reading?.Comment;
+
+    /// <summary>The same value as printed (and, for a number, as stored), whoever gave it.</summary>
+    public bool HoldsValue(ResultCapture capture) =>
+        ValueText == capture.Value.ValueText && NumericValue == capture.Value.NumericValue;
 
     /// <summary>Sends a verified (not yet released) result back for correction or a rerun.</summary>
     public Result Reopen()
@@ -151,6 +196,13 @@ public sealed class LabResult : AuditableEntity, IFacilityScoped
         ColonyCount = capture.ColonyCount;
         Method = capture.Method ?? Method;
         InstrumentCode = capture.InstrumentCode;
+
+        // What the analyser said describes its own value only: a value typed in, or amended, carries none of it.
+        InstrumentUnit = capture.Reading?.Unit;
+        InstrumentFlags = capture.Reading?.Flags;
+        InstrumentStatus = capture.Reading?.Status;
+        InstrumentComment = capture.Reading?.Comment;
+        HeldReasons = [];
     }
 }
 

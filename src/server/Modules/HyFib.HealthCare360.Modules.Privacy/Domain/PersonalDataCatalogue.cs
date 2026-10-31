@@ -128,6 +128,7 @@ public static class PersonalDataCatalogue
                 new("diagnostics.lab_orders", "Laboratory test orders"),
                 new("diagnostics.lab_samples", "Laboratory samples", Counted: false),
                 new("diagnostics.lab_results", "Laboratory results", Counted: false),
+                new("diagnostics.lab_unmatched_results", "Analyser results waiting to be matched to your sample", Counted: false),
                 new("diagnostics.lab_reports", "Laboratory reports"),
                 new("diagnostics.imaging_studies", "X-rays and scans"),
                 new("diagnostics.radiology_reports", "X-ray and scan reports"),

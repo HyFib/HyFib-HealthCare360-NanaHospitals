@@ -9,6 +9,11 @@ namespace HyFib.HealthCare360.Integrations.Laboratory.Astm;
 /// </summary>
 internal static class AstmMessageMapper
 {
+    /// <summary>
+    /// The results of each sample, in record order. Results under an order record whose sample id cannot be read, or
+    /// with no order record of their own, come under an empty sample id: the LIS keeps them for a person to assign,
+    /// where acknowledging the message and dropping them would lose them without anyone knowing.
+    /// </summary>
     public static IReadOnlyList<InstrumentResultMessage> MapResults(
         IReadOnlyList<AstmRecord> records, string instrumentCode, string rawMessage, DateTimeOffset receivedAt, TimeZoneInfo zone)
     {
@@ -16,6 +21,9 @@ internal static class AstmMessageMapper
         var messageTime = LabTime.Parse(header?.Field(14), zone);
         var samples = new List<(string SampleId, List<InstrumentResult> Results)>();
         List<InstrumentResult>? current = null;
+
+        // A comment record belongs to the result record it follows (its position in the sample's results), if any.
+        var commented = -1;
         foreach (var record in records)
         {
             switch (record.Type)
@@ -23,22 +31,31 @@ internal static class AstmMessageMapper
                 case 'P':
                     // A new patient: results must be preceded by their own order record.
                     current = null;
+                    commented = -1;
                     break;
                 case 'O':
-                    var sampleId = SampleId(record);
-                    current = string.IsNullOrWhiteSpace(sampleId) ? null : [];
-                    if (current is not null)
+                    current = [];
+                    samples.Add((SampleId(record) ?? string.Empty, current));
+                    commented = -1;
+                    break;
+                case 'R':
+                    if (current is null)
                     {
-                        samples.Add((sampleId!, current));
+                        current = [];
+                        samples.Add((string.Empty, current));
                     }
 
-                    break;
-                case 'R' when current is not null:
+                    commented = -1;
                     if (Result(record, zone, messageTime) is { } result)
                     {
                         current.Add(result);
+                        commented = current.Count - 1;
                     }
 
+                    break;
+                case 'C' when current is not null && commented >= 0 && Comment(record) is { } comment:
+                    var annotated = current[commented];
+                    current[commented] = annotated with { Comment = annotated.Comment is null ? comment : $"{annotated.Comment} {comment}" };
                     break;
             }
         }
@@ -59,7 +76,8 @@ internal static class AstmMessageMapper
 
     /// <summary>
     /// R.3 universal test id (<c>^^^CODE</c>: the manufacturer's code is the 4th component), R.4 value, R.5 units,
-    /// R.7 abnormal flags, R.9 status (X = cannot be done and I = pending are skipped), R.13 completion time.
+    /// R.7 abnormal flags, R.9 status (X = cannot be done and I = pending are skipped; the rest, F final, P
+    /// preliminary, C correction…, is passed on), R.13 completion time.
     /// </summary>
     internal static InstrumentResult? Result(AstmRecord record, TimeZoneInfo zone, DateTimeOffset? messageTime)
     {
@@ -80,7 +98,20 @@ internal static class AstmMessageMapper
         var units = record.Component(5, 1).Trim();
         var flags = string.Join(",", record.Repeats(7).Select(f => record.Delimiters.Unescape(f).Trim()).Where(f => f.Length > 0));
         return new InstrumentResult(code.Trim(), value, units.Length == 0 ? null : units, flags.Length == 0 ? null : flags,
-            LabTime.Parse(record.Field(13), zone) ?? messageTime);
+            LabTime.Parse(record.Field(13), zone) ?? messageTime)
+        {
+            Status = status.Length == 0 ? null : status,
+        };
+    }
+
+    /// <summary>C.4 comment text (its components joined), or null for an empty comment.</summary>
+    internal static string? Comment(AstmRecord record)
+    {
+        var text = string.Join(" ", Enumerable.Range(0, record.Repeats(4).Count)
+            .SelectMany(repeat => record.Components(4, repeat))
+            .Select(c => c.Trim())
+            .Where(c => c.Length > 0));
+        return text.Length == 0 ? null : text;
     }
 
     /// <summary>
