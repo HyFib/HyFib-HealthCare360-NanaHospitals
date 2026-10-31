@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ItemDetail } from '@/modules/inventory/api';
 import type { QueueEntryDetail, QueueLineDto } from '@/modules/pharmacy/api';
 import { ENTRY, ENTRY_ID, ITEMS, PHARMACY_ANSWERS } from './accessibility/fixtures/pharmacy';
-import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, stubBrowserApis, type FakeRequest } from './appScreen';
+import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, STAFF_USER, stubBrowserApis, type FakeRequest } from './appScreen';
 
 // The dispensing screen marks each medicine with its schedule from the drug master. In the production-style run it
 // marked ceftriaxone, a Schedule H1 antibiotic, with a red "NDPS" badge: it took the prescription line's controlled
@@ -34,6 +34,8 @@ const ceftriaxoneLine: QueueLineDto = {
   instructions: null,
   // The line is controlled (Schedule H1: a register entry and the pharmacist's confirmation), not NDPS.
   isControlledDrug: true,
+  schedule: 'H1',
+  isNdps: false,
 };
 
 const ceftriaxone: ItemDetail = {
@@ -72,18 +74,23 @@ async function lineRow(drugName: string) {
   return row!;
 }
 
+/** The dispensing screen's server, with the drug master's items. */
+function serve() {
+  return fakeServer({
+    ...PHARMACY_ANSWERS,
+    'GET /api/v1/print/letterhead': { name: 'Nana Hospitals, Pune' },
+    'GET /api/v1/emr/patients/*': { allergyStatus: 'NoKnownAllergies', allergies: [], alerts: [] },
+    'GET /api/v1/patients/*': (request: FakeRequest) =>
+      request.path.endsWith('/visits') ? paged([]) : request.path.endsWith('/payer') ? { current: null } : undefined,
+    [`GET /api/v1/pharmacy/queue/${ENTRY_ID}`]: entry,
+    'GET /api/v1/inventory/items/*': (request: FakeRequest) =>
+      items.find((item) => item.id === request.path.split('/').at(-1)),
+  });
+}
+
 describe('the dispensing screen marks each medicine with its own schedule', SCREEN_TESTS, () => {
   it('shows ceftriaxone as Schedule H1, not NDPS, and tramadol as H1 and NDPS', async () => {
-    fakeServer({
-      ...PHARMACY_ANSWERS,
-      'GET /api/v1/print/letterhead': { name: 'Nana Hospitals, Pune' },
-      'GET /api/v1/emr/patients/*': { allergyStatus: 'NoKnownAllergies', allergies: [], alerts: [] },
-      'GET /api/v1/patients/*': (request: FakeRequest) =>
-        request.path.endsWith('/visits') ? paged([]) : request.path.endsWith('/payer') ? { current: null } : undefined,
-      [`GET /api/v1/pharmacy/queue/${ENTRY_ID}`]: entry,
-      'GET /api/v1/inventory/items/*': (request: FakeRequest) =>
-        items.find((item) => item.id === request.path.split('/').at(-1)),
-    });
+    serve();
     openScreen(`/pharmacy/queue/${ENTRY_ID}`);
 
     const cef = await lineRow('Ceftriaxone 1 g Injection');
@@ -97,5 +104,23 @@ describe('the dispensing screen marks each medicine with its own schedule', SCRE
     // A prescription-only medicine that is not scheduled H1 or X shows that, and no register mark.
     const pantoprazole = await lineRow('Pantoprazole 40 mg tablet');
     expect(within(pantoprazole).getByText('Rx · H')).toBeInTheDocument();
+  });
+
+  it('shows them to a dispenser who may not read the drug catalogue, from the queue', async () => {
+    // A role made in the role editor with the queue and dispensing only: the item master is not read for it, and the
+    // schedules come with the prescription's lines.
+    const dispenser = {
+      ...STAFF_USER,
+      roles: ['Dispenser'],
+      permissions: ['pharmacy.queue.read', 'pharmacy.dispense', 'pharmacy.sales', 'patients.read'],
+    };
+    const server = serve();
+    openScreen(`/pharmacy/queue/${ENTRY_ID}`, dispenser);
+
+    const cef = await lineRow('Ceftriaxone 1 g Injection');
+    await waitFor(() => expect(within(cef).getByText('H1')).toBeInTheDocument(), SLOW);
+    expect(within(cef).queryByText(/NDPS/)).not.toBeInTheDocument();
+    expect(within(await lineRow(TRAMADOL_LINE.drugName)).getByText('H1 · NDPS')).toBeInTheDocument();
+    expect(server.requests.filter((r) => r.path.startsWith('/api/v1/inventory/items/'))).toEqual([]);
   });
 });

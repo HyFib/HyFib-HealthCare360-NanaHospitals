@@ -2,7 +2,10 @@ using System.Net;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain.Safety;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
+using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -90,5 +93,41 @@ public sealed class ControlledDrugLineTests(HospitalServer server)
             new SignPrescriptionRequest(OverrideReason: null, AcknowledgeWarnings: true, ConfirmControlledDrugs: false, draft.Version));
         unconfirmed.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
         (await unconfirmed.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("prescription.controlled_confirmation_required");
+    }
+
+    [Fact]
+    public async Task The_dispensing_queue_carries_each_medicines_schedule_from_the_drug_master()
+    {
+        // As in the production-style run: ceftriaxone, a Schedule H1 antibiotic, was badged NDPS at the counter because the
+        // screen read the line's controlled mark (H1, X or NDPS) as the item's NDPS flag. The queue now carries the drug
+        // master's schedule and NDPS flag, so even a dispenser who may not read the catalogue sees them.
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(await server.SignInAsync(HospitalServer.Users.FrontOffice));
+        var ceftriaxone = (await doctor.GetAsync<List<PrescribableDrug>>("/api/v1/emr/drugs?search=Ceftriaxone")).Single(d => d.Code == "DRG-CEFTRI1G");
+        var tramadol = (await doctor.GetAsync<List<PrescribableDrug>>("/api/v1/emr/drugs?search=Tramadol")).Single(d => d.Code == "DRG-TRAM50");
+        var draft = await doctor.PostAsync<PrescriptionDto>(Prescriptions, new CreatePrescriptionRequest(
+            patient.Id, EncounterId: null, VisitId: null, AdmissionId: null, IsInpatient: false, PractitionerId: null, Notes: null, Advice: null,
+            RefillsAllowed: 0,
+            [
+                new PrescriptionItemRequest(
+                    ceftriaxone.Id, ceftriaxone.Name, ceftriaxone.GenericName, ceftriaxone.Strength, ceftriaxone.DosageForm, Route: "IV", Dose: "1 g",
+                    DoseFrequency.STAT, CustomFrequency: null, DosesPerDay: null, 1, Quantity: 1, Instructions: null, IsControlledDrug: true, ControlledSchedule: "H1"),
+                new PrescriptionItemRequest(
+                    tramadol.Id, tramadol.Name, tramadol.GenericName, tramadol.Strength, tramadol.DosageForm, Route: "Oral", Dose: "1 capsule",
+                    DoseFrequency.STAT, CustomFrequency: null, DosesPerDay: null, 1, Quantity: 1, Instructions: null, IsControlledDrug: true, ControlledSchedule: "H1"),
+            ]));
+        var signed = await doctor.PostAsync<SignPrescriptionResult>($"{Prescriptions}/{draft.Id}/sign",
+            new SignPrescriptionRequest(OverrideReason: null, AcknowledgeWarnings: true, ConfirmControlledDrugs: true, draft.Version));
+
+        var waiting = (await pharmacist.GetAsync<PagedResult<QueueListItem>>($"/api/v1/pharmacy/queue?search={signed.Prescription.PrescriptionNumber}"))
+            .Items.ShouldHaveSingleItem();
+        var lines = (await pharmacist.GetAsync<QueueEntryDetail>($"/api/v1/pharmacy/queue/{waiting.Id}")).Lines;
+
+        // Both lines carry the prescriber's controlled mark; only tramadol is NDPS.
+        var cef = lines.Single(l => l.DrugItemId == ceftriaxone.Id);
+        (cef.IsControlledDrug, cef.Schedule, cef.IsNdps).ShouldBe((true, DrugSchedule.H1, false));
+        var tram = lines.Single(l => l.DrugItemId == tramadol.Id);
+        (tram.IsControlledDrug, tram.Schedule, tram.IsNdps).ShouldBe((true, DrugSchedule.H1, true));
     }
 }

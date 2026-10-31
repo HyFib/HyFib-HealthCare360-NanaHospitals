@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
+using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
 
@@ -26,6 +27,11 @@ public sealed record QueueListItem(
     int WaitingMinutes);
 
 /// <param name="Available">Sellable quantity of the prescribed item in the chosen store (when a store is given).</param>
+/// <param name="Schedule">
+/// The prescribed item's schedule in the drug master, and <paramref name="IsNdps"/> its NDPS flag: what the dispensing screen
+/// marks the medicine with, whatever catalogue permissions the pharmacist holds. <paramref name="IsControlledDrug"/> is the
+/// line's own mark, true for Schedule H1 and X as well as NDPS, so it does not tell an antibiotic from a narcotic.
+/// </param>
 public sealed record QueueLineDto(
     Guid Id,
     Guid PrescriptionLineId,
@@ -46,7 +52,9 @@ public sealed record QueueLineDto(
     QueueLineStatus Status,
     decimal? Available,
     decimal? Mrp,
-    DateOnly? NearestExpiry);
+    DateOnly? NearestExpiry,
+    DrugSchedule? Schedule,
+    bool IsNdps);
 
 public sealed record QueueEntryDetail(
     Guid Id,

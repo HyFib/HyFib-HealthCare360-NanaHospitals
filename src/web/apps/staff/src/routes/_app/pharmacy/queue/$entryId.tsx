@@ -244,8 +244,9 @@ type Done =
   | { kind: 'issue'; id: string; number: string; total: number; labels: DrugLabel[] };
 
 /**
- * The prescribed item as far as the line knows it. Its schedule and NDPS flag come from the drug master: the line's
- * `isControlledDrug` covers Schedule H1 and X as well as NDPS, so it does not make ceftriaxone (H1) a narcotic.
+ * The prescribed item as far as the line knows it. Its schedule and NDPS flag are the drug master's, as the queue
+ * carries them, so a pharmacist who cannot read the catalogue still sees them; the line's `isControlledDrug` covers
+ * Schedule H1 and X as well as NDPS, so it does not make ceftriaxone (H1) a narcotic.
  */
 function prescribedItem(line: QueueLineDto): SubstituteChoice | null {
   return line.drugItemId
@@ -254,8 +255,8 @@ function prescribedItem(line: QueueLineDto): SubstituteChoice | null {
         name: line.drugName,
         genericName: line.genericName,
         strength: line.strength,
-        schedule: null,
-        isControlled: false,
+        schedule: line.schedule,
+        isControlled: line.isNdps,
         baseUnit: null,
       }
     : null;

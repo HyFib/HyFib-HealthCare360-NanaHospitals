@@ -133,6 +133,7 @@ internal static class QueueEndpoints
         var stock = storeId is { } store && itemIds.Count > 0
             ? await InventoryQueries.AvailabilityAsync(db, store, itemIds, today, ct)
             : new Dictionary<Guid, StockAvailability>();
+        var masters = itemIds.Count > 0 ? await InventoryQueries.ItemSummariesAsync(db, itemIds, ct) : new Dictionary<Guid, ItemSummary>();
 
         return TypedResults.Ok(new QueueEntryDetail(
             entry.Id, entry.PrescriptionId, entry.PrescriptionNumber, patient, entry.VisitId, entry.AdmissionId, entry.PractitionerId,
@@ -141,10 +142,11 @@ internal static class QueueEndpoints
             entry.Lines.OrderBy(l => l.DrugName).Select(l =>
             {
                 var available = l.DrugItemId is { } itemId ? stock.GetValueOrDefault(itemId) : null;
+                var master = l.DrugItemId is { } drugId ? masters.GetValueOrDefault(drugId) : null;
                 return new QueueLineDto(
                     l.Id, l.PrescriptionLineId, l.DrugItemId, l.DrugName, l.GenericName, l.Strength, l.DosageForm, l.Route, l.Dose, l.Frequency,
                     l.DurationDays, l.Instructions, l.IsControlledDrug, l.RequestedQuantity, l.DispensedQuantity, l.RemainingQuantity, l.Status,
-                    available?.Available, available?.CurrentMrp, available?.NearestExpiry);
+                    available?.Available, available?.CurrentMrp, available?.NearestExpiry, master?.Schedule, master?.IsControlled ?? false);
             }).ToList(),
             entry.Version,
             await DispensingService.FreeTreatmentAsync(db, entry.VisitId, ct)));
