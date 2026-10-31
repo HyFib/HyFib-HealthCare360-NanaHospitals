@@ -8,7 +8,10 @@ import {
   flagDisplay,
   formatDelta,
   interpretLine,
+  isBenignAnalyserFlag,
+  isFinalOnAnalyser,
   isReadyForBulkVerify,
+  isSameUnit,
   limitsFromReferenceText,
   parseNumericResult,
   reviewHints,
@@ -59,6 +62,11 @@ function line(partial: Partial<ResultSheetLine>): ResultSheetLine {
     deltaExceeded: false,
     autoValidated: false,
     instrumentCode: null,
+    instrumentUnit: null,
+    instrumentFlags: null,
+    instrumentStatus: null,
+    instrumentComment: null,
+    heldReasons: [],
     method: null,
     remarks: null,
     organism: null,
@@ -298,5 +306,49 @@ describe('verification hints', () => {
         dirty: false,
       }),
     ).toBe(false);
+  });
+
+  it('holds a normal value the analyser flagged, did not report as final, sent in another unit or commented on', () => {
+    const normal = { flag: 'Normal' as const, deltaExceeded: false, invalid: null, dirty: false };
+    const fromAnalyser = (partial: Partial<ResultSheetLine>) =>
+      line({ status: 'Entered', value: '4.2', flag: 'Normal', instrumentCode: 'EM360', ...partial });
+
+    expect(reviewHints(fromAnalyser({ instrumentFlags: 'W' }), normal)).toEqual(['Analyser flag W']);
+    expect(reviewHints(fromAnalyser({ instrumentStatus: 'P' }), normal)).toEqual([
+      'Not final on the analyser (status P)',
+    ]);
+    expect(reviewHints(fromAnalyser({ instrumentUnit: 'mg/dL' }), normal)).toEqual([
+      'Analyser sent mg/dL, the test is in mmol/L',
+    ]);
+    expect(reviewHints(fromAnalyser({ instrumentComment: 'Haemolysed' }), normal)).toEqual(['Analyser comment']);
+    for (const held of [
+      { instrumentFlags: 'W' },
+      { instrumentStatus: 'P' },
+      { instrumentUnit: 'mg/dL' },
+      { instrumentComment: 'Haemolysed' },
+    ]) {
+      expect(isReadyForBulkVerify(fromAnalyser(held), normal)).toBe(false);
+    }
+
+    // What the analyser says of a normal, final result in the test's unit (written its own way) is nothing to look at.
+    const final = fromAnalyser({ instrumentFlags: 'N', instrumentStatus: 'F', instrumentUnit: 'mmol/l' });
+    expect(reviewHints(final, normal)).toEqual([]);
+    expect(isReadyForBulkVerify(final, normal)).toBe(true);
+  });
+});
+
+describe('analyser readings', () => {
+  it('reads flags, statuses and units as the server does', () => {
+    expect(isBenignAnalyserFlag(null)).toBe(true);
+    expect(isBenignAnalyserFlag(' n ')).toBe(true);
+    expect(isBenignAnalyserFlag('H')).toBe(false);
+    expect(isFinalOnAnalyser(null)).toBe(true);
+    expect(isFinalOnAnalyser('f')).toBe(true);
+    expect(isFinalOnAnalyser('C')).toBe(false);
+    expect(isSameUnit('10*3/µL', '10*3/uL')).toBe(true);
+    expect(isSameUnit('µIU/mL', 'μIU/mL')).toBe(true);
+    expect(isSameUnit(null, 'g/dL')).toBe(true);
+    expect(isSameUnit('%', null)).toBe(false);
+    expect(isSameUnit('mmol/L', 'mg/dL')).toBe(false);
   });
 });

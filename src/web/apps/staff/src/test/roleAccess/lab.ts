@@ -17,6 +17,7 @@ import type {
   QcStatusRow,
   ReferralLabDto,
   ResultSheet,
+  UnmatchedResultDto,
   WorklistItem,
 } from '@/modules/lab/api';
 import type { CriticalCallDto } from '@/modules/lab/common/types';
@@ -471,6 +472,11 @@ const SHEET: ResultSheet = {
     deltaExceeded: false,
     autoValidated: false,
     instrumentCode: 'XN550',
+    instrumentUnit: line.unit,
+    instrumentFlags: line.flag.charAt(0),
+    instrumentStatus: 'F',
+    instrumentComment: null,
+    heldReasons: [`The result is flagged ${line.flag}.`],
     method: 'Automated cell counter',
     remarks: null,
     organism: null,
@@ -482,6 +488,53 @@ const SHEET: ResultSheet = {
     version: 1,
   })),
 };
+
+// ------------------------------------------------------------------ unmatched analyser results
+
+const unmatched = (
+  overrides: Partial<UnmatchedResultDto> & Pick<UnmatchedResultDto, 'id' | 'reason' | 'detail'>,
+): UnmatchedResultDto => ({
+  instrumentCode: 'XN550',
+  sampleBarcode: null,
+  sampleId: null,
+  patientId: null,
+  uhid: null,
+  patientName: null,
+  labResultId: null,
+  testName: null,
+  channelCode: 'HGB',
+  value: '12.9',
+  instrumentUnit: 'g/dL',
+  instrumentFlags: null,
+  instrumentStatus: 'F',
+  instrumentComment: null,
+  resultedAt: minutesAgo(25),
+  receivedAt: minutesAgo(24),
+  status: 'Open',
+  assignedResultId: null,
+  discardReason: null,
+  resolvedBy: null,
+  resolvedAt: null,
+  ...overrides,
+});
+
+// One result the analyser sent without a sample id, and Asha Devi's haemoglobin sent again after it was verified.
+const UNMATCHED: UnmatchedResultDto[] = [
+  unmatched({ id: id('81'), reason: 'NoSampleId', detail: 'XN550 sent the result without a sample id.' }),
+  unmatched({
+    id: id('82'),
+    reason: 'DiffersFromVerified',
+    detail: 'Haemoglobin on sample LB2600412-01 is verified as 11.2 g/dL; XN550 sent 11.9 g/dL.',
+    sampleBarcode: 'LB2600412-01',
+    sampleId: BLOOD_SAMPLE,
+    patientId: ASHA.id,
+    uhid: ASHA.uhid,
+    patientName: ASHA.fullName,
+    labResultId: id('70'),
+    testName: 'Haemoglobin',
+    value: '11.9',
+  }),
+];
 
 // ------------------------------------------------------------------ reports
 
@@ -785,6 +838,7 @@ export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/lab/orders/${RECORD_ID}`]: ORDER,
   'GET /api/v1/lab/samples/pending-collection': paged(PENDING),
   'GET /api/v1/lab/worklist': paged(WORKLIST),
+  'GET /api/v1/lab/unmatched-results': paged(UNMATCHED),
   [`GET /api/v1/lab/samples/${BLOOD_SAMPLE}/results`]: SHEET,
   'GET /api/v1/lab/reports': paged(REPORTS),
   [`GET /api/v1/lab/reports/${RECORD_ID}`]: REPORT,

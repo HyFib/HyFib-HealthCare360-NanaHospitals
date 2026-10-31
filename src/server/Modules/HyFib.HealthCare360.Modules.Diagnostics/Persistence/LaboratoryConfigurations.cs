@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Persistence;
@@ -181,6 +182,10 @@ internal sealed class LabResultConfiguration : IEntityTypeConfiguration<LabResul
         b.Property(x => x.ReferenceText).HasMaxLength(500);
         b.Property(x => x.Method).HasMaxLength(200);
         b.Property(x => x.InstrumentCode).HasMaxLength(32);
+        b.Property(x => x.InstrumentUnit).HasMaxLength(32);
+        b.Property(x => x.InstrumentFlags).HasMaxLength(64);
+        b.Property(x => x.InstrumentStatus).HasMaxLength(16);
+        b.Property(x => x.InstrumentComment).HasMaxLength(500);
         b.Property(x => x.Remarks).HasMaxLength(1000);
         b.Property(x => x.Organism).HasMaxLength(200);
         b.Property(x => x.ColonyCount).HasMaxLength(100);
@@ -194,6 +199,31 @@ internal sealed class LabResultConfiguration : IEntityTypeConfiguration<LabResul
         b.HasIndex(x => new { x.PatientId, x.LabTestId, x.VerifiedAt });
         b.HasIndex(x => x.LabOrderId);
         b.HasIndex(x => new { x.Status, x.Flag });
+    }
+}
+
+internal sealed class UnmatchedLabResultConfiguration : IEntityTypeConfiguration<UnmatchedLabResult>
+{
+    public void Configure(EntityTypeBuilder<UnmatchedLabResult> b)
+    {
+        b.ToTable("lab_unmatched_results", DiagnosticsSchema.Name);
+        b.Property(x => x.InstrumentCode).HasMaxLength(32);
+        b.Property(x => x.SampleBarcode).HasMaxLength(UnmatchedLabResult.SampleBarcodeLength);
+        b.Property(x => x.ChannelCode).HasMaxLength(UnmatchedLabResult.ChannelCodeLength);
+        b.Property(x => x.Value).HasMaxLength(ResultInterpreter.MaxTextLength);
+        b.Property(x => x.InstrumentUnit).HasMaxLength(32);
+        b.Property(x => x.InstrumentFlags).HasMaxLength(64);
+        b.Property(x => x.InstrumentStatus).HasMaxLength(16);
+        b.Property(x => x.InstrumentComment).HasMaxLength(500);
+        b.Property(x => x.Detail).HasMaxLength(500);
+        b.Property(x => x.DiscardReason).HasMaxLength(UnmatchedLabResult.DiscardReasonLength);
+        b.HasOne<LabSample>().WithMany().HasForeignKey(x => x.SampleId).OnDelete(DeleteBehavior.SetNull);
+
+        // The lab's list of results waiting to be matched, and its count.
+        b.HasIndex(x => new { x.FacilityId, x.Status, x.ReceivedAt });
+
+        // A message sent again finds the results kept from it.
+        b.HasIndex(x => new { x.InstrumentCode, x.SampleBarcode });
     }
 }
 

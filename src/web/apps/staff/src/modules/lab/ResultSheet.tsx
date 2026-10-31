@@ -967,10 +967,20 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                                 Large change from the previous result: check the sample
                               </span>
                             )}
+                            {line.status === 'Entered' && line.heldReasons.length > 0 && (
+                              <Caption1 className={styles.muted}>
+                                Not auto-verified: {line.heldReasons.join(' ')}
+                              </Caption1>
+                            )}
                           </div>
                         </td>
                         <td className={mergeClasses(styles.td, styles.valueCell)}>
                           {editable(line) ? valueEditor(line, interp) : valueDisplay(line)}
+                          {line.instrumentComment && (
+                            <Caption1 block className={styles.muted}>
+                              Analyser comment: {line.instrumentComment}
+                            </Caption1>
+                          )}
                           {showRemarks && (
                             <div className={styles.remarks}>
                               {editable(line) ? (

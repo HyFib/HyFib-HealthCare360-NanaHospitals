@@ -614,7 +614,10 @@ simulated analysers and COM ports, but they cannot check a real analyser's diale
 or null-modem), a USB-to-serial adapter's driver, the Windows service account's access to the COM port, or the
 firewall. For each analyser: send a result for a test tube and check it reaches the worklist; if it is bidirectional,
 scan a received tube on the analyser (host query) and check that a newly received tube appears on the analyser's
-worklist (order download).
+worklist (order download). Then run a tube whose barcode HC360 does not know, or one without a barcode: the analyser
+is answered and moves on, and the result waits in **Lab › Unmatched analyser results**. Register each analyser's
+control lots under Quality control with the analyser named on the lot: an analyser's results are auto-validated only
+on the QC that analyser ran that day.
 
 ### Radiology: PACS and the modality worklist
 

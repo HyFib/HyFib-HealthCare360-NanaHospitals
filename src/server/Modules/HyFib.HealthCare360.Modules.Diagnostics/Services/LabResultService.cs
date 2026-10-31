@@ -379,7 +379,8 @@ internal sealed class LabResultService(
                     r.Id, r.LabOrderItemId, itemNames.GetValueOrDefault(r.LabOrderItemId, r.TestName), r.LabTestId, r.TestCode, r.TestName, r.GroupName,
                     r.DisplayOrder, r.ResultType, r.Status, r.ValueText, r.Unit, test?.Decimals ?? 0, test?.Options ?? [], r.Flag, r.IsCritical,
                     r.ReferenceText ?? context.ReferenceTextFor(r), r.PreviousValue ?? previous?.Value, r.PreviousResultAt ?? previous?.At,
-                    r.DeltaPercent, r.DeltaExceeded, r.AutoValidated, r.InstrumentCode, r.Method, r.Remarks, r.Organism, r.ColonyCount,
+                    r.DeltaPercent, r.DeltaExceeded, r.AutoValidated, r.InstrumentCode, r.InstrumentUnit, r.InstrumentFlags, r.InstrumentStatus,
+                    r.InstrumentComment, r.HeldReasons, r.Method, r.Remarks, r.Organism, r.ColonyCount,
                     r.Susceptibilities.Where(s => !s.IsDeleted).OrderBy(s => s.DisplayOrder)
                         .Select(s => new SusceptibilityDto(s.Antibiotic, s.Interpretation, s.Mic)).ToList(),
                     r.EnteredAt, r.VerifiedAt, called.Contains(r.Id), r.Version);

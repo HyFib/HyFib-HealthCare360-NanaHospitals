@@ -4,9 +4,22 @@ using HyFib.HealthCare360.SharedKernel;
 namespace HyFib.HealthCare360.Platform.Contracts;
 
 /// <summary>One analyte result reported by a laboratory analyser (HL7 OBX / ASTM R record).</summary>
-public sealed record InstrumentResult(string ChannelCode, string Value, string? Units, string? Flags, DateTimeOffset? ResultedAt);
+public sealed record InstrumentResult(string ChannelCode, string Value, string? Units, string? Flags, DateTimeOffset? ResultedAt)
+{
+    /// <summary>
+    /// The analyser's result status as it sent it (ASTM R.9, HL7 OBX-11): F for a final result, P for a preliminary
+    /// one, C for a correction and so on; null when it sent none.
+    /// </summary>
+    public string? Status { get; init; }
 
-/// <summary>A decoded analyser message for one sample.</summary>
+    /// <summary>The analyser's comment on this result (ASTM C records after the R record, HL7 NTE after the OBX).</summary>
+    public string? Comment { get; init; }
+}
+
+/// <summary>
+/// A decoded analyser message for one sample. <see cref="SampleBarcode"/> is empty when the analyser named no sample:
+/// the LIS keeps such results for a person to assign, instead of the gateway dropping them.
+/// </summary>
 public sealed record InstrumentResultMessage(
     string InstrumentCode,
     string SampleBarcode,
@@ -62,6 +75,12 @@ public sealed record InstrumentOrderRequest(string SampleBarcode, InstrumentOrde
 /// <summary>Implemented by the Diagnostics (LIS) module; used by the lab-equipment gateway in Integrations.</summary>
 public interface IInstrumentResultSink
 {
+    /// <summary>
+    /// Stores one sample's results. Every result is kept: on the sample's open tests, or, when it cannot go on one (no
+    /// sample id, a sample unknown or not in the lab, a value the test cannot hold, another value for a verified test),
+    /// among the unmatched results for a person to assign or discard. An identical resend changes nothing. A failure
+    /// means nothing of the sample was stored, so the analyser should send it again.
+    /// </summary>
     Task<Result> ReceiveAsync(InstrumentResultMessage message, CancellationToken cancellationToken);
 
     /// <summary>Host query: the analyser scanned the tube and asks which of its tests are still to run.</summary>

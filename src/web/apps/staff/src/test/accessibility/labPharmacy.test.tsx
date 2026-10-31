@@ -12,6 +12,7 @@ import type {
   ReferenceRangeDto,
   ResultSheet,
   ResultSheetLine,
+  UnmatchedResultDto,
   WorklistItem,
 } from '@/modules/lab/api';
 import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, stubBrowserApis, type FakeRequest } from '../appScreen';
@@ -205,6 +206,11 @@ const result = (
   deltaExceeded: false,
   autoValidated: false,
   instrumentCode: 'XN-550',
+  instrumentUnit: null,
+  instrumentFlags: null,
+  instrumentStatus: 'F',
+  instrumentComment: null,
+  heldReasons: [],
   method: null,
   remarks: null,
   organism: null,
@@ -410,6 +416,36 @@ const LAB_TESTS: LabTestDetail[] = RESULTS.map((line) => ({
   version: 1,
 }));
 
+/** An analyser result sent without a sample id, waiting to be matched: the worklist says so. */
+const UNMATCHED: UnmatchedResultDto[] = [
+  {
+    id: '0192a000-0000-7000-8000-000000000c11',
+    instrumentCode: 'XN-550',
+    sampleBarcode: null,
+    sampleId: null,
+    patientId: null,
+    uhid: null,
+    patientName: null,
+    labResultId: null,
+    testName: null,
+    channelCode: 'HGB',
+    value: '12.9',
+    instrumentUnit: 'g/dL',
+    instrumentFlags: null,
+    instrumentStatus: 'F',
+    instrumentComment: null,
+    resultedAt: minutesAgo(30),
+    receivedAt: minutesAgo(29),
+    reason: 'NoSampleId',
+    detail: 'XN-550 sent the result without a sample id.',
+    status: 'Open',
+    assignedResultId: null,
+    discardReason: null,
+    resolvedBy: null,
+    resolvedAt: null,
+  },
+];
+
 const LETTERHEAD: Letterhead = { name: 'Nana Hospitals, Pune' };
 
 let server: ReturnType<typeof fakeServer>;
@@ -427,6 +463,7 @@ beforeEach(() => {
     // Laboratory
     'GET /api/v1/lab/worklist': paged(WORKLIST),
     'GET /api/v1/lab/qc/status': QC_STATUS,
+    'GET /api/v1/lab/unmatched-results': paged(UNMATCHED),
     [`GET /api/v1/lab/samples/${SAMPLE}/results`]: SHEET,
     'GET /api/v1/lab/tests/*': (request: FakeRequest) => LAB_TESTS.find((test) => test.id === lastSegment(request)),
     // Pharmacy
@@ -446,6 +483,7 @@ describe('lab and pharmacy screens', SCREEN_TESTS, () => {
     openScreen('/lab/worklist');
     expect(await screen.findByText('Ravi Shankar', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('QC failed today', {}, SLOW)).toBeInTheDocument();
+    expect(await screen.findByText('An analyser result is waiting to be matched', {}, SLOW)).toBeInTheDocument();
     await expectNoAxeViolations();
 
     await userEvent.click(screen.getByText('Asha Devi'));

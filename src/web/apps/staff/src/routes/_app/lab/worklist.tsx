@@ -19,6 +19,7 @@ import {
   BarcodeScannerRegular,
   CheckmarkCircleRegular,
   ChevronRightRegular,
+  LinkDismissRegular,
   ShieldErrorRegular,
 } from '@fluentui/react-icons';
 import { formatTime, isApiError, useHotkey } from '@hc360/core';
@@ -128,6 +129,8 @@ function WorklistPage() {
   const worklist = useQuery(labQueries.worklist(filters));
   const qc = useQuery({ ...labQueries.qcStatus(), retry: false });
   const locked = qc.data ? summarizeQc(qc.data).lockedTests : [];
+  const unmatched = useQuery({ ...labQueries.unmatchedResults({}, 1), retry: false });
+  const unmatchedCount = unmatched.data?.totalCount ?? 0;
 
   useHotkey('f2', () => scanRef.current?.focus(), { allowInInputs: true });
 
@@ -249,6 +252,25 @@ function WorklistPage() {
           <MessageBarActions>
             <Button size="small" onClick={() => void navigate({ to: '/lab/qc' })}>
               Open quality control
+            </Button>
+          </MessageBarActions>
+        </MessageBar>
+      )}
+
+      {unmatchedCount > 0 && (
+        <MessageBar intent="warning" icon={<LinkDismissRegular />} layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>
+              {unmatchedCount === 1
+                ? 'An analyser result is waiting to be matched'
+                : `${unmatchedCount} analyser results are waiting to be matched`}
+            </MessageBarTitle>
+            HC360 could not put {unmatchedCount === 1 ? 'it' : 'them'} on a sample&apos;s test. Assign each to the right
+            test, or discard it with the reason.
+          </MessageBarBody>
+          <MessageBarActions>
+            <Button size="small" onClick={() => void navigate({ to: '/lab/unmatched' })}>
+              Match results
             </Button>
           </MessageBarActions>
         </MessageBar>

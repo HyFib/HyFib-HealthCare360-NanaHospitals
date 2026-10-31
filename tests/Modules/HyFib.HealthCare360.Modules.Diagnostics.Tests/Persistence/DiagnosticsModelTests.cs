@@ -25,10 +25,10 @@ public sealed class DiagnosticsModelTests
     private static readonly string[] Tables =
     [
         "lab_tests", "lab_test_components", "lab_reference_ranges", "lab_instruments", "referral_labs", "lab_orders",
-        "lab_order_items", "lab_samples", "lab_results", "lab_result_susceptibilities", "lab_reports", "lab_report_amendments",
-        "critical_call_logs", "qc_lots", "qc_runs", "qc_overrides", "imaging_studies", "imaging_repeats", "radiology_reports",
-        "radiology_addenda", "report_templates", "imaging_procedures", "imaging_ai_findings", "cardiology_studies",
-        "cardiology_reports", "cardiology_pacs_objects", "form_f",
+        "lab_order_items", "lab_samples", "lab_results", "lab_result_susceptibilities", "lab_unmatched_results", "lab_reports",
+        "lab_report_amendments", "critical_call_logs", "qc_lots", "qc_runs", "qc_overrides", "imaging_studies", "imaging_repeats",
+        "radiology_reports", "radiology_addenda", "report_templates", "imaging_procedures", "imaging_ai_findings",
+        "cardiology_studies", "cardiology_reports", "cardiology_pacs_objects", "form_f",
     ];
 
     [Fact]

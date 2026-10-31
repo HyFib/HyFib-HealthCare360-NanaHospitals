@@ -24,14 +24,14 @@ public sealed class AstmMessageMapperTests
         message.RawMessage.ShouldBe(string.Join("\r", LabSamples.AstmResultRecords));
         message.Results.ShouldBe(
         [
-            new InstrumentResult("GLU", "98", "mg/dL", "N", new DateTimeOffset(2026, 9, 25, 10, 35, 0, Ist)),
+            new InstrumentResult("GLU", "98", "mg/dL", "N", new DateTimeOffset(2026, 9, 25, 10, 35, 0, Ist)) { Status = "F" },
             // No completion time on the record: the header's message time applies.
-            new InstrumentResult("CREA", "1.4", "mg/dL", "H", new DateTimeOffset(2026, 9, 25, 10, 30, 0, Ist)),
+            new InstrumentResult("CREA", "1.4", "mg/dL", "H", new DateTimeOffset(2026, 9, 25, 10, 30, 0, Ist)) { Status = "F" },
         ]);
     }
 
     [Fact]
-    public void Groups_results_per_sample_and_ignores_results_without_an_order()
+    public void Groups_results_per_sample_and_keeps_results_without_an_order_under_no_sample_id()
     {
         var messages = Map(
             @"H|\^&",
@@ -46,9 +46,48 @@ public sealed class AstmMessageMapperTests
             "R|1|^^^CREA|1.0|mg/dL",
             "L|1|N");
 
-        messages.Select(m => m.SampleBarcode).ShouldBe(["S1", "S2"]);
+        messages.Select(m => m.SampleBarcode).ShouldBe(["S1", "", "S2"]);
         messages[0].Results.Select(r => r.ChannelCode).ShouldBe(["GLU", "CREA"]);
-        messages[1].Results.ShouldHaveSingleItem().Value.ShouldBe("110");
+        messages[1].Results.ShouldHaveSingleItem().Value.ShouldBe("120");
+        messages[2].Results.ShouldHaveSingleItem().Value.ShouldBe("110");
+    }
+
+    [Fact]
+    public void Results_under_an_order_whose_sample_id_cannot_be_read_are_kept_under_no_sample_id()
+    {
+        // As a Sysmex XN sends it when the sample number is not where the gateway reads it: O.3 and O.4 empty.
+        var message = Map(
+            @"H|\^&|||XN-550^00-23|||||||E1394-97",
+            "P|1",
+            "O|1||||R",
+            "R|1|^^^^WBC^1|7.92|10*3/uL||N||F||||20260925103000",
+            "R|2|^^^^HGB^1|13.4|g/dL||N||F||||20260925103000",
+            "L|1|N").ShouldHaveSingleItem();
+
+        message.SampleBarcode.ShouldBeEmpty();
+        message.Results.Select(r => (r.ChannelCode, r.Value)).ShouldBe([("WBC", "7.92"), ("HGB", "13.4")]);
+    }
+
+    [Fact]
+    public void Keeps_the_analysers_status_and_its_comment_on_each_result()
+    {
+        var results = Map(
+            @"H|\^&",
+            "O|1|S1||^^^GLU",
+            "R|1|^^^GLU|98|mg/dL||N||P",
+            "C|1|I|Lipaemic^index 2|G",
+            "C|2|I|Repeat advised|G",
+            "R|2|^^^CREA|1.4|mg/dL||H",
+            "R|3|^^^UREA|0|mg/dL||||X",
+            "C|1|I|Insufficient sample|G",
+            "L|1|N").ShouldHaveSingleItem().Results;
+
+        results.Select(r => (r.ChannelCode, r.Status, r.Comment)).ShouldBe(
+        [
+            ("GLU", "P", "Lipaemic index 2 Repeat advised"),
+            // No status sent; and the comment on the urea the analyser could not measure is not put on the creatinine.
+            ("CREA", null, null),
+        ]);
     }
 
     [Fact]

@@ -355,12 +355,52 @@ export function interpretLine(
   return { ...base, flag: classifyText(range, value) };
 }
 
+/** Analyser abnormal flags: none, or N (normal), is nothing to look at (the server's AutoValidationPolicy). */
+export function isBenignAnalyserFlag(flags: string | null | undefined): boolean {
+  const value = flags?.trim() ?? '';
+  return value === '' || value.toUpperCase() === 'N';
+}
+
+/** The analyser reported the result as final (F), or sent no status, as many ASTM analysers do. */
+export function isFinalOnAnalyser(status: string | null | undefined): boolean {
+  const value = status?.trim() ?? '';
+  return value === '' || value.toUpperCase() === 'F';
+}
+
 /**
- * Why a pathologist should look at a result before verifying it (the same facts that stop auto-validation). An empty
- * list means the result is in range with nothing unusual, so it can be verified in bulk.
+ * The analyser's unit is the test's, whatever the case, the spaces and the micro sign (µ, μ or u): "mg/dl" is
+ * "mg/dL". An analyser that sent no unit has nothing to compare.
+ */
+export function isSameUnit(analyserUnit: string | null | undefined, testUnit: string | null | undefined): boolean {
+  const key = (unit: string | null | undefined) =>
+    (unit ?? '')
+      .replace(/\s/g, '')
+      .replace(/[\u00b5\u03bc]/g, 'u')
+      .toUpperCase();
+  return !analyserUnit?.trim() || key(analyserUnit) === key(testUnit);
+}
+
+type ReviewedLine = Pick<
+  ResultSheetLine,
+  | 'resultType'
+  | 'status'
+  | 'autoValidated'
+  | 'hasCriticalCall'
+  | 'remarks'
+  | 'unit'
+  | 'instrumentUnit'
+  | 'instrumentFlags'
+  | 'instrumentStatus'
+  | 'instrumentComment'
+>;
+
+/**
+ * Why a pathologist should look at a result before verifying it (the same facts that stop auto-validation, the
+ * analyser's own flags, status, unit and comment included). An empty list means the result is in range with nothing
+ * unusual, so it can be verified in bulk.
  */
 export function reviewHints(
-  line: Pick<ResultSheetLine, 'resultType' | 'status' | 'autoValidated' | 'hasCriticalCall' | 'remarks'>,
+  line: ReviewedLine,
   interpretation: Pick<LineInterpretation, 'flag' | 'deltaExceeded' | 'invalid'>,
 ): string[] {
   const hints: string[] = [];
@@ -385,12 +425,24 @@ export function reviewHints(
   if (line.remarks) {
     hints.push('Has remarks');
   }
+  if (!isBenignAnalyserFlag(line.instrumentFlags)) {
+    hints.push(`Analyser flag ${line.instrumentFlags!.trim()}`);
+  }
+  if (!isFinalOnAnalyser(line.instrumentStatus)) {
+    hints.push(`Not final on the analyser (status ${line.instrumentStatus!.trim()})`);
+  }
+  if (!isSameUnit(line.instrumentUnit, line.unit)) {
+    hints.push(`Analyser sent ${line.instrumentUnit!.trim()}, the test is in ${line.unit?.trim() || 'no unit'}`);
+  }
+  if (line.instrumentComment) {
+    hints.push('Analyser comment');
+  }
   return hints;
 }
 
 /** True when an entered result may be verified together with others without an individual look. */
 export function isReadyForBulkVerify(
-  line: Pick<ResultSheetLine, 'status' | 'resultType' | 'autoValidated' | 'hasCriticalCall' | 'remarks'>,
+  line: ReviewedLine,
   interpretation: Pick<LineInterpretation, 'flag' | 'deltaExceeded' | 'invalid' | 'dirty'>,
 ): boolean {
   return (

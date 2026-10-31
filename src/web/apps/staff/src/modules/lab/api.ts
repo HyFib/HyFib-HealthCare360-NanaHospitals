@@ -103,6 +103,21 @@ export type InstrumentProtocol = 'Hl7' | 'Astm';
 export const QC_OUTCOMES = ['Accepted', 'AcceptedWithWarning', 'Rejected'] as const;
 export type QcOutcome = (typeof QC_OUTCOMES)[number];
 
+/** Why an analyser's result could not go on a sample's test (the server's UnmatchedResultReason). */
+export const UNMATCHED_REASONS = [
+  'NoSampleId',
+  'UnknownSample',
+  'SampleNotInLab',
+  'NoMatchingTest',
+  'DiffersFromVerified',
+  'InvalidValue',
+  'RepeatedInMessage',
+] as const;
+export type UnmatchedResultReason = (typeof UNMATCHED_REASONS)[number];
+
+export const UNMATCHED_STATUSES = ['Open', 'Assigned', 'Discarded'] as const;
+export type UnmatchedResultStatus = (typeof UNMATCHED_STATUSES)[number];
+
 // ------------------------------------------------------------------------------------------------ masters
 
 export interface LabTestListItem {
@@ -688,6 +703,13 @@ export interface ResultSheetLine {
   deltaExceeded: boolean;
   autoValidated: boolean;
   instrumentCode: string | null;
+  /** What the analyser said with its value: its unit, flags, result status (F final, P preliminary…) and comment. */
+  instrumentUnit: string | null;
+  instrumentFlags: string | null;
+  instrumentStatus: string | null;
+  instrumentComment: string | null;
+  /** Why the analyser's result was not auto-verified, as the server found it when the result came. */
+  heldReasons: string[];
   method: string | null;
   remarks: string | null;
   organism: string | null;
@@ -734,6 +756,38 @@ export interface VerificationOutcome {
   criticalCallsRecorded: number;
   qcOverrides: number;
   releasedItemIds: string[];
+}
+
+/**
+ * A result an analyser sent that could not go on a sample's test, kept for the lab to assign to the right test or to
+ * discard with a reason. The patient is known only when the barcode is a sample of this facility.
+ */
+export interface UnmatchedResultDto {
+  id: string;
+  instrumentCode: string;
+  sampleBarcode: string | null;
+  sampleId: string | null;
+  patientId: string | null;
+  uhid: string | null;
+  patientName: string | null;
+  /** The sample's result the value was for, when the server found one (a verified result it differs from…). */
+  labResultId: string | null;
+  testName: string | null;
+  channelCode: string;
+  value: string;
+  instrumentUnit: string | null;
+  instrumentFlags: string | null;
+  instrumentStatus: string | null;
+  instrumentComment: string | null;
+  resultedAt: string | null;
+  receivedAt: string;
+  reason: UnmatchedResultReason;
+  detail: string;
+  status: UnmatchedResultStatus;
+  assignedResultId: string | null;
+  discardReason: string | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
 }
 
 /** `data.lockouts` of a 422 lab.qc_lockout refusal. */
@@ -1003,6 +1057,12 @@ export interface PendingCollectionFilters {
   page?: number;
 }
 
+export interface UnmatchedResultFilters {
+  status?: UnmatchedResultStatus;
+  search?: string;
+  page?: number;
+}
+
 export interface WorklistFilters {
   section?: LabSection;
   status?: SampleStatus;
@@ -1044,6 +1104,7 @@ export const labKeys = {
   qc: ['lab', 'qc'] as const,
   outsourcing: ['lab', 'outsourcing'] as const,
   connections: ['lab', 'connections'] as const,
+  unmatched: ['lab', 'unmatched'] as const,
 };
 
 export const labQueries = {
@@ -1125,6 +1186,18 @@ export const labQueries = {
       queryKey: ['lab', 'worklist', filters, pageSize],
       queryFn: ({ signal }) =>
         api.get<PagedResult<WorklistItem>>('/api/v1/lab/worklist', { query: { ...filters, pageSize }, signal }),
+      placeholderData: keepPreviousData,
+      refetchInterval: 60_000,
+    }),
+  /** Analyser results waiting to be matched (or those assigned or discarded); the count is the lab's to-do. */
+  unmatchedResults: (filters: UnmatchedResultFilters, pageSize = PAGE) =>
+    queryOptions({
+      queryKey: ['lab', 'unmatched', filters, pageSize],
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<UnmatchedResultDto>>('/api/v1/lab/unmatched-results', {
+          query: { ...filters, pageSize },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -1245,6 +1318,11 @@ export const labApi = {
   recordCriticalCall: (resultId: string, call: CriticalCallDetails) =>
     api.post<string>(`/api/v1/lab/results/${resultId}/critical-calls`, call),
   sheet: (sampleId: string) => api.get<ResultSheet>(`/api/v1/lab/samples/${sampleId}/results`),
+  /** Puts an analyser's unmatched result on a sample's test, where a person verifies it. */
+  assignUnmatched: (id: string, resultId: string) =>
+    api.post<void>(`/api/v1/lab/unmatched-results/${id}/assign`, { resultId }),
+  discardUnmatched: (id: string, reason: string) =>
+    api.post<void>(`/api/v1/lab/unmatched-results/${id}/discard`, { reason }),
 
   // reports
   releaseReport: (reportId: string) => api.post<ReleaseOutcome>(`/api/v1/lab/reports/${reportId}/release`),

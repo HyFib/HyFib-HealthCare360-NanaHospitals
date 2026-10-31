@@ -6,6 +6,7 @@ import {
   CheckmarkCircleRegular,
   ClipboardTaskListLtrRegular,
   DropRegular,
+  LinkDismissRegular,
   LockClosedRegular,
   ShieldCheckmarkRegular,
   TimerRegular,
@@ -63,6 +64,7 @@ function LabDashboard() {
 
   const pending = useQuery({ ...labQueries.pendingCollection({}, 1), enabled: canCollectList });
   const worklist = useQuery({ ...labQueries.worklist({}, 100), enabled: canBench });
+  const unmatched = useQuery({ ...labQueries.unmatchedResults({}, 1), enabled: canBench });
   const qc = useQuery({ ...labQueries.qcStatus(), enabled: canQc });
   const tat = useQuery({ ...labQueries.tat(), enabled: canRead });
 
@@ -127,6 +129,21 @@ function LabDashboard() {
               hint="Samples with entered results"
               icon={<CheckmarkCircleRegular />}
               onClick={() => void navigate({ to: '/lab/worklist' })}
+            />
+            <KpiCard
+              label="Unmatched analyser results"
+              value={
+                unmatched.data ? (
+                  <span className={unmatched.data.totalCount > 0 ? styles.red : undefined}>
+                    {unmatched.data.totalCount.toLocaleString('en-IN')}
+                  </span>
+                ) : (
+                  '…'
+                )
+              }
+              hint="Results to assign to a sample, or discard"
+              icon={<LinkDismissRegular />}
+              onClick={() => void navigate({ to: '/lab/unmatched' })}
             />
             <KpiCard
               label="Critical to call"

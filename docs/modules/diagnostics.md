@@ -7,15 +7,20 @@ the lab counter, charged through Billing (`IChargePoster`), and every released r
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Diagnostics` (references Patients, and Clinical for the health
 check-up report). Schema `diagnostics`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.Diagnostics.Tests` (about 460 unit tests: range/flag evaluation, delta
-check, auto-validation, Westgard rules, sample state machine, tube planning, payment gate, report release/amendment,
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.Diagnostics.Tests` (about 550 unit tests: range/flag evaluation, delta
+check, auto-validation (the analyser's flags, status and unit included), today's QC per analyser, Westgard rules, sample
+state machine, unmatched analyser results, tube planning, payment gate, report release/amendment,
 imaging and cardiology workflows, DICOM formatting, worklist entries, PACS study matching, the linking schedule, the
 image rate limit, critical call register, seeded catalogue checks incl. LOINC check digits, EF model,
 QR verification links, report id → study look-ups, and the printed documents: content, released-only rules, encoding of
 hostile text, footers and file names), and the end-to-end `LabVerificationTests` in `tests/HyFib.HealthCare360.IntegrationTests`
 (a critical value is not verified until the call to the clinician is documented, before or with the verification; while
 today's QC of an assay is rejected its results are verified only with a pathologist's override, which is audited and bound
-to that run, or once QC passes again).
+to that run, or once QC passes again), and `LabAnalyserTests` (an analyser's results are auto-validated only on the QC
+that analyser ran today and are held with the reasons when it flags them, reports them preliminary or in another unit;
+results it sends without a sample id, for an unknown sample or with another value for a verified test are acknowledged
+(a serial analyser's frame by frame over its lab agent's relay, the last frame once the results are kept) and kept for
+the lab to assign or discard, and an identical resend changes nothing).
 
 ## Permissions
 
@@ -25,7 +30,7 @@ to that run, or once QC passes again).
 | `lab.orders.create` | Walk-in / outside-referral registration, cancel tests, retry charges | LabTechnician, FrontOffice |
 | `lab.samples.collect` | Pending-collection list, collect, print labels | LabTechnician, Nurse |
 | `lab.samples.receive` | Receive by barcode, reject, recollect, send out to reference labs | LabTechnician, Pathologist |
-| `lab.results.enter` | Worklist, result entry, external reports | LabTechnician, Pathologist |
+| `lab.results.enter` | Worklist, result entry, external reports; assigning or discarding unmatched analyser results | LabTechnician, Pathologist |
 | `lab.results.verify` | Verify, release, amend, reopen; critical calls; QC lockout override | Pathologist |
 | `lab.qc.manage` | QC lots, runs, reviews | LabTechnician, Pathologist |
 | `lab.masters.manage` | Test master, ranges, analysers, reference labs | Pathologist, HospitalAdmin |
@@ -112,11 +117,18 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/worklist?section&status&priority` | results.enter or results.verify | → `PagedResult<WorklistItem>` (STAT first, then tubes with unverified critical values; pending/entered/verified/critical counts) |
-| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, susceptibilities, hasCriticalCall, version) |
+| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment), heldReasons (why it was not auto-validated), susceptibilities, hasCriticalCall, version) |
 | POST | `/results` | `lab.results.enter` | `EnterResultsRequest` (`ResultEntry[]`: resultId, value, remarks, organism, colonyCount, susceptibilities) → `ResultSheetLine[]` (flags, reference text and delta computed server-side) |
 | POST | `/results/verify` | `lab.results.verify` | `VerifyResultsRequest` (resultIds, qcOverrideReason, criticalCall `CriticalCallDetails`, release) → `VerificationOutcome`; 422 `lab.qc_lockout` (data: locked assays) or `lab.critical_call_required` |
 | POST | `/results/{id}/reopen` | `lab.results.verify` | `ReopenResultRequest` (reason) → 204 (unreleased results only; released ones are amended) |
 | POST | `/results/{id}/critical-calls` | results.verify or results.enter | `CriticalCallDetails` (informedPersonName, role, informedPractitionerId, method, informedAt, readBackConfirmed = true, notes) → 201 |
+
+### Unmatched analyser results — `/api/v1/lab/unmatched-results`
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/?status&search` | results.enter or results.verify | → `PagedResult<UnmatchedResultDto>` (analyser, sample barcode as sent, the tube and patient when known, the result it was for, channel, value, the analyser's unit, flags, status and comment, resulted and received times, reason, detail, status, who resolved it and how), newest first; `status` Open (default), Assigned or Discarded; `search` is a sample barcode, an analyser code or a channel code |
+| POST | `/{id}/assign` | `lab.results.enter` | `AssignUnmatchedResultRequest` (resultId) → 204; the value is entered on that result as an analyser's, never auto-validated; 422 `lab.result_verified` (a pathologist reopens it first), `lab.unmatched_value_invalid`, `lab.unmatched_resolved`, or the result entry refusals (`lab.item_cancelled`, `lab.result_released`, `lab.sample_not_in_lab`); audited `lab.unmatched.assigned` |
+| POST | `/{id}/discard` | `lab.results.enter` | `DiscardUnmatchedResultRequest` (reason, 5 to 300 characters) → 204; 422 `lab.unmatched_resolved`; audited `lab.unmatched.discarded` |
 
 ### Reports — `/api/v1/lab/reports`
 | Method | Path | Permission | Request → response |
@@ -312,12 +324,26 @@ diagnostics screen.
   (`1,20,000`) are parsed. Answer-type results flag Abnormal/Critical from the interval's normal/critical answer lists.
 * **Delta check**: % change against the patient's last verified result of the analyte within `lab.deltaCheckWindowDays`
   (default 30); threshold per test or `lab.deltaCheckPercent` (default 50). A change away from zero is always flagged.
-* **Auto-validation** (analyser results): numeric, in range (Normal), test and analyser allow it, QC accepted today, delta
-  passed and only benign analyser flags. Anything else waits for a pathologist, with the reasons listed.
+* **Auto-validation** (`AutoValidationPolicy`, analyser results): numeric, in range (Normal), test and analyser allow it,
+  QC accepted today on that analyser (below), delta passed, and the analyser raised no flag (none or `N`), sent the
+  value in the test's unit and reported it as final. Units are compared whatever the case, the spaces and the micro
+  sign (`mg/dl` is `mg/dL`, `µIU/mL` is `uIU/mL`); an analyser that sends no unit is not compared. The final status is
+  `F` (ASTM R.9, HL7 OBX-11), or none, which many ASTM analysers send; `P` (preliminary), `S` (partial), `C`
+  (correction), HL7 `R` (not verified on the analyser) or any other is not taken as final. Anything else waits for a
+  pathologist: the reasons are stored on the result (`heldReasons`) and the result sheet shows them under the test,
+  with the analyser's flag, status, unit and comment among the hints that keep a result out of bulk verification.
 * **Westgard QC**: z-scores against the lot targets; 1-2s warning; 1-3s, 2-2s, R-4s, 4-1s and 10x reject (all rules are
   always checked, limits are strict). Tests in the same QC group (FBS/PPBS share `GLU`) share QC. While today's latest run
   of any lot of the assay is rejected, verification is locked (`lab.qc_lockout`) unless a pathologist records an override
   reason (audited, bound to that run). A rejected run needs a corrective action at review.
+* **QC per analyser** (ISO 15189: QC shows the measuring system works, and the analyser is the system). A QC lot names
+  the analyser it is run on (`instrumentCode`), and each run keeps it. An analyser's result is auto-validated only when
+  that analyser ran QC on the assay today and no lot of the assay has a rejected latest run today, overridden or not:
+  the EM 360's accepted QC never lets a back-up analyser's results through, and auto-validation never verifies what a
+  pathologist could verify only with an override. A lot tied to no analyser lets no analyser's results auto-validate,
+  so name the analyser on every lot. The lockout stays per assay, whichever analyser failed: a value typed in or
+  carried over from another analyser cannot be traced to the failing one with certainty, and a lockout too wide costs an
+  audited override where one too narrow would let a failing analyser's result out unchecked.
 * **Critical values**: verifying a critical result (or signing a critical imaging/cardiology finding) requires a
   documented call with read-back (`CriticalCallLog`). The ordering doctor gets the `lab.critical` /
   `diagnostics.critical_finding` SMS in the same transaction, plus in-app alerts to the doctor's user and to holders of
@@ -407,8 +433,9 @@ diagnostics screen.
 
 Realtime (`Topics.Lab(facilityId)`): `lab.order.created`, `lab.order.cancelled`, `lab.sample.collected`,
 `lab.sample.received`, `lab.sample.rejected`, `lab.sample.recollection`, `lab.results.entered`, `lab.results.received`
-(analyser), `lab.results.verified`, `lab.results.reopened`, `lab.critical`, `lab.report.released`, `lab.report.amended`,
-`lab.qc.run`, `lab.qc.override`, `lab.outsourcing.sent`, `lab.outsourcing.received`, `radiology.study.changed`,
+(analyser), `lab.results.unmatched` (analyser results kept aside, assigned or discarded), `lab.results.verified`,
+`lab.results.reopened`, `lab.critical`, `lab.report.released`, `lab.report.amended`, `lab.qc.run`, `lab.qc.override`,
+`lab.outsourcing.sent`, `lab.outsourcing.received`, `radiology.study.changed`,
 `radiology.worklist.changed`, `radiology.ai.finding`, `cardiology.study.changed`. Pushes and staff alerts raised inside
 event handlers go through the outbox (`diagnostics.realtime`, `diagnostics.staff-alert`) so they are sent only after commit.
 
@@ -498,14 +525,42 @@ sample's results on screen and sends them as that analyser would, so they are ch
 
 * `ReceiveAsync` maps the instrument code + channel (`XN550:HGB` beats a generic `HGB`) to the analyte, finds the tube
   by barcode in the analyser's facility (a collected tube is received automatically, and the other bidirectional
-  analysers that run its tests are then sent its order), records unverified results, auto-validates when allowed and
-  raises critical alerts.
+  analysers that run its tests are then sent its order, once a result goes on it), records unverified results with the
+  analyser's unit, flags, status and comment, auto-validates when allowed (else stores why not) and raises critical
+  alerts. A result that cannot go on an open test is kept (see *Unmatched analyser results*) and the message is
+  acknowledged; only an analyser that Lab setup does not have, or has switched off, is refused, and a failure to store
+  (the database away) refuses the whole message, so the analyser sends it again and nothing is stored twice.
 * `GetOrderForSampleAsync` answers host queries with the channels still pending for the barcode (collected, received or
   in-process tubes of the analyser's facility).
 * `GetOrderToSendAsync` builds an order to send unasked: the tests of a received or in-process tube that this analyser
   runs and that are not yet verified, with the UHID, priority, collection time and specimen type. It is called when the
   order is sent, so a test cancelled or resulted meanwhile is left out.
 * `GetInstrumentAsync` returns the analyser as Lab setup registers it (facility, active, bidirectional, protocol).
+
+**Unmatched analyser results** (`UnmatchedLabResult`, table `diagnostics.lab_unmatched_results`, facility-scoped). An
+analyser result is never acknowledged and lost, nor refused so that the analyser sends it for ever and holds up the
+results behind it. One that cannot go on an open test is kept with all the analyser said, and the analyser is
+acknowledged:
+
+| Reason | When |
+|---|---|
+| `NoSampleId` | The analyser named no sample (an ASTM order record without O.3 or O.4, an HL7 order with none of the sample-id fields, results without an order record) |
+| `UnknownSample` | No tube of the analyser's facility has the barcode |
+| `SampleNotInLab` | The tube is not collected yet, rejected or cancelled |
+| `NoMatchingTest` | None of the tube's tests maps any channel the message sent for it (when some do, the others are only logged, as analysers send whole profiles) |
+| `DiffersFromVerified` | The test is verified and the analyser sent another value, or the same value with another unit, flags, status or comment (a correction, status `C`), or for a result typed in or from another analyser. Only the reading on the test sent again (after a lost acknowledgement) changes nothing |
+| `InvalidValue` | The value is not one the test can hold (not a number for a numeric test, not one of its answers) |
+| `RepeatedInMessage` | The message gave the test twice, the second time with another value or the same value read otherwise; the first is on the test |
+
+The same result sent again for the same sample id (the same channel, value, unit, flags, status, comment and time, as
+stored) is kept once; one differing in any of them is kept too, and results without a sample id are each kept, since
+two samples' results cannot be told from a resend. **Lab › Unmatched analyser results** lists them, newest first, and the
+lab overview and result entry show how many wait. Someone with `lab.results.enter` assigns one to a sample's test (found
+by the tube's barcode; not a verified one, which a pathologist reopens first): it goes through result entry, interpreted
+and delta-checked, with the analyser's reading and the time it measured the sample (never later than the assignment),
+and is never auto-validated, since a person chose where it goes. Or
+discards it with a reason (a control run, a duplicate, a rerun on its own tube). Both are audited
+(`lab.unmatched.assigned`, `lab.unmatched.discarded`), and the rows keep who did it and when.
 
 **Order download** (`AnalyserOrders`, LIS-04). In the same unit of work as the change, Diagnostics adds one
 `lab.analyser.order` outbox message (`InstrumentOrderRequest`: barcode, action, analysers with channel codes), so

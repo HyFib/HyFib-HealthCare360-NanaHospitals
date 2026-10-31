@@ -175,7 +175,10 @@ internal sealed class LabTrainingAnalyser(
         return (instrument with { Code = profile.Code }, null);
     }
 
-    /// <summary>An ORU^R01 (HL7 2.5.1) as an analyser sends it: the barcode in OBR-2, OBR-3 and SPM-2, one OBX per result.</summary>
+    /// <summary>
+    /// An ORU^R01 (HL7 2.5.1) as an analyser sends it: the barcode in OBR-2, OBR-3 and SPM-2, one OBX per result, each
+    /// final (OBX-11 F) and timed (OBX-14).
+    /// </summary>
     internal static string Hl7Oru(string code, string barcode, IReadOnlyList<TrainingResult> results, DateTimeOffset localNow)
     {
         var stamp = localNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
@@ -186,7 +189,7 @@ internal sealed class LabTrainingAnalyser(
             $"OBR|1|{barcode}|{barcode}|^Training results|||{stamp}",
         };
         lines.AddRange(results.Select((r, i) =>
-            $"OBX|{i + 1}|{(IsNumber(r.Value) ? "NM" : "ST")}|{r.Channel}^{r.Channel}||{r.Value}|{r.Units}||||||F|||{stamp}"));
+            $"OBX|{i + 1}|{(IsNumber(r.Value) ? "NM" : "ST")}|{r.Channel}^{r.Channel}||{r.Value}|{r.Units}|||||F|||{stamp}"));
         lines.Add($"SPM|1|{barcode}");
         return string.Join('\r', lines) + "\r";
     }

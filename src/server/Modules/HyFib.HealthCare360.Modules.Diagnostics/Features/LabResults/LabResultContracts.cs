@@ -26,7 +26,12 @@ public sealed record WorklistItem(
 
 public sealed record SusceptibilityDto(string Antibiotic, SusceptibilityInterpretation Interpretation, string? Mic);
 
-/// <summary>One analyte line on the result-entry / verification sheet, with the reference interval for this patient.</summary>
+/// <summary>
+/// One analyte line on the result-entry / verification sheet, with the reference interval for this patient. An
+/// analyser's result carries what the analyser said (<see cref="InstrumentUnit"/>, <see cref="InstrumentFlags"/>,
+/// <see cref="InstrumentStatus"/>, <see cref="InstrumentComment"/>) and, when it was not auto-validated, why
+/// (<see cref="HeldReasons"/>).
+/// </summary>
 public sealed record ResultSheetLine(
     Guid ResultId,
     Guid LabOrderItemId,
@@ -51,6 +56,11 @@ public sealed record ResultSheetLine(
     bool DeltaExceeded,
     bool AutoValidated,
     string? InstrumentCode,
+    string? InstrumentUnit,
+    string? InstrumentFlags,
+    string? InstrumentStatus,
+    string? InstrumentComment,
+    IReadOnlyList<string> HeldReasons,
     string? Method,
     string? Remarks,
     string? Organism,

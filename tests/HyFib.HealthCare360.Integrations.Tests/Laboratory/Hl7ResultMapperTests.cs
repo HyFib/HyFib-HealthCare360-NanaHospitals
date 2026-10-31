@@ -31,13 +31,13 @@ public sealed class Hl7ResultMapperTests
     }
 
     [Fact]
-    public void Reads_value_units_flags_and_observation_time()
+    public void Reads_value_units_flags_status_and_observation_time()
     {
         var results = Map(LabSamples.HematologyOru).Messages[0].Results;
 
-        results[0].ShouldBe(new InstrumentResult("WBC", "7.8", "10*3/uL", "N", new DateTimeOffset(2026, 9, 25, 10, 29, 0, Ist)));
+        results[0].ShouldBe(new InstrumentResult("WBC", "7.8", "10*3/uL", "N", new DateTimeOffset(2026, 9, 25, 10, 29, 0, Ist)) { Status = "F" });
         // No OBX-14: the order's observation time (OBR-7) applies.
-        results[1].ShouldBe(new InstrumentResult("HGB", "10.2", "g/dL", "L", new DateTimeOffset(2026, 9, 25, 10, 25, 0, Ist)));
+        results[1].ShouldBe(new InstrumentResult("HGB", "10.2", "g/dL", "L", new DateTimeOffset(2026, 9, 25, 10, 25, 0, Ist)) { Status = "F" });
         results[2].Value.ShouldBe("Normocytic & normochromic");
         results[2].Units.ShouldBeNull();
         results[2].Flags.ShouldBeNull();
@@ -117,9 +117,40 @@ public sealed class Hl7ResultMapperTests
             .ShouldBe("The message contains no OBX results.");
 
     [Fact]
-    public void Results_without_a_sample_id_are_errors() =>
-        Map(string.Join('\r', @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M5|P|2.5.1", "OBR|1", "OBX|1|NM|GLU||98|mg/dL|||||F")).Error
-            .ShouldBe("No sample id found in SPM-2, SAC-3, OBR-3, OBR-2.");
+    public void Results_without_a_sample_id_are_kept_under_no_sample_id()
+    {
+        var text = string.Join('\r',
+            @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M5|P|2.5.1",
+            "OBR|1",
+            "OBX|1|NM|GLU||98|mg/dL|||||F",
+            "OBR|2||S-1",
+            "OBX|1|NM|CREA||1.1|mg/dL|||||F");
+
+        var mapped = Map(text);
+
+        mapped.Error.ShouldBeNull();
+        mapped.Messages.Select(m => (m.SampleBarcode, m.Results.ShouldHaveSingleItem().ChannelCode)).ShouldBe([("", "GLU"), ("S-1", "CREA")]);
+    }
+
+    [Fact]
+    public void A_preliminary_result_keeps_its_status_and_the_notes_after_it_are_its_comment()
+    {
+        var text = string.Join('\r',
+            @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M8|P|2.5.1",
+            "OBR|1||S-1",
+            "NTE|1|L|Order note from the ward",
+            "OBX|1|NM|GLU||98|mg/dL||N|||P",
+            "NTE|1|I|Lipaemic sample~index 2",
+            "NTE|2|I|Rerun advised",
+            "OBX|2|NM|CREA||1.1|mg/dL|||||F",
+            "SPM|1|S-1",
+            "NTE|1|I|Not a result note");
+
+        var results = Map(text).Messages.ShouldHaveSingleItem().Results;
+
+        results.Select(r => (r.ChannelCode, r.Status, r.Comment)).ShouldBe(
+            [("GLU", "P", "Lipaemic sample index 2 Rerun advised"), ("CREA", "F", null)]);
+    }
 
     [Fact]
     public void Deleted_or_corrected_away_results_leave_nothing_to_store() =>

@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.Outsourcing;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Portal;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.UnmatchedResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Verification;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Platform.Documents;
@@ -126,6 +127,7 @@ public sealed class DiagnosticsModule : IModule
         services.AddScoped<LabReportService>();
         services.AddScoped<LabReportBuilder>();
         services.AddScoped<LabResultService>();
+        services.AddScoped<UnmatchedResultService>();
         services.AddScoped<ImagingService>();
         services.AddScoped<StudyImageService>();
         services.AddOptions<ConcurrencyLimit>(RadiologyImageLimits.Policy)
@@ -159,6 +161,7 @@ public sealed class DiagnosticsModule : IModule
         LabOrderEndpoints.Map(endpoints);
         SampleEndpoints.Map(endpoints);
         LabResultEndpoints.Map(endpoints);
+        UnmatchedResultEndpoints.Map(endpoints);
         LabReportEndpoints.Map(endpoints);
         QcEndpoints.Map(endpoints);
         OutsourcingEndpoints.Map(endpoints);

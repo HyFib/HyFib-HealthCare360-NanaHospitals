@@ -120,6 +120,21 @@ public sealed class MllpSessionTests
     }
 
     [Fact]
+    public async Task Hands_results_without_a_sample_id_to_the_lis_and_acknowledges_them_once_kept()
+    {
+        // No barcode in SPM-2, SAC-3, OBR-3 or OBR-2: the LIS keeps the results for a person, so the analyser can move on.
+        const string unnamed = "MSH|^~\\&|LAB|X|HC360|Nana|20260925||ORU^R01|M10|P|2.5.1\rOBR|1\rOBX|1|NM|GLU||98|mg/dL||N|||F";
+
+        (await Session().HandleAsync(unnamed, Ct)).ShouldNotBeNull().ShouldEndWith("\rMSA|AA|M10\r");
+
+        await _processor.Received(1).SubmitResultsAsync(
+            Arg.Is(LabSamples.Hl7Instrument),
+            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m.Count == 1 && m[0].SampleBarcode == "" && m[0].Results.Count == 1),
+            Arg.Is(unnamed),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Never_acknowledges_an_acknowledgement()
     {
         (await Session().HandleAsync(Ack("HC0000000000001234"), Ct)).ShouldBeNull();
