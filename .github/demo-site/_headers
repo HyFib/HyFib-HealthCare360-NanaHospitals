@@ -1,0 +1,11 @@
+# Headers on every response of the demo. Cloudflare applies this file to the Worker's static assets and does not serve
+# it. The Demo site workflow checks each of them on the live site after a deploy.
+#
+# HTTPS only, for a year; no type sniffing; no address sent to other sites; and no other site may frame the demo. The
+# demo shows documents and prints in frames of its own, so SAMEORIGIN, not DENY.
+/*
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: SAMEORIGIN
+  Content-Security-Policy: frame-ancestors 'self'

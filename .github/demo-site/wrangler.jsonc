@@ -1,0 +1,18 @@
+// The demo (src/web/demo/README.md) on Cloudflare: a Worker with static assets only, so no Worker script runs. The
+// Demo site workflow puts src/web/demo/site, as committed, and _headers into dist/ and deploys it with a token that can
+// deploy this one Worker and nothing else.
+//
+// Its address, the Custom Domain hc360.hyfib.com, is attached to the Worker once in the dashboard, which makes its DNS
+// record and certificate. It is not listed here: a deploy that listed it would need a token that can change the
+// hyfib.com zone's routes.
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "hc360-demo",
+	"compatibility_date": "2026-10-16",
+	"assets": {
+		"directory": "./dist"
+	},
+	// One public address: the Custom Domain. No workers.dev address, and no preview address for each version.
+	"workers_dev": false,
+	"preview_urls": false
+}

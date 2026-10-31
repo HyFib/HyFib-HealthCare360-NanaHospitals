@@ -74,9 +74,15 @@ The patient (`PORTAL_PATIENT` in `app/personas.ts`) signs in to the portal on th
 
 ## Publishing at hc360.hyfib.com
 
-https://hc360.hyfib.com serves `site/`: a built folder that `verify.mjs` checked, committed as it was built. The _Demo
-site_ workflow (`.github/workflows/demo-site.yml`) deploys it with GitHub Pages when it changes on `main`, and can be
-run by hand. After a deploy it fetches each file from the live site, and fails if one is not the file committed.
+https://hc360.hyfib.com serves `site/`: a built folder that `verify.mjs` checked, committed as it was built. Cloudflare
+serves it, as the Worker `hc360-demo` with static assets only (no Worker script runs). The _Demo site_ workflow
+(`.github/workflows/demo-site.yml`) deploys it with Wrangler when it changes on `main`, and can be run by hand.
+
+- **What it deploys.** `site/` as committed, with the headers in `.github/demo-site/_headers`: HTTPS only, no type
+  sniffing, no referrer, and no framing by other sites.
+- **What it checks.** After a deploy it fetches each file from the live site and fails if one is not the file
+  committed. It also fails if a header is missing or Cloudflare is not in front.
+- **Check only.** Run by hand with _check only_, it deploys nothing and checks the live site.
 
 `site/` holds the demo built from the head of #138 (6a7b6e5): 12 roles, 1,336 screens walked, no unrecorded calls, no
 browser errors, and 30 of 30 guided places. Building that commit again from the same recordings gives the same 16 files,
@@ -86,24 +92,24 @@ byte for byte. To publish a new recording, make it and check it as above, then r
 rm -rf demo/site && cp -r demo/out/demo demo/site
 ```
 
-It is set up once, by whoever administers the repository and hyfib.com's DNS. Until then, a run of the workflow says
-what is missing and deploys nothing.
+It is set up once, in the Cloudflare account that holds the `hyfib.com` zone, by its administrator. Until then, a run of
+the workflow says what is missing and deploys nothing. The deploy token can deploy this one Worker and nothing else.
+Creating a Worker and giving it a Custom Domain need more than that, so they are done once, by hand:
 
-1. **DNS**: a `CNAME` record for `hc360.hyfib.com` with the value `hyfib.github.io`.
-2. **Settings › Pages**: Source _GitHub Actions_, and Custom domain `hc360.hyfib.com`. Once GitHub has checked the domain
-   and issued its certificate, tick _Enforce HTTPS_.
-3. **The organization's Settings › Pages**: verify `hyfib.com`, so that no other GitHub account can serve a site under
-   it.
+1. **The Worker.** In **Workers & Pages › Create**, start from _Hello World_, name it `hc360-demo`, and deploy it. The
+   first run of the workflow replaces it with the demo.
+2. **Its address.** In the Worker's **Settings › Domains & Routes › Add › Custom domain**, enter `hc360.hyfib.com`.
+   Cloudflare makes the DNS record and the certificate. It refuses a name that already has a `CNAME` record, so delete
+   any `hc360` record first.
+3. **The deploy token.** In **Manage Account › Account API Tokens**, create a token with one permission: _Workers_,
+   scope _Specified Workers_ › `hc360-demo`, role _Editor_.
+4. **In this repository's Settings**:
+   - In **Environments**, create `demo-site`, and set its deployment branches to `main` only.
+   - Add the environment secret `CLOUDFLARE_API_TOKEN`, set to the token.
+   - In **Secrets and variables › Actions › Variables**, add `CLOUDFLARE_ACCOUNT_ID`. It is on the **Workers & Pages**
+     overview, on the right.
 
-Cloudflare Pages (free) can serve the same folder instead, with GitHub Pages left off:
-
-1. In Cloudflare, **Workers & Pages › Create › Pages › Connect to Git**: this repository, production branch `main`, no
-   framework and no build command, build output directory `src/web/demo/site`.
-2. In the project, **Custom domains**: `hc360.hyfib.com`. When hyfib.com's DNS is on Cloudflare, the record is made for
-   you; otherwise add a `CNAME` for `hc360.hyfib.com` to the project's `pages.dev` address.
-
-Cloudflare then deploys on each push to `main`. Run the _Demo site_ workflow by hand with _check only_ to check that
-https://hc360.hyfib.com serves the committed files.
+Then run the workflow. Its summary lists each file, each header, and the certificate the site answers with.
 
 ## What it replays, and what it does not
 
