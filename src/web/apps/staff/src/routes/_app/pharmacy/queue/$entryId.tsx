@@ -230,6 +230,9 @@ interface LinePlan {
   quantityText: string;
   usable: number | null;
   batches: BatchStock[] | undefined;
+  /** The item's schedule and NDPS flag, from the drug master once it is read. */
+  schedule: DrugSchedule | null;
+  isControlled: boolean;
   plan: BatchIssuePlan | null;
   problems: string[];
   priced: SaleLinePrice[];
@@ -240,6 +243,10 @@ type Done =
   | { kind: 'sale'; sale: PharmacySaleCreated; labels: DrugLabel[] }
   | { kind: 'issue'; id: string; number: string; total: number; labels: DrugLabel[] };
 
+/**
+ * The prescribed item as far as the line knows it. Its schedule and NDPS flag come from the drug master: the line's
+ * `isControlledDrug` covers Schedule H1 and X as well as NDPS, so it does not make ceftriaxone (H1) a narcotic.
+ */
 function prescribedItem(line: QueueLineDto): SubstituteChoice | null {
   return line.drugItemId
     ? {
@@ -248,7 +255,7 @@ function prescribedItem(line: QueueLineDto): SubstituteChoice | null {
         genericName: line.genericName,
         strength: line.strength,
         schedule: null,
-        isControlled: line.isControlledDrug,
+        isControlled: false,
         baseUnit: null,
       }
     : null;
@@ -319,7 +326,8 @@ function EntryScreen({
     const kind: SubstitutionKind = item
       ? evaluateSubstitution(line.drugItemId, line.genericName, line.strength, item)
       : 'none';
-    const unit = item ? (master.items.get(item.itemId)?.baseUnit ?? item.baseUnit) : null;
+    const detail = item ? master.items.get(item.itemId) : undefined;
+    const unit = item ? (detail?.baseUnit ?? item.baseUnit) : null;
     const plan =
       item && quantity > 0
         ? planBatchIssue(
@@ -341,7 +349,7 @@ function EntryScreen({
             ...substitutionProblems(kind, choice.reason ?? '', choice.consent ?? false),
           ]
         : [];
-    const gstRate = item ? (master.items.get(item.itemId)?.gstRate ?? null) : null;
+    const gstRate = detail?.gstRate ?? null;
     const priced =
       plan && !entry.isInpatient
         ? plan.allocation.allocations.map((a) =>
@@ -370,6 +378,8 @@ function EntryScreen({
       quantityText,
       usable,
       batches,
+      schedule: detail?.schedule ?? item?.schedule ?? null,
+      isControlled: detail?.isControlled ?? item?.isControlled ?? false,
       plan,
       problems,
       priced,
@@ -383,15 +393,12 @@ function EntryScreen({
   const totals = saleTotals(active.flatMap((p) => p.priced));
   const ipTotal = sumNumbers(active.map((p) => p.amount));
   const controlled = controlledItems(
-    active.map((p) => {
-      const detail = p.item ? master.items.get(p.item.itemId) : undefined;
-      return {
-        name: p.item?.name ?? p.line.drugName,
-        schedule: detail?.schedule ?? p.item?.schedule ?? null,
-        isControlled: detail?.isControlled ?? p.item?.isControlled ?? false,
-        lineIsControlled: p.line.isControlledDrug,
-      };
-    }),
+    active.map((p) => ({
+      name: p.item?.name ?? p.line.drugName,
+      schedule: p.schedule,
+      isControlled: p.isControlled,
+      lineIsControlled: p.line.isControlledDrug,
+    })),
   );
   const resolved = resolvePayments(totals.net, payments);
   const paymentCheck = checkPayments(totals.net, resolved, true);
@@ -1140,7 +1147,7 @@ function DrugCell({ plan }: { plan: LinePlan }) {
           {kind === 'substitution' ? ' (substitution)' : ' (same generic)'}
         </Caption1>
       )}
-      {item && <ItemFlags schedule={item.schedule} isControlled={item.isControlled} />}
+      {item && <ItemFlags schedule={plan.schedule} isControlled={plan.isControlled} />}
     </div>
   );
 }
