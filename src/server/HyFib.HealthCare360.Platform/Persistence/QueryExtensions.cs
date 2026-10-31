@@ -66,17 +66,36 @@ public static class QueryExtensions
     /// <summary>
     /// A search as people type it: every word of <paramref name="term"/> must match, in any order, so "chest X-ray" finds
     /// "X-ray chest PA view". <paramref name="matches"/> is the condition one word's pattern (<see cref="ToLikePattern"/>)
-    /// puts on a row; each word is a condition of its own, which a trigram index serves.
+    /// puts on a row; each word is a condition of its own. <paramref name="whole"/>, when given, finds a row by the whole
+    /// term too, spaces and all: an identifier that has a space in it (a barcode typed as printed) is found as before.
     /// </summary>
-    public static IQueryable<T> WhereEveryWord<T>(this IQueryable<T> query, string term, Func<string, Expression<Func<T, bool>>> matches)
+    public static IQueryable<T> WhereEveryWord<T>(
+        this IQueryable<T> query, string term, Func<string, Expression<Func<T, bool>>> matches, Expression<Func<T, bool>>? whole = null)
     {
         ArgumentNullException.ThrowIfNull(matches);
+        var row = Expression.Parameter(typeof(T), "row");
+        Expression? every = null;
         foreach (var word in term.SearchWords())
         {
-            query = query.Where(matches(word.ToLikePattern()));
+            var condition = Rebind(matches(word.ToLikePattern()), row);
+            every = every is null ? condition : Expression.AndAlso(every, condition);
         }
 
-        return query;
+        if (every is null)
+        {
+            return query;
+        }
+
+        return query.Where(Expression.Lambda<Func<T, bool>>(whole is null ? every : Expression.OrElse(Rebind(whole, row), every), row));
+    }
+
+    private static Expression Rebind<T>(Expression<Func<T, bool>> condition, ParameterExpression row) =>
+        new ParameterRebinder(condition.Parameters[0], row).Visit(condition.Body);
+
+    /// <summary>Puts one row parameter in place of another, so conditions written separately make one condition.</summary>
+    private sealed class ParameterRebinder(ParameterExpression from, ParameterExpression to) : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node) => node == from ? to : base.VisitParameter(node);
     }
 
     /// <summary>Loads an entity by id or returns a NotFound error.</summary>
