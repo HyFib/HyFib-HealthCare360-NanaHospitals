@@ -16,6 +16,10 @@ internal sealed class EdgePdfRenderer : IPdfRenderer, IAsyncDisposable
     private const string NoBrowser =
         "Microsoft Edge was not found on the server, so PDFs can't be made. Install Edge, or set HealthCare360:Pdf:BrowserPath.";
 
+    // The problem goes to whoever asked for the PDF, so it names the setting and the browser's file, never a server path.
+    private const string NoConfiguredBrowser =
+        "There is no browser where HealthCare360:Pdf:BrowserPath says, so PDFs can't be made. Correct the path, or remove the setting to use Microsoft Edge.";
+
     private readonly PdfOptions _options;
     private readonly string? _browserPath;
     private readonly string _profileRoot;
@@ -39,8 +43,10 @@ internal sealed class EdgePdfRenderer : IPdfRenderer, IAsyncDisposable
     }
 
     public PdfRendererStatus Status => _browserPath is null
-        ? new PdfRendererStatus(false, null, NoBrowser)
+        ? new PdfRendererStatus(false, null, Missing)
         : new PdfRendererStatus(Volatile.Read(ref _problem) is null, _browserPath, Volatile.Read(ref _problem));
+
+    private string Missing => string.IsNullOrWhiteSpace(_options.BrowserPath) ? NoBrowser : NoConfiguredBrowser;
 
     public async Task<byte[]> RenderAsync(PdfSource source, CancellationToken cancellationToken)
     {
@@ -48,7 +54,7 @@ internal sealed class EdgePdfRenderer : IPdfRenderer, IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_browserPath is null)
         {
-            throw new PdfRenderException(NoBrowser);
+            throw new PdfRenderException(Missing);
         }
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -141,7 +147,7 @@ internal sealed class EdgePdfRenderer : IPdfRenderer, IAsyncDisposable
         }
         catch (Exception ex) when (ex is DevToolsException or Win32Exception or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            throw Failed("The PDF browser (Microsoft Edge) could not be started.", ex);
+            throw Failed($"The PDF browser ({Path.GetFileName(_browserPath)}) could not be started.", ex);
         }
         finally
         {

@@ -114,6 +114,8 @@ public sealed partial class EdgePdfRendererTests : IDisposable
         await Should.ThrowAsync<ObjectDisposedException>(() => renderer.RenderAsync(new PdfSource("<p>x</p>"), Ct));
     }
 
+    // The problem names the setting that is wrong, not Edge (which nobody asked for), and not the path: the person who
+    // asked for the PDF reads it too.
     [Fact]
     public async Task Without_a_browser_it_says_so()
     {
@@ -121,8 +123,25 @@ public sealed partial class EdgePdfRendererTests : IDisposable
             Options(Path.Combine(_dataDirectory, "no-such-browser.exe")), Directories(), TimeProvider.System, NullLogger<EdgePdfRenderer>.Instance);
 
         renderer.Status.Available.ShouldBeFalse();
-        renderer.Status.Problem.ShouldNotBeNull().ShouldContain("Edge");
-        await Should.ThrowAsync<PdfRenderException>(() => renderer.RenderAsync(new PdfSource("<p>x</p>"), Ct));
+        var problem = renderer.Status.Problem.ShouldNotBeNull();
+        problem.ShouldStartWith("There is no browser where HealthCare360:Pdf:BrowserPath says");
+        problem.ShouldNotContain(_dataDirectory);
+        (await Should.ThrowAsync<PdfRenderException>(() => renderer.RenderAsync(new PdfSource("<p>x</p>"), Ct))).Message.ShouldBe(problem);
+    }
+
+    [Fact]
+    public async Task A_browser_that_does_not_start_is_named_by_its_file()
+    {
+        var directories = Directories();
+        var path = Path.Combine(_dataDirectory, "not-a-browser.exe");
+        await File.WriteAllTextAsync(path, "not a program", Ct);
+        await using var renderer = new EdgePdfRenderer(Options(path), directories, TimeProvider.System, NullLogger<EdgePdfRenderer>.Instance);
+
+        var error = await Should.ThrowAsync<PdfRenderException>(() => renderer.RenderAsync(new PdfSource("<p>x</p>"), Ct));
+
+        error.Message.ShouldBe("The PDF browser (not-a-browser.exe) could not be started.");
+        renderer.Status.Available.ShouldBeFalse();
+        renderer.Status.Problem.ShouldBe(error.Message);
     }
 
     [Fact]
