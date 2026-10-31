@@ -6,13 +6,14 @@
 // --partial packs whatever roles were recorded (while trying the build out); without it every role of personas.ts
 // must be there.
 // It stops (exit 1) when a guided place of personas.ts was not recorded for its role, or when an answer still holds
-// what must not travel: a token, a private key, a password (a connection string's, or the demo accounts' own, from
-// HC360_DEMO_PASSWORD). Paths and addresses of the machine that recorded it are replaced, and what it replaced is
-// listed in <out-dir>.report.json beside the folder.
+// what must not travel: a token, a private key, a draft key, a password (a connection string's, or the demo accounts'
+// own, from HC360_DEMO_PASSWORD). Paths and addresses of the machine that recorded it are replaced, and so are the
+// sign-ins' token and draft key; what it replaced is listed in <out-dir>.report.json beside the folder.
 
 import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { isIP } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MORNING, PERSONAS } from './app/personas.ts';
@@ -37,6 +38,11 @@ const DEMO_PASSWORD = process.env.HC360_DEMO_PASSWORD;
 const PART_BYTES = 6_000_000;
 /** The fictional mobile numbers story.mjs gives patients (90000 0xxxx): any other is reported. */
 const FICTIONAL_PHONE = /^90000/;
+/**
+ * What the sign-ins give the staff app to encrypt drafts with instead of their draft key (AuthResult.draftKey), which
+ * the recording server makes from its own key. Any 32 bytes work.
+ */
+const DRAFT_KEY_STAND_IN = Buffer.alloc(32).toString('base64');
 
 const report = { roles: {}, replaced: {}, phones: [], refused: [], files: [] };
 const note = (what) => (report.replaced[what] = (report.replaced[what] ?? 0) + 1);
@@ -84,6 +90,34 @@ function serverNames() {
 }
 const SERVER_NAMES = serverNames();
 
+/** Loopback and unspecified addresses, which are the same on every machine. */
+const NO_MACHINE_ADDRESS = /^(?:127\.|::1$|0\.0\.0\.0$|::$)/;
+
+/**
+ * The addresses the recording machine gives for itself on System health (its network's, and its certificate's names),
+ * matched whole wherever they show. Private ones are replaced anyway; these are replaced whatever range they are in, so
+ * a public or an IPv6 address does not travel either.
+ */
+function serverAddresses() {
+  const addresses = new Set();
+  for (const recording of recordings) {
+    const entry = recording.entries['GET /api/v1/admin/system/health'];
+    if (!entry?.body || entry.encoding !== 'utf8' || entry.status !== 200) continue;
+    const { network, certificate } = JSON.parse(entry.body);
+    for (const address of [...(network?.ipAddresses ?? []), ...(certificate?.subjectAlternativeNames ?? [])]) {
+      if (isIP(address) && !NO_MACHINE_ADDRESS.test(address)) addresses.add(address);
+    }
+  }
+  return [...addresses].map((address) => {
+    const v6 = isIP(address) === 6;
+    const whole = address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Not a piece of a longer address; a port may follow an IPv4 one.
+    const pattern = v6 ? `(?<![\\w:])${whole}(?![\\w:])` : `(?<![\\w.])${whole}(?!\\w|\\.\\d)`;
+    return { pattern: new RegExp(pattern, 'g'), standIn: v6 ? '2001:db8::10' : '192.0.2.10' };
+  });
+}
+const SERVER_ADDRESSES = serverAddresses();
+
 function scrub(text, where) {
   let out = text;
   for (const path of MACHINE_PATHS) {
@@ -103,6 +137,12 @@ function scrub(text, where) {
     note('private address');
     return '192.0.2.10';
   });
+  for (const { pattern, standIn } of SERVER_ADDRESSES) {
+    out = out.replace(pattern, () => {
+      note('server address');
+      return standIn;
+    });
+  }
   for (const name of SERVER_NAMES) {
     out = out.replace(name, () => {
       note('server name');
@@ -114,6 +154,9 @@ function scrub(text, where) {
   }
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(out)) {
     report.refused.push(`${where}: a private key`);
+  }
+  if (/"draftKey":"/.test(out)) {
+    report.refused.push(`${where}: a draft key`);
   }
   if (/\b(?:Password|Pwd)\s*=/i.test(out) || (DEMO_PASSWORD && out.includes(DEMO_PASSWORD))) {
     report.refused.push(`${where}: a password`);
@@ -148,6 +191,7 @@ for (const recording of recordings) {
   const login = recording.entries['POST /api/v1/auth/login'] ?? recording.entries['POST /api/v1/auth/otp/verify'];
   if (!login?.body) throw new Error(`${role}: the recording has no sign-in answer.`);
   const signIn = JSON.parse(login.body);
+  if (signIn.draftKey) note('draft key');
   const answers = {};
   for (const [key, entry] of Object.entries(recording.entries)) {
     // Signing in and out, the token's refresh and the health check are the replay's own (replay.ts).
@@ -163,7 +207,12 @@ for (const recording of recordings) {
     userName: user.userName,
     displayName: user.displayName,
     roleName: user.roles.map((r) => r.replace(/([a-z])([A-Z])/g, '$1 $2')).join(', '),
-    login: { ...signIn, accessToken: 'demo-access-token', expiresAt: null },
+    login: {
+      ...signIn,
+      accessToken: 'demo-access-token',
+      expiresAt: null,
+      draftKey: signIn.draftKey && DRAFT_KEY_STAND_IN,
+    },
     desk: recording.desk ?? {},
     ...(recording.phone ? { phone: recording.phone } : {}),
     answers,
