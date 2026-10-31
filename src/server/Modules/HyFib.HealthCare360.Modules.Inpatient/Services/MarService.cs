@@ -71,6 +71,13 @@ public sealed class MarService(HospitalDbContext db, ISettingsService settings, 
 
     public async Task<Result<MedicationOrderDto>> AddOrderAsync(AdmissionRef admission, AddMedicationOrderRequest request, CancellationToken ct)
     {
+        // A late entry after the discharge records what was done; nothing is started for a patient who has gone home.
+        if (admission.DischargedAt is not null)
+        {
+            return Error.Rule("medication.discharged",
+                "The patient has been discharged, so no medicine is started now. To record a dose given before the discharge, add it as given.");
+        }
+
         var now = time.GetUtcNow();
         var start = request.StartAt ?? now;
         var order = new MedicationOrder
@@ -185,6 +192,12 @@ public sealed class MarService(HospitalDbContext db, ISettingsService settings, 
         }
 
         var now = time.GetUtcNow();
+        if (admission.DischargedAt is { } dischargedAt && (!request.GivenNow || (request.ScheduledAt ?? now) > dischargedAt))
+        {
+            return Error.Rule("medication.discharged",
+                "The patient has been discharged: record only a dose given before the discharge, with the time it was given.");
+        }
+
         var entry = new MedicationAdministration
         {
             FacilityId = admission.FacilityId,

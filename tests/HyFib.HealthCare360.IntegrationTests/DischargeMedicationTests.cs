@@ -51,7 +51,30 @@ public sealed class DischargeMedicationTests(HospitalServer server)
         after.Where(d => d.MedicationOrderId == qid.Id).ShouldAllBe(d => d.Status == MarStatus.Cancelled);
         after.Single(d => d.MedicationOrderId == stat.Id).Status.ShouldBe(MarStatus.Due, "a dose due before the discharge is the nurse's to document");
 
+        // The chart stays open 24 hours for late entries, but nothing becomes due again: no new line, no dose to give.
+        await ShouldBeRefusedAsync(nurse, orders, Order("QID"));
+        var adHoc = $"/api/v1/nursing/admissions/{admission.Id}/mar";
+        await ShouldBeRefusedAsync(nurse, adHoc, AdHoc(givenNow: false, at: null));
+        await ShouldBeRefusedAsync(nurse, adHoc, AdHoc(givenNow: true, at: null));
+        (await DosesAsync(admission.Id)).Count.ShouldBe(after.Count);
+
+        // A dose given before the discharge can still be recorded.
+        var stay = await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admission.Id}");
+        await nurse.PostAsync<MarEntryDto>(adHoc, AdHoc(givenNow: true, at: stay.DischargedAt!.Value.AddMinutes(-30)));
+        (await DosesAsync(admission.Id)).ShouldContain(d => d.IsAdHoc && d.Status == MarStatus.Given);
+
         await CleanBedAsync(nurse, admission.Id);
+    }
+
+    private static AddAdHocDoseRequest AdHoc(bool givenNow, DateTimeOffset? at) => new(
+        MedicationOrderId: null, DrugName: "Ondansetron 4 mg Injection", Dose: "4 mg", Route: "IV", ScheduledAt: at, GivenNow: givenNow,
+        Reason: null, BatchNumber: null, WitnessName: null, Notes: null);
+
+    private static async Task ShouldBeRefusedAsync(ApiClient nurse, string path, object body)
+    {
+        using var refused = await nurse.SendRawAsync(HttpMethod.Post, path, body);
+        refused.StatusCode.ShouldBe(System.Net.HttpStatusCode.UnprocessableEntity);
+        (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("medication.discharged");
     }
 
     private static AddMedicationOrderRequest Order(string frequency) => new(
