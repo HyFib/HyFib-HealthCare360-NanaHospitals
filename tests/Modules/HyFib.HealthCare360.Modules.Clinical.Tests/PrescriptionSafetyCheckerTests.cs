@@ -222,4 +222,69 @@ public sealed class PrescriptionSafetyCheckerTests
         result.Warnings.ShouldBeEmpty();
         result.IsBlocked.ShouldBeFalse();
     }
+
+    private static SafetyDrug Line(string name, string? dosageForm, string? route) =>
+        new(Guid.CreateVersion7(), name, "Ceftriaxone", "1 g", route, "1 g", DoseFrequency.BD, null, null, false, DosageForm: dosageForm);
+
+    [Fact]
+    public void An_injection_with_no_route_or_given_by_mouth_blocks_signing()
+    {
+        // As in the production-style run: the drug master's ceftriaxone (powder for injection) was signed as oral.
+        var oral = Check([Line("Ceftriaxone 1 g Injection", "Powder for injection", "Oral")]).Alerts.Single(a => a.Kind == SafetyAlertKind.Route);
+        oral.IsBlocking.ShouldBeTrue();
+        oral.Severity.ShouldBe(SafetyAlertSeverity.Major);
+        oral.Message.ShouldBe("Ceftriaxone 1 g Injection is an injection, but its route is Oral.");
+
+        Check([Line("Ceftriaxone 1 g Injection", "Powder for injection", null)]).Alerts.Single(a => a.Kind == SafetyAlertKind.Route).Message
+            .ShouldBe("Ceftriaxone 1 g Injection is an injection: choose how it is given (IV, IM or SC).");
+
+        // The form says injection though the name does not.
+        Check([Line("Cefotaxime 1 g", "Injection", "Oral")]).IsBlocked.ShouldBeTrue();
+        foreach (var route in new[] { "IV", "IM", "SC", "Other" })
+        {
+            Check([Line("Ceftriaxone 1 g Injection", "Powder for injection", route)]).Alerts.ShouldNotContain(a => a.Kind == SafetyAlertKind.Route, route);
+        }
+    }
+
+    [Fact]
+    public void A_medicine_taken_by_mouth_given_by_needle_blocks_signing_and_a_name_stands_in_for_a_missing_form()
+    {
+        Check([Line("Paracetamol 500 mg Tablet", null, "IV")]).Alerts.Single(a => a.Kind == SafetyAlertKind.Route).Message
+            .ShouldBe("Paracetamol 500 mg Tablet is taken by mouth, but its route is IV.");
+        Check([Line("Inj. Pantoprazole 40", null, "Oral")]).IsBlocked.ShouldBeTrue();
+
+        // Neither the form nor the name says how it is given: the route is the prescriber's.
+        Check([Line("Pan 40", null, "IV")]).Alerts.ShouldNotContain(a => a.Kind == SafetyAlertKind.Route);
+        Check([Line("Normal saline 0.9%", "Solution", "Oral")]).Alerts.ShouldNotContain(a => a.Kind == SafetyAlertKind.Route);
+    }
+
+    [Theory]
+    [InlineData("Paracetamol 500 mg Tablet", "Tablet", null)]
+    [InlineData("Ciprofloxacin 0.3% drops", "Drops", "")]
+    [InlineData("Normal saline 0.9%", null, " ")]
+    public void A_line_without_a_route_blocks_signing_whatever_its_form(string name, string? form, string? route)
+    {
+        var alert = Check([Line(name, form, route)]).Alerts.Single(a => a.Kind == SafetyAlertKind.Route);
+
+        alert.IsBlocking.ShouldBeTrue();
+        alert.Message.ShouldBe($"{name} has no route: choose how it is given.");
+    }
+
+    [Theory]
+    [InlineData("Tablet", DosageFormKind.Oral)]
+    [InlineData("Tablet (enteric-coated)", DosageFormKind.Oral)]
+    [InlineData("Soft gelatin capsule", DosageFormKind.Oral)]
+    [InlineData("Powder for oral suspension", DosageFormKind.Oral)]
+    [InlineData("Oral solution", DosageFormKind.Oral)]
+    [InlineData("Injection", DosageFormKind.Injection)]
+    [InlineData("Powder for injection", DosageFormKind.Injection)]
+    [InlineData("IV infusion", DosageFormKind.Injection)]
+    [InlineData("Metered-dose inhaler", DosageFormKind.Local)]
+    [InlineData("Nebuliser suspension", DosageFormKind.Local)]
+    [InlineData("Cream", DosageFormKind.Local)]
+    [InlineData("Jelly", DosageFormKind.Local)]
+    [InlineData("Solution", DosageFormKind.Unknown)]
+    [InlineData("", DosageFormKind.Unknown)]
+    public void The_dosage_forms_of_the_drug_master_are_read_as_they_are_given(string form, DosageFormKind kind) =>
+        DosageForms.Classify(form).ShouldBe(kind);
 }

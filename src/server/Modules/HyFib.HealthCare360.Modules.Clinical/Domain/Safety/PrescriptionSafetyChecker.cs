@@ -14,6 +14,7 @@ public static class PrescriptionSafetyChecker
         alerts.AddRange(InteractionCheck.Run(input.Items, input.CurrentMedications, input.Interactions));
         alerts.AddRange(DuplicateTherapyCheck.Run(input.Items, input.CurrentMedications));
         alerts.AddRange(DoseCheck.Run(input.Items, input.CurrentMedications, input.DoseLimits));
+        alerts.AddRange(RouteCheck.Run(input.Items));
         alerts.AddRange(input.Items.Where(i => i.IsControlledDrug).Select(i => new SafetyAlert(
             $"controlled:{i.Id}", SafetyAlertKind.ControlledDrug, SafetyAlertSeverity.Info, IsBlocking: false,
             $"{i.DrugName} is a Schedule H1/X (narcotic/psychotropic) medicine: confirm it explicitly; it is entered in the controlled-drug register.",

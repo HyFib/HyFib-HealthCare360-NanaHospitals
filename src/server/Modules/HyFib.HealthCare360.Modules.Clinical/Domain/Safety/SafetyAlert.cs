@@ -17,6 +17,9 @@ public enum SafetyAlertKind
 
     /// <summary>Schedule H1/X medicine — needs explicit confirmation (enforced when signing).</summary>
     ControlledDrug,
+
+    /// <summary>No route for an injection, or a route its dosage form contradicts (<see cref="RouteCheck"/>).</summary>
+    Route,
 }
 
 public enum SafetyAlertSeverity
@@ -53,7 +56,8 @@ public sealed record SafetyDrug(
     decimal? DosesPerDay,
     bool IsControlledDrug,
     bool IsCurrentMedication = false,
-    string? PrescriptionNumber = null)
+    string? PrescriptionNumber = null,
+    string? DosageForm = null)
 {
     public IReadOnlyList<string> Components { get; } = DrugNames.Components(GenericName, DrugName);
 

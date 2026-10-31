@@ -50,7 +50,7 @@ export function emptyLine(): RxLineValues {
     genericName: '',
     strength: '',
     dosageForm: '',
-    route: 'Oral',
+    route: '',
     dose: '',
     frequency: 'BD',
     customFrequency: '',
@@ -113,6 +113,10 @@ const lineSchema = z
         path: ['quantity'],
         message: 'Enter the quantity to dispense (it cannot be calculated for this dose).',
       });
+    }
+    const route = routeProblem(line);
+    if (route) {
+      ctx.addIssue({ code: 'custom', path: ['route'], message: route });
     }
     // The prescription names every medicine by its generic name (IMC Regulations 2002, reg. 1.5); the server will not
     // sign one without it.
@@ -324,7 +328,8 @@ export function applyDefaults(line: RxLineValues, defaults: MedicineDefaults): R
     genericName: defaults.genericName ?? '',
     strength: defaults.strength ?? '',
     dosageForm: defaults.dosageForm ?? line.dosageForm,
-    route: defaults.route ?? line.route,
+    // A favourite, a template or the drug master may not say: then the medicine's form does, or the doctor chooses.
+    route: defaults.route || defaultRoute(defaults.dosageForm ?? line.dosageForm, defaults.drugName),
     dose: defaults.dose ?? line.dose,
     frequency: defaults.frequency ?? line.frequency,
     customFrequency: defaults.customFrequency ?? '',
@@ -370,6 +375,7 @@ export function drugMasterDefaults(
     genericName: drug.genericName,
     strength: drug.strength,
     dosageForm: drug.dosageForm,
+    route: defaultRoute(drug.dosageForm, drug.name),
     isControlledDrug: drug.isControlled,
     controlledSchedule: drug.controlledSchedule,
   };
@@ -438,6 +444,94 @@ export function templateMedicineDefaults(m: {
   instructions: string | null;
 }): MedicineDefaults {
   return { ...m };
+}
+
+/** What a dosage form (or, without one, the medicine's name) says about how it is given; as the server's DosageForms. */
+export type DosageFormKind = 'injection' | 'oral' | 'local' | 'unknown';
+
+const INJECTION_FORM = /\b(inj(ection)?s?\b|inj\.|infusion|vials?\b|amp(o)?ules?\b)/i;
+// Before oral: a nebuliser suspension is inhaled, an oral gel is put on the gums.
+const LOCAL_FORM =
+  /(inhal|nebuli[sz]|respule|rotacap|metered[- ]dose|\beye\b|ophthalm|\bear\b|\botic\b|nasal|suppositor|rectal|enema|pessar|vaginal|sublingual|cream|ointment|\bgel\b|lotion|jelly|dusting|\bpaint\b|patch|topical)/i;
+const ORAL_FORM =
+  /(tablet|\btabs?\b|capsule|\bcaps?\b|syrup|suspension|\boral\b|sachet|granule|elixir|lozenge|chewable)/i;
+const INJECTION_ROUTES = new Set(['IV', 'IM', 'SC']);
+const NON_INJECTION_ROUTES = new Set([
+  'Oral',
+  'Sublingual',
+  'Nasogastric',
+  'Rectal',
+  'Topical',
+  'Inhalation',
+  'Nebulisation',
+  'Eye',
+  'Ear',
+  'Nasal',
+  'Vaginal',
+]);
+
+export function dosageFormKind(dosageForm: string | null | undefined, drugName?: string | null): DosageFormKind {
+  const text = dosageForm?.trim() || drugName?.trim() || '';
+  if (!text) {
+    return 'unknown';
+  }
+  if (INJECTION_FORM.test(text)) {
+    return 'injection';
+  }
+  if (LOCAL_FORM.test(text)) {
+    return 'local';
+  }
+  return ORAL_FORM.test(text) ? 'oral' : 'unknown';
+}
+
+/**
+ * The route a medicine is given by when its form leaves no doubt: a tablet by mouth, a cream on the skin, an inhaler
+ * inhaled, an IV infusion IV. None for an injection (IV, IM or SC is the doctor's choice) or a form that does not say
+ * (a solution, drops).
+ */
+export function defaultRoute(dosageForm: string | null | undefined, drugName?: string | null): string {
+  const text = dosageForm?.trim() || drugName?.trim() || '';
+  switch (dosageFormKind(dosageForm, drugName)) {
+    case 'injection':
+      return /\b(iv|intravenous)\b|infusion/i.test(text) ? 'IV' : '';
+    case 'oral':
+      return 'Oral';
+    case 'local':
+      if (/inhal|nebuli[sz]|respule|rotacap|metered[- ]dose/i.test(text)) return 'Inhalation';
+      if (/\beye\b|ophthalm/i.test(text)) return 'Eye';
+      if (/\bear\b|\botic\b/i.test(text)) return 'Ear';
+      if (/nasal/i.test(text)) return 'Nasal';
+      if (/suppositor|rectal|enema/i.test(text)) return 'Rectal';
+      if (/pessar|vaginal/i.test(text)) return 'Vaginal';
+      if (/sublingual/i.test(text)) return 'Sublingual';
+      return 'Topical';
+    default:
+      return '';
+  }
+}
+
+/**
+ * Why a medicine's route cannot be signed, or null: every medicine names its route, an injection is given by needle
+ * (IV, IM, SC or Other), and a medicine taken by mouth is not given IV, IM or SC. The server blocks the same.
+ */
+export function routeProblem(line: Pick<RxLineValues, 'drugName' | 'dosageForm' | 'route'>): string | null {
+  if (!line.drugName.trim()) {
+    return null;
+  }
+  const route = line.route.trim();
+  const kind = dosageFormKind(line.dosageForm, line.drugName);
+  if (!route) {
+    return kind === 'injection'
+      ? 'Choose how the injection is given: IV, IM or SC.'
+      : 'Choose how the medicine is given.';
+  }
+  if (kind === 'injection' && NON_INJECTION_ROUTES.has(route)) {
+    return `An injection is not given by the ${route.toLowerCase()} route.`;
+  }
+  if (kind === 'oral' && INJECTION_ROUTES.has(route)) {
+    return `A medicine taken by mouth is not given ${route}.`;
+  }
+  return null;
 }
 
 /** Replaces the trailing blank row (if any) with new rows, so picking from favourites never leaves gaps. */
