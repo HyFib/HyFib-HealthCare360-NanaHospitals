@@ -1,10 +1,9 @@
 // The demo (src/web/demo/README.md) on Cloudflare: a Worker with static assets only, so no Worker script runs. The
-// Demo site workflow puts src/web/demo/site, as committed, and _headers into dist/ and deploys it with a token that can
-// deploy this one Worker and nothing else.
+// Demo site workflow puts src/web/demo/site, as committed, and _headers into dist/ and deploys it.
 //
-// Its address, the Custom Domain hc360.hyfib.com, is attached to the Worker once in the dashboard, which makes its DNS
-// record and certificate. It is not listed here: a deploy that listed it would need a token that can change the
-// hyfib.com zone's routes.
+// The first deploy creates the Worker and its Custom Domain, hc360.hyfib.com, for which Cloudflare makes the DNS record
+// and the certificate. Each deploy keeps the domain attached, so the deploy token can edit the hyfib.com zone's
+// Workers routes (src/web/demo/README.md).
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "hc360-demo",
@@ -12,7 +11,8 @@
 	"assets": {
 		"directory": "./dist"
 	},
-	// One public address: the Custom Domain. No workers.dev address, and no preview address for each version.
+	// One public address, the Custom Domain: no workers.dev address, and no preview address for each version.
+	"routes": [{ "pattern": "hc360.hyfib.com", "custom_domain": true }],
 	"workers_dev": false,
 	"preview_urls": false
 }

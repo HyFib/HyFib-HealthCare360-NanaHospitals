@@ -93,18 +93,17 @@ byte for byte. To publish a new recording, make it and check it as above, then r
 rm -rf demo/site && cp -r demo/out/demo demo/site
 ```
 
-It is set up once, in the Cloudflare account that holds the `hyfib.com` zone, by its administrator. Until then, a run of
-the workflow says what is missing and deploys nothing. The deploy token can deploy this one Worker and nothing else.
-Creating a Worker and giving it a Custom Domain need more than that, so they are done once, by hand:
+The first deploy creates the Worker `hc360-demo` and its Custom Domain, `hc360.hyfib.com`. Cloudflare makes the
+domain's DNS record and certificate. A deploy token is set up once, by the administrator of the Cloudflare account that
+holds the `hyfib.com` zone. Until then, a run of the workflow says what is missing and deploys nothing.
 
-1. **The Worker.** In **Workers & Pages › Create**, start from _Hello World_, name it `hc360-demo`, and deploy it. The
-   first run of the workflow replaces it with the demo.
-2. **Its address.** In the Worker's **Settings › Domains & Routes › Add › Custom domain**, enter `hc360.hyfib.com`.
-   Cloudflare makes the DNS record and the certificate. It refuses a name that already has a `CNAME` record, so delete
-   any `hc360` record first.
-3. **The deploy token.** In **Manage Account › Account API Tokens**, create a token with one permission: _Workers_,
-   scope _Specified Workers_ › `hc360-demo`, role _Editor_.
-4. **In this repository's Settings**:
+1. **The deploy token.** In **Manage Account › Account API Tokens**, create a token with two permissions:
+   - _Workers_, role _Admin_. The first deploy creates the Worker. Admin can also change the account's other Workers,
+     so the token is kept where only `main`'s runs can read it (step 2).
+   - _Zone › Workers Routes › Edit_, for the `hyfib.com` zone only. Each deploy keeps `hc360.hyfib.com` attached.
+     Cloudflare refuses a Custom Domain on a name that already has a `CNAME` record, so delete any `hc360` record
+     first.
+2. **In this repository's Settings**:
    - In **Environments**, create `demo-site`, and set its deployment branches to `main` only.
    - Add the environment secret `CLOUDFLARE_API_TOKEN`, set to the token.
    - In **Secrets and variables › Actions › Variables**, add `CLOUDFLARE_ACCOUNT_ID`. It is on the **Workers & Pages**

@@ -5,8 +5,8 @@
 #   - Cloudflare serves it (its cf-ray header), unless CLOUDFLARE=optional.
 # Usage: demo-site-check.sh <address> <site folder> <_headers file>
 # Writes a Markdown report to REPORT (default: standard output) and a workflow error for each difference; exits 1 if
-# there is one. A file that differs is fetched again (RETRIES times, DELAY seconds apart) while a new deploy reaches
-# every server.
+# there is one. It waits up to WAIT seconds for the site to answer at all. A file that differs is fetched again
+# (RETRIES times, DELAY seconds apart) while a new deploy reaches every server.
 set -euo pipefail
 
 base=${1%/}
@@ -25,6 +25,20 @@ fail() {
 }
 
 echo "## $base" >> "$report"
+
+# A Custom Domain made by this deploy answers once its certificate is in place: wait for it (WAIT seconds, 15 apart).
+wait=${WAIT:-600}
+for ((waited = 0; ; waited += 15)); do
+  if curl --silent --fail --output /dev/null "$base/"; then
+    break
+  fi
+  if [ "$waited" -ge "$wait" ]; then
+    fail "$base/ did not answer within $wait seconds."
+    echo "- \`/\`: **no answer within $wait seconds**" >> "$report"
+    exit 1
+  fi
+  sleep 15
+done
 
 mapfile -t files < <(cd "$site" && find . -type f | sed 's|^\./||' | sort)
 for file in "" "${files[@]}"; do

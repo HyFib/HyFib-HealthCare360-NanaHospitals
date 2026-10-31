@@ -2,10 +2,10 @@ name: Demo site
 
 # Publishes the demo (src/web/demo/README.md) at https://hc360.hyfib.com from Cloudflare: the Worker hc360-demo, with
 # static assets only. What it publishes is src/web/demo/site, the built folder verify.mjs checked, as it is, with the
-# headers in .github/demo-site/_headers. It runs when either changes on main, and by hand. The Worker, its Custom Domain
-# and the deploy token are set up once (src/web/demo/README.md); until the token is in place, a run says what is missing
-# and deploys nothing. After a deploy, the live site is checked: each file as committed, each header, and Cloudflare in
-# front. Run by hand with "check only", it deploys nothing and checks the live site.
+# headers in .github/demo-site/_headers. It runs when either changes on main, and by hand. The first deploy creates the
+# Worker and its Custom Domain. The deploy token is set up once (src/web/demo/README.md); until it is in place, a run
+# says what is missing and deploys nothing. After a deploy, the live site is checked: each file as committed, each
+# header, and Cloudflare in front. Run by hand with "check only", it deploys nothing and checks the live site.
 on:
   push:
     branches: [main]
