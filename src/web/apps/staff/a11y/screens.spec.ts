@@ -77,6 +77,8 @@ const SCREENS: Screen[] = [
       [`GET /api/v1/privacy/patients/${ASHA.id}/nominee`]: { nominee: null },
       'GET /api/v1/privacy/requests': paged([]),
       [`GET /api/v1/patients/${ASHA.id}/sensitive-categories`]: { categories: [], version: 1 },
+      // A merge waiting for a second records officer would show here; none is waiting.
+      'GET /api/v1/approvals': paged([]),
     },
     ready: (page) => page.getByText('Penicillin', { exact: false }).first(),
   },
