@@ -44,10 +44,11 @@ HC360_HealthCare360__RateLimits__PerUser__TokensPerPeriod=2000
 The story plays the morning at the hospital's times, from 9:00 to 11:10 am, so its screens show a believable
 timeline (lab turnaround, waiting times, who was seen when). For that the server and its database take their clock
 from one file, through libfaketime, and the story moves it on as it goes. At the end it stops the clock at 11:10 am,
-the moment the demo shows, so every screen is recorded at that one moment. On Linux:
+the moment the demo shows, so every screen is recorded at that one moment. On Linux (the offset is signed, `+` before
+9:00 am in India and `-` after; libfaketime ignores a file that reads `+-`, and the clock then stays real):
 
 ```bash
-echo "+$(( $(TZ=Asia/Kolkata date -d 'today 09:00' +%s) - $(date +%s) ))" > /var/tmp/hc360-demo-clock.txt
+printf '%+d\n' $(( $(TZ=Asia/Kolkata date -d 'today 09:00' +%s) - $(date +%s) )) > /var/tmp/hc360-demo-clock.txt
 export FAKETIME_TIMESTAMP_FILE=/var/tmp/hc360-demo-clock.txt FAKETIME_CACHE_DURATION=1 FAKETIME_DONT_FAKE_MONOTONIC=1
 # Start PostgreSQL with LD_PRELOAD=…/faketime/libfaketime.so.1, then the server (on an empty database) with
 # LD_PRELOAD=…/faketime/libfaketimeMT.so.1. Its demo seed is made at 9:00 am.
