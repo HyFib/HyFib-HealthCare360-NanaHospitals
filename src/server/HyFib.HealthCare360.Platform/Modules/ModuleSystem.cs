@@ -1,5 +1,6 @@
 using System.Reflection;
 using FluentValidation;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -55,8 +56,8 @@ public sealed class ModuleCatalog
 public static class ModuleServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the modules and scans their assemblies for validators, seeders, domain-event handlers
-    /// and outbox handlers so modules never need to touch shared registration code.
+    /// Registers the modules and scans their assemblies for validators, seeders, domain-event handlers,
+    /// outbox handlers and approval actions so modules never need to touch shared registration code.
     /// </summary>
     public static ModuleCatalog AddHospitalModules(this IServiceCollection services, IConfiguration configuration, IEnumerable<IModule> modules)
     {
@@ -68,6 +69,7 @@ public static class ModuleServiceCollectionExtensions
             services.AddValidatorsFromAssembly(assembly, ServiceLifetime.Scoped, includeInternalTypes: true);
             RegisterImplementations(services, assembly, typeof(ISeeder));
             RegisterImplementations(services, assembly, typeof(IOutboxHandler));
+            RegisterImplementations(services, assembly, typeof(IApprovalAction));
             RegisterOpenGeneric(services, assembly, typeof(IDomainEventHandler<>));
         }
 

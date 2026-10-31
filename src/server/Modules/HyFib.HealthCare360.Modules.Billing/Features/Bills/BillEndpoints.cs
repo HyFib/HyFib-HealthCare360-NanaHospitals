@@ -46,7 +46,9 @@ internal static class BillEndpoints
         group.MapDelete("/{id:guid}", Discard).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
         group.MapPost("/{id:guid}/send-whatsapp", SendOnWhatsApp)
             .RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage, BillingPermissions.PaymentsCollect);
-        group.MapPost("/{id:guid}/credit-notes", IssueCreditNote).RequirePermission(BillingPermissions.RefundsApprove).WithValidation<IssueCreditNoteRequest>();
+        // Asks for a credit note or write-off; an approver, someone else, issues it from the approvals inbox (202).
+        group.MapPost("/{id:guid}/credit-notes", RequestCreditNote).RequireAnyPermission(BillingPermissions.RefundsRequest, BillingPermissions.RefundsApprove)
+            .WithValidation<IssueCreditNoteRequest>();
     }
 
     private static async Task<IResult> List(
@@ -221,13 +223,8 @@ internal static class BillEndpoints
         return sent.ToNoContent();
     }
 
-    private static async Task<IResult> IssueCreditNote(Guid id, IssueCreditNoteRequest request, RefundService refunds, HospitalDbContext db, TimeProvider time, CancellationToken ct)
-    {
-        var issued = await refunds.IssueCreditNoteAsync(id, request, ct);
-        return issued.IsSuccess
-            ? TypedResults.Created($"/api/v1/billing/bills/{id}", await BillQueries.DetailAsync(db, id, time, ct))
-            : issued.Error!.ToProblem();
-    }
+    private static async Task<IResult> RequestCreditNote(Guid id, IssueCreditNoteRequest request, RefundService refunds, CancellationToken ct) =>
+        (await refunds.RequestCreditNoteAsync(id, request, ct)).ToHttpResult(approval => TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval));
 
     private static async Task<IResult> DetailAfterAsync(Result result, HospitalDbContext db, Guid id, TimeProvider time, CancellationToken ct)
     {

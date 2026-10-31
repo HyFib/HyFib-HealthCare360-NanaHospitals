@@ -58,7 +58,9 @@ public sealed record ReceiptSummary(Guid Id, string ReceiptNumber, ReceiptPurpos
 
 public sealed record RefundSummary(Guid Id, string RefundNumber, decimal Amount, RefundStatus Status, PaymentMode? Mode, DateTimeOffset RequestedAt, DateTimeOffset? PaidAt);
 
-public sealed record CreditNoteDto(Guid Id, string Number, CreditNoteKind Kind, decimal Amount, string Reason, DateTimeOffset IssuedAt, string? IssuedByName);
+/// <param name="RequestedByName">Who asked for it; <paramref name="IssuedByName"/> approved and issued it.</param>
+public sealed record CreditNoteDto(
+    Guid Id, string Number, CreditNoteKind Kind, decimal Amount, string Reason, DateTimeOffset IssuedAt, string? IssuedByName, string? RequestedByName);
 
 public sealed record DiscountApprovalDto(
     Guid Id,
@@ -204,6 +206,7 @@ public sealed record CancelBillRequest(string Reason, uint Version);
 
 public sealed record DecideDiscountRequest(string? Remarks);
 
+/// <summary>A credit note or write-off asked for on a finalized bill; it is issued when an approver approves it.</summary>
 public sealed record IssueCreditNoteRequest(CreditNoteKind Kind, decimal Amount, string Reason);
 
 public sealed record DiscountLimitDto(Guid Id, Guid UserId, string? UserName, decimal MaxPercent, decimal? MaxAmount, string? Notes, uint Version);

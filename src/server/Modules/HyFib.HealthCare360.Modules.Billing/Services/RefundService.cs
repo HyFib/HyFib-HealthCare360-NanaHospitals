@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -10,8 +11,9 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 
 /// <summary>
 /// Refunds, credit notes and write-offs (MB-05, OPB-06, IPB-08). A refund is requested, approved by a second person and
-/// only then paid out (cash from the open shift, bank/UPI with a reference, or reversed through the payment gateway);
-/// credit notes and write-offs are issued by approvers and audited.
+/// only then paid out (cash from the open shift, bank/UPI with a reference, or reversed through the payment gateway).
+/// A credit note or write-off is asked for by one person and issued when an approver, another person, approves it
+/// (<see cref="CreditNoteApproval"/>); both are audited.
 /// </summary>
 public sealed class RefundService(
     HospitalDbContext db,
@@ -19,6 +21,7 @@ public sealed class RefundService(
     ShiftService shifts,
     INotificationService notifications,
     IAuditLogger audit,
+    IApprovals approvals,
     IServiceProvider services,
     ICurrentUser currentUser,
     TimeProvider time,
@@ -248,46 +251,95 @@ public sealed class RefundService(
         return Result.Success();
     }
 
-    public async Task<Result<Guid>> IssueCreditNoteAsync(Guid billId, IssueCreditNoteRequest request, CancellationToken ct)
+    /// <summary>
+    /// Asks for a credit note or write-off on a finalized bill. Nothing changes until an approver, someone other than the
+    /// person asking, approves it; it is then issued on the bill as it is now, or not at all
+    /// (<see cref="IssueApprovedCreditNoteAsync"/>).
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto>> RequestCreditNoteAsync(Guid billId, IssueCreditNoteRequest request, CancellationToken ct)
     {
-        var bill = await db.Set<Bill>().FirstOrDefaultAsync(b => b.Id == billId, ct);
+        var bill = await db.Set<Bill>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == billId, ct);
         if (bill is null)
         {
             return Error.NotFound(nameof(Bill), billId);
         }
 
-        var credited = bill.ApplyCredit(Money.Round(request.Amount));
+        var amount = Money.Round(request.Amount);
+        var creditable = bill.CanCredit(amount);
+        if (creditable.IsFailure)
+        {
+            return creditable.Error!;
+        }
+
+        var what = CreditNoteApproval.Words(request.Kind);
+        return await approvals.RequestAsync(
+            CreditNoteApproval.KindOf(request.Kind),
+            new ApprovalSubject(nameof(Bill), bill.Id, bill.Version, bill.FacilityId, bill.PatientId),
+            new CreditNotePayload(bill.Id, request.Kind, amount, request.Reason.Trim()),
+            $"{what} of ₹{Money.FormatInr(amount)} on bill {bill.BillNumber}",
+            [
+                new("Bill", bill.BillNumber ?? bill.Id.ToString()),
+                new("Patient's share", $"₹{Money.FormatInr(bill.PatientAmount)}"),
+                new("Paid", $"₹{Money.FormatInr(bill.PaidAmount)}"),
+                new("Already credited", $"₹{Money.FormatInr(bill.CreditAmount)}"),
+                new("Balance due", $"₹{Money.FormatInr(bill.DueAmount)}"),
+                new(what, $"₹{Money.FormatInr(amount)}"),
+            ],
+            request.Reason,
+            ct);
+    }
+
+    /// <summary>
+    /// Issues an approved credit note or write-off, in the approval's transaction (the approval saves and commits). It is
+    /// issued only on the bill as it was asked for: a bill paid, refunded or credited since was approved for a balance it
+    /// no longer has. The person who asked and the approver are both kept on the note.
+    /// </summary>
+    internal async Task<Result<string>> IssueApprovedCreditNoteAsync(ApprovalRequest approval, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<CreditNotePayload>(approval.Payload);
+        var bill = await db.Set<Bill>().FirstOrDefaultAsync(b => b.Id == asked.BillId, ct);
+        if (bill is null)
+        {
+            return Error.NotFound(nameof(Bill), asked.BillId);
+        }
+
+        if (bill.Version != approval.SubjectVersion)
+        {
+            return Error.Rule("approval.stale",
+                $"Bill {bill.BillNumber} changed after this was asked for (a payment, a refund or another credit). Ask again, against the bill as it is now.");
+        }
+
+        var credited = bill.ApplyCredit(asked.Amount);
         if (credited.IsFailure)
         {
             return credited.Error!;
         }
 
-        await using var transaction = await db.BeginOwnedTransactionAsync(ct);
         var note = new CreditNote
         {
             FacilityId = bill.FacilityId,
             Number = await numbers.NextAsync(BillingNumberSeries.CreditNote, bill.FacilityId, ct),
-            Kind = request.Kind,
+            Kind = asked.Kind,
             BillId = bill.Id,
             PatientId = bill.PatientId,
-            Amount = Money.Round(request.Amount),
-            Reason = request.Reason.Trim(),
+            Amount = asked.Amount,
+            Reason = asked.Reason,
+            RequestedBy = approval.RequestedBy,
+            RequestedByName = approval.RequestedByName,
             IssuedBy = currentUser.UserId,
             IssuedByName = currentUser.DisplayName ?? currentUser.UserName,
             IssuedAt = time.GetUtcNow(),
         };
         db.Add(note);
-        audit.Add(new AuditEntry(AuditCategories.Data, request.Kind == CreditNoteKind.WriteOff ? "billing.bill.written_off" : "billing.credit_note.issued",
-            $"{note.Number}: ₹{Money.FormatInr(note.Amount)} on bill {bill.BillNumber} — {note.Reason}")
+        audit.Add(new AuditEntry(AuditCategories.Data, asked.Kind == CreditNoteKind.WriteOff ? "billing.bill.written_off" : "billing.credit_note.issued",
+            $"{note.Number}: ₹{Money.FormatInr(note.Amount)} on bill {bill.BillNumber} — {note.Reason} (asked for by {note.RequestedByName}, approved by {note.IssuedByName})")
         {
             PatientId = bill.PatientId,
             EntityType = nameof(Bill),
             EntityId = bill.Id.ToString(),
             Severity = AuditSeverity.Warning,
         });
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return note.Id;
+        return note.Number;
     }
 
     /// <summary>

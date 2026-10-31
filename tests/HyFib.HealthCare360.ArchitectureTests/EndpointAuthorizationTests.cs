@@ -173,6 +173,15 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/notifications/{id:guid}/read",
         "POST /api/v1/notifications/read-all",
 
+        // Approvals (maker-checker), staff only: patients are refused. A caller sees the requests they asked for and those
+        // of the kinds they hold the approving permission for; a decision checks that permission again and refuses the
+        // person who asked, and only the person who asked may withdraw.
+        "GET /api/v1/approvals/",
+        "GET /api/v1/approvals/{id:guid}",
+        "POST /api/v1/approvals/{id:guid}/approve",
+        "POST /api/v1/approvals/{id:guid}/reject",
+        "POST /api/v1/approvals/{id:guid}/withdraw",
+
         // Branding and feature switches (non-secret "ui.*" and "features.*" settings only; every switch as the server
         // enforces it for the caller's facility).
         "GET /api/v1/settings/public",

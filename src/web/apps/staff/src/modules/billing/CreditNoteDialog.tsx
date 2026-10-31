@@ -16,8 +16,9 @@ import {
 } from '@fluentui/react-components';
 import { formatInr } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { approvalKeys } from '@/modules/approvals/api';
 import { billingApi, type BillDetail } from './api';
 import { useRefreshBilling } from './hooks';
 import { CREDIT_NOTE_KIND_LABEL, CREDIT_NOTE_KINDS, type CreditNoteKind } from './labels';
@@ -30,13 +31,14 @@ const useStyles = makeStyles({
 });
 
 /**
- * Credit note (wrong rate, service not given) or write-off (unrecoverable due) on a finalized bill. Issued only by
- * approvers, numbered and audited; it reduces what the patient owes and, if the bill was paid, makes the difference
- * refundable.
+ * Asks for a credit note (wrong rate, service not given) or write-off (unrecoverable due) on a finalized bill. An
+ * approver, someone other than the person asking, issues it from the approvals inbox, on the bill as it is then; it is
+ * numbered and audited, reduces what the patient owes and, if the bill was paid, makes the difference refundable.
  */
 export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; open: boolean; onClose: () => void }) {
   const styles = useStyles();
   const notify = useNotify();
+  const queryClient = useQueryClient();
   const refresh = useRefreshBilling();
   const max = creditableAmount(bill);
   const [kind, setKind] = useState<CreditNoteKind>('CreditNote');
@@ -62,13 +64,13 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
   const valid = parsed.ok && reason.trim().length >= 5;
 
   const issue = useMutation({
-    mutationFn: () => billingApi.issueCreditNote(bill.id, kind, parsed.ok ? parsed.rupees : 0, reason.trim()),
-    onSuccess: (updated) => {
-      const note = updated.creditNotes.at(-1);
+    mutationFn: () => billingApi.requestCreditNote(bill.id, kind, parsed.ok ? parsed.rupees : 0, reason.trim()),
+    onSuccess: (asked) => {
       notify.success(
-        `${CREDIT_NOTE_KIND_LABEL[kind]} issued`,
-        note ? `${note.number} · ${formatInr(note.amount)}` : undefined,
+        `${CREDIT_NOTE_KIND_LABEL[kind]} sent for approval`,
+        `${asked.summary}. An approver, not you, issues it.`,
       );
+      void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
       void refresh();
       onClose();
     },
@@ -96,8 +98,8 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
             <DialogTitle>Credit note or write-off</DialogTitle>
             <DialogContent className={styles.body}>
               <Text>
-                Bill {bill.billNumber} · {bill.patientName}. Up to <Amount value={max} strong /> can be credited. This
-                cannot be undone.
+                Bill {bill.billNumber} · {bill.patientName}. Up to <Amount value={max} strong /> can be credited. An
+                approver, someone other than you, issues it; once issued it cannot be undone.
               </Text>
               <Field label="Type" required>
                 <RadioGroup value={kind} onChange={(_, data) => setKind(data.value as CreditNoteKind)}>
@@ -142,7 +144,7 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
                 disabledFocusable={issue.isPending}
                 icon={issue.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
-                Issue {CREDIT_NOTE_KIND_LABEL[kind].toLowerCase()}
+                Ask for {CREDIT_NOTE_KIND_LABEL[kind].toLowerCase()}
               </Button>
             </DialogActions>
           </DialogBody>

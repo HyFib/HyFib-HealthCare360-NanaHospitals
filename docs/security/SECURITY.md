@@ -314,9 +314,23 @@ and grants nothing.
   biomedical, HR, store, purchase and MIS roles do not get `patients.read` or `visits.read` by default. An upgrade takes
   a default grant back from a role that no longer has it (`identity.seeded_grants` records what the seeder gave), and
   leaves alone any grant an administrator gave by hand.
+- **Maker-checker.** Some changes are made only when a second person approves them (`ApprovalRequest`,
+  `/api/v1/approvals`):
+  - credit notes and write-offs on a finalized bill (audit finding S6): a cashier or the billing desk asks
+    (`billing.refunds.request`), an approver issues (`billing.refunds.approve`);
+  - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves.
+  - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
+    approver must hold the kind's approving permission when deciding.
+  - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
+    asked is refused (`approval.altered`, audited as critical).
+  - The change is made in the approval's own transaction, and only on the record as it was when it was asked for (its
+    version): a bill paid or credited since, or a patient record changed since, fails the request (`approval.stale`)
+    and the person who asked is told to ask again.
+  - A request waits at most 7 days. Only the person who asked withdraws it. Asking, approving, rejecting, withdrawing
+    and a failed approval are audited, and the credit note keeps both names.
 - **Separation of duties.** No one approves or undoes their own work:
-  - whoever finalised a bill cannot cancel it (`billing.cancel_own_bill`), as refunds and discounts already need a
-    second person;
+  - whoever finalised a bill cannot cancel it (`billing.cancel_own_bill`), as refunds, discounts, credit notes and
+    write-offs already need a second person;
   - whoever raised a purchase requisition or order cannot approve it (`requisition.approve_own`, `po.approve_own`);
   - a lab that sets `lab.separateVerifier` (per facility, off by default for a lab with one pathologist) refuses
     verification of a result by whoever entered it (`lab.verify_own_result`).

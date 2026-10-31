@@ -9,6 +9,7 @@ import type {
 } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { PaperRegistration } from './downtimeApi';
 import { photoDataUrl } from './photo';
 
@@ -642,7 +643,9 @@ export const patientApi = {
    * server answers 422 `patient.merge_self` for the same record and `patient.already_merged` when either one has been
    * merged; the reason (10 to 500 characters) goes into the audit trail.
    */
-  merge: (id: string, request: MergePatientRequest) => api.post<void>(`/api/v1/patients/${id}/merge`, request),
+  /** Asks for the merge (202): another person who may merge records approves it from the approvals inbox. */
+  requestMerge: (id: string, request: MergePatientRequest) =>
+    api.post<ApprovalRequestDto>(`/api/v1/patients/${id}/merge`, request),
   breakGlass: (id: string, reason: string) =>
     api.post<{ patientId: string; expiresAt: string }>(`/api/v1/patients/${id}/break-glass`, { reason }),
   createVisit: (request: CreateVisitRequest) => api.post<VisitDetail>('/api/v1/visits', request),

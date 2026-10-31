@@ -240,7 +240,7 @@ public sealed class PortalFamilyTests(HospitalServer server)
         await frontOffice.PostAsync($"/api/v1/patients/{kept.Id}/portal-family", new LinkFamilyMemberRequest(sisterPhone, FamilyRelation.Sibling, "Patient", true));
 
         var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
-        await mrd.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+        await MakerChecker.MergeAsync(mrd, await server.SignInAsync(HospitalServer.Users.MrdVerifier), duplicate.Id, kept.Id, "Registered twice");
 
         var grandson = await server.SignInToPortalAsync(grandsonPhone);
         var profiles = await grandson.GetAsync<List<PatientSummary>>("/api/v1/portal/profiles");

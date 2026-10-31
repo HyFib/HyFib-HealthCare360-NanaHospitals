@@ -212,6 +212,11 @@ sequenceDiagram
 * **Tokens:** ES256-signed JWT access tokens (10 min) carrying user, facility, session and device IDs. **Permissions are resolved server-side** and cached, so revocation is immediate and tokens stay small. Refresh tokens are opaque, stored hashed, rotated on every use, and grouped by family for reuse detection. Sessions have a 12 h absolute limit. Start-up refuses settings beyond either ceiling (access tokens 15 min, sessions 12 h; SRS SEC-02).
 * **Authorisation:** permission strings (`billing.op.create`, `clinical.notes.sign`, …) are declared by modules and grouped into seeded roles. Endpoints enforce them with a dynamic policy provider. Every query is facility-scoped by default.
 * **Break-the-glass:** restricted-record access needs a reason and is time-boxed, flagged in the audit log and surfaced to the privacy officer.
+* **Maker-checker:** a change that needs a second person is asked for through `IApprovals` (Platform). The request
+  stores the change and its SHA-256 and the record's version; it waits in `/api/v1/approvals` for someone else who
+  holds the kind's approving permission. On approval, the module that owns the record makes the change through its
+  `IApprovalAction`, in the approval's transaction, and only on the record's version that was asked for. Modules
+  declare their actions; the platform discovers them as it does seeders and handlers (see SECURITY.md, Maker-checker).
 * **Transport:** TLS everywhere, including on the LAN, with HSTS. The Desktop shell pins the server certificate fingerprint captured at enrolment and blocks navigation outside the server origin.
 * **At rest:** AES-GCM field encryption, an encrypted document store, and encrypted backups. Data Protection keys are protected with machine DPAPI. BitLocker on the Server Node is the hospital's responsibility (SRS SEC-05); nothing checks it yet, and an installer check is planned (`docs/security/ASVS-L2.md`).
 * **Web hardening:** strict CSP, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` (camera/microphone only for self), `frame-ancestors 'none'`, rate limiting, request size limits, and output encoding (React).

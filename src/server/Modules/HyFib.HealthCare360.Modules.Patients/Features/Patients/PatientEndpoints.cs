@@ -20,6 +20,7 @@ internal static class PatientEndpoints
         // Who edits a patient's details sees them in full first (SRS PRV-03): a masked number saved back would replace the real one.
         group.MapPut("/{id:guid}", Update).RequirePermission(PatientsPermissions.Register).RequirePermission(PatientsPermissions.ContactRead)
             .WithValidation<UpdatePatientRequest>();
+        // Asks for the merge; another person who may merge records approves it from the approvals inbox (202).
         group.MapPost("/{id:guid}/merge", Merge).RequirePermission(PatientsPermissions.Merge).WithValidation<MergePatientRequest>();
         group.MapPost("/{id:guid}/break-glass", BreakGlass).RequirePermission(PatientsPermissions.BreakGlass).WithValidation<BreakGlassRequest>();
         group.MapGet("/{id:guid}/sensitive-categories", GetSensitive).RequirePermission(PatientsPermissions.SensitiveManage);
@@ -205,7 +206,7 @@ internal static class PatientEndpoints
     }
 
     private static async Task<IResult> Merge(Guid id, MergePatientRequest request, PatientRegistrationService registration, CancellationToken ct) =>
-        (await registration.MergeAsync(id, request, ct)).ToNoContent();
+        (await registration.RequestMergeAsync(id, request, ct)).ToHttpResult(approval => TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval));
 
     private static async Task<IResult> BreakGlass(Guid id, BreakGlassRequest request, PatientAccessGuard guard, CancellationToken ct) =>
         (await guard.BreakGlassAsync(id, request.Reason.Trim(), ct)).ToOk();

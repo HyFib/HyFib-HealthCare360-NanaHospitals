@@ -80,7 +80,7 @@ internal static class BillQueries
             IsTaxInvoice: bill.Lines.Any(l => l.TaxAmount > 0), bill.CreatedAt, bill.FinalizedAt, bill.CancelledAt, bill.CancelReason, bill.Notes, lines,
             receipts.Select(ToSummary).ToList(),
             refunds.Select(r => new RefundSummary(r.Id, r.RefundNumber, r.Amount, r.Status, r.Mode, r.RequestedAt, r.PaidAt)).ToList(),
-            credits.Select(c => new CreditNoteDto(c.Id, c.Number, c.Kind, c.Amount, c.Reason, c.IssuedAt, c.IssuedByName)).ToList(),
+            credits.Select(c => new CreditNoteDto(c.Id, c.Number, c.Kind, c.Amount, c.Reason, c.IssuedAt, c.IssuedByName, c.RequestedByName)).ToList(),
             pending is null ? null : ToDto(pending, bill.BillNumber, patient?.Uhid, patient?.FullName),
             package,
             bill.Version,
