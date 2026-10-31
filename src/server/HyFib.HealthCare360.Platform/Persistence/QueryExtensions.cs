@@ -59,6 +59,26 @@ public static class QueryExtensions
             .Replace("%", LikeEscape + "%", StringComparison.Ordinal)
             .Replace("_", LikeEscape + "_", StringComparison.Ordinal);
 
+    /// <summary>The words of a search term, each once, in the order typed.</summary>
+    public static IReadOnlyList<string> SearchWords(this string term) =>
+        [.. term.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>
+    /// A search as people type it: every word of <paramref name="term"/> must match, in any order, so "chest X-ray" finds
+    /// "X-ray chest PA view". <paramref name="matches"/> is the condition one word's pattern (<see cref="ToLikePattern"/>)
+    /// puts on a row; each word is a condition of its own, which a trigram index serves.
+    /// </summary>
+    public static IQueryable<T> WhereEveryWord<T>(this IQueryable<T> query, string term, Func<string, Expression<Func<T, bool>>> matches)
+    {
+        ArgumentNullException.ThrowIfNull(matches);
+        foreach (var word in term.SearchWords())
+        {
+            query = query.Where(matches(word.ToLikePattern()));
+        }
+
+        return query;
+    }
+
     /// <summary>Loads an entity by id or returns a NotFound error.</summary>
     public static async Task<Result<T>> FindOrNotFoundAsync<T>(this DbSet<T> set, Guid id, CancellationToken cancellationToken)
         where T : Entity
