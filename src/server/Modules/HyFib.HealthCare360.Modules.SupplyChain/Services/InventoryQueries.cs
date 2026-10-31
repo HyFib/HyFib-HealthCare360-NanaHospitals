@@ -67,6 +67,16 @@ public static class InventoryQueries
         }
 
         var code = term.ToUpperInvariant();
+        if (term.SearchWords().Count > 1)
+        {
+            // A name typed in any order ("tablet paracetamol 500" for "Paracetamol 500 mg Tablet"): each word in the name,
+            // the generic or the brand. The whole term is still an exact code or barcode: one typed as printed has spaces.
+            return items.WhereEveryWord(term, word => i => EF.Functions.ILike(i.Name, word, QueryExtensions.LikeEscape)
+                                                           || (i.GenericName != null && EF.Functions.ILike(i.GenericName, word, QueryExtensions.LikeEscape))
+                                                           || (i.BrandName != null && EF.Functions.ILike(i.BrandName, word, QueryExtensions.LikeEscape)),
+                whole: i => i.Code == code || i.Barcode == term);
+        }
+
         var like = term.ToLikePattern();
         return items.Where(i => i.Code == code || i.Barcode == term || EF.Functions.ILike(i.Name, like, QueryExtensions.LikeEscape)
                                 || (i.GenericName != null && EF.Functions.ILike(i.GenericName, like, QueryExtensions.LikeEscape))

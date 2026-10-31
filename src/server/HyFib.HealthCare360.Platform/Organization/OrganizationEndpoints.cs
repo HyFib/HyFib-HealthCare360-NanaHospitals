@@ -347,8 +347,9 @@ internal static class OrganizationEndpoints
                 var query = db.Set<ServiceItem>().Where(s => s.IsActive && (category == null || s.Category == category));
                 if (!string.IsNullOrWhiteSpace(search))
                 {
-                    var like = search.Trim().ToLikePattern();
-                    query = query.Where(s => EF.Functions.ILike(s.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(s.Code, like, QueryExtensions.LikeEscape));
+                    // Each word in the name or the code, in any order: a doctor orders "chest X-ray" for "X-ray chest PA view".
+                    query = query.WhereEveryWord(search, like => s =>
+                        EF.Functions.ILike(s.Name, like, QueryExtensions.LikeEscape) || EF.Functions.ILike(s.Code, like, QueryExtensions.LikeEscape));
                 }
 
                 return TypedResults.Ok(await query.OrderBy(s => s.Name).Take(50).Select(ToServiceDto).ToListAsync(ct));
