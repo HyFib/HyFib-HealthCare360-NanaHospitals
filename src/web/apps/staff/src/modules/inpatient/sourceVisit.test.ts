@@ -17,15 +17,32 @@ describe('the visit a stay comes from', () => {
   ];
 
   it('offers the out-patient visits of the last three days for an admission advised in OPD, latest first', () => {
-    expect(sourceVisitChoices(visits, 'OutPatient', NOW).map((v) => v.id)).toEqual(['opd-today', 'opd-two-days']);
+    expect(sourceVisitChoices(visits, 'OutPatient', null, NOW).map((v) => v.id)).toEqual(['opd-today', 'opd-two-days']);
   });
 
   it('offers the casualty visits for an admission from the ER', () => {
-    expect(sourceVisitChoices(visits, 'Emergency', NOW).map((v) => v.id)).toEqual(['er-yesterday']);
+    expect(sourceVisitChoices(visits, 'Emergency', null, NOW).map((v) => v.id)).toEqual(['er-yesterday']);
   });
 
   it('offers none for a referral or a direct admission', () => {
-    expect(sourceVisitChoices(visits, 'Referral', NOW)).toEqual([]);
-    expect(sourceVisitChoices(visits, 'Direct', NOW)).toEqual([]);
+    expect(sourceVisitChoices(visits, 'Referral', null, NOW)).toEqual([]);
+    expect(sourceVisitChoices(visits, 'Direct', null, NOW)).toEqual([]);
+  });
+
+  it('offers, for an admission entered as earlier, only the visits of the three days before it', () => {
+    // Admitted yesterday at 11 am (entered today): today's OPD visit came after the stay began, and is no source of it;
+    // the visit four days before the admission is too old, and the one two days before it is offered.
+    const admittedAt = NOW - 24 * 3_600_000;
+    const earlier = [
+      visit('opd-today', 'OutPatient', hoursAgo(1)),
+      visit('opd-before-admission', 'OutPatient', hoursAgo(26)),
+      visit('opd-two-days-before', 'OutPatient', hoursAgo(24 + 48)),
+      visit('opd-four-days-before', 'OutPatient', hoursAgo(24 + 96)),
+    ];
+
+    expect(sourceVisitChoices(earlier, 'OutPatient', admittedAt, NOW).map((v) => v.id)).toEqual([
+      'opd-before-admission',
+      'opd-two-days-before',
+    ]);
   });
 });
