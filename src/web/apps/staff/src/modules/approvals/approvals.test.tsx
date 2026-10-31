@@ -5,8 +5,8 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApprovalRequestDto } from '@/modules/approvals/api';
-import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, STAFF_USER, stubBrowserApis } from './appScreen';
-import type { FakeRequest } from './fakeApi';
+import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, STAFF_USER, stubBrowserApis } from '@/test/appScreen';
+import type { FakeRequest } from '@/test/fakeApi';
 
 // Maker-checker in the staff app: the accountant approves a credit note the billing desk asked for, sending the version
 // of the request they saw; the person who asked may only withdraw it; and a refusal (the bill changed after it was asked
