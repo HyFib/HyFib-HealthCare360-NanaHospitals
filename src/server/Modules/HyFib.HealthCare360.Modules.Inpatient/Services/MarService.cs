@@ -71,6 +71,13 @@ public sealed class MarService(HospitalDbContext db, ISettingsService settings, 
 
     public async Task<Result<MedicationOrderDto>> AddOrderAsync(AdmissionRef admission, AddMedicationOrderRequest request, CancellationToken ct)
     {
+        // A late entry after the discharge records what was done; nothing is started for a patient who has gone home.
+        if (admission.DischargedAt is not null)
+        {
+            return Error.Rule("medication.discharged",
+                "The patient has been discharged, so no medicine is started now. To record a dose given before the discharge, add it as given.");
+        }
+
         var now = time.GetUtcNow();
         var start = request.StartAt ?? now;
         var order = new MedicationOrder
@@ -185,6 +192,12 @@ public sealed class MarService(HospitalDbContext db, ISettingsService settings, 
         }
 
         var now = time.GetUtcNow();
+        if (admission.DischargedAt is { } dischargedAt && (!request.GivenNow || (request.ScheduledAt ?? now) > dischargedAt))
+        {
+            return Error.Rule("medication.discharged",
+                "The patient has been discharged: record only a dose given before the discharge, with the time it was given.");
+        }
+
         var entry = new MedicationAdministration
         {
             FacilityId = admission.FacilityId,
@@ -284,6 +297,24 @@ public sealed class MarService(HospitalDbContext db, ISettingsService settings, 
             .Where(m => m.MedicationOrderId != null && ids.Contains(m.MedicationOrderId.Value) && m.Status == MarStatus.Due && m.ScheduledAt >= now)
             .ToListAsync(ct);
         future.ForEach(m => m.CancelIfDue("Prescription cancelled"));
+    }
+
+    /// <summary>
+    /// A completed discharge ends the stay's medicines: its active chart lines stop and the doses scheduled from the
+    /// discharge on are cancelled, so the MAR, a legal record, does not show a dose as due for a patient who has gone.
+    /// Doses that fell due before the discharge stay for the nurse to document, as when a line is stopped.
+    /// </summary>
+    public async Task StopForDischargeAsync(PatientDischarged discharged, CancellationToken ct)
+    {
+        const string reason = "Patient discharged";
+        var orders = await db.Set<MedicationOrder>()
+            .Where(o => o.AdmissionId == discharged.AdmissionId && o.Status == MedicationOrderStatus.Active)
+            .ToListAsync(ct);
+        orders.ForEach(o => o.Stop(null, reason, discharged.DischargedAt));
+        var future = await db.Set<MedicationAdministration>()
+            .Where(m => m.AdmissionId == discharged.AdmissionId && m.Status == MarStatus.Due && m.ScheduledAt >= discharged.DischargedAt)
+            .ToListAsync(ct);
+        future.ForEach(m => m.CancelIfDue(reason));
     }
 
     /// <summary>
