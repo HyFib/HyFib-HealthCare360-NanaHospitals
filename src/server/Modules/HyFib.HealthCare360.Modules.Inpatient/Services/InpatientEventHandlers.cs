@@ -20,6 +20,12 @@ internal sealed class PrescriptionCancelledHandler(MarService mar) : IDomainEven
     public Task HandleAsync(PrescriptionCancelled domainEvent, CancellationToken cancellationToken) => mar.StopPrescriptionAsync(domainEvent, cancellationToken);
 }
 
+/// <summary>A completed discharge stops the stay's chart lines and cancels its doses from the discharge on.</summary>
+internal sealed class DischargeStopsMedicationsHandler(MarService mar) : IDomainEventHandler<PatientDischarged>
+{
+    public Task HandleAsync(PatientDischarged domainEvent, CancellationToken cancellationToken) => mar.StopForDischargeAsync(domainEvent, cancellationToken);
+}
+
 /// <summary>Medication issued by the IP pharmacy is scheduled on the MAR (PH-03 MAR feed).</summary>
 internal sealed class MedicationDispensedHandler(MarService mar) : IDomainEventHandler<MedicationDispensed>
 {

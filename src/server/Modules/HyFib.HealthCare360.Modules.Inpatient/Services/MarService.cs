@@ -287,6 +287,24 @@ public sealed class MarService(HospitalDbContext db, ISettingsService settings, 
     }
 
     /// <summary>
+    /// A completed discharge ends the stay's medicines: its active chart lines stop and the doses scheduled from the
+    /// discharge on are cancelled, so the MAR, a legal record, does not show a dose as due for a patient who has gone.
+    /// Doses that fell due before the discharge stay for the nurse to document, as when a line is stopped.
+    /// </summary>
+    public async Task StopForDischargeAsync(PatientDischarged discharged, CancellationToken ct)
+    {
+        const string reason = "Patient discharged";
+        var orders = await db.Set<MedicationOrder>()
+            .Where(o => o.AdmissionId == discharged.AdmissionId && o.Status == MedicationOrderStatus.Active)
+            .ToListAsync(ct);
+        orders.ForEach(o => o.Stop(null, reason, discharged.DischargedAt));
+        var future = await db.Set<MedicationAdministration>()
+            .Where(m => m.AdmissionId == discharged.AdmissionId && m.Status == MarStatus.Due && m.ScheduledAt >= discharged.DischargedAt)
+            .ToListAsync(ct);
+        future.ForEach(m => m.CancelIfDue(reason));
+    }
+
+    /// <summary>
     /// Schedules the next 24 hours of doses for each dispensed line. Lines without a charted prescription line are
     /// charted as a single dose to confirm with the doctor (never a guessed schedule); for patients already in discharge
     /// such lines are treated as take-home medicines and not put on the ward MAR.
