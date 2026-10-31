@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -96,37 +99,50 @@ internal sealed class ApprovalService(
         }
 
         var action = Action(kind) ?? throw new InvalidOperationException($"No approval action is registered for '{kind}'.");
-        var waiting = await db.Set<ApprovalRequest>().AnyAsync(
-            r => r.Kind == kind && r.SubjectType == subject.Type && r.SubjectId == subject.Id && r.Status == ApprovalStatus.Pending && r.ExpiresAt > time.GetUtcNow(), ct);
-        if (waiting)
-        {
-            return Error.Conflict("approval.already_requested", $"A request of this kind for this {Words(subject.Type)} is already waiting for approval. Withdraw it first, or wait for its decision.");
-        }
 
-        var now = time.GetUtcNow();
-        var text = ApprovalPayload.Write(payload);
-        var request = new ApprovalRequest
+        // One waiting request of a kind for a record: two people asking at the same moment are taken one after the
+        // other (a transaction-scoped advisory lock, the same on every server), so the second finds the first.
+        ApprovalRequest request;
+        var own = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        await using (own)
         {
-            FacilityId = subject.FacilityId,
-            Kind = kind,
-            Title = action.Title,
-            Summary = Fit(summary, 300),
-            SubjectType = subject.Type,
-            SubjectId = subject.Id,
-            SubjectVersion = subject.Version,
-            PatientId = subject.PatientId,
-            Details = ApprovalPayload.Write(details),
-            Payload = text,
-            PayloadHash = ApprovalPayload.Hash(text),
-            Reason = Fit(reason.Trim(), 500),
-            RequestedBy = maker,
-            RequestedByName = Name(),
-            RequestedAt = now,
-            ExpiresAt = now + ApprovalRequest.Lifetime,
-        };
-        db.Add(request);
-        audit.Add(Entry(request, "approval.requested", $"{request.Title} asked for: {request.Summary} ({request.Reason})", AuditSeverity.Info));
-        await db.SaveChangesAsync(ct);
+            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockKey(kind, subject)})", ct);
+            var waiting = await db.Set<ApprovalRequest>().AnyAsync(
+                r => r.Kind == kind && r.SubjectType == subject.Type && r.SubjectId == subject.Id && r.Status == ApprovalStatus.Pending && r.ExpiresAt > time.GetUtcNow(), ct);
+            if (waiting)
+            {
+                return Error.Conflict("approval.already_requested", $"A request of this kind for this {Words(subject.Type)} is already waiting for approval. Withdraw it first, or wait for its decision.");
+            }
+
+            var now = time.GetUtcNow();
+            var text = ApprovalPayload.Write(payload);
+            request = new ApprovalRequest
+            {
+                FacilityId = subject.FacilityId,
+                Kind = kind,
+                Title = action.Title,
+                Summary = Fit(summary, 300),
+                SubjectType = subject.Type,
+                SubjectId = subject.Id,
+                SubjectVersion = subject.Version,
+                PatientId = subject.PatientId,
+                Details = ApprovalPayload.Write(details),
+                Payload = text,
+                PayloadHash = ApprovalPayload.Hash(text),
+                Reason = Fit(reason.Trim(), 500),
+                RequestedBy = maker,
+                RequestedByName = Name(),
+                RequestedAt = now,
+                ExpiresAt = now + ApprovalRequest.Lifetime,
+            };
+            db.Add(request);
+            audit.Add(Entry(request, "approval.requested", $"{request.Title} asked for: {request.Summary} ({request.Reason})", AuditSeverity.Info));
+            await db.SaveChangesAsync(ct);
+            if (own is not null)
+            {
+                await own.CommitAsync(ct);
+            }
+        }
 
         await notifications.NotifyPermissionHoldersAsync(action.ApprovePermission, request.FacilityId, $"{request.Title} waiting for approval",
             $"{request.Summary}. Asked for by {request.RequestedByName}.", Link(request.Id), Category, cancellationToken: ct);
@@ -178,11 +194,26 @@ internal sealed class ApprovalService(
             return failure;
         }
 
+        // The request as the checker saw it: withdrawn or decided by someone else meanwhile, that decision stands and
+        // nothing is written over it (the version the checker sent, as for the approval itself).
         var failed = await db.Set<ApprovalRequest>().FirstAsync(r => r.Id == id, ct);
+        if (failed.Status != ApprovalStatus.Pending)
+        {
+            return Concurrent;
+        }
+
+        db.SetExpectedVersion(failed, version);
         failed.MarkFailed(checker, Name(), note, Fit(failure.Message, 500), now);
         audit.Add(Entry(failed, "approval.failed",
             $"{failed.Title} approved by {Name()} but not made: {failure.Message} ({failed.Summary})", AuditSeverity.Warning));
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Concurrent;
+        }
         await notifications.NotifyUsersAsync([failed.RequestedBy], $"{failed.Title} could not be made", $"{failed.Summary}: {failure.Message}", Link(failed.Id), Category,
             "warning", ct);
         return failure;
@@ -356,6 +387,10 @@ internal sealed class ApprovalService(
     private string Name() => currentUser.DisplayName ?? currentUser.UserName ?? "Unknown user";
 
     private static string Link(Guid id) => $"/approvals/{id}";
+
+    /// <summary>The advisory lock of one record's requests of one kind: a stable 64-bit key, the same on every server.</summary>
+    private static long LockKey(string kind, ApprovalSubject subject) =>
+        BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes($"approvals:{kind}:{subject.Type}:{subject.Id:N}")));
 
     private static string Words(string type) => string.Concat(type.Select((c, i) => i > 0 && char.IsUpper(c) ? " " + char.ToLowerInvariant(c) : char.ToLowerInvariant(c).ToString()));
 

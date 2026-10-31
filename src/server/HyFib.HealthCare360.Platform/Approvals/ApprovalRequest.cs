@@ -156,6 +156,13 @@ public sealed class ApprovalRequest : AuditableEntity, IFacilityScoped
 
     private void Decide(ApprovalStatus status, Guid checkerId, string checkerName, string? note, DateTimeOffset now)
     {
+        // A request is decided once. The service checks first (CanBeDecidedBy, and again before keeping a failure), so
+        // this only stops a decision being written over another one.
+        if (Status != ApprovalStatus.Pending)
+        {
+            throw new InvalidOperationException($"Approval request {Id} is {Status} already; it is not {status} as well.");
+        }
+
         Status = status;
         DecidedBy = checkerId;
         DecidedByName = checkerName;

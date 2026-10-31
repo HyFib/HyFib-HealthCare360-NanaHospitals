@@ -79,6 +79,19 @@ public sealed class ApprovalRequestTests
     }
 
     [Fact]
+    public void A_decision_is_never_written_over_another()
+    {
+        // The cashier withdrew the request while the accountant's approval was being made, and the change failed.
+        var request = CreditNote();
+        request.Withdraw(Cashier, Asked.AddHours(1)).IsSuccess.ShouldBeTrue();
+
+        Should.Throw<InvalidOperationException>(() => request.MarkFailed(Accountant, "Ravi (accountant)", null, "Bill changed.", Asked.AddHours(1)));
+        Should.Throw<InvalidOperationException>(() => request.MarkApproved(Accountant, "Ravi (accountant)", null, "NHPCN26000004", Asked.AddHours(1)));
+        request.Status.ShouldBe(ApprovalStatus.Withdrawn);
+        request.Outcome.ShouldBeNull();
+    }
+
+    [Fact]
     public void Only_the_person_who_asked_withdraws_a_request()
     {
         var request = CreditNote();

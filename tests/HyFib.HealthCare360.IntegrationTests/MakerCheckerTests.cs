@@ -143,6 +143,30 @@ public sealed class MakerCheckerTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Requests_asked_at_the_same_moment_for_one_bill_leave_one_waiting()
+    {
+        // Two desks press "Ask for credit note" on the same bill at once: one request waits, the others are refused.
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var cashier = await server.SignInAsync(HospitalServer.Users.Cashier);
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        var bill = await FinalizedBillAsync(frontOffice, billing);
+
+        var asks = Enumerable.Range(0, 6).Select(async i =>
+        {
+            using var response = await (i % 2 == 0 ? billing : cashier).SendRawAsync(HttpMethod.Post, CreditNotes(bill),
+                new IssueCreditNoteRequest(CreditNoteKind.CreditNote, 100m + i, "Rate charged above the tariff"));
+            return response.StatusCode;
+        });
+        var statuses = await Task.WhenAll(asks);
+
+        statuses.Count(s => s == HttpStatusCode.Accepted).ShouldBe(1, string.Join(", ", statuses));
+        statuses.Count(s => s == HttpStatusCode.Conflict).ShouldBe(5, string.Join(", ", statuses));
+        (await accountant.GetAsync<PagedResult<ApprovalRequestDto>>($"/api/v1/approvals?view=Subject&subjectType=Bill&subjectId={bill.Id}")).Items
+            .ShouldHaveSingleItem().Status.ShouldBe(ApprovalStatus.Pending);
+    }
+
+    [Fact]
     public async Task A_request_whose_stored_change_was_altered_is_not_approved()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
