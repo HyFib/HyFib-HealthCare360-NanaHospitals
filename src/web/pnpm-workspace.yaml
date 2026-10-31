@@ -5,3 +5,9 @@ packages:
 # Reproducible, supply-chain-conscious installs.
 onlyBuiltDependencies:
   - esbuild
+
+# minimatch below 11.0.1 has GHSA-g3hv-75wg-m249: a pattern whose braces expand without bound. ESLint (10.14.0) still
+# asks for ^10.2.6, so its copy is overridden; 11 keeps 10's exports and Node versions. Remove once ESLint's range takes
+# in 11.0.1.
+overrides:
+  "minimatch@<11.0.1": 11.0.3
