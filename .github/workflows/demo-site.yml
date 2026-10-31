@@ -1,16 +1,18 @@
 name: Demo site
 
-# Publishes the demo (src/web/demo/README.md) at https://hc360.hyfib.com with GitHub Pages. What it publishes is
-# src/web/demo/site: the built folder that verify.mjs checked, deployed as it is. It runs when that folder changes on
-# main, and by hand. Pages is set up once, in Settings › Pages (Source: GitHub Actions; Custom domain: hc360.hyfib.com;
-# Enforce HTTPS); until it is, a run says what is missing and deploys nothing. After a deploy, each file of the folder
-# is fetched from the live site and must be the one committed. Run by hand with "check only", it deploys nothing and
-# checks https://hc360.hyfib.com, whichever host serves it: GitHub Pages, or Cloudflare Pages serving the same folder.
+# Publishes the demo (src/web/demo/README.md) at https://hc360.hyfib.com from Cloudflare: the Worker hc360-demo, with
+# static assets only. What it publishes is src/web/demo/site, the built folder verify.mjs checked, as it is, with the
+# headers in .github/demo-site/_headers. It runs when either changes on main, and by hand. The first deploy creates the
+# Worker and its Custom Domain. The deploy token is set up once (src/web/demo/README.md); until it is in place, a run
+# says what is missing and deploys nothing. After a deploy, the live site is checked: each file as committed, each
+# header, and Cloudflare in front. Run by hand with "check only", it deploys nothing and checks the live site.
 on:
   push:
     branches: [main]
     paths:
       - src/web/demo/site/**
+      - .github/demo-site/**
+      - .github/scripts/demo-site-check.sh
       - .github/workflows/demo-site.yml
   workflow_dispatch:
     inputs:
@@ -30,90 +32,74 @@ concurrency:
 env:
   DOMAIN: hc360.hyfib.com
   SITE: src/web/demo/site
+  DEPLOY: .github/demo-site
 
 jobs:
-  settings:
-    name: Pages settings
+  publish:
+    name: Publish the demo
     if: ${{ !inputs.check_only }}
     runs-on: ubuntu-latest
     permissions:
-      pages: read
-    outputs:
-      ready: ${{ steps.read.outputs.ready }}
-      https: ${{ steps.read.outputs.https }}
-    steps:
-      # GET /pages answers 404 while Pages is off. Its build_type is "workflow" when the source is GitHub Actions, cname
-      # is the custom domain, and https_enforced says the domain's certificate is in place.
-      - name: Read the Pages settings
-        id: read
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          code=$(curl --silent --output "$RUNNER_TEMP/pages.json" --write-out '%{http_code}' \
-            --header "Authorization: Bearer $GH_TOKEN" --header "Accept: application/vnd.github+json" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pages")
-          skip() {
-            echo "::warning title=Nothing deployed::$1"
-            echo "$1" >> "$GITHUB_STEP_SUMMARY"
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          }
-          if [ "$code" = 404 ]; then
-            skip "GitHub Pages is off for this repository. In Settings › Pages, set Source to GitHub Actions and Custom domain to $DOMAIN, then run this workflow again."
-          fi
-          if [ "$code" != 200 ]; then
-            echo "::error::Reading the Pages settings answered HTTP $code."
-            exit 1
-          fi
-          if [ "$(jq -r '.build_type' "$RUNNER_TEMP/pages.json")" != workflow ]; then
-            skip "GitHub Pages publishes from a branch. In Settings › Pages, set Source to GitHub Actions, then run this workflow again."
-          fi
-          # The repository has one Pages site: while it answers at another domain, or at none, it may be serving something
-          # else, and the demo is not put over it.
-          cname=$(jq -r '.cname // ""' "$RUNNER_TEMP/pages.json")
-          if [ "$cname" != "$DOMAIN" ]; then
-            skip "The Pages site's custom domain is '${cname:-none}', not $DOMAIN. In Settings › Pages, set Custom domain to $DOMAIN, then run this workflow again."
-          fi
-          https=$(jq -r '.https_enforced' "$RUNNER_TEMP/pages.json")
-          if [ "$https" != true ]; then
-            echo "::warning::HTTPS is not enforced for $DOMAIN yet: tick Enforce HTTPS in Settings › Pages once GitHub has issued its certificate."
-          fi
-          echo "https=$([ "$https" = true ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "ready=true" >> "$GITHUB_OUTPUT"
-
-  publish:
-    name: Publish the demo
-    needs: settings
-    if: needs.settings.outputs.ready == 'true'
-    runs-on: ubuntu-latest
-    permissions:
       contents: read
-      pages: write # deploys
-      id-token: write # deploy-pages proves the run to Pages with an OIDC token
+    # The deploy token is kept in this environment's secrets. With the environment's deployment branches set to main
+    # (src/web/demo/README.md), only main's runs can read it.
     environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      name: demo-site
+      url: https://hc360.hyfib.com
     outputs:
-      page_url: ${{ steps.deploy.outputs.page_url }}
+      deployed: ${{ steps.deploy.outputs.deployed }}
     steps:
+      - name: Look for the Cloudflare credentials
+        id: credentials
+        env:
+          HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+          HAS_ACCOUNT: ${{ vars.CLOUDFLARE_ACCOUNT_ID != '' }}
+        run: |
+          if [ "$HAS_TOKEN" = true ] && [ "$HAS_ACCOUNT" = true ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          message="Nothing deployed: set the secret CLOUDFLARE_API_TOKEN and the variable CLOUDFLARE_ACCOUNT_ID, as src/web/demo/README.md says, then run this workflow again."
+          echo "::warning title=Nothing deployed::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.credentials.outputs.ready == 'true'
         with:
           persist-credentials: false
 
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.credentials.outputs.ready == 'true'
         with:
-          path: ${{ env.SITE }}
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ env.DEPLOY }}/package-lock.json
 
+      # Wrangler from .github/demo-site/package-lock.json, at its pinned version; no install script runs.
+      - name: Install Wrangler
+        if: steps.credentials.outputs.ready == 'true'
+        run: npm ci --prefix "$DEPLOY" --ignore-scripts --no-audit --no-fund
+
+      # dist/ is the committed folder and the headers file, which Cloudflare applies and does not serve.
       - name: Deploy
         id: deploy
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          rm -rf "$DEPLOY/dist"
+          cp -R "$SITE" "$DEPLOY/dist"
+          cp "$DEPLOY/_headers" "$DEPLOY/dist/_headers"
+          "$DEPLOY/node_modules/.bin/wrangler" deploy --config "$DEPLOY/wrangler.jsonc" --message "Demo site at $GITHUB_SHA"
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
 
   check:
     name: Check the live site
-    needs: [settings, publish]
-    if: ${{ always() && (inputs.check_only || needs.publish.result == 'success') }}
+    needs: publish
+    if: ${{ always() && (inputs.check_only || needs.publish.outputs.deployed == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -122,46 +108,5 @@ jobs:
         with:
           persist-credentials: false
 
-      # Each file of the folder, fetched from the live site, must be the one committed, and the site's address must
-      # answer with the page. After a deploy, the site is checked at the address GitHub gives it, and at
-      # https://hc360.hyfib.com once HTTPS is on for it; a check only checks https://hc360.hyfib.com. A file that differs
-      # is fetched again for up to two minutes, while a new deploy reaches every server of the CDN.
       - name: Check the live site
-        env:
-          PAGE_URL: ${{ needs.publish.outputs.page_url }}
-          DOMAIN_HTTPS: ${{ inputs.check_only && 'true' || needs.settings.outputs.https }}
-        run: |
-          bases=()
-          if [ -n "$PAGE_URL" ]; then
-            bases+=("${PAGE_URL%/}")
-          fi
-          if [ "$DOMAIN_HTTPS" = true ] && [ "${PAGE_URL%/}" != "https://$DOMAIN" ]; then
-            bases+=("https://$DOMAIN")
-          fi
-          mapfile -t files < <(cd "$SITE" && find . -type f | sed 's|^\./||' | sort)
-          failed=0
-          for base in "${bases[@]}"; do
-            echo "## $base" >> "$GITHUB_STEP_SUMMARY"
-            for file in "" "${files[@]}"; do
-              want=$(sha256sum < "$SITE/${file:-index.html}" | cut -d' ' -f1)
-              got=""
-              for _ in $(seq 1 12); do
-                if curl --silent --fail --location --output "$RUNNER_TEMP/live" "$base/$file"; then
-                  got=$(sha256sum < "$RUNNER_TEMP/live" | cut -d' ' -f1)
-                fi
-                [ "$got" = "$want" ] && break
-                sleep 10
-              done
-              if [ "$got" = "$want" ]; then
-                echo "- \`/$file\`: as committed" >> "$GITHUB_STEP_SUMMARY"
-              else
-                echo "::error::$base/$file is not the committed ${file:-index.html}."
-                echo "- \`/$file\`: **not as committed**" >> "$GITHUB_STEP_SUMMARY"
-                failed=1
-              fi
-            done
-            # The certificate the site answers with: its name and who issued it.
-            curl --silent --verbose --output /dev/null "$base/" 2>&1 \
-              | sed -n 's/^\* *\(subject\|issuer\|expire date\): */- \1: /p' >> "$GITHUB_STEP_SUMMARY" || true
-          done
-          exit "$failed"
+        run: REPORT="$GITHUB_STEP_SUMMARY" bash .github/scripts/demo-site-check.sh "https://$DOMAIN" "$SITE" "$DEPLOY/_headers"

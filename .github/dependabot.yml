@@ -47,6 +47,20 @@ updates:
       sbom-tools:
         patterns: ["*"]
 
+  # Wrangler, which deploys the demo to Cloudflare (.github/workflows/demo-site.yml), with its lockfile.
+  - package-ecosystem: npm
+    directory: /.github/demo-site
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    cooldown:
+      default-days: 7
+    groups:
+      demo-site-tools:
+        patterns: ["*"]
+
   # The SDK in global.json. The server and HC360 Desktop are published self-contained, so the .NET runtime they ship,
   # and its security fixes, come from this SDK.
   - package-ecosystem: dotnet-sdk
