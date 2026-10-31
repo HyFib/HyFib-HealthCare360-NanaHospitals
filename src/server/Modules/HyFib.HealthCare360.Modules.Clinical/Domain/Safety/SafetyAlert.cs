@@ -57,7 +57,8 @@ public sealed record SafetyDrug(
     bool IsControlledDrug,
     bool IsCurrentMedication = false,
     string? PrescriptionNumber = null,
-    string? DosageForm = null)
+    string? DosageForm = null,
+    string? ControlledSchedule = null)
 {
     public IReadOnlyList<string> Components { get; } = DrugNames.Components(GenericName, DrugName);
 

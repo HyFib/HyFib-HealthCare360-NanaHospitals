@@ -223,6 +223,21 @@ public sealed class PrescriptionSafetyCheckerTests
         result.IsBlocked.ShouldBeFalse();
     }
 
+    [Theory]
+    [InlineData("H1", "Ceftriaxone 1 g Injection is a Schedule H1 medicine")]
+    [InlineData("X", "Ceftriaxone 1 g Injection is a Schedule X medicine")]
+    [InlineData(null, "Ceftriaxone 1 g Injection is a Schedule H1 medicine")]
+    public void A_controlled_medicine_is_named_by_its_own_schedule(string? schedule, string expected)
+    {
+        // As in the production-style run: ceftriaxone, an H1 antibiotic, was announced as "narcotic/psychotropic".
+        var line = Line("Ceftriaxone 1 g Injection", "Powder for injection", "IV") with { IsControlledDrug = true, ControlledSchedule = schedule };
+
+        var alert = Check([line]).Alerts.ShouldHaveSingleItem();
+
+        alert.Message.ShouldStartWith(expected);
+        alert.Message.ShouldNotContain("narcotic");
+    }
+
     private static SafetyDrug Line(string name, string? dosageForm, string? route) =>
         new(Guid.CreateVersion7(), name, "Ceftriaxone", "1 g", route, "1 g", DoseFrequency.BD, null, null, false, DosageForm: dosageForm);
 

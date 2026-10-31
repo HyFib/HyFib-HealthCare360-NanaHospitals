@@ -1,5 +1,6 @@
 using System.Net;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Clinical.Domain.Safety;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -81,7 +82,10 @@ public sealed class ControlledDrugLineTests(HospitalServer server)
                 .ExecuteUpdateAsync(i => i.SetProperty(x => x.IsControlledDrug, false).SetProperty(x => x.ControlledSchedule, (string?)null), TestContext.Current.CancellationToken);
         }
 
-        (await doctor.PostAsync<SafetyCheckResponse>($"{Prescriptions}/{draft.Id}/check")).HasControlledDrugs.ShouldBeTrue();
+        var check = await doctor.PostAsync<SafetyCheckResponse>($"{Prescriptions}/{draft.Id}/check");
+        check.HasControlledDrugs.ShouldBeTrue();
+        // Announced by the schedule the drug master gives it.
+        check.Alerts.Single(a => a.Kind == SafetyAlertKind.ControlledDrug).Message.ShouldStartWith($"{morphine.Name} is a Schedule X medicine");
         using var unconfirmed = await doctor.SendRawAsync(HttpMethod.Post, $"{Prescriptions}/{draft.Id}/sign",
             new SignPrescriptionRequest(OverrideReason: null, AcknowledgeWarnings: true, ConfirmControlledDrugs: false, draft.Version));
         unconfirmed.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);

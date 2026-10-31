@@ -15,9 +15,11 @@ public static class PrescriptionSafetyChecker
         alerts.AddRange(DuplicateTherapyCheck.Run(input.Items, input.CurrentMedications));
         alerts.AddRange(DoseCheck.Run(input.Items, input.CurrentMedications, input.DoseLimits));
         alerts.AddRange(RouteCheck.Run(input.Items));
+        // The line's own schedule, as the prescription shows it (H1 unless the drug master says X): most H1 medicines are
+        // antibiotics (ceftriaxone, meropenem, anti-TB drugs), not narcotics or psychotropics.
         alerts.AddRange(input.Items.Where(i => i.IsControlledDrug).Select(i => new SafetyAlert(
             $"controlled:{i.Id}", SafetyAlertKind.ControlledDrug, SafetyAlertSeverity.Info, IsBlocking: false,
-            $"{i.DrugName} is a Schedule H1/X (narcotic/psychotropic) medicine: confirm it explicitly; it is entered in the controlled-drug register.",
+            $"{i.DrugName} is a Schedule {(string.IsNullOrWhiteSpace(i.ControlledSchedule) ? "H1" : i.ControlledSchedule.Trim())} medicine: confirm it explicitly; it is entered in the controlled-drug register.",
             null, [i.Id])));
 
         return new SafetyCheckResult(alerts

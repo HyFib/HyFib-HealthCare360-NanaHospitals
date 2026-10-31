@@ -58,5 +58,5 @@ public sealed class PrescriptionSafetyService(HospitalDbContext db, TimeProvider
 
     public static SafetyDrug ToSafetyDrug(PrescriptionItem i) => new(
         i.Id, i.DrugName, i.GenericName, i.Strength, i.Route, i.Dose, i.Frequency, i.CustomFrequency, i.DosesPerDay, i.IsControlledDrug,
-        DosageForm: i.DosageForm);
+        DosageForm: i.DosageForm, ControlledSchedule: i.ControlledSchedule);
 }
