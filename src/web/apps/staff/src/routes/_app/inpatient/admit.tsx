@@ -28,6 +28,7 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  formatDateTime,
   formatRelative,
   humanize,
   isApiError,
@@ -55,7 +56,7 @@ import {
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { useLetterhead } from '@/lib/letterhead';
@@ -81,6 +82,7 @@ import { useStoredState } from '@/modules/inpatient/hooks';
 import { printAdmissionSlip, printWristband } from '@/modules/inpatient/print';
 import { fromIstInput, toIstInput } from '@/modules/inpatient/time';
 import { patientQueries } from '@/modules/patients/api';
+import { sourceVisitChoices, sourceVisitsQuery } from '@/modules/inpatient/sourceVisit';
 import { PatientPicker } from '@/modules/patients/PatientPicker';
 
 interface AdmitSearch {
@@ -103,6 +105,7 @@ const schema = z
     patient: z.object({ id: z.string(), uhid: z.string(), fullName: z.string() }).nullable(),
     type: z.enum(ADMISSION_TYPES),
     source: z.enum(ADMISSION_SOURCES),
+    sourceVisitId: z.string().nullable(),
     referredBy: z.string().trim().max(200),
     departmentId: z.string().nullable(),
     admittingPractitionerId: z.string().nullable(),
@@ -200,12 +203,14 @@ function AdmitPatientPage() {
   const canRegister = usePermission('patients.register');
   const [autoPrint, setAutoPrint] = useStoredState('hc360:inpatient:admit-autoprint', '1');
   const [nowInput] = useState(() => toIstInput(new Date()));
+  const [openedAt] = useState(() => Date.now());
   const [created, setCreated] = useState<AdmissionCreated | null>(null);
 
   const defaults: AdmitValues = {
     patient: null,
     type: 'Elective',
     source: 'OutPatient',
+    sourceVisitId: null,
     referredBy: '',
     departmentId: null,
     admittingPractitionerId: ownPractitionerId,
@@ -228,20 +233,22 @@ function AdmitPatientPage() {
   };
   const form = useForm<AdmitValues>({ resolver: zodResolver(schema), defaultValues: defaults, mode: 'onTouched' });
   const draft = useFormDraft(form, 'inpatient-admit');
-  const [patient, departmentId, admittingId, source, payerType, isMlc, earlier, consultantId, bedId] = useWatch({
-    control: form.control,
-    name: [
-      'patient',
-      'departmentId',
-      'admittingPractitionerId',
-      'source',
-      'payerType',
-      'isMlc',
-      'earlier',
-      'consultantPractitionerId',
-      'bedId',
-    ],
-  });
+  const [patient, departmentId, admittingId, source, payerType, isMlc, earlier, consultantId, bedId, admittedAtInput] =
+    useWatch({
+      control: form.control,
+      name: [
+        'patient',
+        'departmentId',
+        'admittingPractitionerId',
+        'source',
+        'payerType',
+        'isMlc',
+        'earlier',
+        'consultantPractitionerId',
+        'bedId',
+        'admittedAt',
+      ],
+    });
   const departments = useDepartments('Clinical');
   const practitioners = usePractitioners(departmentId);
 
@@ -264,6 +271,52 @@ function AdmitPatientPage() {
     }
   }, [admittingId, form]);
 
+  // The visit the stay comes from (her OPD consultation or her casualty case): the admission links it, so the stay goes
+  // on from it, a victim's free treatment (BNSS 2023 s.397) included. Only a visit before the admission is one: for an
+  // admission entered as earlier, before the time entered.
+  const comesFromVisit = source === 'OutPatient' || source === 'Emergency';
+  const lookUpVisits = Boolean(patient?.id) && comesFromVisit;
+  const visits = useQuery({ ...sourceVisitsQuery(patient?.id ?? ''), enabled: lookUpVisits });
+  const admittedAtMs = earlier ? Date.parse(fromIstInput(admittedAtInput) ?? '') : Number.NaN;
+  const sourceVisits = useMemo(
+    () =>
+      comesFromVisit
+        ? sourceVisitChoices(
+            visits.data?.items ?? [],
+            source,
+            Number.isNaN(admittedAtMs) ? null : admittedAtMs,
+            openedAt,
+          )
+        : [],
+    [visits.data, source, comesFromVisit, admittedAtMs, openedAt],
+  );
+  // The latest is chosen once the patient's visits are in, for each patient and source. After that the desk's choice
+  // stands, "Not linked" included, whatever reloads the visits; a visit chosen that is no longer one the stay can come
+  // from (an earlier admission time was entered) gives way to the latest that is.
+  const defaultedFor = useRef<string | null>(null);
+  const choiceFor = lookUpVisits && visits.isSuccess ? `${patient?.id}|${source}` : null;
+  useEffect(() => {
+    const current = form.getValues('sourceVisitId');
+    if (!comesFromVisit) {
+      if (current !== null) {
+        form.setValue('sourceVisitId', null);
+      }
+      return;
+    }
+    if (choiceFor === null) {
+      return;
+    }
+    if (choiceFor !== defaultedFor.current) {
+      defaultedFor.current = choiceFor;
+      form.setValue('sourceVisitId', sourceVisits[0]?.id ?? null);
+    } else if (current !== null && !sourceVisits.some((v) => v.id === current)) {
+      form.setValue('sourceVisitId', sourceVisits[0]?.id ?? null);
+    }
+  }, [choiceFor, comesFromVisit, sourceVisits, form]);
+  // The link is settled before admitting: the desk waits while the visits load, and is told if they could not be.
+  const visitsLoading = lookUpVisits && visits.isLoading;
+  const visitsFailed = lookUpVisits && visits.isError;
+
   const history = useQuery({ ...inpatientQueries.patientAdmissions(patient?.id ?? ''), enabled: Boolean(patient?.id) });
   // Same query (and cache) as the bed picker: gives the chosen bed's label and ward for the summary.
   const available = useQuery(inpatientQueries.available(patient?.id ?? null));
@@ -278,7 +331,7 @@ function AdmitPatientPage() {
         bedId: v.bedId!,
         type: v.type,
         source: v.source,
-        sourceVisitId: null,
+        sourceVisitId: v.sourceVisitId,
         departmentId: v.departmentId,
         admittingPractitionerId: v.admittingPractitionerId,
         consultantPractitionerId: v.consultantPractitionerId!,
@@ -323,8 +376,15 @@ function AdmitPatientPage() {
     },
   });
 
-  const submit = form.handleSubmit((values) => admit.mutate(values));
-  useHotkey('mod+s', () => void submit(), { allowInInputs: true, enabled: !admit.isPending && !created });
+  const submit = form.handleSubmit((values) => {
+    if (!visitsLoading) {
+      admit.mutate(values);
+    }
+  });
+  useHotkey('mod+s', () => void submit(), {
+    allowInInputs: true,
+    enabled: !admit.isPending && !created && !visitsLoading,
+  });
 
   const print = async (what: 'slip' | 'wristband') => {
     const admission = detail.data;
@@ -457,7 +517,33 @@ function AdmitPatientPage() {
                   {source === 'Referral' && (
                     <TextField control={form.control} name="referredBy" label="Referred by" required maxLength={200} />
                   )}
+                  {sourceVisits.length > 0 && (
+                    <SelectField
+                      control={form.control}
+                      name="sourceVisitId"
+                      label="From visit"
+                      placeholder="Not linked"
+                      options={sourceVisits.map((v) => ({
+                        value: v.id,
+                        label: [v.visitNumber, formatDateTime(v.visitedAt), v.practitionerName ?? v.departmentName]
+                          .filter(Boolean)
+                          .join(' · '),
+                      }))}
+                    />
+                  )}
+                  {visitsLoading && <Spinner size="tiny" label="Looking up the patient's visits…" />}
                 </FormGrid>
+                {visitsFailed && (
+                  <MessageBar intent="warning" layout="multiline">
+                    <MessageBarBody>
+                      <MessageBarTitle>The patient's visits could not be loaded</MessageBarTitle>
+                      This stay is not linked to the visit it comes from unless they load.
+                    </MessageBarBody>
+                    <MessageBarActions>
+                      <Button onClick={() => void visits.refetch()}>Try again</Button>
+                    </MessageBarActions>
+                  </MessageBar>
+                )}
                 <FormGrid columns={3}>
                   <SelectField
                     control={form.control}
@@ -643,7 +729,7 @@ function AdmitPatientPage() {
                   type="submit"
                   appearance="primary"
                   className={styles.submit}
-                  disabled={admit.isPending || Boolean(activeStay)}
+                  disabled={admit.isPending || Boolean(activeStay) || visitsLoading}
                   icon={admit.isPending ? <Spinner size="tiny" aria-hidden /> : <PersonAddRegular />}
                   aria-keyshortcuts="Control+S"
                 >
