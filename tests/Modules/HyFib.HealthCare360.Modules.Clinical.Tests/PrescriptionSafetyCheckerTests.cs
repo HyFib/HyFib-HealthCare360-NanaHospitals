@@ -259,6 +259,18 @@ public sealed class PrescriptionSafetyCheckerTests
     }
 
     [Theory]
+    [InlineData("Paracetamol 500 mg Tablet", "Tablet", null)]
+    [InlineData("Ciprofloxacin 0.3% drops", "Drops", "")]
+    [InlineData("Normal saline 0.9%", null, " ")]
+    public void A_line_without_a_route_blocks_signing_whatever_its_form(string name, string? form, string? route)
+    {
+        var alert = Check([Line(name, form, route)]).Alerts.Single(a => a.Kind == SafetyAlertKind.Route);
+
+        alert.IsBlocking.ShouldBeTrue();
+        alert.Message.ShouldBe($"{name} has no route: choose how it is given.");
+    }
+
+    [Theory]
     [InlineData("Tablet", DosageFormKind.Oral)]
     [InlineData("Tablet (enteric-coated)", DosageFormKind.Oral)]
     [InlineData("Soft gelatin capsule", DosageFormKind.Oral)]

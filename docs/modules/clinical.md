@@ -890,7 +890,7 @@ prescriptions still within their course, all facilities) and active drug/other a
 | Maximum daily dose, **summed per ingredient** across the new lines and current medicines | Major, **blocking** |
 | Dose not computable although a limit exists | Minor warning (never silently skipped) |
 | Methotrexate on a daily schedule | Major, **blocking** |
-| Route against the dosage form (the line's form, or its name when it has none): an injection with no route, or with a route no injection is given by (Oral, Topical, Inhalation…); a tablet, capsule or syrup given IV, IM or SC. `Other` stays open for intrathecal, intra-articular and similar | Major, **blocking** |
+| Route against the dosage form (the drug master's form for one of its medicines, else the line's, else its name): a line with no route; an injection with a route no injection is given by (Oral, Topical, Inhalation…); a tablet, capsule or syrup given IV, IM or SC. `Other` stays open for intrathecal, intra-articular and similar | Major, **blocking** |
 | Schedule H1/X medicine | Info + explicit `confirmControlledDrugs` + controlled-drug register entry |
 
 The editor fills a line's route from the drug master's dosage form when the form leaves no doubt (tablet: Oral, cream:

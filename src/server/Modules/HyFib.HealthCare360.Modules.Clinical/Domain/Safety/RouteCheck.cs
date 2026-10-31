@@ -68,10 +68,10 @@ public static partial class DosageForms
 }
 
 /// <summary>
-/// The route a line is given by must fit its dosage form (ERX-02): an injection is given by needle, so it needs a route
-/// (IV, IM and SC are the prescriber's choice, as is "Other" for intrathecal or intra-articular) and never one such as
-/// Oral; a tablet or a syrup is not given IV, IM or SC. The route goes to the pharmacy label and the nurse's MAR, so a
-/// line the form contradicts blocks signing, whichever screen or favourite filled it.
+/// Every line names the route it is given by, and the route must fit its dosage form (ERX-02): an injection is given by
+/// needle (IV, IM and SC are the prescriber's choice, as is "Other" for intrathecal or intra-articular), never by a route
+/// such as Oral; a tablet or a syrup is not given IV, IM or SC. The route goes to the pharmacy label and the nurse's MAR,
+/// so a line without one, or one its form contradicts, blocks signing, whichever screen, favourite or client filled it.
 /// </summary>
 public static class RouteCheck
 {
@@ -84,6 +84,7 @@ public static class RouteCheck
             {
                 DosageFormKind.Injection when string.IsNullOrWhiteSpace(item.Route) =>
                     $"{item.DrugName} is an injection: choose how it is given (IV, IM or SC).",
+                _ when string.IsNullOrWhiteSpace(item.Route) => $"{item.DrugName} has no route: choose how it is given.",
                 DosageFormKind.Injection when DosageForms.IsNonInjectionRoute(item.Route) =>
                     $"{item.DrugName} is an injection, but its route is {item.Route!.Trim()}.",
                 DosageFormKind.Oral when DosageForms.IsInjectionRoute(item.Route) =>
