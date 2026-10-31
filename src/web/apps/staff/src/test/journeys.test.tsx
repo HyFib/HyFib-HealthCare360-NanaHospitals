@@ -377,10 +377,21 @@ describe('common journeys take at most three screens (UX-06)', SCREEN_TESTS, () 
       bedId: bed.bedId,
       bedLabel: bed.label,
     };
+    // She was seen in OPD an hour ago: the stay is linked to that visit (in the production-style run it was not).
+    const opd = {
+      id: '0192a000-0000-7000-8000-000000000d91',
+      visitNumber: 'NHV260000076',
+      type: 'OutPatient',
+      status: 'InProgress',
+      visitedAt: new Date(Date.now() - 3_600_000).toISOString(),
+      departmentName: 'General Medicine',
+      practitionerName: 'Dr. Anil Kumar',
+    };
     const server = fakeServer({
       ...FRONT_OFFICE_ANSWERS,
       'GET /api/v1/beds/available': [bed],
       [`GET /api/v1/patients/${ASHA.id}/admissions`]: [],
+      [`GET /api/v1/patients/${ASHA.id}/visits`]: { items: [opd], page: 1, pageSize: 10, totalCount: 1 },
       'POST /api/v1/inpatient/admissions': created,
     });
     // The admission desk does not print in this test.
@@ -401,6 +412,8 @@ describe('common journeys take at most three screens (UX-06)', SCREEN_TESTS, () 
     ).toMatchObject({
       patientId: ASHA.id,
       bedId: bed.bedId,
+      source: 'OutPatient',
+      sourceVisitId: opd.id,
     });
 
     expectWithinLimit('Admit to bed', journey.screens());

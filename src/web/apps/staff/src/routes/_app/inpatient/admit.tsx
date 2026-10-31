@@ -28,6 +28,7 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  formatDateTime,
   formatRelative,
   humanize,
   isApiError,
@@ -55,7 +56,7 @@ import {
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { useLetterhead } from '@/lib/letterhead';
@@ -81,6 +82,7 @@ import { useStoredState } from '@/modules/inpatient/hooks';
 import { printAdmissionSlip, printWristband } from '@/modules/inpatient/print';
 import { fromIstInput, toIstInput } from '@/modules/inpatient/time';
 import { patientQueries } from '@/modules/patients/api';
+import { sourceVisitChoices } from '@/modules/inpatient/sourceVisit';
 import { PatientPicker } from '@/modules/patients/PatientPicker';
 
 interface AdmitSearch {
@@ -103,6 +105,7 @@ const schema = z
     patient: z.object({ id: z.string(), uhid: z.string(), fullName: z.string() }).nullable(),
     type: z.enum(ADMISSION_TYPES),
     source: z.enum(ADMISSION_SOURCES),
+    sourceVisitId: z.string().nullable(),
     referredBy: z.string().trim().max(200),
     departmentId: z.string().nullable(),
     admittingPractitionerId: z.string().nullable(),
@@ -200,12 +203,14 @@ function AdmitPatientPage() {
   const canRegister = usePermission('patients.register');
   const [autoPrint, setAutoPrint] = useStoredState('hc360:inpatient:admit-autoprint', '1');
   const [nowInput] = useState(() => toIstInput(new Date()));
+  const [openedAt] = useState(() => Date.now());
   const [created, setCreated] = useState<AdmissionCreated | null>(null);
 
   const defaults: AdmitValues = {
     patient: null,
     type: 'Elective',
     source: 'OutPatient',
+    sourceVisitId: null,
     referredBy: '',
     departmentId: null,
     admittingPractitionerId: ownPractitionerId,
@@ -264,6 +269,23 @@ function AdmitPatientPage() {
     }
   }, [admittingId, form]);
 
+  // The visit the stay comes from (her OPD consultation or her casualty case): the admission links it, so the stay goes
+  // on from it, a victim's free treatment (BNSS 2023 s.397) included. The latest is chosen; the desk may pick another.
+  const comesFromVisit = source === 'OutPatient' || source === 'Emergency';
+  const visits = useQuery({
+    ...patientQueries.visits(patient?.id ?? ''),
+    enabled: Boolean(patient?.id) && comesFromVisit,
+  });
+  const sourceVisits = useMemo(
+    () => (comesFromVisit ? sourceVisitChoices(visits.data?.items ?? [], source, openedAt) : []),
+    [visits.data, source, comesFromVisit, openedAt],
+  );
+  useEffect(() => {
+    if (!sourceVisits.some((v) => v.id === form.getValues('sourceVisitId'))) {
+      form.setValue('sourceVisitId', sourceVisits[0]?.id ?? null);
+    }
+  }, [sourceVisits, form]);
+
   const history = useQuery({ ...inpatientQueries.patientAdmissions(patient?.id ?? ''), enabled: Boolean(patient?.id) });
   // Same query (and cache) as the bed picker: gives the chosen bed's label and ward for the summary.
   const available = useQuery(inpatientQueries.available(patient?.id ?? null));
@@ -278,7 +300,7 @@ function AdmitPatientPage() {
         bedId: v.bedId!,
         type: v.type,
         source: v.source,
-        sourceVisitId: null,
+        sourceVisitId: v.sourceVisitId,
         departmentId: v.departmentId,
         admittingPractitionerId: v.admittingPractitionerId,
         consultantPractitionerId: v.consultantPractitionerId!,
@@ -456,6 +478,20 @@ function AdmitPatientPage() {
                   />
                   {source === 'Referral' && (
                     <TextField control={form.control} name="referredBy" label="Referred by" required maxLength={200} />
+                  )}
+                  {sourceVisits.length > 0 && (
+                    <SelectField
+                      control={form.control}
+                      name="sourceVisitId"
+                      label="From visit"
+                      placeholder="Not linked"
+                      options={sourceVisits.map((v) => ({
+                        value: v.id,
+                        label: [v.visitNumber, formatDateTime(v.visitedAt), v.practitionerName ?? v.departmentName]
+                          .filter(Boolean)
+                          .join(' · '),
+                      }))}
+                    />
                   )}
                 </FormGrid>
                 <FormGrid columns={3}>
