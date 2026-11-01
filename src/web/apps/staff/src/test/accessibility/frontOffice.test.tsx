@@ -55,6 +55,13 @@ describe('front office screens', SCREEN_TESTS, () => {
     await expectNoAxeViolations();
   });
 
+  it('patients in hospital, each with the pipeline of their visit or stay', async () => {
+    openScreen('/front-office/in-hospital');
+    expect(await screen.findByText('Sunil Patil', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getAllByRole('list', { name: /^(Out-patient visit|In-patient stay) / })).toHaveLength(3);
+    await expectNoAxeViolations();
+  });
+
   it('patient queue', async () => {
     openScreen('/front-office/queue');
     expect(await screen.findByText('GM-012', {}, SLOW)).toBeInTheDocument();

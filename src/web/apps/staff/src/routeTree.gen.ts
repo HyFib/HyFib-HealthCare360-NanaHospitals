@@ -98,6 +98,7 @@ import { Route as AppFeedbackResponsesRouteImport } from './routes/_app/feedback
 import { Route as AppFrontOfficeIndexRouteImport } from './routes/_app/front-office/index'
 import { Route as AppFrontOfficeAbhaSharesRouteImport } from './routes/_app/front-office/abha-shares'
 import { Route as AppFrontOfficeEnquiriesRouteImport } from './routes/_app/front-office/enquiries'
+import { Route as AppFrontOfficeInHospitalRouteImport } from './routes/_app/front-office/in-hospital'
 import { Route as AppFrontOfficeQueueRouteImport } from './routes/_app/front-office/queue'
 import { Route as AppFrontOfficeVisitorsRouteImport } from './routes/_app/front-office/visitors'
 import { Route as AppFrontOfficeVisitsRouteImport } from './routes/_app/front-office/visits'
@@ -791,6 +792,12 @@ const AppFrontOfficeEnquiriesRoute = AppFrontOfficeEnquiriesRouteImport.update({
   path: '/front-office/enquiries',
   getParentRoute: () => AppRoute,
 } as any)
+const AppFrontOfficeInHospitalRoute =
+  AppFrontOfficeInHospitalRouteImport.update({
+    id: '/front-office/in-hospital',
+    path: '/front-office/in-hospital',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppFrontOfficeQueueRoute = AppFrontOfficeQueueRouteImport.update({
   id: '/front-office/queue',
   path: '/front-office/queue',
@@ -2135,6 +2142,7 @@ export interface FileRoutesByFullPath {
   '/feedback/responses': typeof AppFeedbackResponsesRoute
   '/front-office/abha-shares': typeof AppFrontOfficeAbhaSharesRoute
   '/front-office/enquiries': typeof AppFrontOfficeEnquiriesRoute
+  '/front-office/in-hospital': typeof AppFrontOfficeInHospitalRoute
   '/front-office/queue': typeof AppFrontOfficeQueueRoute
   '/front-office/visitors': typeof AppFrontOfficeVisitorsRoute
   '/front-office/visits': typeof AppFrontOfficeVisitsRoute
@@ -2467,6 +2475,7 @@ export interface FileRoutesByTo {
   '/feedback/responses': typeof AppFeedbackResponsesRoute
   '/front-office/abha-shares': typeof AppFrontOfficeAbhaSharesRoute
   '/front-office/enquiries': typeof AppFrontOfficeEnquiriesRoute
+  '/front-office/in-hospital': typeof AppFrontOfficeInHospitalRoute
   '/front-office/queue': typeof AppFrontOfficeQueueRoute
   '/front-office/visitors': typeof AppFrontOfficeVisitorsRoute
   '/front-office/visits': typeof AppFrontOfficeVisitsRoute
@@ -2801,6 +2810,7 @@ export interface FileRoutesById {
   '/_app/feedback/responses': typeof AppFeedbackResponsesRoute
   '/_app/front-office/abha-shares': typeof AppFrontOfficeAbhaSharesRoute
   '/_app/front-office/enquiries': typeof AppFrontOfficeEnquiriesRoute
+  '/_app/front-office/in-hospital': typeof AppFrontOfficeInHospitalRoute
   '/_app/front-office/queue': typeof AppFrontOfficeQueueRoute
   '/_app/front-office/visitors': typeof AppFrontOfficeVisitorsRoute
   '/_app/front-office/visits': typeof AppFrontOfficeVisitsRoute
@@ -3135,6 +3145,7 @@ export interface FileRouteTypes {
     | '/feedback/responses'
     | '/front-office/abha-shares'
     | '/front-office/enquiries'
+    | '/front-office/in-hospital'
     | '/front-office/queue'
     | '/front-office/visitors'
     | '/front-office/visits'
@@ -3467,6 +3478,7 @@ export interface FileRouteTypes {
     | '/feedback/responses'
     | '/front-office/abha-shares'
     | '/front-office/enquiries'
+    | '/front-office/in-hospital'
     | '/front-office/queue'
     | '/front-office/visitors'
     | '/front-office/visits'
@@ -3800,6 +3812,7 @@ export interface FileRouteTypes {
     | '/_app/feedback/responses'
     | '/_app/front-office/abha-shares'
     | '/_app/front-office/enquiries'
+    | '/_app/front-office/in-hospital'
     | '/_app/front-office/queue'
     | '/_app/front-office/visitors'
     | '/_app/front-office/visits'
@@ -4692,6 +4705,13 @@ declare module '@tanstack/react-router' {
       path: '/front-office/enquiries'
       fullPath: '/front-office/enquiries'
       preLoaderRoute: typeof AppFrontOfficeEnquiriesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/front-office/in-hospital': {
+      id: '/_app/front-office/in-hospital'
+      path: '/front-office/in-hospital'
+      fullPath: '/front-office/in-hospital'
+      preLoaderRoute: typeof AppFrontOfficeInHospitalRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/front-office/queue': {
@@ -6459,6 +6479,7 @@ interface AppRouteChildren {
   AppFeedbackResponsesRoute: typeof AppFeedbackResponsesRoute
   AppFrontOfficeAbhaSharesRoute: typeof AppFrontOfficeAbhaSharesRoute
   AppFrontOfficeEnquiriesRoute: typeof AppFrontOfficeEnquiriesRoute
+  AppFrontOfficeInHospitalRoute: typeof AppFrontOfficeInHospitalRoute
   AppFrontOfficeQueueRoute: typeof AppFrontOfficeQueueRoute
   AppFrontOfficeVisitorsRoute: typeof AppFrontOfficeVisitorsRoute
   AppFrontOfficeVisitsRoute: typeof AppFrontOfficeVisitsRoute
@@ -6790,6 +6811,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFeedbackResponsesRoute: AppFeedbackResponsesRoute,
   AppFrontOfficeAbhaSharesRoute: AppFrontOfficeAbhaSharesRoute,
   AppFrontOfficeEnquiriesRoute: AppFrontOfficeEnquiriesRoute,
+  AppFrontOfficeInHospitalRoute: AppFrontOfficeInHospitalRoute,
   AppFrontOfficeQueueRoute: AppFrontOfficeQueueRoute,
   AppFrontOfficeVisitorsRoute: AppFrontOfficeVisitorsRoute,
   AppFrontOfficeVisitsRoute: AppFrontOfficeVisitsRoute,

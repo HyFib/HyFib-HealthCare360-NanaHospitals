@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, it, vi } from 'vitest';
 import { PatientBanner, PatientFlagBadges, type PatientBannerData } from './clinical/PatientBanner';
 import { DataTable, type Column } from './data/DataTable';
 import { ConfirmDialog, EmptyState, ErrorState, KpiCard, LoadingState, StatusBadge } from './feedback/feedback';
+import { Pipeline, type PipelineStage } from './feedback/Pipeline';
 import { CheckboxGroup } from './forms/checkboxGroup';
 import {
   ChoiceField,
@@ -373,6 +374,33 @@ describe('patient banner', () => {
         <PatientBanner
           patient={{ ...PATIENT, isVip: false, isDeceased: true, allergies: [], alerts: [], photoUrl: 'data:,' }}
         />
+      </>,
+    );
+    await expectNoAxeViolations(container);
+  });
+});
+
+const VISIT: PipelineStage[] = [
+  { key: 'checked-in', label: 'Checked in', state: 'Done', at: '2026-10-31T03:30:00Z', detail: 'Token GM-012' },
+  { key: 'called', label: 'Called', state: 'Skipped', at: null },
+  {
+    key: 'in-consultation',
+    label: 'In consultation',
+    state: 'Current',
+    at: '2026-10-31T05:10:00Z',
+    minutesInStage: 20,
+  },
+  { key: 'investigations-done', label: 'Investigations done', state: 'Pending', at: null, detail: '0 of 1 resulted' },
+  { key: 'dispensed', label: 'Medicines dispensed', state: 'NotApplicable', at: null },
+  { key: 'closed', label: 'Visit closed', state: 'Stopped', at: null },
+];
+
+describe('pipeline', () => {
+  it('has no problems in its full and its compact form', async () => {
+    await show(
+      <>
+        <Pipeline stages={VISIT} label="Out-patient visit OP2600981" />
+        <Pipeline stages={VISIT} label="Out-patient visit OP2600982" compact />
       </>,
     );
     await expectNoAxeViolations(container);

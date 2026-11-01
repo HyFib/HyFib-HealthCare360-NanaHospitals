@@ -1,6 +1,9 @@
 import type { AuthUser } from '@hc360/core';
+import type { PipelineStage } from '@hc360/ui';
 import type { BillListItem, DayEndReport } from '@/modules/billing/api';
 import type { FrontOfficeDashboard, QueueEntry } from '@/modules/front-office/api';
+import type { InHospitalPatient, JourneyDto, PatientJourneys } from '@/modules/front-office/journeys';
+import type { WardDto } from '@/modules/inpatient/api';
 import type { PatientListItem } from '@/modules/patients/api';
 import type {
   AppointmentDaySummary,
@@ -198,7 +201,202 @@ export const BILLS: BillListItem[] = [
   bill({ id: '14', status: 'Cancelled' }),
 ];
 
+/** A stage reached `ago` minutes ago (null: not reached); the current one counts its minutes from then. */
+const stage = (
+  key: string,
+  label: string,
+  state: PipelineStage['state'],
+  ago: number | null = null,
+  detail: string | null = null,
+): PipelineStage => ({
+  key,
+  label,
+  state,
+  at: ago === null ? null : minutesAgo(ago),
+  minutesInStage: state === 'Current' && ago !== null ? ago : null,
+  detail,
+});
+
+const journey = (
+  overrides: Partial<JourneyDto> & Pick<JourneyDto, 'kind' | 'id' | 'number' | 'stages'>,
+): JourneyDto => ({
+  title: 'General medicine · Dr. Meera Iyer',
+  status: 'Active',
+  startedAt: overrides.stages[0]?.at ?? minutesAgo(60),
+  current: overrides.stages.find((s) => s.state === 'Current') ?? null,
+  ...overrides,
+});
+
+/** Asha Devi: checked in 50 minutes ago, paid at the desk, with the doctor for the last 20 minutes. */
+export const ASHA_VISIT = journey({
+  kind: 'Outpatient',
+  id: '0192a000-0000-7000-8000-00000000a501',
+  number: 'OP2600981',
+  stages: [
+    stage('checked-in', 'Checked in', 'Done', 50, 'Token GM-012'),
+    stage('called', 'Called', 'Done', 25, 'Room 3'),
+    stage('in-consultation', 'In consultation', 'Current', 20),
+    stage('consultation-signed', 'Consultation signed', 'Pending'),
+    stage('investigations-done', 'Investigations done', 'Pending'),
+    stage('dispensed', 'Medicines dispensed', 'Pending'),
+    stage('billed', 'Billed', 'Done', 47),
+    stage('paid', 'Paid', 'Done', 46),
+    stage('closed', 'Visit closed', 'Pending'),
+  ],
+});
+
+export const WARD: WardDto = {
+  id: '0192a000-0000-7000-8000-00000000a401',
+  code: 'GWM',
+  name: 'General Ward — Male',
+  type: 'General',
+  floor: '1',
+  block: null,
+  genderPolicy: 'MaleOnly',
+  nurseStation: null,
+  phone: null,
+  departmentId: null,
+  bedServiceItemId: null,
+  bedServiceCode: null,
+  displayOrder: 0,
+  isActive: true,
+  notes: null,
+  totalBeds: 12,
+  occupiedBeds: 7,
+  version: 1,
+};
+
+/** The board: Asha with the doctor, Ravi (restricted) waiting since check-in, a man in the general ward for two days. */
+export const IN_HOSPITAL: InHospitalPatient[] = [
+  {
+    patientId: PATIENTS[0]!.id,
+    uhid: PATIENTS[0]!.uhid,
+    patientName: PATIENTS[0]!.fullName,
+    isRestricted: false,
+    gender: 'Female',
+    age: '39Y',
+    kind: 'Outpatient',
+    departmentId: OPD.id,
+    departmentName: OPD.name,
+    wardId: null,
+    place: 'Token GM-012',
+    arrivedAt: minutesAgo(50),
+    journey: ASHA_VISIT,
+  },
+  {
+    patientId: PATIENTS[1]!.id,
+    uhid: PATIENTS[1]!.uhid,
+    patientName: 'R. S. (restricted)',
+    isRestricted: true,
+    gender: 'Male',
+    age: '62Y',
+    kind: 'Outpatient',
+    departmentId: OPD.id,
+    departmentName: OPD.name,
+    wardId: null,
+    place: 'Token GM-015',
+    arrivedAt: minutesAgo(15),
+    journey: journey({
+      kind: 'Outpatient',
+      id: '0192a000-0000-7000-8000-00000000a502',
+      number: 'OP2600990',
+      stages: [
+        stage('checked-in', 'Checked in', 'Current', 15, 'Token GM-015'),
+        stage('called', 'Called', 'Pending'),
+        stage('in-consultation', 'In consultation', 'Pending'),
+        stage('consultation-signed', 'Consultation signed', 'Pending'),
+        stage('investigations-done', 'Investigations done', 'Pending'),
+        stage('dispensed', 'Medicines dispensed', 'Pending'),
+        stage('billed', 'Billed', 'Pending', null, '2 services not billed yet'),
+        stage('paid', 'Paid', 'Pending'),
+        stage('closed', 'Visit closed', 'Pending'),
+      ],
+    }),
+  },
+  {
+    patientId: '0192a000-0000-7000-8000-000000000004',
+    uhid: 'NH26000126',
+    patientName: 'Sunil Patil',
+    isRestricted: false,
+    gender: 'Male',
+    age: '58Y',
+    kind: 'Inpatient',
+    departmentId: OPD.id,
+    departmentName: OPD.name,
+    wardId: WARD.id,
+    place: `${WARD.name} · GWM-07`,
+    arrivedAt: minutesAgo(60 * 50),
+    journey: journey({
+      kind: 'Inpatient',
+      id: '0192a000-0000-7000-8000-00000000a503',
+      number: 'IP2600112',
+      title: `${WARD.name} · GWM-07`,
+      stages: [
+        stage('admitted', 'Admitted', 'Done', 60 * 50),
+        stage('bedded', 'In a bed', 'Done', 60 * 50, `${WARD.name} · GWM-07`),
+        stage('rounds-and-nursing', 'Rounds and nursing', 'Current', 60 * 44),
+        stage('investigations-complete', 'Investigations complete', 'Pending', null, '1 of 2 resulted'),
+        stage('discharge-initiated', 'Discharge initiated', 'Pending'),
+        stage('summary-signed', 'Discharge summary signed', 'Pending'),
+        stage('cleared', 'Cleared by billing', 'Pending', null, '3 services not billed yet'),
+        stage('discharged', 'Discharged', 'Pending'),
+        stage('bed-cleaned', 'Bed cleaned', 'Pending'),
+      ],
+    }),
+  },
+];
+
+/** A patient's journeys as their page shows them: Asha's visit, her CRP waiting in the lab, and a booked operation. */
+export function patientJourneys(patientId: string): PatientJourneys {
+  return {
+    patientId,
+    asOf: minutesAgo(0),
+    outpatient: ASHA_VISIT,
+    inpatient: null,
+    surgeries: [
+      journey({
+        kind: 'Surgery',
+        id: '0192a000-0000-7000-8000-00000000a504',
+        number: 'OT2600045',
+        title: 'Laparoscopic cholecystectomy',
+        stages: [
+          stage('requested', 'Requested', 'Done', 60 * 26),
+          stage('scheduled', 'Scheduled', 'Current', null, 'Slot 01 Nov 2026, 09:00 AM IST in OT-2'),
+          stage('pre-op', 'Pre-op checks and consent', 'Pending', null, '1 of 10 checks done'),
+          stage('received', 'Received in pre-op', 'Pending'),
+          stage('sign-in', 'WHO Sign-in', 'Pending'),
+          stage('time-out', 'WHO Time-out', 'Pending'),
+          stage('incision', 'Incision', 'Pending'),
+          stage('sign-out', 'WHO Sign-out', 'Pending'),
+          stage('out-and-billed', 'Out of theatre and billed', 'Pending'),
+        ],
+      }),
+    ],
+    labOrders: [
+      journey({
+        kind: 'Lab',
+        id: '0192a000-0000-7000-8000-00000000a505',
+        number: 'NHLB260000123',
+        title: 'C-reactive protein (CRP)',
+        stages: [
+          stage('ordered', 'Ordered', 'Done', 18, '1 test'),
+          stage('payment-cleared', 'Payment cleared', 'Done', 12),
+          stage('collected', 'Sample collected', 'Current', 5),
+          stage('received', 'Received in lab', 'Pending'),
+          stage('resulted', 'Resulted', 'Pending'),
+          stage('verified', 'Verified', 'Pending'),
+          stage('released', 'Report released', 'Pending'),
+          stage('reviewed', 'Reviewed by the doctor', 'Pending'),
+        ],
+      }),
+    ],
+    surgeriesWithheld: false,
+  };
+}
+
 export const FRONT_OFFICE_ANSWERS: FakeAnswers = {
+  'GET /api/v1/journeys/in-hospital': paged(IN_HOSPITAL),
+  'GET /api/v1/inpatient/wards': [WARD],
   'GET /api/v1/patients': paged(PATIENTS),
   'GET /api/v1/masters/lookups/departments': [OPD],
   'GET /api/v1/masters/lookups/practitioners': DOCTORS,

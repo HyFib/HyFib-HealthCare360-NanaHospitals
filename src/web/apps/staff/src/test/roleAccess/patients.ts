@@ -9,6 +9,7 @@ import type {
   WhatsAppConsentDto,
 } from '@/modules/patients/api';
 import type { DowntimeUhidBlockSummary } from '@/modules/patients/downtimeApi';
+import { patientJourneys } from '../accessibility/fixtures/frontOffice';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
 
@@ -264,4 +265,5 @@ export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/patients/${RECORD_ID}/portal-family`]: PORTAL,
   [`GET /api/v1/patients/${RECORD_ID}/documents`]: DOCUMENTS,
   [`GET /api/v1/patients/${RECORD_ID}/identity-checks`]: IDENTITY_CHECKS,
+  [`GET /api/v1/patients/${RECORD_ID}/journey`]: patientJourneys(RECORD_ID),
 };

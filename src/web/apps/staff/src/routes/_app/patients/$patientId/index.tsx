@@ -38,6 +38,7 @@ import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
+import { PatientJourneyCard } from '@/modules/front-office/JourneyCard';
 import { useVisitActions } from '@/modules/front-office/VisitActions';
 import { guardianRelationLabel, patientApi, patientQueries, type PatientDetail } from '@/modules/patients/api';
 import { AbdmConsentRequestsPanel } from '@/modules/patients/AbdmConsentRequestsPanel';
@@ -233,6 +234,7 @@ function PatientProfilePage() {
       )}
 
       {canMerge && !p.mergedIntoPatientId && <PendingApprovals subjectType="Patient" subjectId={p.id} />}
+      <PatientJourneyCard patientId={p.id} />
 
       <Section flush>
         <div style={{ padding: '0 8px' }}>

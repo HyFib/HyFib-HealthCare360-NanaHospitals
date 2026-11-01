@@ -22,6 +22,12 @@ const manifest: ModuleManifest = {
       keywords: ['op', 'check-in', 'visit list'],
     },
     {
+      label: 'Patients in hospital',
+      to: '/front-office/in-hospital',
+      permission: 'visits.read',
+      keywords: ['pipeline', 'journey', 'where is the patient', 'board', 'time in stage'],
+    },
+    {
       label: 'Queue',
       to: '/front-office/queue',
       permission: ['queue.manage', 'visits.read'],

@@ -11,7 +11,7 @@ Staff app: `src/web/apps/staff/src/modules/analytics` (manifest section *Insight
 
 The module also holds the **patient journeys** (the pipeline of where each patient is: their out-patient visit, stay,
 operations and lab orders, and the board of patients in the hospital), a live read model over every module's records
-that only this layer may read (see *Patient journeys*).
+that only this layer may read (see *Patient journeys*). Its screens are the front office's.
 
 ## Permissions
 
@@ -477,6 +477,14 @@ ageing).
 
 Home widget *Hospital at a glance* (this month's first four KPIs) for any analytics reader.
 
+The patient journeys are shown by the front office's module (`src/web/apps/staff/src/modules/front-office/journeys.ts`,
+`JourneyCard.tsx`) with the shared `Pipeline` of `@hc360/ui`:
+
+| Route | Screen |
+|---|---|
+| `/front-office/in-hospital` | *Patients in hospital* (Front office menu, `visits.read`): the board, filtered by out-patients or in-patients, department and ward (the ward filter for those who may read the wards), each row with the compact pipeline and the time in the current stage; opens the patient's page; refreshed every minute and on every visit change |
+| `/patients/$patientId` | The *Journey* card (`visits.read`): the visit and the stay as full pipelines, operations and lab orders beneath as compact lines |
+
 ## Tests
 
 `tests/Modules/HyFib.HealthCare360.Modules.Analytics.Tests` (xUnit + Shouldly):
@@ -498,7 +506,8 @@ Patient journeys: every stage rule in `Domain/Journeys` (`JourneyStagesTests`, `
 `InpatientJourneyTests`, `SurgeryJourneyTests`, `LabJourneyTests`: current, skipped, not applicable, cancelled and
 finished journeys); `PatientPipelineTests` in the integration tests drives a patient through registration, the OPD, the
 consultation, a lab order, payment, collection and admission and reads both endpoints at each step, and checks the
-restricted-record rules.
+restricted-record rules; the staff app's `Pipeline.test.tsx` (`@hc360/ui`), `JourneyCard.test.tsx`,
+`inHospital.test.tsx` and the accessibility checks of the board and the patient's page (in the browser at 360 px too).
 
 ## Maintainers
 
