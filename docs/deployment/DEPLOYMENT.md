@@ -114,8 +114,9 @@ The installer:
 - Starts HC360 and checks that it is ready: up, and reaching the database.
 - Registers the scheduled task *HC360 certificate probe* (Task Scheduler › HyFib), which checks every day, as SYSTEM, the
   certificate the staff address serves, as HC360 Desktop and the lab agents check it, against the hospital CA
-  fingerprint printed below. It runs it once and shows what it found. What needs attention goes to the Application event
-  log, where monitoring tools read it, even while HC360 is down ([CA-ROLLOVER.md](CA-ROLLOVER.md#the-certificate-probe)).
+  fingerprint printed below; on a day the server was off at that time, once it starts. It runs it once and shows what
+  it found. What needs attention goes to the Application event log, where monitoring tools read it, even while HC360 is
+  down ([CA-ROLLOVER.md](CA-ROLLOVER.md#the-certificate-probe)).
 
 At the end it prints two things. Write them down:
 - the **hospital CA fingerprint**, which staff compare when setting up HC360 Desktop;

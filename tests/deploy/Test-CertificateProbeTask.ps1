@@ -93,6 +93,7 @@ try {
     $trigger = @($task.Triggers)
     Assert ($trigger.Count -eq 1 -and $trigger[0].CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger' -and ([datetime] $trigger[0].StartBoundary).ToString('HH:mm') -eq '07:10') `
         "every day at 07:10 (found: $(@($trigger | ForEach-Object { "$($_.CimClass.CimClassName) $($_.StartBoundary)" }) -join '; '))"
+    Assert ($task.Settings.StartWhenAvailable -eq $true) 'on a day the machine was off at that time, it runs once the machine starts'
     Assert ((Get-CertificateProbePin $name) -eq $fingerprint) 'the fingerprint it checks for is read back'
 
     Write-Host 'Task Scheduler runs the probe as SYSTEM, and what it finds reaches the event log'
@@ -120,7 +121,7 @@ try {
     if ($step) { & ([scriptblock]::Create($step.Replace("'HC360 certificate probe'", "'$name'").Replace('<new>', $rolled))) }
     Assert ((Get-CertificateProbePin $name) -eq $rolled) 'the task checks for the new fingerprint'
     $after = Get-ScheduledTask -TaskName $name -TaskPath '\HyFib\'
-    Assert ($after.Principal.UserId -match 'SYSTEM$' -and @($after.Triggers).Count -eq 1 -and @($after.Actions)[0].Execute -eq $exe) 'and runs as before'
+    Assert ($after.Principal.UserId -match 'SYSTEM$' -and @($after.Triggers).Count -eq 1 -and @($after.Actions)[0].Execute -eq $exe -and $after.Settings.StartWhenAvailable -eq $true) 'and runs as before'
 
     Write-Host 'A task that cannot start the probe is told apart'
     $null = Register-CertificateProbe (Join-Path $env:TEMP 'no-such-program.exe') $address $fingerprint '07:10' $missing

@@ -208,7 +208,8 @@ function Register-CertificateProbe([string] $Exe, [string] $Address, [string] $F
     $before = Get-CertificateProbePin $TaskName $TaskPath
     $action = New-ScheduledTaskAction -Execute $Exe -Argument "certificates probe $Address --ca-fingerprint $Fingerprint --event-log"
     $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew `
+    # -StartWhenAvailable: on a day the server was off at that time, it checks once the server starts.
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
     Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Action $action -Trigger (New-ScheduledTaskTrigger -Daily -At $At) `
         -Principal $principal -Settings $settings -Force `
@@ -1103,7 +1104,8 @@ if ($postgres) {
 # hospital CA whose fingerprint is printed below, which they pin. Run apart from the server, it still tells when HC360 is
 # down or cannot send its own alerts, and when what the devices are served is not what the server holds; what needs
 # attention goes to the Application event log, where monitoring tools read it. An hour after Windows Update may last
-# restart the server. A standby serves nothing until a failover, when this installer runs there again without -Standby.
+# restart the server, or once it starts when it was off then. A standby serves nothing until a failover, when this
+# installer runs there again without -Standby.
 $caPath = Join-Path $DataDir 'certs\hc360-hospital-ca.crt'
 $caFingerprint = if (Test-Path -LiteralPath $caPath) { Get-CertificateFingerprint $caPath } else { $null }
 if ($Standby) {
