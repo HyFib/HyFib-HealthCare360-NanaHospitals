@@ -504,10 +504,15 @@ public sealed class AuthService(
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"auth.otp:" + phone}, 0))", ct);
         var windowStart = now.AddMinutes(-15);
-        var recent = await db.Set<AuthChallenge>().CountAsync(c => c.Kind == AuthChallengeKind.Otp && c.Phone == phone && c.CreatedAt > windowStart, ct);
-        if (recent >= 3)
+        var recent = await db.Set<AuthChallenge>()
+            .Where(c => c.Kind == AuthChallengeKind.Otp && c.Phone == phone && c.CreatedAt > windowStart)
+            .OrderByDescending(c => c.CreatedAt).Select(c => c.CreatedAt).Take(3).ToListAsync(ct);
+        if (recent.Count >= 3)
         {
-            return Error.Rule("auth.otp_throttled", "Too many codes requested for this number. Please wait a few minutes.");
+            // Another code is allowed once the third latest leaves the 15 minutes: the portal counts down to then.
+            var wait = recent[2].AddMinutes(15) - now;
+            var throttled = Error.Rule("auth.otp_throttled", "Too many codes requested for this number. Please wait a few minutes.");
+            return throttled with { Data = new { retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds)) } };
         }
 
         var code = SecretTokens.NewNumericCode(6);

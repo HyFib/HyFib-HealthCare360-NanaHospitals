@@ -40,7 +40,7 @@ import {
   sanitizeCode,
   sanitizePhoneInput,
   secondsUntil,
-  THROTTLED_COOLDOWN_SECONDS,
+  throttledWaitSeconds,
   toE164,
 } from '@/lib/otp';
 import { useProfileStore } from '@/lib/profileStore';
@@ -270,7 +270,7 @@ function SignInPage() {
       }
       const throttled = errorCode(err) === 'auth.otp_throttled' || (isApiError(err) && err.status === 429);
       if (throttled) {
-        setResendAt(Date.now() + THROTTLED_COOLDOWN_SECONDS * 1000);
+        setResendAt(Date.now() + throttledWaitSeconds(isApiError(err) ? err.data : undefined) * 1000);
       }
       setError(
         throttled
