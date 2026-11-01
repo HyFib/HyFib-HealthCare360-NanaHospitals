@@ -49,7 +49,11 @@ public sealed class InstrumentSet : AuditableEntity, IFacilityScoped
     }
 }
 
-/// <summary>One line of a set's count sheet ("Artery forceps × 6").</summary>
+/// <summary>
+/// One line of a set's count sheet ("Artery forceps × 6"). Editing the set replaces the count sheet, so the set's audit
+/// event lists it as it was and as it is (<c>items</c>).
+/// </summary>
+[AuditedWithParent]
 public sealed class InstrumentSetItem : Entity
 {
     public Guid InstrumentSetId { get; set; }

@@ -87,6 +87,15 @@ public sealed class NotAuditedAttribute : Attribute;
 [AttributeUsage(AttributeTargets.Class)]
 public sealed class AuditedAttribute : Attribute;
 
+/// <summary>
+/// Audits the rows of a collection with the record that holds them (a coding's ICD codes, a tariff's bed multipliers, a
+/// user's roles): when a row is added, changed or removed, the record's own data audit event lists the collection as it
+/// was and as it is, so replacing it keeps the codes or amounts it had in the trail. The row needs one foreign key to its
+/// record, from a collection navigation of the record's (<c>EncounterCoding.Entries</c>).
+/// </summary>
+[AttributeUsage(AttributeTargets.Class)]
+public sealed class AuditedWithParentAttribute : Attribute;
+
 /// <summary>Marker for in-process domain events.</summary>
 public interface IDomainEvent;
 

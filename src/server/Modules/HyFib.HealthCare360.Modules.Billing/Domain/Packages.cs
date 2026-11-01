@@ -51,7 +51,11 @@ public sealed class Package : AuditableEntity
         UsedFor == PackageUse.Both || UsedFor == (type == BillType.InPatient ? PackageUse.InPatient : PackageUse.OutPatient);
 }
 
-/// <summary>What a package covers: one service item or a whole category, optionally capped by quantity and/or amount.</summary>
+/// <summary>
+/// What a package covers: one service item or a whole category, optionally capped by quantity and/or amount. Saving the
+/// package replaces them, so its audit event lists them as they were and as they are (<c>inclusions</c>).
+/// </summary>
+[AuditedWithParent]
 public sealed class PackageInclusion : Entity
 {
     public Guid PackageId { get; set; }

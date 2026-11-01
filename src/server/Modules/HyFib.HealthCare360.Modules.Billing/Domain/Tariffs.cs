@@ -45,7 +45,11 @@ public sealed class TariffPlan : AuditableEntity
             : 1m;
 }
 
-/// <summary>Bed-class multiplier of a tariff plan, keyed by the bed's service item (BED-GEN, BED-PVT, BED-ICU…).</summary>
+/// <summary>
+/// Bed-class multiplier of a tariff plan, keyed by the bed's service item (BED-GEN, BED-PVT, BED-ICU…). Saving the plan
+/// replaces them, so the plan's audit event lists them as they were and as they are (<c>bedMultipliers</c>).
+/// </summary>
+[AuditedWithParent]
 public sealed class TariffBedMultiplier : Entity
 {
     public Guid TariffPlanId { get; set; }

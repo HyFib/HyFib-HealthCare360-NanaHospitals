@@ -33,7 +33,11 @@ public sealed class ClinicalTemplate : AuditableEntity
     public bool IsActive { get; set; } = true;
 }
 
-/// <summary>A default medicine of a template. <see cref="DrugItemId"/> may be empty until mapped to the drug master.</summary>
+/// <summary>
+/// A default medicine of a template. <see cref="DrugItemId"/> may be empty until mapped to the drug master. Saving the
+/// template replaces them, so its audit event lists them as they were and as they are (<c>medications</c>).
+/// </summary>
+[AuditedWithParent]
 public sealed class TemplateMedication : Entity
 {
     public Guid TemplateId { get; set; }

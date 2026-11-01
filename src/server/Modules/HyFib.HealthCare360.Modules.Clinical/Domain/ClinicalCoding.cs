@@ -102,6 +102,11 @@ public sealed class EncounterCoding : AuditableEntity, IFacilityScoped
     }
 }
 
+/// <summary>
+/// A coded diagnosis or procedure of a coding. Coding again replaces them all, so they are audited with the coding
+/// (<c>entries</c>): its data audit event lists the codes as they were and as they are.
+/// </summary>
+[AuditedWithParent]
 public sealed class CodingEntry : Entity
 {
     public Guid CodingId { get; set; }

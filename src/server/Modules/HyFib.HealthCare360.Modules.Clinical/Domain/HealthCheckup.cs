@@ -80,7 +80,11 @@ public sealed class HealthPackage : AuditableEntity
     };
 }
 
-/// <summary>A test or consultation of a package, with optional item-level rules (for example mammography from 40).</summary>
+/// <summary>
+/// A test or consultation of a package, with optional item-level rules (for example mammography from 40). Saving the
+/// package replaces them, so its audit event lists them as they were and as they are (<c>items</c>).
+/// </summary>
+[AuditedWithParent]
 public sealed class HealthPackageItem : Entity
 {
     public Guid PackageId { get; set; }
