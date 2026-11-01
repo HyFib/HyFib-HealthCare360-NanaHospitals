@@ -60,8 +60,8 @@ public sealed record ErasureHold(
 /// <summary>
 /// The retention schedule (<see cref="RetentionSchedule"/>): the periods in force, changes to them, the clean-up of
 /// operational records past their period, and the review list for what is never deleted automatically. The clean-up
-/// deletes in small batches with set-based statements, and records each run (with an audit entry) because such
-/// deletes bypass the per-row audit.
+/// deletes in small batches with set-based statements, which bypass the per-row audit, so each batch commits with an
+/// audit entry naming the records it removed (<see cref="PurgedAction"/>), and each run is recorded with one more.
 /// </summary>
 public sealed class RetentionService(
     HospitalDbContext db,
@@ -73,6 +73,9 @@ public sealed class RetentionService(
 {
     /// <summary>Set when an administrator asks for a clean-up now; the job picks it up within minutes.</summary>
     public const string RunRequestedSetting = "privacy.retention.run_requested";
+
+    /// <summary>The audit entry of one batch the clean-up removed: the rule, the cut-off and the ids of the records.</summary>
+    public const string PurgedAction = "privacy.retention.purged";
 
     private const int Batch = 1000;
 
@@ -161,7 +164,7 @@ public sealed class RetentionService(
         var results = new List<RetentionRunResult>();
         foreach (var (rule, before) in await DueRulesAsync(ct))
         {
-            results.Add(new RetentionRunResult { Key = rule.Key, Before = before, Removed = await PurgeAsync(rule.Key, before, countOnly: true, ct) });
+            results.Add(new RetentionRunResult { Key = rule.Key, Before = before, Removed = await PurgeAsync(null, rule.Key, before, ct) });
         }
 
         return results;
@@ -192,7 +195,8 @@ public sealed class RetentionService(
 
     /// <summary>
     /// Removes the operational records past their period. Each kind is done separately, so a failure part-way keeps what
-    /// was already done; the run records the error and the next run carries on.
+    /// was already done; the run records the error and the next run carries on. Every batch removed is in the audit trail
+    /// from the moment it is removed, whatever stops the run later.
     /// </summary>
     public async Task<RetentionRun> RunAsync(RetentionRunTrigger trigger, Guid? startedByUserId, CancellationToken ct)
     {
@@ -209,7 +213,7 @@ public sealed class RetentionService(
         {
             foreach (var (rule, before) in await DueRulesAsync(ct))
             {
-                var removed = await PurgeAsync(rule.Key, before, countOnly: false, ct);
+                var removed = await PurgeAsync(run, rule.Key, before, ct);
                 run.Results = [.. run.Results, new RetentionRunResult { Key = rule.Key, Before = before, Removed = removed }];
             }
         }
@@ -305,36 +309,43 @@ public sealed class RetentionService(
         return due;
     }
 
-    private Task<int> PurgeAsync(string key, DateTimeOffset before, bool countOnly, CancellationToken ct) => key switch
+    /// <summary>
+    /// Removes what <paramref name="key"/> keeps no longer, in batches recorded under <paramref name="run"/>; with no run,
+    /// counts it instead (the preview).
+    /// </summary>
+    private Task<int> PurgeAsync(RetentionRun? run, string key, DateTimeOffset before, CancellationToken ct) => key switch
     {
         // Sent (or failed, or expired) messages only: a pending one may still be delivered.
-        RetentionSchedule.Outbox => DeleteAsync(
+        RetentionSchedule.Outbox => DeleteAsync(run, key, before,
             db.Set<OutboxMessage>().IgnoreQueryFilters().Where(m => m.Status != OutboxStatus.Pending && (m.ProcessedAt ?? m.CreatedAt) < before),
-            m => m.Id, countOnly, ct),
-        RetentionSchedule.MessageLog => DeleteAsync(db.Set<NotificationLog>().IgnoreQueryFilters().Where(l => l.CreatedAt < before), l => l.Id, countOnly, ct),
-        RetentionSchedule.IntegrationLog => PurgeIntegrationLogsAsync(before, countOnly, ct),
-        RetentionSchedule.SignInLog => PurgeSignInsAsync(before, countOnly, ct),
+            m => m.Id, ct),
+        RetentionSchedule.MessageLog => DeleteAsync(run, key, before, db.Set<NotificationLog>().IgnoreQueryFilters().Where(l => l.CreatedAt < before), l => l.Id, ct),
+        RetentionSchedule.IntegrationLog => PurgeIntegrationLogsAsync(run, before, ct),
+        RetentionSchedule.SignInLog => PurgeSignInsAsync(run, before, ct),
         _ => Task.FromResult(0),
     };
 
     /// <summary>The integration log and the payment gateway's webhook events (event and gateway ids only), kept alike.</summary>
-    private async Task<int> PurgeIntegrationLogsAsync(DateTimeOffset before, bool countOnly, CancellationToken ct) =>
-        await DeleteAsync(db.Set<IntegrationLog>().IgnoreQueryFilters().Where(l => l.CreatedAt < before), l => l.Id, countOnly, ct)
-        + await DeleteAsync(db.Set<Billing.Domain.GatewayWebhookEvent>().Where(e => e.ReceivedAt < before), e => e.Id, countOnly, ct);
+    private async Task<int> PurgeIntegrationLogsAsync(RetentionRun? run, DateTimeOffset before, CancellationToken ct) =>
+        await DeleteAsync(run, RetentionSchedule.IntegrationLog, before, db.Set<IntegrationLog>().IgnoreQueryFilters().Where(l => l.CreatedAt < before), l => l.Id, ct)
+        + await DeleteAsync(run, RetentionSchedule.IntegrationLog, before, db.Set<Billing.Domain.GatewayWebhookEvent>().Where(e => e.ReceivedAt < before), e => e.Id, ct);
 
     /// <summary>
     /// Old sign-in code requests, sessions that ended before the cut-off, refresh tokens past their expiry, and
     /// break-the-glass grants that ended before it (the audit trail keeps every emergency access).
     /// </summary>
-    private async Task<int> PurgeSignInsAsync(DateTimeOffset before, bool countOnly, CancellationToken ct)
+    private async Task<int> PurgeSignInsAsync(RetentionRun? run, DateTimeOffset before, CancellationToken ct)
     {
-        var removed = await DeleteAsync(db.Set<AuthChallenge>().IgnoreQueryFilters().Where(c => c.CreatedAt < before), c => c.Id, countOnly, ct)
-            + await DeleteAsync(db.Set<BreakGlassAccess>().Where(g => g.ExpiresAt < before), g => g.Id, countOnly, ct);
+        const string key = RetentionSchedule.SignInLog;
+        var removed = await DeleteAsync(run, key, before, db.Set<AuthChallenge>().IgnoreQueryFilters().Where(c => c.CreatedAt < before), c => c.Id, ct)
+            + await DeleteAsync(run, key, before, db.Set<BreakGlassAccess>().Where(g => g.ExpiresAt < before), g => g.Id, ct);
         var ended = db.Set<UserSession>().IgnoreQueryFilters().Where(s => (s.RevokedAt ?? s.ExpiresAt) < before);
         var expiredTokens = db.Set<RefreshToken>().IgnoreQueryFilters().Where(t => t.ExpiresAt < before);
-        if (countOnly)
+        if (run is null)
         {
-            return removed + await ended.CountAsync(ct) + await expiredTokens.CountAsync(ct);
+            // An ended session's tokens go with it, expired or not.
+            return removed + await ended.CountAsync(ct)
+                + await db.Set<RefreshToken>().IgnoreQueryFilters().Where(t => t.ExpiresAt < before || ended.Any(s => s.Id == t.SessionId)).CountAsync(ct);
         }
 
         while (true)
@@ -345,18 +356,20 @@ public sealed class RetentionService(
                 break;
             }
 
-            // A session's refresh tokens go with it (there is no foreign key to cascade).
-            removed += await db.Set<RefreshToken>().IgnoreQueryFilters().Where(t => sessions.Contains(t.SessionId)).ExecuteDeleteAsync(ct);
-            removed += await db.Set<UserSession>().IgnoreQueryFilters().Where(s => sessions.Contains(s.Id)).ExecuteDeleteAsync(ct);
+            // A session's refresh tokens go first (there is no foreign key to cascade), in batches of their own named by
+            // their ids: a token not yet expired would otherwise go unnamed with its session.
+            removed += await DeleteAsync(run, key, before, db.Set<RefreshToken>().IgnoreQueryFilters().Where(t => sessions.Contains(t.SessionId)), t => t.Id, ct);
+            removed += await RemoveBatchAsync(run, key, before, nameof(UserSession), sessions, () =>
+                db.Set<UserSession>().IgnoreQueryFilters().Where(s => sessions.Contains(s.Id)).ExecuteDeleteAsync(ct), ct);
         }
 
-        return removed + await DeleteAsync(expiredTokens, t => t.Id, countOnly: false, ct);
+        return removed + await DeleteAsync(run, key, before, expiredTokens, t => t.Id, ct);
     }
 
-    private static async Task<int> DeleteAsync<T>(IQueryable<T> rows, Expression<Func<T, Guid>> id, bool countOnly, CancellationToken ct)
+    private async Task<int> DeleteAsync<T>(RetentionRun? run, string key, DateTimeOffset before, IQueryable<T> rows, Expression<Func<T, Guid>> id, CancellationToken ct)
         where T : class
     {
-        if (countOnly)
+        if (run is null)
         {
             return await rows.CountAsync(ct);
         }
@@ -370,7 +383,46 @@ public sealed class RetentionService(
                 return removed;
             }
 
-            removed += await rows.Where(In(id, ids)).ExecuteDeleteAsync(ct);
+            removed += await RemoveBatchAsync(run, key, before, typeof(T).Name, ids, () => rows.Where(In(id, ids)).ExecuteDeleteAsync(ct), ct);
+        }
+    }
+
+    /// <summary>
+    /// Deletes one batch and records it with the ids of its records, in one transaction: a clean-up stopped part-way (the
+    /// server shut down, a later batch failed) leaves every batch it removed in the audit trail, and a batch that failed
+    /// leaves neither its deletes nor an entry. The ids say which records went, never what they held.
+    /// </summary>
+    private async Task<int> RemoveBatchAsync(
+        RetentionRun run, string key, DateTimeOffset before, string records, List<Guid> ids, Func<Task<int>> delete, CancellationToken ct)
+    {
+        await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            var removed = await delete();
+            audit.Add(new AuditEntry(AuditCategories.Data, PurgedAction,
+                string.Create(CultureInfo.InvariantCulture, $"Retention clean-up removed {removed} record(s) of {RetentionSchedule.Get(key).Title.ToLowerInvariant()}"))
+            {
+                EntityType = nameof(RetentionRun),
+                EntityId = run.Id.ToString(),
+                Details = new { key, before, records, removed, ids },
+            });
+            await db.SaveChangesAsync(ct);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(ct);
+            }
+
+            return removed;
+        }
+        catch
+        {
+            // Rolled back: an entry still waiting to be saved would claim the batch went when the run's own entry is saved.
+            foreach (var unsaved in db.ChangeTracker.Entries<AuditEvent>().Where(e => e.State == EntityState.Added).ToList())
+            {
+                unsaved.State = EntityState.Detached;
+            }
+
+            throw;
         }
     }
 

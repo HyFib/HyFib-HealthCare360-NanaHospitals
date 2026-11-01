@@ -560,6 +560,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Account changes name the roles and facilities given and taken away (`user.created`, `user.updated`), and the
     permissions start-up gives a role or takes back at an upgrade are audited as an administrator's are
     (`role.permissions_changed`, with no user).
+  - A change made in set-based statements, which the data audit does not see, writes its own entry in its transaction,
+    naming the rows: a patient merge's moves in OT, dialysis, physiotherapy and blood bank with the bookings it cancelled
+    (`specialtycare.records_moved`), each batch of the retention clean-up (`privacy.retention.purged`), an ABDM erase
+    (`abdm.records_erased`), and a setting removed (`SystemSetting.delete`, with every value it had).
   - `AuditedChangeTests` (IntegrationTests) read each of these changes back from the audit log.
 - **Idempotency keys** on every write:
   - A WiFi retry replays the original result instead of creating a duplicate bill, payment or order.

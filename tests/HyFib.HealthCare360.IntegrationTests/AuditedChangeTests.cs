@@ -9,12 +9,22 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Templates;
 using HyFib.HealthCare360.Modules.HR.Domain;
 using HyFib.HealthCare360.Modules.HR.Features.Employees;
 using HyFib.HealthCare360.Modules.HR.Features.Payroll;
+using HyFib.HealthCare360.Modules.Interop.Domain;
+using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Modules.Privacy.Domain;
+using HyFib.HealthCare360.Modules.Privacy.Services;
+using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Dialysis;
+using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Physiotherapy;
+using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,7 +35,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// What the audit trail keeps of a change, read back as an auditor reads it (Administration › Audit log): who changed what,
 /// with the values before and after, in the transaction that made the change. Each of these changes left no such trail:
 /// the roles and facilities an account was given, the permissions an upgrade gave a role, the codes of a coding done
-/// again, and the bed multipliers, package inclusions, template medicines and pay heads saved with their record.
+/// again, the records a merge moved, the bed multipliers, package inclusions, template medicines and pay heads saved with
+/// their record, the batches a clean-up removed before it stopped, an ABDM erase, and the value a removed setting had.
 /// </summary>
 public sealed class AuditedChangeTests(HospitalServer server)
 {
@@ -123,6 +134,58 @@ public sealed class AuditedChangeTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_merge_names_the_specialty_care_records_it_moved_and_the_bookings_it_cancelled()
+    {
+        var facility = (await (await server.SignInAsync(HospitalServer.Users.FrontOffice)).GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId!.Value;
+        var (duplicate, kept) = (await RegisterAsync("Duplicate"), await RegisterAsync("Kept"));
+        var day = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30 + Random.Shared.Next(300));
+        Guid duplicateProfile, clash, other, referral;
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            // Both records are enrolled in the dialysis unit and booked for the same morning; the duplicate has a second
+            // booking and a physiotherapy referral of its own.
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            var profiles = new[] { Profile(facility, duplicate, day), Profile(facility, kept, day) };
+            var sessions = new[] { Session(facility, duplicate, day), Session(facility, kept, day), Session(facility, duplicate, day.AddDays(2)) };
+            var physio = new PhysioReferral
+            {
+                FacilityId = facility,
+                PatientId = duplicate,
+                Reason = "Frozen shoulder",
+                ReferredAt = DateTimeOffset.UtcNow,
+                Status = PhysioReferralStatus.New,
+                Priority = OrderPriority.Routine,
+            };
+            db.AddRange(profiles);
+            db.AddRange(sessions);
+            db.Add(physio);
+            await db.SaveChangesAsync(Ct);
+            (duplicateProfile, clash, other, referral) = (profiles[0].Id, sessions[0].Id, sessions[2].Id, physio.Id);
+        }
+
+        // A second records officer approves the merge (maker-checker): the rows move in the approval's transaction.
+        await MakerChecker.MergeAsync(
+            await server.SignInAsync(HospitalServer.Users.MrdOfficer), await server.SignInAsync(HospitalServer.Users.MrdVerifier), duplicate, kept, "Registered twice");
+
+        var moved = (await TrailAsync("Patient", duplicate, PatientMergeHandler.RecordsMovedAction)).ShouldHaveSingleItem();
+        moved.PatientId.ShouldBe(kept);
+        moved.Category.ShouldBe(AuditCategories.Data);
+        var details = JsonNode.Parse(moved.Details!)!;
+        Ids(details["moved"]!["DialysisSession"]!).ShouldBe([clash, other], ignoreOrder: true);
+        Ids(details["moved"]!["PhysioReferral"]!).ShouldBe([referral]);
+        details["moved"]!.AsObject().ContainsKey("DialysisPatientProfile").ShouldBeFalse("The duplicate's profile stays with it, deactivated.");
+        Ids(details["dialysisProfilesDeactivated"]!).ShouldBe([duplicateProfile]);
+        Ids(details["dialysisSessionsCancelled"]!).ShouldBe([clash]);
+
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            (await db.Set<DialysisSession>().IgnoreQueryFilters().SingleAsync(s => s.Id == clash, Ct)).Status.ShouldBe(DialysisSessionStatus.Cancelled);
+            (await db.Set<PhysioReferral>().IgnoreQueryFilters().SingleAsync(r => r.Id == referral, Ct)).PatientId.ShouldBe(kept);
+        }
+    }
+
+    [Fact]
     public async Task A_tariff_plans_bed_multipliers_are_in_the_trail_as_they_were_and_as_they_are()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
@@ -204,6 +267,235 @@ public sealed class AuditedChangeTests(HospitalServer server)
             .ShouldBe([(components["BASIC"].Id, 18_000m), (components["HRA"].Id, 40m)], ignoreOrder: true);
     }
 
+    [Fact]
+    public async Task A_clean_up_stopped_part_way_leaves_each_batch_it_removed_in_the_trail_and_none_it_did_not()
+    {
+        // A thousand and one messages sent long ago: the clean-up removes them a thousand at a time, oldest first.
+        var old = DateTimeOffset.UtcNow.AddDays(-400);
+        var sent = Enumerable.Range(0, 1_001)
+            .Select(_ => new OutboxMessage { Type = "audit.test", Status = OutboxStatus.Succeeded, CreatedAt = old, NextAttemptAt = old, ProcessedAt = old })
+            .ToList();
+        var ids = sent.Select(m => m.Id).ToList();
+        RetentionRun run;
+        Guid last;
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            db.AddRange(sent);
+            await db.SaveChangesAsync(Ct);
+
+            // The second batch fails, as a lost connection or a full disk would stop it: the database refuses to delete the
+            // message the clean-up comes to last.
+            last = await db.Set<OutboxMessage>().Where(m => ids.Contains(m.Id)).OrderByDescending(m => m.Id).Select(m => m.Id).FirstAsync(Ct);
+            var refuse = $"""
+                CREATE FUNCTION platform.audit_test_refuse() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'kept by the test'; END $$ LANGUAGE plpgsql;
+                CREATE TRIGGER audit_test_refuse BEFORE DELETE ON platform.outbox_messages FOR EACH ROW WHEN (OLD.id = '{last}')
+                    EXECUTE FUNCTION platform.audit_test_refuse();
+                """;
+            await db.Database.ExecuteSqlRawAsync(refuse, Ct);
+            try
+            {
+                run = await scope.ServiceProvider.GetRequiredService<RetentionService>().RunAsync(RetentionRunTrigger.Manual, null, Ct);
+            }
+            finally
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "DROP TRIGGER audit_test_refuse ON platform.outbox_messages; DROP FUNCTION platform.audit_test_refuse();", Ct);
+            }
+        }
+
+        run.Error.ShouldNotBeNull().ShouldContain("kept by the test");
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            var left = (await db.Set<OutboxMessage>().Where(m => ids.Contains(m.Id)).Select(m => m.Id).ToListAsync(Ct)).ToHashSet();
+            var batches = await db.Set<AuditEvent>().AsNoTracking()
+                .Where(e => e.Action == RetentionService.PurgedAction && e.EntityId == run.Id.ToString()).ToListAsync(Ct);
+            var named = batches.SelectMany(b => Ids(JsonNode.Parse(b.Details!)!["ids"]!)).ToHashSet();
+
+            var removed = ids.Where(id => !left.Contains(id)).ToList();
+            removed.ShouldNotBeEmpty("The first batch was removed.");
+            left.ShouldContain(last);
+            removed.Where(id => !named.Contains(id)).ShouldBeEmpty("Every message removed is named in a batch's audit entry.");
+            named.Where(left.Contains).ShouldBeEmpty("A batch that failed is in no audit entry: its deletes were rolled back with it.");
+            batches.ShouldAllBe(b => b.Category == AuditCategories.Data);
+
+            await db.Set<OutboxMessage>().Where(m => ids.Contains(m.Id)).ExecuteDeleteAsync(Ct);
+        }
+    }
+
+    [Fact]
+    public async Task A_clean_up_names_each_refresh_token_it_removes_with_its_session()
+    {
+        // A session revoked long ago that still holds a refresh token not yet expired: the token goes with its session.
+        var user = (await (await server.SignInAsync(HospitalServer.Users.FrontOffice)).GetAsync<AuthUser>("/api/v1/auth/me")).Id;
+        var old = DateTimeOffset.UtcNow.AddDays(-400);
+        var session = new UserSession { UserId = user, CreatedAt = old, LastSeenAt = old, LastActiveAt = old, ExpiresAt = old.AddHours(8), RevokedAt = old.AddHours(1), RevokedReason = "test" };
+        var token = new RefreshToken { SessionId = session.Id, TokenHash = "audit-test-" + Guid.NewGuid().ToString("N"), CreatedAt = old, ExpiresAt = DateTimeOffset.UtcNow.AddDays(30) };
+        RetentionRun run;
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            db.AddRange(session, token);
+            await db.SaveChangesAsync(Ct);
+            run = await scope.ServiceProvider.GetRequiredService<RetentionService>().RunAsync(RetentionRunTrigger.Manual, null, Ct);
+        }
+
+        run.Error.ShouldBeNull();
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            (await db.Set<UserSession>().IgnoreQueryFilters().AnyAsync(s => s.Id == session.Id, Ct)).ShouldBeFalse();
+            (await db.Set<RefreshToken>().IgnoreQueryFilters().AnyAsync(t => t.Id == token.Id, Ct)).ShouldBeFalse();
+            var batches = (await db.Set<AuditEvent>().AsNoTracking()
+                    .Where(e => e.Action == RetentionService.PurgedAction && e.EntityId == run.Id.ToString()).ToListAsync(Ct))
+                .Select(e => JsonNode.Parse(e.Details!)!).ToList();
+            List<Guid> Named(string records) =>
+                [.. batches.Where(b => b["records"]!.GetValue<string>() == records).SelectMany(b => Ids(b["ids"]!))];
+            Named(nameof(RefreshToken)).ShouldContain(token.Id, "The token is named in the entry of the batch that removed it.");
+            Named(nameof(UserSession)).ShouldContain(session.Id);
+            batches.ShouldAllBe(b => b["removed"]!.GetValue<int>() == b["ids"]!.AsArray().Count, "Each entry counts only the records it names.");
+        }
+    }
+
+    [Fact]
+    public async Task An_abdm_erase_that_fails_part_way_erases_nothing_and_the_one_that_completes_names_the_records()
+    {
+        var (patient, _, transfer, record) = await ReceivedUnderAPassedConsentAsync();
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+
+            // Dropping the request's key fails, after the record is deleted.
+            var refuse = $"""
+                CREATE FUNCTION interop.audit_test_refuse() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'kept by the test'; END $$ LANGUAGE plpgsql;
+                CREATE TRIGGER audit_test_refuse BEFORE UPDATE ON interop.abdm_health_information_requests FOR EACH ROW WHEN (OLD.id = '{transfer}')
+                    EXECUTE FUNCTION interop.audit_test_refuse();
+                """;
+            await db.Database.ExecuteSqlRawAsync(refuse, Ct);
+            try
+            {
+                await Should.ThrowAsync<Exception>(() => scope.ServiceProvider.GetRequiredService<AbdmHealthInformationService>().EraseExpiredAsync(Ct));
+            }
+            finally
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "DROP TRIGGER audit_test_refuse ON interop.abdm_health_information_requests; DROP FUNCTION interop.audit_test_refuse();", Ct);
+            }
+        }
+
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            (await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters().AnyAsync(r => r.Id == record, Ct)).ShouldBeTrue("The failed erase was rolled back whole.");
+            (await Erased(db)).ShouldBeEmpty();
+
+            await scope.ServiceProvider.GetRequiredService<AbdmHealthInformationService>().EraseExpiredAsync(Ct);
+
+            (await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters().AnyAsync(r => r.Id == record, Ct)).ShouldBeFalse();
+            (await db.Set<AbdmHealthInformationRequest>().AsNoTracking().SingleAsync(q => q.Id == transfer, Ct)).PrivateKeyCipher.ShouldBeNull();
+            Ids(JsonNode.Parse((await Erased(db)).ShouldHaveSingleItem().Details!)!["records"]!).ShouldBe([record]);
+        }
+
+        Task<List<AuditEvent>> Erased(HospitalDbContext db) =>
+            db.Set<AuditEvent>().AsNoTracking().Where(a => a.PatientId == patient && a.Action == AbdmHealthInformationService.Erased).ToListAsync(Ct);
+    }
+
+    [Fact]
+    public async Task A_page_kept_while_an_erase_waits_for_it_is_erased_and_named_with_the_rest()
+    {
+        var (patient, artefact, transfer, first) = await ReceivedUnderAPassedConsentAsync();
+
+        // A page being kept: the receipt holds the transfer's lock (AbdmHealthInformationService.ReceiveAsync) and has
+        // written its record, not yet committed.
+        await using var receipt = server.Services.CreateAsyncScope();
+        var receiving = receipt.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        await using var keeping = await receiving.Database.BeginTransactionAsync(Ct);
+        await receiving.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({AbdmHealthInformationService.TransferLock(artefact)}, 0))", Ct);
+        var late = new AbdmReceivedRecord { RequestEntityId = transfer, PatientId = patient, CareContextReference = "visit/2", PageNumber = 2, Content = "{}" };
+        receiving.Add(late);
+        await receiving.SaveChangesAsync(Ct);
+
+        // The erase starts meanwhile: it waits for the page, then erases it with the record before it.
+        await using var eraser = server.Services.CreateAsyncScope();
+        var erase = eraser.ServiceProvider.GetRequiredService<AbdmHealthInformationService>().EraseExpiredAsync(Ct);
+        (await Task.WhenAny(erase, Task.Delay(TimeSpan.FromSeconds(2), Ct))).ShouldNotBe(erase, "The erase waits for the page being kept.");
+        await keeping.CommitAsync(Ct);
+        await erase;
+
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        (await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters().AnyAsync(r => r.RequestEntityId == transfer, Ct)).ShouldBeFalse("No record of the transfer outlives the erase.");
+        var erased = await db.Set<AuditEvent>().AsNoTracking().Where(a => a.PatientId == patient && a.Action == AbdmHealthInformationService.Erased).ToListAsync(Ct);
+        Ids(JsonNode.Parse(erased.ShouldHaveSingleItem().Details!)!["records"]!).ShouldBe([first, late.Id], ignoreOrder: true);
+    }
+
+    /// <summary>A patient with a record received through ABDM under a consent whose erase date has passed.</summary>
+    private async Task<(Guid Patient, Guid Artefact, Guid Transfer, Guid Record)> ReceivedUnderAPassedConsentAsync()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var patient = (await frontOffice.PostAsync<PatientCreated>("/api/v1/patients",
+            AbdmExportTests.Registration(AbdmExportTests.NewAbha(), "erase." + AbdmExportTests.Letters(8) + "@sbx"))).Id;
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var eraseAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var request = new AbdmConsentRequest
+        {
+            PatientId = patient,
+            AbhaAddress = "erase@sbx",
+            GatewayRequestId = Guid.NewGuid(),
+            Status = AbdmConsentRequestStatus.Granted,
+            Purpose = "CAREMGT",
+            HiTypes = "OPConsultation",
+            RequesterName = "Dr. Test",
+            DateFrom = DateTimeOffset.UtcNow.AddYears(-1),
+            DateTo = DateTimeOffset.UtcNow,
+            DataEraseAt = eraseAt,
+        };
+        var artefact = new AbdmConsentArtefact
+        {
+            ConsentRequestEntityId = request.Id,
+            PatientId = patient,
+            ArtefactId = Guid.NewGuid().ToString(),
+            Status = "GRANTED",
+            DataEraseAt = eraseAt,
+        };
+        var information = new AbdmHealthInformationRequest
+        {
+            ArtefactEntityId = artefact.Id,
+            PatientId = patient,
+            GatewayRequestId = Guid.NewGuid(),
+            Status = AbdmHealthInformationStatus.Requested,
+            PrivateKeyCipher = "v1.key",
+            Nonce = "nonce",
+            KeyExpiresAt = eraseAt,
+        };
+        var received = new AbdmReceivedRecord { RequestEntityId = information.Id, PatientId = patient, CareContextReference = "visit/1", PageNumber = 1, Content = "{}" };
+        db.AddRange(request, artefact, information, received);
+        await db.SaveChangesAsync(Ct);
+        return (patient, artefact.Id, information.Id, received.Id);
+    }
+
+    [Fact]
+    public async Task A_setting_removed_leaves_the_value_it_had_in_the_trail()
+    {
+        var key = "ui.notice_" + Letters(8);
+        Guid id;
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+            await settings.SetAsync(key, "Ward 5 closed for deep cleaning", null, false, Ct);
+            id = (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<SystemSetting>().SingleAsync(s => s.Key == key, Ct)).Id;
+
+            (await settings.RemoveAsync(key, null, Ct)).ShouldBeTrue();
+        }
+
+        var removed = Details(await TrailAsync(nameof(SystemSetting), id), "SystemSetting.delete");
+        removed["key"]!.GetValue<string>().ShouldBe(key);
+        removed["value"]!.GetValue<string>().ShouldBe("\"Ward 5 closed for deep cleaning\"");
+    }
+
     private const string PatientsRead = "patients.read";
 
     /// <summary>The audit trail of one record, newest first, as Administration › Audit log shows it.</summary>
@@ -248,6 +540,25 @@ public sealed class AuditedChangeTests(HospitalServer server)
     private static async Task<Guid> ServiceAsync(ApiClient admin, string name, ServiceCategory category, decimal price) =>
         (await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
             $"SV-{Letters(8).ToUpperInvariant()}", name, null, category, null, price, 0m, null, true, false, null, true, null))).Id;
+
+    private static DialysisPatientProfile Profile(Guid facility, Guid patient, DateOnly enrolled) => new()
+    {
+        FacilityId = facility,
+        PatientId = patient,
+        DryWeightKg = 58m,
+        Shift = DialysisShift.Morning,
+        EnrolledOn = enrolled.AddMonths(-6),
+    };
+
+    private static DialysisSession Session(Guid facility, Guid patient, DateOnly day) => new()
+    {
+        FacilityId = facility,
+        SessionNumber = "DS" + Letters(10).ToUpperInvariant(),
+        PatientId = patient,
+        ScheduledDate = day,
+        Shift = DialysisShift.Morning,
+        Status = DialysisSessionStatus.Scheduled,
+    };
 
     private async Task<Guid> RegisterAsync(string firstName)
     {

@@ -212,7 +212,10 @@ ask for (rules 6 and 8), across a 29 February too. A period changed to less befo
 - `RetentionJob` runs every night after 02:00 IST, and within minutes of a request, on nodes that run jobs.
 - A PostgreSQL session lock keeps two nodes from running it at once.
 - It deletes in batches of 1,000 with set-based statements.
-- Each run is recorded, with an audit entry, because those statements bypass the per-row audit.
+- Those statements bypass the per-row audit, so each batch commits with an audit entry of its own
+  (`privacy.retention.purged`: the rule, the cut-off and the ids of the records removed, never what they held), and
+  each run is recorded with one more (`privacy.retention.run`). A run stopped part-way, by a failure or a server shutting
+  down, leaves every batch it removed in the trail; a batch that failed is rolled back with its entry.
 - Documents, deleted ones included, stay with the medical record: the file store keeps a deleted document's encrypted
   file for medico-legal reasons.
 

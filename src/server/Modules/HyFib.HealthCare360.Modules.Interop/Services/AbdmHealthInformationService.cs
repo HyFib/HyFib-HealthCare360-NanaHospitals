@@ -187,8 +187,19 @@ internal sealed class AbdmHealthInformationService(
             return Error.Validation("abdm.push_transaction", "The page names no transaction.");
         }
 
-        var request = await db.Set<AbdmHealthInformationRequest>().FirstOrDefaultAsync(r => r.TransactionId == transactionId, ct);
-        if (request is null || request.Status != AbdmHealthInformationStatus.Requested || request.PrivateKeyCipher is null)
+        var found = await db.Set<AbdmHealthInformationRequest>().AsNoTracking().Where(r => r.TransactionId == transactionId)
+            .Select(r => new { r.Id, r.ArtefactEntityId }).FirstOrDefaultAsync(ct);
+        if (found is null)
+        {
+            return Error.NotFound("abdm.push_unknown", "No transfer awaiting pages has that transaction id.");
+        }
+
+        // The page is kept under the lock an erase of the artefact's records takes (EraseAsync), and the transfer read again
+        // under it: a page that arrives while an erase runs finds the key dropped, and one kept first is erased with the rest.
+        await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        await LockTransferAsync(found.ArtefactEntityId, ct);
+        var request = await db.Set<AbdmHealthInformationRequest>().FirstAsync(r => r.Id == found.Id, ct);
+        if (request.Status != AbdmHealthInformationStatus.Requested || request.PrivateKeyCipher is null)
         {
             return Error.NotFound("abdm.push_unknown", "No transfer awaiting pages has that transaction id.");
         }
@@ -252,6 +263,11 @@ internal sealed class AbdmHealthInformationService(
             return Result.Success();
         }
 
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
         var pages = await db.Set<AbdmReceivedRecord>().Where(r => r.RequestEntityId == request.Id).Select(r => r.PageNumber).Distinct().CountAsync(ct);
         if (pages == count)
         {
@@ -308,7 +324,11 @@ internal sealed class AbdmHealthInformationService(
         return new AbdmReceivedRecordView(Summary(row.r, row.ArtefactId, row.HipName), bundle, row.DataEraseAt!.Value);
     }
 
-    /// <summary>Deletes outright the records received under these artefacts, and drops any key still kept for them.</summary>
+    /// <summary>
+    /// Deletes outright the records received under these artefacts, and drops any key still kept for them. The deletes, the
+    /// keys dropped and an audit entry per patient naming the records erased commit together: a failure part-way erases
+    /// nothing, and nothing is erased without its entry.
+    /// </summary>
     public async Task<int> EraseAsync(IReadOnlyCollection<Guid> artefactIds, string reason, CancellationToken ct)
     {
         if (artefactIds.Count == 0)
@@ -316,28 +336,40 @@ internal sealed class AbdmHealthInformationService(
             return 0;
         }
 
+        await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+
+        // A page being kept for these artefacts is kept first, and one arriving now waits, then finds the key dropped
+        // (ReceiveAsync): nothing is kept after the records to erase are read. In ascending order, so erases never deadlock.
+        foreach (var artefactId in artefactIds.Distinct().Order())
+        {
+            await LockTransferAsync(artefactId, ct);
+        }
+
         var requests = db.Set<AbdmHealthInformationRequest>().IgnoreQueryFilters().Where(q => artefactIds.Contains(q.ArtefactEntityId));
-        var patients = await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters()
+        var records = await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters()
             .Where(r => requests.Any(q => q.Id == r.RequestEntityId))
-            .GroupBy(r => r.PatientId).Select(g => new { PatientId = g.Key, Count = g.Count() }).ToListAsync(ct);
-        var erased = await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters()
-            .Where(r => requests.Any(q => q.Id == r.RequestEntityId))
-            .ExecuteDeleteAsync(ct);
+            .OrderBy(r => r.Id)
+            .Select(r => new { r.Id, r.PatientId })
+            .ToListAsync(ct);
+        var ids = records.Select(r => r.Id).ToList();
+        var erased = await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters().Where(r => ids.Contains(r.Id)).ExecuteDeleteAsync(ct);
         await requests.Where(q => q.PrivateKeyCipher != null)
             .ExecuteUpdateAsync(s => s.SetProperty(q => q.PrivateKeyCipher, (string?)null), ct);
-        foreach (var patient in patients)
+        foreach (var patient in records.GroupBy(r => r.PatientId))
         {
-            audit.Add(new AuditEntry(AuditCategories.PhiAccess, Erased, $"{patient.Count} record(s) received through ABDM erased: {reason}")
+            var erasedIds = patient.Select(r => r.Id).ToList();
+            audit.Add(new AuditEntry(AuditCategories.PhiAccess, Erased, $"{erasedIds.Count} record(s) received through ABDM erased: {reason}")
             {
-                PatientId = patient.PatientId,
+                PatientId = patient.Key,
                 EntityType = "abdm.received_record",
-                Details = new { api = "abdm", erased = patient.Count, reason },
+                Details = new { api = "abdm", erased = erasedIds.Count, reason, records = erasedIds },
             });
         }
 
-        if (patients.Count > 0)
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null)
         {
-            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
 
         return erased;
@@ -495,6 +527,12 @@ internal sealed class AbdmHealthInformationService(
             log.LogWarning("The receipt of transfer {Transaction} was not reported: {Reason}", transactionId, notified.Error!.Message);
         }
     }
+
+    /// <summary>The name of the lock of one consent artefact's transfers, held until the transaction ends.</summary>
+    internal static string TransferLock(Guid artefactId) => "abdm.transfer:" + artefactId.ToString("N");
+
+    private Task LockTransferAsync(Guid artefactId, CancellationToken ct) =>
+        db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({TransferLock(artefactId)}, 0))", ct);
 
     private static void End(AbdmHealthInformationRequest request, AbdmHealthInformationStatus status, string error)
     {
