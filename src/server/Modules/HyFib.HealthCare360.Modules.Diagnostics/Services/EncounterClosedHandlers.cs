@@ -17,7 +17,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// </list>
 /// What a clinician ordered is withdrawn by cancelling its order line, which cancels the work and its charge here as the
 /// clinician's own cancellation does (<see cref="ServiceOrderCancelledHandler"/>), so the order, the department and the
-/// bill say the same.
+/// bill say the same. A health checkup's tests are left to their booking, which is cancelled with its visit when its
+/// package charge can be (<see cref="HealthCheckupService.CancelForVisitAsync"/>): the tests go with the charge, or stay.
 /// </summary>
 internal sealed class EncounterClosedHandlers(HospitalDbContext db, LabOrderService lab, ClinicalOrderService orders) :
     IDomainEventHandler<VisitCancelled>,
@@ -45,9 +46,14 @@ internal sealed class EncounterClosedHandlers(HospitalDbContext db, LabOrderServ
     public Task HandleAsync(PatientDischarged discharged, CancellationToken cancellationToken) =>
         WithdrawAsync(discharged.VisitId, discharged.AdmissionId, "Patient discharged before the sample was collected", studies: false, cancellationToken);
 
-    /// <summary>The work of the visit, or of the stay when <paramref name="admissionId"/> is given.</summary>
+    /// <summary>
+    /// The work of the visit, or of the stay when <paramref name="admissionId"/> is given. Read under the encounter's lock,
+    /// held to the closing's commit (<see cref="EncounterLocks"/>): an order being placed on it is committed first and is
+    /// withdrawn here with the rest, and one placed after the closing finds the encounter closed and is refused.
+    /// </summary>
     private async Task WithdrawAsync(Guid visitId, Guid? admissionId, string reason, bool studies, CancellationToken ct)
     {
+        await EncounterLocks.LockAsync(db, [visitId, admissionId], ct);
         var lines = new List<Guid>(await lab.WithdrawUncollectedAsync(visitId, admissionId, reason, ct));
         if (studies)
         {

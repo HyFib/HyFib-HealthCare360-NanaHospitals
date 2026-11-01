@@ -27,6 +27,12 @@ public sealed record OrderDraft(
     IReadOnlyList<OrderLine> Lines);
 
 /// <summary>
+/// A visit or a stay that has ended, as <see cref="ClinicalOrderService.ClosedEncounterAsync"/> finds it: why
+/// (<c>admission.cancelled</c>, <c>admission.closed</c>, <c>visit.cancelled</c> or <c>visit.closed</c>) and its number.
+/// </summary>
+public sealed record ClosedEncounter(string Code, string Number);
+
+/// <summary>
 /// Clinical orders (EMR-05): validation against the service catalogue, duplicate-order protection, gap-free order
 /// numbers ("{FAC}OR{YY}{SEQ:7}") and publication of <see cref="ServiceOrderPlaced"/>/<see cref="ServiceOrderCancelled"/>
 /// to the performing departments in the same transaction. Nothing is ordered on a visit or a stay that has ended.
@@ -77,36 +83,16 @@ public sealed class ClinicalOrderService(
             admissionId ??= encounter.AdmissionId;
         }
 
-        var visit = visitId is { } vid
-            ? await db.Set<Visit>().AsNoTracking()
-                .Where(v => v.Id == vid && v.PatientId == request.PatientId)
-                .Select(v => new { v.VisitNumber, v.Status })
-                .FirstOrDefaultAsync(ct)
-            : null;
-        if (visitId is not null && visit is null)
+        if (visitId is { } vid && !await db.Set<Visit>().AnyAsync(v => v.Id == vid && v.PatientId == request.PatientId, ct))
         {
             return Error.Field("visitId", "This visit does not belong to the patient.");
         }
 
-        // Nobody would do the work of a stay or a visit that has ended, and its charge would land on a bill already
-        // settled or withdrawn. A stay's own visit closes with it, so the stay is asked first, to say what happened.
-        if (admissionId is { } aid && await admissions.FindAsync(aid, ct) is { Status: not StayStatus.Open } stay)
+        // Asked first, so the clinician hears it before anything else; asked again under the encounter's lock as the order
+        // is made (CreateAsync), where it holds.
+        if (await ClosedEncounterAsync(visitId, admissionId, locked: false, ct) is { } closed)
         {
-            return stay.Status == StayStatus.Cancelled
-                ? Error.Rule("admission.cancelled", $"Admission {stay.AdmissionNumber} was cancelled: nothing can be ordered on it.")
-                : Error.Rule("admission.closed",
-                    $"The patient was discharged from admission {stay.AdmissionNumber}: nothing more can be ordered on it. Order on a new visit.");
-        }
-
-        if (visit?.Status == VisitStatus.Cancelled)
-        {
-            return Error.Rule("visit.cancelled", $"Visit {visit.VisitNumber} was cancelled: nothing can be ordered on it.");
-        }
-
-        if (visit?.Status == VisitStatus.Completed)
-        {
-            return Error.Rule("visit.closed",
-                $"Visit {visit.VisitNumber} is closed: nothing more can be ordered on it. Order on the patient's current visit or admission.");
+            return OrderRefusal(closed);
         }
 
         var lines = await ResolveLinesAsync(request, ct);
@@ -139,9 +125,18 @@ public sealed class ClinicalOrderService(
         return await ToDtoAsync(order.Value, ct);
     }
 
-    /// <summary>Allocates the number, adds the lines and raises the events. The caller saves inside its own transaction.</summary>
+    /// <summary>
+    /// Allocates the number, adds the lines and raises the events. The caller saves inside its own transaction, which holds
+    /// the visit's and the stay's lock from here to its commit: nothing is ordered on an encounter that has ended, and one
+    /// closing at this moment either finds this order when it withdraws the work not begun, or this order finds it closed.
+    /// </summary>
     public async Task<Result<ClinicalOrder>> CreateAsync(OrderDraft draft, CancellationToken ct)
     {
+        if (await ClosedEncounterAsync(draft.VisitId, draft.AdmissionId, locked: true, ct) is { } closed)
+        {
+            return OrderRefusal(closed);
+        }
+
         var order = new ClinicalOrder
         {
             FacilityId = draft.FacilityId,
@@ -190,7 +185,9 @@ public sealed class ClinicalOrderService(
     /// Cancels lines whose work had not begun when their visit or stay closed (a sample not drawn, a scan not done), as the
     /// performing department found them. Each raises <see cref="ServiceOrderCancelled"/> as a line the clinician cancels
     /// does, so the department cancels its work and its charge the same way; lines closed meanwhile are left as they are.
-    /// Runs in the caller's unit of work (an event handler of the closing), which saves it.
+    /// Runs in the caller's unit of work (an event handler of the closing), which saves it. The tests of a health checkup are
+    /// left to their booking: they are charged once, as the package, and go only with the package charge, when the booking is
+    /// cancelled (<see cref="HealthCheckupService.CancelForVisitAsync"/>).
     /// </summary>
     public async Task WithdrawLinesAsync(IReadOnlyCollection<Guid> itemIds, string reason, CancellationToken ct)
     {
@@ -201,7 +198,7 @@ public sealed class ClinicalOrderService(
 
         var orders = await db.Set<ClinicalOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Include(o => o.Items)
-            .Where(o => o.Items.Any(i => itemIds.Contains(i.Id)))
+            .Where(o => o.Source != OrderSource.HealthCheckup && o.Items.Any(i => itemIds.Contains(i.Id)))
             .ToListAsync(ct);
         var now = time.GetUtcNow();
         var why = reason.Length <= MaxCancelReason ? reason : reason[..MaxCancelReason];
@@ -213,6 +210,59 @@ public sealed class ClinicalOrderService(
             }
         }
     }
+
+    /// <summary>
+    /// What has ended of this visit or stay, or null while both go on. Nobody would do the work of a stay or a visit that has
+    /// ended, and its charge would land on a bill already settled or withdrawn. The stay is asked first: a stay's own visit
+    /// closes with it, and the stay says what happened. <paramref name="locked"/> asks it in the caller's transaction, under
+    /// the encounter's lock (<see cref="EncounterLocks"/>) and with the visit's row read FOR SHARE, so a closing at the same
+    /// moment, whether it withdraws the work (a cancellation, a discharge) or not (a visit closed at the desk), either commits
+    /// first and is seen here, or waits for the caller's commit.
+    /// </summary>
+    public async Task<ClosedEncounter?> ClosedEncounterAsync(Guid? visitId, Guid? admissionId, bool locked, CancellationToken ct)
+    {
+        if (locked)
+        {
+            await EncounterLocks.LockAsync(db, [visitId, admissionId], ct);
+        }
+
+        if (admissionId is { } aid && await admissions.FindAsync(aid, ct) is { Status: not StayStatus.Open } stay)
+        {
+            return new ClosedEncounter(stay.Status == StayStatus.Cancelled ? "admission.cancelled" : "admission.closed", stay.AdmissionNumber);
+        }
+
+        if (visitId is not { } vid)
+        {
+            return null;
+        }
+
+        var visits = locked
+            ? db.Set<Visit>().FromSqlRaw(VisitForShareSql(), vid)
+            : db.Set<Visit>().Where(v => v.Id == vid);
+        var visit = await visits.IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Select(v => new { v.VisitNumber, v.Status })
+            .FirstOrDefaultAsync(ct);
+        return visit?.Status switch
+        {
+            VisitStatus.Cancelled => new ClosedEncounter("visit.cancelled", visit.VisitNumber),
+            VisitStatus.Completed => new ClosedEncounter("visit.closed", visit.VisitNumber),
+            _ => null,
+        };
+    }
+
+    /// <summary>Why an order is refused on an encounter that has ended (422).</summary>
+    internal static Error OrderRefusal(ClosedEncounter closed) => closed.Code switch
+    {
+        "admission.cancelled" => Error.Rule(closed.Code, $"Admission {closed.Number} was cancelled: nothing can be ordered on it."),
+        "admission.closed" => Error.Rule(closed.Code,
+            $"The patient was discharged from admission {closed.Number}: nothing more can be ordered on it. Order on a new visit."),
+        "visit.cancelled" => Error.Rule(closed.Code, $"Visit {closed.Number} was cancelled: nothing can be ordered on it."),
+        _ => Error.Rule(closed.Code, $"Visit {closed.Number} is closed: nothing more can be ordered on it. Order on the patient's current visit or admission."),
+    };
+
+    /// <summary>The one read of a visit that locks its row, on the table the model maps visits to; {0} is the visit's id.</summary>
+    private string VisitForShareSql() =>
+        "SELECT * FROM " + db.Model.FindEntityType(typeof(Visit))!.GetSchemaQualifiedTableName() + " WHERE id = {0} FOR SHARE";
 
     public async Task<OrderDto> ToDtoAsync(ClinicalOrder o, CancellationToken ct)
     {

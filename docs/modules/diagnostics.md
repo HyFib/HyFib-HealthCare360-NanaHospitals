@@ -356,8 +356,12 @@ diagnostics screen.
   `diagnostics.cardiology`; SourceReference = item/study id; quantity from the order; departments LAB, RAD, CDX) and
   reversed on cancellation. A billing failure never blocks clinical work: the error is stored and can be retried.
   Health-checkup package components (`ServiceOrderPlaced.PackageBookingId`) are never charged per test/study.
-* **Closed visits and stays** (`EncounterClosedHandlers`, in the closing's unit of work): work that had not begun when its
-  encounter closed is withdrawn with its charge, so it neither waits on a worklist nor stays on the bill. A cancelled
+* **Closed visits and stays** (`EncounterClosedHandlers`, in the closing's unit of work and transaction, under the
+  encounter's lock `EncounterLocks`, held to the commit, as an order takes it): work that had not begun when its
+  encounter closed is withdrawn with its charge, so it neither waits on a worklist nor stays on the bill. An order being
+  placed at the same moment is committed first and withdrawn with the rest, or finds the encounter closed. A health
+  check-up's tests are left to their booking, which the visit's cancellation cancels with its package charge (see
+  [clinical.md](clinical.md)). A cancelled
   visit withdraws its tests whose sample is not drawn (status Ordered: never drawn, or waiting to be drawn again after a
   rejected tube) and its imaging studies not done (ordered, scheduled or arrived) and cardiology studies not done (ordered
   or scheduled), with the reason "Visit cancelled: …". A cancelled admission withdraws the same of its stay (by admission

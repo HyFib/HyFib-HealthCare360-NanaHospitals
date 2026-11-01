@@ -3,10 +3,12 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
+using HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
@@ -20,8 +22,10 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
@@ -41,6 +45,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 public sealed class ClosedEncounterTests(HospitalServer server)
 {
     private const string Orders = "/api/v1/clinical/orders";
+    private const string Bookings = "/api/v1/health-checkups/bookings";
     private const string Cbc = "LAB-CBC";
     private const string Crp = "LAB-CRP";
     private const string ChestXray = "RAD-XR-CHEST";
@@ -188,6 +193,251 @@ public sealed class ClosedEncounterTests(HospitalServer server)
         await CleanBedAsync(nurse, admission.Id);
     }
 
+    [Fact]
+    public async Task A_cancelled_visit_cancels_the_health_checkup_checked_in_on_it_with_its_package_charge_and_its_tests()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var patientId = await RegisterPatientAsync(frontOffice);
+        var package = await CheckupPackageAsync(frontOffice, doctor);
+
+        // A walk-in check-up: booked on the patient's visit, so checked in and the package charged at once.
+        var visit = await CheckInAsync(frontOffice, doctor, patientId);
+        var booking = await frontOffice.PostAsync<BookingDto>(Bookings, new BookCheckupRequest(patientId, package.Id, Today(), visit.Id, null));
+        booking.Status.ShouldBe(BookingStatus.CheckedIn);
+
+        // The patient leaves before the blood is drawn, and the desk cancels the visit.
+        await frontOffice.PostAsync($"/api/v1/visits/{visit.Id}/cancel", new CancelVisitRequest("Patient left before the check-up"));
+
+        // The check-up goes with it, as its own cancellation does: the booking, the package charge and the blood count.
+        var cancelled = await frontOffice.GetAsync<BookingDto>($"{Bookings}/{booking.Id}");
+        (cancelled.Status, cancelled.CancelReason).ShouldBe((BookingStatus.Cancelled, "Visit cancelled: Patient left before the check-up"));
+        (await PackageChargeAsync(billing, visit.Id, package)).Status.ShouldBe(ChargeStatus.Cancelled);
+        (await AccessionAsync(lab, patientId)).Items.Single(i => i.TestCode == Cbc).Status.ShouldBe(LabOrderItemStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task A_cancelled_visit_keeps_a_health_checkup_whose_package_is_on_a_finalised_bill_with_its_tests_and_tells_the_desk()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var patientId = await RegisterPatientAsync(frontOffice);
+        var package = await CheckupPackageAsync(frontOffice, doctor);
+        var visit = await CheckInAsync(frontOffice, doctor, patientId);
+        var booking = await frontOffice.PostAsync<BookingDto>(Bookings, new BookCheckupRequest(patientId, package.Id, Today(), visit.Id, null));
+
+        // The package is billed and the bill finalised before the desk cancels the visit.
+        var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(visit.Id, null, null));
+        await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
+        await frontOffice.PostAsync($"/api/v1/visits/{visit.Id}/cancel", new CancelVisitRequest("Visit opened twice"));
+
+        // The patient has paid for the check-up: it stays, and so does its blood count, until billing refunds the package.
+        (await frontOffice.GetAsync<BookingDto>($"{Bookings}/{booking.Id}")).Status.ShouldBe(BookingStatus.CheckedIn);
+        (await PackageChargeAsync(billing, visit.Id, package)).Status.ShouldBe(ChargeStatus.Billed);
+        (await AccessionAsync(lab, patientId)).Items.Single(i => i.TestCode == Cbc).Status.ShouldBe(LabOrderItemStatus.Ordered);
+
+        // The check-up desk is told what to do.
+        var notice = (await admin.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=200")).Items
+            .Where(n => n.Link == $"/health-checkups/bookings/{booking.Id}").ShouldHaveSingleItem();
+        notice.Title.ShouldBe("Visit cancelled — health checkup kept");
+        notice.Body.ShouldNotBeNull().ShouldContain($"Visit {visit.VisitNumber} was cancelled, but health checkup {booking.BookingNumber}");
+    }
+
+    [Fact]
+    public async Task A_health_checkup_is_neither_booked_nor_checked_in_on_a_visit_closed_at_the_desk_or_cancelled()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var patientId = await RegisterPatientAsync(frontOffice);
+        var package = await CheckupPackageAsync(frontOffice, doctor);
+        var closed = await CheckInAsync(frontOffice, doctor, patientId);
+        await frontOffice.PostAsync($"/api/v1/visits/{closed.Id}/complete");
+        var cancelled = await CheckInAsync(frontOffice, doctor, patientId);
+        await frontOffice.PostAsync($"/api/v1/visits/{cancelled.Id}/cancel", new CancelVisitRequest("Checked in twice by mistake"));
+
+        // Not booked as a walk-in on either visit: the refusal names the visit.
+        (await RefusalAsync(frontOffice, Bookings, new BookCheckupRequest(patientId, package.Id, Today(), closed.Id, null))).ShouldBe(("visit.closed",
+            $"Visit {closed.VisitNumber} is closed: a health checkup cannot be booked or checked in on it. Link the patient's current visit."));
+        (await RefusalAsync(frontOffice, Bookings, new BookCheckupRequest(patientId, package.Id, Today(), cancelled.Id, null))).ShouldBe(("visit.cancelled",
+            $"Visit {cancelled.VisitNumber} was cancelled: a health checkup cannot be booked or checked in on it."));
+
+        // Nor checked in on one when booked ahead: the booking waits as it was, and nothing is charged.
+        var booking = await frontOffice.PostAsync<BookingDto>(Bookings, new BookCheckupRequest(patientId, package.Id, Today(), null, null));
+        (await RefusalAsync(frontOffice, $"{Bookings}/{booking.Id}/check-in", new CheckInCheckupRequest(closed.Id))).Code.ShouldBe("visit.closed");
+        (await frontOffice.GetAsync<BookingDto>($"{Bookings}/{booking.Id}")).Status.ShouldBe(BookingStatus.Booked);
+        (await billing.GetAsync<PagedResult<ChargeDto>>($"/api/v1/billing/charges?patientId={patientId}&pageSize=200")).Items
+            .ShouldNotContain(c => c.ServiceCode == package.Code);
+    }
+
+    [Fact]
+    public async Task An_order_placed_while_the_stay_is_being_discharged_waits_for_the_discharge_and_is_refused()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+        var patientId = await RegisterPatientAsync(frontOffice);
+        var admission = await AdmitAsync(frontOffice, doctor, patientId);
+        var cbc = await ServiceAsync(doctor, Cbc);
+
+        // The discharge is caught between its reads and its save: a transaction of the test holds the stay's row, which the
+        // discharge writes last. The patient left the ward unseen, so it is recorded without billing clearance.
+        await using var hold = await HoldAsync($"SELECT 1 FROM inpatient.admissions WHERE id = {admission.Id} FOR UPDATE");
+        var discharge = nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
+            new CompleteDischargeRequest(DischargeType.Absconded, DischargedAt: null, "Not in the ward at the 6 pm round", NotifyPatient: false));
+        await WaitUntilLockedAsync(admission.Id);
+
+        // The doctor orders a blood count for the stay meanwhile: the order waits for the discharge to be saved.
+        var order = doctor.SendRawAsync(HttpMethod.Post, Orders, Order(patientId, cbc, admissionId: admission.Id));
+        (await Task.WhenAny(order, Task.Delay(TimeSpan.FromSeconds(2), Ct))).ShouldNotBe(order, "the order waits for the discharge");
+
+        // The discharge is saved, and the order then finds the stay ended.
+        await hold.ReleaseAsync();
+        (await discharge).Status.ShouldBe(AdmissionStatus.Absconded);
+        using var refused = await order;
+        refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await refused.Content.ReadAsStringAsync(Ct));
+        (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("admission.closed");
+        (await doctor.GetAsync<PagedResult<OrderDto>>($"{Orders}?patientId={patientId}")).Items.ShouldBeEmpty();
+        await CleanBedAsync(nurse, admission.Id);
+    }
+
+    [Fact]
+    public async Task A_visit_cancelled_while_an_order_is_being_placed_on_it_waits_for_the_order_and_withdraws_it()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var patientId = await RegisterPatientAsync(frontOffice);
+        var visit = await CheckInAsync(frontOffice, doctor, patientId);
+        var cbc = await ServiceAsync(doctor, Cbc);
+
+        // The order is caught as it reads the visit: a transaction of the test holds the visit's row, which the order reads
+        // FOR SHARE once it holds the visit's lock.
+        await using var hold = await HoldAsync($"SELECT 1 FROM patients.visits WHERE id = {visit.Id} FOR UPDATE");
+        var order = doctor.PostAsync<OrderDto>(Orders, Order(patientId, cbc, visitId: visit.Id));
+        await WaitUntilLockedAsync(visit.Id);
+
+        // The desk cancels the visit meanwhile: the cancellation waits for the order.
+        var cancel = frontOffice.SendRawAsync(HttpMethod.Post, $"/api/v1/visits/{visit.Id}/cancel", new CancelVisitRequest("Patient left before the blood test"));
+        (await Task.WhenAny(cancel, Task.Delay(TimeSpan.FromSeconds(2), Ct))).ShouldNotBe(cancel, "the cancellation waits for the order");
+
+        // The order is saved first, and the cancellation then withdraws its blood count, in the order and in the lab.
+        await hold.ReleaseAsync();
+        var placed = await order;
+        using var cancelled = await cancel;
+        cancelled.IsSuccessStatusCode.ShouldBeTrue(await cancelled.Content.ReadAsStringAsync(Ct));
+        const string reason = "Visit cancelled: Patient left before the blood test";
+        var line = (await doctor.GetAsync<OrderDto>($"{Orders}/{placed.Id}")).Items.ShouldHaveSingleItem();
+        (line.Status, line.CancelReason).ShouldBe((OrderItemStatus.Cancelled, reason));
+        (await AccessionAsync(lab, patientId)).Items.Single(i => i.TestCode == Cbc).Status.ShouldBe(LabOrderItemStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task An_order_placed_while_the_desk_closes_the_visit_waits_for_the_close_and_is_refused()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var patientId = await RegisterPatientAsync(frontOffice);
+        var visit = await CheckInAsync(frontOffice, doctor, patientId);
+
+        // The desk's close of the visit is written but not yet committed, as it is for the moment its save takes. A visit
+        // closed at the desk withdraws nothing, so its close takes no lock: the order reads the visit's row FOR SHARE.
+        await using var hold = await HoldAsync($"UPDATE patients.visits SET status = 'Completed' WHERE id = {visit.Id}");
+        var order = doctor.SendRawAsync(HttpMethod.Post, Orders, Order(patientId, await ServiceAsync(doctor, Cbc), visitId: visit.Id));
+        (await Task.WhenAny(order, Task.Delay(TimeSpan.FromSeconds(2), Ct))).ShouldNotBe(order, "the order waits for the close");
+
+        // The close commits, and the order finds the visit closed.
+        await hold.CommitAsync();
+        using var refused = await order;
+        refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await refused.Content.ReadAsStringAsync(Ct));
+        (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("visit.closed");
+    }
+
+    /// <summary>A check-up of a blood count alone, for anyone.</summary>
+    private static async Task<PackageDto> CheckupPackageAsync(ApiClient frontOffice, ApiClient doctor) =>
+        await frontOffice.PostAsync<PackageDto>("/api/v1/health-checkups/packages", new SavePackageRequest(
+            "HC-CE" + Letters(8), "Fever screen", null, PackageGender.Any, MinAgeYears: null, MaxAgeYears: null, Price: 1500m, IsActive: true,
+            [new PackageItemRequest(PackageItemKind.Investigation, await ServiceAsync(doctor, Cbc), null, PackageGender.Any, null)], Version: null));
+
+    /// <summary>The package's one charge on the visit.</summary>
+    private static async Task<ChargeDto> PackageChargeAsync(ApiClient billing, Guid visitId, PackageDto package) =>
+        (await billing.GetAsync<PagedResult<ChargeDto>>($"/api/v1/billing/charges?visitId={visitId}&pageSize=200")).Items
+        .Single(c => c.ServiceCode == package.Code);
+
+    private DateOnly Today() => server.Services.GetRequiredService<TimeProvider>().Today();
+
+    /// <summary>
+    /// Runs <paramref name="sql"/> in a transaction of the test, on its own connection, and keeps it open (with the locks it
+    /// took) until it is released or committed.
+    /// </summary>
+    private async Task<HeldTransaction> HoldAsync(FormattableString sql)
+    {
+        var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var transaction = await db.Database.BeginTransactionAsync(Ct);
+        await db.Database.ExecuteSqlAsync(sql, Ct);
+        return new HeldTransaction(scope, transaction);
+    }
+
+    /// <summary>Waits until a transaction holds the lock of the visit or stay (<see cref="EncounterLocks"/>), as pg_locks shows it.</summary>
+    private async Task WaitUntilLockedAsync(Guid encounterId)
+    {
+        var key = (ulong)EncounterLocks.Key(encounterId);
+        long high = (long)(key >> 32), low = (long)(key & 0xFFFF_FFFF);
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var held = await db.Database.SqlQuery<int>($"""
+                SELECT count(*)::int AS "Value" FROM pg_locks
+                WHERE locktype = 'advisory' AND granted AND objsubid = 1 AND classid::bigint = {high} AND objid::bigint = {low}
+                  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                """).SingleAsync(Ct);
+            if (held > 0)
+            {
+                return;
+            }
+
+            await Task.Delay(100, Ct);
+        }
+
+        throw new ShouldAssertException($"Nothing took the lock of {encounterId} within 10 seconds.");
+    }
+
+    /// <summary>A transaction of the test, held open: released (rolled back) or committed once, then disposed.</summary>
+    private sealed class HeldTransaction(AsyncServiceScope scope, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction) : IAsyncDisposable
+    {
+        private bool done;
+
+        public async Task ReleaseAsync()
+        {
+            done = true;
+            await transaction.RollbackAsync(Ct);
+        }
+
+        public async Task CommitAsync()
+        {
+            done = true;
+            await transaction.CommitAsync(Ct);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!done)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+
+            await transaction.DisposeAsync();
+            await scope.DisposeAsync();
+        }
+    }
+
     private static PlaceOrderRequest Order(Guid patientId, Guid serviceItemId, Guid? visitId = null, Guid? admissionId = null) =>
         Order(patientId, [serviceItemId], visitId, admissionId);
 
@@ -196,9 +446,12 @@ public sealed class ClosedEncounterTests(HospitalServer server)
             [.. serviceItemIds.Select(id => new OrderLineRequest(id, null))], OrderSetId: null, ConfirmDuplicates: true);
 
     /// <summary>The doctor places the order and is refused as against the rules (422): its code and detail.</summary>
-    private static async Task<(string? Code, string? Detail)> RefusalAsync(ApiClient doctor, PlaceOrderRequest order)
+    private static Task<(string? Code, string? Detail)> RefusalAsync(ApiClient doctor, PlaceOrderRequest order) => RefusalAsync(doctor, Orders, order);
+
+    /// <summary>The request is refused as against the rules (422): its code and detail.</summary>
+    private static async Task<(string? Code, string? Detail)> RefusalAsync(ApiClient client, string path, object body)
     {
-        using var response = await doctor.SendRawAsync(HttpMethod.Post, Orders, order);
+        using var response = await client.SendRawAsync(HttpMethod.Post, path, body);
         response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await response.Content.ReadAsStringAsync(Ct));
         var problem = await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
         return (problem.GetProperty("code").GetString(), problem.GetProperty("detail").GetString());
