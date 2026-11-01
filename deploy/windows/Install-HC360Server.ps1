@@ -208,10 +208,14 @@ function Register-CertificateProbe([string] $Exe, [string] $Address, [string] $F
     $before = Get-CertificateProbePin $TaskName $TaskPath
     $action = New-ScheduledTaskAction -Execute $Exe -Argument "certificates probe $Address --ca-fingerprint $Fingerprint --event-log"
     $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-    # -StartWhenAvailable: on a day the server was off at that time, it checks once the server starts.
+    # -StartWhenAvailable: on a day the server was off at that time, it checks once the server starts. The first run is
+    # the next $At to come: one already past today would count as missed, and run at once beside the run this installer
+    # starts itself.
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
-    Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Action $action -Trigger (New-ScheduledTaskTrigger -Daily -At $At) `
+    $first = [datetime]::Today.Add([timespan]::Parse($At))
+    if ($first -le (Get-Date)) { $first = $first.AddDays(1) }
+    Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Action $action -Trigger (New-ScheduledTaskTrigger -Daily -At $first) `
         -Principal $principal -Settings $settings -Force `
         -Description 'Checks the certificate HyFib HealthCare360 serves as its workstations and lab agents check it, and writes what needs attention to the Application event log (SRS DED-04).' | Out-Null
     return $before
@@ -232,8 +236,14 @@ function Get-CertificateProbePin([string] $TaskName = 'HC360 certificate probe',
 # probe, or $null when it did not end within $Seconds.
 function Invoke-CertificateProbeTask([string] $TaskName = 'HC360 certificate probe', [string] $TaskPath = '\HyFib\', [int] $Seconds = 120) {
     $now = Get-Date
+    # A run already under way (the day's, or one Task Scheduler caught up) ends first: Task Scheduler starts no second one
+    # beside it (-MultipleInstances IgnoreNew), so this run would never come.
+    while ("$((Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath).State)" -eq 'Running' -and (Get-Date) -lt $now.AddSeconds($Seconds)) {
+        Start-Sleep -Seconds 2
+    }
+    $started = Get-Date
     # Task Scheduler keeps the run's time in whole seconds.
-    $since = $now.AddMilliseconds(-$now.Millisecond)
+    $since = $started.AddMilliseconds(-$started.Millisecond)
     Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
     do {
         Start-Sleep -Seconds 2

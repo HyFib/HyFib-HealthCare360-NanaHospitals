@@ -81,18 +81,25 @@ $address = "https://127.0.0.1:$port/"
 $fingerprint = -join (1..32 | ForEach-Object { 'AB' })
 $name = 'HC360 certificate probe test ' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $missing = $name + ' (no program)'
+# A time already past today (except in the first minutes after midnight): a first run there would count as missed.
+$at = (Get-Date).AddMinutes(-5).ToString('HH:mm')
 
 try {
     Write-Host 'The task is registered as the installer registers it'
-    Assert ($null -eq (Register-CertificateProbe $exe $address $fingerprint '07:10' $name)) 'a first registration had no fingerprint before'
+    Assert ($null -eq (Register-CertificateProbe $exe $address $fingerprint $at $name)) 'a first registration had no fingerprint before'
+    # 267011 (0x41303): Task Scheduler's "has not yet run".
+    Start-Sleep -Seconds 3
+    $first = Get-ScheduledTaskInfo -TaskName $name -TaskPath '\HyFib\'
+    Assert ($first.LastTaskResult -eq 267011) "registering it does not run it at once, at $at already past today (found: result $($first.LastTaskResult), run $($first.LastRunTime))"
     $task = Get-ScheduledTask -TaskName $name -TaskPath '\HyFib\'
     $action = @($task.Actions)[0]
     Assert ($task.Principal.UserId -match 'SYSTEM$' -and "$($task.Principal.RunLevel)" -eq 'Highest') "it runs as SYSTEM (found: $($task.Principal.UserId), $($task.Principal.RunLevel))"
     Assert ($action.Execute -eq $exe) "it runs the server's program ($($action.Execute))"
     Assert ($action.Arguments -eq "certificates probe $address --ca-fingerprint $fingerprint --event-log") "with the probe's arguments ($($action.Arguments))"
     $trigger = @($task.Triggers)
-    Assert ($trigger.Count -eq 1 -and $trigger[0].CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger' -and ([datetime] $trigger[0].StartBoundary).ToString('HH:mm') -eq '07:10') `
-        "every day at 07:10 (found: $(@($trigger | ForEach-Object { "$($_.CimClass.CimClassName) $($_.StartBoundary)" }) -join '; '))"
+    Assert ($trigger.Count -eq 1 -and $trigger[0].CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger' -and ([datetime] $trigger[0].StartBoundary).ToString('HH:mm') -eq $at `
+            -and ([datetime] $trigger[0].StartBoundary) -gt (Get-Date)) `
+        "every day at $at, from the next one to come (found: $(@($trigger | ForEach-Object { "$($_.CimClass.CimClassName) $($_.StartBoundary)" }) -join '; '))"
     Assert ($task.Settings.StartWhenAvailable -eq $true) 'on a day the machine was off at that time, it runs once the machine starts'
     Assert ((Get-CertificateProbePin $name) -eq $fingerprint) 'the fingerprint it checks for is read back'
 
@@ -109,7 +116,7 @@ try {
 
     Write-Host 'Run again, it keeps one task and says what it checked for before'
     $other = -join (1..32 | ForEach-Object { 'CD' })
-    Assert ((Register-CertificateProbe $exe $address $other '07:10' $name) -eq $fingerprint) 'the fingerprint before is returned'
+    Assert ((Register-CertificateProbe $exe $address $other $at $name) -eq $fingerprint) 'the fingerprint before is returned'
     Assert ((Get-CertificateProbePin $name) -eq $other) 'and the new one is checked for'
     Assert (@(Get-ScheduledTask -TaskPath '\HyFib\' | Where-Object { $_.TaskName -eq $name }).Count -eq 1) 'one task'
 
@@ -124,7 +131,7 @@ try {
     Assert ($after.Principal.UserId -match 'SYSTEM$' -and @($after.Triggers).Count -eq 1 -and @($after.Actions)[0].Execute -eq $exe -and $after.Settings.StartWhenAvailable -eq $true) 'and runs as before'
 
     Write-Host 'A task that cannot start the probe is told apart'
-    $null = Register-CertificateProbe (Join-Path $env:TEMP 'no-such-program.exe') $address $fingerprint '07:10' $missing
+    $null = Register-CertificateProbe (Join-Path $env:TEMP 'no-such-program.exe') $address $fingerprint $at $missing
     $failed = Invoke-CertificateProbeTask $missing '\HyFib\' 30
     Assert ($failed -ne 0 -and $failed -ne 1 -and $failed -ne 2) "its result is none of the probe's exit codes (found: $(if ($null -eq $failed) { 'no result within 30 seconds' } else { '0x{0:X8}' -f $failed }))"
 }
