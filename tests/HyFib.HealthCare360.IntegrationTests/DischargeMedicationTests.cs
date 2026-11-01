@@ -125,11 +125,10 @@ public sealed class DischargeMedicationTests(HospitalServer server)
             .ToListAsync(Ct);
     }
 
-    private static async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
+    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, "SPW");
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Emergency, Source: AdmissionSource.Direct, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
@@ -138,7 +137,7 @@ public sealed class DischargeMedicationTests(HospitalServer server)
             AdmittedAt: null, Notes: null));
     }
 
-    /// <summary>Housekeeping cleans the bed the discharge released: the wards' beds are shared by every test of the run.</summary>
+    /// <summary>Housekeeping cleans the bed the discharge released: the run's tests read the same wards' boards and housekeeping lists.</summary>
     private static async Task CleanBedAsync(ApiClient nurse, Guid admissionId)
     {
         var stay = await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admissionId}");

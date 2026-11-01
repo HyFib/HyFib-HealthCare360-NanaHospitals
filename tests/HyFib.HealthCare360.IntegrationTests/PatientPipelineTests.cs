@@ -313,18 +313,15 @@ public sealed class PatientPipelineTests(HospitalServer server)
     }
 
     /// <summary>
-    /// Front office: admits the patient from his OPD visit, under the doctor, to a bed of the ward that the hospital admin
-    /// adds for this admission alone. The run's tests share the wards' beds, and many admissions leave theirs for cleaning,
-    /// so no bed of the ward may be free by the time this test runs.
+    /// Front office: admits the patient from his OPD visit, under the doctor, to a bed of the ward added for it
+    /// (<see cref="TestBeds"/>).
     /// </summary>
     private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId, Guid visitId, Guid wardId)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
-        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var bed = await admin.PostAsync<BedDto>("/api/v1/beds", new SaveBedRequest(
-            wardId, null, "PL-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant(), false, false, false, 999, true, null));
+        var bed = await TestBeds.AddAsync(server, wardId);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
-            PatientId: patientId, BedId: bed.Id, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: visitId,
+            PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: visitId,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
             ProvisionalDiagnosis: "Community-acquired pneumonia", ReferredBy: null, PayerType: PayerType.Self, PayerId: null, PolicyNumber: null,
             IsMlc: false, MlcNumber: null, ExpectedDischargeDate: null, AttendantName: null, AttendantRelation: null, AttendantPhone: null,
@@ -332,8 +329,8 @@ public sealed class PatientPipelineTests(HospitalServer server)
     }
 
     /// <summary>
-    /// The front office cancels the admission made for the test, and the nurse cleans the bed it released: the wards' beds
-    /// are shared by every test of the run.
+    /// The front office cancels the admission made for the test, and the nurse cleans the bed it released: the run's tests
+    /// read the same wards' boards and housekeeping lists.
     /// </summary>
     private static async Task CancelAdmissionAsync(ApiClient frontOffice, ApiClient nurse, Guid admissionId)
     {

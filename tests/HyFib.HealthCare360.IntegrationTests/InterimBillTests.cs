@@ -345,13 +345,12 @@ public sealed class InterimBillTests(HospitalServer server)
     }
 
     /// <summary>Front office: admits the patient under the doctor to a free bed of the male general ward.</summary>
-    private static async Task<AdmissionCreated> AdmitAsync(
+    private async Task<AdmissionCreated> AdmitAsync(
         ApiClient frontOffice, ApiClient doctor, Guid patientId, PayerType payerType, Guid? payerId, DateTimeOffset? admittedAt)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
@@ -361,7 +360,7 @@ public sealed class InterimBillTests(HospitalServer server)
     }
 
     /// <summary>A patient admitted now and seen once by the consultant, with his IP account.</summary>
-    private static async Task<(AdmissionCreated Admission, IpAccountDetail Account)> AdmitWithAVisitAsync(
+    private async Task<(AdmissionCreated Admission, IpAccountDetail Account)> AdmitWithAVisitAsync(
         ApiClient frontOffice, ApiClient doctor, ApiClient billing, PayerType payerType, Guid? payerId)
     {
         var admission = await AdmitAsync(frontOffice, doctor, await RegisterPatientAsync(frontOffice), payerType, payerId, null);

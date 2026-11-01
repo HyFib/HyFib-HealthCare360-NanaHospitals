@@ -81,7 +81,7 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var wards = await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards");
         var generalWard = wards.Single(w => w.Code == "GWM");
-        var firstBedId = await FreeBedAsync(frontOffice, patient.Id, generalWard.Id);
+        var firstBedId = await FreeBedAsync(generalWard.Id);
         var admission = await AdmitAsync(frontOffice, patient.Id, firstBedId, consultantId, insurer.Id, policyNumber, admittedAt, today);
 
         // Bed: the bed board shows the bed occupied by him.
@@ -128,7 +128,7 @@ public sealed class InpatientJourneyTests(HospitalServer server)
 
         // Nurse: at the family's request, moves him to a semi-private bed.
         var semiPrivateWard = wards.Single(w => w.Code == "SPW");
-        var secondBedId = await FreeBedAsync(nurse, patient.Id, semiPrivateWard.Id);
+        var secondBedId = await FreeBedAsync(semiPrivateWard.Id);
         await nurse.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/transfer",
             new TransferPatientRequest(secondBedId, "Moved to a semi-private room at the family's request", null, null, null));
 
@@ -521,12 +521,8 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         return IndiaClock.LocalDate(clock.GetUtcNow());
     }
 
-    /// <summary>A bed of the ward that the patient may be put in (free, and his sex and age fit the ward).</summary>
-    private static async Task<Guid> FreeBedAsync(ApiClient api, Guid patientId, Guid wardId)
-    {
-        var beds = await api.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={wardId}");
-        return beds.First(b => b.IsEligible && b.Status == BedStatus.Vacant).BedId;
-    }
+    /// <summary>A bed of the ward added for this admission or transfer (<see cref="TestBeds"/>), so it is free.</summary>
+    private async Task<Guid> FreeBedAsync(Guid wardId) => (await TestBeds.AddAsync(server, wardId)).BedId;
 
     private static async Task<BedBoardItem> BedOnBoardAsync(ApiClient api, Guid wardId, Guid bedId)
     {
