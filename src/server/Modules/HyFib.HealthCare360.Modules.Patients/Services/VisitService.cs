@@ -206,22 +206,37 @@ public sealed class VisitService(
             return InpatientVisitClosesWithTheStay;
         }
 
-        var now = time.GetUtcNow();
-        var result = visit.Complete(now);
-        if (result.IsFailure)
+        var completed = await CompleteWithTokenAsync(visit, time.GetUtcNow(), ct);
+        if (completed.IsFailure)
         {
-            return result;
+            return completed;
         }
 
-        var token = await db.Set<QueueToken>().FirstOrDefaultAsync(t => t.VisitId == visitId, ct);
-        token?.Finish(now);
         await db.SaveChangesAsync(ct);
-        if (token is not null)
+        if (completed.Value is { } token)
         {
             await PublishQueueChangeAsync(token, ct);
         }
 
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Completes the visit and finishes its queue token, as closing the visit at the desk does, without saving: an admission
+    /// from the OPD closes the visit it came from in its own unit of work. Returns the token, if any, whose change the caller
+    /// pushes to the queue screens (<see cref="PublishQueueChangeAsync"/>) once it has saved.
+    /// </summary>
+    public async Task<Result<QueueToken?>> CompleteWithTokenAsync(Visit visit, DateTimeOffset now, CancellationToken ct)
+    {
+        var result = visit.Complete(now);
+        if (result.IsFailure)
+        {
+            return result.Error!;
+        }
+
+        var token = await db.Set<QueueToken>().FirstOrDefaultAsync(t => t.VisitId == visit.Id, ct);
+        token?.Finish(now);
+        return Result<QueueToken?>.Ok(token);
     }
 
     // ------------------------------------------------------------------ queue
@@ -339,7 +354,8 @@ public sealed class VisitService(
         return ToDto(token);
     }
 
-    private async Task PublishQueueChangeAsync(QueueToken token, CancellationToken ct, bool called = false)
+    /// <summary>Tells the department's queue screens and the facility's visit lists that the token changed.</summary>
+    public async Task PublishQueueChangeAsync(QueueToken token, CancellationToken ct, bool called = false)
     {
         var payload = new { token.Id, token.DepartmentId, token.PractitionerId, token.Label, token.Status, token.Room };
         await realtime.PublishAsync(Topics.Queue(token.DepartmentId), called ? "queue.called" : "queue.changed", payload, ct);

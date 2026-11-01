@@ -14,8 +14,9 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 /// <summary>
 /// Admission, transfer, update and cancellation (ADT, WB-03/04). An admission creates the in-patient visit exactly the
 /// way the Patients module's <see cref="VisitService"/> numbers and raises it, allocates the admission number, occupies
-/// the bed and records the first bed assignment in one transaction. The bed's concurrency version plus the database's
-/// one-active-admission indexes make double allocation impossible even when two desks click at the same moment.
+/// the bed and records the first bed assignment in one transaction, and closes the OPD visit the patient was admitted
+/// from. The bed's concurrency version plus the database's one-active-admission indexes make double allocation
+/// impossible even when two desks click at the same moment.
 /// </summary>
 public sealed class AdmissionService(
     HospitalDbContext db,
@@ -24,6 +25,7 @@ public sealed class AdmissionService(
     INotificationService notifications,
     IRealtimePublisher realtime,
     InpatientChargeService charges,
+    VisitService visits,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -94,12 +96,23 @@ public sealed class AdmissionService(
             return Error.Field("departmentId", "Choose an active department.");
         }
 
-        if (request.SourceVisitId is { } sourceVisitId && !await db.Set<Visit>().AnyAsync(v => v.Id == sourceVisitId && v.PatientId == patient.Id, ct))
-        {
-            return Error.Field("sourceVisitId", "The source visit does not belong to this patient.");
-        }
-
         var admittedAt = request.AdmittedAt ?? now;
+        Visit? sourceVisit = null;
+        if (request.SourceVisitId is { } sourceVisitId)
+        {
+            sourceVisit = await db.Set<Visit>().FirstOrDefaultAsync(v => v.Id == sourceVisitId && v.PatientId == patient.Id, ct);
+            if (sourceVisit is null)
+            {
+                return Error.Field("sourceVisitId", "The source visit does not belong to this patient.");
+            }
+
+            // Only a visit the Admit screen would offer: of the source's kind, not cancelled, and of the three days before the
+            // admission, none after it. The stay goes on from it, and an OPD one is closed with the admission below.
+            if (AdmissionRules.SourceVisitRefusal(request.Source, sourceVisit, admittedAt) is { } refusal)
+            {
+                return refusal;
+            }
+        }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
@@ -177,6 +190,21 @@ public sealed class AdmissionService(
         });
         admission.MarkAdmitted(ward.BedServiceItemId);
 
+        // The OPD visit the patient was admitted from ends here, as the doctor finishing its token ends it: it no longer
+        // shows as in consultation, and the patient can be checked in again the same day. An emergency visit is left to
+        // the ER, whose disposition closes it.
+        QueueToken? sourceToken = null;
+        if (sourceVisit is { Type: VisitType.OutPatient, Status: VisitStatus.Open or VisitStatus.InProgress })
+        {
+            var closed = await visits.CompleteWithTokenAsync(sourceVisit, now, ct);
+            if (closed.IsFailure)
+            {
+                return closed.Error!;
+            }
+
+            sourceToken = closed.Value;
+        }
+
         if (request.NotifyPatient && patient.Phone is not null)
         {
             notifications.Queue("admission.admitted",
@@ -201,6 +229,11 @@ public sealed class AdmissionService(
         await transaction.CommitAsync(ct);
         await InpatientRealtime.BedChangedAsync(realtime, bed, ct);
         await InpatientRealtime.AdmissionChangedAsync(realtime, admission, ct);
+        if (sourceToken is not null)
+        {
+            await visits.PublishQueueChangeAsync(sourceToken, ct);
+        }
+
         return new AdmissionCreated(admission.Id, admission.AdmissionNumber, visit.Id, visit.VisitNumber, bed.Id, bed.Label);
     }
 

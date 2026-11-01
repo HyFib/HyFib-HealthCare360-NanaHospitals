@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
@@ -195,6 +196,67 @@ internal static class AdmissionRules
 
     public static bool WithinWindow(DateTimeOffset? at, DateTimeOffset now, TimeSpan back) =>
         at is null || (at <= now + ClockTolerance && at >= now - back);
+
+    /// <summary>
+    /// The kind of visit a stay from <paramref name="source"/> comes from: an OPD visit for "Advised in OPD", a casualty
+    /// visit for "From casualty / ER"; none for a referral or a direct admission.
+    /// </summary>
+    public static VisitType? SourceVisitType(AdmissionSource source) => source switch
+    {
+        AdmissionSource.OutPatient => VisitType.OutPatient,
+        AdmissionSource.Emergency => VisitType.Emergency,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Why <paramref name="visit"/> cannot be the visit a stay from <paramref name="source"/>, admitted at
+    /// <paramref name="admittedAt"/>, comes from; null when it can. It is the rule the Admit screen offers the visits by
+    /// (staff app, <c>modules/inpatient/sourceVisit.ts</c>), so the server takes exactly the visits the desk is offered: one
+    /// of the source's kind, not cancelled, checked in during the <see cref="BackdateWindow"/> before the admission and not
+    /// after it. An admission entered as earlier counts back from its own time.
+    /// </summary>
+    public static Error? SourceVisitRefusal(AdmissionSource source, Visit visit, DateTimeOffset admittedAt)
+    {
+        if (SourceVisitType(source) is not { } kind)
+        {
+            return Error.Rule("admission.source_visit_type",
+                $"{(source == AdmissionSource.Referral ? "A referred patient" : "A direct admission")} comes from no visit here, so visit "
+                + $"{visit.VisitNumber} cannot be named as the source. Leave it out, or choose \"Advised in OPD\" or \"From casualty / ER\".");
+        }
+
+        if (visit.Type != kind)
+        {
+            return Error.Rule("admission.source_visit_type", kind == VisitType.OutPatient
+                ? $"Visit {visit.VisitNumber} is not an OPD visit, so an admission advised in OPD cannot come from it. "
+                  + "Choose the OPD visit the admission was advised at."
+                : $"Visit {visit.VisitNumber} is not a casualty visit, so an admission from casualty / ER cannot come from it. "
+                  + "Choose the casualty visit the patient was admitted from.");
+        }
+
+        if (visit.Status == VisitStatus.Cancelled)
+        {
+            return Error.Rule("admission.source_visit_cancelled",
+                $"Visit {visit.VisitNumber} was cancelled, so the patient cannot have been admitted from it. Choose the visit the admission was advised at.");
+        }
+
+        // A visit checked in after the admission time is another one (a late entry dated earlier than the visit it names), and
+        // closing it would end a visit the stay never came from.
+        if (visit.VisitedAt > admittedAt)
+        {
+            return Error.Rule("admission.source_visit_after_admission",
+                $"Visit {visit.VisitNumber} was checked in after the admission time, so the patient cannot have been admitted from it. "
+                + "Choose the visit the admission was advised at, or correct the admission time.");
+        }
+
+        if (visit.VisitedAt < admittedAt - BackdateWindow)
+        {
+            return Error.Rule("admission.source_visit_too_old",
+                $"Visit {visit.VisitNumber} was checked in more than 3 days before the admission time, so the stay does not come from it. "
+                + "Choose a visit of the 3 days before the admission, or admit without one.");
+        }
+
+        return null;
+    }
 }
 
 public sealed class AdmitPatientRequestValidator : AbstractValidator<AdmitPatientRequest>

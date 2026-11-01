@@ -117,7 +117,8 @@ public sealed class EmergencyDepartmentTests(HospitalServer server)
         return (created.Id, visit);
     }
 
-    private static TriageRequest Triage(uint version) => new(
+    /// <summary>The casualty nurse's triage of the patient of <see cref="EmergencyVisitAsync"/>: level 2, for a fast pulse.</summary>
+    internal static TriageRequest Triage(uint version) => new(
         "Fall from two-wheeler, forearm laceration, head knock", ArrivalMode.GovernmentAmbulance, false, false, false, false, 2,
         118, 18, 95, 128, 82, 37.1m, 15, 5, null, null, version);
 
