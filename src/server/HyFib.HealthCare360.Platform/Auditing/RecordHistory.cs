@@ -19,9 +19,25 @@ namespace HyFib.HealthCare360.Platform.Auditing;
 /// <summary>
 /// A record opened for its history: what to call it, whose record it is (for the PHI-access audit), and its parts: the
 /// rows its own screen shows as its content that the audit trail records apart from it (a report's results, a bill's
-/// receipts), deleted ones included, whose changes are the record's history too.
+/// receipts), deleted ones included, whose changes are the record's history too. <see cref="Redaction"/> keeps from its
+/// reader what the record's screen keeps from them.
 /// </summary>
-public sealed record HistoryRecord(string Title, Guid? PatientId, IReadOnlyList<HistoryPart>? Parts = null);
+public sealed record HistoryRecord(string Title, Guid? PatientId, IReadOnlyList<HistoryPart>? Parts = null)
+{
+    public HistoryRedaction Redaction { get; init; } = HistoryRedaction.None;
+}
+
+/// <summary>
+/// What a record's history keeps from its reader, by the rules that show the record itself, read from the trail: fields
+/// its screen masks for them, shown masked so that they changed still shows (<c>phone</c>); fields its screen does not
+/// show them, left out of every entry, and a change of one left out whole (<c>sensitiveCategories</c>); and the events
+/// about it they may not read, left out (<c>patient.sensitive_changed</c>). Fields are named as the trail names them
+/// (<c>address.line1</c>), on the record and its parts alike.
+/// </summary>
+public sealed record HistoryRedaction(IReadOnlyCollection<string> MaskedFields, IReadOnlyCollection<string> HiddenFields, IReadOnlyCollection<string> HiddenActions)
+{
+    public static readonly HistoryRedaction None = new([], [], []);
+}
 
 /// <summary>A part of a record: its type and id as the audit trail names them, and what to call it (<c>Potassium</c>).</summary>
 public sealed record HistoryPart(string EntityType, Guid Id, string Label);
@@ -77,6 +93,9 @@ internal sealed class RecordHistoryService(
 {
     private const int MaxValueLength = 500;
 
+    /// <summary>A value the reader may not see, as the trail shows a value it masks.</summary>
+    private const string Masked = "***";
+
     /// <summary>The prefix of an approval request row's own data changes (<c>ApprovalRequest.update</c>).</summary>
     private const string ApprovalRows = nameof(ApprovalRequest) + ".";
 
@@ -127,9 +146,26 @@ internal sealed class RecordHistoryService(
         }
 
         var key = id.ToString();
-        var entries = await db.Set<AuditEvent>().AsNoTracking()
+        var redaction = opened.Value.Redaction;
+        var trail = db.Set<AuditEvent>().AsNoTracking()
             .Where(About([(entityType, key), .. parts.Select(p => (p.EntityType, p.Id.ToString()))], approvals))
-            .Where(e => e.Category != AuditCategories.PhiAccess)
+            .Where(e => e.Category != AuditCategories.PhiAccess);
+        if (redaction.HiddenActions.Count > 0)
+        {
+            var hiddenActions = redaction.HiddenActions.ToList();
+            trail = trail.Where(e => !hiddenActions.Contains(e.Action));
+        }
+
+        if (redaction.HiddenFields.Count > 0)
+        {
+            // A change of a field the reader may not see is left out whole, here, so a page holds what it says it holds; a
+            // row created or deleted keeps its other fields.
+            var hiddenFields = redaction.HiddenFields.ToArray();
+            trail = trail.Where(e => !(e.Category == AuditCategories.Data && e.Action.EndsWith(".update") && e.Details != null
+                && EF.Functions.JsonExistAny(e.Details, hiddenFields)));
+        }
+
+        var entries = await trail
             .OrderByDescending(e => e.OccurredAt).ThenByDescending(e => e.Id)
             .Select(e => new { e.Id, e.OccurredAt, e.UserId, e.UserName, e.Category, e.Action, e.EntityType, e.EntityId, e.Summary, e.Details })
             .ToPagedResultAsync(page, ct);
@@ -153,7 +189,7 @@ internal sealed class RecordHistoryService(
             return new HistoryEntry(
                 e.Id, e.OccurredAt, by, e.Action, part,
                 change switch { "create" => "Created", "update" => "Changed", "delete" => "Deleted", _ => e.Summary ?? e.Action },
-                change is null ? [] : Changes(change, e.Details));
+                change is null ? [] : Changes(change, e.Details, redaction));
         }));
     }
 
@@ -209,10 +245,12 @@ internal sealed class RecordHistoryService(
 
     /// <summary>
     /// The fields of a data change, from its details: every value on create and delete, each from/to on update, and a child
-    /// collection's rows (all of them, or those added and removed).
+    /// collection's rows (all of them, or those added and removed); without the fields the reader may not see, and with
+    /// those masked for them masked.
     /// </summary>
-    internal static IReadOnlyList<HistoryChange> Changes(string change, string? details)
+    internal static IReadOnlyList<HistoryChange> Changes(string change, string? details, HistoryRedaction? redaction = null)
     {
+        redaction ??= HistoryRedaction.None;
         if (string.IsNullOrWhiteSpace(details))
         {
             return [];
@@ -227,16 +265,24 @@ internal sealed class RecordHistoryService(
         var changes = new List<HistoryChange>();
         foreach (var property in document.RootElement.EnumerateObject())
         {
+            if (redaction.HiddenFields.Contains(property.Name, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
             var field = Field(property.Name);
             var value = property.Value;
-            changes.Add(change switch
+            var shown = change switch
             {
                 "update" when Has(value, "from") || Has(value, "to") => new HistoryChange(field, Text(Get(value, "from")), Text(Get(value, "to"))),
                 "update" when Has(value, "added") || Has(value, "removed") =>
                     new HistoryChange(field, Prefixed("removed", Get(value, "removed")), Prefixed("added", Get(value, "added"))),
                 "delete" => new HistoryChange(field, Text(value), null),
                 _ => new HistoryChange(field, null, Text(value)),
-            });
+            };
+            changes.Add(redaction.MaskedFields.Contains(property.Name, StringComparer.Ordinal)
+                ? shown with { From = shown.From is null ? null : Masked, To = shown.To is null ? null : Masked }
+                : shown);
         }
 
         return changes;

@@ -136,6 +136,87 @@ public sealed class RecordHistoryTests(HospitalServer server)
             && e.Changes.Any(c => c.Field == "Received at" && c.From == null), "the sample received, by the technician");
     }
 
+    /// <summary>
+    /// Clinicians and nurses see a report's released results only (an unverified value must never guide treatment), and so
+    /// its history keeps the lab's work on its results from them, and keeps its own entries; the lab sees its work.
+    /// </summary>
+    [Fact]
+    public async Task A_lab_reports_history_shows_staff_who_see_released_results_only_no_value_the_lab_has_not_released()
+    {
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var tube = await LabVerificationTests.ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
+        var lines = await LabVerificationTests.EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101" });
+
+        // Sodium verified and released alone: potassium and chloride stay unverified.
+        var sodium = lines.Single(l => l.TestCode == "NA");
+        await pathologist.PostAsync<VerificationOutcome>("/api/v1/lab/results/verify", new VerifyResultsRequest([sodium.ResultId], null, null, Release: true));
+        var order = await lab.GetAsync<LabOrderDetail>($"/api/v1/lab/orders/{(await lab.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results")).LabOrderId}");
+        var reportId = order.ReportId.ShouldNotBeNull();
+        var potassium = lines.Single(l => l.TestCode == "K");
+
+        var ofTheLab = await pathologist.GetAsync<RecordHistoryDto>($"/api/v1/history/LabReport/{reportId}?pageSize=100");
+        var ofTheDoctor = await doctor.GetAsync<RecordHistoryDto>($"/api/v1/history/LabReport/{reportId}?pageSize=100");
+
+        ofTheLab.Entries.Items.ShouldContain(e => e.Part == potassium.TestName && e.Changes.Contains(new HistoryChange("Value text", null, "4.2")),
+            "the lab sees the value it has not released");
+        ofTheDoctor.Entries.Items.ShouldNotContain(e => lines.Any(l => l.TestName == e.Part), "no entry of a result, released or not");
+        ofTheDoctor.Entries.Items.SelectMany(e => e.Changes).ShouldNotContain(c => c.From == "4.2" || c.To == "4.2");
+        ofTheDoctor.Entries.Items.ShouldContain(e => e.Part == null, "the report's own entries stay");
+        ofTheDoctor.Entries.TotalCount.ShouldBe(ofTheDoctor.Entries.Items.Count);
+    }
+
+    /// <summary>
+    /// The registration record's history keeps from its reader what the record keeps from them: contact details masked for
+    /// staff who see them masked (PRV-03), and the record's sensitive categories, put in and taken out, left out for staff
+    /// who may not manage them, so a category taken out does not show once the record opens to everyone again.
+    /// </summary>
+    [Fact]
+    public async Task A_patients_history_masks_contacts_and_leaves_out_sensitive_categories_for_staff_the_record_keeps_them_from()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var patient = await LabVerificationTests.RegisterPatientAsync(server);
+        var registered = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
+        var email = $"history.{Letters(6)}@example.org";
+        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(registered) with { Email = email });
+
+        // A doctor puts the record in the mental health category, then takes it out: recorded in error.
+        var categories = await doctor.GetAsync<SensitiveCategoriesDto>($"/api/v1/patients/{patient.Id}/sensitive-categories");
+        await doctor.PutAsync<SensitiveCategoriesDto>($"/api/v1/patients/{patient.Id}/sensitive-categories",
+            new SetSensitiveCategoriesRequest([SensitiveCategory.MentalHealth], "Admitted under the Mental Healthcare Act", categories.Version));
+        categories = await doctor.GetAsync<SensitiveCategoriesDto>($"/api/v1/patients/{patient.Id}/sensitive-categories");
+        await doctor.PutAsync<SensitiveCategoriesDto>($"/api/v1/patients/{patient.Id}/sensitive-categories",
+            new SetSensitiveCategoriesRequest([], "Recorded in error on another patient's record", categories.Version));
+
+        var path = $"/api/v1/history/Patient/{patient.Id}?pageSize=100";
+        var asTheDoctor = await doctor.GetAsync<RecordHistoryDto>(path);
+        var asTheDesk = await frontOffice.GetAsync<RecordHistoryDto>(path);
+        var asTheLab = await lab.GetAsync<RecordHistoryDto>(path);
+
+        // Contacts: in full for staff who see them so, masked for the lab, which sees them masked on the record too.
+        Changes(asTheDesk).ShouldContain(new HistoryChange("Email", null, email));
+        Changes(asTheDesk).ShouldContain(new HistoryChange("Phone", null, registered.Phone));
+        Changes(asTheLab).ShouldContain(new HistoryChange("Email", null, "***"));
+        Changes(asTheLab).ShouldContain(new HistoryChange("Phone", null, "***"));
+        Changes(asTheLab).ShouldNotContain(c => c.From == email || c.To == email || c.To == registered.Phone);
+        Changes(asTheLab).ShouldContain(c => c.Field == "Last name" && c.To == registered.LastName, "what the record shows them stays");
+
+        // Sensitive categories: the doctor, who manages them, sees both changes and why; the others see neither.
+        asTheDoctor.Entries.Items.Count(e => e.Action == "patient.sensitive_changed").ShouldBe(2);
+        asTheDoctor.Entries.Items.ShouldContain(e => e.Action == "patient.sensitive_changed" && e.What.Contains("Recorded in error", StringComparison.Ordinal));
+        foreach (var other in new[] { asTheDesk, asTheLab })
+        {
+            other.Entries.Items.ShouldNotContain(e => e.Action.StartsWith("patient.sensitive_", StringComparison.Ordinal));
+            Changes(other).ShouldNotContain(c => c.Field == "Sensitive categories");
+            other.Entries.TotalCount.ShouldBe(other.Entries.Items.Count, "what is left out is not counted either");
+        }
+
+        asTheDoctor.Entries.TotalCount.ShouldBe(asTheDesk.Entries.TotalCount + 4, "two category changes, each with its event");
+    }
+
     [Fact]
     public async Task A_bills_history_has_the_approvals_asked_for_on_it_who_asked_who_decided_and_why_and_what_was_made()
     {
@@ -227,6 +308,8 @@ public sealed class RecordHistoryTests(HospitalServer server)
         p.EmergencyContactPhone, p.EmergencyContactRelation, p.Occupation, p.Religion, p.Nationality, p.PreferredLanguage,
         p.Category, null, p.AbhaAddress, null, p.PhotoFileId, p.IsVip, p.IsDeceased, p.DeceasedAt, p.Notes,
         p.IsActive, p.Version);
+
+    private static IEnumerable<HistoryChange> Changes(RecordHistoryDto history) => history.Entries.Items.SelectMany(e => e.Changes);
 
     private static async Task<string> NameAsync(ApiClient client) => (await client.GetAsync<AuthUser>("/api/v1/auth/me")).DisplayName;
 

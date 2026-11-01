@@ -547,6 +547,14 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     - It opens only for staff who may read the record (the record's own read permissions), by the rules that open the
       record itself: its facility, and the restricted-record rules of its patient. Patients are refused. A part is one
       the record's own screen shows to the same staff.
+    - It keeps from its reader what the record's own screen keeps from them (`HistoryRedaction`):
+      - a patient's phone numbers, email and street address, and the emergency contact's number, masked for staff who
+        see them masked on the record (PRV-03);
+      - the record's sensitive categories, put in or taken out, and their events, left out for staff who may not manage
+        them, so a category taken out does not show once the record opens to everyone again;
+      - a lab report's results, released or not, left out for staff who see released results only (clinicians, nurses):
+        an unverified value must never guide treatment. They keep the report's releases and its amendments, which change
+        released values only.
     - Values the trail masks stay masked. Reading a patient's record history is itself in the patient's access log.
     - The module that owns a record type declares it, with its parts (`IRecordHistorySource`).
     - The trail is read by record through the index `ix_audit_events_entity`. It is not in a migration, which would hold
