@@ -237,6 +237,8 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<IApprovals>(sp => sp.GetRequiredService<ApprovalService>());
+        services.AddScoped<RecordHistoryService>();
+        services.AddScoped<AuditEntityIndex>();
         services.AddScoped<NotificationTemplateRenderer>();
         services.AddScoped<WhatsAppConsent>();
         services.AddSingleton<IRealtimePublisher, SignalRRealtimePublisher>();
@@ -330,6 +332,7 @@ public static class PlatformServiceCollectionExtensions
             services.AddScoped<IHealthWarningSource, AlertHeartbeatWarnings>();
             services.AddHostedService<IdempotencyCleanupService>();
             services.AddHostedService<PartitionMaintenanceJob>();
+            services.AddHostedService<AuditEntityIndexJob>();
             services.AddHostedService<ClusterStoreCleanup>();
             services.AddHostedService<WifiMonitor>();
             services.AddHostedService<FieldKeyMoverService>();
@@ -404,6 +407,7 @@ public static class PlatformServiceCollectionExtensions
         PrintTemplateEndpoints.Map(endpoints);
         NotificationEndpoints.Map(endpoints);
         ApprovalEndpoints.Map(endpoints);
+        RecordHistoryEndpoints.Map(endpoints);
         FileEndpoints.Map(endpoints);
         SettingsEndpoints.Map(endpoints);
         FeatureEndpoints.Map(endpoints);

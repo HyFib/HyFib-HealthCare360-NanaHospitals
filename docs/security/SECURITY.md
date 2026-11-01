@@ -532,6 +532,26 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Tests, against PostgreSQL: `AuditTrailTests` (the triggers, and each column changed behind them),
     `AuditSealTests` (a chain computed again without the key, seals taken off, a chain cut short past an anchor or made
     again at an anchored position, an export changed after it was made), `AuditTriggerTests`.
+  - **A record's History.** A patient's registration record, a visit, a bill, a lab order and its report, and an
+    admission have a *History* button: who created the record, changed it or acted on it, when, and each field from
+    what to what, newest first, from the audit trail (`GET /api/v1/history/{type}/{id}`).
+    - It holds the record's parts too, the rows its own screen shows as its content that the trail records apart from
+      it, deleted ones included, each entry named by its part:
+      - a lab report: each result on it (entered, by hand or from an analyser; verified; corrected) and each amendment;
+      - a lab order: each test on it (ordered, cancelled) and each sample (collected, received, rejected, referred out);
+      - a bill: its discount requests, receipts, refunds, credit notes and write-offs;
+      - an admission: each bed the patient was put in or moved to.
+    - And the approvals asked for on the record (maker-checker): who asked and why, who approved it, who rejected it and
+      why, a request withdrawn, and one that failed when it was approved. A rejected request leaves nothing on the
+      record itself; its History still has it.
+    - It opens only for staff who may read the record (the record's own read permissions), by the rules that open the
+      record itself: its facility, and the restricted-record rules of its patient. Patients are refused. A part is one
+      the record's own screen shows to the same staff.
+    - Values the trail masks stay masked. Reading a patient's record history is itself in the patient's access log.
+    - The module that owns a record type declares it, with its parts (`IRecordHistorySource`).
+    - The trail is read by record through the index `ix_audit_events_entity`. It is not in a migration, which would hold
+      every audited write while it was built: the server that runs the jobs builds it after start, one monthly partition
+      at a time and `CONCURRENTLY` (`AuditEntityIndex`), and later partitions take it from the parent.
   - The log is partitioned by month (SCAL-04). Each month's partition refuses TRUNCATE and DELETE as the table does, and
     the chain-link trigger refuses a seal that takes a chain position another entry has (a unique index would have to
     include the month). No partition is ever dropped, of the audit log or any other table: records are deleted only by

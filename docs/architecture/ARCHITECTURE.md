@@ -215,6 +215,11 @@ sequenceDiagram
 * **Tokens:** ES256-signed JWT access tokens (10 min) carrying user, facility, session and device IDs. **Permissions are resolved server-side** and cached, so revocation is immediate and tokens stay small. Refresh tokens are opaque, stored hashed, rotated on every use, and grouped by family for reuse detection. Sessions have a 12 h absolute limit. Start-up refuses settings beyond either ceiling (access tokens 15 min, sessions 12 h; SRS SEC-02).
 * **Authorisation:** permission strings (`billing.op.create`, `clinical.notes.sign`, …) are declared by modules and grouped into seeded roles. Endpoints enforce them with a dynamic policy provider. Every query is facility-scoped by default.
 * **Break-the-glass:** restricted-record access needs a reason and is time-boxed, flagged in the audit log and surfaced to the privacy officer.
+* **Record history:** a record's *History* is read from the audit trail (`GET /api/v1/history/{type}/{id}`). The module
+  that owns the record type declares it with an `IRecordHistorySource`: the read permissions, how to open the record by
+  the rules its own screen uses (facility, restricted record), and its parts (a report's results, a bill's receipts)
+  whose events are the record's history too. The platform adds the approvals asked for on the record, and discovers the
+  sources as it does approval actions (see SECURITY.md, Audit).
 * **Maker-checker:** a change that needs a second person is asked for through `IApprovals` (Platform). The request
   stores the change and its SHA-256 and the record's version; it waits in `/api/v1/approvals` for someone else who
   holds the kind's approving permission. On approval, the module that owns the record makes the change through its

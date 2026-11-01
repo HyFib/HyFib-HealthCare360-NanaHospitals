@@ -36,6 +36,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { HistoryButton } from '@/modules/history/RecordHistory';
 import {
   LAB_PERMISSIONS,
   labApi,
@@ -253,6 +254,7 @@ function OrderView({
                 Report
               </Button>
             )}
+            <HistoryButton type="LabOrder" id={order.id} />
             {canLabels && collectedCount > 0 && (
               <Button
                 icon={printing === 'all' ? <Spinner size="tiny" aria-hidden /> : <PrintRegular />}

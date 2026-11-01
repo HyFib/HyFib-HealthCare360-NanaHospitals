@@ -40,6 +40,7 @@ import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import { PatientJourneyCard } from '@/modules/front-office/JourneyCard';
 import { useVisitActions } from '@/modules/front-office/VisitActions';
+import { HistoryButton } from '@/modules/history/RecordHistory';
 import { guardianRelationLabel, patientApi, patientQueries, type PatientDetail } from '@/modules/patients/api';
 import { AbdmConsentRequestsPanel } from '@/modules/patients/AbdmConsentRequestsPanel';
 import { AbhaChecksPanel } from '@/modules/patients/AbhaChecksPanel';
@@ -156,6 +157,7 @@ function PatientProfilePage() {
                 Edit
               </Button>
             )}
+            <HistoryButton type="Patient" id={patientId} />
             <Menu>
               <MenuTrigger disableButtonEnhancement>
                 <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />

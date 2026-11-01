@@ -1167,6 +1167,7 @@
     "/api/v1/health-checkups/packages healthcheck.manage|clinical.emr.read",
     "/api/v1/health-checkups/packages/{id:guid} healthcheck.manage|clinical.emr.read",
     "/api/v1/health-checkups/packages/{id:guid}/eligibility healthcheck.manage|clinical.emr.read",
+    "/api/v1/history/{entityType}/{entityId:guid} -",
     "/api/v1/hr/attendance hr.attendance.manage",
     "/api/v1/hr/attendance/punches hr.attendance.manage",
     "/api/v1/hr/attendance/regularisations hr.attendance.manage",
