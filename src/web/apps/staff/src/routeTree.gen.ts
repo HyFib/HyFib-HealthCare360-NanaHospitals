@@ -31,6 +31,8 @@ import { Route as AppAnalyticsIndexRouteImport } from './routes/_app/analytics/i
 import { Route as AppAnalyticsExtractsRouteImport } from './routes/_app/analytics/extracts'
 import { Route as AppAnalyticsKpisRouteImport } from './routes/_app/analytics/kpis'
 import { Route as AppAnalyticsSchedulesRouteImport } from './routes/_app/analytics/schedules'
+import { Route as AppApprovalsIndexRouteImport } from './routes/_app/approvals/index'
+import { Route as AppApprovalsApprovalIdRouteImport } from './routes/_app/approvals/$approvalId'
 import { Route as AppAssetsIndexRouteImport } from './routes/_app/assets/index'
 import { Route as AppAssetsAssetIdRouteImport } from './routes/_app/assets/$assetId'
 import { Route as AppAssetsCondemnationsRouteImport } from './routes/_app/assets/condemnations'
@@ -449,6 +451,16 @@ const AppAnalyticsKpisRoute = AppAnalyticsKpisRouteImport.update({
 const AppAnalyticsSchedulesRoute = AppAnalyticsSchedulesRouteImport.update({
   id: '/analytics/schedules',
   path: '/analytics/schedules',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppApprovalsIndexRoute = AppApprovalsIndexRouteImport.update({
+  id: '/approvals/',
+  path: '/approvals/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppApprovalsApprovalIdRoute = AppApprovalsApprovalIdRouteImport.update({
+  id: '/approvals/$approvalId',
+  path: '/approvals/$approvalId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAssetsIndexRoute = AppAssetsIndexRouteImport.update({
@@ -2072,6 +2084,7 @@ export interface FileRoutesByFullPath {
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
   '/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
+  '/approvals/$approvalId': typeof AppApprovalsApprovalIdRoute
   '/assets/$assetId': typeof AppAssetsAssetIdRoute
   '/assets/condemnations': typeof AppAssetsCondemnationsRoute
   '/assets/maintenance': typeof AppAssetsMaintenanceRoute
@@ -2204,6 +2217,7 @@ export interface FileRoutesByFullPath {
   '/ambulance/': typeof AppAmbulanceIndexRoute
   '/ams/': typeof AppAmsIndexRoute
   '/analytics/': typeof AppAnalyticsIndexRoute
+  '/approvals/': typeof AppApprovalsIndexRoute
   '/assets/': typeof AppAssetsIndexRoute
   '/billing/': typeof AppBillingIndexRoute
   '/blood-bank/': typeof AppBloodBankIndexRoute
@@ -2402,6 +2416,7 @@ export interface FileRoutesByTo {
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
   '/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
+  '/approvals/$approvalId': typeof AppApprovalsApprovalIdRoute
   '/assets/$assetId': typeof AppAssetsAssetIdRoute
   '/assets/condemnations': typeof AppAssetsCondemnationsRoute
   '/assets/maintenance': typeof AppAssetsMaintenanceRoute
@@ -2534,6 +2549,7 @@ export interface FileRoutesByTo {
   '/ambulance': typeof AppAmbulanceIndexRoute
   '/ams': typeof AppAmsIndexRoute
   '/analytics': typeof AppAnalyticsIndexRoute
+  '/approvals': typeof AppApprovalsIndexRoute
   '/assets': typeof AppAssetsIndexRoute
   '/billing': typeof AppBillingIndexRoute
   '/blood-bank': typeof AppBloodBankIndexRoute
@@ -2734,6 +2750,7 @@ export interface FileRoutesById {
   '/_app/analytics/extracts': typeof AppAnalyticsExtractsRoute
   '/_app/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/_app/analytics/schedules': typeof AppAnalyticsSchedulesRoute
+  '/_app/approvals/$approvalId': typeof AppApprovalsApprovalIdRoute
   '/_app/assets/$assetId': typeof AppAssetsAssetIdRoute
   '/_app/assets/condemnations': typeof AppAssetsCondemnationsRoute
   '/_app/assets/maintenance': typeof AppAssetsMaintenanceRoute
@@ -2866,6 +2883,7 @@ export interface FileRoutesById {
   '/_app/ambulance/': typeof AppAmbulanceIndexRoute
   '/_app/ams/': typeof AppAmsIndexRoute
   '/_app/analytics/': typeof AppAnalyticsIndexRoute
+  '/_app/approvals/': typeof AppApprovalsIndexRoute
   '/_app/assets/': typeof AppAssetsIndexRoute
   '/_app/billing/': typeof AppBillingIndexRoute
   '/_app/blood-bank/': typeof AppBloodBankIndexRoute
@@ -3066,6 +3084,7 @@ export interface FileRouteTypes {
     | '/analytics/extracts'
     | '/analytics/kpis'
     | '/analytics/schedules'
+    | '/approvals/$approvalId'
     | '/assets/$assetId'
     | '/assets/condemnations'
     | '/assets/maintenance'
@@ -3198,6 +3217,7 @@ export interface FileRouteTypes {
     | '/ambulance/'
     | '/ams/'
     | '/analytics/'
+    | '/approvals/'
     | '/assets/'
     | '/billing/'
     | '/blood-bank/'
@@ -3396,6 +3416,7 @@ export interface FileRouteTypes {
     | '/analytics/extracts'
     | '/analytics/kpis'
     | '/analytics/schedules'
+    | '/approvals/$approvalId'
     | '/assets/$assetId'
     | '/assets/condemnations'
     | '/assets/maintenance'
@@ -3528,6 +3549,7 @@ export interface FileRouteTypes {
     | '/ambulance'
     | '/ams'
     | '/analytics'
+    | '/approvals'
     | '/assets'
     | '/billing'
     | '/blood-bank'
@@ -3727,6 +3749,7 @@ export interface FileRouteTypes {
     | '/_app/analytics/extracts'
     | '/_app/analytics/kpis'
     | '/_app/analytics/schedules'
+    | '/_app/approvals/$approvalId'
     | '/_app/assets/$assetId'
     | '/_app/assets/condemnations'
     | '/_app/assets/maintenance'
@@ -3859,6 +3882,7 @@ export interface FileRouteTypes {
     | '/_app/ambulance/'
     | '/_app/ams/'
     | '/_app/analytics/'
+    | '/_app/approvals/'
     | '/_app/assets/'
     | '/_app/billing/'
     | '/_app/blood-bank/'
@@ -4199,6 +4223,20 @@ declare module '@tanstack/react-router' {
       path: '/analytics/schedules'
       fullPath: '/analytics/schedules'
       preLoaderRoute: typeof AppAnalyticsSchedulesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/approvals/': {
+      id: '/_app/approvals/'
+      path: '/approvals'
+      fullPath: '/approvals/'
+      preLoaderRoute: typeof AppApprovalsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/approvals/$approvalId': {
+      id: '/_app/approvals/$approvalId'
+      path: '/approvals/$approvalId'
+      fullPath: '/approvals/$approvalId'
+      preLoaderRoute: typeof AppApprovalsApprovalIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/assets/': {
@@ -6370,6 +6408,7 @@ interface AppRouteChildren {
   AppAnalyticsExtractsRoute: typeof AppAnalyticsExtractsRoute
   AppAnalyticsKpisRoute: typeof AppAnalyticsKpisRoute
   AppAnalyticsSchedulesRoute: typeof AppAnalyticsSchedulesRoute
+  AppApprovalsApprovalIdRoute: typeof AppApprovalsApprovalIdRoute
   AppAssetsAssetIdRoute: typeof AppAssetsAssetIdRoute
   AppAssetsCondemnationsRoute: typeof AppAssetsCondemnationsRoute
   AppAssetsMaintenanceRoute: typeof AppAssetsMaintenanceRoute
@@ -6502,6 +6541,7 @@ interface AppRouteChildren {
   AppAmbulanceIndexRoute: typeof AppAmbulanceIndexRoute
   AppAmsIndexRoute: typeof AppAmsIndexRoute
   AppAnalyticsIndexRoute: typeof AppAnalyticsIndexRoute
+  AppApprovalsIndexRoute: typeof AppApprovalsIndexRoute
   AppAssetsIndexRoute: typeof AppAssetsIndexRoute
   AppBillingIndexRoute: typeof AppBillingIndexRoute
   AppBloodBankIndexRoute: typeof AppBloodBankIndexRoute
@@ -6699,6 +6739,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAnalyticsExtractsRoute: AppAnalyticsExtractsRoute,
   AppAnalyticsKpisRoute: AppAnalyticsKpisRoute,
   AppAnalyticsSchedulesRoute: AppAnalyticsSchedulesRoute,
+  AppApprovalsApprovalIdRoute: AppApprovalsApprovalIdRoute,
   AppAssetsAssetIdRoute: AppAssetsAssetIdRoute,
   AppAssetsCondemnationsRoute: AppAssetsCondemnationsRoute,
   AppAssetsMaintenanceRoute: AppAssetsMaintenanceRoute,
@@ -6831,6 +6872,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAmbulanceIndexRoute: AppAmbulanceIndexRoute,
   AppAmsIndexRoute: AppAmsIndexRoute,
   AppAnalyticsIndexRoute: AppAnalyticsIndexRoute,
+  AppApprovalsIndexRoute: AppApprovalsIndexRoute,
   AppAssetsIndexRoute: AppAssetsIndexRoute,
   AppBillingIndexRoute: AppBillingIndexRoute,
   AppBloodBankIndexRoute: AppBloodBankIndexRoute,

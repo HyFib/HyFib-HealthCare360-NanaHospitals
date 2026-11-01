@@ -1,6 +1,7 @@
 import type { PagedResult, PayerType } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { DiscountAuthority } from './billTotals';
 import type { EInvoiceStamp } from './einvoiceApi';
 import type {
@@ -129,6 +130,8 @@ export interface CreditNoteDto {
   reason: string;
   issuedAt: string;
   issuedByName: string | null;
+  /** Who asked for it; `issuedByName` approved and issued it. Empty on notes issued before the approval step. */
+  requestedByName: string | null;
 }
 
 export interface DiscountApprovalDto {
@@ -872,8 +875,12 @@ export const billingApi = {
    * `billing.whatsapp_opted_out` (the number replied STOP) or `billing.bill_not_shareable` (a draft or cancelled bill).
    */
   sendOnWhatsApp: (billId: string) => api.post<void>(`/api/v1/billing/bills/${billId}/send-whatsapp`),
-  issueCreditNote: (billId: string, kind: CreditNoteKind, amount: number, reason: string) =>
-    api.post<BillDetail>(`/api/v1/billing/bills/${billId}/credit-notes`, { kind, amount, reason }),
+  /**
+   * Asks for a credit note or write-off (202): an approver, someone other than the person asking, issues it from the
+   * approvals inbox, on the bill as it is now.
+   */
+  requestCreditNote: (billId: string, kind: CreditNoteKind, amount: number, reason: string) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/credit-notes`, { kind, amount, reason }),
   adjustAdvance: (
     billId: string,
     advanceId: string,

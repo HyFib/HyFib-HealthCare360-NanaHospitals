@@ -527,7 +527,7 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
 
         // Front office finds the patient was registered twice; the merge moves the prescription to the kept record.
         var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
-        await mrd.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+        await MakerChecker.MergeAsync(mrd, await server.SignInAsync(HospitalServer.Users.MrdVerifier), duplicate.Id, kept.Id, "Registered twice");
         (await doctor.GetAsync<PrescriptionDto>($"/api/v1/clinical/prescriptions/{rx.Id}")).PatientId.ShouldBe(kept.Id);
 
         var status = await doctor.GetAsync<PrescriptionDigitalSignatureDto>($"/api/v1/clinical/prescriptions/{rx.Id}/digital-signature");

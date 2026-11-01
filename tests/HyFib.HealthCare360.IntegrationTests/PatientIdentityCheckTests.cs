@@ -272,7 +272,7 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
             var aadhaar = NewAadhaar();
             var check = await frontOffice.PostAsync<IdentityCheckDto>(Path(duplicate), new VerifyIdentityRequest(aadhaar, Matching, true));
 
-            await admin.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(surviving.Id, "Registered twice at the counter"));
+            await MakerChecker.MergeAsync(admin, await server.SignInAsync(HospitalServer.Users.MrdOfficer), duplicate.Id, surviving.Id, "Registered twice at the counter");
 
             (await frontOffice.GetAsync<List<IdentityCheckDto>>(Path(surviving))).ShouldHaveSingleItem().Id.ShouldBe(check.Id);
             (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{surviving.Id}")).AadhaarLast4.ShouldBe(aadhaar[^4..]);

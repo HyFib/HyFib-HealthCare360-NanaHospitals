@@ -63,6 +63,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.Accountant] = SystemRoles.Accountant,
         [Users.Radiographer] = SystemRoles.Radiographer,
         [Users.MisAnalyst] = SystemRoles.MisAnalyst,
+        [Users.Cashier] = SystemRoles.Cashier,
     };
 
     // A test-only password for the staff accounts, new for every run.
@@ -675,6 +676,12 @@ public sealed class HospitalServer : IAsyncLifetime
 
         /// <summary>Runs MIS reports and schedules them, but holds no finance reports. Created on first use.</summary>
         public const string MisAnalyst = "misanalyst";
+
+        /// <summary>
+        /// Takes payments at a counter of their own (no other test opens or closes this cashier's shift) and asks for
+        /// refunds and credit notes, which an approver issues. Created on first use.
+        /// </summary>
+        public const string Cashier = "cashier";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

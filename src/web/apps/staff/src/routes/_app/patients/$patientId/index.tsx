@@ -34,6 +34,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { useFeatureOn } from '@/lib/features';
 import { usePermission } from '@/lib/permissions';
+import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
@@ -230,6 +231,8 @@ function PatientProfilePage() {
           </MessageBarBody>
         </MessageBar>
       )}
+
+      {canMerge && !p.mergedIntoPatientId && <PendingApprovals subjectType="Patient" subjectId={p.id} />}
 
       <Section flush>
         <div style={{ padding: '0 8px' }}>

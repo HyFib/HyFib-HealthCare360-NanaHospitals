@@ -106,6 +106,7 @@ internal sealed class CreditNoteConfiguration : IEntityTypeConfiguration<CreditN
         b.ToTable("credit_notes", BillingSchema.Name);
         b.Property(x => x.Number).HasMaxLength(24);
         b.Property(x => x.Reason).HasMaxLength(300);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
         b.Property(x => x.IssuedByName).HasMaxLength(200);
         b.HasOne<Bill>().WithMany().HasForeignKey(x => x.BillId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.Number).IsUnique();

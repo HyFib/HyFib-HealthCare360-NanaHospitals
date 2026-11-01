@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
@@ -234,6 +235,8 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<INumberSeries, NumberSeriesService>();
         services.AddScoped<IOutbox, Outbox>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<ApprovalService>();
+        services.AddScoped<IApprovals>(sp => sp.GetRequiredService<ApprovalService>());
         services.AddScoped<NotificationTemplateRenderer>();
         services.AddScoped<WhatsAppConsent>();
         services.AddSingleton<IRealtimePublisher, SignalRRealtimePublisher>();
@@ -399,6 +402,7 @@ public static class PlatformServiceCollectionExtensions
         NumberSeriesEndpoints.Map(endpoints);
         PrintTemplateEndpoints.Map(endpoints);
         NotificationEndpoints.Map(endpoints);
+        ApprovalEndpoints.Map(endpoints);
         FileEndpoints.Map(endpoints);
         SettingsEndpoints.Map(endpoints);
         FeatureEndpoints.Map(endpoints);

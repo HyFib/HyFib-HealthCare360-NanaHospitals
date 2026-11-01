@@ -424,7 +424,8 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    public Result ApplyCredit(decimal amount)
+    /// <summary>Whether a credit note or write-off of <paramref name="amount"/> may be issued on the bill as it is now.</summary>
+    public Result CanCredit(decimal amount)
     {
         if (amount <= 0)
         {
@@ -437,9 +438,17 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         }
 
         var creditable = PatientAmount - CreditAmount;
-        if (amount > creditable)
+        return amount > creditable
+            ? Error.Rule("billing.credit_exceeds", $"At most ₹{Money.FormatInr(Math.Max(creditable, 0m))} can be credited on this bill.")
+            : Result.Success();
+    }
+
+    public Result ApplyCredit(decimal amount)
+    {
+        var creditable = CanCredit(amount);
+        if (creditable.IsFailure)
         {
-            return Error.Rule("billing.credit_exceeds", $"At most ₹{Money.FormatInr(Math.Max(creditable, 0m))} can be credited on this bill.");
+            return creditable;
         }
 
         CreditAmount += amount;

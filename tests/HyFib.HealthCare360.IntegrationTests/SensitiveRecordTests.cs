@@ -99,7 +99,7 @@ public sealed class SensitiveRecordTests(HospitalServer server)
         await admin.PutAsync<SensitiveCategoriesDto>($"/api/v1/patients/{duplicate.Id}/sensitive-categories",
             new SetSensitiveCategoriesRequest([SensitiveCategory.MentalHealth], "Psychiatric admission recorded on paper", flagged.Version));
 
-        await mrd.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+        await MakerChecker.MergeAsync(mrd, await server.SignInAsync(HospitalServer.Users.MrdVerifier), duplicate.Id, kept.Id, "Registered twice");
 
         (await admin.GetAsync<SensitiveCategoriesDto>($"/api/v1/patients/{kept.Id}/sensitive-categories")).Categories
             .ShouldBe([SensitiveCategory.MentalHealth]);

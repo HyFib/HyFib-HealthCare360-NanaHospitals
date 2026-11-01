@@ -92,8 +92,8 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `billing.bills.cancel` | Cancel finalized bills | HospitalAdmin, Accountant |
 | `billing.discounts.approve` | Approve discounts above a user's limit, discharge with dues, set limits | HospitalAdmin, Accountant |
 | `billing.payments.collect` | Collect payments, POS, payment links, advance adjustment, pay out approved refunds | Cashier, Billing, FrontOffice, HospitalAdmin |
-| `billing.refunds.request` | Request refunds | Cashier, Billing, HospitalAdmin |
-| `billing.refunds.approve` | Approve refunds, issue credit notes/write-offs | HospitalAdmin, Accountant |
+| `billing.refunds.request` | Request refunds, credit notes and write-offs | Cashier, Billing, HospitalAdmin |
+| `billing.refunds.approve` | Approve refunds, credit notes and write-offs someone else asked for | HospitalAdmin, Accountant |
 | `billing.deposits` | Collect IP advances | Cashier, Billing, HospitalAdmin |
 | `billing.shifts` | Cashier shifts, day-end report | Cashier, Billing, FrontOffice, Accountant, HospitalAdmin |
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
@@ -192,7 +192,7 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | POST | `/{id}/cancel` | `billing.bills.cancel` | `CancelBillRequest(reason, version)` → `BillDetail`; charges released, advances restored, cash refunds requested |
 | DELETE | `/{id}?version` | `op.create` / `ip.manage` | → 204 (discard a draft) |
 | POST | `/{id}/send-whatsapp` | `op.create` / `ip.manage` / `payments.collect` | → 204: queues the bill's PDF to the patient's mobile number on WhatsApp ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); 422 `billing.bill_not_shareable` (draft or cancelled), `billing.no_mobile`, `billing.whatsapp_opted_out` (the number replied STOP); guarded and audited ("Sent a bill to the patient on WhatsApp"). The staff app's bill page offers it as "Send on WhatsApp" in the More menu |
-| POST | `/{id}/credit-notes` | `billing.refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason)` → 201 (`{FAC}CN{YY}{SEQ:6}`) |
+| POST | `/{id}/credit-notes` | `refunds.request` / `refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason)` → 202 `ApprovalRequestDto` (kind `billing.credit_note` or `billing.write_off`): asks for it; 422 `billing.credit_exceeds` / `billing.bill_not_creditable` as the bill is now, 409 `approval.already_requested` while one of the kind waits. An approver, never the person who asked, issues it at `POST /api/v1/approvals/{id}/approve` (`{FAC}CN{YY}{SEQ:6}`, both names on the note), only on the bill's version it was asked against: 422 `approval.stale` after a payment, refund or another credit |
 | POST | `/{id}/adjust-advance` | `billing.payments.collect` | `AdjustAdvanceRequest(advanceId, amount?, version)` → 201 `ReceiptDto` (patient advance used on an OP bill) |
 
 ### Discounts — `/api/v1/billing/discount-approvals`, `/api/v1/billing/discount-limits`

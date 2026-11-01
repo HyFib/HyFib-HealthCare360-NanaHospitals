@@ -118,7 +118,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         var kept = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null) with { AbhaNumber = null });
         var duplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
 
-        await medicalRecords.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+        await MakerChecker.MergeAsync(medicalRecords, await server.SignInAsync(HospitalServer.Users.MrdVerifier), duplicate.Id, kept.Id, "Registered twice");
 
         (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{kept.Id}")).AbhaNumberMasked.ShouldBe("XX-XXXX-XXXX-" + abha[^4..]);
         var linked = (await AuditAsync(kept.Id, "patient.abha_changed")).ShouldNotBeNull();
@@ -128,7 +128,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         // A surviving record with a number of its own keeps it, and nothing is linked.
         var other = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
         var otherDuplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
-        await medicalRecords.PostAsync($"/api/v1/patients/{otherDuplicate.Id}/merge", new MergePatientRequest(other.Id, "Registered twice"));
+        await MakerChecker.MergeAsync(medicalRecords, await server.SignInAsync(HospitalServer.Users.MrdVerifier), otherDuplicate.Id, other.Id, "Registered twice");
         (await AuditAsync(other.Id, "patient.abha_changed")).ShouldNotBeNull().Summary.ShouldStartWith("At registration:");
     }
 
@@ -733,7 +733,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             // under the UHID they were made for.
             var crp = await CrpAsync(duplicate, admission);
             await ReleaseAsync(crp);
-            await medicalRecords.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+            await MakerChecker.MergeAsync(medicalRecords, await server.SignInAsync(HospitalServer.Users.MrdVerifier), duplicate.Id, kept.Id, "Registered twice");
             var path = $"/api/v1/abdm/bundles/lab-reports/{crp.ReportId}";
             await SwitchAsync(enabled: true);
 
@@ -795,7 +795,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             // doctor writes and signs the summary under the surviving one.
             var crp = await CrpAsync(duplicate, admission);
             await ReleaseAsync(crp);
-            await medicalRecords.PostAsync($"/api/v1/patients/{duplicate.Id}/merge", new MergePatientRequest(kept.Id, "Registered twice"));
+            await MakerChecker.MergeAsync(medicalRecords, await server.SignInAsync(HospitalServer.Users.MrdVerifier), duplicate.Id, kept.Id, "Registered twice");
             var summary = await SummaryAsync(doctor, kept.Id, admission);
             await doctor.PostAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/{summary.Id}/sign", new SignDischargeSummaryRequest(summary.Version));
             var path = $"/api/v1/abdm/bundles/discharge-summaries/{summary.Id}";

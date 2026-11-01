@@ -300,7 +300,11 @@ public enum CreditNoteKind
     WriteOff,
 }
 
-/// <summary>Reduces what the patient owes on a finalized bill (MB-05); issued only by approvers and always audited.</summary>
+/// <summary>
+/// Reduces what the patient owes on a finalized bill (MB-05); always audited. One person asks for it and another, an
+/// approver, issues it by approving the request (maker-checker): <see cref="RequestedBy"/> is the first, <see cref="IssuedBy"/>
+/// the second. Notes issued before the approval step have no <see cref="RequestedBy"/>.
+/// </summary>
 public sealed class CreditNote : AuditableEntity, IFacilityScoped
 {
     public Guid FacilityId { get; set; }
@@ -310,6 +314,8 @@ public sealed class CreditNote : AuditableEntity, IFacilityScoped
     public Guid PatientId { get; set; }
     public decimal Amount { get; set; }
     public string Reason { get; set; } = string.Empty;
+    public Guid? RequestedBy { get; set; }
+    public string? RequestedByName { get; set; }
     public Guid? IssuedBy { get; set; }
     public string? IssuedByName { get; set; }
     public DateTimeOffset IssuedAt { get; set; }

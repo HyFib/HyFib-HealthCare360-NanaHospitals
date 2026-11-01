@@ -172,7 +172,7 @@ describe('merging a duplicate record', SCREEN_TESTS, () => {
     expect(screen.queryByRole('menuitem', { name: 'Merge duplicate…' })).not.toBeInTheDocument();
   });
 
-  it('shows both records, needs a reason and the acknowledgement, then merges and opens the surviving record', async () => {
+  it('shows both records, needs a reason and the acknowledgement, then asks for the merge and stays on the record', async () => {
     const { router } = openScreen(`/patients/${DUPLICATE_ID}`, MRD_USER);
     const { user, dialog } = await chooseSurvivor();
 
@@ -186,7 +186,7 @@ describe('merging a duplicate record', SCREEN_TESTS, () => {
     expect(within(survivor).getByText('+91******0001')).toBeInTheDocument();
     expect(within(dialog).getByText(/A merge cannot be undone/)).toBeInTheDocument();
 
-    const confirm = within(dialog).getByRole('button', { name: 'Merge into NH24000123' });
+    const confirm = within(dialog).getByRole('button', { name: 'Ask to merge into NH24000123' });
     await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Registered twice');
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), ', same Aadhaar');
@@ -198,13 +198,20 @@ describe('merging a duplicate record', SCREEN_TESTS, () => {
     );
     await user.click(confirm);
 
+    // Another person who may merge records approves it (maker-checker): until then nothing has changed.
     await waitFor(() =>
-      expect(notify.success).toHaveBeenCalledWith('Records merged', 'NH26000789 was merged into NH24000123.'),
+      expect(notify.success).toHaveBeenCalledWith(
+        'Merge sent for approval',
+        'NH26000789 will be merged into NH24000123 when another person who may merge records approves it.',
+      ),
     );
     expect(merges().map((r) => r.body)).toEqual([
       { intoPatientId: SURVIVOR_ID, reason: 'Registered twice, same Aadhaar' },
     ]);
-    await waitFor(() => expect(router.state.location.pathname).toBe(`/patients/${SURVIVOR_ID}`));
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog', { name: 'Merge duplicate record' })).not.toBeInTheDocument(),
+    );
+    expect(router.state.location.pathname).toBe(`/patients/${DUPLICATE_ID}`);
   });
 
   it('does not let a record be merged into itself', async () => {
@@ -221,7 +228,7 @@ describe('merging a duplicate record', SCREEN_TESTS, () => {
     await user.click(await screen.findByRole('option', { name: /NH26000789/ }));
 
     expect(await within(dialog).findByText('Choose a different record to merge into.')).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Merge' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Ask to merge' })).toBeDisabled();
   });
 
   it("shows the server's refusal in the dialog and stays on the record", async () => {
@@ -230,7 +237,7 @@ describe('merging a duplicate record', SCREEN_TESTS, () => {
     const { user, dialog } = await chooseSurvivor();
     await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Registered twice, same Aadhaar');
     await user.click(within(dialog).getByRole('checkbox', { name: /cannot be undone/ }));
-    await user.click(within(dialog).getByRole('button', { name: 'Merge into NH24000123' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Ask to merge into NH24000123' }));
 
     expect(await within(dialog).findByText('One of these records has already been merged.')).toBeInTheDocument();
     expect(notify.success).not.toHaveBeenCalled();

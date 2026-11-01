@@ -21,9 +21,9 @@ import {
 import { isApiError } from '@hc360/core';
 import { useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { MERGE_REASON_LIMITS, patientApi, patientKeys, patientQueries, type PatientDetail } from './api';
+import { approvalKeys } from '@/modules/approvals/api';
+import { MERGE_REASON_LIMITS, patientApi, patientQueries, type PatientDetail } from './api';
 import { PatientPicker, type PickedPatient } from './PatientPicker';
 
 const useStyles = makeStyles({
@@ -55,10 +55,10 @@ function maskPhone(phone: string | null): string {
 }
 
 /**
- * Merges this patient, a duplicate registration, into the record that stays (needs `patients.merge`): its visits,
- * tokens, consents, documents and identity checks move to the surviving record, and this one remains only as a pointer
- * to it. Both records are shown side by side before the merge, which needs a reason and cannot be undone. On success
- * the surviving record opens.
+ * Asks for this patient, a duplicate registration, to be merged into the record that stays (needs `patients.merge`):
+ * once another person who may merge records approves it, its visits, tokens, consents, documents and identity checks
+ * move to the surviving record, and this one remains only as a pointer to it. Both records are shown side by side
+ * before asking, which needs a reason; a merge cannot be undone.
  */
 export function MergePatientDialog({
   patient,
@@ -77,7 +77,6 @@ function MergeForm({ patient, onClose }: { patient: PatientDetail; onClose: () =
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const [target, setTarget] = useState<PickedPatient | null>(null);
   const [reason, setReason] = useState('');
   const [understood, setUnderstood] = useState(false);
@@ -87,14 +86,15 @@ function MergeForm({ patient, onClose }: { patient: PatientDetail; onClose: () =
 
   const merge = useMutation({
     mutationFn: (into: PatientDetail) =>
-      patientApi.merge(patient.id, { intoPatientId: into.id, reason: reason.trim() }),
+      patientApi.requestMerge(patient.id, { intoPatientId: into.id, reason: reason.trim() }),
     onSuccess: (_, into) => {
-      notify.success('Records merged', `${patient.uhid} was merged into ${into.uhid}.`);
-      // Both records, every list they appear in and their visits change.
-      void queryClient.invalidateQueries({ queryKey: patientKeys.all });
-      // Saved: closes, and leaves for the surviving record, without asking about the reason typed.
+      notify.success(
+        'Merge sent for approval',
+        `${patient.uhid} will be merged into ${into.uhid} when another person who may merge records approves it.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
+      // Asked: closes without asking about the reason typed. Nothing has changed yet, so the record stays open.
       guard.close();
-      void navigate({ to: '/patients/$patientId', params: { patientId: into.id } });
     },
   });
 
@@ -127,8 +127,9 @@ function MergeForm({ patient, onClose }: { patient: PatientDetail; onClose: () =
                 <MessageBar intent="warning" layout="multiline">
                   <MessageBarBody>
                     <MessageBarTitle>This record will be merged into the one you choose</MessageBarTitle>
-                    Its visits, queue tokens, consents, documents and identity checks move to the surviving record, and{' '}
-                    {patient.uhid} stays only as a pointer to it. A merge cannot be undone.
+                    Once another person who may merge records approves it, its visits, queue tokens, consents, documents
+                    and identity checks move to the surviving record, and {patient.uhid} stays only as a pointer to it.
+                    A merge cannot be undone.
                   </MessageBarBody>
                 </MessageBar>
                 <PatientPicker
@@ -205,7 +206,7 @@ function MergeForm({ patient, onClose }: { patient: PatientDetail; onClose: () =
                   icon={merge.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
                   style={ready ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
                 >
-                  {survivor && !pickError ? `Merge into ${survivor.uhid}` : 'Merge'}
+                  {survivor && !pickError ? `Ask to merge into ${survivor.uhid}` : 'Ask to merge'}
                 </Button>
               </DialogActions>
             </DialogBody>

@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Persistence;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -31,7 +32,8 @@ internal sealed record PatientInput(
 
 /// <summary>
 /// Registration (FO-01): duplicate detection, UHID allocation (gap-free, inside the insert transaction),
-/// encryption of national identifiers, updates with optimistic concurrency, and duplicate merging.
+/// encryption of national identifiers, updates with optimistic concurrency, and duplicate merging, which one person asks
+/// for and another approves (<see cref="PatientMergeApproval"/>).
 /// </summary>
 public sealed class PatientRegistrationService(
     HospitalDbContext db,
@@ -43,6 +45,7 @@ public sealed class PatientRegistrationService(
     WhatsAppConsent whatsApp,
     ISettingsService settings,
     PatientAccessGuard access,
+    IApprovals approvals,
     TimeProvider time)
 {
     /// <summary>Audit action of a change to the patient's ABHA number or address.</summary>
@@ -256,18 +259,69 @@ public sealed class PatientRegistrationService(
         return Result.Success();
     }
 
-    public async Task<Result> MergeAsync(Guid sourceId, MergePatientRequest request, CancellationToken ct)
+    /// <summary>
+    /// Asks for a duplicate record to be merged into another. It cannot be undone, so it is made only when someone else
+    /// who may merge records approves it, and only on the two records as they are now (<see cref="MergeApprovedAsync"/>).
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto>> RequestMergeAsync(Guid sourceId, MergePatientRequest request, CancellationToken ct)
     {
-        if (sourceId == request.IntoPatientId)
+        var records = await MergeRecordsAsync(sourceId, request.IntoPatientId, track: false, ct);
+        if (records.IsFailure)
+        {
+            return records.Error!;
+        }
+
+        var (source, target) = records.Value;
+        var today = time.Today();
+        return await approvals.RequestAsync(
+            PatientMergeApproval.Key,
+            new ApprovalSubject(nameof(Patient), source.Id, source.Version, currentUser.FacilityId ?? source.RegisteredFacilityId, target.Id),
+            new PatientMergePayload(source.Id, target.Id, target.Version, request.Reason.Trim()),
+            $"Merge {source.Uhid} into {target.Uhid}",
+            [new("Duplicate, merged away", Describe(source, today)), new("Record kept", Describe(target, today))],
+            request.Reason,
+            ct);
+    }
+
+    /// <summary>
+    /// Merges an approved request's duplicate into the record it names, in the approval's transaction (the approval saves
+    /// and commits, and other modules move their records on PatientsMerged in it). It is made only on the two records as
+    /// they were when it was asked for: one corrected since may no longer be the same person.
+    /// </summary>
+    internal async Task<Result<string>> MergeApprovedAsync(ApprovalRequest approval, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<PatientMergePayload>(approval.Payload);
+        var records = await MergeRecordsAsync(asked.DuplicateId, asked.IntoPatientId, track: true, ct);
+        if (records.IsFailure)
+        {
+            return records.Error!;
+        }
+
+        var (source, target) = records.Value;
+        if (source.Version != approval.SubjectVersion || target.Version != asked.IntoVersion)
+        {
+            return Error.Rule("approval.stale",
+                $"{(source.Version != approval.SubjectVersion ? source.Uhid : target.Uhid)} was changed after this merge was asked for. Check that the two records are the same person, and ask again.");
+        }
+
+        await MergeAsync(source, target, $"{asked.Reason} (asked for by {approval.RequestedByName}, approved by {currentUser.DisplayName ?? currentUser.UserName})", ct);
+        return $"{source.Uhid} merged into {target.Uhid}";
+    }
+
+    /// <summary>The duplicate and the record it would merge into, if neither is merged already.</summary>
+    private async Task<Result<(Patient Source, Patient Target)>> MergeRecordsAsync(Guid sourceId, Guid targetId, bool track, CancellationToken ct)
+    {
+        if (sourceId == targetId)
         {
             return Error.Rule("patient.merge_self", "Choose a different record to merge into.");
         }
 
-        var source = await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == sourceId, ct);
-        var target = await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == request.IntoPatientId, ct);
+        var patients = track ? db.Set<Patient>() : db.Set<Patient>().AsNoTracking();
+        var source = await patients.FirstOrDefaultAsync(p => p.Id == sourceId, ct);
+        var target = await patients.FirstOrDefaultAsync(p => p.Id == targetId, ct);
         if (source is null || target is null)
         {
-            return Error.NotFound(nameof(Patient), source is null ? sourceId : request.IntoPatientId);
+            return Error.NotFound(nameof(Patient), source is null ? sourceId : targetId);
         }
 
         if (source.MergedIntoPatientId is not null || target.MergedIntoPatientId is not null)
@@ -275,7 +329,18 @@ public sealed class PatientRegistrationService(
             return Error.Rule("patient.already_merged", "One of these records has already been merged.");
         }
 
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        return (source, target);
+    }
+
+    /// <summary>A record as the approver's list shows it; a VIP's name by its initials, as search shows it (they open the record to see more).</summary>
+    private static string Describe(Patient patient, DateOnly today) =>
+        string.Join(" · ", new[] { patient.Uhid, patient.IsVip ? PatientNames.Restricted(patient.FullName) : patient.FullName, patient.Gender.ToString(), patient.AgeDisplay(today) }
+            .Where(p => !string.IsNullOrEmpty(p)));
+
+    /// <summary>Moves the duplicate's records to the surviving one and marks the duplicate merged; the caller saves.</summary>
+    private async Task MergeAsync(Patient source, Patient target, string reason, CancellationToken ct)
+    {
+        var sourceId = source.Id;
 
         // Re-point this module's own records; other modules handle PatientsMerged in the same transaction.
         foreach (var visit in await db.Set<Visit>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Where(v => v.PatientId == sourceId).ToListAsync(ct))
@@ -326,17 +391,13 @@ public sealed class PatientRegistrationService(
         target.AadhaarIndex ??= source.AadhaarIndex;
         source.MarkMergedInto(target.Id);
 
-        audit.Add(new AuditEntry(AuditCategories.Clinical, "patient.merged", $"Merged {source.Uhid} into {target.Uhid}: {request.Reason}")
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "patient.merged", $"Merged {source.Uhid} into {target.Uhid}: {reason}")
         {
             PatientId = target.Id,
             EntityType = nameof(Patient),
             EntityId = source.Id.ToString(),
             Severity = AuditSeverity.Warning,
         });
-
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return Result.Success();
     }
 
     /// <summary>

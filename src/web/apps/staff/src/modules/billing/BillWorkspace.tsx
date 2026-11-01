@@ -41,6 +41,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
+import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
 import { billDocument, billingApi, billingQueries, type BillDetail, type BillLineDto } from './api';
 import { BillLinesTable } from './BillLinesTable';
 import { BillPackagePanel } from './BillPackagePanel';
@@ -133,7 +134,8 @@ export function BillWorkspace({
   const canCollect = usePermission('billing.payments.collect');
   const canCancel = usePermission('billing.bills.cancel');
   const canRequestRefund = usePermission('billing.refunds.request');
-  const canCredit = usePermission('billing.refunds.approve');
+  // Asking is enough: an approver, someone else, issues the note from the approvals inbox.
+  const canCredit = usePermission(['billing.refunds.request', 'billing.refunds.approve']);
   const canSend = usePermission(['billing.op.create', 'billing.ip.manage', 'billing.payments.collect']);
 
   const isDraft = bill.status === 'Draft';
@@ -305,6 +307,7 @@ export function BillWorkspace({
             </MessageBarBody>
           </MessageBar>
         )}
+        {canCredit && !isDraft && <PendingApprovals subjectType="Bill" subjectId={bill.id} />}
 
         <BillPackagePanel bill={bill} onChanged={store} />
 
@@ -401,7 +404,8 @@ export function BillWorkspace({
                     key: 'reason',
                     header: 'Reason',
                     priority: 'low',
-                    render: (c) => `${c.reason}${c.issuedByName ? ` · ${c.issuedByName}` : ''}`,
+                    render: (c) =>
+                      `${c.reason}${c.requestedByName ? ` · asked for by ${c.requestedByName}, approved by ${c.issuedByName ?? '—'}` : c.issuedByName ? ` · ${c.issuedByName}` : ''}`,
                   },
                   { key: 'amount', header: 'Amount', align: 'end', render: (c) => <Amount value={c.amount} strong /> },
                 ]}
