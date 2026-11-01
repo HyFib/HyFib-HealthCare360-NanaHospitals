@@ -154,6 +154,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           appearance="outline"
           icon={<SearchRegular />}
           onClick={() => setPaletteOpen(true)}
+          // Named in words at every width: below 640 px it shows its icon alone, the words hidden. The shortcut is said
+          // by aria-keyshortcuts, so it is not read out again as part of the name.
+          aria-label="Search patients or screens"
           aria-keyshortcuts="Control+K"
         >
           <span className={styles.searchText}>Search patients or screens</span>
