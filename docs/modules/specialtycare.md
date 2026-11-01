@@ -190,7 +190,10 @@ Clinical records it as a procedure on the patient's record (EHR-01). Otherwise t
 completes a discharge): while a surgery of the stay is received in pre-op or in progress, the discharge, of whatever
 type, is refused with 422 `discharge.in_theatre`, naming the case ("Surgery {no.} ({procedure}) is in progress…", "The
 patient is in pre-op for surgery {no.}…: complete, postpone or cancel it before the discharge"). A case still waiting for
-its day holds nothing; the discharge deals with it as above.
+its day holds nothing; the discharge deals with it as above. Receiving the patient in pre-op and starting the operation
+take the stay's lock (`EncounterLocks`) and read the case again under it, in the transaction that saves them, as the
+discharge asks the theatre under it: a discharge saved at the same moment either waits for the theatre and is refused,
+or commits first, and the theatre then finds the case cancelled or given back.
 
 ## Charges (`IChargePoster`, idempotent on SourceModule + SourceReference)
 | SourceModule | SourceReference | Service code | When |

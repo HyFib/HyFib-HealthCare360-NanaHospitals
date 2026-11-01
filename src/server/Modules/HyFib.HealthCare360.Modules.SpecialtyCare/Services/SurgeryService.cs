@@ -127,13 +127,13 @@ public sealed class SurgeryService(
         return Result.Success();
     }
 
-    public Task<Result> ReceiveInPreOpAsync(Guid id, CancellationToken ct) => ChangeAsync(id, b => b.ReceiveInPreOp(time.GetUtcNow()), ct);
+    public Task<Result> ReceiveInPreOpAsync(Guid id, CancellationToken ct) => TakeIntoTheatreAsync(id, b => b.ReceiveInPreOp(time.GetUtcNow()), ct);
 
     public Task<Result> PostponeAsync(Guid id, string reason, CancellationToken ct) => ChangeAsync(id, b => b.Postpone(reason), ct);
 
     public Task<Result> CancelAsync(Guid id, string reason, CancellationToken ct) => ChangeAsync(id, b => b.Cancel(reason), ct);
 
-    public Task<Result> StartAsync(Guid id, CancellationToken ct) => ChangeAsync(id, b => b.Start(time.GetUtcNow()), ct);
+    public Task<Result> StartAsync(Guid id, CancellationToken ct) => TakeIntoTheatreAsync(id, b => b.Start(time.GetUtcNow()), ct);
 
     /// <summary>Completes the surgery (WHO Sign-out gate in the aggregate) and posts OT charges to the patient's bill.</summary>
     public async Task<Result> CompleteAsync(Guid id, CancellationToken ct)
@@ -175,6 +175,42 @@ public sealed class SurgeryService(
         booking.RecordCharges(outcome.Status, outcome.Error);
         await db.SaveChangesAsync(ct);
         return outcome;
+    }
+
+    /// <summary>
+    /// Takes the patient into the theatre (pre-op, or the table), which holds a discharge back (<see cref="TheatreDischargeHolds"/>),
+    /// under the lock of the case's stay (<see cref="EncounterLocks"/>), held to the commit, as the discharge asks the theatre
+    /// under it. A discharge saved at the same moment either commits first, and its stay's cases are then cancelled or given
+    /// back before this reads the case again, or waits for this and finds the patient in the theatre.
+    /// </summary>
+    private async Task<Result> TakeIntoTheatreAsync(Guid id, Func<SurgeryBooking, Result> change, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var booking = await db.Set<SurgeryBooking>().FirstOrDefaultAsync(b => b.Id == id, ct);
+        Guid? locked = null;
+        while (booking?.AdmissionId is { } stay && stay != locked)
+        {
+            // Read again under the lock: the stay may have ended, or the case moved, while the lock was awaited.
+            await EncounterLocks.LockAsync(db, [stay], ct);
+            locked = stay;
+            await db.Entry(booking).ReloadAsync(ct);
+        }
+
+        if (booking is null)
+        {
+            return Error.NotFound(nameof(SurgeryBooking), id);
+        }
+
+        var result = change(booking);
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        await realtime.OtChangedAsync(booking.FacilityId, booking.Id, ct);
+        return Result.Success();
     }
 
     private async Task<Result> ChangeAsync(Guid id, Func<SurgeryBooking, Result> change, CancellationToken ct)

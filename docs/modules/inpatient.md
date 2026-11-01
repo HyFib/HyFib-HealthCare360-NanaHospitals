@@ -135,7 +135,10 @@ Rules: routine discharges (Normal, Referred, LAMA, DAMA) must be initiated and c
 are recorded immediately without clearance and without the "discharged" SMS. Whatever the type, a discharge is not
 completed while another department still has the patient: before anything is charged or changed, `DischargeService`
 asks every `IDischargeHoldSource` (Platform contract; today SpecialtyCare's theatre: a surgery of the stay received in
-pre-op or under way), and refuses with the first hold's code and every hold's message. Completion closes the visit,
+pre-op or under way), and refuses with the first hold's code and every hold's message. It asks again in its transaction,
+under the stay's lock (`EncounterLocks`, held to the commit), which the theatre also takes to receive the patient in
+pre-op or start the operation: a case taken into the theatre at the same moment is either seen, or finds the stay
+ended. Completion closes the visit,
 closes the bed assignment and sends the bed to housekeeping.
 
 ### Census — `GET /api/v1/inpatient/census?from&to&wardId` (`inpatient.admissions.read`)

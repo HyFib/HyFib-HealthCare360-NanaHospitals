@@ -104,16 +104,11 @@ public sealed class DischargeService(
         }
 
         // However the stay is to end, a patient the theatre still has (in pre-op, on the table) is not discharged: the
-        // case is finished, postponed or cancelled there first. Asked before anything is charged or changed.
-        var holds = new List<DischargeHold>();
-        foreach (var source in holdSources)
+        // case is finished, postponed or cancelled there first. Asked before anything is charged or changed, and again
+        // below under the stay's lock, where it holds.
+        if (await HoldAsync(admission.Id, ct) is { } held)
         {
-            holds.AddRange(await source.HoldsAsync(admission.Id, ct));
-        }
-
-        if (holds.Count > 0)
-        {
-            return Error.Rule(holds[0].Code, string.Join(" ", holds.Select(h => h.Message)));
+            return held;
         }
 
         var now = time.GetUtcNow();
@@ -135,6 +130,14 @@ public sealed class DischargeService(
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        // The stay's lock, held to this commit, is the one the theatre takes to receive the patient in pre-op or start
+        // the operation (EncounterLocks): a case taken into the theatre meanwhile is committed first and found here.
+        await EncounterLocks.LockAsync(db, [admission.Id, admission.VisitId], ct);
+        if (await HoldAsync(admission.Id, ct) is { } stillHeld)
+        {
+            return stillHeld;
+        }
 
         var completed = admission.CompleteDischarge(type, currentUser.UserId, request.Notes, dischargedAt);
         if (completed.IsFailure)
@@ -190,6 +193,18 @@ public sealed class DischargeService(
 
         await InpatientRealtime.AdmissionChangedAsync(realtime, admission, ct);
         return ToResult(admission, posted);
+    }
+
+    /// <summary>Why the stay cannot end now, as the modules that hold it say (the theatre), or null when nothing holds it.</summary>
+    private async Task<Error?> HoldAsync(Guid admissionId, CancellationToken ct)
+    {
+        var holds = new List<DischargeHold>();
+        foreach (var source in holdSources)
+        {
+            holds.AddRange(await source.HoldsAsync(admissionId, ct));
+        }
+
+        return holds.Count > 0 ? Error.Rule(holds[0].Code, string.Join(" ", holds.Select(h => h.Message))) : null;
     }
 
     private static DischargeResult ToResult(Admission a, int chargesPosted) =>
