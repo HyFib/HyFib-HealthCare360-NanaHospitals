@@ -345,15 +345,20 @@ public sealed class TheatreStayTests(HospitalServer server)
             false, null, null, TokenPriority.Normal, IssueToken: false, NotifyPatient: false));
     }
 
-    /// <summary>Front office: admits the patient under the doctor to a free bed of the male general ward.</summary>
-    private static async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
+    /// <summary>
+    /// Front office: admits the patient under the doctor to a bed of the male general ward that the hospital admin adds for
+    /// this admission alone. The run's tests share the ward's twelve beds, and so many of them admit there that no bed may be
+    /// left free by the time this test runs.
+    /// </summary>
+    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var bed = await admin.PostAsync<BedDto>("/api/v1/beds", new SaveBedRequest(
+            ward.Id, null, "OT-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant(), false, false, false, 999, true, null));
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
-            PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
+            PatientId: patientId, BedId: bed.Id, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
             ProvisionalDiagnosis: "Right inguinal hernia", ReferredBy: null, PayerType: PayerType.Self, PayerId: null, PolicyNumber: null,
             IsMlc: false, MlcNumber: null, ExpectedDischargeDate: null, AttendantName: null, AttendantRelation: null, AttendantPhone: null,
