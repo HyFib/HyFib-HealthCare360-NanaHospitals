@@ -52,6 +52,7 @@ import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { AdmissionDietPanel } from '@/modules/dietary/AdmissionDietPanel';
+import { HistoryButton } from '@/modules/history/RecordHistory';
 import {
   ADMISSION_SOURCE_LABEL,
   ADMISSION_STATUS_LABEL,
@@ -202,6 +203,7 @@ function AdmissionPage() {
         }}
         actions={
           <>
+            <HistoryButton type="Admission" id={a.id} />
             {initiated && permissions.discharge && (
               <Button appearance="primary" icon={<CheckmarkCircleRegular />} onClick={() => setDialog('complete')}>
                 Complete discharge

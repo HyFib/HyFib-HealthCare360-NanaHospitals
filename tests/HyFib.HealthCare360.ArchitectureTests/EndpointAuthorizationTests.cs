@@ -182,6 +182,10 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/approvals/{id:guid}/reject",
         "POST /api/v1/approvals/{id:guid}/withdraw",
 
+        // A record's history (the audit trail of it), staff only: patients are refused. The module that owns the record
+        // names the permissions that read it and opens it by the rules its own screen does (facility, restricted record).
+        "GET /api/v1/history/{entityType}/{entityId:guid}",
+
         // Branding and feature switches (non-secret "ui.*" and "features.*" settings only; every switch as the server
         // enforces it for the caller's facility).
         "GET /api/v1/settings/public",

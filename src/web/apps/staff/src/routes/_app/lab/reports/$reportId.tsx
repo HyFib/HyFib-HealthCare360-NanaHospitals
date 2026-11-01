@@ -10,6 +10,7 @@ import { usePermission } from '@/lib/permissions';
 import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
 import { AbdmLinkButton } from '@/modules/emr/AbdmLinkButton';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
+import { HistoryButton } from '@/modules/history/RecordHistory';
 import { AmendReportDialog } from '@/modules/lab/AmendReportDialog';
 import {
   abdmLabReportBundle,
@@ -135,6 +136,7 @@ function LabReportPage() {
               path={labReportDocument(reportId)}
               printAppearance={canVerify && waiting.length > 0 ? 'secondary' : 'primary'}
             />
+            <HistoryButton type="LabReport" id={view.reportId} />
             {labReportExportable(view.status) && (
               <>
                 <AbdmReportButton path={abdmLabReportBundle(view.reportId)} what="lab report" />
