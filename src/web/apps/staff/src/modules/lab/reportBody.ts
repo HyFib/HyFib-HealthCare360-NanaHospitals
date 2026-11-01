@@ -28,9 +28,12 @@ export function labReportPatientRows(view: LabReportView): [string, string][] {
   ];
 }
 
-/** Footnotes: partial report, auto-validation and amendment notices. */
+/** Footnotes: a correction waiting for approval, partial report, auto-validation and amendment notices. */
 export function labReportNotes(view: LabReportView): string[] {
   const notes: string[] = [];
+  if (view.amendmentWaitingSince) {
+    notes.push("An amendment of this report is waiting for a second pathologist's approval. Results on it may change.");
+  }
   if (view.isPartial) {
     notes.push('Partial report: some tests are still in progress and will follow in an updated report.');
   }

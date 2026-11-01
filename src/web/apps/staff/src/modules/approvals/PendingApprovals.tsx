@@ -5,11 +5,17 @@ import { useNavigate } from '@tanstack/react-router';
 import { approvalQueries } from './api';
 
 /**
- * The changes waiting for a second person's approval on one record (a bill's credit note, a patient's merge), so the
- * desk does not ask twice and sees why nothing has changed yet. The server lists only what the user asked for or may
- * decide.
+ * The changes waiting for a second person's approval on one record (a bill's credit note, a patient's merge, a lab
+ * report's correction), so the desk does not ask twice and sees why nothing has changed yet. The server lists only what
+ * the user asked for or may decide.
  */
-export function PendingApprovals({ subjectType, subjectId }: { subjectType: 'Bill' | 'Patient'; subjectId: string }) {
+export function PendingApprovals({
+  subjectType,
+  subjectId,
+}: {
+  subjectType: 'Bill' | 'Patient' | 'LabReport';
+  subjectId: string;
+}) {
   const navigate = useNavigate();
   const requests = useQuery(approvalQueries.list({ view: 'Subject', status: 'Pending', subjectType, subjectId }));
   const waiting = (requests.data?.items ?? []).filter((r) => !r.isExpired);

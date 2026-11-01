@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 
@@ -8,9 +9,9 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// Builds the printable lab report (LIS-07). It has the facility letterhead, patient header, results grouped by
 /// section with flags and reference intervals, the signatories (with qualification and registration number), the
 /// amendment history and the QR verification code. Staff copies show work in progress; portal copies contain released
-/// tests only.
+/// tests only. Every copy says when a correction of the report waits for a second pathologist's approval.
 /// </summary>
-internal sealed class LabReportBuilder(HospitalDbContext db, DiagnosticsLookups lookups, TimeProvider time)
+internal sealed class LabReportBuilder(HospitalDbContext db, DiagnosticsLookups lookups, IApprovals approvals, TimeProvider time)
 {
     public const string VerificationPathPrefix = "/api/v1/lab/reports/verify/";
 
@@ -44,6 +45,7 @@ internal sealed class LabReportBuilder(HospitalDbContext db, DiagnosticsLookups 
                          ?? (order.OrderingPractitionerId is { } pid ? (await lookups.PractitionerNamesAsync([pid], ct)).GetValueOrDefault(pid) : null);
         var signatories = await lookups.SignatoriesAsync(results.Where(r => !r.AutoValidated).Select(r => r.VerifiedBy), ct);
         var amendedBy = await lookups.UserNamesAsync(report.Amendments.Select(a => a.AmendedBy), ct);
+        var waiting = await approvals.WaitingSinceAsync(LabAmendmentApproval.Key, nameof(LabReport), [report.Id], ct);
         var today = DiagnosticsTime.Today(time);
 
         var sections = items
@@ -94,10 +96,11 @@ internal sealed class LabReportBuilder(HospitalDbContext db, DiagnosticsLookups 
             signatories.Select(s => new ReportSignatory(s.UserId, s.Name, s.Qualification, s.RegistrationNumber, s.SignatureFileId)).ToList(),
             results.Any(r => r.AutoValidated),
             report.Amendments.OrderBy(a => a.Revision).Select(a => new LabAmendmentView(
-                a.Revision, a.Reason, a.Changes, a.AmendedAt, a.AmendedBy is { } by ? amendedBy.GetValueOrDefault(by) : null)).ToList(),
+                a.Revision, a.Reason, a.Changes, a.AmendedAt, a.AmendedBy is { } by ? amendedBy.GetValueOrDefault(by) : null, a.RequestedByName)).ToList(),
             report.VerificationCode,
             report.VerificationCode is { } code ? VerificationPathPrefix + code : null,
-            await lookups.VerificationUrlAsync(order.FacilityId, DiagnosticKind.Laboratory, report.VerificationCode, ct));
+            await lookups.VerificationUrlAsync(order.FacilityId, DiagnosticKind.Laboratory, report.VerificationCode, ct),
+            waiting.TryGetValue(report.Id, out var asked) ? asked : null);
     }
 
     internal static ReportLetterhead Letterhead(FacilitySnapshot? facility) =>

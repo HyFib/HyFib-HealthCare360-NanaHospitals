@@ -319,7 +319,11 @@ and grants nothing.
   `/api/v1/approvals`):
   - credit notes and write-offs on a finalized bill (audit finding S6): a cashier or the billing desk asks
     (`billing.refunds.request`), an approver issues (`billing.refunds.approve`);
-  - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves.
+  - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves;
+  - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
+    the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
+    a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.
+    A corrected critical value is asked for with the documented call, registered when the correction is made.
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -334,7 +338,8 @@ and grants nothing.
     write-offs already need a second person;
   - whoever raised a purchase requisition or order cannot approve it (`requisition.approve_own`, `po.approve_own`);
   - a lab that sets `lab.separateVerifier` (per facility, off by default for a lab with one pathologist) refuses
-    verification of a result by whoever entered it (`lab.verify_own_result`).
+    verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report
+    waits for a second pathologist (see Maker-checker).
 - **Attendance terminals that push** are registered with the IP address they push from, and punches from any other
   address are refused. A terminal registered before the address was required is held to the first address it calls from.
 - **Switched-off controls are shown.** Outside development, System health shows a critical warning while two-step sign-in

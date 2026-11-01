@@ -6,7 +6,10 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
@@ -29,6 +32,8 @@ internal sealed class LabReportService(
     AntimicrobialCultureReview stewardship,
     PatientAccessGuard records,
     INotificationService notifications,
+    IApprovals approvals,
+    ISettingsService settings,
     IAuditLogger audit,
     ICurrentUser currentUser,
     TimeProvider time,
@@ -82,7 +87,104 @@ internal sealed class LabReportService(
         }
     }
 
-    public async Task<Result> AmendAsync(Guid reportId, AmendReportRequest request, CancellationToken ct)
+    /// <summary>
+    /// Corrects released results. Where the lab requires a second person to verify (R-6,
+    /// <see cref="LabResultService.SeparateVerifierSetting"/>), the correction is asked for: nothing on the report changes
+    /// until another pathologist approves it (<see cref="LabAmendmentApproval"/>), and until then the report says a
+    /// correction is waiting. A lab with one pathologist makes it at once.
+    /// </summary>
+    public async Task<Result<AmendmentOutcome>> AmendAsync(Guid reportId, AmendReportRequest request, CancellationToken ct)
+    {
+        var staged = await StageAmendmentAsync(reportId, request, currentUser.UserId, ct);
+        if (staged.IsFailure)
+        {
+            return staged.Error!;
+        }
+
+        var amendment = staged.Value;
+        var report = amendment.Report;
+        if (await settings.GetAsync<bool?>(LabResultService.SeparateVerifierSetting, report.FacilityId, ct) == true)
+        {
+            // Checked exactly as it would be made, and none of it kept: it is made again, on the report as it is then,
+            // when another pathologist approves it.
+            db.ChangeTracker.Clear();
+            var asked = await approvals.RequestAsync(
+                LabAmendmentApproval.Key,
+                new ApprovalSubject(nameof(LabReport), report.Id, report.Version, report.FacilityId, report.PatientId),
+                new LabAmendmentPayload(report.Id, request),
+                $"Correction of lab report {report.ReportNumber}",
+                [
+                    new("Report", report.ReportNumber),
+                    .. amendment.Changes.Select(c => new ApprovalDetail(c.Test, c.Change)),
+                    .. amendment.Calls.Select(c => new ApprovalDetail("Critical value told to", $"{c.InformedPersonName}, {DocumentFormat.DateTime(c.InformedAt)}")),
+                ],
+                request.Reason,
+                ct);
+            return asked.IsFailure ? asked.Error! : new AmendmentOutcome(asked.Value);
+        }
+
+        var alerts = await RecordAmendmentAsync(amendment, request.Reason, requestedBy: null, ct);
+        if (alerts.IsFailure)
+        {
+            return alerts.Error!;
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        await critical.NotifyVerifiedAsync(alerts.Value, ct);
+        await NotifyOrderingDoctorAsync(amendment.Order, report, ct);
+        await realtime.PublishAsync(report.FacilityId, "lab.report.amended", new { ReportId = report.Id, report.LabOrderId, report.Revision }, ct);
+        return new AmendmentOutcome(null);
+    }
+
+    /// <summary>
+    /// Makes an approved correction, in the approval's transaction (the approval saves and commits): on the report as it
+    /// was when it was asked for, checked again, or not at all. The pathologist who asked and the one who approved are
+    /// both named on the amendment; the alerts go out once the approval commits.
+    /// </summary>
+    internal async Task<Result<string>> AmendApprovedAsync(ApprovalRequest approval, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<LabAmendmentPayload>(approval.Payload);
+        // The report as it is now, tracked: the version checked here is the one the save is made against, so a change
+        // after this read fails the save rather than slipping past the check.
+        var current = await db.Set<LabReport>().FirstOrDefaultAsync(r => r.Id == asked.ReportId, ct);
+        if (current is null)
+        {
+            return Error.NotFound(nameof(LabReport), asked.ReportId);
+        }
+
+        if (current.Version != approval.SubjectVersion)
+        {
+            return Error.Rule("approval.stale",
+                $"Report {current.ReportNumber} changed after this correction was asked for (another correction, or more tests released). Ask again, against the report as it is now.");
+        }
+
+        var staged = await StageAmendmentAsync(asked.ReportId, asked.Request, approval.RequestedBy, ct);
+        if (staged.IsFailure)
+        {
+            return staged.Error!;
+        }
+
+        var amendment = staged.Value;
+        var alerts = await RecordAmendmentAsync(amendment, asked.Request.Reason, (approval.RequestedBy, approval.RequestedByName), ct);
+        if (alerts.IsFailure)
+        {
+            return alerts.Error!;
+        }
+
+        await critical.NotifyVerifiedAfterCommitAsync(alerts.Value, ct);
+        await NotifyOrderingDoctorAfterCommitAsync(amendment.Order, amendment.Report, ct);
+        realtime.PublishAfterCommit(amendment.Report.FacilityId, "lab.report.amended",
+            new { ReportId = amendment.Report.Id, amendment.Report.LabOrderId, amendment.Report.Revision });
+        return $"Revision {amendment.Report.Revision} of report {amendment.Report.ReportNumber}";
+    }
+
+    /// <summary>
+    /// Checks a correction and applies it to the tracked results, saving nothing: every result is on this report and
+    /// released, every value is valid, and a corrected value that is critical has its documented call
+    /// (<paramref name="maker"/> made it). The corrected results are verified by the signed-in pathologist.
+    /// </summary>
+    private async Task<Result<StagedAmendment>> StageAmendmentAsync(Guid reportId, AmendReportRequest request, Guid? maker, CancellationToken ct)
     {
         var report = await db.Set<LabReport>().FirstOrDefaultAsync(r => r.Id == reportId, ct);
         if (report is null)
@@ -106,10 +208,15 @@ internal sealed class LabReportService(
             return Error.Rule("lab.result_not_released", $"Only released results are amended; correct these through result entry: {string.Join(", ", unreleased)}.");
         }
 
+        if (report.Status is not (LabReportStatus.Released or LabReportStatus.Amended))
+        {
+            return Error.Rule("lab.report_not_released", "Only a released report can be amended. Correct unreleased results through result entry.");
+        }
+
         var context = await evaluator.LoadAsync(results, ct);
         var now = time.GetUtcNow();
         var errors = new Dictionary<string, string[]>();
-        var changes = new List<string>();
+        var changes = new List<AmendedValue>();
         var criticalResults = new List<LabResult>();
         for (var i = 0; i < request.Changes.Count; i++)
         {
@@ -131,7 +238,7 @@ internal sealed class LabReportService(
                 continue;
             }
 
-            changes.Add($"{result.TestName}: {before} -> {result.Describe()}");
+            changes.Add(new AmendedValue(result.TestName, $"{before} -> {result.Describe()}"));
             if (result.IsCritical)
             {
                 criticalResults.Add(result);
@@ -144,6 +251,7 @@ internal sealed class LabReportService(
         }
 
         // A corrected critical value is a new communication: the earlier call documented a different value.
+        var calls = new List<CriticalCallLog>();
         if (criticalResults.Count > 0)
         {
             if (request.CriticalCall is null)
@@ -156,43 +264,53 @@ internal sealed class LabReportService(
                 var log = CriticalCallLog.Record(
                     new CriticalFindingRef(DiagnosticKind.Laboratory, result.FacilityId, result.PatientId, $"{result.TestName} {result.Describe()} ({result.Flag}) (amended)", LabResultId: result.Id),
                     request.CriticalCall,
-                    currentUser.UserId,
+                    maker,
                     now);
                 if (log.IsFailure)
                 {
                     return log.Error!;
                 }
 
-                db.Add(log.Value);
+                calls.Add(log.Value);
             }
         }
 
-        await NotifyAsync(results, now, amended: true, ct);
-        var affected = results.Select(r => items[r.LabOrderItemId]).Distinct().ToList();
-        var recorded = report.Amend(order, request.Reason.Trim(), string.Join("; ", changes), affected, criticalResults.Count > 0, currentUser.UserId, now);
+        return new StagedAmendment(report, order, items, results, changes, criticalResults, calls, now);
+    }
+
+    /// <summary>
+    /// Records a staged correction for the caller's save: the call log, the public-health and confidentiality follow-ups,
+    /// the numbered amendment and its audit, and the ordering doctor's SMS for a critical value (queued in the save).
+    /// Returns the in-app alerts to send once it is committed.
+    /// </summary>
+    private async Task<Result<IReadOnlyList<CriticalAlert>>> RecordAmendmentAsync(
+        StagedAmendment amendment, string reason, (Guid Id, string Name)? requestedBy, CancellationToken ct)
+    {
+        var (report, order) = (amendment.Report, amendment.Order);
+        db.AddRange(amendment.Calls);
+        await NotifyAsync(amendment.Results, amendment.At, amended: true, ct);
+        var affected = amendment.Results.Select(r => amendment.Items[r.LabOrderItemId]).Distinct().ToList();
+        var summary = string.Join("; ", amendment.Changes.Select(c => $"{c.Test}: {c.Change}"));
+        var recorded = report.Amend(order, reason.Trim(), summary, affected, amendment.Critical.Count > 0, currentUser.UserId, amendment.At, requestedBy);
         if (recorded.IsFailure)
         {
-            return recorded;
+            return recorded.Error!;
         }
 
-        audit.Add(new AuditEntry(AuditCategories.Clinical, "lab.report.amended", $"Amended report {report.ReportNumber}: {request.Reason.Trim()}")
+        var by = requestedBy is { } maker ? $" (asked for by {maker.Name}, approved by {currentUser.DisplayName ?? currentUser.UserName})" : string.Empty;
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "lab.report.amended", $"Amended report {report.ReportNumber}: {reason.Trim()}{by}")
         {
             PatientId = report.PatientId,
             EntityType = nameof(LabReport),
             EntityId = report.Id.ToString(),
             Severity = AuditSeverity.Warning,
-            Details = new { revision = report.Revision, changes },
+            Details = new { revision = report.Revision, changes = amendment.Changes.Select(c => $"{c.Test}: {c.Change}").ToList(), requestedBy = requestedBy?.Id },
         });
 
-        var alerts = criticalResults.Select(r => new CriticalAlert(
+        var alerts = amendment.Critical.Select(r => new CriticalAlert(
             DiagnosticKind.Laboratory, r.FacilityId, r.PatientId, order.OrderingPractitionerId, r.TestName, $"{r.Describe()} ({r.Flag})", $"/lab/orders/{order.Id}")).ToList();
         await critical.QueueDoctorSmsAsync(alerts, ct);
-        await db.SaveChangesAsync(ct);
-
-        await critical.NotifyVerifiedAsync(alerts, ct);
-        await NotifyOrderingDoctorAsync(order, report, ct);
-        await realtime.PublishAsync(report.FacilityId, "lab.report.amended", new { ReportId = report.Id, report.LabOrderId, report.Revision }, ct);
-        return Result.Success();
+        return alerts;
     }
 
     private async Task<Result<ReleaseOutcome>> ReleaseCoreAsync(LabReport report, CancellationToken ct)
@@ -280,13 +398,39 @@ internal sealed class LabReportService(
         }
 
         var users = await lookups.UserIdsForPractitionerAsync(practitionerId, ct);
+        var (title, body) = AmendedWords(report);
         await AfterCommit.RunAsync(logger, "amendment alert", () => notifications.NotifyUsersAsync(
-            users,
-            $"Lab report amended: {report.ReportNumber}",
-            $"Revision {report.Revision} of report {report.ReportNumber} corrects released results. Review the changes.",
-            $"/lab/reports/{report.Id}",
-            "diagnostics",
-            "warning",
-            ct));
+            users, title, body, $"/lab/reports/{report.Id}", "diagnostics", "warning", ct));
     }
+
+    /// <summary>The same alert as <see cref="NotifyOrderingDoctorAsync"/>, sent only if the caller's transaction commits.</summary>
+    private async Task NotifyOrderingDoctorAfterCommitAsync(LabOrder order, LabReport report, CancellationToken ct)
+    {
+        if (order.OrderingPractitionerId is not { } practitionerId)
+        {
+            return;
+        }
+
+        var users = await lookups.UserIdsForPractitionerAsync(practitionerId, ct);
+        var (title, body) = AmendedWords(report);
+        realtime.AlertUsersAfterCommit(new DeferredUserAlert(users, report.FacilityId, title, body, $"/lab/reports/{report.Id}", "warning"));
+    }
+
+    private static (string Title, string Body) AmendedWords(LabReport report) =>
+        ($"Lab report amended: {report.ReportNumber}",
+            $"Revision {report.Revision} of report {report.ReportNumber} corrects released results. Review the changes.");
+
+    /// <summary>One corrected value, in words: the test and "old -> new".</summary>
+    private sealed record AmendedValue(string Test, string Change);
+
+    /// <summary>A correction checked and applied to the tracked results, not yet recorded or saved.</summary>
+    private sealed record StagedAmendment(
+        LabReport Report,
+        LabOrder Order,
+        IReadOnlyDictionary<Guid, LabOrderItem> Items,
+        IReadOnlyList<LabResult> Results,
+        IReadOnlyList<AmendedValue> Changes,
+        IReadOnlyList<LabResult> Critical,
+        IReadOnlyList<CriticalCallLog> Calls,
+        DateTimeOffset At);
 }

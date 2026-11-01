@@ -128,6 +128,15 @@ export function LabReportPreview({ view }: { view: LabReportView }) {
         </MessageBar>
       )}
 
+      {view.amendmentWaitingSince && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            A correction of this report, asked for {formatDateTime(view.amendmentWaitingSince)}, is waiting for a second
+            pathologist&apos;s approval. Results on it may change.
+          </MessageBarBody>
+        </MessageBar>
+      )}
+
       <section className={styles.patient} aria-label="Patient and report details">
         {labReportPatientRows(view).map(([label, value]) => (
           <div key={label} className={styles.pair}>
@@ -212,7 +221,9 @@ export function LabReportPreview({ view }: { view: LabReportView }) {
           {view.amendments.map((amendment) => (
             <Caption1 key={amendment.revision} block>
               Revision {amendment.revision} · {formatDateTime(amendment.amendedAt)}
-              {amendment.amendedBy ? ` · ${amendment.amendedBy}` : ''}: {amendment.reason}. {amendment.changes}
+              {amendment.amendedBy ? ` · ${amendment.amendedBy}` : ''}
+              {amendment.requestedBy ? ` (asked for by ${amendment.requestedBy})` : ''}: {amendment.reason}.{' '}
+              {amendment.changes}
             </Caption1>
           ))}
         </section>

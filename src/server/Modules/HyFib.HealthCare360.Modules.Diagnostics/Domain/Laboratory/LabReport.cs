@@ -81,10 +81,13 @@ public sealed class LabReport : AuditableEntity, IFacilityScoped
 
     /// <summary>
     /// Records a post-release correction. The corrected tests are re-announced to the EHR marked "(amended)"; the
-    /// amendment reason and the old → new values are printed on every later copy of the report.
+    /// amendment reason and the old → new values are printed on every later copy of the report. A correction one
+    /// pathologist asked for and another approved names both: <paramref name="by"/> approved it, and
+    /// <paramref name="requestedBy"/> asked for it.
     /// </summary>
     public Result Amend(
-        LabOrder order, string reason, string changeSummary, IReadOnlyCollection<LabOrderItem> affectedItems, bool hasCritical, Guid? by, DateTimeOffset at)
+        LabOrder order, string reason, string changeSummary, IReadOnlyCollection<LabOrderItem> affectedItems, bool hasCritical, Guid? by, DateTimeOffset at,
+        (Guid Id, string Name)? requestedBy = null)
     {
         if (Status is not (LabReportStatus.Released or LabReportStatus.Amended))
         {
@@ -100,6 +103,8 @@ public sealed class LabReport : AuditableEntity, IFacilityScoped
             Changes = changeSummary.Length > 2000 ? changeSummary[..2000] : changeSummary,
             AmendedAt = at,
             AmendedBy = by,
+            RequestedBy = requestedBy?.Id,
+            RequestedByName = requestedBy?.Name,
         });
 
         foreach (var item in affectedItems)
@@ -123,5 +128,15 @@ public sealed class LabReportAmendment : AuditableEntity
     public string Reason { get; set; } = string.Empty;
     public string Changes { get; set; } = string.Empty;
     public DateTimeOffset AmendedAt { get; set; }
+
+    /// <summary>Who released the correction: the pathologist who made it, or the second pathologist who approved it.</summary>
     public Guid? AmendedBy { get; set; }
+
+    /// <summary>
+    /// The pathologist who asked for the correction, where the lab requires a second person to verify
+    /// (<c>lab.separateVerifier</c>); null when the pathologist who made it released it.
+    /// </summary>
+    public Guid? RequestedBy { get; set; }
+
+    public string? RequestedByName { get; set; }
 }

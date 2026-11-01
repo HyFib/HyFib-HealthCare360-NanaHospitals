@@ -52,6 +52,12 @@ public interface IApprovals
     /// </summary>
     Task<Result<ApprovalRequestDto>> RequestAsync<TPayload>(
         string kind, ApprovalSubject subject, TPayload payload, string summary, IReadOnlyList<ApprovalDetail> details, string reason, CancellationToken ct);
+
+    /// <summary>
+    /// The records among these with a change of this kind still waiting for a decision (not yet decided, withdrawn or
+    /// expired), and when it was asked for, so the module can show the record as waiting. Records with none are left out.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, DateTimeOffset>> WaitingSinceAsync(string kind, string subjectType, IReadOnlyCollection<Guid> subjectIds, CancellationToken ct);
 }
 
 public enum ApprovalView
@@ -147,6 +153,22 @@ internal sealed class ApprovalService(
         await notifications.NotifyPermissionHoldersAsync(action.ApprovePermission, request.FacilityId, $"{request.Title} waiting for approval",
             $"{request.Summary}. Asked for by {request.RequestedByName}.", Link(request.Id), Category, cancellationToken: ct);
         return await ToDtoAsync(request, ct);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, DateTimeOffset>> WaitingSinceAsync(
+        string kind, string subjectType, IReadOnlyCollection<Guid> subjectIds, CancellationToken ct)
+    {
+        if (subjectIds.Count == 0)
+        {
+            return new Dictionary<Guid, DateTimeOffset>();
+        }
+
+        var now = time.GetUtcNow();
+        var waiting = await db.Set<ApprovalRequest>().AsNoTracking()
+            .Where(r => r.SubjectType == subjectType && subjectIds.Contains(r.SubjectId) && r.Kind == kind && r.Status == ApprovalStatus.Pending && r.ExpiresAt > now)
+            .Select(r => new { r.SubjectId, r.RequestedAt })
+            .ToListAsync(ct);
+        return waiting.GroupBy(r => r.SubjectId).ToDictionary(g => g.Key, g => g.Min(r => r.RequestedAt));
     }
 
     public async Task<Result<ApprovalRequestDto>> ApproveAsync(Guid id, string? note, uint version, CancellationToken ct)

@@ -260,6 +260,7 @@ internal sealed class LabReportAmendmentConfiguration : IEntityTypeConfiguration
         b.ToTable("lab_report_amendments", DiagnosticsSchema.Name);
         b.Property(x => x.Reason).HasMaxLength(500);
         b.Property(x => x.Changes).HasMaxLength(2000);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
     }
 }
 

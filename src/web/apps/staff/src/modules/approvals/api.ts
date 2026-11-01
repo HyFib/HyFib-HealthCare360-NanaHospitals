@@ -14,7 +14,8 @@ export interface ApprovalDetail {
 }
 
 /**
- * A change one person asked for and another must approve before it is made (credit notes, write-offs, patient merges).
+ * A change one person asked for and another must approve before it is made (credit notes, write-offs, patient merges,
+ * lab report corrections).
  * The server decides what each user sees and may do: `canDecide` is false for the person who asked.
  */
 export interface ApprovalRequestDto {
@@ -93,6 +94,11 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
 
 /**
  * Who may ask for or decide a change of each kind: the inbox is for them. Kept with the server's kinds
- * (IApprovalAction): credit notes and write-offs, and patient merges.
+ * (IApprovalAction): credit notes and write-offs, patient merges, and lab report corrections.
  */
-export const APPROVAL_PERMISSIONS = ['billing.refunds.request', 'billing.refunds.approve', 'patients.merge'] as const;
+export const APPROVAL_PERMISSIONS = [
+  'billing.refunds.request',
+  'billing.refunds.approve',
+  'patients.merge',
+  'lab.results.verify',
+] as const;

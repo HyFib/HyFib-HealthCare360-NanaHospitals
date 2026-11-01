@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 
@@ -23,6 +24,12 @@ public sealed record AmendmentChange(Guid ResultId, string Value, string? Remark
 
 /// <summary>Post-release correction. <see cref="CriticalCall"/> is required when a corrected value is critical.</summary>
 public sealed record AmendReportRequest(string Reason, IReadOnlyList<AmendmentChange> Changes, CriticalCallDetails? CriticalCall);
+
+/// <summary>
+/// What became of an amendment: made at once (<paramref name="Approval"/> null), or asked for, waiting for a second
+/// pathologist's approval where the lab requires a separate verifier.
+/// </summary>
+public sealed record AmendmentOutcome(ApprovalRequestDto? Approval);
 
 // ---------------------------------------------------------------- printable report (shared by lab, radiology, cardiology)
 
@@ -77,13 +84,20 @@ public sealed record LabReportTest(
 
 public sealed record LabReportSection(LabSection Section, IReadOnlyList<LabReportTest> Tests);
 
-public sealed record LabAmendmentView(int Revision, string Reason, string Changes, DateTimeOffset AmendedAt, string? AmendedBy);
+/// <param name="AmendedBy">Who released the correction.</param>
+/// <param name="RequestedBy">
+/// The pathologist who asked for it, where a second pathologist approved it (the lab requires a separate verifier);
+/// null when the one who made it released it.
+/// </param>
+public sealed record LabAmendmentView(int Revision, string Reason, string Changes, DateTimeOffset AmendedAt, string? AmendedBy, string? RequestedBy = null);
 
 /// <summary>
 /// Everything needed to render the A4 report (PrintDocument in the UI) including the QR verification code (LIS-07).
 /// Portal copies contain released tests only. Print <c>VerificationUrl</c> as the QR code when present (the portal's
 /// public page <c>{portal.baseUrl}/portal/verify/lab/{code}</c>, which resolves outside the hospital LAN); it is null
 /// until <c>portal.baseUrl</c> is configured. <c>VerificationPath</c> (the server-relative API) is kept for compatibility.
+/// <c>AmendmentWaitingSince</c> is when a correction of the released report was asked for that still waits for a second
+/// pathologist's approval: its results may change.
 /// </summary>
 public sealed record LabReportView(
     Guid ReportId,
@@ -106,7 +120,8 @@ public sealed record LabReportView(
     IReadOnlyList<LabAmendmentView> Amendments,
     string? VerificationCode,
     string? VerificationPath,
-    string? VerificationUrl);
+    string? VerificationUrl,
+    DateTimeOffset? AmendmentWaitingSince = null);
 
 /// <summary>Public QR verification answer: proves the report is genuine without disclosing results or identity.</summary>
 public sealed record ReportAuthenticity(
