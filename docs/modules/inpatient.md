@@ -9,7 +9,7 @@ round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.In
 
 It implements the Platform contracts `IRoomClassDirectory` (Billing's rate list) and `IAdmissionDirectory` (whether a
 stay goes on, read in every facility: Clinical takes no order for a stay that is discharged or cancelled), and asks
-`IBillingStatusProvider` before it completes a discharge.
+`IBillingStatusProvider` and every `IDischargeHoldSource` before it completes a discharge.
 
 ## Permissions
 
@@ -128,12 +128,18 @@ section of the doctor's worklist (EMR-01, see the Clinical module).
 | POST | `/initiate` | `inpatient.admissions.discharge` | `InitiateDischargeRequest` (expectedDischargeDate, notes) → `DischargeResult` (all due bed days are posted first) |
 | POST | `/revoke` | `inpatient.admissions.discharge` | `RevokeDischargeRequest` → `DischargeResult` |
 | GET | `/clearance` | discharge or admissions.read | → `DischargeClearanceDto` (from `IBillingStatusProvider`) |
-| POST | `/complete` | `inpatient.admissions.discharge` | `CompleteDischargeRequest` (dischargeType Normal/Referred/Lama/Dama/Absconded/Expired, dischargedAt ≤ 48 h back, notes — required for LAMA/DAMA/absconded, notifyPatient) → `DischargeResult`; 422 `discharge.billing_pending` (`data.outstanding`) until Billing clears |
+| POST | `/complete` | `inpatient.admissions.discharge` | `CompleteDischargeRequest` (dischargeType Normal/Referred/Lama/Dama/Absconded/Expired, dischargedAt ≤ 48 h back, notes — required for LAMA/DAMA/absconded, notifyPatient) → `DischargeResult`; 422 `discharge.in_theatre` while the stay has a surgery in pre-op or in progress (the detail names each case), then 422 `discharge.billing_pending` (`data.outstanding`) until Billing clears |
 | GET | `/api/v1/inpatient/discharges/pending?wardId` | `inpatient.admissions.read` | → `PendingDischargeItem[]` |
 
 Rules: routine discharges (Normal, Referred, LAMA, DAMA) must be initiated and cleared by Billing; death and abscondence
-are recorded immediately without clearance and without the "discharged" SMS. Completion closes the visit, closes the
-bed assignment and sends the bed to housekeeping.
+are recorded immediately without clearance and without the "discharged" SMS. Whatever the type, a discharge is not
+completed while another department still has the patient: before anything is charged or changed, `DischargeService`
+asks every `IDischargeHoldSource` (Platform contract; today SpecialtyCare's theatre: a surgery of the stay received in
+pre-op or under way), and refuses with the first hold's code and every hold's message. It asks again in its transaction,
+under the stay's lock (`EncounterLocks`, held to the commit), which the theatre also takes to receive the patient in
+pre-op or start the operation: a case taken into the theatre at the same moment is either seen, or finds the stay
+ended. Completion closes the visit,
+closes the bed assignment and sends the bed to housekeeping.
 
 ### Census — `GET /api/v1/inpatient/census?from&to&wardId` (`inpatient.admissions.read`)
 → `CensusReport`: hospital and per-ward `CensusSummary` (admissions, discharges, deaths, daily midnight census,
@@ -178,7 +184,7 @@ fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" 
 |---|---|---|
 | `PatientAdmitted` | raised | on admission; includes `WardId`, `BedId`, `BedServiceItemId` (ward tariff), `PayerType` |
 | `PatientTransferred` | raised | includes `FromBedId`, `ToBedId`, `ToBedServiceItemId`, `ToWardId` |
-| `AdmissionCancelled` | raised | on cancellation, with the reason. The admission's visit is cancelled in the same transaction (Billing reacts to `VisitCancelled`); Dietary stops the diet order and future meals, Pharmacy cancels pending ward indents, SpecialtyCare cancels waiting surgeries and unissued blood requests, Diagnostics withdraws the tests not drawn and the studies not done |
+| `AdmissionCancelled` | raised | on cancellation, with the reason. The admission's visit is cancelled in the same transaction (Billing reacts to `VisitCancelled`); Dietary stops the diet order and future meals, Pharmacy cancels pending ward indents, SpecialtyCare cancels the surgeries booked during the stay and still waiting (and gives back those booked before it) and unissued blood requests, Diagnostics withdraws the tests not drawn and the studies not done |
 | `DischargeInitiated` | raised | on initiation (and on direct completion of death/abscondence) |
 | `DischargeRevoked` | raised | when an initiated discharge is revoked: Billing opens the IP account again, so the stay is not settled while the patient is in |
 | `PatientDischarged` | raised and handled | `DischargeType` = `Normal`, `Referred`, `Lama`, `Dama`, `Absconded` or `Expired`; Diagnostics withdraws the stay's tests whose sample is not drawn. Handled here too: the stay's chart lines stop ("Patient discharged") and the doses scheduled from the discharge on are cancelled; doses that fell due before it stay for the nurse to document |

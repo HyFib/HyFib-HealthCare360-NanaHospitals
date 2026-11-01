@@ -71,6 +71,23 @@ internal static class SpecialtyLookups
         return admission is null ? (null, null) : (admission.Id, admission.VisitId);
     }
 
+    /// <summary>
+    /// The stay a surgery booked now belongs to: the admission the caller named, else the patient's current one, whatever
+    /// visit it was booked or ordered from (that visit is kept; without one the stay's own is used). Its theatre and implant
+    /// charges then go to the running IP bill and count for the discharge clearance, and a case under way holds the discharge.
+    /// </summary>
+    public static async Task<(Guid? AdmissionId, Guid? VisitId)> SurgeryEncounterAsync(
+        HospitalDbContext db, Guid patientId, Guid? admissionId, Guid? visitId, CancellationToken ct)
+    {
+        if (admissionId is not null)
+        {
+            return (admissionId, visitId);
+        }
+
+        var admission = await ActiveAdmissionAsync(db, patientId, ct);
+        return admission is null ? (null, visitId) : (admission.Id, visitId ?? admission.VisitId);
+    }
+
     public static StaffStamp Stamp(this ICurrentUser user, DateTimeOffset at) =>
         new(user.UserId, user.DisplayName ?? user.UserName ?? "Unknown user", at);
 }

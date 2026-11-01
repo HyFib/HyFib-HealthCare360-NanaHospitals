@@ -40,7 +40,7 @@ and write a PHI-access audit entry. Donor detail views write a `donor.accessed` 
 | GET | `/implants/trace?lot=&serial=` | `ot.theatres.manage` | → `ImplantTraceItem[]` for a device recall (phone masked; audited) |
 | GET | `/bookings?from=&to=&status=&theatreId=&surgeonId=&search=&sort=scheduledStart\|bookingNumber\|status\|priority\|createdAt` | `ot.read` | → paged `SurgeryListItem` |
 | GET | `/bookings/{id}` | `ot.read` | → `SurgeryDetail` (patient summary, team, slot, status, timestamps, pre-op and WHO checklists with items and attestations, charge status) |
-| POST | `/bookings` | `ot.bookings.manage` | `CreateSurgeryBookingRequest` (patientId, admissionId?, procedureServiceItemId?, procedureName, laterality, surgeonId, assistantIds, anaesthetistId, anaesthesiaType GA/Spinal/Epidural/Regional/Local/Sedation, priority Elective/Urgent/Emergency, preferredDate, optional theatreId+scheduledStart+scheduledEnd) → 201 `SurgeryCreated` (id, bookingNumber, status). 409 `surgery.slot_conflict` with the conflicts |
+| POST | `/bookings` | `ot.bookings.manage` | `CreateSurgeryBookingRequest` (patientId, admissionId?, visitId?, procedureServiceItemId?, procedureName, laterality, surgeonId, assistantIds, anaesthetistId, anaesthesiaType GA/Spinal/Epidural/Regional/Local/Sedation, priority Elective/Urgent/Emergency, preferredDate, optional theatreId+scheduledStart+scheduledEnd) → 201 `SurgeryCreated` (id, bookingNumber, status). 409 `surgery.slot_conflict` with the conflicts. Without an `admissionId`, a patient in a bed gets the current admission whatever visit is named (the visit is kept; without one, the stay's), so the OT and implant charges go to the IP bill (`SpecialtyLookups.SurgeryEncounterAsync`) |
 | PUT | `/bookings/{id}` | `ot.bookings.manage` | `UpdateSurgeryPlanRequest` (procedure, team, anaesthesia, priority, version) → 204. A booked slot is re-checked for conflicts |
 | POST | `/bookings/{id}/schedule` | `ot.bookings.manage` | `ScheduleSurgeryRequest` (theatreId, scheduledStart, scheduledEnd, version) → 204 / 409 |
 | POST | `/bookings/{id}/postpone` · `/cancel` | `ot.bookings.manage` | `SurgeryReasonRequest` (reason) → 204. Postpone resets the WHO checklist |
@@ -181,10 +181,19 @@ Clinical records it as a procedure on the patient's record (EHR-01). Otherwise t
 |---|---|---|
 | `ServiceOrderPlaced` (Category **Physiotherapy**) | `PhysioOrderHandler` | Creates a `PhysioReferral` (idempotent on `OrderItemId`); order `Quantity` = sessions prescribed (`sessionsOrdered`), the default for the treatment plan |
 | `ServiceOrderPlaced` (Category **BloodBank**, codes BB-WB/PRBC/FFP/PLT/CRYO) | `BloodOrderHandler` | Creates a `BloodRequest` for order `Quantity` units (at least 1; Stat → Emergency) |
-| `ServiceOrderPlaced` (Category **Surgery**) | `SurgeryOrderHandler` | Creates a *Requested* `SurgeryBooking` with the ordering doctor as surgeon |
+| `ServiceOrderPlaced` (Category **Surgery**) | `SurgeryOrderHandler` | Creates a *Requested* `SurgeryBooking` with the ordering doctor as surgeon; ordered for a patient in a bed, from whatever visit, it is the stay's (as `POST /bookings`) |
 | `ServiceOrderCancelled` | the three handlers above | Cancels the work item if no treatment, issue or surgery has happened yet, and frees reserved blood |
-| `PatientAdmitted` / `PatientDischarged` / `AdmissionCancelled` | `AdmissionEventHandlers` | Maintains `specialtycare.admissions`, so charges go to the running IP bill. On discharge or cancellation: cancels waiting surgeries, cancels unissued blood requests (frees reserved units), and detaches future dialysis sessions from the closed admission |
+| `PatientAdmitted` / `PatientDischarged` / `AdmissionCancelled` | `AdmissionEventHandlers` | Maintains `specialtycare.admissions`, so charges go to the running IP bill. On admission, the patient's surgeries at the admission's facility that wait with no admission (Requested, Scheduled, Postponed) join the stay, keeping their visit. On discharge or cancellation: cancels the waiting surgeries booked during the stay, gives back those booked before it (created before the admission time: no admission again, slot kept), cancels unissued blood requests (frees reserved units), and detaches future dialysis sessions from the closed admission |
 | `PatientsMerged` (Patients) | `PatientMergeHandler` | Re-points every patient-linked row to the surviving UHID (all facilities). The rows move in set-based statements, so one audit entry in the merge's transaction, `specialtycare.records_moved` (on the duplicate's record, under the surviving patient), lists the ids moved from each table, the duplicate's dialysis profiles deactivated and its sessions cancelled for clashing with the survivor's: what an unmerge would put back |
+
+**Discharge hold** (`TheatreDischargeHolds`, the Platform contract `IDischargeHoldSource` Inpatient asks before it
+completes a discharge): while a surgery of the stay is received in pre-op or in progress, the discharge, of whatever
+type, is refused with 422 `discharge.in_theatre`, naming the case ("Surgery {no.} ({procedure}) is in progress…", "The
+patient is in pre-op for surgery {no.}…: complete, postpone or cancel it before the discharge"). A case still waiting for
+its day holds nothing; the discharge deals with it as above. Receiving the patient in pre-op and starting the operation
+take the stay's lock (`EncounterLocks`) and read the case again under it, in the transaction that saves them, as the
+discharge asks the theatre under it: a discharge saved at the same moment either waits for the theatre and is refused,
+or commits first, and the theatre then finds the case cancelled or given back.
 
 ## Charges (`IChargePoster`, idempotent on SourceModule + SourceReference)
 | SourceModule | SourceReference | Service code | When |

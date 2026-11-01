@@ -26,6 +26,23 @@ public interface IAdmissionDirectory
     Task<StaySummary?> FindAsync(Guid admissionId, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Work of a stay that keeps the patient in the hospital, however the stay is to end: an operation under way in the
+/// theatre. <see cref="Code"/> is the code the discharge is refused with; <see cref="Message"/> names the work and says
+/// what is to be done first.
+/// </summary>
+public sealed record DischargeHold(string Code, string Message);
+
+/// <summary>
+/// A department's word on whether a stay may end now, from a module Inpatient cannot reference (SpecialtyCare's theatre).
+/// Inpatient asks every source before it completes a discharge, and refuses it while any of them names a hold.
+/// </summary>
+public interface IDischargeHoldSource
+{
+    /// <summary>What keeps the patient of <paramref name="admissionId"/> from leaving now; empty when nothing does.</summary>
+    Task<IReadOnlyList<DischargeHold>> HoldsAsync(Guid admissionId, CancellationToken cancellationToken);
+}
+
 /// <summary>Fallback used until the Inpatient module registers its directory: nothing is known of any admission.</summary>
 internal sealed class NullAdmissionDirectory : IAdmissionDirectory
 {

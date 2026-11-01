@@ -138,6 +138,7 @@ docs/                                     SRS, architecture, security, deploymen
 | `IBillingStatusProvider` — paid status of order lines, outstanding dues, discharge clearance | Billing | Diagnostics, Inpatient, Front office |
 | `IAdmissionDirectory` — whether a stay goes on, is discharged or was cancelled | Inpatient | Clinical (no order for a stay that has ended) |
 | `EncounterLocks` — the transaction-scoped lock of a visit or a stay, taken by what orders on it and what closes it | Platform | Clinical (orders, check-ups), Diagnostics (work withdrawn when a visit or stay closes) |
+| `IDischargeHoldSource` — work that keeps the patient in the hospital (several sources may answer) | SpecialtyCare (a surgery in pre-op or under way) | Inpatient (discharge completion) |
 | `IVerifiedCodingSource` — the medical records coding of an admission or visit, once a second coder has verified it | Clinical | Billing (insurance claims) |
 | `INotificationService` — patient/staff notifications (SMS, WhatsApp, e-mail, in-app) | Platform + Integrations | all |
 | `IRealtimePublisher` — push events to SignalR groups | Platform | all |
