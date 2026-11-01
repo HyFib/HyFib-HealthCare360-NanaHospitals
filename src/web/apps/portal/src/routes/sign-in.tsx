@@ -220,7 +220,9 @@ function SignInPage() {
   const [checking, setChecking] = useState(false);
   const codeInput = useRef<HTMLInputElement>(null);
   const phoneInput = useRef<HTMLInputElement>(null);
-  const now = useNow(1000, step === 'code');
+  // The clock runs on both steps. A wait can start on the number's step ("too many codes", or a resend wait carried back
+  // by "Change number"); a clock stopped there would hold its countdown, and the Send code button, until a reload.
+  const now = useNow(1000);
 
   useEffect(() => {
     if (features.portal) {
