@@ -115,7 +115,7 @@ public sealed class AgentTests : IDisposable
     }
 
     [Fact]
-    public void Finds_the_intermediate_in_the_handshake_whether_it_is_in_the_extra_store_or_the_chain()
+    public void Trusts_an_intermediate_the_server_sent_and_not_one_only_this_computer_found()
     {
         using var ca = CreateCa("CN=Nana Hospitals CA");
         using var intermediate = CreateIntermediate(ca, "CN=Nana Hospitals LAN CA");
@@ -128,13 +128,14 @@ public sealed class AgentTests : IDisposable
         handshake.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         handshake.Build(server);
 
-        trust.Validate(server, handshake, "hc360-srv").ShouldBeTrue();
+        trust.Validate(server, handshake, "hc360-srv").ShouldBeTrue("the server sent it: the handshake's extra store holds it");
 
-        // As the TLS callback may pass it: the intermediate only among the chain's elements.
+        // Not sent, only among the elements of the chain the platform built (on Windows, from this computer's own stores):
+        // whether the server is trusted must not depend on what happens to be on this computer.
         handshake.ChainPolicy.ExtraStore.Clear();
-        ServerTrust.Intermediates(handshake, server).Cast<X509Certificate2>().Select(c => c.Subject)
-            .ShouldContain("CN=Nana Hospitals LAN CA");
-        trust.Validate(server, handshake, "hc360-srv").ShouldBeTrue();
+        ServerTrust.Intermediates(handshake, server).ShouldBeEmpty();
+        trust.Validate(server, handshake, "hc360-srv").ShouldBeFalse();
+        trust.IsTrusted(server, "hc360-srv", [intermediate]).ShouldBeTrue();
     }
 
     [Fact]

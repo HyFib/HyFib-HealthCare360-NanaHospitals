@@ -38,7 +38,7 @@ internal sealed class ServerTrust : IDisposable
 
     /// <summary>
     /// Whether <paramref name="serverCertificate"/> may be trusted for <paramref name="host"/>: it names the host,
-    /// is for a TLS server, and chains to exactly the pinned CA, directly or through <paramref name="intermediates"/>
+    /// is for a TLS server, and chains to exactly the pinned CA, directly or only through <paramref name="intermediates"/>
     /// (the CA certificates the server sent in the handshake).
     /// </summary>
     public bool IsTrusted(
@@ -66,13 +66,23 @@ internal sealed class ServerTrust : IDisposable
             return false;
         }
 
+        // Built from what the server sent and the pinned CA only: Windows also takes certificates from this computer's own
+        // stores to build a chain, and whether the server is trusted must not depend on what happens to be there.
+        for (var link = 1; link < chain.ChainElements.Count - 1; link++)
+        {
+            var linked = chain.ChainElements[link].Certificate.RawData;
+            if (intermediates is null || !intermediates.Any(sent => sent.RawData.AsSpan().SequenceEqual(linked)))
+            {
+                return false;
+            }
+        }
+
         return chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(_ca.RawData);
     }
 
     /// <summary>
-    /// The TLS callback: <paramref name="handshake"/> is the chain .NET built for the server's certificate. The
-    /// intermediates the server sent are in its extra store, and those .NET could place are in its elements too; both
-    /// are offered, so a certificate issued below the pinned CA is trusted whichever way the platform passes them.
+    /// The TLS callback: <paramref name="handshake"/> is the chain .NET built for the server's certificate, whose extra store
+    /// holds what the server sent. Only that is offered: the chain's own elements may come from this computer's stores.
     /// </summary>
     public bool Validate(X509Certificate? certificate, X509Chain? handshake, string host)
     {
@@ -85,7 +95,7 @@ internal sealed class ServerTrust : IDisposable
         return IsTrusted(certificate2, host, Intermediates(handshake, certificate2));
     }
 
-    /// <summary>Every certificate of the handshake other than the server's own.</summary>
+    /// <summary>What the server sent in the handshake besides its own certificate.</summary>
     internal static X509Certificate2Collection Intermediates(X509Chain? handshake, X509Certificate2 server)
     {
         var intermediates = new X509Certificate2Collection();
@@ -94,12 +104,11 @@ internal sealed class ServerTrust : IDisposable
             return intermediates;
         }
 
-        intermediates.AddRange(handshake.ChainPolicy.ExtraStore);
-        foreach (var element in handshake.ChainElements)
+        foreach (var sent in handshake.ChainPolicy.ExtraStore)
         {
-            if (!element.Certificate.RawData.AsSpan().SequenceEqual(server.RawData))
+            if (!sent.RawData.AsSpan().SequenceEqual(server.RawData))
             {
-                intermediates.Add(element.Certificate);
+                intermediates.Add(sent);
             }
         }
 

@@ -645,6 +645,10 @@ internal static class ServerCli
         if (imported.CrossSignedUntil is { } rolledUntil)
         {
             Console.WriteLine($"With the rollover's certificates: this server serves devices that pin the previous CA until {rolledUntil:dd MMM yyyy}.");
+            if (!imported.HeldForWindows)
+            {
+                Console.Error.WriteLine(WindowsCannotSend);
+            }
         }
 
         if (imported.PreviousKeptAs is { } keptAs)
@@ -750,6 +754,11 @@ internal static class ServerCli
         Console.WriteLine($"New CA: {GroupFingerprint(rolled.Fingerprint)} (valid until {rolled.ExpiresAt:dd MMM yyyy}).");
         Console.WriteLine($"The CA it replaces, {GroupFingerprint(rolled.PreviousFingerprint)}, vouches for it until {rolled.CrossSignedUntil:dd MMM yyyy}: every device that");
         Console.WriteLine($"trusts that CA trusts the server until then.{(rolled.PreviousKeptAs is { } keptAs ? $" It is kept as {keptAs}." : "")}");
+        if (!rolled.HeldForWindows)
+        {
+            Console.Error.WriteLine(WindowsCannotSend);
+        }
+
         Console.WriteLine("Next, as CA-ROLLOVER.md says:");
         Console.WriteLine("  1. Start the HC360Server service (or restart it): it issues itself a certificate from the new CA, and sends the CA's certificate with it.");
         Console.WriteLine("  2. On a warm standby and every other server node, import the CA again: 'certificates export-ca' here, 'certificates import-ca' there.");
@@ -757,6 +766,10 @@ internal static class ServerCli
         Console.WriteLine("     systems that call HC360, and set HC360 Desktop and the lab agents up again with the new fingerprint, one at a time.");
         return 0;
     }
+
+    /// <summary>Said when Windows was not given the rollover's certificate (<c>WindowsTlsChain</c>): devices on the old CA would be cut off.</summary>
+    private const string WindowsCannotSend =
+        "Windows was not given the certificate the previous CA signed: it would send the server's certificate without it, and devices that pin the previous CA would refuse the server. Run this command again from an elevated prompt.";
 
     /// <summary>
     /// Checks HC360 addresses as a device does, for a scheduled task or a monitoring tool (SRS DED-04): the exit code is the

@@ -27,17 +27,25 @@ public sealed record NewHospitalCa(string Fingerprint, DateTimeOffset ExpiresAt,
 /// <summary>What <see cref="LanCertificateManager.ImportCa"/> did.</summary>
 /// <param name="Changed">False when this server already had that CA.</param>
 /// <param name="PreviousKeptAs">The file name a different CA that was here was kept under.</param>
+/// <param name="HeldForWindows">
+/// False when, on Windows, no certificate store took the rollover's certificate (<see cref="WindowsTlsChain"/>): Windows then
+/// sends the server's certificate without it. The command is run as an administrator to put it in the computer's store.
+/// </param>
 public sealed record ImportedHospitalCa(
-    string Fingerprint, DateTimeOffset ExpiresAt, bool Changed, string? PreviousKeptAs, DateTimeOffset? CrossSignedUntil = null);
+    string Fingerprint, DateTimeOffset ExpiresAt, bool Changed, string? PreviousKeptAs, DateTimeOffset? CrossSignedUntil = null, bool HeldForWindows = true);
 
 /// <summary>
 /// What <see cref="LanCertificateManager.RollCa"/> made: the new CA (the old one's name, a new key), the CA it replaced
 /// (kept under <paramref name="PreviousKeptAs"/>), and until when devices that pin the replaced CA still trust the server
 /// (<paramref name="CrossSignedUntil"/>, the replaced CA's expiry).
 /// </summary>
+/// <param name="HeldForWindows">
+/// False when, on Windows, no certificate store took the certificate the replaced CA signed (<see cref="WindowsTlsChain"/>):
+/// Windows then sends the server's certificate without it, and devices that pin the replaced CA refuse the server.
+/// </param>
 public sealed record RolledHospitalCa(
     string Fingerprint, DateTimeOffset ExpiresAt, string PreviousFingerprint, DateTimeOffset PreviousExpiresAt, string? PreviousKeptAs,
-    DateTimeOffset CrossSignedUntil);
+    DateTimeOffset CrossSignedUntil, bool HeldForWindows = true);
 
 /// <summary>
 /// TLS for the hospital LAN/WiFi (DED-04, ADR-005). On first start it creates a private hospital CA and a
@@ -99,6 +107,10 @@ public sealed class LanCertificateManager : IDisposable
     private X509Certificate2? _cross;
     private X509Certificate2? _previousCa;
     private SslStreamCertificateContext? _context;
+    private IReadOnlyList<X509Certificate2> _sent = [];
+
+    // What this server put in the Windows certificate stores for Windows' TLS to send (WindowsTlsChain).
+    private readonly List<X509Certificate2> _heldForWindows = [];
     private ITimer? _expiryCheck;
 
     public LanCertificateManager(
@@ -135,6 +147,22 @@ public sealed class LanCertificateManager : IDisposable
             lock (_gate)
             {
                 return _context;
+            }
+        }
+    }
+
+    /// <summary>
+    /// What the server sends after its own certificate, as HC360 decides it: after a rollover, the certificate the previous CA
+    /// signed for this one and the previous CA; else nothing. On Windows these are also put where its TLS finds them
+    /// (<see cref="WindowsTlsChain"/>); <see cref="ServerCertificateContext"/> holds what .NET made of them on this computer.
+    /// </summary>
+    public IReadOnlyList<X509Certificate2> SentWithCertificate
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _sent;
             }
         }
     }
@@ -393,7 +421,39 @@ public sealed class LanCertificateManager : IDisposable
             extra.Add(_previousCa);
         }
 
+        HoldForWindows(extra);
+        _sent = [.. extra];
         _context = SslStreamCertificateContext.Create(_server, extra, offline: true);
+    }
+
+    /// <summary>
+    /// On Windows, puts what the server sends after its own certificate where Windows' TLS finds it, and takes out what it
+    /// no longer sends (the rollover's certificates once the previous CA has expired). Before the context is made, so .NET
+    /// finds the chain whole. Under <see cref="_gate"/>.
+    /// </summary>
+    private void HoldForWindows(X509Certificate2Collection sent)
+    {
+        var dropped = _heldForWindows.Where(held => !sent.Any(c => c.RawData.AsSpan().SequenceEqual(held.RawData))).ToList();
+        WindowsTlsChain.Withdraw(dropped);
+        foreach (var gone in dropped)
+        {
+            _heldForWindows.Remove(gone);
+            gone.Dispose();
+        }
+
+        var added = sent.Where(c => !_heldForWindows.Any(held => held.RawData.AsSpan().SequenceEqual(c.RawData))).ToList();
+        if (added.Count == 0)
+        {
+            return;
+        }
+
+        if (!WindowsTlsChain.Publish(added))
+        {
+            _logger.LogError(
+                "Windows has no certificate store this server may put the certificate the previous CA signed in: it sends its certificate without it, and devices that pin the previous CA refuse it. Run 'certificates import-ca' or 'certificates roll-ca' as an administrator (docs/deployment/CA-ROLLOVER.md).");
+        }
+
+        _heldForWindows.AddRange(added.Select(c => X509CertificateLoader.LoadCertificate(c.RawData)));
     }
 
     private X509Certificate2 LoadOrCreateCa()
@@ -680,15 +740,16 @@ public sealed class LanCertificateManager : IDisposable
         var cross = bundle.FirstOrDefault(c => !c.RawData.AsSpan().SequenceEqual(ca.RawData)
             && c.PublicKey.EncodedKeyValue.RawData.AsSpan().SequenceEqual(ca.PublicKey.EncodedKeyValue.RawData));
         var previous = cross is null ? null : bundle.FirstOrDefault(c => !c.RawData.AsSpan().SequenceEqual(cross.RawData) && IsCrossFor(cross, ca, c));
-        var crossUntil = WriteRollover(directories, cross is not null && previous is not null && cross.NotAfter.ToUniversalTime() > now.UtcDateTime ? (cross, previous) : null);
+        var (crossUntil, heldForWindows) = WriteRollover(
+            directories, cross is not null && previous is not null && cross.NotAfter.ToUniversalTime() > now.UtcDateTime ? (cross, previous) : null);
 
         if (File.Exists(path) && SameCertificate(path, protector, ca))
         {
             File.WriteAllText(Path.Combine(directories.Certificates, CaPublicFile), ca.ExportCertificatePem());
-            return new ImportedHospitalCa(fingerprint, expires, Changed: false, PreviousKeptAs: null, crossUntil);
+            return new ImportedHospitalCa(fingerprint, expires, Changed: false, PreviousKeptAs: null, crossUntil, heldForWindows);
         }
 
-        return new ImportedHospitalCa(fingerprint, expires, Changed: true, Install(directories, protector, ca, now), crossUntil);
+        return new ImportedHospitalCa(fingerprint, expires, Changed: true, Install(directories, protector, ca, now), crossUntil, heldForWindows);
     }
 
     /// <summary>
@@ -696,21 +757,44 @@ public sealed class LanCertificateManager : IDisposable
     /// only with the CA they are for (<see cref="ReadCross"/>), so they are written before the CA takes its place: a change
     /// cut short never leaves a new CA without the certificate the old devices need. Returns until when they are valid.
     /// </summary>
-    private static DateTimeOffset? WriteRollover(DataDirectories directories, (X509Certificate2 Cross, X509Certificate2 Previous)? rollover)
+    private static (DateTimeOffset? Until, bool HeldForWindows) WriteRollover(DataDirectories directories, (X509Certificate2 Cross, X509Certificate2 Previous)? rollover)
     {
         Directory.CreateDirectory(directories.Certificates);
         var crossPath = Path.Combine(directories.Certificates, CrossFile);
         var previousPath = Path.Combine(directories.Certificates, PreviousCaPublicFile);
+
+        // On Windows the stores hold what its TLS sends (WindowsTlsChain): the rollover's certificates go with the files, and
+        // these commands run as an administrator, so they go into, and out of, the computer's store.
+        WindowsTlsChain.Withdraw(ReadWritten(crossPath, previousPath));
         if (rollover is not { } written)
         {
             File.Delete(crossPath);
             File.Delete(previousPath);
-            return null;
+            return (null, true);
         }
 
         File.WriteAllText(previousPath, written.Previous.ExportCertificatePem());
         File.WriteAllText(crossPath, written.Cross.ExportCertificatePem());
-        return new DateTimeOffset(written.Cross.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+        return (new DateTimeOffset(written.Cross.NotAfter.ToUniversalTime(), TimeSpan.Zero), WindowsTlsChain.Publish([written.Cross, written.Previous]));
+    }
+
+    /// <summary>The rollover's certificates as they are on disk, to take out of the Windows stores before they are replaced.</summary>
+    private static List<X509Certificate2> ReadWritten(params string[] paths)
+    {
+        var written = new List<X509Certificate2>();
+        foreach (var path in paths.Where(File.Exists))
+        {
+            try
+            {
+                written.Add(X509Certificate2.CreateFromPem(File.ReadAllText(path)));
+            }
+            catch (CryptographicException)
+            {
+                // Not a certificate: nothing of it is in a store.
+            }
+        }
+
+        return written;
     }
 
     /// <summary>
@@ -753,11 +837,11 @@ public sealed class LanCertificateManager : IDisposable
 
         using var ca = CreateCa(previous.SubjectName, now);
         using var cross = CreateCross(ca, previous, now);
-        var crossUntil = WriteRollover(directories, (cross, previous))!.Value;
+        var (crossUntil, heldForWindows) = WriteRollover(directories, (cross, previous));
         var keptAs = Install(directories, protector, ca, now);
         return new RolledHospitalCa(
             Convert.ToHexString(SHA256.HashData(ca.RawData)), new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero),
-            Convert.ToHexString(SHA256.HashData(previous.RawData)), previousExpires, keptAs, crossUntil);
+            Convert.ToHexString(SHA256.HashData(previous.RawData)), previousExpires, keptAs, crossUntil!.Value, heldForWindows);
     }
 
     /// <summary>
@@ -900,6 +984,15 @@ public sealed class LanCertificateManager : IDisposable
             _ca?.Dispose();
             _cross?.Dispose();
             _previousCa?.Dispose();
+
+            // What was put in the Windows stores stays there for the next start: the service may not take out what an
+            // administrator's command put in the computer's store.
+            foreach (var held in _heldForWindows)
+            {
+                held.Dispose();
+            }
+
+            _heldForWindows.Clear();
         }
     }
 }

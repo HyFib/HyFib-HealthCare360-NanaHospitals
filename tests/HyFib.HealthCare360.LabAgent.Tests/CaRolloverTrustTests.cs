@@ -69,6 +69,9 @@ public sealed class CaRolloverTrustTests : IDisposable
         using var server = Start(directories, keys);
         using var enrolledBefore = new ServerTrust(oldCa);
 
+        // Windows' TLS sends what it finds in this computer's stores, where HC360 put the certificate: out of them, so the
+        // server certificate goes out alone, as it did before.
+        WindowsTlsChain.Withdraw(server.SentWithCertificate);
         (await HandshakeAsync(SslStreamCertificateContext.Create(server.ServerCertificate, null, offline: true), enrolledBefore)).ShouldBeFalse();
     }
 

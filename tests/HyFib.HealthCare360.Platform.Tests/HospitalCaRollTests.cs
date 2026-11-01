@@ -70,10 +70,15 @@ public sealed class HospitalCaRollTests : IDisposable
         newCa.PublicKey.EncodedKeyValue.RawData.ShouldNotBe(oldCa.PublicKey.EncodedKeyValue.RawData, "a new key");
         newCa.Extensions.OfType<X509BasicConstraintsExtension>().Single().PathLengthConstraint.ShouldBe(0, "it issues server certificates only, as the old one");
 
-        // What the server sends after its own certificate: the certificate the old CA signed for the new key (and the old CA
-        // itself where the platform sends the root too), never the new CA, which the devices that moved hold themselves.
-        var cross = Crosses(server.ServerCertificateContext.ShouldNotBeNull().IntermediateCertificates, newCa).ShouldHaveSingleItem();
-        server.ServerCertificateContext.IntermediateCertificates.ShouldAllBe(c => c.RawData.SequenceEqual(cross.RawData) || c.RawData.SequenceEqual(oldCa.RawData));
+        // What the server sends after its own certificate: the certificate the old CA signed for the new key, and the old CA it
+        // leads to; never the new CA, which the devices that moved hold themselves. (What goes over the wire: the TLS test.)
+        server.ServerCertificateContext.ShouldNotBeNull();
+        var cross = Crosses(server.SentWithCertificate, newCa).ShouldHaveSingleItem();
+        server.SentWithCertificate.Select(c => c.RawData).ShouldBe([cross.RawData, oldCa.RawData]);
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsTlsChain.Holds(cross).ShouldBeTrue("Windows' TLS sends only what it finds in this computer's stores");
+        }
         cross.SubjectName.RawData.ShouldBe(newCa.SubjectName.RawData);
         cross.IssuerName.RawData.ShouldBe(oldCa.SubjectName.RawData, "the old CA's name, which is the new one's: self-issued");
         cross.PublicKey.EncodedKeyValue.RawData.ShouldBe(newCa.PublicKey.EncodedKeyValue.RawData);
@@ -116,9 +121,15 @@ public sealed class HospitalCaRollTests : IDisposable
         var old = Snapshot(directories, keys, Made);
         LanCertificateManager.RollCa(directories, keys, DateTimeOffset.UtcNow);
         using var server = Start(directories, keys, DateTimeOffset.UtcNow);
+
+        // Windows' TLS sends what it finds in this computer's stores, where HC360 put the certificate: out of them, so the
+        // server certificate goes out alone, as it did before.
+        WindowsTlsChain.Withdraw(server.SentWithCertificate);
         await using var alone = await ServeAsync(server, leafAlone: true);
 
-        (await ConnectAsync(alone, old.CaPem)).Trusted.ShouldBeFalse();
+        var pinnedToOld = await ConnectAsync(alone, old.CaPem);
+        pinnedToOld.Sent.ShouldBeEmpty("the server certificate alone");
+        pinnedToOld.Trusted.ShouldBeFalse();
         (await ConnectAsync(alone, server.CaPem!)).Trusted.ShouldBeTrue();
     }
 
@@ -167,7 +178,7 @@ public sealed class HospitalCaRollTests : IDisposable
         File.Exists(Path.Combine(directories.Certificates, "hc360-hospital-ca-previous.crt")).ShouldBeFalse();
         using var server = Start(directories, keys, DateTimeOffset.UtcNow);
         (server.PreviousCaFingerprint, server.CrossSignedUntil, server.PreviousCaPem).ShouldBe((null, null, null));
-        server.ServerCertificateContext.ShouldNotBeNull().IntermediateCertificates.ShouldBeEmpty();
+        server.SentWithCertificate.ShouldBeEmpty();
         await using var app = await ServeAsync(server);
         (await ConnectAsync(app, old.CaPem)).Trusted.ShouldBeFalse();
     }
@@ -204,14 +215,19 @@ public sealed class HospitalCaRollTests : IDisposable
             directories, new PlatformOptions { DataDirectory = directories.Root }, keys, NullLogger<LanCertificateManager>.Instance, clock);
         server.EnsureCertificates();
         using var newCa = X509Certificate2.CreateFromPem(server.CaPem!);
-        Crosses(server.ServerCertificateContext.ShouldNotBeNull().IntermediateCertificates, newCa).ShouldHaveSingleItem();
+        using var cross = X509CertificateLoader.LoadCertificate(Crosses(server.SentWithCertificate, newCa).ShouldHaveSingleItem().RawData);
 
         // The running server's own check, the day after the old CA expired.
         clock.Now = rolled.CrossSignedUntil.AddDays(1);
         server.RefreshIfNeeded();
 
         (server.PreviousCaFingerprint, server.CrossSignedUntil).ShouldBe((null, null));
-        server.ServerCertificateContext.ShouldNotBeNull().IntermediateCertificates.ShouldBeEmpty();
+        server.SentWithCertificate.ShouldBeEmpty();
+        server.ServerCertificateContext.ShouldNotBeNull();
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsTlsChain.Holds(cross).ShouldBeFalse("taken out of the store Windows' TLS sends from");
+        }
         using var restarted = Start(directories, keys, clock.Now);
         restarted.PreviousCaFingerprint.ShouldBeNull("nor does it at its next start");
     }
@@ -373,25 +389,37 @@ public sealed class HospitalCaRollTests : IDisposable
             return false;
         }
 
-        using var chain = new X509Chain();
-        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-        chain.ChainPolicy.CustomTrustStore.Add(pinned);
-        if (handshake is not null)
+        var sent = new X509Certificate2Collection();
+        foreach (var other in handshake?.ChainPolicy.ExtraStore ?? [])
         {
-            chain.ChainPolicy.ExtraStore.AddRange(handshake.ChainPolicy.ExtraStore);
-            foreach (var element in handshake.ChainElements)
+            if (!other.RawData.AsSpan().SequenceEqual(served.RawData))
             {
-                if (!element.Certificate.RawData.AsSpan().SequenceEqual(served.RawData))
-                {
-                    chain.ChainPolicy.ExtraStore.Add(element.Certificate);
-                }
+                sent.Add(other);
             }
         }
 
+        using var chain = new X509Chain();
+        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        chain.ChainPolicy.CustomTrustStore.Add(pinned);
+        chain.ChainPolicy.ExtraStore.AddRange(sent);
         chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1"));
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationTime = DateTime.Now;
-        return chain.Build(served) && chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(pinned.RawData);
+        if (!chain.Build(served))
+        {
+            return false;
+        }
+
+        for (var link = 1; link < chain.ChainElements.Count - 1; link++)
+        {
+            var linked = chain.ChainElements[link].Certificate.RawData;
+            if (!sent.Any(certificate => certificate.RawData.AsSpan().SequenceEqual(linked)))
+            {
+                return false;
+            }
+        }
+
+        return chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(pinned.RawData);
     }
 
     /// <summary>A clock the test sets; the server's own daily check is called by the test rather than waited for.</summary>

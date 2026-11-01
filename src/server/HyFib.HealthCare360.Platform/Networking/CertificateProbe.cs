@@ -181,10 +181,11 @@ public static class CertificateProbe
                 served = certificate is null ? null : X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
 
                 // The other certificates the server sent (after a rollover, the one the previous CA signed for the current CA),
-                // as the devices take them: from the handshake's extra store and the chain the platform built.
+                // as the devices take them: from the handshake's extra store, not the chain the platform built, which may hold
+                // certificates from this computer's own stores.
                 if (chain is not null && served is not null)
                 {
-                    foreach (var other in chain.ChainPolicy.ExtraStore.Concat(chain.ChainElements.Select(e => e.Certificate)))
+                    foreach (var other in chain.ChainPolicy.ExtraStore)
                     {
                         if (!other.RawData.AsSpan().SequenceEqual(served.RawData) && !sent.Any(s => s.RawData.AsSpan().SequenceEqual(other.RawData)))
                         {
@@ -244,7 +245,23 @@ public static class CertificateProbe
             chain.ChainPolicy.CustomTrustStore.Add(ca);
         }
 
-        return chain.Build(served) && (ca is null || chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(ca.RawData));
+        if (!chain.Build(served) || (ca is not null && !chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(ca.RawData)))
+        {
+            return false;
+        }
+
+        // As a device checks it: through what the server sent only. Windows also builds chains from this computer's stores,
+        // and the probe on the Server Node itself would otherwise find there what the server does not send.
+        for (var link = 1; link < chain.ChainElements.Count - 1; link++)
+        {
+            var linked = chain.ChainElements[link].Certificate.RawData;
+            if (!sent.Any(certificate => certificate.RawData.AsSpan().SequenceEqual(linked)))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>The address's host as a name or an IP address, without the brackets an IPv6 address has in a URL.</summary>

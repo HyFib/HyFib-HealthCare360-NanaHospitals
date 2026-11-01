@@ -85,9 +85,14 @@ the server on that day (critical in its last 90 days). Every device must have th
 
    It must warn that the CA was rolled over and name the new CA. If it says the certificate "was not issued by the
    hospital CA", the server is not sending the old CA's certificate: devices that have the old CA cannot connect. Put the
-   old CA back at once (below). Windows builds the chain it sends from the Server Node's own certificate stores: with the
-   new CA installed there as a trusted root, it may send the server certificate alone. Do not install the hospital CA in
-   the Server Node's own certificate stores.
+   old CA back at once (below).
+
+   Windows sends with the server's certificate only what it finds in the Server Node's own certificate stores, not what
+   HC360 hands it. So `roll-ca`, run as an administrator, puts the certificate the old CA signed, and the old CA, in the
+   computer's **Intermediate Certification Authorities** store. Once the old CA has expired they vouch for nothing; the
+   next `roll-ca`, or a `new-ca`, takes them out. If `roll-ca` says Windows was not given the certificate, run it again
+   from an elevated prompt. Do not install the hospital CA among the Server Node's **Trusted Root Certification Authorities**:
+   Windows would then build the chain to the new CA and send the server's certificate alone.
 6. **Probe again with the new fingerprint.** It says `OK`.
 7. **Do the standby and the other server nodes** (`certificates export-ca` here, `certificates import-ca` there), and
    probe each one with the old fingerprint and the new one.
