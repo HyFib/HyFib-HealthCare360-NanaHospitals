@@ -28,6 +28,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     that contradicts IT's fingerprint, or the one the server announced on the network, is refused outright.
   - The lab agent runs unattended, so its fingerprint is always given by IT at installation; enrolment stops if the
     server's CA does not match it. Every call the agent makes, its analyser relays included, is pinned the same way.
+  - A CA rollover (`certificates roll-ca`, docs/deployment/CA-ROLLOVER.md) keeps the pins: the new CA has the old one's
+    name and a new key, and the server sends the certificate the old CA signed for that key until the old CA expires,
+    so a device that pins the old CA builds the chain to exactly that CA, as before. Nothing else is trusted more: the
+    old CA vouches only for the new CA's key, and a device that pins another CA still refuses the server. A CA whose key
+    may have been seen is never rolled over, since whoever holds the key could sign a successor of their own: it is
+    replaced (`certificates new-ca`), and every device set up again.
   - WebView2, which shows the staff app in HC360 Desktop, hands the Desktop a server certificate only when Windows
     rejects it. A certificate Windows trusts would pass unchecked: one from a company's TLS-inspection proxy, say.
     So the Desktop checks the connection with its own pinned client before it loads the staff app, and every 10

@@ -47,10 +47,11 @@ public sealed record OutboxInfo(int Pending, int FailedLast24Hours, DateTimeOffs
 
 /// <summary>
 /// The hospital CA and the server certificate it issued. <see cref="CaExpiresAt"/> is null with an administrator-supplied
-/// certificate, whose issuer HC360 does not hold.
+/// certificate, whose issuer HC360 does not hold. After a rollover, <see cref="PreviousCaFingerprint"/> is the CA it replaced,
+/// which devices that have not moved yet still pin, until <see cref="CrossSignedUntil"/>.
 /// </summary>
 public sealed record CertificateInfo(string? CaFingerprint, DateTimeOffset? ServerExpiresAt, IReadOnlyList<string> SubjectAlternativeNames,
-    DateTimeOffset? CaExpiresAt = null);
+    DateTimeOffset? CaExpiresAt = null, string? PreviousCaFingerprint = null, DateTimeOffset? CrossSignedUntil = null);
 
 public sealed record PowerInfo(bool Available, bool? OnBattery, int? ChargePercent, string? Source);
 
@@ -106,9 +107,13 @@ public sealed record SystemHealthReport(
     DateTimeOffset GeneratedAt,
     IReadOnlyList<ServerNodeHealth>? Servers = null);
 
+/// <summary>
+/// What the server says of itself before anyone signs in. After a rollover, <see cref="PreviousCaFingerprint"/> is the CA the
+/// current one replaced, which still vouches for it: a device that pins it may take the current CA.
+/// </summary>
 public sealed record SystemInfoDto(
     string Product, string Version, string ServerName, string? FacilityName, string? FacilityCode, string? CaFingerprint, DateTimeOffset ServerTime, int ApiVersion,
-    SystemFeatures Features);
+    SystemFeatures Features, string? PreviousCaFingerprint = null);
 
 /// <summary>The hospital-wide feature switches (Platform/Features), for the portal and the sign-in page before anyone signs in.</summary>
 public sealed record SystemFeatures(bool PatientPortal, bool Telehealth);
@@ -393,7 +398,7 @@ public sealed class SystemHealthService(
         var encryption = OperatingSystem.IsWindows() ? DiskEncryption.Load(DiskEncryption.PathIn(directories)) : null;
         var storage = ReadStorage() with { Encryption = encryption };
         var certificate = new CertificateInfo(certificates.CaFingerprint, certificates.ServerExpiresAt, certificates.SubjectAlternativeNames,
-            certificates.CaExpiresAt);
+            certificates.CaExpiresAt, certificates.PreviousCaFingerprint, certificates.CrossSignedUntil);
         var power = ReadPower();
 
         // The machine: its data drive, and BitLocker, the settings file's secrets and the database watchdog, which exist only
@@ -477,9 +482,20 @@ public sealed class SystemHealthService(
         {
             warnings.Add(caExpiring - now < CaUrgentPeriod
                 ? new("cert.ca_expiring", "critical",
-                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}: then no workstation, tablet or HC360 Desktop trusts this server. Replace it now with HyFib support, as the CA rollover procedure says (CA-ROLLOVER.md).")
+                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}: then no workstation, tablet or HC360 Desktop trusts this server. Roll it over now with 'certificates roll-ca', as the CA rollover procedure says (CA-ROLLOVER.md): devices keep trusting the server while each takes the new CA.")
                 : new("cert.ca_expiring", "warning",
-                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}. Every workstation, tablet, HC360 Desktop and lab agent trusts it, so replacing it means setting each up again: plan it with HyFib support now (CA-ROLLOVER.md)."));
+                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}. Roll it over with 'certificates roll-ca' in the coming months, as the CA rollover procedure says (CA-ROLLOVER.md): devices keep trusting the server while each takes the new CA, with no downtime."));
+        }
+
+        // After a rollover, devices that still pin the previous CA trust the server only through the certificate it signed for
+        // the current one, which ends with the previous CA.
+        if (certificate.CrossSignedUntil is { } rolledUntil)
+        {
+            warnings.Add(rolledUntil - now < CaUrgentPeriod
+                ? new("cert.rollover_ending", "critical",
+                    $"The hospital CA was rolled over: devices that still pin the previous CA stop trusting this server on {rolledUntil:dd MMM yyyy}. Give the new CA to every tablet and browser, the certificate probe and other systems that call HC360, and update HC360 Desktop and the lab agents, now (CA-ROLLOVER.md).")
+                : new("cert.rollover_ending", "warning",
+                    $"The hospital CA was rolled over: devices that pin the previous CA trust this server until {rolledUntil:dd MMM yyyy}. Before then give the new CA to every tablet and browser, the certificate probe and other systems that call HC360 (CA-ROLLOVER.md)."));
         }
 
         return warnings;
@@ -676,7 +692,7 @@ internal static class SystemEndpoints
                     await features.IsEnabledAsync(FeatureKeys.PatientPortal, null, ct),
                     await features.IsEnabledAsync(FeatureKeys.Telehealth, null, ct));
                 return TypedResults.Ok(new SystemInfoDto("HyFib HealthCare360", SystemHealthService.ProductVersion, Environment.MachineName,
-                    facility?.Name, facility?.Code, certificates.CaFingerprint, time.GetUtcNow(), 1, switches));
+                    facility?.Name, facility?.Code, certificates.CaFingerprint, time.GetUtcNow(), 1, switches, certificates.PreviousCaFingerprint));
             })
             .AllowAnonymous()
             .RequireRateLimiting(RateLimitPolicies.Public);
@@ -685,6 +701,15 @@ internal static class SystemEndpoints
         system.MapGet("/ca-certificate", (LanCertificateManager certificates) =>
                 certificates.CaPem is { } pem
                     ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes(pem), "application/x-x509-ca-cert", "hc360-hospital-ca.crt")
+                    : Results.NotFound())
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Public);
+
+        // After a rollover, the CA the current one replaced, while it still vouches for it: a device or the certificate probe
+        // that pins it checks the chain the server sends against it (public, no secret).
+        system.MapGet("/ca-certificate/previous", (LanCertificateManager certificates) =>
+                certificates.PreviousCaPem is { } pem
+                    ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes(pem), "application/x-x509-ca-cert", "hc360-hospital-ca-previous.crt")
                     : Results.NotFound())
             .AllowAnonymous()
             .RequireRateLimiting(RateLimitPolicies.Public);

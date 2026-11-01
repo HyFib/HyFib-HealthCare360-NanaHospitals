@@ -37,6 +37,9 @@ public static class CertificateProbe
     /// <summary>Where HC360 hands out its hospital CA, as HC360 Desktop and the lab agent read it at enrolment.</summary>
     public const string CaCertificatePath = "api/v1/system/ca-certificate";
 
+    /// <summary>After a rollover, where the server hands out the CA its current one replaced (404 otherwise).</summary>
+    public const string PreviousCaCertificatePath = "api/v1/system/ca-certificate/previous";
+
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
     /// <summary>
@@ -53,9 +56,10 @@ public static class CertificateProbe
         }
 
         X509Certificate2 served;
+        X509Certificate2Collection sent;
         try
         {
-            served = await HandshakeAsync(address, ct);
+            (served, sent) = await HandshakeAsync(address, ct);
         }
         catch (Exception ex) when (IsConnectionFailure(ex, ct))
         {
@@ -67,6 +71,8 @@ public static class CertificateProbe
             var findings = new List<(CertificateProbeOutcome Outcome, string Text)>();
             var ca = trustedCa;
             X509Certificate2? handedOut = null;
+            X509Certificate2? previous = null;
+            DateTimeOffset? currentCaExpires = null;
             try
             {
                 if (pinnedFingerprint is not null)
@@ -84,15 +90,32 @@ public static class CertificateProbe
                     var handedOutFingerprint = Fingerprint(handedOut);
                     if (!string.Equals(handedOutFingerprint, Normalise(pinnedFingerprint), StringComparison.Ordinal))
                     {
-                        return Failed(address,
-                            $"The server hands out the CA {Group(handedOutFingerprint)}, not {Group(Normalise(pinnedFingerprint))}, which the devices "
-                            + "pinned: none of them connects. If the CA was replaced on purpose, set every device up again (CA-ROLLOVER.md).");
-                    }
+                        // A rollover: the pinned CA, now the previous one, still vouches for the current one. Anything else is
+                        // a CA the devices do not trust.
+                        previous = await TryFetchAsync(new Uri(address, PreviousCaCertificatePath), ct);
+                        if (previous is null || !string.Equals(Fingerprint(previous), Normalise(pinnedFingerprint), StringComparison.Ordinal))
+                        {
+                            return Failed(address,
+                                $"The server hands out the CA {Group(handedOutFingerprint)}, not {Group(Normalise(pinnedFingerprint))}, which the devices "
+                                + "pinned: none of them connects. If the CA was replaced on purpose, set every device up again (CA-ROLLOVER.md).");
+                        }
 
-                    ca = handedOut;
+                        // Devices that pin it trust the server only until it expires: in its last months, that is critical.
+                        var rolledUntil = new DateTimeOffset(previous.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+                        currentCaExpires = new DateTimeOffset(handedOut.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+                        findings.Add((rolledUntil - now < SystemHealthService.CaUrgentPeriod ? CertificateProbeOutcome.Critical : CertificateProbeOutcome.Warning,
+                            $"The hospital CA was rolled over: the server's CA is now {Group(handedOutFingerprint)}, and devices that pin "
+                            + $"{Group(Normalise(pinnedFingerprint))} trust the server until {rolledUntil:dd MMM yyyy}. Give this probe the new "
+                            + "fingerprint (--ca-fingerprint) before then, as every other device that pins the CA (CA-ROLLOVER.md)."));
+                        ca = previous;
+                    }
+                    else
+                    {
+                        ca = handedOut;
+                    }
                 }
 
-                if (!IssuedBy(served, ca, now))
+                if (!IssuedBy(served, ca, now, sent))
                 {
                     findings.Add((CertificateProbeOutcome.Critical, ca is null
                         ? $"This machine does not trust the certificate served ({served.Subject}, issued by {served.Issuer})."
@@ -111,7 +134,8 @@ public static class CertificateProbe
                 // certificate an administrator supplied, checked against this machine's roots) only the certificate is judged.
                 var serverExpires = new DateTimeOffset(served.NotAfter.ToUniversalTime(), TimeSpan.Zero);
                 DateTimeOffset? caExpires = ca is null ? null : new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero);
-                foreach (var warning in SystemHealthService.CertificateWarnings(new CertificateInfo(null, serverExpires, [], caExpires), now))
+                // After a rollover the CA that matters from here on is the server's current one; the previous one's end is said above.
+                foreach (var warning in SystemHealthService.CertificateWarnings(new CertificateInfo(null, serverExpires, [], currentCaExpires ?? caExpires), now))
                 {
                     findings.Add((warning.Severity == "critical" ? CertificateProbeOutcome.Critical : CertificateProbeOutcome.Warning, warning.Message));
                 }
@@ -127,13 +151,18 @@ public static class CertificateProbe
             finally
             {
                 handedOut?.Dispose();
+                previous?.Dispose();
+                foreach (var certificate in sent)
+                {
+                    certificate.Dispose();
+                }
             }
         }
     }
 
     /// <summary>The certificate the address serves, whatever it is: it is judged after the handshake, against the time given.</summary>
     [SuppressMessage("Security", "CA5359:Do not disable certificate validation", Justification = "Nothing is sent over the connection: the certificate is checked after the handshake, against the CA the devices pinned.")]
-    private static async Task<X509Certificate2> HandshakeAsync(Uri address, CancellationToken ct)
+    private static async Task<(X509Certificate2 Served, X509Certificate2Collection Sent)> HandshakeAsync(Uri address, CancellationToken ct)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(Timeout);
@@ -141,18 +170,47 @@ public static class CertificateProbe
         using var client = new TcpClient();
         await client.ConnectAsync(Host(address), address.Port, timeout.Token);
         X509Certificate2? served = null;
+        var sent = new X509Certificate2Collection();
         await using var tls = new SslStream(client.GetStream(), leaveInnerStreamOpen: false);
         await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
         {
             TargetHost = Host(address),
             CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-            RemoteCertificateValidationCallback = (_, certificate, _, _) =>
+            RemoteCertificateValidationCallback = (_, certificate, chain, _) =>
             {
                 served = certificate is null ? null : X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
+
+                // The other certificates the server sent (after a rollover, the one the previous CA signed for the current CA),
+                // as the devices take them: from the handshake's extra store and the chain the platform built.
+                if (chain is not null && served is not null)
+                {
+                    foreach (var other in chain.ChainPolicy.ExtraStore.Concat(chain.ChainElements.Select(e => e.Certificate)))
+                    {
+                        if (!other.RawData.AsSpan().SequenceEqual(served.RawData) && !sent.Any(s => s.RawData.AsSpan().SequenceEqual(other.RawData)))
+                        {
+                            sent.Add(X509CertificateLoader.LoadCertificate(other.RawData));
+                        }
+                    }
+                }
+
                 return true;
             },
         }, timeout.Token);
-        return served ?? throw new AuthenticationException("The server sent no certificate.");
+        return (served ?? throw new AuthenticationException("The server sent no certificate."), sent);
+    }
+
+    /// <summary>A certificate the server hands out at <paramref name="url"/>, or null when it has none there (404).</summary>
+    [SuppressMessage("Security", "CA5359:Do not disable certificate validation", Justification = "The CA is trusted only once its fingerprint matches the one the devices pinned.")]
+    private static async Task<X509Certificate2?> TryFetchAsync(Uri url, CancellationToken ct)
+    {
+        using var handler = new SocketsHttpHandler
+        {
+            ConnectTimeout = Timeout,
+            SslOptions = { RemoteCertificateValidationCallback = (_, _, _, _) => true },
+        };
+        using var http = new HttpClient(handler) { Timeout = Timeout };
+        using var response = await http.GetAsync(url, ct);
+        return response.IsSuccessStatusCode ? X509Certificate2.CreateFromPem(await response.Content.ReadAsStringAsync(ct)) : null;
     }
 
     /// <summary>The CA the server hands out, read as HC360 Desktop reads it at enrolment: not trusted until its fingerprint is checked.</summary>
@@ -173,9 +231,10 @@ public static class CertificateProbe
     /// Whether <paramref name="served"/> chains to <paramref name="ca"/> (or, without one, to a root this machine trusts),
     /// its signatures checked. Expiry is left to the warnings, so an expired certificate is said to have expired.
     /// </summary>
-    private static bool IssuedBy(X509Certificate2 served, X509Certificate2? ca, DateTimeOffset now)
+    private static bool IssuedBy(X509Certificate2 served, X509Certificate2? ca, DateTimeOffset now, X509Certificate2Collection sent)
     {
         using var chain = new X509Chain();
+        chain.ChainPolicy.ExtraStore.AddRange(sent);
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationTime = now.UtcDateTime;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreNotTimeValid;

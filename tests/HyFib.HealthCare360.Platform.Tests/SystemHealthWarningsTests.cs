@@ -51,6 +51,30 @@ public sealed class SystemHealthWarningsTests
         warning.Message.ShouldContain("CA-ROLLOVER.md");
     }
 
+    /// <summary>
+    /// After a rollover the devices that still pin the previous CA trust the server only until it expires: a warning for the
+    /// whole rollover, so the new CA reaches every tablet, browser and probe, and critical in its last 90 days.
+    /// </summary>
+    [Theory]
+    [InlineData(300, "warning")]
+    [InlineData(91, "warning")]
+    [InlineData(89, "critical")]
+    public void A_rollover_is_flagged_until_the_previous_CA_ends_and_critically_in_its_last_90_days(int daysLeft, string severity)
+    {
+        var rolled = Certificate(server: Now.AddDays(300), ca: Now.AddYears(10)) with
+        {
+            PreviousCaFingerprint = "CD34",
+            CrossSignedUntil = Now.AddDays(daysLeft),
+        };
+
+        var warning = SystemHealthService.CertificateWarnings(rolled, Now).ShouldHaveSingleItem();
+
+        (warning.Code, warning.Severity).ShouldBe(("cert.rollover_ending", severity));
+        warning.Message.ShouldContain(Now.AddDays(daysLeft).ToString("dd MMM yyyy", CultureInfo.InvariantCulture));
+        warning.Message.ShouldContain("CA-ROLLOVER.md");
+        SystemHealthService.CertificateWarnings(rolled with { PreviousCaFingerprint = null, CrossSignedUntil = null }, Now).ShouldBeEmpty();
+    }
+
     [Fact]
     public void An_expired_hospital_CA_is_critical()
     {

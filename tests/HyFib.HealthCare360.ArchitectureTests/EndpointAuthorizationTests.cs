@@ -43,6 +43,7 @@ public sealed class EndpointAuthorizationTests
         // Workstation set-up, the sign-in page and the portal: the server's public CA certificate, name and version, and
         // whether the patient portal and video consultations are switched on (hospital-wide, nothing per person).
         "GET /api/v1/system/ca-certificate",
+        "GET /api/v1/system/ca-certificate/previous",
         "GET /api/v1/system/info",
         "POST /api/v1/devices/enroll",
         "POST /api/v1/devices/heartbeat",

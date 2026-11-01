@@ -94,13 +94,23 @@ internal static class ServerCli
               issues itself a new certificate from the imported CA when it starts. Prints the CA's fingerprint: it is the
               one HC360 Desktop pinned. The password is read as for export-ca.
 
+          certificates roll-ca [--confirm] [--data-dir <folder>]
+              Rolls the hospital CA over in its last year, with no device cut off: the new CA has this one's name and a new
+              key, and this CA signs a certificate for the new key, which the server sends with its own until this CA
+              expires. Every workstation, tablet, HC360 Desktop and lab agent that trusts this CA keeps trusting the server
+              until then, while each takes the new CA (docs/deployment/CA-ROLLOVER.md). Not for a key that may have been
+              seen by someone it should not have been: use new-ca then. Without --confirm it says what it would do, and
+              changes nothing. The CA it replaces is kept under a new name. Run it with the HC360 service stopped, then
+              start the service.
+
           certificates new-ca [--confirm] [--data-dir <folder>]
-              Makes a new hospital CA in place of this server's: for a CA in its last year, or one whose key may have been
-              seen by someone it should not have been. Every workstation, tablet, HC360 Desktop and lab agent trusts the CA
-              it replaces, so each must be set up again (docs/deployment/CA-ROLLOVER.md): without --confirm it says which
-              CA it would replace, and changes nothing. The CA it replaces is kept under a new name, so it can be put back.
-              Run it with the HC360 service stopped, then start the service: the server issues itself a certificate from
-              the new CA. Prints the new CA's fingerprint, which the devices pin when they are set up again.
+              Makes a new hospital CA in place of this server's: for a CA whose key may have been seen by someone it should
+              not have been, or one that has already expired (a CA in its last year rolls over with roll-ca instead). Every
+              workstation, tablet, HC360 Desktop and lab agent trusts the CA it replaces, so each must be set up again
+              (docs/deployment/CA-ROLLOVER.md): without --confirm it says which CA it would replace, and changes nothing.
+              The CA it replaces is kept under a new name, so it can be put back. Run it with the HC360 service stopped,
+              then start the service: the server issues itself a certificate from the new CA. Prints the new CA's
+              fingerprint, which the devices pin when they are set up again.
 
           certificates probe <https://address>... [--ca-fingerprint <fingerprint> | --ca-file <ca.crt>] [--event-log]
               Checks each address from this machine as a device does: the certificate served is for that name, was issued
@@ -175,6 +185,7 @@ internal static class ServerCli
                 ["certificates", "export-ca", ..] when options.ContainsKey("out") => ExportCa(options),
                 ["certificates", "import-ca", ..] when options.ContainsKey("in") => ImportCa(options),
                 ["certificates", "new-ca", ..] => NewCa(options, confirmed),
+                ["certificates", "roll-ca", ..] => RollCa(options, confirmed),
                 ["certificates", "probe", ..] when Positional(args[2..]).Length > 0 => await ProbeAsync(Positional(args[2..]), options, eventLog),
                 ["desktop", "publish", ..] when options.ContainsKey("package") => DesktopCli.Publish(options["package"], options.GetValueOrDefault("data-dir")),
                 ["desktop", "verify", ..] when options.ContainsKey("package") => DesktopCli.Verify(options["package"]),
@@ -580,6 +591,11 @@ internal static class ServerCli
 
         Console.WriteLine($"Wrote the hospital CA, with its private key, to {output}, encrypted with the password.");
         Console.WriteLine($"Fingerprint: {GroupFingerprint(exported.Fingerprint)} (valid until {exported.ExpiresAt:dd MMM yyyy}).");
+        if (exported.CrossSignedUntil is { } rolledUntil)
+        {
+            Console.WriteLine($"It carries the rollover's certificates too, so the standby serves devices that pin the previous CA until {rolledUntil:dd MMM yyyy}.");
+        }
+
         Console.WriteLine("Import it on the standby with 'certificates import-ca'. Keep the file as safely as the backup recovery key, apart from");
         Console.WriteLine("its password, and delete copies you no longer need: with both, anyone can make certificates the workstations trust.");
         return 0;
@@ -626,6 +642,11 @@ internal static class ServerCli
             ? $"Installed the hospital CA in {directories.Certificates}, protected for this machine."
             : "This server already has this hospital CA: nothing changed.");
         Console.WriteLine($"Fingerprint: {GroupFingerprint(imported.Fingerprint)} (valid until {imported.ExpiresAt:dd MMM yyyy}). HC360 Desktop shows the one it pinned.");
+        if (imported.CrossSignedUntil is { } rolledUntil)
+        {
+            Console.WriteLine($"With the rollover's certificates: this server serves devices that pin the previous CA until {rolledUntil:dd MMM yyyy}.");
+        }
+
         if (imported.PreviousKeptAs is { } keptAs)
         {
             Console.WriteLine($"The different CA that was here is kept as {keptAs}.");
@@ -685,6 +706,55 @@ internal static class ServerCli
         Console.WriteLine("  3. Set every device up again: HC360 Desktop (a new enrolment code, and the new fingerprint wherever IT set -CaFingerprint),");
         Console.WriteLine("     the lab agents, and each tablet and browser (install the CA from https://<server>:7360/api/v1/system/ca-certificate).");
         Console.WriteLine("  4. Give the certificate probe the new fingerprint.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Rolls the hospital CA over, once the administrator has confirmed it: a new CA of the same name with a new key, which the
+    /// current one vouches for until it expires, so no device is cut off (docs/deployment/CA-ROLLOVER.md). Needs
+    /// administrator rights.
+    /// </summary>
+    private static int RollCa(Dictionary<string, string> options, bool confirmed)
+    {
+        var directories = SiteDirectories(options);
+        if (!confirmed)
+        {
+            using var current = LanCertificateManager.PublicCa(directories);
+            Console.WriteLine(current is null
+                ? "This server has no hospital CA yet: HC360 makes one when it first starts."
+                : $"This server's hospital CA is {GroupFingerprint(CertificateProbe.Fingerprint(current))}, valid until {current.NotAfter.ToUniversalTime():dd MMM yyyy}.");
+            Console.WriteLine("'certificates roll-ca' makes a new CA of the same name with a new key, valid for ten years. This CA signs a certificate for");
+            Console.WriteLine("it, which the server sends until this CA expires: every device that trusts this CA keeps trusting the server until then,");
+            Console.WriteLine("while each takes the new CA. Not for a key that may have been seen by someone else: use 'certificates new-ca' then.");
+            Console.WriteLine("Nothing has changed. Run it again with --confirm, with the HC360 service stopped, to roll the CA over.");
+            return 1;
+        }
+
+        RolledHospitalCa rolled;
+        try
+        {
+            rolled = LanCertificateManager.RollCa(directories, HospitalDataProtection.CreateNodeProvider(directories), DateTimeOffset.UtcNow);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine($"{ex.Message} Nothing has changed.");
+            return 1;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or UnauthorizedAccessException or IOException or CryptographicException)
+        {
+            Console.Error.WriteLine($"The hospital CA could not be rolled over: {ex.Message} Run it on the Server Node from an elevated prompt; nothing has changed.");
+            return 2;
+        }
+
+        Console.WriteLine($"Rolled the hospital CA over in {directories.Certificates}, protected for this machine.");
+        Console.WriteLine($"New CA: {GroupFingerprint(rolled.Fingerprint)} (valid until {rolled.ExpiresAt:dd MMM yyyy}).");
+        Console.WriteLine($"The CA it replaces, {GroupFingerprint(rolled.PreviousFingerprint)}, vouches for it until {rolled.CrossSignedUntil:dd MMM yyyy}: every device that");
+        Console.WriteLine($"trusts that CA trusts the server until then.{(rolled.PreviousKeptAs is { } keptAs ? $" It is kept as {keptAs}." : "")}");
+        Console.WriteLine("Next, as CA-ROLLOVER.md says:");
+        Console.WriteLine("  1. Start the HC360Server service (or restart it): it issues itself a certificate from the new CA, and sends the CA's certificate with it.");
+        Console.WriteLine("  2. On a warm standby and every other server node, import the CA again: 'certificates export-ca' here, 'certificates import-ca' there.");
+        Console.WriteLine($"  3. Before {rolled.CrossSignedUntil:dd MMM yyyy}, give the new CA to tablets and browsers (MDM), the certificate probe and other");
+        Console.WriteLine("     systems that call HC360, and set HC360 Desktop and the lab agents up again with the new fingerprint, one at a time.");
         return 0;
     }
 

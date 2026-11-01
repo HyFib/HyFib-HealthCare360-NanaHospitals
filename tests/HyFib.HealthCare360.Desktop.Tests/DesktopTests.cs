@@ -407,6 +407,20 @@ public sealed class DiscoveryTests
         server.CaFingerprint.ShouldBe(new string('A', 64));
         server.Addresses.ShouldContain(IPAddress.Parse("192.168.1.20"));
         server.CandidateUris().First().AbsoluteUri.ShouldBe("https://hc360-srv:7360/");
+        server.PreviousCaFingerprint.ShouldBeNull("no rollover is announced");
+    }
+
+    [Fact]
+    public void Reads_the_CA_a_rolled_over_server_replaced_from_its_txt_record()
+    {
+        var instance = new DomainName("HC360-HC360-SRV._hc360._tcp.local");
+        var target = new DomainName("HC360-SRV.local");
+        var txt = new TXTRecord { Name = instance };
+        txt.Strings.AddRange(["ver=1.0.0", "fac=NH", $"fp={new string('C', 64)}", "host=HC360-SRV", "path=/", $"fpprev={new string('a', 64)}"]);
+
+        var server = ServerDiscovery.Assemble([new SRVRecord { Name = instance, Target = target, Port = 7360 }, txt]).ShouldHaveSingleItem();
+
+        (server.CaFingerprint, server.PreviousCaFingerprint).ShouldBe((new string('C', 64), new string('A', 64)));
     }
 
     [Fact]

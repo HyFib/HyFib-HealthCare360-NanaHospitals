@@ -1,4 +1,3 @@
-using System.Security.Authentication;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
@@ -83,14 +82,7 @@ builder.WebHost.ConfigureKestrel(kestrel =>
     kestrel.AddServerHeader = false;
     kestrel.Limits.MaxRequestBodySize = 30 * 1024 * 1024;
     kestrel.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
-    void Https(ListenOptions listen) => listen.UseHttps(https =>
-    {
-        // TLS 1.2 is the floor on purpose: older Windows versions the server may run on still enable TLS 1.0/1.1 by default.
-#pragma warning disable CA5398 // Avoid hardcoded SslProtocols values
-        https.SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13;
-#pragma warning restore CA5398
-        https.ServerCertificateSelector = (_, _) => certificates.ServerCertificate;
-    });
+    void Https(ListenOptions listen) => listen.UseHttps(https => HospitalHttps.Configure(https, certificates));
 
     kestrel.ListenAnyIP(platformOptions.HttpsPort, Https);
     kestrel.ListenAnyIP(platformOptions.PortalHttpsPort, Https);

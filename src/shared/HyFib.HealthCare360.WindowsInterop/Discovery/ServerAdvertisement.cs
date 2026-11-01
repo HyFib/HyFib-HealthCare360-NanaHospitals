@@ -22,6 +22,12 @@ public static class ServerAdvertisement
     /// </summary>
     public const string FingerprintKey = "fp";
 
+    /// <summary>
+    /// After the hospital CA was rolled over, the fingerprint of the CA it replaced, while that CA still vouches for the
+    /// server: a workstation that pins it finds the server by it. Absent otherwise.
+    /// </summary>
+    public const string PreviousFingerprintKey = "fpprev";
+
     /// <summary>The server's machine name, which workstations connect to: it survives DHCP changes, unlike its addresses.</summary>
     public const string HostKey = "host";
 
@@ -36,10 +42,12 @@ public static class ServerAdvertisement
 
     /// <summary>The TXT record's properties, in the order the server advertises them.</summary>
     /// <param name="version">The server's informational version; build metadata (after <c>+</c>) is left out.</param>
-    public static IReadOnlyList<KeyValuePair<string, string>> Properties(string version, string facilityCode, string? caFingerprint, string hostName)
+    /// <param name="previousCaFingerprint">After a rollover, the CA the current one replaced, while it vouches for it.</param>
+    public static IReadOnlyList<KeyValuePair<string, string>> Properties(
+        string version, string facilityCode, string? caFingerprint, string hostName, string? previousCaFingerprint = null)
     {
         ArgumentNullException.ThrowIfNull(version);
-        return
+        List<KeyValuePair<string, string>> properties =
         [
             new(VersionKey, version.Split('+')[0]),
             new(FacilityKey, facilityCode),
@@ -47,11 +55,17 @@ public static class ServerAdvertisement
             new(HostKey, hostName),
             new(PathKey, "/"),
         ];
+        if (!string.IsNullOrEmpty(previousCaFingerprint))
+        {
+            properties.Add(new(PreviousFingerprintKey, previousCaFingerprint));
+        }
+
+        return properties;
     }
 
     /// <summary>
     /// What a server's TXT record says, from its strings (<c>key=value</c>), as HC360 Desktop reads it: keys in any case,
-    /// the first of a repeated key, a host name only when there is one, and the fingerprint only when it has a
+    /// the first of a repeated key, a host name only when there is one, and each fingerprint only when it has a
     /// fingerprint's length, in upper case.
     /// </summary>
     public static AdvertisedProperties Read(IEnumerable<string> strings)
@@ -65,10 +79,17 @@ public static class ServerAdvertisement
         return new AdvertisedProperties(
             txt.GetValueOrDefault(VersionKey),
             txt.GetValueOrDefault(FacilityKey),
-            txt.TryGetValue(FingerprintKey, out var fingerprint) && fingerprint.Length == FingerprintLength ? fingerprint.ToUpperInvariant() : null,
-            txt.TryGetValue(HostKey, out var host) && !string.IsNullOrWhiteSpace(host) ? host : null);
+            Fingerprint(txt, FingerprintKey),
+            txt.TryGetValue(HostKey, out var host) && !string.IsNullOrWhiteSpace(host) ? host : null,
+            Fingerprint(txt, PreviousFingerprintKey));
     }
+
+    private static string? Fingerprint(Dictionary<string, string> txt, string key) =>
+        txt.TryGetValue(key, out var fingerprint) && fingerprint.Length == FingerprintLength ? fingerprint.ToUpperInvariant() : null;
 }
 
-/// <summary>What a Server Node's TXT record says (<see cref="ServerAdvertisement.Read"/>).</summary>
-public sealed record AdvertisedProperties(string? Version, string? FacilityCode, string? CaFingerprint, string? HostName);
+/// <summary>
+/// What a Server Node's TXT record says (<see cref="ServerAdvertisement.Read"/>). <see cref="PreviousCaFingerprint"/> is set
+/// after a rollover, while the CA the current one replaced still vouches for it.
+/// </summary>
+public sealed record AdvertisedProperties(string? Version, string? FacilityCode, string? CaFingerprint, string? HostName, string? PreviousCaFingerprint = null);

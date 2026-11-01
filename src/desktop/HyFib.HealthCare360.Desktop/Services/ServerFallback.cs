@@ -23,7 +23,8 @@ internal static class ServerFallback
     /// <summary>
     /// The addresses to try instead of <paramref name="current"/>, in order: <paramref name="remembered"/>, this computer
     /// by name and as localhost when a server listens on it, then the addresses of servers found on the network that
-    /// announce <paramref name="caFingerprint"/>. A server announcing another CA is not the hospital's.
+    /// announce <paramref name="caFingerprint"/>, as their CA or, after a rollover, as the CA theirs replaced. A server
+    /// announcing another CA is not the hospital's.
     /// </summary>
     public static IReadOnlyList<Uri> Candidates(
         Uri current, IEnumerable<string> remembered, DiscoveredServer? thisComputer, IEnumerable<DiscoveredServer> discovered, string caFingerprint)
@@ -43,7 +44,9 @@ internal static class ServerFallback
             candidates.Add(new Uri($"https://localhost:{thisComputer.Port}/"));
         }
 
-        foreach (var server in discovered.Where(s => string.Equals(s.CaFingerprint, caFingerprint, StringComparison.OrdinalIgnoreCase)))
+        // After a rollover the server announces the CA it replaced too, which still vouches for it.
+        foreach (var server in discovered.Where(s => string.Equals(s.CaFingerprint, caFingerprint, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(s.PreviousCaFingerprint, caFingerprint, StringComparison.OrdinalIgnoreCase)))
         {
             candidates.AddRange(server.CandidateUris());
         }

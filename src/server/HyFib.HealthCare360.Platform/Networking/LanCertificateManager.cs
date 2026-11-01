@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.NetworkInformation;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -10,8 +11,12 @@ using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Platform.Networking;
 
-/// <summary>The hospital CA as <see cref="LanCertificateManager.ExportCa"/> wrote it: a password-protected PKCS#12 file.</summary>
-public sealed record ExportedHospitalCa(byte[] Pkcs12, string Fingerprint, DateTimeOffset ExpiresAt);
+/// <summary>
+/// The hospital CA as <see cref="LanCertificateManager.ExportCa"/> wrote it: a password-protected PKCS#12 file. After a
+/// rollover it also holds the certificate the previous CA signed for this one, and the previous CA's public certificate,
+/// until <paramref name="CrossSignedUntil"/>.
+/// </summary>
+public sealed record ExportedHospitalCa(byte[] Pkcs12, string Fingerprint, DateTimeOffset ExpiresAt, DateTimeOffset? CrossSignedUntil = null);
 
 /// <summary>A hospital CA <see cref="LanCertificateManager.NewCa"/> made, and the one it replaced.</summary>
 /// <param name="PreviousKeptAs">The file name the CA it replaced is kept under; null when there was none.</param>
@@ -22,7 +27,17 @@ public sealed record NewHospitalCa(string Fingerprint, DateTimeOffset ExpiresAt,
 /// <summary>What <see cref="LanCertificateManager.ImportCa"/> did.</summary>
 /// <param name="Changed">False when this server already had that CA.</param>
 /// <param name="PreviousKeptAs">The file name a different CA that was here was kept under.</param>
-public sealed record ImportedHospitalCa(string Fingerprint, DateTimeOffset ExpiresAt, bool Changed, string? PreviousKeptAs);
+public sealed record ImportedHospitalCa(
+    string Fingerprint, DateTimeOffset ExpiresAt, bool Changed, string? PreviousKeptAs, DateTimeOffset? CrossSignedUntil = null);
+
+/// <summary>
+/// What <see cref="LanCertificateManager.RollCa"/> made: the new CA (the old one's name, a new key), the CA it replaced
+/// (kept under <paramref name="PreviousKeptAs"/>), and until when devices that pin the replaced CA still trust the server
+/// (<paramref name="CrossSignedUntil"/>, the replaced CA's expiry).
+/// </summary>
+public sealed record RolledHospitalCa(
+    string Fingerprint, DateTimeOffset ExpiresAt, string PreviousFingerprint, DateTimeOffset PreviousExpiresAt, string? PreviousKeptAs,
+    DateTimeOffset CrossSignedUntil);
 
 /// <summary>
 /// TLS for the hospital LAN/WiFi (DED-04, ADR-005). On first start it creates a private hospital CA and a
@@ -35,8 +50,11 @@ public sealed record ImportedHospitalCa(string Fingerprint, DateTimeOffset Expir
 /// same CA, so workstations and lab agents trust it as they trusted the first, and find it by the CA it announces.
 /// </para>
 /// <para>
-/// The CA is never renewed by itself: a new one (<see cref="NewCa"/>) means setting every device up again
-/// (docs/deployment/CA-ROLLOVER.md). A server whose CA has expired does not start, and says what to do.
+/// The CA is never renewed by itself. A rollover (<see cref="RollCa"/>) cuts no device off: the new CA has the old one's
+/// name and a new key, the old CA signs a certificate for the new key, and the server sends it with its own until the old
+/// CA expires, so a device that pins the old CA still trusts the server. A new CA (<see cref="NewCa"/>), for a key that
+/// may have been seen, means setting every device up again (docs/deployment/CA-ROLLOVER.md). A server whose CA has
+/// expired does not start, and says what to do.
 /// </para>
 /// </summary>
 public sealed class LanCertificateManager : IDisposable
@@ -48,6 +66,12 @@ public sealed class LanCertificateManager : IDisposable
     private const string ServerFile = "server.pfx.protected";
     private const string ServerMetaFile = "server.meta.json";
     private const string CaPublicFile = "hc360-hospital-ca.crt";
+
+    /// <summary>After a rollover: the certificate the previous CA signed for the current CA's key (public; PEM).</summary>
+    private const string CrossFile = "hospital-ca-cross.crt";
+
+    /// <summary>After a rollover: the previous CA's own certificate (public; PEM), which the cross certificate chains to.</summary>
+    private const string PreviousCaPublicFile = "hc360-hospital-ca-previous.crt";
     private const string ProtectorPurpose = "HC360.LanCertificates.v1";
 
     /// <summary>
@@ -72,6 +96,9 @@ public sealed class LanCertificateManager : IDisposable
     private readonly Lock _gate = new();
     private X509Certificate2? _ca;
     private X509Certificate2? _server;
+    private X509Certificate2? _cross;
+    private X509Certificate2? _previousCa;
+    private SslStreamCertificateContext? _context;
     private ITimer? _expiryCheck;
 
     public LanCertificateManager(
@@ -95,6 +122,34 @@ public sealed class LanCertificateManager : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// The server certificate with the chain the server sends. After a rollover (<see cref="RollCa"/>) the chain carries the
+    /// certificate the previous CA signed for this one, so a device that pins the previous CA still trusts the server until
+    /// the previous CA expires. Null with an administrator-supplied certificate, which Kestrel serves as it was given.
+    /// </summary>
+    public SslStreamCertificateContext? ServerCertificateContext
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _context;
+            }
+        }
+    }
+
+    /// <summary>
+    /// After a rollover, the CA this one replaced (upper-case hex SHA-256), while devices that pin it are still served a chain
+    /// they trust; null otherwise.
+    /// </summary>
+    public string? PreviousCaFingerprint { get; private set; }
+
+    /// <summary>Until when devices that pin <see cref="PreviousCaFingerprint"/> still trust the server: the previous CA's expiry.</summary>
+    public DateTimeOffset? CrossSignedUntil { get; private set; }
+
+    /// <summary>The previous CA's certificate (PEM) while <see cref="PreviousCaFingerprint"/> is set; null otherwise.</summary>
+    public string? PreviousCaPem { get; private set; }
 
     /// <summary>SHA-256 fingerprint (upper-case hex) of the hospital CA pinned by HC360 Desktop.</summary>
     public string? CaFingerprint { get; private set; }
@@ -170,6 +225,8 @@ public sealed class LanCertificateManager : IDisposable
             CaPem = _ca.ExportCertificatePem();
             File.WriteAllText(Path.Combine(_directories.Certificates, CaPublicFile), CaPem);
             _server = LoadOrCreateServerCertificate(_ca, force: false);
+            LoadCross();
+            BuildContext();
             _expiryCheck ??= _time.CreateTimer(_ => RenewBeforeExpiry(), null, ExpiryCheck, ExpiryCheck);
         }
     }
@@ -206,6 +263,13 @@ public sealed class LanCertificateManager : IDisposable
 
         lock (_gate)
         {
+            // Once the previous CA has expired, its signature on this one vouches for nothing: stop sending it.
+            if (_cross is not null && _cross.NotAfter.ToUniversalTime() <= _time.GetUtcNow().UtcDateTime)
+            {
+                LoadCross();
+                BuildContext();
+            }
+
             // Nothing can be issued from a CA that has expired since the server started: System health says so.
             if (_ca.NotAfter.ToUniversalTime() <= _time.GetUtcNow().UtcDateTime)
             {
@@ -223,9 +287,113 @@ public sealed class LanCertificateManager : IDisposable
 
             var previous = _server;
             _server = LoadOrCreateServerCertificate(_ca, force: true);
+            BuildContext();
             previous?.Dispose();
             return true;
         }
+    }
+
+    /// <summary>
+    /// After a rollover, the certificate the previous CA signed for this one: taken while it is valid and is for this CA's
+    /// name and key, so the server sends it to devices that pin the previous CA. Anything else in its place is set aside,
+    /// with a note in the log. Under <see cref="_gate"/>.
+    /// </summary>
+    private void LoadCross()
+    {
+        _cross?.Dispose();
+        _previousCa?.Dispose();
+        (_cross, _previousCa, PreviousCaFingerprint, CrossSignedUntil, PreviousCaPem) = (null, null, null, null, null);
+        if (_ca is null || ReadCross(_directories, _ca, _time.GetUtcNow()) is not { } rollover)
+        {
+            return;
+        }
+
+        (_cross, _previousCa) = rollover;
+        PreviousCaFingerprint = Convert.ToHexString(SHA256.HashData(_previousCa.RawData));
+        PreviousCaPem = _previousCa.ExportCertificatePem();
+        CrossSignedUntil = new DateTimeOffset(_cross.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+        _logger.LogInformation(
+            "Hospital CA rolled over: devices that pin the previous CA ({Previous}) trust this server until {Until:u}", PreviousCaFingerprint, CrossSignedUntil);
+    }
+
+    /// <summary>
+    /// The certificate the previous CA signed for <paramref name="ca"/>, with the previous CA, when both are on disk and the
+    /// first is valid at <paramref name="now"/>, is for <paramref name="ca"/>'s name and key, and was signed by the second.
+    /// </summary>
+    private static (X509Certificate2 Cross, X509Certificate2 Previous)? ReadCross(DataDirectories directories, X509Certificate2 ca, DateTimeOffset now)
+    {
+        var crossPath = Path.Combine(directories.Certificates, CrossFile);
+        var previousPath = Path.Combine(directories.Certificates, PreviousCaPublicFile);
+        if (!File.Exists(crossPath) || !File.Exists(previousPath))
+        {
+            return null;
+        }
+
+        X509Certificate2? cross = null;
+        X509Certificate2? previous = null;
+        try
+        {
+            cross = X509Certificate2.CreateFromPem(File.ReadAllText(crossPath));
+            previous = X509Certificate2.CreateFromPem(File.ReadAllText(previousPath));
+            if (cross.NotBefore.ToUniversalTime() <= now.UtcDateTime && now.UtcDateTime < cross.NotAfter.ToUniversalTime() && IsCrossFor(cross, ca, previous))
+            {
+                return (cross, previous);
+            }
+        }
+        catch (CryptographicException)
+        {
+            // Unreadable: as if it were not there.
+        }
+
+        cross?.Dispose();
+        previous?.Dispose();
+        return null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="cross"/> is the certificate <paramref name="previous"/> (a hospital CA, self-signed) signed for
+    /// <paramref name="ca"/>: the same name, the same key, its signature checked.
+    /// </summary>
+    private static bool IsCrossFor(X509Certificate2 cross, X509Certificate2 ca, X509Certificate2 previous) =>
+        cross.SubjectName.RawData.AsSpan().SequenceEqual(ca.SubjectName.RawData)
+        && cross.PublicKey.EncodedKeyValue.RawData.AsSpan().SequenceEqual(ca.PublicKey.EncodedKeyValue.RawData)
+        && !previous.PublicKey.EncodedKeyValue.RawData.AsSpan().SequenceEqual(ca.PublicKey.EncodedKeyValue.RawData)
+        && previous.SubjectName.RawData.AsSpan().SequenceEqual(previous.IssuerName.RawData)
+        && IsIssuedBy(cross, previous);
+
+    /// <summary>
+    /// Whether <paramref name="certificate"/> is issued in its own name and names its own key as its issuer's (or no key), as a
+    /// self-signed CA does. The certificate the previous CA signs for a CA in a rollover has the CA's name too, but names the
+    /// previous CA's key.
+    /// </summary>
+    private static bool NamesItselfAsIssuer(X509Certificate2 certificate)
+    {
+        var issuerKey = certificate.Extensions.OfType<X509AuthorityKeyIdentifierExtension>().FirstOrDefault()?.KeyIdentifier;
+        var ownKey = certificate.Extensions.OfType<X509SubjectKeyIdentifierExtension>().FirstOrDefault()?.SubjectKeyIdentifierBytes;
+        return certificate.SubjectName.RawData.AsSpan().SequenceEqual(certificate.IssuerName.RawData)
+            && (issuerKey is not { } named || ownKey is not { } own || named.Span.SequenceEqual(own.Span));
+    }
+
+    /// <summary>
+    /// The TLS context: the server certificate, and after a rollover the certificate the previous CA signed for this one.
+    /// The previous CA is given too, so the chain is built to the end and only the root is left out of what is sent. Under
+    /// <see cref="_gate"/>.
+    /// </summary>
+    private void BuildContext()
+    {
+        if (_server is null)
+        {
+            return;
+        }
+
+        var extra = new X509Certificate2Collection();
+        if (_cross is not null && _previousCa is not null)
+        {
+            extra.Add(_cross);
+            extra.Add(_previousCa);
+        }
+
+        _context = SslStreamCertificateContext.Create(_server, extra, offline: true);
     }
 
     private X509Certificate2 LoadOrCreateCa()
@@ -245,8 +413,8 @@ public sealed class LanCertificateManager : IDisposable
 
     /// <summary>
     /// A new hospital CA with its private key: RSA 3072, valid for ten years, able to issue only the server certificates
-    /// under it. Its name carries the day it was made, so a device that trusts two (during a rollover) tells them apart; the
-    /// facility's name may hold a comma or other characters a distinguished name escapes.
+    /// under it. Its name carries the day it was made, so a device that trusts two (after <see cref="NewCa"/>) tells them
+    /// apart; the facility's name may hold a comma or other characters a distinguished name escapes.
     /// </summary>
     private static X509Certificate2 CreateCa(string facilityName, DateTimeOffset now)
     {
@@ -254,15 +422,46 @@ public sealed class LanCertificateManager : IDisposable
         name.AddOrganizationalUnitName(facilityName);
         name.AddOrganizationName("HyFib HealthCare360");
         name.AddCommonName($"HyFib HealthCare360 Hospital CA ({Environment.MachineName} {now.UtcDateTime:yyyy-MM-dd})");
+        return CreateCa(name.Build(), now);
+    }
 
+    /// <summary>A new hospital CA named <paramref name="name"/>, with a new key; see <see cref="CreateCa(string, DateTimeOffset)"/>.</summary>
+    private static X509Certificate2 CreateCa(X500DistinguishedName name, DateTimeOffset now)
+    {
         using var key = RSA.Create(3072);
-        var request = new CertificateRequest(name.Build(), key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
-        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
-        request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+        var request = new CertificateRequest(name, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        AddCaExtensions(request);
 
         using var ca = request.CreateSelfSigned(now.AddDays(-1), now.AddYears(10));
         return X509CertificateLoader.LoadPkcs12(ca.Export(X509ContentType.Pkcs12), null, X509KeyStorageFlags.Exportable);
+    }
+
+    /// <summary>
+    /// A hospital CA's extensions: a CA whose path length is 0 (it issues server certificates only), able to sign
+    /// certificates and revocation lists, and its key's identifier.
+    /// </summary>
+    private static void AddCaExtensions(CertificateRequest request)
+    {
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+        request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+    }
+
+    /// <summary>
+    /// The certificate <paramref name="previous"/> signs for <paramref name="ca"/>'s key, in a rollover: the same name as both
+    /// (so it is self-issued, and the CAs' path length of 0 still holds: RFC 5280 4.2.1.9), valid until
+    /// <paramref name="previous"/> expires, and naming <paramref name="previous"/>'s key as its issuer's.
+    /// </summary>
+    private static X509Certificate2 CreateCross(X509Certificate2 ca, X509Certificate2 previous, DateTimeOffset now)
+    {
+        var request = new CertificateRequest(ca.SubjectName, ca.PublicKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        AddCaExtensions(request);
+        request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(previous, true, false));
+
+        var serial = RandomNumberGenerator.GetBytes(16);
+        serial[0] &= 0x7F;
+        var notBefore = now.AddDays(-1) < previous.NotBefore ? new DateTimeOffset(previous.NotBefore.ToUniversalTime(), TimeSpan.Zero) : now.AddDays(-1);
+        return request.Create(previous, notBefore, new DateTimeOffset(previous.NotAfter.ToUniversalTime(), TimeSpan.Zero), serial);
     }
 
     private X509Certificate2 LoadOrCreateServerCertificate(X509Certificate2 ca, bool force)
@@ -396,8 +595,28 @@ public sealed class LanCertificateManager : IDisposable
         try
         {
             using var ca = X509CertificateLoader.LoadPkcs12(unprotected, null, X509KeyStorageFlags.Exportable);
-            var file = ca.ExportPkcs12(new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, ExportIterations), password);
-            return new ExportedHospitalCa(file, Convert.ToHexString(SHA256.HashData(ca.RawData)), new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero));
+
+            // After a rollover, the standby must send the same chain, or devices that pin the previous CA lose it there.
+            var rollover = ReadCross(directories, ca, DateTimeOffset.UtcNow);
+            try
+            {
+                var bundle = new X509Certificate2Collection(ca);
+                if (rollover is { } sent)
+                {
+                    bundle.Add(sent.Cross);
+                    bundle.Add(sent.Previous);
+                }
+
+                var file = bundle.ExportPkcs12(new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, ExportIterations), password);
+                return new ExportedHospitalCa(
+                    file, Convert.ToHexString(SHA256.HashData(ca.RawData)), new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero),
+                    rollover is { } carried ? new DateTimeOffset(carried.Cross.NotAfter.ToUniversalTime(), TimeSpan.Zero) : null);
+            }
+            finally
+            {
+                rollover?.Cross.Dispose();
+                rollover?.Previous.Dispose();
+            }
         }
         finally
         {
@@ -415,7 +634,26 @@ public sealed class LanCertificateManager : IDisposable
     /// <exception cref="InvalidDataException">The file does not hold a CA certificate with its private key, or it has expired.</exception>
     public static ImportedHospitalCa ImportCa(DataDirectories directories, IDataProtectionProvider dataProtection, byte[] pkcs12, string password, DateTimeOffset now)
     {
-        using var ca = X509CertificateLoader.LoadPkcs12(pkcs12, password, X509KeyStorageFlags.Exportable);
+        var bundle = X509CertificateLoader.LoadPkcs12Collection(pkcs12, password, X509KeyStorageFlags.Exportable);
+        try
+        {
+            return ImportCa(directories, dataProtection, bundle, now);
+        }
+        finally
+        {
+            foreach (var certificate in bundle)
+            {
+                certificate.Dispose();
+            }
+        }
+    }
+
+    private static ImportedHospitalCa ImportCa(DataDirectories directories, IDataProtectionProvider dataProtection, X509Certificate2Collection bundle, DateTimeOffset now)
+    {
+        // The CA: the certificate with the key that names that key as its issuer's. After a rollover the file also holds the
+        // certificate the previous CA signed for the same key, which a PKCS#12 reader may pair with the key as well.
+        var ca = bundle.FirstOrDefault(c => c.HasPrivateKey && NamesItselfAsIssuer(c)) ?? bundle.FirstOrDefault(c => c.HasPrivateKey) ?? bundle.FirstOrDefault()
+            ?? throw new InvalidDataException("The file holds no certificate: export the CA with 'certificates export-ca'.");
         if (!ca.HasPrivateKey)
         {
             throw new InvalidDataException("The file holds a certificate without its private key: export the CA with 'certificates export-ca'.");
@@ -436,13 +674,90 @@ public sealed class LanCertificateManager : IDisposable
         var fingerprint = Convert.ToHexString(SHA256.HashData(ca.RawData));
         var protector = dataProtection.CreateProtector(ProtectorPurpose);
         var path = Path.Combine(directories.Certificates, CaFile);
+
+        // A rollover's certificates come with the CA they are for, or this server sends none: one left from another CA vouches
+        // for nothing here.
+        var cross = bundle.FirstOrDefault(c => !c.RawData.AsSpan().SequenceEqual(ca.RawData)
+            && c.PublicKey.EncodedKeyValue.RawData.AsSpan().SequenceEqual(ca.PublicKey.EncodedKeyValue.RawData));
+        var previous = cross is null ? null : bundle.FirstOrDefault(c => !c.RawData.AsSpan().SequenceEqual(cross.RawData) && IsCrossFor(cross, ca, c));
+        var crossUntil = WriteRollover(directories, cross is not null && previous is not null && cross.NotAfter.ToUniversalTime() > now.UtcDateTime ? (cross, previous) : null);
+
         if (File.Exists(path) && SameCertificate(path, protector, ca))
         {
             File.WriteAllText(Path.Combine(directories.Certificates, CaPublicFile), ca.ExportCertificatePem());
-            return new ImportedHospitalCa(fingerprint, expires, Changed: false, PreviousKeptAs: null);
+            return new ImportedHospitalCa(fingerprint, expires, Changed: false, PreviousKeptAs: null, crossUntil);
         }
 
-        return new ImportedHospitalCa(fingerprint, expires, Changed: true, Install(directories, protector, ca, now));
+        return new ImportedHospitalCa(fingerprint, expires, Changed: true, Install(directories, protector, ca, now), crossUntil);
+    }
+
+    /// <summary>
+    /// Writes a rollover's certificates beside the CA, or removes any there when there are none. They are public, and taken
+    /// only with the CA they are for (<see cref="ReadCross"/>), so they are written before the CA takes its place: a change
+    /// cut short never leaves a new CA without the certificate the old devices need. Returns until when they are valid.
+    /// </summary>
+    private static DateTimeOffset? WriteRollover(DataDirectories directories, (X509Certificate2 Cross, X509Certificate2 Previous)? rollover)
+    {
+        Directory.CreateDirectory(directories.Certificates);
+        var crossPath = Path.Combine(directories.Certificates, CrossFile);
+        var previousPath = Path.Combine(directories.Certificates, PreviousCaPublicFile);
+        if (rollover is not { } written)
+        {
+            File.Delete(crossPath);
+            File.Delete(previousPath);
+            return null;
+        }
+
+        File.WriteAllText(previousPath, written.Previous.ExportCertificatePem());
+        File.WriteAllText(crossPath, written.Cross.ExportCertificatePem());
+        return new DateTimeOffset(written.Cross.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+    }
+
+    /// <summary>
+    /// Rolls the hospital CA over with no device cut off: the new CA has this one's name and a new key, valid for ten years, and
+    /// this one signs a certificate for the new key (self-issued: RFC 4210 4.4, as Windows certificate services renew a CA
+    /// with a new key). The server sends that certificate with its own until this CA expires, so a workstation, lab agent,
+    /// tablet or browser that trusts this CA trusts the server all that time, while each device takes the new CA.
+    /// This CA is kept under a new name, never deleted, and the server certificate it issued is removed. Run with the HC360
+    /// service stopped, or restart it after.
+    /// <para>
+    /// Not for a CA whose key may have been seen by someone who should not have it: whoever has the key could sign a "new"
+    /// CA of their own the same way. Use <see cref="NewCa"/> then, and set every device up again.
+    /// </para>
+    /// </summary>
+    /// <exception cref="FileNotFoundException">This server has no hospital CA yet.</exception>
+    /// <exception cref="InvalidOperationException">The CA has expired, or a rollover is still in progress.</exception>
+    public static RolledHospitalCa RollCa(DataDirectories directories, IDataProtectionProvider dataProtection, DateTimeOffset now)
+    {
+        var protector = dataProtection.CreateProtector(ProtectorPurpose);
+        var path = Path.Combine(directories.Certificates, CaFile);
+        using var previous = (File.Exists(path) ? Open(path, protector) : null)
+            ?? throw new FileNotFoundException("This server has no hospital CA yet: HC360 makes one when it first starts.", path);
+        var previousExpires = new DateTimeOffset(previous.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+        if (previousExpires <= now)
+        {
+            throw new InvalidOperationException(
+                $"The hospital CA expired on {previousExpires:dd MMM yyyy}, and an expired CA cannot vouch for the next one. Make a new CA with "
+                + "'certificates new-ca' and set every device up again, as docs/deployment/CA-ROLLOVER.md says.");
+        }
+
+        if (ReadCross(directories, previous, now) is { } inProgress)
+        {
+            var until = new DateTimeOffset(inProgress.Cross.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+            inProgress.Cross.Dispose();
+            inProgress.Previous.Dispose();
+            throw new InvalidOperationException(
+                $"The last rollover runs until {until:dd MMM yyyy}: until then the server also vouches for the CA before this one, for devices "
+                + "that have not moved yet. Roll the CA again after that day.");
+        }
+
+        using var ca = CreateCa(previous.SubjectName, now);
+        using var cross = CreateCross(ca, previous, now);
+        var crossUntil = WriteRollover(directories, (cross, previous))!.Value;
+        var keptAs = Install(directories, protector, ca, now);
+        return new RolledHospitalCa(
+            Convert.ToHexString(SHA256.HashData(ca.RawData)), new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero),
+            Convert.ToHexString(SHA256.HashData(previous.RawData)), previousExpires, keptAs, crossUntil);
     }
 
     /// <summary>
@@ -461,6 +776,7 @@ public sealed class LanCertificateManager : IDisposable
         try
         {
             using var ca = CreateCa(facilityName, now);
+            WriteRollover(directories, null);
             var keptAs = Install(directories, protector, ca, now);
             return new NewHospitalCa(
                 Convert.ToHexString(SHA256.HashData(ca.RawData)), new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero), keptAs,
@@ -477,11 +793,26 @@ public sealed class LanCertificateManager : IDisposable
     /// Puts <paramref name="ca"/> in place of this server's CA, and removes the server certificate the CA it replaces issued.
     /// Returns the file name that CA is kept under, null when there was none.
     /// </summary>
+    /// <summary>
+    /// The name a CA that is replaced is kept under: the time it was replaced, and a number after it when another was
+    /// replaced in the same second (a rollover, then a new CA, by a script).
+    /// </summary>
+    private static string KeptAsName(string path, DateTimeOffset now)
+    {
+        var name = $"{path}.replaced-{now.UtcDateTime:yyyyMMdd-HHmmss}";
+        for (var n = 2; File.Exists(name); n++)
+        {
+            name = $"{path}.replaced-{now.UtcDateTime:yyyyMMdd-HHmmss}-{n}";
+        }
+
+        return name;
+    }
+
     private static string? Install(DataDirectories directories, IDataProtector protector, X509Certificate2 ca, DateTimeOffset now)
     {
         Directory.CreateDirectory(directories.Certificates);
         var path = Path.Combine(directories.Certificates, CaFile);
-        var keptAs = File.Exists(path) ? $"{path}.replaced-{now.UtcDateTime:yyyyMMdd-HHmmss}" : null;
+        var keptAs = File.Exists(path) ? KeptAsName(path, now) : null;
 
         // The new CA is on disk before the old one is moved aside, and the old one goes back if the new one cannot take its
         // place, so the server never starts without a CA and makes a new one that no workstation trusts.
@@ -567,6 +898,8 @@ public sealed class LanCertificateManager : IDisposable
         {
             _server?.Dispose();
             _ca?.Dispose();
+            _cross?.Dispose();
+            _previousCa?.Dispose();
         }
     }
 }

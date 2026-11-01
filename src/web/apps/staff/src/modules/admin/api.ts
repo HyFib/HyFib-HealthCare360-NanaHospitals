@@ -316,6 +316,10 @@ export interface SystemHealthReport {
     subjectAlternativeNames: string[];
     /** Null with an administrator-supplied certificate, whose issuer HC360 does not hold. */
     caExpiresAt: string | null;
+    /** After a rollover ('certificates roll-ca'), the CA the current one replaced, while it still vouches for it. */
+    previousCaFingerprint?: string | null;
+    /** Until when devices that pin the previous CA still trust the server: the previous CA's expiry. */
+    crossSignedUntil?: string | null;
   };
   power: { available: boolean; onBattery: boolean | null; chargePercent: number | null; source: string | null };
   /** Empty when the integrations are not loaded (never on a real server). */

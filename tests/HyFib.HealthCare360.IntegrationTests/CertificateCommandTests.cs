@@ -14,7 +14,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// The certificate commands as an administrator and a monitoring tool run them (docs/deployment/CA-ROLLOVER.md): a new
-/// hospital CA is made only once confirmed, and the probe's exit code is the worst of the addresses it checks.
+/// hospital CA and a rollover are made only once confirmed, and the probe's exit code is the worst of the addresses it checks.
 /// </summary>
 public sealed class CertificateCommandTests : IDisposable
 {
@@ -48,6 +48,35 @@ public sealed class CertificateCommandTests : IDisposable
 
         using var started = Start(directories);
         started.CaFingerprint.ShouldBe(Fingerprint(directories), "the server starts with the new CA");
+    }
+
+    /// <summary>
+    /// A rollover too waits for --confirm, and is not run again while the CA it replaced still vouches for the new one: a
+    /// second one would leave the devices that have not moved yet with a chain they cannot follow.
+    /// </summary>
+    [Fact]
+    public async Task A_rollover_is_made_only_once_confirmed_and_not_again_while_the_last_one_runs()
+    {
+        var directories = new DataDirectories(new PlatformOptions { DataDirectory = _root });
+        string old;
+        using (var first = Start(directories))
+        {
+            old = first.CaFingerprint!;
+        }
+
+        (await ServerCli.RunAsync(["certificates", "roll-ca", "--data-dir", _root])).ShouldBe(1, "nothing is rolled over without --confirm");
+        Fingerprint(directories).ShouldBe(old);
+
+        (await ServerCli.RunAsync(["certificates", "roll-ca", "--confirm", "--data-dir", _root])).ShouldBe(0);
+        var rolled = Fingerprint(directories);
+        rolled.ShouldNotBe(old);
+        Directory.GetFiles(directories.Certificates, "hospital-ca.pfx.protected.replaced-*").ShouldHaveSingleItem("the CA it replaced is kept");
+
+        (await ServerCli.RunAsync(["certificates", "roll-ca", "--confirm", "--data-dir", _root])).ShouldBe(1, "the last rollover still runs");
+        Fingerprint(directories).ShouldBe(rolled);
+
+        using var started = Start(directories);
+        (started.CaFingerprint, started.PreviousCaFingerprint).ShouldBe((rolled, old), "the server starts with the new CA, which the old one vouches for");
     }
 
     [Fact]
