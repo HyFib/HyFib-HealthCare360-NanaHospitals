@@ -129,8 +129,7 @@ public sealed class DietProductionTests(HospitalServer server)
             EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
             Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
             ConfirmedNotDuplicate: false));
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patient.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant && b.WardType != WardType.Icu);
+        var bed = await TestBeds.AddAsync(server, "GWM");
         var admission = await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patient.Id, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,

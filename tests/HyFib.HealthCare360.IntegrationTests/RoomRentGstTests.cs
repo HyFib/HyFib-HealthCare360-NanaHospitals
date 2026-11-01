@@ -113,12 +113,11 @@ public sealed class RoomRentGstTests(HospitalServer server)
     }
 
     /// <summary>Front office: admits the patient, paying for herself, to a free bed of <paramref name="wardCode"/>.</summary>
-    private static async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId, string wardCode, DateTimeOffset admittedAt)
+    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId, string wardCode, DateTimeOffset admittedAt)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == wardCode);
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,

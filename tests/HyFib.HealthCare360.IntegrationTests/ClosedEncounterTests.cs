@@ -448,7 +448,10 @@ public sealed class ClosedEncounterTests(HospitalServer server)
             new CompleteDischargeRequest(DischargeType.Normal, null, "Discharged home", NotifyPatient: false))).Status.ShouldBe(AdmissionStatus.Discharged);
     }
 
-    /// <summary>Housekeeping cleans the bed a discharge or a cancelled admission released: the wards' beds are shared by the run.</summary>
+    /// <summary>
+    /// Housekeeping cleans the bed a discharge or a cancelled admission released: the run's tests read the same wards' boards
+    /// and housekeeping lists.
+    /// </summary>
     private static async Task CleanBedAsync(ApiClient nurse, Guid admissionId)
     {
         var stay = await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admissionId}");
@@ -470,12 +473,11 @@ public sealed class ClosedEncounterTests(HospitalServer server)
     }
 
     /// <summary>Front office: admits the patient under the doctor to a free bed of the male general ward.</summary>
-    private static async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
+    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Emergency, Source: AdmissionSource.Direct, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,

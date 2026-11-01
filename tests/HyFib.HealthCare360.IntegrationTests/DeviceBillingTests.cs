@@ -237,7 +237,7 @@ public sealed class DeviceBillingTests(HospitalServer server)
 
         (await pharmacist.GetAsync<IpIssueDetail>($"/api/v1/pharmacy/ip-issues/{created.Id}")).Lines.ShouldHaveSingleItem().UnitPrice.ShouldBe(PackMrp);
 
-        // The wards' beds are shared by every test of the run.
+        // The run's tests read the same wards' boards and housekeeping lists.
         await CancelAdmissionAsync(frontOffice, nurse, admission.Id);
     }
 
@@ -344,12 +344,11 @@ public sealed class DeviceBillingTests(HospitalServer server)
         (await billing.GetAsync<List<ServiceItemDto>>($"/api/v1/masters/lookups/services?search={code}")).Single(s => s.Code == code).Id;
 
     /// <summary>The front office admits the patient under the doctor to a free bed of the male general ward.</summary>
-    private static async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
+    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.Direct, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
