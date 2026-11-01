@@ -728,7 +728,9 @@ Then the records themselves (`AbdmHealthInformationService`):
    narrative. Each opening is audited as `phi` / `abdm.records_viewed`.
 10. The records are deleted outright (not soft-deleted) when the patient revokes the consent or it expires, and at its
     erase date (`AbdmReceivedRecordEraser`, hourly; none is shown past it in the meantime), with any key still kept;
-    audited as `phi` / `abdm.records_erased`.
+    audited as `phi` / `abdm.records_erased`, one entry per patient naming the records erased (`records`, their ids,
+    never their content). The deletes, the keys dropped and the entries commit in one transaction: an erase that fails
+    part-way erases nothing, and nothing is erased without its entry.
 
 NHA's wrapper, which this follows for the shapes, has faults HC360 does not copy: it sends the HIU's notification of
 records received under a header named `HIU` rather than `X-HIU-ID`, and reports a success as `ERRORED`/`FAILED`; it

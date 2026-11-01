@@ -308,7 +308,11 @@ internal sealed class AbdmHealthInformationService(
         return new AbdmReceivedRecordView(Summary(row.r, row.ArtefactId, row.HipName), bundle, row.DataEraseAt!.Value);
     }
 
-    /// <summary>Deletes outright the records received under these artefacts, and drops any key still kept for them.</summary>
+    /// <summary>
+    /// Deletes outright the records received under these artefacts, and drops any key still kept for them. The deletes, the
+    /// keys dropped and an audit entry per patient naming the records erased commit together: a failure part-way erases
+    /// nothing, and nothing is erased without its entry.
+    /// </summary>
     public async Task<int> EraseAsync(IReadOnlyCollection<Guid> artefactIds, string reason, CancellationToken ct)
     {
         if (artefactIds.Count == 0)
@@ -316,28 +320,32 @@ internal sealed class AbdmHealthInformationService(
             return 0;
         }
 
+        await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
         var requests = db.Set<AbdmHealthInformationRequest>().IgnoreQueryFilters().Where(q => artefactIds.Contains(q.ArtefactEntityId));
-        var patients = await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters()
+        var records = await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters()
             .Where(r => requests.Any(q => q.Id == r.RequestEntityId))
-            .GroupBy(r => r.PatientId).Select(g => new { PatientId = g.Key, Count = g.Count() }).ToListAsync(ct);
-        var erased = await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters()
-            .Where(r => requests.Any(q => q.Id == r.RequestEntityId))
-            .ExecuteDeleteAsync(ct);
+            .OrderBy(r => r.Id)
+            .Select(r => new { r.Id, r.PatientId })
+            .ToListAsync(ct);
+        var ids = records.Select(r => r.Id).ToList();
+        var erased = await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters().Where(r => ids.Contains(r.Id)).ExecuteDeleteAsync(ct);
         await requests.Where(q => q.PrivateKeyCipher != null)
             .ExecuteUpdateAsync(s => s.SetProperty(q => q.PrivateKeyCipher, (string?)null), ct);
-        foreach (var patient in patients)
+        foreach (var patient in records.GroupBy(r => r.PatientId))
         {
-            audit.Add(new AuditEntry(AuditCategories.PhiAccess, Erased, $"{patient.Count} record(s) received through ABDM erased: {reason}")
+            var erasedIds = patient.Select(r => r.Id).ToList();
+            audit.Add(new AuditEntry(AuditCategories.PhiAccess, Erased, $"{erasedIds.Count} record(s) received through ABDM erased: {reason}")
             {
-                PatientId = patient.PatientId,
+                PatientId = patient.Key,
                 EntityType = "abdm.received_record",
-                Details = new { api = "abdm", erased = patient.Count, reason },
+                Details = new { api = "abdm", erased = erasedIds.Count, reason, records = erasedIds },
             });
         }
 
-        if (patients.Count > 0)
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null)
         {
-            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
 
         return erased;

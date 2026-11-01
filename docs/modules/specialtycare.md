@@ -184,7 +184,7 @@ Clinical records it as a procedure on the patient's record (EHR-01). Otherwise t
 | `ServiceOrderPlaced` (Category **Surgery**) | `SurgeryOrderHandler` | Creates a *Requested* `SurgeryBooking` with the ordering doctor as surgeon |
 | `ServiceOrderCancelled` | the three handlers above | Cancels the work item if no treatment, issue or surgery has happened yet, and frees reserved blood |
 | `PatientAdmitted` / `PatientDischarged` / `AdmissionCancelled` | `AdmissionEventHandlers` | Maintains `specialtycare.admissions`, so charges go to the running IP bill. On discharge or cancellation: cancels waiting surgeries, cancels unissued blood requests (frees reserved units), and detaches future dialysis sessions from the closed admission |
-| `PatientsMerged` (Patients) | `PatientMergeHandler` | Re-points every patient-linked row to the surviving UHID (all facilities) |
+| `PatientsMerged` (Patients) | `PatientMergeHandler` | Re-points every patient-linked row to the surviving UHID (all facilities). The rows move in set-based statements, so one audit entry in the merge's transaction, `specialtycare.records_moved` (on the duplicate's record, under the surviving patient), lists the ids moved from each table, the duplicate's dialysis profiles deactivated and its sessions cancelled for clashing with the survivor's: what an unmerge would put back |
 
 ## Charges (`IChargePoster`, idempotent on SourceModule + SourceReference)
 | SourceModule | SourceReference | Service code | When |

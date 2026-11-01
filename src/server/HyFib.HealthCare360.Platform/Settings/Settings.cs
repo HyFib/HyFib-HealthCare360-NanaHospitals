@@ -149,7 +149,8 @@ public static class SettingVersions
 /// it reads every value from the database.
 /// </summary>
 internal sealed class SettingsService(
-    HospitalDbContext db, IFieldProtector protector, IMemoryCache cache, SettingChangeTokens changes, IClusterSignals signals) : ISettingsService
+    HospitalDbContext db, IFieldProtector protector, IMemoryCache cache, SettingChangeTokens changes, IClusterSignals signals, IAuditLogger audit)
+    : ISettingsService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
@@ -233,9 +234,47 @@ internal sealed class SettingsService(
 
     public async Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default)
     {
-        var removed = await db.Set<SystemSetting>().Where(s => s.Key == key && s.FacilityId == facilityId).ExecuteDeleteAsync(cancellationToken);
+        var removed = await DeleteAsync(key, facilityId, cancellationToken);
         Changed(key);
-        return removed > 0;
+        return removed;
+    }
+
+    /// <summary>
+    /// Deletes the row outright, not softly: one row per key and facility, and the value may be saved again later. A
+    /// delete in SQL bypasses the data audit, so the event it would have written (<c>SystemSetting.delete</c>, every value
+    /// the row had) is written here, in the transaction that deletes the row.
+    /// </summary>
+    private async Task<bool> DeleteAsync(string key, Guid? facilityId, CancellationToken ct)
+    {
+        var row = await db.Set<SystemSetting>().FirstOrDefaultAsync(s => s.Key == key && s.FacilityId == facilityId, ct);
+        if (row is null)
+        {
+            return false;
+        }
+
+        var entry = db.Entry(row);
+        var values = UnitOfWorkInterceptor.AuditChanges(entry, "delete");
+        entry.State = EntityState.Detached;
+
+        await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        if (await db.Set<SystemSetting>().Where(s => s.Id == row.Id).ExecuteDeleteAsync(ct) == 0)
+        {
+            return false;
+        }
+
+        audit.Add(new AuditEntry(AuditCategories.Data, $"{nameof(SystemSetting)}.delete")
+        {
+            EntityType = nameof(SystemSetting),
+            EntityId = row.Id.ToString(),
+            Details = values,
+        });
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
+        return true;
     }
 
     /// <summary>
