@@ -79,10 +79,7 @@ internal sealed class CriticalValueNotifier(
     {
         foreach (var alert in alerts)
         {
-            var patient = await lookups.PatientAsync(alert.PatientId, ct);
-            var title = alert.Kind == DiagnosticKind.Laboratory ? $"Critical value: {alert.What}" : $"Critical finding: {alert.What}";
-            var body = $"{Describe(patient)}: {alert.What} {alert.Value}";
-
+            var (title, body) = Words(alert, await lookups.PatientAsync(alert.PatientId, ct));
             if (alert.OrderingPractitionerId is { } practitionerId)
             {
                 var users = await lookups.UserIdsForPractitionerAsync(practitionerId, ct);
@@ -93,6 +90,29 @@ internal sealed class CriticalValueNotifier(
                 DiagnosticsPermissions.CriticalAlerts, alert.FacilityId, title, body, alert.Link, "diagnostics", "critical", ct));
         }
     }
+
+    /// <summary>
+    /// Before SaveChanges: the same in-app alerts as <see cref="NotifyVerifiedAsync"/>, sent only if the caller's
+    /// transaction commits (a correction released by an approval, in the approval's transaction).
+    /// </summary>
+    public async Task NotifyVerifiedAfterCommitAsync(IReadOnlyCollection<CriticalAlert> alerts, CancellationToken ct)
+    {
+        foreach (var alert in alerts)
+        {
+            var (title, body) = Words(alert, await lookups.PatientAsync(alert.PatientId, ct));
+            if (alert.OrderingPractitionerId is { } practitionerId)
+            {
+                var users = await lookups.UserIdsForPractitionerAsync(practitionerId, ct);
+                realtime.AlertUsersAfterCommit(new DeferredUserAlert([.. users], alert.FacilityId, title, body, alert.Link, "critical"));
+            }
+
+            realtime.AlertStaffAfterCommit(new DeferredStaffAlert(DiagnosticsPermissions.CriticalAlerts, alert.FacilityId, title, body, alert.Link, "critical"));
+        }
+    }
+
+    private static (string Title, string Body) Words(CriticalAlert alert, PatientSnapshot? patient) =>
+        (alert.Kind == DiagnosticKind.Laboratory ? $"Critical value: {alert.What}" : $"Critical finding: {alert.What}",
+            $"{Describe(patient)}: {alert.What} {alert.Value}");
 
     private static string Describe(PatientSnapshot? patient) => patient is null ? "Patient" : $"{patient.FullName} ({patient.Uhid})";
 

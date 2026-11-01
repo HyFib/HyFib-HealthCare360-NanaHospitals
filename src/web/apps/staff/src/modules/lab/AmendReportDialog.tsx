@@ -23,6 +23,7 @@ import { Fragment, useState } from 'react';
 import { CriticalCallDialog } from './common/CriticalCallDialog';
 import { errorMessage, hasErrorCode } from './common/errors';
 import type { CriticalCallDetails } from './common/types';
+import { approvalKeys } from '@/modules/approvals/api';
 import { labApi, labKeys, type AmendmentChange, type LabReportView, type ResultFlag } from './api';
 import { flagDisplay } from './flags';
 
@@ -79,7 +80,8 @@ function amendableRows(view: LabReportView): AmendRow[] {
 
 /**
  * Post-release correction (SRS LIS-07): a numbered amendment with the reason and old → new values, re-announced to the
- * doctor, the EHR and the patient as "(amended)". A corrected value that is critical needs a documented call.
+ * doctor, the EHR and the patient as "(amended)". A corrected value that is critical needs a documented call. Where the
+ * lab requires a separate verifier, the correction is asked for and another pathologist releases it by approving it.
  */
 export function AmendReportDialog({ view, onClose }: { view: LabReportView; onClose: () => void }) {
   const styles = useStyles();
@@ -109,11 +111,20 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
   const amend = useMutation({
     mutationFn: (criticalCall: CriticalCallDetails | null) =>
       labApi.amendReport(view.reportId, { reason: reason.trim(), changes, criticalCall }),
-    onSuccess: () => {
-      notify.success(
-        `Report amended (revision ${view.revision + 1})`,
-        'The doctor and the patient are informed of the corrected report.',
-      );
+    onSuccess: (asked) => {
+      if (asked) {
+        // The lab requires a separate verifier: another pathologist releases the correction by approving it.
+        notify.success(
+          'Asked for approval',
+          'Another pathologist must approve this correction. Until then the report says a correction is waiting.',
+        );
+        void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
+      } else {
+        notify.success(
+          `Report amended (revision ${view.revision + 1})`,
+          'The doctor and the patient are informed of the corrected report.',
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: labKeys.reports });
       void queryClient.invalidateQueries({ queryKey: labKeys.orders });
       onClose();

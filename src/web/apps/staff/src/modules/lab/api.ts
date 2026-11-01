@@ -1,6 +1,7 @@
 import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type {
   CriticalCallDetails,
   CriticalCallDto,
@@ -887,7 +888,13 @@ export interface LabAmendmentView {
   reason: string;
   changes: string;
   amendedAt: string;
+  /** Who released the correction. */
   amendedBy: string | null;
+  /**
+   * The pathologist who asked for it, where a second pathologist approved it (the lab requires a separate verifier);
+   * null when the one who made it released it.
+   */
+  requestedBy?: string | null;
 }
 
 export interface LabReportView {
@@ -914,6 +921,11 @@ export interface LabReportView {
   verificationPath: string | null;
   /** Absolute portal verification page for the QR code; null until the public address (`portal.baseUrl`) is configured. */
   verificationUrl: string | null;
+  /**
+   * When a correction of the released report was asked for that still waits for a second pathologist's approval: its
+   * results may change. Null when none waits.
+   */
+  amendmentWaitingSince?: string | null;
 }
 
 // ------------------------------------------------------------------------------------------------ quality control
@@ -1107,6 +1119,9 @@ export const labKeys = {
   unmatched: ['lab', 'unmatched'] as const,
 };
 
+/** How often a report with a correction waiting for approval is asked for again. */
+export const WAITING_REFRESH_MS = 30_000;
+
 export const labQueries = {
   tests: (params: TestSearch) =>
     queryOptions({
@@ -1222,6 +1237,9 @@ export const labQueries = {
     queryOptions({
       queryKey: ['lab', 'reports', 'detail', id],
       queryFn: ({ signal }) => api.get<LabReportView>(`/api/v1/lab/reports/${id}`, { signal }),
+      // While a correction waits for approval, ask again every 30 s. Its rejection, withdrawal or lapse, on any
+      // workstation, sends no lab event, and the page must offer Amend again once a correction may be asked for.
+      refetchInterval: (query) => (query.state.data?.amendmentWaitingSince ? WAITING_REFRESH_MS : false),
     }),
   tat: (from?: string, to?: string, section?: LabSection) =>
     queryOptions({
@@ -1326,8 +1344,12 @@ export const labApi = {
 
   // reports
   releaseReport: (reportId: string) => api.post<ReleaseOutcome>(`/api/v1/lab/reports/${reportId}/release`),
+  /**
+   * Corrects released results at once (204, nothing returned), or, where the lab requires a separate verifier, asks for
+   * the correction (202): it waits for another pathologist's approval in the approvals inbox.
+   */
   amendReport: (reportId: string, request: AmendReportRequest) =>
-    api.post<void>(`/api/v1/lab/reports/${reportId}/amend`, request),
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/lab/reports/${reportId}/amend`, request),
 
   // quality control
   saveQcLot: (id: string | null, request: SaveQcLotRequest): Promise<Created | undefined> =>

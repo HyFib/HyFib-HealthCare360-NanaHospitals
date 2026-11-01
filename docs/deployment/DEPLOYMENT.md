@@ -329,7 +329,8 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    has approved the `system_alert` template. A failed backup is told to the administrators in the app, not by SMS.
    Set `privacy.noticeVersion` to the version of the privacy notice the desk hands out (default `1`), and change it
    when the notice changes. A lab with more than one pathologist can set `lab.separateVerifier` to `true` for its
-   facility, so whoever entered a result does not also verify it.
+   facility, so whoever entered a result does not also verify it, and a correction of a released report waits for a
+   second pathologist's approval.
    A facility that does ultrasounds in pregnancy sets `pcpndt.registrationNumber` (for that facility) to its PCPNDT
    registration: until then Form F cannot be recorded, and those scans cannot start. Mark each obstetric ultrasound
    procedure "Ultrasound in pregnancy" under Radiology › Procedures and templates; the seeded obstetric and anomaly

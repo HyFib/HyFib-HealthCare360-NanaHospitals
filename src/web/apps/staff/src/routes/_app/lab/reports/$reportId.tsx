@@ -7,6 +7,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
+import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
 import { AbdmLinkButton } from '@/modules/emr/AbdmLinkButton';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { AmendReportDialog } from '@/modules/lab/AmendReportDialog';
@@ -140,7 +141,7 @@ function LabReportPage() {
                 <AbdmLinkButton record={{ type: 'LabReport', id: view.reportId }} what="lab report" />
               </>
             )}
-            {canVerify && releasedTests(view) > 0 && (
+            {canVerify && releasedTests(view) > 0 && !view.amendmentWaitingSince && (
               <Button icon={<EditRegular />} onClick={() => setAmending(true)}>
                 Amend
               </Button>
@@ -148,6 +149,8 @@ function LabReportPage() {
           </>
         }
       />
+
+      {canVerify && <PendingApprovals subjectType="LabReport" subjectId={view.reportId} />}
 
       <LabReportPreview view={view} />
 
