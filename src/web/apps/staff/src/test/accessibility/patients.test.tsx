@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PatientDetail } from '@/modules/patients/api';
 import { FACILITY_ID, fakeServer, openScreen, SCREEN_TESTS, SLOW, STAFF_USER, stubBrowserApis } from '../appScreen';
+import { patientJourneys } from './fixtures/frontOffice';
 
 // A patient's record as a role that neither contacts nor bills patients sees it (SRS PRV-03): the phone numbers, email,
 // street address and emergency contact's phone come masked from the server, the page says why, and offers no editing.
@@ -80,6 +81,7 @@ beforeEach(() => {
   server = fakeServer({
     [`GET /api/v1/patients/${PATIENT_ID}`]: MASKED,
     [`GET /api/v1/patients/${PATIENT_ID}/payer`]: { current: null },
+    [`GET /api/v1/patients/${PATIENT_ID}/journey`]: patientJourneys(PATIENT_ID),
     'GET /api/v1/masters/lookups/departments': [],
     'GET /api/v1/masters/lookups/practitioners': [],
   });
@@ -100,6 +102,17 @@ describe('patient record', SCREEN_TESTS, () => {
       screen.getByText(/shown in part: in full they are for the staff who contact or bill patients/),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(server.unanswered).toEqual([]);
+    await expectNoAxeViolations();
+  });
+
+  it('with the journey of her visit, her lab order and her operation', async () => {
+    openScreen(`/patients/${PATIENT_ID}`, LAB_USER);
+
+    const visit = await screen.findByRole('list', { name: 'Out-patient visit OP2600981' }, SLOW);
+    expect(within(visit).getByText('In consultation').closest('li')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('list', { name: 'Lab order NHLB260000123' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Operation OT2600045' })).toBeInTheDocument();
     expect(server.unanswered).toEqual([]);
     await expectNoAxeViolations();
   });

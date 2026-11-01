@@ -282,10 +282,10 @@ and grants nothing.
   - Break-the-glass requires a written reason, expires, and is flagged for review. The grant is a row in the database
     (`patients.break_glass_grants`), so it holds, and expires, on every server alike.
   - Lists don't name them unless the user may open restricted records, or has break-the-glass access to that one. Patient
-    search shows the initials, "R. K. S. (restricted)", so the desk can tell two results apart. The bed board, the doctor's worklist and the
-    ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
-    result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
-    and safety flags stay, so the patient is still seen to.
+    search and the board of patients in the hospital show the initials, "R. K. S. (restricted)", so the desk can tell two
+    results apart. The bed board, the doctor's worklist and the ward round show "Restricted patient". The worklist also
+    leaves out the complaint, booking reason, note title, result name and deficiency, and the round leaves out the
+    diagnosis and vital-sign details. The token, bed, UHID and safety flags stay, so the patient is still seen to.
   - Their stored files (documents, photos, reports) follow the same rules: opening a file, or its details, by its id
     is refused (403 `patient.restricted`) until the user may open the record, so knowing a file's id is not a way in.
 - **Sensitive categories** (HIV, mental health, termination of pregnancy, sexual violence; HIV/AIDS Act 2017, Mental
@@ -301,7 +301,8 @@ and grants nothing.
     gynaecologists), to those who may open restricted records, or through break-the-glass, which is audited as for VIP
     records.
   - The patient's details, bills, pharmacy, lab and radiology orders, appointments, allergies and alerts are not closed,
-    so the desk and the departments keep serving the patient; the categories themselves show only to doctors.
+    so the desk and the departments keep serving the patient; the categories themselves show only to doctors. The
+    patient's journey (where they are in their visit, stay and lab orders) stays open too, without their operations.
   - The FHIR API does not list these patients to clients that may not open restricted records.
   - The upgrade puts records that already carry such a diagnosis into its category; a merge carries the duplicate's
     categories to the surviving record. A doctor manages the categories without being able to open the chart.

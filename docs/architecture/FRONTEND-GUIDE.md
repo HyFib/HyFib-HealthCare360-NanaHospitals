@@ -117,6 +117,12 @@ export const bedQueries = {
 * Feedback: `LoadingState`, `EmptyState` (always say what to do next), `ErrorState` (never raw errors),
   `StatusBadge` (colour from the status word), `KpiCard`, `ConfirmDialog` (every destructive/irreversible action),
   `useNotify()` toasts (success after saves; `notify.error(error, 'Could not …')` on failures).
+* Journeys: `Pipeline` shows a patient's journey (a visit, a stay, an operation, a lab accession) as a line of stages,
+  each with its label, its state as an icon and in words (never colour alone), its time, and `aria-current="step"` on
+  the stage the patient is in; `compact` is the form for a row of a list (one icon a stage, named for screen readers
+  and on hover, the current stage written out with the time spent in it). It wraps rather than scrolls at 360 px. The
+  stages come from the server (`journeyQueries` in `src/modules/front-office/journeys.ts`); never work one out in the
+  browser. `formatStageDuration` and `formatStageTime` write its times elsewhere on the page.
 * Forms: react-hook-form + zod (`zodResolver`) + `TextField`, `TextAreaField`, `NumberField`, `SelectField`,
   `DateField`, `SwitchField`, `ChoiceField`, `LookupField`, laid out with `FormGrid`. A set of checkboxes goes in a
   `CheckboxGroup`, never in a Fluent `Field`: a Field gives its id, `required` and aria-* to every control inside it,

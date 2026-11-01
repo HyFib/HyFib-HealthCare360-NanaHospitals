@@ -9,6 +9,10 @@ scheduled data extracts for external BI tools such as Power BI, with data-refres
 Staff app: `src/web/apps/staff/src/modules/analytics` (manifest section *Insights*) and
 `src/web/apps/staff/src/routes/_app/analytics`.
 
+The module also holds the **patient journeys** (the pipeline of where each patient is: their out-patient visit, stay,
+operations and lab orders, and the board of patients in the hospital), a live read model over every module's records
+that only this layer may read (see *Patient journeys*). Its screens are the front office's.
+
 ## Permissions
 
 | Permission | Default roles | Purpose |
@@ -68,7 +72,8 @@ and every page view and export is audited per patient (see *Audit*).
 
 ## Endpoints
 
-All under `/api/v1/analytics`, tag *Analytics*.
+All under `/api/v1/analytics`, tag *Analytics*, except the patient journeys' two (tag *Patient journeys*, see
+*Patient journeys*).
 
 ### Reports, KPIs and look-ups (any analytics read permission)
 
@@ -360,6 +365,70 @@ BI extracts.
 * **Several servers**: only nodes that run jobs refresh on schedule, but *Refresh now* writes from the node that
   answers it, so every node must have the same shared folder (a UNC path) in its settings.
 
+## Patient journeys (the pipeline)
+
+Where each patient is in the hospital, as a line of stages: their out-patient visit, their stay, their operations and
+their lab orders. Every stage is read from the record that proves it; nothing is a status someone sets by hand, and no
+module was given a field for it. `Services/JourneyQueries.cs` reads, `Domain/Journeys/*` decides (pure, unit-tested),
+`Features/Journeys/*` answers. Like the Clinical timeline and the CRM 360° view it reads with small indexed queries, a
+few per kind of record for a whole page of patients at once, and writes nothing. Unlike the reports it reads the live
+database (not the reporting replica), since staff act on it, and stays in the user's facility as the visit and
+admission lists do.
+
+### Endpoints
+
+| Method | Path | Permission | Response |
+|---|---|---|---|
+| GET | `/api/v1/patients/{patientId}/journey` | `visits.read` | `PatientJourneys {patientId, asOf, outpatient, inpatient, surgeries[], labOrders[], surgeriesWithheld}` |
+| GET | `/api/v1/journeys/in-hospital?kind=&departmentId=&wardId=&page=&pageSize=` | `visits.read` | `PagedResult<InHospitalPatient {patientId, uhid, patientName, isRestricted, gender, age, kind, departmentId, departmentName, wardId, place, arrivedAt, journey}>`; `kind` `Outpatient` or `Inpatient` (another kind is a 400 on `kind`) |
+
+`JourneyDto {kind (Outpatient, Inpatient, Surgery, Lab), id, number, title, status (Active, Completed, Cancelled),
+startedAt, stages[], current}`; each stage `{key, label, state, at, minutesInStage, detail}`, `state` one of `Done`,
+`Current`, `Pending`, `Skipped`, `NotApplicable`, `Stopped`; `minutesInStage` only on the current stage, and only when
+the time it was reached is stored; `detail` a short note from the records ("Token GM-012", "₹350.00 due", "1 of 3
+released"). `current` is null once the journey is finished or cancelled.
+
+* **Who.** `visits.read` (Patients), which the front office, nurses and doctors hold with the other roles that see
+  patients: a journey is the patient's visits and stays, which that permission shows already.
+* **One patient.** `PatientAccessGuard.EnsureCanOpenAsync` first (a restricted record needs its permission or
+  break-the-glass: 403 `patient.restricted`), and each read is audited as `patient.accessed` ("Viewed where the patient is
+  in their visit, stay, operations and lab orders"). Operations are part of the clinical record, which a sensitive
+  category closes: unless `EnsureCanOpenChartAsync` passes they are left out and `surgeriesWithheld` says so. The
+  visit, stay and lab orders stay open to the desk and the departments, as the categories leave bills and orders open.
+* **Which journeys.** The current out-patient visit (one open today, as the board has it), or else the most recent
+  whatever its state; the latest stay while it lasts, that is admitted or with the discharge begun, and after discharge
+  until the bed the patient left is clean; operations and lab orders of that visit or stay, or still open (at most 5
+  operations and 10 lab orders, newest first).
+* **The board.** Today's (IST) out-patient visits still open and the stays of patients in a bed, newest arrival first,
+  25 a page, by out-patients or in-patients, department (the visit's or the stay's) and ward (the stay's). Each kind is
+  read on its own index for its newest arrivals and the two merged, as the Clinical timeline pages its sources. A
+  restricted (VIP) patient the user may not open is named by initials, "R. S. (restricted)", as patient search does
+  (R-3), with `isRestricted`; the UHID stays. Like today's visits and the bed board, a look at the board is not audited
+  (it refreshes every minute); opening a patient from it is.
+
+### How a stage's state is decided (`JourneyStages.Resolve`)
+
+Each kind of journey lists its stages in order, each with a role: **core** (the patient is not past it until it
+happens: the consultation, the discharge, the incision), **optional** (holds the patient up like a core stage until a
+later core or optional stage happens without it, then *skipped*: a doctor who opens the encounter without calling the
+token), or **parallel** (tests, medicines and billing, which happen before, during or after the consultation and never
+hold the position; *pending* until they happen). The patient is in the stage reached last among those before the first
+stage that holds them up; a stage whose time is not stored counts as after the stages before it; two at the same moment
+go to the later one. A finished journey has no current stage and shows what it went without as *skipped*; a cancelled
+one shows *stopped* for every stage it had not reached. A stage that does not apply is *not applicable*.
+
+| Journey | Stages (key: what proves it, role) |
+|---|---|
+| Out-patient visit | `checked-in` visit's check-in (token in detail) · `called` token called, room in detail (optional; not applicable without a token) · `in-consultation` the earlier of the token's service start and the first encounter · `consultation-signed` every encounter of the visit signed · `investigations-done` every lab, imaging and cardiology line of the visit's orders completed by its report (parallel) · `dispensed` every e-prescription of the visit dispensed at the pharmacy (parallel) · `billed` every charge of the visit on a finalized bill (parallel) · `paid` nothing left to bill and nothing due, when the last bill was settled: the payment, credit note or write-off that brought its due to nothing (parallel) · `closed` the visit completed. Before the consultation is signed, tests, medicines and billing with nothing behind them are pending (they may still come); after, not applicable |
+| In-patient stay | `admitted` where from, in the admit screen's words, naming the OPD or casualty visit the admission links ("From OPD visit NHV260000076") · `bedded` the first bed's start (ward and bed in detail) · `rounds-and-nursing` the first consultant's round, nursing note or risk assessment (optional) · `investigations-complete` the stay's investigation lines completed (parallel; not applicable until one is ordered) · `discharge-initiated` · `summary-signed` the discharge summary signed (parallel) · `cleared` as Billing clears a discharge: every service on a finalized bill, interim or final, and nothing due, when the last bill was settled, or a discharge with dues approved (optional: a patient who leaves against advice, absconds or dies is not held by it; not applicable with nothing charged) · `discharged` (how, for anything but a normal discharge) · `bed-cleaned` the housekeeping task of the bed left at discharge (not applicable when the bed was not left for cleaning) |
+| Operation | `requested` the booking · `scheduled` a slot held (when it was given is not stored: no time, the slot and theatre in detail; a postponed booking is waiting for a slot again) · `pre-op` the pre-operative checklist complete, consent among its items, at the last item recorded · `received` in pre-op (optional) · `sign-in`, `time-out` WHO checklist phases · `incision` · `sign-out` · `out-and-billed` the patient out of theatre with the OT charges posted (failed charges keep it pending). There is no recovery (PACU) or back-to-ward record, so no stage for it |
+| Lab accession | `ordered` · `payment-cleared` every test's charge on a paid bill, for an out-patient or walk-in not treated free by law (optional: skipped when the sample was drawn first, as a hospital that turns the payment gate off allows; not applicable for in-patients, emergency, day care and package tests) · `collected` · `received` (or sent out to a reference lab) · `resulted` · `verified` ("Auto-validated" when every result was) · `released` · `reviewed` by the ordering doctor (not applicable to a walk-in or outside referral). A stage is reached when every test that is not cancelled has reached it, at the time the last one did |
+
+What the records cannot say is left out rather than made up: when a slot was given, when the patient reached recovery,
+when a visit was handed over to the ward. A hand-off the records did not take (an out-patient visit left open after the
+patient was admitted, an order placed on a closed visit, an operation not linked to its admission) shows as the records
+have it.
+
 ## Settings and configuration
 
 | Key | Default | Purpose |
@@ -390,6 +459,7 @@ ageing).
 | `analytics.report.viewed` + `patient.accessed` per patient | PhiAccess | each page of a patient-level report opened |
 | `analytics.report.exported` (+ `patient.accessed` per patient for patient lists) | Data / PhiAccess | every export (report, format, inputs, rows in the file), and every BI extract written; a PDF that could not be made is not audited |
 | `analytics.delivery.downloaded` | Data | a delivered file downloaded again |
+| `patient.accessed` "Viewed where the patient is in their visit, stay, operations and lab orders" | PhiAccess | each read of a patient's journeys |
 | data audit | Data | dashboards and schedules (create/change/delete) via the platform interceptor |
 
 ## Staff app
@@ -406,6 +476,14 @@ ageing).
 | `/analytics/extracts` | BI extracts: active, late and failing extracts and the last refresh; the facility's folder and the refresh log (with copy buttons) and how to connect Power BI, or why HC360 cannot write the folder; list with file, schedule, data as of and state; the same drawer with a file name instead of recipients (CSV only, hourly allowed); refresh now, pause/resume, refresh history, delete |
 
 Home widget *Hospital at a glance* (this month's first four KPIs) for any analytics reader.
+
+The patient journeys are shown by the front office's module (`src/web/apps/staff/src/modules/front-office/journeys.ts`,
+`JourneyCard.tsx`) with the shared `Pipeline` of `@hc360/ui`:
+
+| Route | Screen |
+|---|---|
+| `/front-office/in-hospital` | *Patients in hospital* (Front office menu, `visits.read`): the board, filtered by out-patients or in-patients, department and ward (the ward filter for those who may read the wards), each row with the compact pipeline and the time in the current stage; opens the patient's page; refreshed every minute and on every visit change |
+| `/patients/$patientId` | The *Journey* card (`visits.read`): the visit and the stay as full pipelines, operations and lab orders beneath as compact lines |
 
 ## Tests
 
@@ -424,6 +502,12 @@ end-to-end `BiExtractTests` in `tests/HyFib.HealthCare360.IntegrationTests` (rul
 and delete, a failing refresh alerting once). `AnalyticsModuleTests` checks that the server's catalogue has every
 report.
 Web: `format.test.ts`, `params.test.ts`, `charts.test.ts`, `schedule-form.test.ts` in the module folder.
+Patient journeys: every stage rule in `Domain/Journeys` (`JourneyStagesTests`, `OutpatientJourneyTests`,
+`InpatientJourneyTests`, `SurgeryJourneyTests`, `LabJourneyTests`: current, skipped, not applicable, cancelled and
+finished journeys); `PatientPipelineTests` in the integration tests drives a patient through registration, the OPD, the
+consultation, a lab order, payment, collection and admission and reads both endpoints at each step, and checks the
+restricted-record rules; the staff app's `Pipeline.test.tsx` (`@hc360/ui`), `JourneyCard.test.tsx`,
+`inHospital.test.tsx` and the accessibility checks of the board and the patient's page (in the browser at 360 px too).
 
 ## Maintainers
 

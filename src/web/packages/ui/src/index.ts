@@ -1,6 +1,7 @@
 export * from './clinical/PatientBanner';
 export * from './data/DataTable';
 export * from './feedback/feedback';
+export * from './feedback/Pipeline';
 export * from './feedback/status';
 export * from './forms/checkboxGroup';
 export * from './forms/fields';

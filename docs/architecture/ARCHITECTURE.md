@@ -125,7 +125,7 @@ docs/                                     SRS, architecture, security, deploymen
 | 6 | **Engagement** | Healthcare CRM, Feedback, patient portal accounts, campaigns | Scheduling, Clinical (+ lower) |
 | 6 | **Quality** | IRMS (incidents, RCA, CAPA, risk register, quality indicators) | Patients, HR (+ lower) |
 | 7 | **Billing** | OP Billing, IP Billing, Medical Billing, Insurance, Doctor Fee Accounting | any module of layers 2–6 |
-| 8 | **Analytics** | MIS Reports, Managed BI Services | any module |
+| 8 | **Analytics** | MIS Reports, Managed BI Services; the patient journeys (where each patient is, read from every module's records) | any module |
 | 8 | **AI** | AI Voice Assistant (commands + clinical dictation) | Patients, Scheduling, Clinical (+ lower) |
 | 8 | **Interop** | HL7 FHIR R4 read API for other providers, with the patient's data-sharing consent (EHR-05); ABDM health records: NRCeS FHIR documents of discharge summaries, lab reports, consultations and prescriptions, and the (not yet live) ABDM gateway client (EHR-08, behind `features.abdm`) | Patients, Clinical, Diagnostics, Inpatient |
 | 8 | **Privacy** | DPDP Act 2023: data-principal requests, nominees, the breach register, the retention schedule and clean-up (PRV-01..04) | Patients, Clinical, Engagement, Billing |

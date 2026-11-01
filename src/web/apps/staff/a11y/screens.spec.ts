@@ -18,6 +18,7 @@ import {
   FRONT_DESK_USER,
   FRONT_OFFICE_ANSWERS,
   OPD,
+  patientJourneys,
 } from '../src/test/accessibility/fixtures/frontOffice';
 import { SHELL_SCREEN_ANSWERS } from '../src/test/accessibility/fixtures/shell';
 import { createFakeFetch, paged, problem, STAFF_USER, type FakeAnswers } from '../src/test/fakeApi';
@@ -79,8 +80,15 @@ const SCREENS: Screen[] = [
       [`GET /api/v1/patients/${ASHA.id}/sensitive-categories`]: { categories: [], version: 1 },
       // A merge waiting for a second records officer would show here; none is waiting.
       'GET /api/v1/approvals': paged([]),
+      [`GET /api/v1/patients/${ASHA.id}/journey`]: patientJourneys(ASHA.id),
     },
     ready: (page) => page.getByText('Penicillin', { exact: false }).first(),
+  },
+  {
+    name: 'patients in hospital',
+    path: '/front-office/in-hospital',
+    answers: FRONT_OFFICE_ANSWERS,
+    ready: (page) => page.getByText('Sunil Patil'),
   },
   {
     name: 'patient queue',
@@ -228,4 +236,30 @@ test.describe('tablet, 768 px wide', () => {
     await expect(page.getByRole('dialog', { name: 'Main navigation' })).toBeVisible();
     await expectAccessibleScreen(page, testInfo, { focus: { from: 'here' } });
   });
+});
+
+// A phone held upright (WCAG 2.2 reflow): the patient pipelines wrap onto more lines instead of running off the side
+// or making the page scroll sideways. Axe checks the screen's content here; the top bar is checked at desktop width
+// above.
+test.describe('phone, 360 px wide', () => {
+  test.use({ viewport: { width: 360, height: 780 } });
+
+  for (const screen of SCREENS.filter((s) => ['patients in hospital', 'patient chart'].includes(s.name))) {
+    test(screen.name, async ({ page }, testInfo) => {
+      await open(page, 'light', screen);
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow, 'the page scrolls sideways').toBeLessThanOrEqual(0);
+      const pipelines = page.locator('#main ol[aria-label]');
+      await expect(pipelines.first()).toBeVisible();
+      const cut = await pipelines.evaluateAll((lists) =>
+        lists
+          .filter((l) => l.scrollWidth > l.clientWidth || l.getBoundingClientRect().right > window.innerWidth)
+          .map((l) => l.getAttribute('aria-label')),
+      );
+      expect(cut, 'pipelines that run off the side').toEqual([]);
+      await expectAccessibleScreen(page, testInfo, { include: '#main', focus: { from: 'skip-link' } });
+    });
+  }
 });
