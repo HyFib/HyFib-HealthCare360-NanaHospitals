@@ -35,6 +35,9 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<BloodInventoryService>();
         services.AddScoped<MtpService>();
 
+        // A patient in pre-op or on the table holds the discharge (Inpatient asks every source).
+        services.AddScoped<IDischargeHoldSource, TheatreDischargeHolds>();
+
         // Daily expiry housekeeping; it checks PlatformOptions.RunsJobs itself so API-only nodes stay idle.
         services.AddHostedService<BloodUnitExpiryJob>();
     }

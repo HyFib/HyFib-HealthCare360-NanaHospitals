@@ -7,7 +7,8 @@ namespace HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 /// <summary>
 /// Turns an EMR surgery order into a surgery request on the OT list (OT-01), with the ordering doctor as surgeon.
 /// The OT coordinator then confirms the team and anaesthesia and gives it a theatre slot. Cancelling the order
-/// cancels the booking as long as surgery has not started.
+/// cancels the booking as long as surgery has not started. Ordered while the patient is in a bed, from whatever visit,
+/// the surgery belongs to the stay.
 /// </summary>
 internal sealed class SurgeryOrderHandler(HospitalDbContext db, INumberSeries numbers) :
     IDomainEventHandler<ServiceOrderPlaced>,
@@ -21,13 +22,15 @@ internal sealed class SurgeryOrderHandler(HospitalDbContext db, INumberSeries nu
             return;
         }
 
+        var (admissionId, visitId) = await SpecialtyLookups.SurgeryEncounterAsync(
+            db, domainEvent.PatientId, domainEvent.AdmissionId, domainEvent.VisitId, cancellationToken);
         db.Add(new SurgeryBooking
         {
             FacilityId = domainEvent.FacilityId,
             BookingNumber = await numbers.NextAsync(SpecialtyCareNumberSeries.SurgeryBooking, domainEvent.FacilityId, cancellationToken),
             PatientId = domainEvent.PatientId,
-            AdmissionId = domainEvent.AdmissionId,
-            VisitId = domainEvent.VisitId,
+            AdmissionId = admissionId,
+            VisitId = visitId,
             OrderItemId = domainEvent.OrderItemId,
             ProcedureServiceItemId = domainEvent.ServiceItemId,
             ProcedureCode = domainEvent.ServiceCode,

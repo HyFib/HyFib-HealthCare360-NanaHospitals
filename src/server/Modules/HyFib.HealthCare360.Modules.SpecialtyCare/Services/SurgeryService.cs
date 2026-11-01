@@ -31,7 +31,7 @@ public sealed class SurgeryService(
             return checks.Error!;
         }
 
-        var (admissionId, visitId) = await SpecialtyLookups.EncounterAsync(db, request.PatientId, request.AdmissionId, request.VisitId, ct);
+        var (admissionId, visitId) = await SpecialtyLookups.SurgeryEncounterAsync(db, request.PatientId, request.AdmissionId, request.VisitId, ct);
         var booking = new SurgeryBooking
         {
             FacilityId = facilityId,

@@ -9,11 +9,13 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 /// <summary>
 /// Discharge workflow: initiate (Billing prepares the final bill), check billing clearance, complete (the visit closes,
 /// the bed goes for cleaning, the family is informed) or revoke. Every bed day up to discharge is charged before the
-/// clearance check, so the patient never leaves with charges missing from the final bill.
+/// clearance check, so the patient never leaves with charges missing from the final bill. No stay ends while another
+/// department still has the patient (<see cref="IDischargeHoldSource"/>: a patient in pre-op or on the table).
 /// </summary>
 public sealed class DischargeService(
     HospitalDbContext db,
     IBillingStatusProvider billing,
+    IEnumerable<IDischargeHoldSource> holdSources,
     InpatientChargeService charges,
     INotificationService notifications,
     IRealtimePublisher realtime,
@@ -99,6 +101,19 @@ public sealed class DischargeService(
         if (admission.Status == AdmissionStatus.Admitted && DischargeRules.RequiresInitiation(type))
         {
             return Error.Rule("discharge.not_initiated", "Initiate the discharge first so billing can prepare the final bill.");
+        }
+
+        // However the stay is to end, a patient the theatre still has (in pre-op, on the table) is not discharged: the
+        // case is finished, postponed or cancelled there first. Asked before anything is charged or changed.
+        var holds = new List<DischargeHold>();
+        foreach (var source in holdSources)
+        {
+            holds.AddRange(await source.HoldsAsync(admission.Id, ct));
+        }
+
+        if (holds.Count > 0)
+        {
+            return Error.Rule(holds[0].Code, string.Join(" ", holds.Select(h => h.Message)));
         }
 
         var now = time.GetUtcNow();

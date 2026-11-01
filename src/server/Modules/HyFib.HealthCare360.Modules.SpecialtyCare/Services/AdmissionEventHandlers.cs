@@ -8,7 +8,8 @@ namespace HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 
 /// <summary>
 /// Keeps the local admission projection in step with Inpatient (by id only), so OT, blood and IP dialysis charges
-/// land on the running IP bill, and tidies up work that cannot continue once the admission ends (discharge or cancellation).
+/// land on the running IP bill, brings the patient's waiting surgeries into the stay, and tidies up work that cannot
+/// continue once the admission ends (discharge or cancellation).
 /// </summary>
 internal sealed class AdmissionEventHandlers(HospitalDbContext db, TimeProvider time) :
     IDomainEventHandler<PatientAdmitted>,
@@ -32,12 +33,22 @@ internal sealed class AdmissionEventHandlers(HospitalDbContext db, TimeProvider 
             AdmissionNumber = domainEvent.AdmissionNumber,
             AdmittedAt = domainEvent.AdmittedAt,
         });
+
+        // A surgery booked at this hospital before the admission (at the OPD, or with no visit) and still waiting for its day
+        // belongs to the stay from now on: its theatre and implant charges go to the running IP bill and count for the
+        // discharge clearance. Its visit is kept, so that it can be given back if the stay ends first (CloseAsync).
+        var waiting = await db.Set<SurgeryBooking>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(b => b.PatientId == domainEvent.PatientId && b.FacilityId == domainEvent.FacilityId && b.AdmissionId == null
+                        && (b.Status == SurgeryStatus.Requested || b.Status == SurgeryStatus.Scheduled || b.Status == SurgeryStatus.Postponed))
+            .ToListAsync(cancellationToken);
+        waiting.ForEach(b => b.AdmissionId = domainEvent.AdmissionId);
     }
 
     /// <summary>
-    /// On discharge: close the projection; cancel surgeries still waiting under this admission (a new admission gets
-    /// a new booking); cancel open blood requests without issued units and free their reserved units for others;
-    /// detach future dialysis sessions from the closed admission so they bill as out-patient sessions.
+    /// On discharge: close the projection; cancel surgeries still waiting that were booked during the stay (a new
+    /// admission gets a new booking) and give back those booked before it; cancel open blood requests without issued units
+    /// and free their reserved units for others; detach future dialysis sessions from the closed admission so they bill as
+    /// out-patient sessions.
     /// </summary>
     public Task HandleAsync(PatientDischarged domainEvent, CancellationToken cancellationToken) =>
         CloseAsync(domainEvent.AdmissionId, domainEvent.DischargedAt, "Patient discharged before surgery", "Patient discharged", cancellationToken);
@@ -60,7 +71,19 @@ internal sealed class AdmissionEventHandlers(HospitalDbContext db, TimeProvider 
             .Where(b => b.AdmissionId == admissionId
                         && (b.Status == SurgeryStatus.Requested || b.Status == SurgeryStatus.Scheduled || b.Status == SurgeryStatus.Postponed))
             .ToListAsync(cancellationToken);
-        bookings.ForEach(b => b.Cancel(surgeryReason));
+        foreach (var booking in bookings)
+        {
+            // A surgery booked before the stay joined it at admission: it goes back to waiting on its own, slot and all,
+            // rather than being cancelled with a stay it was not booked for.
+            if (admission is not null && booking.CreatedAt < admission.AdmittedAt)
+            {
+                booking.AdmissionId = null;
+            }
+            else
+            {
+                booking.Cancel(surgeryReason);
+            }
+        }
 
         var requests = await db.Set<BloodRequest>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(r => r.AdmissionId == admissionId && r.UnitsIssued == 0
