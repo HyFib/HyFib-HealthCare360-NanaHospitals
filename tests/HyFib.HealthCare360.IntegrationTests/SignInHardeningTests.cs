@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Identity;
@@ -161,6 +162,31 @@ public sealed class SignInHardeningTests(HospitalServer server)
         var normalized = Phone.Normalize(phone);
         (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuthChallenge>()
             .CountAsync(c => c.Phone == normalized, Ct)).ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task A_number_refused_another_code_is_told_when_it_may_have_one()
+    {
+        // In the production-style run the portal said "ask again in 05:06" whatever the server's 15 minutes said.
+        var phone = NewMobile();
+        for (var i = 0; i < 3; i++)
+        {
+            using var sent = await OnPortal().SendRawAsync(HttpMethod.Post, "/api/v1/auth/otp/request", new OtpRequest(phone));
+            sent.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+
+        using var refused = await OnPortal().SendRawAsync(HttpMethod.Post, "/api/v1/auth/otp/request", new OtpRequest(phone));
+        refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
+        problem.GetProperty("code").GetString().ShouldBe("auth.otp_throttled");
+
+        // Until the first of the three leaves the 15 minutes.
+        await using var scope = server.Services.CreateAsyncScope();
+        var normalized = Phone.Normalize(phone);
+        var first = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuthChallenge>()
+            .Where(c => c.Phone == normalized).MinAsync(c => c.CreatedAt, Ct);
+        var expected = (first.AddMinutes(15) - DateTimeOffset.UtcNow).TotalSeconds;
+        problem.GetProperty("data").GetProperty("retryAfterSeconds").GetInt32().ShouldBeInRange((int)expected - 5, (int)expected + 5);
     }
 
     [Fact]

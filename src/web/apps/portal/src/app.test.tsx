@@ -58,6 +58,9 @@ let signInRefused = false;
 /** Set by a test: a sign-in code is sent, so the page asks for it. */
 let codeSent = false;
 
+/** Set by a test: the number has had its three codes in 15 minutes, and may have another in this many seconds. */
+let throttledFor: number | null = null;
+
 /** Set by a test: the server's re-check finds the DSC-signed prescription changed. */
 let dscTampered = false;
 
@@ -75,6 +78,18 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
   // The anti-automation check (lib/proofOfWork): a challenge with almost no work, which this server does not check.
   if (url.includes('/api/v1/public/challenge')) {
     return json({ required: true, challenge: PROOF_CHALLENGE, bits: 1, expiresAt: null });
+  }
+  if (url.includes('/api/v1/auth/otp/request') && throttledFor !== null) {
+    return new Response(
+      JSON.stringify({
+        title: 'Too many codes',
+        status: 422,
+        detail: 'Too many codes requested for this number. Please wait a few minutes.',
+        code: 'auth.otp_throttled',
+        data: { retryAfterSeconds: throttledFor },
+      }),
+      { status: 422, headers: { 'content-type': 'application/problem+json' } },
+    );
   }
   if (url.includes('/api/v1/auth/otp/request') && codeSent) {
     return json({
@@ -189,6 +204,7 @@ beforeEach(() => {
   switches = { patientPortal: true, telehealth: true };
   signInRefused = false;
   codeSent = false;
+  throttledFor = null;
   useFeatureRefusals.getState().clear();
   // A proof solved in advance by an earlier test's page would stand in for this test's.
   clearPreparedProofs();
@@ -196,6 +212,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   sessionStorage.clear();
   useLanguageStore.getState().setLanguage('en');
@@ -231,6 +248,51 @@ describe('sign-in', () => {
       ['otp/request', 'hi'],
       ['otp/verify', 'hi'],
     ]);
+  });
+
+  it('counts down to the time the server gives when the number has had too many codes, then lets her ask again', async () => {
+    // As in the production-style run: her first code was at 11:02, so she may ask again at 11:17, not in five minutes.
+    // The page's clock is the test's (the timers stay real): it moves only when the test moves it.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    throttledFor = 11 * 60 + 2;
+    openAt('/portal/sign-in');
+
+    await userEvent.type(await screen.findByRole('textbox', { name: /Mobile number/ }, SLOW), '9876543210');
+    // She takes half a minute over the number: a countdown from the time the page opened would be half a minute out.
+    vi.advanceTimersByTime(30_000);
+    await userEvent.click(screen.getByRole('button', { name: 'Send code' }));
+
+    expect(await screen.findByText(/Too many codes were asked for/, {}, SLOW)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'You can ask for a new code in 11:02' }, SLOW)).toBeDisabled();
+
+    // The countdown runs on this page too, where she typed the number: a minute later, ten minutes are left …
+    vi.advanceTimersByTime(60_000);
+    expect(await screen.findByRole('button', { name: 'You can ask for a new code in 10:02' }, SLOW)).toBeDisabled();
+
+    // … and at the time the server gave, she may ask again, and the code comes.
+    throttledFor = null;
+    codeSent = true;
+    vi.advanceTimersByTime((10 * 60 + 2) * 1000);
+    await userEvent.click(await screen.findByRole('button', { name: 'Send code' }, SLOW));
+    expect(await screen.findByRole('textbox', { name: /6-digit code/ }, SLOW)).toBeInTheDocument();
+  });
+
+  it('counts down the wait for another code on the number\'s page after "Change number"', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    codeSent = true;
+    openAt('/portal/sign-in');
+
+    await userEvent.type(await screen.findByRole('textbox', { name: /Mobile number/ }, SLOW), '9876543210');
+    await userEvent.click(screen.getByRole('button', { name: 'Send code' }));
+    expect(await screen.findByRole('textbox', { name: /6-digit code/ }, SLOW)).toBeInTheDocument();
+    vi.advanceTimersByTime(10_000);
+    await userEvent.click(screen.getByRole('button', { name: 'Change number' }));
+
+    // The first new code waits 30 seconds from the first, on this page too …
+    expect(await screen.findByRole('button', { name: 'You can ask for a new code in 00:20' }, SLOW)).toBeDisabled();
+    // … and then she may ask.
+    vi.advanceTimersByTime(20_000);
+    expect(await screen.findByRole('button', { name: 'Send code' }, SLOW)).toBeEnabled();
   });
 });
 

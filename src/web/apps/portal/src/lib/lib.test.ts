@@ -14,6 +14,8 @@ import {
   sanitizeCode,
   sanitizePhoneInput,
   secondsUntil,
+  THROTTLED_COOLDOWN_SECONDS,
+  throttledWaitSeconds,
   toE164,
 } from './otp';
 import {
@@ -56,6 +58,15 @@ describe('sign-in helpers', () => {
 
   it('backs off before sending another code', () => {
     expect([0, 1, 2, 3, 4, 9].map(resendCooldownSeconds)).toEqual([0, 30, 60, 120, 300, 300]);
+  });
+
+  it('waits after "too many codes" until the time the server gives, within its 15 minutes', () => {
+    expect(throttledWaitSeconds({ retryAfterSeconds: 662 })).toBe(662);
+    expect(throttledWaitSeconds({ retryAfterSeconds: 61.2 })).toBe(62);
+    expect(throttledWaitSeconds({ retryAfterSeconds: 5000 })).toBe(900);
+    for (const data of [undefined, null, {}, { retryAfterSeconds: 0 }, { retryAfterSeconds: 'soon' }]) {
+      expect(throttledWaitSeconds(data)).toBe(THROTTLED_COOLDOWN_SECONDS);
+    }
   });
 
   it('trusts the server expiry only when it is plausible on this clock', () => {

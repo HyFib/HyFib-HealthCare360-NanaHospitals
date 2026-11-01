@@ -40,7 +40,7 @@ import {
   sanitizeCode,
   sanitizePhoneInput,
   secondsUntil,
-  THROTTLED_COOLDOWN_SECONDS,
+  throttledWaitSeconds,
   toE164,
 } from '@/lib/otp';
 import { useProfileStore } from '@/lib/profileStore';
@@ -220,7 +220,9 @@ function SignInPage() {
   const [checking, setChecking] = useState(false);
   const codeInput = useRef<HTMLInputElement>(null);
   const phoneInput = useRef<HTMLInputElement>(null);
-  const now = useNow(1000, step === 'code');
+  // The clock runs on both steps. A wait can start on the number's step ("too many codes", or a resend wait carried back
+  // by "Change number"); a clock stopped there would hold its countdown, and the Send code button, until a reload.
+  const now = useNow(1000);
 
   useEffect(() => {
     if (features.portal) {
@@ -270,7 +272,7 @@ function SignInPage() {
       }
       const throttled = errorCode(err) === 'auth.otp_throttled' || (isApiError(err) && err.status === 429);
       if (throttled) {
-        setResendAt(Date.now() + THROTTLED_COOLDOWN_SECONDS * 1000);
+        setResendAt(Date.now() + throttledWaitSeconds(isApiError(err) ? err.data : undefined) * 1000);
       }
       setError(
         throttled
