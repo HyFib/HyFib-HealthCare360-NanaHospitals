@@ -249,6 +249,22 @@ function SystemHealthPage() {
             <Row label="CA expires" tone={expiryTone(h.certificate.caExpiresAt, HOSPITAL_CA)}>
               {h.certificate.caExpiresAt ? formatDateTime(h.certificate.caExpiresAt) : 'Not issued by HC360'}
             </Row>
+            {/* A rollover in two steps: the next CA, which devices take before the switch; after it, the CA it replaced. */}
+            {h.certificate.nextCaFingerprint && (
+              <Row label="Next CA (prepared; devices take it before the switch)">
+                <span className={styles.mono}>{h.certificate.nextCaFingerprint}</span>
+              </Row>
+            )}
+            {h.certificate.previousCaFingerprint && (
+              <>
+                <Row label="Previous CA (switched from)">
+                  <span className={styles.mono}>{h.certificate.previousCaFingerprint}</span>
+                </Row>
+                <Row label="Devices keep it as a second CA until">
+                  {h.certificate.previousCaExpiresAt ? formatDateTime(h.certificate.previousCaExpiresAt) : '—'}
+                </Row>
+              </>
+            )}
             {/* Each server of several has a certificate of its own, on its card. */}
             {!servers && (
               <>

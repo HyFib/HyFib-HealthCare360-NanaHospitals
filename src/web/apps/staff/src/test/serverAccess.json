@@ -1557,6 +1557,8 @@
     "/api/v1/scheduling/waitlist scheduling.appointments.read",
     "/api/v1/settings/public -",
     "/api/v1/system/ca-certificate -",
+    "/api/v1/system/ca-certificate/next -",
+    "/api/v1/system/ca-certificate/previous -",
     "/api/v1/system/info -",
     "/api/v1/telehealth/config telehealth.sessions.read",
     "/api/v1/telehealth/sessions telehealth.sessions.read",

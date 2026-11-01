@@ -47,7 +47,10 @@ public sealed class EnrollDeviceRequestValidator : AbstractValidator<EnrollDevic
 
 public sealed record EnrollDeviceResponse(Guid DeviceId, string DeviceSecret, string ServerName, string? CaFingerprint);
 
-public sealed record DeviceHeartbeatRequest(Guid DeviceId, string DeviceSecret, string? AppVersion, string? WifiSsid, int? WifiSignal);
+/// <param name="CaFingerprints">The hospital CAs the workstation trusts the server through, the one it pins first; null from
+/// versions that do not report them.</param>
+public sealed record DeviceHeartbeatRequest(
+    Guid DeviceId, string DeviceSecret, string? AppVersion, string? WifiSsid, int? WifiSignal, IReadOnlyList<string>? CaFingerprints = null);
 
 /// <summary>
 /// The device's id and secret, and what it reports: Windows gives the WiFi signal as 0–100. A network's name (SSID) may
@@ -62,7 +65,32 @@ public sealed class DeviceHeartbeatRequestValidator : AbstractValidator<DeviceHe
         RuleFor(r => r.AppVersion).SafeText(32);
         RuleFor(r => r.WifiSsid).MaximumLength(64);
         RuleFor(r => r.WifiSignal).InclusiveBetween(0, 100);
+        RuleFor(r => r.CaFingerprints).Must(DeviceCaFingerprints.AreValid).WithMessage(DeviceCaFingerprints.Rule);
     }
+}
+
+/// <summary>The hospital CAs a device reports it trusts the server through (<see cref="Device.TrustedCaFingerprints"/>).</summary>
+public static class DeviceCaFingerprints
+{
+    /// <summary>At most this many: the CA a device pins and the one it replaced, with room for a rollover's overlap.</summary>
+    public const int Max = 4;
+
+    public const int MaxStoredLength = (Max * 64) + Max - 1;
+
+    public const string Rule = "Report at most 4 CA fingerprints, each 64 hexadecimal characters (SHA-256).";
+
+    public static bool AreValid(IReadOnlyList<string>? fingerprints) =>
+        fingerprints is null || (fingerprints.Count <= Max && fingerprints.All(f => f.Length == 64 && f.All(char.IsAsciiHexDigit)));
+
+    /// <summary>
+    /// What to store for <paramref name="reported"/>: upper case, each once, in the order reported; null when the device
+    /// reported none, so a device that stops reporting keeps what it last said.
+    /// </summary>
+    public static string? Stored(IReadOnlyList<string>? reported) =>
+        reported is { Count: > 0 } ? string.Join(',', reported.Select(f => f.ToUpperInvariant()).Distinct(StringComparer.Ordinal)) : null;
+
+    /// <summary>The fingerprints stored for a device, the one it pins first.</summary>
+    public static IReadOnlyList<string> Of(string? stored) => stored is null ? [] : stored.Split(',', StringSplitOptions.RemoveEmptyEntries);
 }
 
 public sealed record DeviceDto(
@@ -224,6 +252,11 @@ internal static class DeviceEndpoints
         device.AppVersion = request.AppVersion?.Trim() ?? device.AppVersion;
         device.LastWifiSsid = request.WifiSsid?.Trim();
         device.LastWifiSignal = request.WifiSignal;
+        if (DeviceCaFingerprints.Stored(request.CaFingerprints) is { } trusted && trusted != device.TrustedCaFingerprints)
+        {
+            device.TrustedCaFingerprints = trusted;
+        }
+
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
     }

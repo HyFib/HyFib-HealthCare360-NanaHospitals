@@ -72,8 +72,10 @@ internal static class LabAgentEndpoints
         var now = time.GetUtcNow();
         var address = http.Connection.RemoteIpAddress?.ToString();
         var version = request.AppVersion?.Trim() is { Length: > 0 } reported ? reported : device.AppVersion;
+        var trusted = DeviceCaFingerprints.Stored(request.CaFingerprints) ?? device.TrustedCaFingerprints;
         await db.Set<Device>().Where(d => d.Id == device.Id)
-            .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastSeenAt, now).SetProperty(d => d.LastIpAddress, address).SetProperty(d => d.AppVersion, version), ct);
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastSeenAt, now).SetProperty(d => d.LastIpAddress, address).SetProperty(d => d.AppVersion, version)
+                .SetProperty(d => d.TrustedCaFingerprints, trusted), ct);
 
         var gateway = await settings.ReadValueAsync<LabGatewaySettings>(LabSettingKeys.Gateway, null, ct) ?? new LabGatewaySettings();
         var assigned = gateway.Enabled ? await AssignedAsync(settings, device.Id, ct) : [];

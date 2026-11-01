@@ -316,6 +316,12 @@ export interface SystemHealthReport {
     subjectAlternativeNames: string[];
     /** Null with an administrator-supplied certificate, whose issuer HC360 does not hold. */
     caExpiresAt: string | null;
+    /** While a next CA is prepared ('certificates prepare-ca'): that CA, which devices take before the switch. */
+    nextCaFingerprint?: string | null;
+    /** After 'certificates switch-ca': the CA the current one replaced, until it expires. */
+    previousCaFingerprint?: string | null;
+    /** When the previous CA expires: devices keep it as a second CA until then. */
+    previousCaExpiresAt?: string | null;
   };
   power: { available: boolean; onBattery: boolean | null; chargePercent: number | null; source: string | null };
   /** Empty when the integrations are not loaded (never on a real server). */

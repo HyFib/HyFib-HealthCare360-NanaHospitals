@@ -29,8 +29,11 @@ internal sealed record EnrolRequest(string Code, string Name, string? MachineNam
 
 internal sealed record EnrolResult(Guid DeviceId, string DeviceSecret, string ServerName, string? CaFingerprint);
 
-/// <summary>Every minute: the agent's version and, for each COM port it was asked to open, whether it is open.</summary>
-internal sealed record HeartbeatRequest(string? AppVersion, IReadOnlyList<PortReport> Ports);
+/// <summary>
+/// Every minute: the agent's version, for each COM port it was asked to open whether it is open, and the hospital CAs it
+/// trusts the server through, the one it pins first.
+/// </summary>
+internal sealed record HeartbeatRequest(string? AppVersion, IReadOnlyList<PortReport> Ports, IReadOnlyList<string> CaFingerprints);
 
 internal sealed record PortReport(string Code, bool Open, string? Error);
 

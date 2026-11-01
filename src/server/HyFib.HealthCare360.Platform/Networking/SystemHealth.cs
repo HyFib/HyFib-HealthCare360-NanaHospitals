@@ -47,10 +47,12 @@ public sealed record OutboxInfo(int Pending, int FailedLast24Hours, DateTimeOffs
 
 /// <summary>
 /// The hospital CA and the server certificate it issued. <see cref="CaExpiresAt"/> is null with an administrator-supplied
-/// certificate, whose issuer HC360 does not hold.
+/// certificate, whose issuer HC360 does not hold. While a next CA is prepared, <see cref="NextCaFingerprint"/> is that CA,
+/// which devices take before the switch. After the switch, <see cref="PreviousCaFingerprint"/> is the CA it replaced, which
+/// devices keep as a second pin until <see cref="PreviousCaExpiresAt"/>.
 /// </summary>
 public sealed record CertificateInfo(string? CaFingerprint, DateTimeOffset? ServerExpiresAt, IReadOnlyList<string> SubjectAlternativeNames,
-    DateTimeOffset? CaExpiresAt = null);
+    DateTimeOffset? CaExpiresAt = null, string? PreviousCaFingerprint = null, DateTimeOffset? PreviousCaExpiresAt = null, string? NextCaFingerprint = null);
 
 public sealed record PowerInfo(bool Available, bool? OnBattery, int? ChargePercent, string? Source);
 
@@ -106,9 +108,14 @@ public sealed record SystemHealthReport(
     DateTimeOffset GeneratedAt,
     IReadOnlyList<ServerNodeHealth>? Servers = null);
 
+/// <summary>
+/// What the server says of itself before anyone signs in. While a next CA is prepared, <see cref="NextCaFingerprint"/> is that
+/// CA (handed out with the current CA's word for it at <c>ca-certificate/next</c>). After a switch,
+/// <see cref="PreviousCaFingerprint"/> is the CA the current one replaced, until it expires.
+/// </summary>
 public sealed record SystemInfoDto(
     string Product, string Version, string ServerName, string? FacilityName, string? FacilityCode, string? CaFingerprint, DateTimeOffset ServerTime, int ApiVersion,
-    SystemFeatures Features);
+    SystemFeatures Features, string? PreviousCaFingerprint = null, string? NextCaFingerprint = null);
 
 /// <summary>The hospital-wide feature switches (Platform/Features), for the portal and the sign-in page before anyone signs in.</summary>
 public sealed record SystemFeatures(bool PatientPortal, bool Telehealth);
@@ -239,6 +246,12 @@ public sealed class SystemHealthService(
         if (await SimulatorRecordSweep.WarningAsync(db, options.Value, ct) is { } simulatorRecords)
         {
             keyWarnings.Add(simulatorRecords);
+        }
+
+        // While a next CA is prepared, the workstations and lab agents that do not hold it yet, by name.
+        if (await CaRolloverDevices.WarningAsync(db, certificates, now, ct) is { } devicesNotReady)
+        {
+            keyWarnings.Add(devicesNotReady);
         }
 
         if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
@@ -393,7 +406,7 @@ public sealed class SystemHealthService(
         var encryption = OperatingSystem.IsWindows() ? DiskEncryption.Load(DiskEncryption.PathIn(directories)) : null;
         var storage = ReadStorage() with { Encryption = encryption };
         var certificate = new CertificateInfo(certificates.CaFingerprint, certificates.ServerExpiresAt, certificates.SubjectAlternativeNames,
-            certificates.CaExpiresAt);
+            certificates.CaExpiresAt, certificates.PreviousCaFingerprint, certificates.PreviousCaExpiresAt, certificates.NextCaFingerprint);
         var power = ReadPower();
 
         // The machine: its data drive, and BitLocker, the settings file's secrets and the database watchdog, which exist only
@@ -470,16 +483,21 @@ public sealed class SystemHealthService(
 
         if (caExpires is { } caExpired && caExpired <= now)
         {
-            warnings.Add(new("cert.ca_expired", "critical",
-                $"The hospital CA expired on {caExpired:dd MMM yyyy}: workstations, tablets and HC360 Desktop no longer trust this server, and HC360 does not start again until it has a new CA. Make one now with HyFib support, as the CA rollover procedure says (CA-ROLLOVER.md)."));
+            warnings.Add(new("cert.ca_expired", "critical", certificate.NextCaFingerprint is null
+                ? $"The hospital CA expired on {caExpired:dd MMM yyyy}: workstations, tablets and HC360 Desktop no longer trust this server, and HC360 does not start again until it has a new CA. Make one now with HyFib support, as the CA rollover procedure says (CA-ROLLOVER.md)."
+                : $"The hospital CA expired on {caExpired:dd MMM yyyy}: workstations, tablets and HC360 Desktop no longer trust this server, and HC360 does not start again until it switches CA. The next CA is prepared: switch to it now with 'certificates switch-ca', and every device that holds it trusts the server again (CA-ROLLOVER.md)."));
         }
         else if (caExpires is { } caExpiring && caExpiring - now < CaPlanningPeriod)
         {
+            // Before the CA expires the server switches to the next one; with none prepared yet, that is the first step.
+            var step = certificate.NextCaFingerprint is null
+                ? "Prepare the next CA with 'certificates prepare-ca': devices take it while they still trust this one, and the server switches to it once every device holds it"
+                : "The next CA is prepared: switch to it with 'certificates switch-ca' once every device holds it (the warning about the devices names those that do not)";
             warnings.Add(caExpiring - now < CaUrgentPeriod
                 ? new("cert.ca_expiring", "critical",
-                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}: then no workstation, tablet or HC360 Desktop trusts this server. Replace it now with HyFib support, as the CA rollover procedure says (CA-ROLLOVER.md).")
+                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}: then no workstation, tablet or HC360 Desktop trusts this server. {step}, now, as the CA rollover procedure says (CA-ROLLOVER.md).")
                 : new("cert.ca_expiring", "warning",
-                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}. Every workstation, tablet, HC360 Desktop and lab agent trusts it, so replacing it means setting each up again: plan it with HyFib support now (CA-ROLLOVER.md)."));
+                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}. {step}, in the coming months, as the CA rollover procedure says (CA-ROLLOVER.md): no device is cut off, and nothing stops."));
         }
 
         return warnings;
@@ -676,18 +694,13 @@ internal static class SystemEndpoints
                     await features.IsEnabledAsync(FeatureKeys.PatientPortal, null, ct),
                     await features.IsEnabledAsync(FeatureKeys.Telehealth, null, ct));
                 return TypedResults.Ok(new SystemInfoDto("HyFib HealthCare360", SystemHealthService.ProductVersion, Environment.MachineName,
-                    facility?.Name, facility?.Code, certificates.CaFingerprint, time.GetUtcNow(), 1, switches));
+                    facility?.Name, facility?.Code, certificates.CaFingerprint, time.GetUtcNow(), 1, switches, certificates.PreviousCaFingerprint,
+                    certificates.NextCaFingerprint));
             })
             .AllowAnonymous()
             .RequireRateLimiting(RateLimitPolicies.Public);
 
-        // Public CA certificate for tablets/browsers on the hospital WiFi (contains no secrets).
-        system.MapGet("/ca-certificate", (LanCertificateManager certificates) =>
-                certificates.CaPem is { } pem
-                    ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes(pem), "application/x-x509-ca-cert", "hc360-hospital-ca.crt")
-                    : Results.NotFound())
-            .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Public);
+        HospitalCaEndpoints.Map(system);
 
         var admin = app.MapGroup("/api/v1/admin/system").WithTags("Administration").RequirePermission(PlatformPermissions.SystemRead);
 
@@ -737,5 +750,45 @@ internal static class SystemEndpoints
                 .Select(s => new WifiSampleDto(s.At, s.Connected, s.SignalQuality, s.RssiDbm, s.ReceiveRateMbps, s.Ssid))
                 .ToListAsync(ct));
         });
+    }
+}
+
+/// <summary>
+/// Where the server hands out its hospital CA certificates (<c>/api/v1/system</c>), as the devices and the certificate probe
+/// read them: public, so a test of HC360 Desktop or the lab agent serves exactly these.
+/// </summary>
+public static class HospitalCaEndpoints
+{
+    /// <summary>
+    /// The hospital CA certificates the server hands out under <paramref name="system"/> (<c>/api/v1/system</c>), public and
+    /// without a secret: its CA, for tablets and browsers on the hospital WiFi and for devices being set up; while a next CA
+    /// is prepared, that CA and the current CA's word for it, which HC360 Desktop and the lab agent take as a second pin
+    /// (<see cref="WindowsInterop.Trust.HospitalCaFollow"/>); after a switch, the CA the current one replaced, until it
+    /// expires, by which the certificate probe that pins it finds the switch.
+    /// </summary>
+    public static void Map(IEndpointRouteBuilder system)
+    {
+        system.MapGet("/ca-certificate", (LanCertificateManager certificates) =>
+                certificates.CaPem is { } pem
+                    ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes(pem), "application/x-x509-ca-cert", "hc360-hospital-ca.crt")
+                    : Results.NotFound())
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Public);
+
+        // The next CA first, then the certificate the current CA signed for its key, each PEM on lines of its own: a device
+        // checks that word against the CA it pins before it holds the next one.
+        system.MapGet("/ca-certificate/next", (LanCertificateManager certificates) =>
+                certificates.NextCaPem is { } pem && certificates.NextCaCrossPem is { } cross
+                    ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes($"{pem.TrimEnd()}\n{cross.TrimEnd()}\n"), "application/x-pem-file", "hc360-hospital-ca-next.pem")
+                    : Results.NotFound())
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Public);
+
+        system.MapGet("/ca-certificate/previous", (LanCertificateManager certificates) =>
+                certificates.PreviousCaPem is { } pem
+                    ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes(pem), "application/x-x509-ca-cert", "hc360-hospital-ca-previous.crt")
+                    : Results.NotFound())
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Public);
     }
 }

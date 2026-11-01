@@ -28,6 +28,31 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     that contradicts IT's fingerprint, or the one the server announced on the network, is refused outright.
   - The lab agent runs unattended, so its fingerprint is always given by IT at installation; enrolment stops if the
     server's CA does not match it. Every call the agent makes, its analyser relays included, is pinned the same way.
+  - A CA rollover keeps the pins, in two steps (docs/deployment/CA-ROLLOVER.md). `certificates prepare-ca` makes the
+    next CA (the current one's name, a new key) and a certificate the current CA signs for that key; the server keeps
+    serving with the current CA and hands both out. HC360 Desktop and the lab agent hold the next CA as a second pin
+    only on the current CA's word (`WindowsInterop/Trust/HospitalCaSuccession`): over a connection already pinned to
+    the current CA they fetch what the server hands out, and take a CA only when it is in the pinned CA's name, with
+    another key, and comes with a CA certificate for that name and key that the pinned CA itself signed, valid now. A
+    CA in the hospital's name signed by its own key, by another hospital's CA, or not a CA, is refused. Each reports in
+    its heartbeat the CAs it holds. `certificates switch-ca` is refused while any device seen in the last 30 days, and
+    not revoked, does not hold the next CA, as the database says; it then makes the next CA the server's. Devices pin it
+    within six hours, and keep the CA it replaced as a second pin until it expires (`Trust/HospitalCaPins`, one copy of
+    the check for both apps), so a standby not switched yet still serves them. Nothing else is trusted more: a device
+    trusts the CA it pins, the next CA its pinned CA vouched for, and the CA its pinned CA replaced, and a device that
+    pins another CA still refuses the server. A CA whose key may have been seen is never rolled over, since whoever
+    holds the key could sign a "next" CA of their own: it is replaced (`certificates new-ca`), and every device set up
+    again.
+  - The server only ever sends its own certificate, and nothing is put into the Server Node's certificate stores: no
+    rollover depends on what Windows' TLS would send with it.
+  - A device builds the chain from what the server sent in the handshake and its pinned CAs only. Windows also takes
+    certificates from the computer's own stores to build a chain; whether the server is trusted does not depend on what
+    happens to be there. The certificate probe checks the same way.
+  - An IT policy fingerprint (HC360 Desktop) is compared with the certificate the workstation pins, not with the
+    fingerprint written beside it in the user's settings file, which the user can edit. A workstation that switched in
+    a rollover keeps a policy that still names the CA it replaced only when that CA's signature on the new key, kept
+    since, shows it (`HospitalCaSuccession.Succeeded`). A policy that names the next CA a workstation holds has it pin
+    that CA alone, from the policy's own fingerprint: nothing the policy names vouches for the CA it pinned until then.
   - WebView2, which shows the staff app in HC360 Desktop, hands the Desktop a server certificate only when Windows
     rejects it. A certificate Windows trusts would pass unchecked: one from a company's TLS-inspection proxy, say.
     So the Desktop checks the connection with its own pinned client before it loads the staff app, and every 10

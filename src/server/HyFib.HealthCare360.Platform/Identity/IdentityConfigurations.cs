@@ -153,6 +153,7 @@ internal sealed class DeviceConfiguration : IEntityTypeConfiguration<Device>
         b.Property(x => x.LastIpAddress).HasMaxLength(64);
         b.Property(x => x.LastWifiSsid).HasMaxLength(64);
         b.Property(x => x.Location).HasMaxLength(128);
+        b.Property(x => x.TrustedCaFingerprints).HasMaxLength(DeviceCaFingerprints.MaxStoredLength);
         b.HasIndex(x => x.FacilityId);
     }
 }

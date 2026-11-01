@@ -1,9 +1,11 @@
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 using Serilog;
 
 namespace HyFib.HealthCare360.Desktop.Services;
@@ -32,6 +34,24 @@ internal sealed class DesktopSettings
     public string? CaCertificatePem { get; set; }
 
     public string? CaFingerprint { get; set; }
+
+    /// <summary>
+    /// The next CA the server prepared ('certificates prepare-ca'), held on the word of the CA pinned: a second pin until the
+    /// server switches to it, and then the CA pinned (CA-ROLLOVER.md).
+    /// </summary>
+    public string? NextCaCertificatePem { get; set; }
+
+    /// <summary>The certificate the pinned CA signed for the next CA's key: that the next CA succeeds it.</summary>
+    public string? NextCaCrossCertificatePem { get; set; }
+
+    /// <summary>
+    /// The CA that <see cref="CaCertificatePem"/> replaced in a switch this workstation followed: a second pin until it
+    /// expires, and what an IT policy that still names it is checked against (CA-ROLLOVER.md).
+    /// </summary>
+    public string? PreviousCaCertificatePem { get; set; }
+
+    /// <summary>The certificate the previous CA signed for the current CA's key: that this CA succeeded it.</summary>
+    public string? CaCrossCertificatePem { get; set; }
 
     public Guid? DeviceId { get; set; }
 
@@ -142,6 +162,55 @@ internal sealed class DesktopSettings
         return true;
     }
 
+    /// <summary>
+    /// Takes <paramref name="step"/> of the hospital CA's rollover and saves it with <paramref name="save"/> (<see cref="Save"/>):
+    /// holds the next CA the server prepared, or pins it once the server switched to it, keeping the CA it replaced. When the
+    /// settings cannot be saved they stay as they were, and the exception is thrown: the next check takes the step again.
+    /// </summary>
+    public void Take(HospitalCaStep step, Action save)
+    {
+        ArgumentNullException.ThrowIfNull(save);
+        ArgumentNullException.ThrowIfNull(step);
+        var before = (CaCertificatePem, CaFingerprint, NextCaCertificatePem, NextCaCrossCertificatePem, PreviousCaCertificatePem, CaCrossCertificatePem);
+        switch (step)
+        {
+            case HospitalCaStep.HoldNext hold:
+                (NextCaCertificatePem, NextCaCrossCertificatePem) = (hold.Next.CaPem, hold.Next.CrossPem);
+                break;
+            case HospitalCaStep.SwitchToNext when NextCaCertificatePem is { } next:
+                (PreviousCaCertificatePem, CaCrossCertificatePem) = (CaCertificatePem, NextCaCrossCertificatePem);
+                (CaCertificatePem, CaFingerprint) = (next, Fingerprint(next));
+                (NextCaCertificatePem, NextCaCrossCertificatePem) = (null, null);
+                break;
+            default:
+                return;
+        }
+
+        try
+        {
+            save();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            (CaCertificatePem, CaFingerprint, NextCaCertificatePem, NextCaCrossCertificatePem, PreviousCaCertificatePem, CaCrossCertificatePem) = before;
+            throw;
+        }
+    }
+
+    /// <summary>Forgets the CA pinned and every second pin: trust in the server must be established again.</summary>
+    public void ForgetCa()
+    {
+        (CaCertificatePem, CaFingerprint) = (null, null);
+        ForgetRollover();
+    }
+
+    /// <summary>Forgets the next and previous CAs: they belong to the CA pinned until now, which setup replaced.</summary>
+    public void ForgetRollover()
+    {
+        (NextCaCertificatePem, NextCaCrossCertificatePem) = (null, null);
+        (PreviousCaCertificatePem, CaCrossCertificatePem) = (null, null);
+    }
+
     public void Save()
     {
         Directory.CreateDirectory(AppDataDirectory);
@@ -170,8 +239,7 @@ internal sealed class DesktopSettings
                 if (!string.Equals(ServerUrl, policy.ServerUrl, StringComparison.OrdinalIgnoreCase))
                 {
                     // A different server than the one configured: trust must be established again.
-                    CaCertificatePem = null;
-                    CaFingerprint = null;
+                    ForgetCa();
                 }
 
                 ServerUrl = policy.ServerUrl;
@@ -179,11 +247,10 @@ internal sealed class DesktopSettings
             }
 
             PolicyCaFingerprint = policy.CaFingerprint?.Replace(" ", string.Empty, StringComparison.Ordinal).Replace(":", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
-            if (PolicyCaFingerprint is not null && CaFingerprint is not null && !string.Equals(PolicyCaFingerprint, CaFingerprint, StringComparison.Ordinal))
+            if (PolicyCaFingerprint is not null && CaCertificatePem is not null && !KeepsPolicyCa(PolicyCaFingerprint))
             {
                 Log.Warning("The pinned CA does not match the IT policy; setup is required");
-                CaCertificatePem = null;
-                CaFingerprint = null;
+                ForgetCa();
             }
 
             if (policy.Kiosk is { } kiosk)
@@ -208,6 +275,33 @@ internal sealed class DesktopSettings
         {
             Log.Error(ex, "The machine policy could not be read");
         }
+    }
+
+    /// <summary>
+    /// Whether the workstation keeps a CA the IT policy names (<see cref="HospitalCaPolicy"/>): the CA pinned, or the one it
+    /// replaced in a switch this workstation followed, on that CA's word; or the next CA it holds, which it then pins alone.
+    /// </summary>
+    private bool KeepsPolicyCa(string policyFingerprint)
+    {
+        switch (HospitalCaPolicy.Decide(policyFingerprint, CaCertificatePem!, PreviousCaCertificatePem, CaCrossCertificatePem, NextCaCertificatePem))
+        {
+            case HospitalCaPolicyOutcome.Keep:
+                return true;
+            case HospitalCaPolicyOutcome.PinNextAlone:
+                Log.Information("The IT policy names the next hospital CA this workstation holds: it pins that CA alone from now on");
+                var next = NextCaCertificatePem;
+                ForgetRollover();
+                (CaCertificatePem, CaFingerprint) = (next, policyFingerprint);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static string Fingerprint(string pem)
+    {
+        using var certificate = X509Certificate2.CreateFromPem(pem);
+        return HospitalCaPins.ComputeFingerprint(certificate);
     }
 
     private sealed record DesktopPolicy(

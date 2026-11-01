@@ -1,11 +1,14 @@
 using System.ComponentModel;
 using System.IO;
+using System.Net.Http;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using HyFib.HealthCare360.Desktop.Bridge;
 using HyFib.HealthCare360.Desktop.Services;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 using Microsoft.Web.WebView2.Core;
 using Serilog;
 
@@ -74,7 +77,7 @@ public partial class MainWindow : Window
         _args = args;
         _notice = notice;
         _server = settings.ServerUri ?? throw new InvalidOperationException("No server configured.");
-        _trust = new ServerTrust(settings.CaCertificatePem!);
+        _trust = new ServerTrust(settings.CaCertificatePem!, settings.PreviousCaCertificatePem, settings.NextCaCertificatePem);
         _client = new ServerClient(_server, _trust);
         _network = new NetworkStatusService(_client);
         _updates = new DesktopUpdateService(_server, _trust, settings);
@@ -130,6 +133,7 @@ public partial class MainWindow : Window
         _scanner.Use(ScannerSetupStore.ForThisComputer().Load().Setup);
         _ = HeartbeatLoopAsync(_lifetime.Token);
         _ = UpdateLoopAsync(_lifetime.Token);
+        _ = FollowCaLoopAsync(_lifetime.Token);
 
         // The pinned check runs before the staff app (and the sign-in cookies it sends) goes to the server.
         if (await _client.PingAsync(_lifetime.Token) is not null)
@@ -503,7 +507,7 @@ public partial class MainWindow : Window
         try
         {
             OfflineDetails.Text = $"{_server.Host} · looking for the server at its other addresses…";
-            var other = await ServerFallback.FindAsync(_server, _settings, _trust.Fingerprint, _lifetime.Token);
+            var other = await ServerFallback.FindAsync(_server, _settings, _trust.Pins, _lifetime.Token);
 
             // The usual address may have answered meanwhile (the retries go on), or a refused certificate locked the window.
             if (other is null || !_retry.IsEnabled || Locked)
@@ -589,6 +593,76 @@ public partial class MainWindow : Window
             }
         }
         while (await timer.WaitForNextTickAsync(cancellationToken));
+    }
+
+    /// <summary>
+    /// Follows the hospital CA's two-step rollover (CA-ROLLOVER.md), a minute after start and every six hours: once IT
+    /// prepared the next CA ('certificates prepare-ca'), holds it as a second pin on the word of the CA this workstation pins;
+    /// once the server switched to it ('certificates switch-ca'), pins it, and keeps the CA it replaced as a second pin until
+    /// that expires. The heartbeat reports the CAs held, so System health names the workstations that do not hold the next
+    /// CA, and the switch waits for them.
+    /// </summary>
+    private async Task FollowCaLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
+            using var timer = new PeriodicTimer(TimeSpan.FromHours(6));
+            do
+            {
+                await FollowCaAsync(cancellationToken);
+            }
+            while (await timer.WaitForNextTickAsync(cancellationToken));
+        }
+        catch (OperationCanceledException)
+        {
+            // The window is closing.
+        }
+    }
+
+    private async Task FollowCaAsync(CancellationToken cancellationToken)
+    {
+        HospitalCaStep? step;
+        try
+        {
+            step = await _client.CheckCaAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or CryptographicException
+            || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            Log.Debug(ex, "Could not ask the server for its CAs; trying again later");
+            return;
+        }
+
+        if (step is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _settings.Take(step, _settings.Save);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Not saved: the CAs stay as they were, and the next check takes the step again.
+            Log.Error(ex, "The hospital CA's rollover could not be saved");
+            return;
+        }
+
+        switch (step)
+        {
+            case HospitalCaStep.HoldNext hold:
+                _trust.Pins.Hold(hold.Next);
+                Log.Information("The server prepared the next hospital CA {Fingerprint}: HC360 Desktop holds it for the switch", hold.Next.Fingerprint);
+                break;
+            case HospitalCaStep.SwitchToNext switched:
+                _trust.Pins.SwitchToNext();
+                Log.Information(
+                    "The server switched to the hospital CA {Fingerprint}: HC360 Desktop pins it, and the one it replaced until that expires",
+                    switched.Fingerprint);
+                break;
+        }
     }
 
     /// <summary>
