@@ -37,9 +37,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - A device builds the chain from what the server sent in the handshake and its pinned CA only. Windows also takes
     certificates from the computer's own stores to build a chain; whether the server is trusted does not depend on what
     happens to be there. The certificate probe checks the same way.
-  - Windows' TLS sends with the server's certificate only what it finds in the Server Node's stores, so after a rollover
-    HC360 puts the certificate the old CA signed, and the old CA, in the Intermediate Certification Authorities store.
-    Not among the trusted roots: the Server Node trusts nothing more for them.
+  - Windows' TLS sends with the server's certificate only a chain it builds from the Server Node's stores, and only to a
+    root the Server Node trusts. So while a rollover runs, HC360 puts the certificate the old CA signed among the
+    Intermediate Certification Authorities, and the old CA among the Trusted Root Certification Authorities, trusted
+    for Server Authentication only (the store's "Enable only the following purposes"). The old CA's key is not there,
+    and it is trusted for nothing else: not to sign code or e-mail, nor to authenticate a client. It goes when the
+    rollover ends. The new CA is never made a trusted root on the Server Node.
   - WebView2, which shows the staff app in HC360 Desktop, hands the Desktop a server certificate only when Windows
     rejects it. A certificate Windows trusts would pass unchecked: one from a company's TLS-inspection proxy, say.
     So the Desktop checks the connection with its own pinned client before it loads the staff app, and every 10

@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 using HyFib.HealthCare360.WindowsInterop.Discovery;
 using Makaretu.Dns;
 using Microsoft.AspNetCore.Builder;
@@ -77,7 +78,11 @@ public sealed class HospitalCaRollTests : IDisposable
         server.SentWithCertificate.Select(c => c.RawData).ShouldBe([cross.RawData, oldCa.RawData]);
         if (OperatingSystem.IsWindows())
         {
-            WindowsTlsChain.Holds(cross).ShouldBeTrue("Windows' TLS sends only what it finds in this computer's stores");
+            // Windows' TLS sends only a chain it builds from this computer's stores, and only to a root the computer trusts.
+            WindowsTlsChain.Holds(cross).ShouldBeTrue("among the computer's intermediate CAs");
+            WindowsTlsChain.Holds(oldCa).ShouldBeTrue("the old CA among its trusted roots");
+            TrustedHereFor(oldCa, WindowsTlsChain.ServerAuthentication).ShouldBeTrue("for TLS servers");
+            TrustedHereFor(oldCa, "1.3.6.1.5.5.7.3.3").ShouldBeFalse("and for nothing else: not to sign code");
         }
         cross.SubjectName.RawData.ShouldBe(newCa.SubjectName.RawData);
         cross.IssuerName.RawData.ShouldBe(oldCa.SubjectName.RawData, "the old CA's name, which is the new one's: self-issued");
@@ -195,9 +200,28 @@ public sealed class HospitalCaRollTests : IDisposable
         expired.Message.ShouldContain("certificates new-ca");
 
         var rolled = LanCertificateManager.RollCa(directories, keys, now);
+        X509Certificate2[] sent;
+        using (var started = Start(directories, keys, now))
+        {
+            sent = [.. started.SentWithCertificate.Select(c => X509CertificateLoader.LoadCertificate(c.RawData))];
+        }
+
+        // Out of the Windows stores, as if the first 'roll-ca' could not put them there: run again, it is refused, and gives
+        // Windows the running rollover's certificates.
+        WindowsTlsChain.Withdraw(sent);
         var running = Should.Throw<InvalidOperationException>(() => LanCertificateManager.RollCa(directories, keys, now.AddDays(30)));
         running.Message.ShouldContain($"The last rollover runs until {rolled.CrossSignedUntil:dd MMM yyyy}");
         Snapshot(directories, keys, now).CaFingerprint.ShouldBe(rolled.Fingerprint, "nothing changed");
+        if (OperatingSystem.IsWindows())
+        {
+            running.Message.ShouldEndWith("Windows has the certificates that rollover sends.");
+            sent.ShouldAllBe(c => WindowsTlsChain.Holds(c), "the refusal gave them back to Windows");
+        }
+
+        foreach (var certificate in sent)
+        {
+            certificate.Dispose();
+        }
 
         // Once the old CA has expired, the new one can be rolled over in its turn.
         LanCertificateManager.RollCa(directories, keys, rolled.CrossSignedUntil.AddDays(1)).PreviousFingerprint.ShouldBe(rolled.Fingerprint);
@@ -216,6 +240,7 @@ public sealed class HospitalCaRollTests : IDisposable
         server.EnsureCertificates();
         using var newCa = X509Certificate2.CreateFromPem(server.CaPem!);
         using var cross = X509CertificateLoader.LoadCertificate(Crosses(server.SentWithCertificate, newCa).ShouldHaveSingleItem().RawData);
+        using var oldCa = X509CertificateLoader.LoadCertificate(server.SentWithCertificate[^1].RawData);
 
         // The running server's own check, the day after the old CA expired.
         clock.Now = rolled.CrossSignedUntil.AddDays(1);
@@ -227,6 +252,7 @@ public sealed class HospitalCaRollTests : IDisposable
         if (OperatingSystem.IsWindows())
         {
             WindowsTlsChain.Holds(cross).ShouldBeFalse("taken out of the store Windows' TLS sends from");
+            WindowsTlsChain.Holds(oldCa).ShouldBeFalse("and the computer no longer trusts the old CA");
         }
         using var restarted = Start(directories, keys, clock.Now);
         restarted.PreviousCaFingerprint.ShouldBeNull("nor does it at its next start");
@@ -274,6 +300,18 @@ public sealed class HospitalCaRollTests : IDisposable
 
         ServerAdvertisement.Read(txt.Strings).ShouldBe(new AdvertisedProperties("1.4.2", "NH", server.CaFingerprint, "HC360-SRV", old.CaFingerprint));
         txt.Strings.ShouldContain($"fpprev={old.CaFingerprint}");
+    }
+
+    /// <summary>
+    /// Whether this computer trusts <paramref name="root"/>, by its own stores, for <paramref name="purpose"/> (an OID): in the
+    /// computer's context, as Windows' TLS builds the server's chain.
+    /// </summary>
+    private static bool TrustedHereFor(X509Certificate2 root, string purpose)
+    {
+        using var chain = new X509Chain(useMachineContext: true);
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        chain.ChainPolicy.ApplicationPolicy.Add(new Oid(purpose));
+        return chain.Build(root);
     }
 
     /// <summary>The certificates among <paramref name="certificates"/> for <paramref name="ca"/>'s key that are not the CA itself.</summary>

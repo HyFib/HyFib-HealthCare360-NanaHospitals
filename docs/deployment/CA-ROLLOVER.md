@@ -87,12 +87,21 @@ the server on that day (critical in its last 90 days). Every device must have th
    hospital CA", the server is not sending the old CA's certificate: devices that have the old CA cannot connect. Put the
    old CA back at once (below).
 
-   Windows sends with the server's certificate only what it finds in the Server Node's own certificate stores, not what
-   HC360 hands it. So `roll-ca`, run as an administrator, puts the certificate the old CA signed, and the old CA, in the
-   computer's **Intermediate Certification Authorities** store. Once the old CA has expired they vouch for nothing; the
-   next `roll-ca`, or a `new-ca`, takes them out. If `roll-ca` says Windows was not given the certificate, run it again
-   from an elevated prompt. Do not install the hospital CA among the Server Node's **Trusted Root Certification Authorities**:
-   Windows would then build the chain to the new CA and send the server's certificate alone.
+   Windows builds the chain it sends with the server's certificate from the Server Node's own certificate stores, not
+   from what HC360 hands it, and sends it only when it ends at a root the Server Node trusts. Otherwise the server's
+   certificate goes alone. So `roll-ca`, run as an administrator, puts:
+   - the certificate the old CA signed in the computer's **Intermediate Certification Authorities** store;
+   - the old CA among its **Trusted Root Certification Authorities**, trusted for **Server Authentication only**. In the
+     Certificates console (Local Computer), its Properties show "Enable only the following purposes" with Server
+     Authentication alone.
+
+   The old CA's private key is never there: the Server Node trusts it only to check a TLS server's certificate, until it
+   expires. The running server checks that both are in place. Once the old CA has expired they vouch for nothing; the
+   next `roll-ca`, or a `new-ca`, takes them out. If `roll-ca` says Windows was not given them, run it again from an
+   elevated prompt: while the rollover runs it is refused, and gives Windows the certificates. Do not install the
+   **new** hospital CA among the Server Node's trusted roots: Windows would then build the chain to it and send the
+   server's certificate alone. A domain policy that lets the Server Node trust only enterprise root CAs has the same
+   effect; the probe with the old fingerprint shows it.
 6. **Probe again with the new fingerprint.** It says `OK`.
 7. **Do the standby and the other server nodes** (`certificates export-ca` here, `certificates import-ca` there), and
    probe each one with the old fingerprint and the new one.

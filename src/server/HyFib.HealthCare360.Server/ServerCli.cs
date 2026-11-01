@@ -769,7 +769,7 @@ internal static class ServerCli
 
     /// <summary>Said when Windows was not given the rollover's certificate (<c>WindowsTlsChain</c>): devices on the old CA would be cut off.</summary>
     private const string WindowsCannotSend =
-        "Windows was not given the certificate the previous CA signed: it would send the server's certificate without it, and devices that pin the previous CA would refuse the server. Run this command again from an elevated prompt.";
+        "Windows was not given the rollover's certificates (the one the previous CA signed, and the previous CA as a root trusted for server authentication only): it would send the server's certificate without them, and devices that pin the previous CA would refuse the server. Run this command again from an elevated prompt.";
 
     /// <summary>
     /// Checks HC360 addresses as a device does, for a scheduled task or a monitoring tool (SRS DED-04): the exit code is the

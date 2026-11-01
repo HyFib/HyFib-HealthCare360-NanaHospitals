@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging;
 
@@ -28,8 +29,8 @@ public sealed record NewHospitalCa(string Fingerprint, DateTimeOffset ExpiresAt,
 /// <param name="Changed">False when this server already had that CA.</param>
 /// <param name="PreviousKeptAs">The file name a different CA that was here was kept under.</param>
 /// <param name="HeldForWindows">
-/// False when, on Windows, no certificate store took the rollover's certificate (<see cref="WindowsTlsChain"/>): Windows then
-/// sends the server's certificate without it. The command is run as an administrator to put it in the computer's store.
+/// False when, on Windows, the computer's stores could not be given the rollover's certificates (<see cref="WindowsTlsChain"/>):
+/// Windows then sends the server's certificate without them. The command is run as an administrator to put them there.
 /// </param>
 public sealed record ImportedHospitalCa(
     string Fingerprint, DateTimeOffset ExpiresAt, bool Changed, string? PreviousKeptAs, DateTimeOffset? CrossSignedUntil = null, bool HeldForWindows = true);
@@ -40,8 +41,9 @@ public sealed record ImportedHospitalCa(
 /// (<paramref name="CrossSignedUntil"/>, the replaced CA's expiry).
 /// </summary>
 /// <param name="HeldForWindows">
-/// False when, on Windows, no certificate store took the certificate the replaced CA signed (<see cref="WindowsTlsChain"/>):
-/// Windows then sends the server's certificate without it, and devices that pin the replaced CA refuse the server.
+/// False when, on Windows, the computer's stores could not be given the certificate the replaced CA signed and the replaced
+/// CA as a root for server authentication (<see cref="WindowsTlsChain"/>): Windows then sends the server's certificate
+/// without them, and devices that pin the replaced CA refuse the server.
 /// </param>
 public sealed record RolledHospitalCa(
     string Fingerprint, DateTimeOffset ExpiresAt, string PreviousFingerprint, DateTimeOffset PreviousExpiresAt, string? PreviousKeptAs,
@@ -390,19 +392,6 @@ public sealed class LanCertificateManager : IDisposable
         && IsIssuedBy(cross, previous);
 
     /// <summary>
-    /// Whether <paramref name="certificate"/> is issued in its own name and names its own key as its issuer's (or no key), as a
-    /// self-signed CA does. The certificate the previous CA signs for a CA in a rollover has the CA's name too, but names the
-    /// previous CA's key.
-    /// </summary>
-    private static bool NamesItselfAsIssuer(X509Certificate2 certificate)
-    {
-        var issuerKey = certificate.Extensions.OfType<X509AuthorityKeyIdentifierExtension>().FirstOrDefault()?.KeyIdentifier;
-        var ownKey = certificate.Extensions.OfType<X509SubjectKeyIdentifierExtension>().FirstOrDefault()?.SubjectKeyIdentifierBytes;
-        return certificate.SubjectName.RawData.AsSpan().SequenceEqual(certificate.IssuerName.RawData)
-            && (issuerKey is not { } named || ownKey is not { } own || named.Span.SequenceEqual(own.Span));
-    }
-
-    /// <summary>
     /// The TLS context: the server certificate, and after a rollover the certificate the previous CA signed for this one.
     /// The previous CA is given too, so the chain is built to the end and only the root is left out of what is sent. Under
     /// <see cref="_gate"/>.
@@ -450,7 +439,7 @@ public sealed class LanCertificateManager : IDisposable
         if (!WindowsTlsChain.Publish(added))
         {
             _logger.LogError(
-                "Windows has no certificate store this server may put the certificate the previous CA signed in: it sends its certificate without it, and devices that pin the previous CA refuse it. Run 'certificates import-ca' or 'certificates roll-ca' as an administrator (docs/deployment/CA-ROLLOVER.md).");
+                "Windows does not hold the rollover's certificates where its TLS takes them from, and this server may not put them there: the certificate the previous CA signed among the computer's Intermediate Certification Authorities, and the previous CA among its Trusted Root Certification Authorities. The server sends its certificate without them, and devices that pin the previous CA refuse it. Run 'certificates roll-ca' from an elevated prompt: while the rollover runs it is refused, and gives Windows the certificates (docs/deployment/CA-ROLLOVER.md).");
         }
 
         _heldForWindows.AddRange(added.Select(c => X509CertificateLoader.LoadCertificate(c.RawData)));
@@ -712,7 +701,7 @@ public sealed class LanCertificateManager : IDisposable
     {
         // The CA: the certificate with the key that names that key as its issuer's. After a rollover the file also holds the
         // certificate the previous CA signed for the same key, which a PKCS#12 reader may pair with the key as well.
-        var ca = bundle.FirstOrDefault(c => c.HasPrivateKey && NamesItselfAsIssuer(c)) ?? bundle.FirstOrDefault(c => c.HasPrivateKey) ?? bundle.FirstOrDefault()
+        var ca = bundle.FirstOrDefault(c => c.HasPrivateKey && WindowsTlsChain.NamesItselfAsIssuer(c)) ?? bundle.FirstOrDefault(c => c.HasPrivateKey) ?? bundle.FirstOrDefault()
             ?? throw new InvalidDataException("The file holds no certificate: export the CA with 'certificates export-ca'.");
         if (!ca.HasPrivateKey)
         {
@@ -828,11 +817,17 @@ public sealed class LanCertificateManager : IDisposable
         if (ReadCross(directories, previous, now) is { } inProgress)
         {
             var until = new DateTimeOffset(inProgress.Cross.NotAfter.ToUniversalTime(), TimeSpan.Zero);
+            // Run again as an administrator, the refusal gives Windows the running rollover's certificates, should the first
+            // run not have been able to.
+            var held = WindowsTlsChain.Publish([inProgress.Cross, inProgress.Previous]);
             inProgress.Cross.Dispose();
             inProgress.Previous.Dispose();
             throw new InvalidOperationException(
                 $"The last rollover runs until {until:dd MMM yyyy}: until then the server also vouches for the CA before this one, for devices "
-                + "that have not moved yet. Roll the CA again after that day.");
+                + "that have not moved yet. Roll the CA again after that day."
+                + (!OperatingSystem.IsWindows() ? "" : held
+                    ? " Windows has the certificates that rollover sends."
+                    : " Windows was not given the certificates that rollover sends: run this command again from an elevated prompt."));
         }
 
         using var ca = CreateCa(previous.SubjectName, now);
