@@ -17,7 +17,11 @@ export function PendingApprovals({
   subjectId: string;
 }) {
   const navigate = useNavigate();
-  const requests = useQuery(approvalQueries.list({ view: 'Subject', status: 'Pending', subjectType, subjectId }));
+  const requests = useQuery({
+    ...approvalQueries.list({ view: 'Subject', status: 'Pending', subjectType, subjectId }),
+    // While one waits, ask again every 30 s: it may be decided, withdrawn or lapse on another workstation.
+    refetchInterval: (query) => (query.state.data?.items.some((r) => !r.isExpired) ? 30_000 : false),
+  });
   const waiting = (requests.data?.items ?? []).filter((r) => !r.isExpired);
   if (waiting.length === 0) {
     return null;

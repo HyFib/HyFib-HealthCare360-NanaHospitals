@@ -8,7 +8,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import { AmendReportDialog } from './AmendReportDialog';
 import type * as LabApi from './api';
-import type { LabReportView } from './api';
+import { labQueries, type LabReportView } from './api';
 import { LabReportPreview } from './LabReportPreview';
 import { labReportNotes } from './reportBody';
 
@@ -199,5 +199,21 @@ describe('a correction of a released lab report', () => {
       "An amendment of this report is waiting for a second pathologist's approval. Results on it may change.",
     );
     expect(labReportNotes(view)).toEqual([]);
+  });
+});
+
+describe('a report with a correction waiting for approval', () => {
+  // A rejection, a withdrawal or the request lapsing, on any workstation, sends the report page no lab event: while one
+  // waits, the page asks for the report again, so Amend comes back once a correction may be asked for.
+  const refetchInterval = labQueries.report('rep1').refetchInterval as unknown as (query: {
+    state: { data?: LabReportView };
+  }) => number | false;
+
+  it('is asked for again every 30 seconds while the correction waits, and not once none does', () => {
+    expect(refetchInterval({ state: { data: { ...view, amendmentWaitingSince: '2026-09-26T08:00:00Z' } } })).toBe(
+      30_000,
+    );
+    expect(refetchInterval({ state: { data: view } })).toBe(false);
+    expect(refetchInterval({ state: { data: undefined } })).toBe(false);
   });
 });

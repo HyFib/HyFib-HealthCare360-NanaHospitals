@@ -1119,6 +1119,9 @@ export const labKeys = {
   unmatched: ['lab', 'unmatched'] as const,
 };
 
+/** How often a report with a correction waiting for approval is asked for again. */
+export const WAITING_REFRESH_MS = 30_000;
+
 export const labQueries = {
   tests: (params: TestSearch) =>
     queryOptions({
@@ -1234,6 +1237,9 @@ export const labQueries = {
     queryOptions({
       queryKey: ['lab', 'reports', 'detail', id],
       queryFn: ({ signal }) => api.get<LabReportView>(`/api/v1/lab/reports/${id}`, { signal }),
+      // While a correction waits for approval, ask again every 30 s. Its rejection, withdrawal or lapse, on any
+      // workstation, sends no lab event, and the page must offer Amend again once a correction may be asked for.
+      refetchInterval: (query) => (query.state.data?.amendmentWaitingSince ? WAITING_REFRESH_MS : false),
     }),
   tat: (from?: string, to?: string, section?: LabSection) =>
     queryOptions({
