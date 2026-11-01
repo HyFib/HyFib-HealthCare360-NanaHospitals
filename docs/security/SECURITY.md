@@ -564,7 +564,12 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     naming the rows: a patient merge's moves in OT, dialysis, physiotherapy and blood bank with the bookings it cancelled
     (`specialtycare.records_moved`), each batch of the retention clean-up (`privacy.retention.purged`), an ABDM erase
     (`abdm.records_erased`), and a setting removed (`SystemSetting.delete`, with every value it had).
-  - `AuditedChangeTests` (IntegrationTests) read each of these changes back from the audit log.
+  - `AuditCoverageTests` (ArchitectureTests) fails for any table that is neither in the trail nor on its reviewed list,
+    where each table has its one-line reason (technical tables, logs that are their own record, read models kept from
+    audited records, catalogues imported as a whole). Lines written with a document but not yet audited with it (a
+    receipt's payment modes, goods receipt and pharmacy sale lines, and the like) are on the list as such, so a new table
+    cannot stay out of the trail unnoticed. `AuditedChangeTests` (IntegrationTests) read each of these changes back
+    from the audit log.
 - **Idempotency keys** on every write:
   - A WiFi retry replays the original result instead of creating a duplicate bill, payment or order.
   - Stored responses are encrypted, because they can contain one-time secrets.
