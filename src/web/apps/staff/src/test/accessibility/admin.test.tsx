@@ -76,7 +76,9 @@ describe('system health', SCREEN_TESTS, () => {
     });
     openScreen('/admin/system');
 
-    expect(await screen.findByText('Next CA (prepared; devices take it before the switch)', {}, SLOW)).toBeInTheDocument();
+    expect(
+      await screen.findByText('Next CA (prepared; devices take it before the switch)', {}, SLOW),
+    ).toBeInTheDocument();
     expect(screen.getByText(next)).toBeInTheDocument();
     expect(screen.queryByText('Previous CA (switched from)')).not.toBeInTheDocument();
     await expectNoAxeViolations();
