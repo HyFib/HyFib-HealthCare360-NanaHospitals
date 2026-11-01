@@ -14,7 +14,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { PrintRegular } from '@fluentui/react-icons';
-import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError } from '@hc360/core';
+import { formatDate, formatDateTime, formatPhone, humanize, isApiError } from '@hc360/core';
 import { ErrorState, Section, useNotify } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -23,7 +23,7 @@ import { privacyQueries, type DataRequestDetail, type DataSummary, type SummaryR
 import { consentTypeLabel, genderLabel } from './labels';
 import { PlainTable } from './PlainTable';
 import { printDataSummary } from './print';
-import { isOpenStatus, itemDatesText } from './rules';
+import { birthDateText, isOpenStatus, itemDatesText } from './rules';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '16px' },
@@ -138,7 +138,7 @@ function SummaryView({ summary }: { summary: DataSummary }) {
             {p.uhid}
           </Detail>
           <Detail label="Gender">{genderLabel[p.gender] ?? humanize(p.gender)}</Detail>
-          <Detail label="Date of birth">{p.dateOfBirth ? formatDateOnly(p.dateOfBirth) : null}</Detail>
+          <Detail label="Date of birth">{birthDateText(p)}</Detail>
           <Detail label="Mobile number">{p.phone ? formatPhone(p.phone) : null}</Detail>
           <Detail label="Other phone number">{p.alternatePhone ? formatPhone(p.alternatePhone) : null}</Detail>
           <Detail label="E-mail address">{p.email}</Detail>

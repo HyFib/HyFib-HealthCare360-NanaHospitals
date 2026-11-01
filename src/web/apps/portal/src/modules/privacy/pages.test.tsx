@@ -41,6 +41,7 @@ const PROFILE: PortalProfile = {
   fullName: 'Asha Verma',
   gender: 'Female',
   dateOfBirth: '1987-03-14',
+  isDateOfBirthEstimated: false,
   age: '39Y',
   phone: '+91******3210',
   bloodGroup: 'BPositive',
@@ -221,6 +222,7 @@ const SUMMARY: DataSummary = {
     fullName: 'Asha Verma',
     gender: 'Female',
     dateOfBirth: '1987-03-14',
+    isDateOfBirthEstimated: false,
     phone: '+919876543210',
     alternatePhone: null,
     email: null,
@@ -290,6 +292,7 @@ function json(body: unknown, status = 200): Response {
 const calls: { method: string; path: string; body: unknown }[] = [];
 let createAnswer: () => Response;
 let profiles: PortalProfile[];
+let summary: DataSummary;
 let status: PortalPrivacyStatus;
 let notice: PortalBreachNotice;
 
@@ -325,7 +328,7 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
     case `GET ${privacy}/nominee`:
       return json(NOMINEE);
     case `GET ${privacy}/summary`:
-      return json(SUMMARY);
+      return json(summary);
     default:
       return json({ title: 'Not found', status: 404 }, 404);
   }
@@ -349,6 +352,7 @@ beforeEach(() => {
   calls.length = 0;
   createAnswer = () => json({ id: NEW_REQUEST_ID, requestNumber: 'PUNDPR2600042', dueAt: '2026-10-30T06:00:00Z' }, 201);
   profiles = [PROFILE];
+  summary = SUMMARY;
   status = STATUS;
   notice = NOTICE;
   useProfileStore.getState().select(null);
@@ -448,6 +452,21 @@ describe('Your privacy', () => {
       'href',
       '/portal/records/request',
     );
+  });
+
+  it('says a date of birth worked out from the age is an estimate, in the summary and on the profile', async () => {
+    // Registered by her age: the record holds her registration day and month in the year of birth the age gives.
+    const estimated = { dateOfBirth: '1974-10-31', isDateOfBirthEstimated: true };
+    summary = { ...SUMMARY, person: { ...SUMMARY.person, ...estimated } };
+    profiles = [{ ...PROFILE, ...estimated }];
+    const text = `${en.calendarDate('1974-10-31')} (estimated from your age when you registered)`;
+
+    const history = openAt('/portal/my-privacy/data');
+    expect(await screen.findByText(text, {}, SLOW)).toBeInTheDocument();
+
+    history.push('/portal/profile');
+    expect(await screen.findByText(text, {}, SLOW)).toBeInTheDocument();
+    expect(screen.queryByText(en.calendarDate('1974-10-31'))).not.toBeInTheDocument();
   });
 
   it('names each kind of record and how long it is kept in Hindi', async () => {

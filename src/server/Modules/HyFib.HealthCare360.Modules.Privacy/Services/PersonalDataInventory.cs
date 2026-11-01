@@ -28,12 +28,16 @@ public sealed record DataSummary(
 /// <summary>The retention periods in force, so a client can say "how long we keep it" in the patient's language.</summary>
 public sealed record RetentionPeriods(int OutpatientYears, int InpatientYears, int FinanceYears, int MessageLogDays, int AuditYears);
 
-/// <summary>The registration details as held. National identifiers appear only as the hospital stores them: masked.</summary>
+/// <summary>
+/// The registration details as held. National identifiers appear only as the hospital stores them: masked. A date of birth
+/// worked out from the age given at registration is marked <see cref="IsDateOfBirthEstimated"/>.
+/// </summary>
 public sealed record SummaryPerson(
     string Uhid,
     string FullName,
     Gender Gender,
     DateOnly? DateOfBirth,
+    bool IsDateOfBirthEstimated,
     string? Phone,
     string? AlternatePhone,
     string? Email,
@@ -150,6 +154,7 @@ public sealed class PersonalDataInventory(
                 patient.FullName,
                 patient.Gender,
                 patient.DateOfBirth,
+                patient.IsDateOfBirthEstimated,
                 patient.Phone,
                 patient.AlternatePhone,
                 patient.Email,

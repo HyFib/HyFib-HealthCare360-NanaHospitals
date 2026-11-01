@@ -65,12 +65,13 @@ public static class PatientQueries
         var idList = ids.Distinct().ToList();
         var rows = await db.Set<Patient>().AsNoTracking()
             .Where(p => idList.Contains(p.Id))
-            .Select(p => new { p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, p.Phone, p.BloodGroup, p.Category, p.IsVip, p.IsDeceased, p.PhotoFileId })
+            .Select(p => new { p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, p.IsDateOfBirthEstimated, p.Phone, p.BloodGroup, p.Category, p.IsVip, p.IsDeceased, p.PhotoFileId })
             .ToListAsync(ct);
 
         return rows.ToDictionary(p => p.Id, p => new PatientSummary(
             p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, p.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
-            PatientContacts.Phone(p.Phone, fullContacts), p.BloodGroup, p.Category, p.IsVip, p.IsDeceased, p.PhotoFileId));
+            PatientContacts.Phone(p.Phone, fullContacts), p.BloodGroup, p.Category, p.IsVip, p.IsDeceased, p.PhotoFileId,
+            p.IsDateOfBirthEstimated));
     }
 
     public static DateOnly Today(this TimeProvider time) => DateOnly.FromDateTime(IndiaTime(time).DateTime);

@@ -610,7 +610,11 @@ export function personRows(person: SummaryPerson, t: Translate, f: Formatters): 
     },
     {
       label: t('myPrivacy.field.dateOfBirth'),
-      value: person.dateOfBirth ? f.calendarDate(person.dateOfBirth) : null,
+      value: person.dateOfBirth
+        ? person.isDateOfBirthEstimated
+          ? t('common.estimatedBirthDate', { date: f.calendarDate(person.dateOfBirth) })
+          : f.calendarDate(person.dateOfBirth)
+        : null,
     },
     { label: t('myPrivacy.field.mobile'), value: formatPhone(person.phone) },
     { label: t('myPrivacy.field.alternatePhone'), value: formatPhone(person.alternatePhone) },

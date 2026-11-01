@@ -166,6 +166,8 @@ export interface SummaryPerson {
   fullName: string;
   gender: Gender;
   dateOfBirth: string | null;
+  /** The date of birth was worked out from the age given at registration. */
+  isDateOfBirthEstimated: boolean;
   phone: string | null;
   alternatePhone: string | null;
   email: string | null;

@@ -74,7 +74,11 @@ function ProfilePage() {
             },
             {
               label: t('profile.dob'),
-              value: profile.dateOfBirth ? f.calendarDate(profile.dateOfBirth) : null,
+              value: profile.dateOfBirth
+                ? profile.isDateOfBirthEstimated
+                  ? t('common.estimatedBirthDate', { date: f.calendarDate(profile.dateOfBirth) })
+                  : f.calendarDate(profile.dateOfBirth)
+                : null,
               hideEmpty: true,
             },
             { label: t('profile.bloodGroup'), value: bloodGroup, hideEmpty: true },

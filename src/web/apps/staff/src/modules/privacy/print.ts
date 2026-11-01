@@ -1,13 +1,4 @@
-import {
-  escapeHtml,
-  formatDate,
-  formatDateOnly,
-  formatDateTime,
-  formatPhone,
-  humanize,
-  printDocument,
-  printHtml,
-} from '@hc360/core';
+import { escapeHtml, formatDate, formatDateTime, formatPhone, humanize, printDocument, printHtml } from '@hc360/core';
 import type { BreachReport, DataSummary, PrivacyContact } from './api';
 import {
   breachDataCategoryLabel,
@@ -17,7 +8,7 @@ import {
   consentTypeLabel,
   genderLabel,
 } from './labels';
-import { itemDatesText } from './rules';
+import { birthDateText, itemDatesText } from './rules';
 
 /** Free text with its line breaks kept; every value is escaped before it reaches the page. */
 function paragraph(text: string | null | undefined): string {
@@ -75,7 +66,7 @@ export function dataSummaryHtml(
     row('Name', p.fullName),
     row('UHID (hospital number)', p.uhid),
     row('Gender', genderLabel[p.gender] ?? humanize(p.gender)),
-    row('Date of birth', p.dateOfBirth ? formatDateOnly(p.dateOfBirth) : null),
+    row('Date of birth', birthDateText(p)),
     row('Mobile number', p.phone ? formatPhone(p.phone) : null),
     row('Other phone number', p.alternatePhone ? formatPhone(p.alternatePhone) : null),
     row('E-mail address', p.email),
