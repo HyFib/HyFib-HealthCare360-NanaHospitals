@@ -144,7 +144,7 @@ public sealed class InpatientJourneyTests
             Status = AdmissionStatus.DischargeInitiated,
             DischargeInitiatedAt = At(9, 0),
             SummarySignedAt = At(9, 40),
-            Clearance = new ClearanceFacts(true, 0, [new BillFact(At(10, 0), 0m, At(10, 15), IsFinalBill: true)], null),
+            Clearance = new ClearanceFacts(true, 0, [new BillFact(At(10, 0), 0m, At(10, 15))], null),
         };
 
         var progress = InpatientJourney.Progress(cleared, Now);
@@ -161,14 +161,31 @@ public sealed class InpatientJourneyTests
         {
             Status = AdmissionStatus.DischargeInitiated,
             DischargeInitiatedAt = At(9, 0),
-            Clearance = new ClearanceFacts(true, 0, [new BillFact(At(10, 0), 12_500m, null, IsFinalBill: true)], null),
+            Clearance = new ClearanceFacts(true, 0, [new BillFact(At(10, 0), 12_500m, null)], null),
         };
 
         Stage(InpatientJourney.Progress(due, Now), "cleared").ShouldSatisfyAllConditions(
             s => s.State.ShouldBe(StageState.Pending),
             s => s.Detail.ShouldBe("₹12,500.00 due"));
         Stage(InpatientJourney.Progress(due with { Clearance = new ClearanceFacts(true, 0, [], null) }, Now), "cleared").Detail
-            .ShouldBe("No final bill yet");
+            .ShouldBe("No bill yet");
+    }
+
+    [Fact]
+    public void A_stay_whose_services_all_went_on_interim_bills_is_cleared_when_the_last_of_them_is_settled()
+    {
+        // Billing clears it so (DischargeClearanceRules): nothing left to bill and nothing due, with or without a final bill.
+        var interim = InTheWard with
+        {
+            Status = AdmissionStatus.DischargeInitiated,
+            DischargeInitiatedAt = At(9, 0),
+            SummarySignedAt = At(9, 40),
+            Clearance = new ClearanceFacts(true, 0, [new BillFact(DaysAgo(2, 18, 0), 0m, DaysAgo(2, 18, 30)), new BillFact(At(9, 30), 0m, At(10, 5))], null),
+        };
+
+        var current = InpatientJourney.Progress(interim, Now).Current.ShouldNotBeNull();
+        current.Key.ShouldBe("cleared");
+        current.At.ShouldBe(At(10, 5), "the second interim bill was settled at 10:05");
     }
 
     [Fact]
@@ -178,7 +195,7 @@ public sealed class InpatientJourneyTests
         {
             Status = AdmissionStatus.DischargeInitiated,
             DischargeInitiatedAt = At(9, 0),
-            Clearance = new ClearanceFacts(true, 0, [new BillFact(At(10, 0), 3_000m, null, IsFinalBill: true)], At(10, 20)),
+            Clearance = new ClearanceFacts(true, 0, [new BillFact(At(10, 0), 3_000m, null)], At(10, 20)),
         };
 
         Stage(InpatientJourney.Progress(approved, Now), "cleared").ShouldSatisfyAllConditions(
@@ -256,7 +273,7 @@ public sealed class InpatientJourneyTests
         Status = AdmissionStatus.Discharged,
         DischargeInitiatedAt = At(8, 0),
         SummarySignedAt = At(8, 30),
-        Clearance = new ClearanceFacts(true, 0, [new BillFact(At(9, 0), 0m, At(9, 20), IsFinalBill: true)], null),
+        Clearance = new ClearanceFacts(true, 0, [new BillFact(At(9, 0), 0m, At(9, 20))], null),
         DischargedAt = At(10, 0),
         DischargeType = DischargeType.Normal,
         Cleaning = cleaning,

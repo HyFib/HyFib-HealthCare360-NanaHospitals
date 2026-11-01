@@ -4,7 +4,7 @@ namespace HyFib.HealthCare360.Modules.Analytics.Domain.Journeys;
 
 /// <summary>
 /// Billing's position on the stay: whether anything was charged, the services not yet on a finalized bill, the finalized
-/// bills (the final bill among them) and when management approved a discharge with dues.
+/// bills (interim and final) and when management approved a discharge with dues.
 /// </summary>
 public sealed record ClearanceFacts(bool HasCharges, int Unbilled, IReadOnlyList<BillFact> Bills, DateTimeOffset? DuesApprovedAt)
 {
@@ -90,8 +90,9 @@ public static class InpatientJourney
     ];
 
     /// <summary>
-    /// Cleared as Billing clears a discharge: everything billed on a final bill and nothing due from the patient, at the
-    /// later of the final bill and the last payment; or a discharge with dues that management approved.
+    /// Cleared as Billing clears a discharge (DischargeClearanceRules): every service on a finalized bill, interim or final,
+    /// and nothing due from the patient, at the moment the last of the bills was settled; or a discharge with dues that
+    /// management approved.
     /// </summary>
     private static Milestone Clearance(ClearanceFacts c)
     {
@@ -106,15 +107,14 @@ public static class InpatientJourney
         }
 
         var due = c.Bills.Sum(b => b.Due);
-        var finalBill = c.Bills.Any(b => b.IsFinalBill);
-        if (finalBill && c.Unbilled == 0 && due == 0)
+        if (c.Unbilled == 0 && c.Bills.Count > 0 && due == 0)
         {
             return Cleared.Reached(Facts.Latest(c.Bills.Select(b => b.SettledAt)));
         }
 
         return Cleared.Open(
             c.Unbilled > 0 ? $"{Facts.Count(c.Unbilled, "service")} not billed yet"
-            : !finalBill ? "No final bill yet"
+            : c.Bills.Count == 0 ? "No bill yet"
             : $"{Facts.Rupees(due)} due");
     }
 

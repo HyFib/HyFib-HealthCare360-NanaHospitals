@@ -4,6 +4,7 @@ using System.Text.Json;
 using HyFib.HealthCare360.Modules.Analytics.Domain.Journeys;
 using HyFib.HealthCare360.Modules.Analytics.Features.Journeys;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
+using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
@@ -17,11 +18,13 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Queue;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
 using BillPaymentMode = HyFib.HealthCare360.Modules.Billing.Domain.PaymentMode;
+using CreditNoteKind = HyFib.HealthCare360.Modules.Billing.Domain.CreditNoteKind;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -155,6 +158,42 @@ public sealed class PatientPipelineTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task An_out_patient_bill_part_paid_and_written_off_is_paid_when_the_write_off_was_issued()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+
+        // Front office checks the patient in; billing charges two dressings and finalizes the visit's OP bill.
+        var patient = await RegisterAsync(frontOffice, "Arun", "Settled" + Letters(8), isVip: false);
+        var visit = await CheckInAsync(frontOffice, patient.Id);
+        var dressing = (await billing.GetAsync<List<ServiceItemDto>>("/api/v1/masters/lookups/services?search=PROC-DRESS")).Single(s => s.Code == "PROC-DRESS");
+        await billing.PostAsync<ChargeDto>("/api/v1/billing/charges", new PostChargeRequest(patient.Id, visit.Id, null, dressing.Id, 2m, null, null, null, null, null));
+        var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(visit.Id, PatientId: null, ChargeIds: null));
+        var bill = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
+
+        // The patient pays all but ₹100 at the counter.
+        await OpenShiftAsync(billing);
+        await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
+            bill.Id, [new PaymentLineInput(BillPaymentMode.Cash, bill.DueAmount - 100m, null, null, null, null, null, null)], Notes: null));
+        Stage((await JourneysAsync(frontOffice, patient.Id)).Outpatient.ShouldNotBeNull(), "paid").ShouldSatisfyAllConditions(
+            s => s.State.ShouldBe(StageState.Pending),
+            s => s.Detail.ShouldBe("₹100.00 due"));
+
+        // The rest is written off: billing asks, the accountant approves, and the write-off is issued then.
+        using var asked = await billing.SendRawAsync(HttpMethod.Post, $"/api/v1/billing/bills/{bill.Id}/credit-notes",
+            new IssueCreditNoteRequest(CreditNoteKind.WriteOff, 100m, "Balance waived by the medical superintendent"));
+        asked.StatusCode.ShouldBe(HttpStatusCode.Accepted, await asked.Content.ReadAsStringAsync(Ct));
+        await MakerChecker.ApproveAsync(accountant, (await asked.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json, Ct)).ShouldNotBeNull());
+        var writeOff = (await billing.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}")).CreditNotes.ShouldHaveSingleItem();
+
+        // Paid when the write-off brought the due to nothing, not at the payment before it.
+        Stage((await JourneysAsync(frontOffice, patient.Id)).Outpatient.ShouldNotBeNull(), "paid").ShouldSatisfyAllConditions(
+            s => s.State.ShouldBe(StageState.Done),
+            s => s.At.ShouldBe(writeOff.IssuedAt));
+    }
+
+    [Fact]
     public async Task A_restricted_patient_is_on_the_board_by_initials_and_the_journey_asks_for_access()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
@@ -258,16 +297,19 @@ public sealed class PatientPipelineTests(HospitalServer server)
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(visitId, PatientId: null, ChargeIds: null));
         var bill = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
-        using (var current = await billing.SendRawAsync(HttpMethod.Get, "/api/v1/billing/shifts/current"))
-        {
-            if (current.StatusCode == HttpStatusCode.NoContent)
-            {
-                await billing.PostAsync<ShiftDto>("/api/v1/billing/shifts/open", new OpenShiftRequest("OP counter 1", OpeningFloat: 0m));
-            }
-        }
-
+        await OpenShiftAsync(billing);
         await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
             bill.Id, [new PaymentLineInput(BillPaymentMode.Cash, bill.DueAmount, null, null, null, null, null, null)], Notes: null));
+    }
+
+    /// <summary>Billing's counter shift, opened if it is not: money is taken only in an open shift.</summary>
+    private static async Task OpenShiftAsync(ApiClient billing)
+    {
+        using var current = await billing.SendRawAsync(HttpMethod.Get, "/api/v1/billing/shifts/current");
+        if (current.StatusCode == HttpStatusCode.NoContent)
+        {
+            await billing.PostAsync<ShiftDto>("/api/v1/billing/shifts/open", new OpenShiftRequest("OP counter 1", OpeningFloat: 0m));
+        }
     }
 
     /// <summary>

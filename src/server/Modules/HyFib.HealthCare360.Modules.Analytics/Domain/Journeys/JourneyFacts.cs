@@ -7,11 +7,51 @@ namespace HyFib.HealthCare360.Modules.Analytics.Domain.Journeys;
 /// </summary>
 public sealed record InvestigationFact(DateTimeOffset? CompletedAt);
 
-/// <summary>A finalized bill (not cancelled): what the patient still owes on it, and when the last payment came in.</summary>
-public sealed record BillFact(DateTimeOffset? FinalizedAt, decimal Due, DateTimeOffset? LastPaymentAt, bool IsFinalBill = false)
+/// <summary>
+/// A finalized bill (not cancelled): what the patient still owes on it, and when the patient's share was settled
+/// (<see cref="BillSettlement"/>), or null while something is due.
+/// </summary>
+public sealed record BillFact(DateTimeOffset? FinalizedAt, decimal Due, DateTimeOffset? SettledAt);
+
+/// <summary>
+/// When a bill's patient share was settled: the moment its due last came down to nothing, replayed from the finalization
+/// through the payments, the credit notes and write-offs, and the refunds paid out of it. A credit note or write-off can be
+/// what settles a bill after a part payment; one issued on a bill already paid, to refund it, settles nothing, and neither
+/// does the refund that follows it.
+/// </summary>
+public static class BillSettlement
 {
-    /// <summary>When the patient's share was settled: the last payment, or the finalization when the payer took it all.</summary>
-    public DateTimeOffset? SettledAt => LastPaymentAt ?? FinalizedAt;
+    /// <param name="finalizedAt">When the bill was finalized; a bill not finalized was never settled.</param>
+    /// <param name="owed">The patient's share of the bill.</param>
+    /// <param name="changes">
+    /// Each change to what is due, when it happened: a payment, credit note or write-off lowers it (a negative change), a
+    /// refund paid raises it.
+    /// </param>
+    public static DateTimeOffset? At(DateTimeOffset? finalizedAt, decimal owed, IEnumerable<(DateTimeOffset At, decimal Change)> changes)
+    {
+        if (finalizedAt is not { } finalized)
+        {
+            return null;
+        }
+
+        var due = owed;
+        DateTimeOffset? settled = due <= 0 ? finalized : null;
+        foreach (var (at, change) in changes.OrderBy(c => c.At))
+        {
+            var wasSettled = due <= 0;
+            due += change;
+            if (due > 0)
+            {
+                settled = null;
+            }
+            else if (!wasSettled)
+            {
+                settled = at < finalized ? finalized : at;
+            }
+        }
+
+        return settled;
+    }
 }
 
 /// <summary>The services charged to a visit (not cancelled), those not yet on a finalized bill, and the bills holding the rest.</summary>

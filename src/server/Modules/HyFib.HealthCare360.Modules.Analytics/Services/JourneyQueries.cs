@@ -545,26 +545,48 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
 
     private sealed record BillRow(Guid Id, Guid? AdmissionId, BillFact Fact);
 
-    /// <summary>The finalized bills among <paramref name="bills"/> (drafts, cancelled and refunded bills left out), with their last payment.</summary>
+    /// <summary>
+    /// The finalized bills among <paramref name="bills"/> (drafts, cancelled and refunded bills left out), each with when it
+    /// was settled (<see cref="BillSettlement"/>): for a bill with nothing due, replayed from its payments, its credit notes
+    /// and write-offs, and the refunds paid out of it.
+    /// </summary>
     private async Task<Dictionary<Guid, BillRow>> BillsAsync(IQueryable<Bill> bills, CancellationToken ct)
     {
         var rows = await bills.AsNoTracking()
             .Where(b => b.Status != BillStatus.Draft && b.Status != BillStatus.Cancelled && b.Status != BillStatus.Refunded)
-            .Select(b => new { b.Id, b.AdmissionId, b.FinalizedAt, b.DueAmount, b.IsFinalBill })
+            .Select(b => new { b.Id, b.AdmissionId, b.FinalizedAt, b.DueAmount, b.PatientAmount })
             .ToListAsync(ct);
         if (rows.Count == 0)
         {
             return [];
         }
 
-        var billIds = rows.Select(b => (Guid?)b.Id).ToList();
-        var payments = await db.Set<Receipt>().AsNoTracking()
-            .Where(r => billIds.Contains(r.BillId) && r.Purpose == ReceiptPurpose.BillPayment)
-            .GroupBy(r => r.BillId)
-            .Select(g => new { BillId = g.Key!.Value, Last = g.Max(r => r.ReceivedAt) })
-            .ToDictionaryAsync(p => p.BillId, p => p.Last, ct);
-        return rows.ToDictionary(b => b.Id, b => new BillRow(
-            b.Id, b.AdmissionId, new BillFact(b.FinalizedAt, b.DueAmount, payments.TryGetValue(b.Id, out var last) ? last : null, b.IsFinalBill)));
+        // Only a bill with nothing due is settled: what changed the others' dues is not read.
+        var settled = rows.Where(b => b.DueAmount == 0).Select(b => b.Id).ToList();
+        var changes = new List<(Guid BillId, DateTimeOffset At, decimal Change)>();
+        if (settled.Count > 0)
+        {
+            var ids = settled.Select(id => (Guid?)id).ToList();
+            changes.AddRange((await db.Set<Receipt>().AsNoTracking()
+                    .Where(r => ids.Contains(r.BillId) && r.Purpose == ReceiptPurpose.BillPayment)
+                    .Select(r => new { BillId = r.BillId!.Value, r.ReceivedAt, r.Amount })
+                    .ToListAsync(ct))
+                .Select(r => (r.BillId, r.ReceivedAt, -r.Amount)));
+            changes.AddRange((await db.Set<CreditNote>().AsNoTracking()
+                    .Where(n => settled.Contains(n.BillId))
+                    .Select(n => new { n.BillId, n.IssuedAt, n.Amount })
+                    .ToListAsync(ct))
+                .Select(n => (n.BillId, n.IssuedAt, -n.Amount)));
+            changes.AddRange((await db.Set<Refund>().AsNoTracking()
+                    .Where(r => ids.Contains(r.BillId) && r.Status == RefundStatus.Paid && r.PaidAt != null)
+                    .Select(r => new { BillId = r.BillId!.Value, PaidAt = r.PaidAt!.Value, r.Amount })
+                    .ToListAsync(ct))
+                .Select(r => (r.BillId, r.PaidAt, r.Amount)));
+        }
+
+        var byBill = changes.ToLookup(c => c.BillId, c => (c.At, c.Change));
+        return rows.ToDictionary(b => b.Id, b => new BillRow(b.Id, b.AdmissionId, new BillFact(
+            b.FinalizedAt, b.DueAmount, b.DueAmount == 0 ? BillSettlement.At(b.FinalizedAt, b.PatientAmount, byBill[b.Id]) : null)));
     }
 
     private sealed record Person(string Uhid, string Name, bool Restricted, Gender Gender, string? Age)
