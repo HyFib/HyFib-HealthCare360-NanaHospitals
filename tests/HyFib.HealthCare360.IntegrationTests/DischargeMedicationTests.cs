@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
@@ -51,6 +52,24 @@ public sealed class DischargeMedicationTests(HospitalServer server)
         after.Where(d => d.MedicationOrderId == qid.Id).ShouldAllBe(d => d.Status == MarStatus.Cancelled);
         after.Single(d => d.MedicationOrderId == stat.Id).Status.ShouldBe(MarStatus.Due, "a dose due before the discharge is the nurse's to document");
 
+        // The discharge's handler changes them in the discharge's own save, so the data audit records them as it records
+        // any change: each line's stop and each cancelled dose is in the audit trail, the status it left and took, with
+        // its reason.
+        var auditor = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        foreach (var order in stopped)
+        {
+            var stop = await LastUpdateAsync(auditor, nameof(MedicationOrder), order.Id);
+            StatusChange<MedicationOrderStatus>(stop).ShouldBe((MedicationOrderStatus.Active, MedicationOrderStatus.Stopped));
+            stop.GetProperty("stopReason").GetProperty("to").GetString().ShouldBe("Patient discharged");
+        }
+
+        foreach (var dose in after.Where(d => d.MedicationOrderId == qid.Id))
+        {
+            var cancel = await LastUpdateAsync(auditor, nameof(MedicationAdministration), dose.Id);
+            StatusChange<MarStatus>(cancel).ShouldBe((MarStatus.Due, MarStatus.Cancelled));
+            cancel.GetProperty("reason").GetProperty("to").GetString().ShouldBe("Patient discharged");
+        }
+
         // The chart stays open 24 hours for late entries, but nothing becomes due again: no new line, no dose to give.
         await ShouldBeRefusedAsync(nurse, orders, Order("QID"));
         var adHoc = $"/api/v1/nursing/admissions/{admission.Id}/mar";
@@ -64,6 +83,21 @@ public sealed class DischargeMedicationTests(HospitalServer server)
         (await DosesAsync(admission.Id)).ShouldContain(d => d.IsAdHoc && d.Status == MarStatus.Given);
 
         await CleanBedAsync(nurse, admission.Id);
+    }
+
+    /// <summary>The details of the newest update in a record's audit trail, as Administration › Audit log shows it.</summary>
+    private static async Task<JsonElement> LastUpdateAsync(ApiClient auditor, string entityType, Guid id)
+    {
+        var trail = await auditor.GetAsync<PagedResult<AuditEventDto>>($"/api/v1/admin/audit?entityType={entityType}&entityId={id}&pageSize=50");
+        return JsonSerializer.Deserialize<JsonElement>(trail.Items.First(e => e.Action == entityType + ".update").Details!);
+    }
+
+    /// <summary>The status an update in the trail changed from and to. The trail keeps a status as its number.</summary>
+    private static (TStatus From, TStatus To) StatusChange<TStatus>(JsonElement update) where TStatus : struct, Enum
+    {
+        var status = update.GetProperty("status");
+        return ((TStatus)Enum.ToObject(typeof(TStatus), status.GetProperty("from").GetInt32()),
+            (TStatus)Enum.ToObject(typeof(TStatus), status.GetProperty("to").GetInt32()));
     }
 
     private static AddAdHocDoseRequest AdHoc(bool givenNow, DateTimeOffset? at) => new(
